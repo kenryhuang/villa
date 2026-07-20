@@ -1,0 +1,29 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource path="res://scripts/combat/projectile.gd" type="Script" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="ProjectileMaterial"]
+albedo_color = Color(1, 0.78, 0.08, 1)
+emission_enabled = true
+emission = Color(1, 0.35, 0.02, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="SphereMesh" id="ProjectileMesh"]
+material = SubResource("ProjectileMaterial")
+radius = 0.12
+height = 0.24
+
+[sub_resource type="SphereShape3D" id="ProjectileShape"]
+radius = 0.14
+
+[node name="Projectile" type="Area3D"]
+collision_layer = 8
+collision_mask = 5
+monitoring = true
+script = ExtResource("1")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("ProjectileMesh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("ProjectileShape")

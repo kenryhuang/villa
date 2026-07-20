@@ -1,0 +1,72 @@
+class_name TreeScatter
+extends RefCounted
+
+const RoadMathScript = preload("res://scripts/world/road_math.gd")
+
+const DIMENSIONS := {
+	"canopy-medium": {"width": 1.75, "height": 1.9, "clearance": 1.05},
+	"canopy-small": {"width": 1.15, "height": 1.35, "clearance": 0.78},
+	"fruit": {"width": 1.55, "height": 1.8, "clearance": 0.95},
+	"oak-large": {"width": 2.35, "height": 2.5, "clearance": 1.1},
+	"pine-large": {"width": 1.7, "height": 2.55, "clearance": 1.05},
+	"pine-small": {"width": 1.05, "height": 1.45, "clearance": 0.75},
+	"pine-tall": {"width": 1.5, "height": 2.75, "clearance": 0.95},
+	"round-medium": {"width": 1.65, "height": 1.9, "clearance": 0.95},
+	"round-small": {"width": 1.18, "height": 1.4, "clearance": 0.75},
+	"yellow": {"width": 1.7, "height": 1.95, "clearance": 1.0},
+}
+
+const WEIGHTED_VARIANTS := [
+	"canopy-small", "pine-small", "round-small", "canopy-medium",
+	"round-medium", "pine-tall", "fruit", "oak-large", "pine-large", "yellow",
+	"canopy-small", "pine-small", "round-small", "canopy-small", "pine-small", "round-small",
+]
+
+const AUTHORED := [
+	{"id": "authored-oak-large", "variant": "oak-large", "x": -5.8, "z": -2.9, "width": 2.35, "height": 2.5, "yaw_offset": 0.0, "lean": 0.0, "clearance": 1.1},
+	{"id": "authored-pine-small", "variant": "pine-small", "x": 5.9, "z": 3.4, "width": 1.05, "height": 1.45, "yaw_offset": 0.0, "lean": 0.0, "clearance": 0.75},
+	{"id": "authored-round-small", "variant": "round-small", "x": 7.2, "z": -2.7, "width": 1.18, "height": 1.4, "yaw_offset": 0.0, "lean": 0.0, "clearance": 0.75},
+]
+
+static func generate(route: Array[Dictionary], seed: int = 0x4b4f4455) -> Array[Dictionary]:
+	if route.size() < 2:
+		return []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var placements: Array[Dictionary] = []
+	for authored in AUTHORED:
+		placements.append(authored.duplicate())
+	var attempts := 0
+	while placements.size() < 28 and attempts < 4000:
+		var generated_index := placements.size() - AUTHORED.size()
+		var variant: String = WEIGHTED_VARIANTS[generated_index % WEIGHTED_VARIANTS.size()]
+		var dimensions: Dictionary = DIMENSIONS[variant]
+		var scale := 0.88 + rng.randf() * 0.24
+		var candidate := {
+			"id": "scatter-%02d" % generated_index,
+			"variant": variant,
+			"x": -15.7 + rng.randf() * 31.4,
+			"z": -11.7 + rng.randf() * 23.4,
+			"width": float(dimensions.width) * scale,
+			"height": float(dimensions.height) * scale,
+			"yaw_offset": (rng.randf() - 0.5) * 0.14,
+			"lean": (rng.randf() - 0.5) * 0.055,
+			"clearance": float(dimensions.clearance) * scale,
+		}
+		attempts += 1
+		if Vector2(candidate.x, candidate.z).length() < 2.35:
+			continue
+		if RoadMathScript.distance_to_route(Vector2(candidate.x, candidate.z), candidate.clearance, route) < 0.45:
+			continue
+		if not _has_clearance(candidate, placements):
+			continue
+		placements.append(candidate)
+	return placements
+
+static func _has_clearance(candidate: Dictionary, placements: Array[Dictionary]) -> bool:
+	var candidate_position := Vector2(float(candidate.x), float(candidate.z))
+	for tree in placements:
+		var required := maxf(float(candidate.clearance), float(tree.clearance))
+		if candidate_position.distance_to(Vector2(float(tree.x), float(tree.z))) < required:
+			return false
+	return true
