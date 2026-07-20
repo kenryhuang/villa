@@ -9,6 +9,7 @@ const PlayerLogicTest = preload("res://tests/test_player_logic.gd")
 const NpcLogicTest = preload("res://tests/test_npc_logic.gd")
 const ProjectileLogicTest = preload("res://tests/test_projectile_logic.gd")
 const SmokeTest = preload("res://tests/smoke_test.gd")
+const VegetationBuilderTest = preload("res://tests/test_vegetation_builder.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 func _init() -> void:
@@ -22,6 +23,7 @@ func _init() -> void:
 	NpcLogicTest.new().run(assertions)
 	ProjectileLogicTest.new().run(assertions)
 	SmokeTest.new().run(assertions)
+	VegetationBuilderTest.new().run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d checks" % assertions.checks)
 		quit(0)

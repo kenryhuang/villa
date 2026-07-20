@@ -16,6 +16,12 @@ const TEXTURES := {
 	"yellow": "res://assets/vegetation/tree-yellow.png",
 }
 
+static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> float:
+	if texture_size.x <= 0.0 or texture_size.y <= 0.0 or target_size.x <= 0.0:
+		return 1.0
+	var pixel_size := target_size.x / texture_size.x
+	return target_size.y / (texture_size.y * pixel_size)
+
 func build(terrain: TerrainBuilder, route: Array[Dictionary]) -> int:
 	var placements := TreeScatterScript.generate(route)
 	if placements.size() < 28:
@@ -30,6 +36,7 @@ func build(terrain: TerrainBuilder, route: Array[Dictionary]) -> int:
 		sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 		sprite.pixel_size = float(tree.width) / float(sprite.texture.get_width())
+		sprite.scale = Vector3(1.0, vertical_scale_for(sprite.texture.get_size(), Vector2(float(tree.width), float(tree.height))), 1.0)
 		sprite.position = Vector3(float(tree.x), terrain.get_height_at(tree.x, tree.z) + float(tree.height) * 0.5, float(tree.z))
 		sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(sprite)
