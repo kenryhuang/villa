@@ -13,6 +13,9 @@ const VegetationBuilderTest = preload("res://tests/test_vegetation_builder.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 func _init() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
 	var assertions = TestAssertScript.new()
 	CombatMathTest.new().run(assertions)
 	RoadMathTest.new().run(assertions)

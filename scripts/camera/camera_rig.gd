@@ -54,4 +54,4 @@ func _apply_camera_transform() -> void:
 	var offset := Vector3(sin(yaw) * ORBIT_DISTANCE, ORBIT_HEIGHT, cos(yaw) * ORBIT_DISTANCE)
 	camera.position = offset
 	camera.size = orthographic_size
-	camera.look_at(Vector3.ZERO, Vector3.UP)
+	camera.look_at(global_position, Vector3.UP)
