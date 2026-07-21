@@ -7,7 +7,7 @@ const CameraMathScript = preload("res://scripts/camera/camera_math.gd")
 
 var target: Node3D
 var yaw := -PI / 4.0
-var orthographic_size := 8.0
+var orthographic_size := CameraMathScript.DEFAULT_SIZE
 var dragging := false
 
 const ORBIT_DISTANCE := 10.0
