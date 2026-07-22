@@ -55,6 +55,12 @@ camera_right={
 "events": [Object(InputEventKey,"physical_keycode":69)]
 }
 
+[autoload]
+
+EventBus="*res://scripts/core/event_bus.gd"
+GameData="*res://scripts/core/game_data.gd"
+GameState="*res://scripts/core/game_state.gd"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
