@@ -44,7 +44,7 @@ Player input and world-authored text are untrusted data. They cannot replace ide
 
 ## Decision Contract
 
-A decision request includes `protocol_version`, `request_id`, `save_id`, `npc_id`, `world_revision`, `reason`, and `snapshot`. The response includes `decision_id`, the same NPC and world revision, `trace_id`, ordered actions, and `next_think_after_ms`.
+A decision request includes `protocol_version`, `request_id`, `save_id`, `npc_id`, `world_revision`, `reason`, and `snapshot`. The response includes `decision_id`, the same NPC and world revision, `trace_id`, ordered actions, and `next_think_after_ms`. An outcome request has its own `outcome_id`, used as the idempotency key when reporting execution results.
 
 Each action contains a unique `action_id`, a closed-set `type`, and schema-validated `params`. Phase A supports `move_to`, `face_actor`, `speak`, `work`, and `wait`. Trade, quest, gift, and memory mutation are added only after the base executor and rejection outcomes are proven.
 

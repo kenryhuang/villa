@@ -2703,7 +2703,7 @@ POST /v1/sessions/{save_id}/checkpoint
 GET  /v1/health
 ```
 
-所有请求携带 `Authorization`、`Idempotency-Key` 和 `X-Protocol-Version: 1`。修改型请求必须幂等；重复请求返回原结果，不重复写入记忆、交易或任务。
+所有 `POST` 请求携带 `Authorization`、`Idempotency-Key` 和 `X-Protocol-Version: 1`。修改型请求必须幂等；重复请求返回原结果，不重复写入记忆、交易或任务。`GET /v1/health` 不要求鉴权和幂等键。
 
 决策响应至少包含 `protocol_version`、`decision_id`、`world_revision`、`npc_id`、`trace_id`、`actions` 和 `next_think_after_ms`。每个动作具有唯一 `action_id`、受控的 `type` 和经过 Schema 校验的 `params`。
 
