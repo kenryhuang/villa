@@ -41,6 +41,8 @@ func _test_inventory(assertions: TestAssert) -> void:
 	assertions.truthy(not inventory.remove_item("wood", 21), "cannot remove unavailable quantity")
 	assertions.truthy(inventory.set_quick_slot(1, 0), "quick slot maps inventory slot")
 	assertions.equal(inventory.get_quick_item(0), "wood", "quick slot returns mapped item id")
+	assertions.truthy(not inventory.set_quick_slot(1, 6), "quick slot rejects an invalid quick index")
+	assertions.truthy(not inventory.set_quick_slot(99, 0), "quick slot rejects an invalid inventory index")
 	inventory.swap_slots(0, 1)
 	assertions.equal(inventory.get_quick_item(0), "", "quick mapping follows physical slot")
 	assertions.truthy(not inventory.add_item("missing", 1), "unknown item is rejected")

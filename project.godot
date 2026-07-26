@@ -24,10 +24,10 @@ SaveManager="*res://scripts/core/save_manager.gd"
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
-window/size/window_width_override=1280
-window/size/window_height_override=720
+window/size/viewport_width=3000
+window/size/viewport_height=2000
+window/size/window_width_override=3000
+window/size/window_height_override=2000
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 

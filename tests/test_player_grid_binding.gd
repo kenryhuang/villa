@@ -28,6 +28,23 @@ func _run() -> void:
 		push_error("PlayerController must use Main's GridSystem instance")
 		quit(1)
 		return
+	if not main.grid_system.has_node("GridOverlay") or not main.grid_system.has_node("GridCells/CellHighlight"):
+		push_error("Main must use the reusable GridSystem scene with visual nodes")
+		quit(1)
+		return
+	if main.grid_system._cells.size() != 1008:
+		push_error("Main GridSystem must initialize all 1008 cells")
+		quit(1)
+		return
+	if get_first_node_in_group("grid_system") != main.grid_system:
+		push_error("runtime GridSystem must be discoverable through the grid_system group")
+		quit(1)
+		return
+	var save_data: Dictionary = main.save_manager.call("_gather_save_data")
+	if not save_data.has("grid") or not save_data.grid.has("cells"):
+		push_error("SaveManager must serialize GridSystem through its public contract")
+		quit(1)
+		return
 
 	player.call("_raycast_to_grid_cell")
 	player.call("_use_current_tool")

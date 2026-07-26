@@ -74,6 +74,10 @@ func _physics_process(delta: float) -> void:
 func _movement_from_input(input_vector: Vector2) -> Vector3:
 	var forward = camera_rig.get_planar_forward() if camera_rig else Vector3.FORWARD
 	var right = camera_rig.get_planar_right() if camera_rig else Vector3.RIGHT
+	return movement_from_input(input_vector, forward, right)
+
+
+static func movement_from_input(input_vector: Vector2, forward: Vector3, right: Vector3) -> Vector3:
 	var direction = right * input_vector.x + forward * -input_vector.y
 	direction.y = 0.0
 	return direction.normalized() if direction.length_squared() > 1.0 else direction

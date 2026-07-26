@@ -1,0 +1,18 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/systems/grid_system.gd" type="Script" id="1"]
+
+[node name="GridSystem" type="Node3D" groups=["grid_system"]]
+script = ExtResource("1")
+
+[node name="GridOverlay" type="MeshInstance3D" parent="."]
+visible = false
+cast_shadow = 0
+
+[node name="GridCells" type="Node3D" parent="."]
+
+[node name="CellHighlight" type="MeshInstance3D" parent="GridCells"]
+visible = false
+cast_shadow = 0
+
+[node name="GridData" type="Node" parent="."]

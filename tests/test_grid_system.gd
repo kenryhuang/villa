@@ -33,3 +33,4 @@ func run(assertions: TestAssert) -> void:
 	assertions.equal(rect_cells.size(), 4, "2x2 rect has 4 cells")
 	assertions.equal(rect_cells[0].gz, 0, "first row first")
 	assertions.equal(rect_cells[2].gz, 1, "second row after first")
+	grid.free()

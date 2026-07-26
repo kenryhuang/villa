@@ -95,13 +95,14 @@ func swap_slots(from_index: int, to_index: int) -> void:
 	slots[to_index] = temp
 
 
-func set_quick_slot(slot_index: int, quick_index: int) -> void:
+func set_quick_slot(slot_index: int, quick_index: int) -> bool:
 	if quick_index < 0 or quick_index >= 6:
-		return
+		return false
 	if slot_index < 0 or slot_index >= slots.size():
 		quick_slot_mappings[quick_index] = -1
-		return
+		return false
 	quick_slot_mappings[quick_index] = slot_index
+	return true
 
 
 func get_quick_item(quick_index: int) -> String:

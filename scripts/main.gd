@@ -3,6 +3,8 @@ extends Node3D
 ## 主场景 - 农庄模式
 ## 编排所有系统初始化、连接和运行
 
+const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
+
 @onready var world = $World
 @onready var player = $Actors/Player
 @onready var npcs: Node3D = $Actors/Npcs
@@ -49,8 +51,7 @@ func _ready() -> void:
 
 func _initialize_systems() -> void:
 	# 创建系统节点
-	grid_system = GridSystem.new()
-	grid_system.name = "GridSystem"
+	grid_system = GRID_SYSTEM_SCENE.instantiate() as GridSystem
 	add_child(grid_system)
 
 	farming_system = FarmingSystem.new()
@@ -112,7 +113,10 @@ func _connect_systems() -> void:
 	# GridSystem 需要地形引用
 	var terrain = world.terrain if world else null
 	if terrain:
-		grid_system.configure(terrain)
+		var route: Array[Dictionary] = []
+		for point in RoadBuilder.MAIN_ROUTE:
+			route.append(point.duplicate())
+		grid_system.configure(terrain, route)
 
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))

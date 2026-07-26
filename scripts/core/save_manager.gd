@@ -76,23 +76,9 @@ func _gather_save_data() -> Dictionary:
 		}
 
 	# 网格状态
-	var grid_system = get_node_or_null("/root/GridSystem")
+	var grid_system = _get_grid_system()
 	if grid_system:
-		var cells_data = []
-		for key in grid_system._cells:
-			var cell = grid_system._cells[key]
-			var cell_dict = {
-				"key": key,
-				"state": cell.state,
-				"watered": cell.watered,
-			}
-			if cell.crop_instance:
-				cell_dict["crop"] = {
-					"crop_id": cell.crop_instance.crop_data.crop_id,
-					"growth": cell.crop_instance.growth_progress,
-				}
-			cells_data.append(cell_dict)
-		data["grid_cells"] = cells_data
+		data["grid"] = grid_system.to_dict()
 
 	# 建筑
 	var building_system = get_node_or_null("/root/BuildingSystem")
@@ -201,23 +187,9 @@ func _apply_save_data(data: Dictionary) -> void:
 		inventory.quick_slot_mappings = data.inventory.get("quick_mappings", [-1,-1,-1,-1,-1,-1])
 
 	# 网格状态
-	var grid_system = get_node_or_null("/root/GridSystem")
-	if grid_system and data.has("grid_cells"):
-		grid_system._cells.clear()
-		for cell_dict in data.grid_cells:
-			var cell = GridCell.new()
-			cell.gx = int(cell_dict.key) / 1000
-			cell.gz = int(cell_dict.key) % 1000
-			cell.state = cell_dict.get("state", 0)
-			cell.watered = cell_dict.get("watered", false)
-			if cell_dict.has("crop"):
-				var crop_data = GameData.get_crop(cell_dict.crop.crop_id)
-				if crop_data:
-					var instance = CropInstance.new()
-					instance.crop_data = crop_data
-					instance.growth_progress = cell_dict.crop.get("growth", 0)
-					cell.crop_instance = instance
-			grid_system._cells[cell_dict.key] = cell
+	var grid_system = _get_grid_system()
+	if grid_system and data.has("grid"):
+		grid_system.from_dict(data.grid)
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
@@ -286,3 +258,9 @@ func delete_save(slot: int) -> bool:
 func _on_day_changed(_total_day: int) -> void:
 	# 自动存档到 slot 0
 	save_game(0)
+
+
+func _get_grid_system() -> Node:
+	if get_tree() == null:
+		return null
+	return get_tree().get_first_node_in_group("grid_system")
