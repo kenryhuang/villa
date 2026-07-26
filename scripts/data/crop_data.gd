@@ -2,6 +2,7 @@ class_name CropData
 extends Resource
 
 @export var crop_id := ""
+@export var name := ""
 @export var crop_name := ""
 @export var category := ""
 @export var growth_days := 3

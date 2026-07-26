@@ -1,9 +1,15 @@
 extends Node
 
+## GameData - 集中管理所有游戏静态数据
+## 包括：作物、物品、建筑、村民、收集品定义
+
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
 
 var _crops = {}
 
+# ============================================================
+# 作物注册（保留已有功能）
+# ============================================================
 
 func register_crop(data) -> bool:
 	if data == null or data.crop_id.is_empty() or _crops.has(data.crop_id):
@@ -12,13 +18,275 @@ func register_crop(data) -> bool:
 	_crops[data.crop_id] = data
 	return true
 
-
 func get_crop(id: String):
 	return _crops.get(id, null)
-
 
 func get_all_crops() -> Array:
 	var result := []
 	for crop in _crops.values():
 		result.append(crop)
 	return result
+
+# ============================================================
+# 物品定义
+# ============================================================
+
+const ITEMS := {
+	# 种子
+	"tomato_seed": {"id": "tomato_seed", "name": "番茄种子", "category": "seed", "sell_price": 0, "buy_price": 5, "max_stack": 99},
+	"carrot_seed": {"id": "carrot_seed", "name": "胡萝卜种子", "category": "seed", "sell_price": 0, "buy_price": 4, "max_stack": 99},
+	"potato_seed": {"id": "potato_seed", "name": "土豆种子", "category": "seed", "sell_price": 0, "buy_price": 3, "max_stack": 99},
+	"strawberry_seed": {"id": "strawberry_seed", "name": "草莓种子", "category": "seed", "sell_price": 0, "buy_price": 10, "max_stack": 99},
+	"blueberry_seed": {"id": "blueberry_seed", "name": "蓝莓种子", "category": "seed", "sell_price": 0, "buy_price": 12, "max_stack": 99},
+	"watermelon_seed": {"id": "watermelon_seed", "name": "西瓜种子", "category": "seed", "sell_price": 0, "buy_price": 15, "max_stack": 99},
+	"sunflower_seed": {"id": "sunflower_seed", "name": "向日葵种子", "category": "seed", "sell_price": 0, "buy_price": 8, "max_stack": 99},
+	"rose_seed": {"id": "rose_seed", "name": "玫瑰种子", "category": "seed", "sell_price": 0, "buy_price": 10, "max_stack": 99},
+	"lavender_seed": {"id": "lavender_seed", "name": "薰衣草种子", "category": "seed", "sell_price": 0, "buy_price": 8, "max_stack": 99},
+	# 作物
+	"tomato": {"id": "tomato", "name": "番茄", "category": "crop", "sell_price": 8, "buy_price": 0, "max_stack": 99},
+	"carrot": {"id": "carrot", "name": "胡萝卜", "category": "crop", "sell_price": 7, "buy_price": 0, "max_stack": 99},
+	"potato": {"id": "potato", "name": "土豆", "category": "crop", "sell_price": 6, "buy_price": 0, "max_stack": 99},
+	"strawberry": {"id": "strawberry", "name": "草莓", "category": "crop", "sell_price": 15, "buy_price": 0, "max_stack": 99},
+	"blueberry": {"id": "blueberry", "name": "蓝莓", "category": "crop", "sell_price": 18, "buy_price": 0, "max_stack": 99},
+	"watermelon": {"id": "watermelon", "name": "西瓜", "category": "crop", "sell_price": 25, "buy_price": 0, "max_stack": 99},
+	"sunflower": {"id": "sunflower", "name": "向日葵", "category": "crop", "sell_price": 12, "buy_price": 0, "max_stack": 99},
+	"rose": {"id": "rose", "name": "玫瑰", "category": "crop", "sell_price": 16, "buy_price": 0, "max_stack": 99},
+	"lavender": {"id": "lavender", "name": "薰衣草", "category": "crop", "sell_price": 14, "buy_price": 0, "max_stack": 99},
+	# 材料
+	"wood": {"id": "wood", "name": "木材", "category": "material", "sell_price": 1, "buy_price": 2, "max_stack": 99},
+	"stone": {"id": "stone", "name": "石头", "category": "material", "sell_price": 1, "buy_price": 3, "max_stack": 99},
+	"iron": {"id": "iron", "name": "铁", "category": "material", "sell_price": 3, "buy_price": 8, "max_stack": 99},
+	"fiber": {"id": "fiber", "name": "纤维", "category": "material", "sell_price": 0, "buy_price": 1, "max_stack": 99},
+	"glass": {"id": "glass", "name": "玻璃", "category": "material", "sell_price": 2, "buy_price": 5, "max_stack": 99},
+	# 稀有
+	"moonflower": {"id": "moonflower", "name": "月光花", "category": "rare", "sell_price": 50, "buy_price": 0, "max_stack": 1},
+	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "max_stack": 1},
+}
+
+func get_item(item_id: String) -> Dictionary:
+	return ITEMS.get(item_id, {})
+
+func get_all_items() -> Array:
+	var result := []
+	for item in ITEMS.values():
+		result.append(item)
+	return result
+
+func get_items_by_category(category: String) -> Array:
+	var result := []
+	for item in ITEMS.values():
+		if item.get("category") == category:
+			result.append(item)
+	return result
+
+func get_sell_price(item_id: String) -> int:
+	var item = ITEMS.get(item_id)
+	if item:
+		return item.get("sell_price", 0)
+	return 0
+
+func get_buy_price(item_id: String) -> int:
+	var item = ITEMS.get(item_id)
+	if item:
+		return item.get("buy_price", 0)
+	return 0
+
+# ============================================================
+# 建筑定义
+# ============================================================
+
+const BUILDINGS := {
+	"barn": {
+		"id": "barn", "name": "谷仓",
+		"footprint_x": 2, "footprint_z": 2,
+		"cost": {"wood": 100, "stone": 50},
+		"description": "增加背包容量 +10 格",
+		"effect": "inventory_expand", "effect_value": 10,
+	},
+	"greenhouse": {
+		"id": "greenhouse", "name": "温室",
+		"footprint_x": 3, "footprint_z": 3,
+		"cost": {"wood": 200, "stone": 100, "glass": 50},
+		"description": "无视季节种植作物",
+		"effect": "ignore_season", "effect_value": 0,
+	},
+	"windmill": {
+		"id": "windmill", "name": "风车",
+		"footprint_x": 2, "footprint_z": 2,
+		"cost": {"wood": 150, "stone": 80},
+		"description": "加工作物（面粉、果酱等）",
+		"effect": "crafting", "effect_value": 0,
+	},
+	"chicken_coop": {
+		"id": "chicken_coop", "name": "鸡舍",
+		"footprint_x": 2, "footprint_z": 2,
+		"cost": {"wood": 80, "stone": 40},
+		"description": "养鸡产蛋",
+		"effect": "animal", "effect_value": 0,
+	},
+	"beehive": {
+		"id": "beehive", "name": "蜂箱",
+		"footprint_x": 1, "footprint_z": 1,
+		"cost": {"wood": 50},
+		"description": "产蜂蜜，加速附近花卉生长",
+		"effect": "honey", "effect_value": 0,
+	},
+	"well": {
+		"id": "well", "name": "水井",
+		"footprint_x": 1, "footprint_z": 1,
+		"cost": {"stone": 60, "wood": 30},
+		"description": "提供灌溉水源",
+		"effect": "water_source", "effect_value": 0,
+	},
+	"workbench": {
+		"id": "workbench", "name": "工作台",
+		"footprint_x": 1, "footprint_z": 1,
+		"cost": {"wood": 40, "stone": 20},
+		"description": "制作工具和装饰",
+		"effect": "crafting", "effect_value": 0,
+	},
+	"lamp": {
+		"id": "lamp", "name": "路灯",
+		"footprint_x": 1, "footprint_z": 1,
+		"cost": {"wood": 20, "iron": 10},
+		"description": "夜间照明，装饰",
+		"effect": "light", "effect_value": 0,
+	},
+	"fence": {
+		"id": "fence", "name": "围栏",
+		"footprint_x": 1, "footprint_z": 1,
+		"cost": {"wood": 10},
+		"description": "划分区域，装饰",
+		"effect": "decoration", "effect_value": 0,
+	},
+}
+
+func get_building(building_id: String) -> Dictionary:
+	return BUILDINGS.get(building_id, {})
+
+func get_all_buildings() -> Array:
+	var result := []
+	for b in BUILDINGS.values():
+		result.append(b)
+	return result
+
+# ============================================================
+# 村民定义
+# ============================================================
+
+const VILLAGERS := {
+	"lao_li": {
+		"id": "lao_li", "name": "老李", "role": "杂货商",
+		"schedule": {6: "home", 8: "shop", 12: "shop", 13: "shop", 17: "wander", 19: "home", 21: "home"},
+		"affinity_rewards": {"order": 10, "gift": 5, "chat": 1},
+	},
+	"xiao_hua": {
+		"id": "xiao_hua", "name": "小花", "role": "花艺师",
+		"schedule": {6: "home", 8: "garden", 12: "garden", 13: "shop", 17: "wander", 19: "home", 21: "home"},
+		"affinity_rewards": {"order": 10, "gift": 8, "chat": 2},
+	},
+	"tiejiang_zhang": {
+		"id": "tiejiang_zhang", "name": "铁匠张", "role": "工匠",
+		"schedule": {6: "home", 8: "forge", 12: "forge", 13: "forge", 17: "wander", 19: "home", 21: "home"},
+		"affinity_rewards": {"order": 12, "gift": 5, "chat": 1},
+	},
+	"afu_shui": {
+		"id": "afu_shui", "name": "渔夫阿水", "role": "渔夫",
+		"schedule": {6: "creek", 8: "creek", 12: "creek", 13: "creek", 17: "wander", 19: "home", 21: "home"},
+		"affinity_rewards": {"order": 10, "gift": 6, "chat": 2},
+	},
+	"xuezhe_lin": {
+		"id": "xuezhe_lin", "name": "学者林", "role": "学者",
+		"schedule": {6: "home", 8: "library", 12: "library", 13: "library", 17: "wander", 19: "home", 21: "home"},
+		"affinity_rewards": {"order": 8, "gift": 10, "chat": 3},
+	},
+}
+
+func get_villager(villager_id: String) -> Dictionary:
+	return VILLAGERS.get(villager_id, {})
+
+func get_all_villagers() -> Array:
+	var result := []
+	for v in VILLAGERS.values():
+		result.append(v)
+	return result
+
+# ============================================================
+# 收集品定义
+# ============================================================
+
+const COLLECTIBLES := {
+	# 日记碎片
+	"diary_fragment_1": {"id": "diary_fragment_1", "name": "日记碎片 #1", "category": "diary", "description": "植物学家的日记第一页"},
+	"diary_fragment_2": {"id": "diary_fragment_2", "name": "日记碎片 #2", "category": "diary", "description": "植物学家的日记第二页"},
+	"diary_fragment_3": {"id": "diary_fragment_3", "name": "日记碎片 #3", "category": "diary", "description": "植物学家的日记第三页"},
+	"diary_fragment_4": {"id": "diary_fragment_4", "name": "日记碎片 #4", "category": "diary", "description": "植物学家的日记第四页"},
+	"diary_fragment_5": {"id": "diary_fragment_5", "name": "日记碎片 #5", "category": "diary", "description": "植物学家的日记第五页"},
+	"diary_fragment_6": {"id": "diary_fragment_6", "name": "日记碎片 #6", "category": "diary", "description": "植物学家的日记第六页"},
+	"diary_fragment_7": {"id": "diary_fragment_7", "name": "日记碎片 #7", "category": "diary", "description": "植物学家的日记第七页"},
+	"diary_fragment_8": {"id": "diary_fragment_8", "name": "日记碎片 #8", "category": "diary", "description": "植物学家的日记第八页"},
+	"diary_fragment_9": {"id": "diary_fragment_9", "name": "日记碎片 #9", "category": "diary", "description": "植物学家的日记第九页"},
+	"diary_fragment_10": {"id": "diary_fragment_10", "name": "日记碎片 #10", "category": "diary", "description": "植物学家的日记第十页"},
+	"diary_fragment_11": {"id": "diary_fragment_11", "name": "日记碎片 #11", "category": "diary", "description": "植物学家的日记第十一页"},
+	"diary_fragment_12": {"id": "diary_fragment_12", "name": "日记碎片 #12", "category": "diary", "description": "植物学家的日记第十二页"},
+	# 化石
+	"fossil_1": {"id": "fossil_1", "name": "化石 #1", "category": "fossil", "description": "远古植物化石"},
+	"fossil_2": {"id": "fossil_2", "name": "化石 #2", "category": "fossil", "description": "远古植物化石"},
+	"fossil_3": {"id": "fossil_3", "name": "化石 #3", "category": "fossil", "description": "远古植物化石"},
+	"fossil_4": {"id": "fossil_4", "name": "化石 #4", "category": "fossil", "description": "远古植物化石"},
+	"fossil_5": {"id": "fossil_5", "name": "化石 #5", "category": "fossil", "description": "远古植物化石"},
+	"fossil_6": {"id": "fossil_6", "name": "化石 #6", "category": "fossil", "description": "远古植物化石"},
+	"fossil_7": {"id": "fossil_7", "name": "化石 #7", "category": "fossil", "description": "远古植物化石"},
+	"fossil_8": {"id": "fossil_8", "name": "化石 #8", "category": "fossil", "description": "远古植物化石"},
+	# 古代遗物
+	"relic_1": {"id": "relic_1", "name": "古代遗物 #1", "category": "relic", "description": "神秘的古代遗物"},
+	"relic_2": {"id": "relic_2", "name": "古代遗物 #2", "category": "relic", "description": "神秘的古代遗物"},
+	"relic_3": {"id": "relic_3", "name": "古代遗物 #3", "category": "relic", "description": "神秘的古代遗物"},
+	"relic_4": {"id": "relic_4", "name": "古代遗物 #4", "category": "relic", "description": "神秘的古代遗物"},
+	"relic_5": {"id": "relic_5", "name": "古代遗物 #5", "category": "relic", "description": "神秘的古代遗物"},
+	"relic_6": {"id": "relic_6", "name": "古代遗物 #6", "category": "relic", "description": "神秘的古代遗物"},
+	# 植物标本
+	"specimen_1": {"id": "specimen_1", "name": "植物标本 #1", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_2": {"id": "specimen_2", "name": "植物标本 #2", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_3": {"id": "specimen_3", "name": "植物标本 #3", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_4": {"id": "specimen_4", "name": "植物标本 #4", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_5": {"id": "specimen_5", "name": "植物标本 #5", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_6": {"id": "specimen_6", "name": "植物标本 #6", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_7": {"id": "specimen_7", "name": "植物标本 #7", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_8": {"id": "specimen_8", "name": "植物标本 #8", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_9": {"id": "specimen_9", "name": "植物标本 #9", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_10": {"id": "specimen_10", "name": "植物标本 #10", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_11": {"id": "specimen_11", "name": "植物标本 #11", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_12": {"id": "specimen_12", "name": "植物标本 #12", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_13": {"id": "specimen_13", "name": "植物标本 #13", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_14": {"id": "specimen_14", "name": "植物标本 #14", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_15": {"id": "specimen_15", "name": "植物标本 #15", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_16": {"id": "specimen_16", "name": "植物标本 #16", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_17": {"id": "specimen_17", "name": "植物标本 #17", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_18": {"id": "specimen_18", "name": "植物标本 #18", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_19": {"id": "specimen_19", "name": "植物标本 #19", "category": "specimen", "description": "稀有植物标本"},
+	"specimen_20": {"id": "specimen_20", "name": "植物标本 #20", "category": "specimen", "description": "稀有植物标本"},
+}
+
+func get_collectible(collectible_id: String) -> Dictionary:
+	return COLLECTIBLES.get(collectible_id, {})
+
+func get_all_collectibles() -> Array:
+	var result := []
+	for c in COLLECTIBLES.values():
+		result.append(c)
+	return result
+
+func get_collectibles_by_category(category: String) -> Array:
+	var result := []
+	for c in COLLECTIBLES.values():
+		if c.get("category") == category:
+			result.append(c)
+	return result
+
+func get_collectible_count_by_category(category: String) -> int:
+	var count := 0
+	for c in COLLECTIBLES.values():
+		if c.get("category") == category:
+			count += 1
+	return count

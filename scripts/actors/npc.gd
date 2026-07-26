@@ -1,78 +1,123 @@
-class_name VillaNpc
 extends CharacterBody3D
 
-signal defeated(npc: Node)
+## 村民 NPC - 日程驱动的状态机
+## 状态：IDLE → MOVING → WORKING → WANDERING → SLEEPING
 
-const CombatMathScript = preload("res://scripts/shared/combat_math.gd")
+signal dialogue_started(villager_id: String)
 
-@export var speed := 1.4
-@export var max_health := 3
-@export var contact_damage := 1
+@export var villager_id: String = "lao_li"
+@export var move_speed: float = 2.0
 
-var health := 3
-var target: Node3D
-var knockback_velocity := Vector3.ZERO
-var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
-var _is_defeated := false
-var _hit_flash_remaining := 0.0
-var _contact_cooldown := 0.0
+var _current_state: String = "IDLE"
+var _target_position: Vector3 = Vector3.ZERO
+var _player_ref
+var _event_bus
 
-@onready var mesh: MeshInstance3D = get_node_or_null("Mesh")
+const INTERACTION_DISTANCE := 3.0
+
 
 func _ready() -> void:
-	health = max_health
-	if mesh and mesh.mesh and mesh.mesh.get_surface_count() > 0:
-		var base_material := mesh.mesh.surface_get_material(0) as StandardMaterial3D
-		if base_material:
-			mesh.material_override = base_material.duplicate()
+	_event_bus = get_node_or_null("/root/EventBus")
 
-func configure(new_target: Node3D) -> void:
-	target = new_target
+	# 注册到 VillagerSystem
+	var villager_system = get_node_or_null("/root/VillagerSystem")
+	if villager_system:
+		villager_system.register_villager(self, villager_id)
+
+
+func configure(player: Node3D) -> void:
+	_player_ref = player
+
+
+func set_target_location(location: String) -> void:
+	# 根据位置名称设置目标点
+	# 实际位置由场景中的 Marker3D 定义
+	match location:
+		"home":
+			_target_position = _find_marker("home")
+			_current_state = "MOVING_TO_HOME"
+		"shop":
+			_target_position = _find_marker("shop")
+			_current_state = "WORKING"
+		"forge":
+			_target_position = _find_marker("forge")
+			_current_state = "WORKING"
+		"garden":
+			_target_position = _find_marker("garden")
+			_current_state = "WORKING"
+		"library":
+			_target_position = _find_marker("library")
+			_current_state = "WORKING"
+		"creek":
+			_target_position = _find_marker("creek")
+			_current_state = "WORKING"
+		"wander":
+			_target_position = _random_wander_point()
+			_current_state = "WANDERING"
+		_:
+			_current_state = "IDLE"
+
+
+func _find_marker(name: String) -> Vector3:
+	# 在场景中查找对应标记点
+	var marker = get_tree().get_first_node_in_group("marker_" + name)
+	if marker and marker is Node3D:
+		return marker.global_position
+	return global_position  # 找不到就原地不动
+
+
+func _random_wander_point() -> Vector3:
+	var offset_x = randf_range(-5.0, 5.0)
+	var offset_z = randf_range(-5.0, 5.0)
+	return global_position + Vector3(offset_x, 0, offset_z)
+
 
 func _physics_process(delta: float) -> void:
-	if _is_defeated:
+	match _current_state:
+		"MOVING_TO_HOME", "WORKING", "WANDERING":
+			_move_toward_target(delta)
+		"IDLE", "SLEEPING":
+			velocity = Vector3.ZERO
+
+
+func _move_toward_target(delta: float) -> void:
+	var to_target = _target_position - global_position
+	to_target.y = 0
+	var dist = to_target.length()
+
+	if dist < 0.5:
+		velocity = Vector3.ZERO
+		if _current_state == "MOVING_TO_HOME":
+			_current_state = "SLEEPING"
+		elif _current_state == "WANDERING":
+			# 到达后随机选新目标
+			if randf() < 0.3:
+				_target_position = _random_wander_point()
+			else:
+				_current_state = "IDLE"
 		return
-	_contact_cooldown = maxf(0.0, _contact_cooldown - delta)
-	_hit_flash_remaining = maxf(0.0, _hit_flash_remaining - delta)
-	_update_hit_flash()
-	if not is_on_floor():
-		velocity.y -= gravity * delta
-	var chase_direction := Vector3.ZERO
-	if is_instance_valid(target):
-		chase_direction = target.global_position - global_position
-		chase_direction.y = 0.0
-		if chase_direction.length_squared() > 0.01:
-			chase_direction = chase_direction.normalized()
-	velocity.x = chase_direction.x * speed + knockback_velocity.x
-	velocity.z = chase_direction.z * speed + knockback_velocity.z
-	knockback_velocity = knockback_velocity.move_toward(Vector3.ZERO, 10.0 * delta)
-	if chase_direction.length_squared() > 0.01:
-		rotation.y = lerp_angle(rotation.y, atan2(chase_direction.x, chase_direction.z), 1.0 - exp(-8.0 * delta))
+
+	var direction = to_target.normalized()
+	velocity = direction * move_speed
+
+	# 面向移动方向
+	if direction.length_squared() > 0.01:
+		rotation.y = lerp_angle(rotation.y, atan2(direction.x, direction.z), 1.0 - exp(-8.0 * delta))
+
 	move_and_slide()
-	_try_contact_damage()
 
-func take_hit(amount: int, impact_direction := Vector3.ZERO) -> void:
-	if _is_defeated:
-		return
-	health = CombatMathScript.apply_damage(health, amount)
-	knockback_velocity += impact_direction.normalized() * 3.6
-	_hit_flash_remaining = 0.12
-	if health == 0:
-		_is_defeated = true
-		defeated.emit(self)
-		if is_inside_tree():
-			queue_free()
 
-func _try_contact_damage() -> void:
-	if _contact_cooldown > 0.0 or not is_instance_valid(target):
+func start_dialogue() -> void:
+	if _player_ref == null:
 		return
-	var horizontal_distance := Vector2(global_position.x - target.global_position.x, global_position.z - target.global_position.z).length()
-	if horizontal_distance < 0.85 and target.has_method("take_damage"):
-		target.take_damage(contact_damage)
-		_contact_cooldown = 0.8
 
-func _update_hit_flash() -> void:
-	if mesh == null or not mesh.material_override is StandardMaterial3D:
+	var dist = global_position.distance_to(_player_ref.global_position)
+	if dist > INTERACTION_DISTANCE:
 		return
-	var material := mesh.material_override as StandardMaterial3D
-	material.albedo_color = Color.WHITE if _hit_flash_remaining > 0.0 else Color(1.0, 0.16, 0.08)
+
+	dialogue_started.emit(villager_id)
+
+	# 增加好感度
+	var villager_system = get_node_or_null("/root/VillagerSystem")
+	if villager_system:
+		villager_system.add_affinity(villager_id, 1)

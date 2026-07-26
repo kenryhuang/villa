@@ -1,19 +1,126 @@
 class_name VillaHud
 extends CanvasLayer
 
-@onready var health_label: Label = $TopLeft/Panel/Margin/Rows/Health
-@onready var state_label: Label = $TopLeft/Panel/Margin/Rows/State
-@onready var npc_label: Label = $TopLeft/Panel/Margin/Rows/Npcs
-@onready var projectile_label: Label = $TopLeft/Panel/Margin/Rows/Projectiles
+## 农庄 HUD - 体力、金币、等级、季节/日期、时间、快捷栏
 
-func set_health(value: int) -> void:
-	health_label.text = "生命  %d / 5" % value
+@onready var stamina_bar: ProgressBar = $TopBar/StaminaBar
+@onready var gold_label: Label = $TopBar/GoldLabel
+@onready var level_label: Label = $TopBar/LevelLabel
+@onready var exp_bar: ProgressBar = $TopBar/ExpBar
+@onready var season_label: Label = $TopBar/SeasonLabel
+@onready var time_label: Label = $TopBar/TimeLabel
+@onready var quick_bar: HBoxContainer = $BottomBar/QuickBar
+@onready var tool_label: Label = $BottomBar/ToolLabel
 
-func set_state(value: String) -> void:
-	state_label.text = "状态  %s" % value
+var _event_bus
 
-func set_npc_count(value: int) -> void:
-	npc_label.text = "入侵者  %d" % value
 
-func set_projectile_count(value: int) -> void:
-	projectile_label.text = "场上弹丸  %d" % value
+func _ready() -> void:
+	_event_bus = get_node_or_null("/root/EventBus")
+	if _event_bus:
+		_event_bus.stamina_changed.connect(_on_stamina_changed)
+		_event_bus.gold_changed.connect(_on_gold_changed)
+		_event_bus.level_changed.connect(_on_level_changed)
+		_event_bus.exp_gained.connect(_on_exp_gained)
+		_event_bus.season_changed.connect(_on_season_changed)
+		_event_bus.time_changed.connect(_on_time_changed)
+		_event_bus.day_changed.connect(_on_day_changed)
+
+	# 初始化显示
+	_init_display()
+
+
+func _init_display() -> void:
+	var game_state = get_node_or_null("/root/GameState")
+	if game_state:
+		_on_stamina_changed(game_state.player_state.stamina)
+		_on_gold_changed(game_state.gold)
+		_on_level_changed(game_state.player_state.level)
+
+	var season_system = get_node_or_null("/root/SeasonSystem")
+	if season_system:
+		_update_season_display(season_system)
+		_update_time_display(season_system.hour, season_system.minute)
+
+
+# ============================================================
+# 信号回调
+# ============================================================
+
+func _on_stamina_changed(value: int) -> void:
+	if stamina_bar:
+		stamina_bar.value = value
+		# 低体力时变红
+		if stamina_bar.has_theme_color_override("fill_color"):
+			pass
+		elif value < 20:
+			stamina_bar.add_theme_color_override("fill_color", Color(1.0, 0.2, 0.2))
+		else:
+			stamina_bar.add_theme_color_override("fill_color", Color(0.2, 0.8, 0.2))
+
+
+func _on_gold_changed(value: int) -> void:
+	if gold_label:
+		gold_label.text = "💰 %d" % value
+
+
+func _on_level_changed(value: int) -> void:
+	if level_label:
+		level_label.text = "Lv.%d" % value
+
+
+func _on_exp_gained(_amount: int) -> void:
+	var game_state = get_node_or_null("/root/GameState")
+	if game_state and exp_bar:
+		var ps = game_state.player_state
+		var exp_needed = ps.get_exp_for_next_level()
+		if exp_needed > 0:
+			exp_bar.value = (float(ps.exp) / exp_needed) * 100.0
+
+
+func _on_season_changed(_new_season: int) -> void:
+	var season_system = get_node_or_null("/root/SeasonSystem")
+	if season_system:
+		_update_season_display(season_system)
+
+
+func _on_day_changed(_total_day: int) -> void:
+	var season_system = get_node_or_null("/root/SeasonSystem")
+	if season_system:
+		_update_season_display(season_system)
+
+
+func _on_time_changed(hour: int, minute: int) -> void:
+	_update_time_display(hour, minute)
+
+
+# ============================================================
+# 显示更新
+# ============================================================
+
+func _update_season_display(season_system: Node) -> void:
+	if season_label == null:
+		return
+
+	var season_names = ["春", "夏", "秋", "冬"]
+	var season_name = season_names[season_system.current_season]
+	season_label.text = "%s %d/%d" % [season_name, season_system.current_day, season_system.DAYS_PER_SEASON]
+
+
+func _update_time_display(hour: int, minute: int) -> void:
+	if time_label == null:
+		return
+	time_label.text = "%02d:%02d" % [hour, minute]
+
+
+func set_tool_name(name: String) -> void:
+	if tool_label:
+		tool_label.text = name
+
+
+func set_quick_slot(index: int, item_name: String, quantity: int) -> void:
+	if quick_bar == null or index < 0 or index >= quick_bar.get_child_count():
+		return
+	var slot = quick_bar.get_child(index)
+	if slot.has_node("Label"):
+		slot.get_node("Label").text = "%s x%d" % [item_name, quantity]

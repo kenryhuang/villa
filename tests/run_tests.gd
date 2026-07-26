@@ -14,6 +14,11 @@ const TreeInstanceTest = preload("res://tests/test_tree_instance.gd")
 const CoreFoundationTest = preload("res://tests/test_core_foundation.gd")
 const CoreAutoloadsTest = preload("res://tests/test_core_autoloads.gd")
 const SeasonSystemTest = preload("res://tests/test_season_system.gd")
+const GridSystemTest = preload("res://tests/test_grid_system.gd")
+const GridMutationTest = preload("res://tests/test_grid_mutation.gd")
+const FarmingSystemTest = preload("res://tests/test_farming_system.gd")
+const CropVisualTest = preload("res://tests/test_crop_visual.gd")
+const Phase1SystemsTest = preload("res://tests/test_phase1_systems.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 func _init() -> void:
@@ -35,6 +40,11 @@ func _run() -> void:
 	CoreFoundationTest.new().run(assertions)
 	CoreAutoloadsTest.new().run(assertions)
 	SeasonSystemTest.new().run(assertions)
+	GridSystemTest.new().run(assertions)
+	GridMutationTest.new().run(assertions)
+	FarmingSystemTest.new().run(assertions)
+	CropVisualTest.new().run(assertions)
+	Phase1SystemsTest.new().run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d checks" % assertions.checks)
 		quit(0)

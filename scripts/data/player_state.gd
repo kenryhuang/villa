@@ -6,6 +6,7 @@ const LEVEL_THRESHOLDS := [0, 100, 250, 500, 850, 1300, 1900, 2600, 3500, 4600, 
 var stamina := 100
 var max_stamina := 100
 var level := 1
+@warning_ignore("shadowed_global_identifier")
 var exp := 0
 
 
@@ -38,3 +39,11 @@ func get_exp_progress() -> float:
 	if range_size <= 0:
 		return 1.0
 	return float(exp - current_threshold) / float(range_size)
+
+
+func get_exp_for_next_level() -> int:
+	if level >= LEVEL_THRESHOLDS.size():
+		return 0
+	var current_threshold: int = LEVEL_THRESHOLDS[level - 1]
+	var next_threshold: int = LEVEL_THRESHOLDS[level]
+	return next_threshold - current_threshold
