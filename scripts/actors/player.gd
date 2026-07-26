@@ -15,6 +15,7 @@ signal tool_changed(tool_type: int)
 var camera_rig
 var game_world
 var tool_system: ToolSystem
+var grid_system: GridSystem
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 
 var _is_sprinting := false
@@ -22,10 +23,11 @@ var _stamina_regen_timer := 0.0
 const STAMINA_REGEN_RATE := 1.0  # 每秒恢复 1 点体力
 
 
-func configure(new_camera_rig: Node, new_world: Node, tools: ToolSystem) -> void:
+func configure(new_camera_rig: Node, new_world: Node, tools: ToolSystem, grid: GridSystem) -> void:
 	camera_rig = new_camera_rig
 	game_world = new_world
 	tool_system = tools
+	grid_system = grid
 
 
 func _physics_process(delta: float) -> void:
@@ -149,7 +151,7 @@ func _interact() -> void:
 
 
 func _raycast_to_grid_cell() -> GridCell:
-	if game_world == null or game_world.grid_system == null:
+	if grid_system == null:
 		return null
 
 	var camera = get_viewport().get_camera_3d()
@@ -170,7 +172,7 @@ func _raycast_to_grid_cell() -> GridCell:
 	if dist > interaction_range:
 		return null
 
-	return game_world.grid_system.get_cell_at_world(hit_point.x, hit_point.z)
+	return grid_system.get_cell_at_world(hit_point.x, hit_point.z)
 
 
 func _switch_tool(tool_type: int) -> void:

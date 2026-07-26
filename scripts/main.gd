@@ -133,7 +133,7 @@ func _connect_systems() -> void:
 func _setup_player() -> void:
 	# 放置玩家到地形上
 	_place_on_terrain(player, Vector2(0.0, 0.0))
-	player.configure(camera_rig, world, tool_system)
+	player.configure(camera_rig, world, tool_system, grid_system)
 	camera_rig.set_target(player)
 
 	# 连接玩家信号
