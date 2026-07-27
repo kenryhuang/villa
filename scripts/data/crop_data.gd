@@ -12,4 +12,5 @@ extends Resource
 @export var exp_reward := 0
 @export var seed_drop_chance := 0.2
 @export var stage_textures: Array[String] = []
+@export var stage_scenes: Array[String] = []
 @export var water_required := 1

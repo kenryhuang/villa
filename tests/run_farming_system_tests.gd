@@ -1,0 +1,29 @@
+extends SceneTree
+
+const CoreFoundationTest = preload("res://tests/test_core_foundation.gd")
+const FarmingSystemTest = preload("res://tests/test_farming_system.gd")
+const CropVisualTest = preload("res://tests/test_crop_visual.gd")
+const FarmingSystemCompleteTest = preload("res://tests/test_farming_system_complete.gd")
+const GrainCropModelsTest = preload("res://tests/test_grain_crop_models.gd")
+const TestAssertScript = preload("res://tests/test_assert.gd")
+
+
+func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	var assertions = TestAssertScript.new()
+	CoreFoundationTest.new().run(assertions)
+	FarmingSystemTest.new().run(assertions)
+	CropVisualTest.new().run(assertions)
+	FarmingSystemCompleteTest.new().run(assertions, self)
+	GrainCropModelsTest.new().run(assertions)
+	if assertions.failures.is_empty():
+		print("PASS: %d farming system checks" % assertions.checks)
+		quit(0)
+		return
+	for failure in assertions.failures:
+		push_error(failure)
+	print("FAIL: %d of %d farming system checks failed" % [assertions.failures.size(), assertions.checks])
+	quit(1)

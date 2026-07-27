@@ -45,6 +45,18 @@ func _run() -> void:
 		push_error("SaveManager must serialize GridSystem through its public contract")
 		quit(1)
 		return
+	if not main.farming_system.has_node("CropVisuals"):
+		push_error("Main must use the reusable FarmingSystem scene")
+		quit(1)
+		return
+	if main.farming_system.grid_system != main.grid_system:
+		push_error("FarmingSystem must use Main's GridSystem instance")
+		quit(1)
+		return
+	if get_first_node_in_group("farming_system") != main.farming_system:
+		push_error("runtime FarmingSystem must be discoverable through the farming_system group")
+		quit(1)
+		return
 
 	player.call("_raycast_to_grid_cell")
 	player.call("_use_current_tool")

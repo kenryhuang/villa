@@ -1,0 +1,161 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource path="res://assets/crops/grain/materials/stalk_gold.tres" type="Material" id="1"]
+[ext_resource path="res://assets/crops/grain/materials/grain_gold.tres" type="Material" id="2"]
+
+[sub_resource type="CylinderMesh" id="StemMesh"]
+material = ExtResource("1")
+top_radius = 0.018
+bottom_radius = 0.03
+height = 0.78
+radial_segments = 6
+rings = 1
+
+[sub_resource type="BoxMesh" id="LeafMesh"]
+material = ExtResource("1")
+size = Vector3(0.055, 0.32, 0.016)
+
+[sub_resource type="SphereMesh" id="GrainMesh"]
+material = ExtResource("2")
+radius = 0.052
+height = 0.12
+radial_segments = 8
+rings = 4
+
+[sub_resource type="CylinderMesh" id="AwnMesh"]
+material = ExtResource("2")
+top_radius = 0.008
+bottom_radius = 0.012
+height = 0.2
+radial_segments = 5
+rings = 1
+
+[node name="GrainStage3Mature" type="Node3D"]
+
+[node name="Stem1" type="MeshInstance3D" parent="."]
+position = Vector3(-0.28, 0.39, 0.12)
+rotation_degrees = Vector3(0, 0, -4)
+mesh = SubResource("StemMesh")
+[node name="Leaf1A" type="MeshInstance3D" parent="."]
+position = Vector3(-0.36, 0.34, 0.12)
+rotation_degrees = Vector3(0, 0, -52)
+mesh = SubResource("LeafMesh")
+[node name="Leaf1B" type="MeshInstance3D" parent="."]
+position = Vector3(-0.2, 0.51, 0.12)
+rotation_degrees = Vector3(0, 0, 48)
+mesh = SubResource("LeafMesh")
+[node name="Grain1A" type="MeshInstance3D" parent="."]
+position = Vector3(-0.31, 0.82, 0.12)
+mesh = SubResource("GrainMesh")
+[node name="Grain1B" type="MeshInstance3D" parent="."]
+position = Vector3(-0.27, 0.9, 0.12)
+mesh = SubResource("GrainMesh")
+[node name="Grain1C" type="MeshInstance3D" parent="."]
+position = Vector3(-0.32, 0.98, 0.12)
+mesh = SubResource("GrainMesh")
+[node name="Awn1" type="MeshInstance3D" parent="."]
+position = Vector3(-0.34, 1.05, 0.12)
+rotation_degrees = Vector3(0, 0, -8)
+mesh = SubResource("AwnMesh")
+
+[node name="Stem2" type="MeshInstance3D" parent="."]
+position = Vector3(-0.13, 0.37, -0.18)
+rotation_degrees = Vector3(0, 0, 2)
+mesh = SubResource("StemMesh")
+[node name="Leaf2A" type="MeshInstance3D" parent="."]
+position = Vector3(-0.21, 0.32, -0.18)
+rotation_degrees = Vector3(0, 0, -48)
+mesh = SubResource("LeafMesh")
+[node name="Leaf2B" type="MeshInstance3D" parent="."]
+position = Vector3(-0.04, 0.5, -0.18)
+rotation_degrees = Vector3(0, 0, 50)
+mesh = SubResource("LeafMesh")
+[node name="Grain2A" type="MeshInstance3D" parent="."]
+position = Vector3(-0.14, 0.8, -0.18)
+mesh = SubResource("GrainMesh")
+[node name="Grain2B" type="MeshInstance3D" parent="."]
+position = Vector3(-0.12, 0.88, -0.18)
+mesh = SubResource("GrainMesh")
+[node name="Grain2C" type="MeshInstance3D" parent="."]
+position = Vector3(-0.14, 0.96, -0.18)
+mesh = SubResource("GrainMesh")
+[node name="Awn2" type="MeshInstance3D" parent="."]
+position = Vector3(-0.14, 1.04, -0.18)
+rotation_degrees = Vector3(0, 0, 4)
+mesh = SubResource("AwnMesh")
+
+[node name="Stem3" type="MeshInstance3D" parent="."]
+position = Vector3(0.03, 0.4, 0.04)
+mesh = SubResource("StemMesh")
+[node name="Leaf3A" type="MeshInstance3D" parent="."]
+position = Vector3(-0.06, 0.36, 0.04)
+rotation_degrees = Vector3(0, 0, -50)
+mesh = SubResource("LeafMesh")
+[node name="Leaf3B" type="MeshInstance3D" parent="."]
+position = Vector3(0.12, 0.54, 0.04)
+rotation_degrees = Vector3(0, 0, 48)
+mesh = SubResource("LeafMesh")
+[node name="Grain3A" type="MeshInstance3D" parent="."]
+position = Vector3(0.03, 0.84, 0.04)
+mesh = SubResource("GrainMesh")
+[node name="Grain3B" type="MeshInstance3D" parent="."]
+position = Vector3(0.03, 0.92, 0.04)
+mesh = SubResource("GrainMesh")
+[node name="Grain3C" type="MeshInstance3D" parent="."]
+position = Vector3(0.03, 1, 0.04)
+mesh = SubResource("GrainMesh")
+[node name="Awn3" type="MeshInstance3D" parent="."]
+position = Vector3(0.03, 1.08, 0.04)
+mesh = SubResource("AwnMesh")
+
+[node name="Stem4" type="MeshInstance3D" parent="."]
+position = Vector3(0.19, 0.38, -0.1)
+rotation_degrees = Vector3(0, 0, -2)
+mesh = SubResource("StemMesh")
+[node name="Leaf4A" type="MeshInstance3D" parent="."]
+position = Vector3(0.1, 0.33, -0.1)
+rotation_degrees = Vector3(0, 0, -49)
+mesh = SubResource("LeafMesh")
+[node name="Leaf4B" type="MeshInstance3D" parent="."]
+position = Vector3(0.28, 0.51, -0.1)
+rotation_degrees = Vector3(0, 0, 51)
+mesh = SubResource("LeafMesh")
+[node name="Grain4A" type="MeshInstance3D" parent="."]
+position = Vector3(0.18, 0.81, -0.1)
+mesh = SubResource("GrainMesh")
+[node name="Grain4B" type="MeshInstance3D" parent="."]
+position = Vector3(0.2, 0.89, -0.1)
+mesh = SubResource("GrainMesh")
+[node name="Grain4C" type="MeshInstance3D" parent="."]
+position = Vector3(0.18, 0.97, -0.1)
+mesh = SubResource("GrainMesh")
+[node name="Awn4" type="MeshInstance3D" parent="."]
+position = Vector3(0.17, 1.05, -0.1)
+rotation_degrees = Vector3(0, 0, -5)
+mesh = SubResource("AwnMesh")
+
+[node name="Stem5" type="MeshInstance3D" parent="."]
+position = Vector3(0.3, 0.36, 0.19)
+rotation_degrees = Vector3(0, 0, 4)
+mesh = SubResource("StemMesh")
+[node name="Leaf5A" type="MeshInstance3D" parent="."]
+position = Vector3(0.21, 0.31, 0.19)
+rotation_degrees = Vector3(0, 0, -47)
+mesh = SubResource("LeafMesh")
+[node name="Leaf5B" type="MeshInstance3D" parent="."]
+position = Vector3(0.39, 0.49, 0.19)
+rotation_degrees = Vector3(0, 0, 50)
+mesh = SubResource("LeafMesh")
+[node name="Grain5A" type="MeshInstance3D" parent="."]
+position = Vector3(0.31, 0.79, 0.19)
+mesh = SubResource("GrainMesh")
+[node name="Grain5B" type="MeshInstance3D" parent="."]
+position = Vector3(0.29, 0.87, 0.19)
+mesh = SubResource("GrainMesh")
+[node name="Grain5C" type="MeshInstance3D" parent="."]
+position = Vector3(0.31, 0.95, 0.19)
+mesh = SubResource("GrainMesh")
+[node name="Awn5" type="MeshInstance3D" parent="."]
+position = Vector3(0.33, 1.03, 0.19)
+rotation_degrees = Vector3(0, 0, 7)
+mesh = SubResource("AwnMesh")

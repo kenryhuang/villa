@@ -4,6 +4,7 @@ extends Node3D
 ## 编排所有系统初始化、连接和运行
 
 const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
+const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn")
 
 @onready var world = $World
 @onready var player = $Actors/Player
@@ -33,7 +34,6 @@ var puzzle_system: PuzzleSystem
 
 # 建筑容器
 var buildings_container: Node3D
-var crop_visuals_container: Node3D
 
 
 func _ready() -> void:
@@ -54,8 +54,7 @@ func _initialize_systems() -> void:
 	grid_system = GRID_SYSTEM_SCENE.instantiate() as GridSystem
 	add_child(grid_system)
 
-	farming_system = FarmingSystem.new()
-	farming_system.name = "FarmingSystem"
+	farming_system = FARMING_SYSTEM_SCENE.instantiate() as FarmingSystem
 	add_child(farming_system)
 
 	season_system = SeasonSystem.new()
@@ -102,12 +101,6 @@ func _initialize_systems() -> void:
 	buildings_container = Node3D.new()
 	buildings_container.name = "Buildings"
 	add_child(buildings_container)
-
-	# 作物视觉容器
-	crop_visuals_container = Node3D.new()
-	crop_visuals_container.name = "CropVisuals"
-	add_child(crop_visuals_container)
-
 
 func _connect_systems() -> void:
 	# GridSystem 需要地形引用
@@ -199,7 +192,8 @@ func _initial_game_state() -> void:
 	economy_system.generate_daily_orders()
 
 	# 尝试加载自动存档
-	save_manager.load_game(0)
+	if save_manager.load_game(0):
+		farming_system.rebuild_visuals()
 
 
 func _register_default_crops() -> void:

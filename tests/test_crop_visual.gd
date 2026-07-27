@@ -30,3 +30,4 @@ func run(assertions: TestAssert) -> void:
 	assertions.near(mat.albedo_color.g, 0.84, 0.01, "mature gold green")
 
 	visual.free()
+	farming.free()

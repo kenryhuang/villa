@@ -52,7 +52,7 @@ func run(assertions: TestAssert) -> void:
 	# Third day - watered to mature
 	farming.water(cell)
 	farming.on_day_changed(4)
-	assertions.near(cell.crop_instance.growth_progress, 4.0, 0.001, "watered adds 1.5 to reach mature")
+	assertions.near(cell.crop_instance.growth_progress, 3.0, 0.001, "watered growth clamps at maturity")
 	assertions.truthy(cell.crop_instance.growth_progress >= crop_data.growth_days, "crop is mature")
 
 	# Harvest
@@ -77,3 +77,6 @@ func run(assertions: TestAssert) -> void:
 	cell2.crop_instance.is_watered_today = true
 	farming.on_day_changed(6)
 	assertions.near(cell2.crop_instance.growth_progress, 1.5, 0.001, "correct season allows growth")
+	farming.free()
+	season.free()
+	grid.free()
