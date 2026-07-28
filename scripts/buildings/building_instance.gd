@@ -128,6 +128,25 @@ func complete_construction() -> void:
 	_transition_construction_stage(ConstructionStage.COMPLETE)
 
 
+func restore_construction(stage: int, elapsed: float) -> void:
+	if data == null:
+		return
+	construction_duration = construction_duration_for(data.footprint)
+	if stage < ConstructionStage.FOUNDATION or stage > ConstructionStage.COMPLETE:
+		stage = ConstructionStage.COMPLETE
+	construction_stage = stage as ConstructionStage
+	if construction_stage == ConstructionStage.COMPLETE:
+		construction_elapsed = construction_duration
+	else:
+		construction_elapsed = clampf(elapsed, 0.0, construction_duration)
+		if construction_stage == ConstructionStage.FRAME:
+			construction_elapsed = maxf(construction_elapsed, construction_duration / 3.0)
+		elif construction_stage == ConstructionStage.HALF_BUILT:
+			construction_elapsed = maxf(construction_elapsed, construction_duration * 2.0 / 3.0)
+	_completion_emitted = construction_stage == ConstructionStage.COMPLETE
+	_apply_construction_stage(false)
+
+
 func is_construction_complete() -> bool:
 	return construction_stage == ConstructionStage.COMPLETE
 
@@ -242,6 +261,9 @@ func to_dict() -> Dictionary:
 		"gx": grid_x,
 		"gz": grid_z,
 		"occupied_cells": occupied_cells.duplicate(true),
+		"construction_stage": int(construction_stage),
+		"construction_elapsed": construction_elapsed,
+		"construction_duration": construction_duration,
 	}
 
 

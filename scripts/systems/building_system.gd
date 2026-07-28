@@ -320,6 +320,16 @@ func restore_buildings(records: Array) -> int:
 			instance.free()
 			continue
 		instance.configure(resolved, gx, gz, snapshots)
+		if record.has("construction_stage") and record.has("construction_elapsed"):
+			instance.restore_construction(
+				int(record.construction_stage),
+				float(record.construction_elapsed)
+			)
+		else:
+			instance.restore_construction(
+				BuildingInstance.ConstructionStage.COMPLETE,
+				BuildingInstance.construction_duration_for(resolved.footprint)
+			)
 		instance.position = _world_position_for(resolved, gx, gz)
 		buildings_container.add_child(instance)
 		_buildings.append(instance)
