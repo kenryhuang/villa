@@ -83,6 +83,7 @@ func start_construction() -> void:
 	construction_elapsed = 0.0
 	construction_stage = ConstructionStage.FOUNDATION
 	_completion_emitted = false
+	_apply_construction_stage(true)
 
 
 func advance_construction(delta: float) -> void:
@@ -143,6 +144,7 @@ func _transition_construction_stage(next_stage: ConstructionStage) -> void:
 	if construction_stage == next_stage:
 		return
 	construction_stage = next_stage
+	_apply_construction_stage(true)
 	construction_stage_changed.emit(self, construction_stage)
 	if construction_stage == ConstructionStage.COMPLETE and not _completion_emitted:
 		_completion_emitted = true
@@ -176,6 +178,7 @@ func configure(
 	name = data.display_name
 	_configure_visuals()
 	_configure_physics()
+	_apply_construction_stage(false)
 	if not _preview_mode and not is_in_group("building_instance"):
 		add_to_group("building_instance")
 
@@ -183,17 +186,7 @@ func configure(
 func set_preview_mode(value: bool) -> void:
 	_preview_mode = value
 	_ensure_nodes()
-	var collision := get_node("Collision") as StaticBody3D
-	var interaction_area := get_node("InteractionArea") as Area3D
-	var camera_occluder := get_node("CameraOccluder") as Area3D
-	collision.collision_layer = 0 if value else COLLISION_LAYERS
-	collision.collision_mask = 0
-	interaction_area.collision_layer = 0 if value else INTERACTION_LAYERS
-	interaction_area.collision_mask = 0
-	interaction_area.monitoring = not value
-	camera_occluder.collision_layer = 0 if value else CAMERA_OCCLUDER_LAYER
-	camera_occluder.collision_mask = 0
-	camera_occluder.monitoring = false
+	_apply_physics_state()
 	if value:
 		remove_from_group("building_instance")
 	else:
@@ -238,6 +231,8 @@ func get_interaction_area() -> Area3D:
 
 
 func interact(player: Node) -> void:
+	if not is_construction_complete():
+		return
 	interacted.emit(self, player)
 
 
@@ -289,6 +284,18 @@ func _ensure_nodes() -> void:
 		var fallback_roof := MeshInstance3D.new()
 		fallback_roof.name = "FallbackRoof"
 		visual_root.add_child(fallback_roof)
+	if visual_root.get_node_or_null("ConstructionLayer") == null:
+		var construction_layer := Sprite3D.new()
+		construction_layer.name = "ConstructionLayer"
+		visual_root.add_child(construction_layer)
+	if visual_root.get_node_or_null("ConstructionFallback") == null:
+		var construction_fallback := Node3D.new()
+		construction_fallback.name = "ConstructionFallback"
+		visual_root.add_child(construction_fallback)
+	if visual_root.get_node_or_null("ConstructionEffects") == null:
+		var construction_effects := Node3D.new()
+		construction_effects.name = "ConstructionEffects"
+		visual_root.add_child(construction_effects)
 	_ensure_physics_node("Collision", StaticBody3D)
 	_ensure_physics_node("InteractionArea", Area3D)
 	_ensure_physics_node("CameraOccluder", Area3D)
@@ -320,6 +327,7 @@ func _configure_visuals() -> void:
 		_configure_sprite(back, back_texture, Vector3.ZERO, -0.1)
 		_configure_sprite(front, front_texture, Vector3(0.025, 0.0, 0.025), 0.1)
 	_configure_fallback(not has_painted_layers)
+	_configure_construction_fallback()
 	_apply_visual_color()
 
 
@@ -327,6 +335,23 @@ func _load_texture(path: String) -> Texture2D:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path) as Texture2D
+
+
+func get_construction_texture_path(stage: ConstructionStage) -> String:
+	if data == null or stage == ConstructionStage.COMPLETE:
+		return ""
+	var suffix: String = str({
+		ConstructionStage.FOUNDATION: "foundation",
+		ConstructionStage.FRAME: "frame",
+		ConstructionStage.HALF_BUILT: "half_built",
+	}.get(stage, ""))
+	if suffix.is_empty():
+		return ""
+	return "res://assets/buildings/construction/%s/%s_%s.png" % [
+		data.building_id,
+		data.building_id,
+		suffix,
+	]
 
 
 func _configure_sprite(
@@ -387,6 +412,145 @@ func _fallback_material(color: Color) -> StandardMaterial3D:
 	return material
 
 
+func _configure_construction_fallback() -> void:
+	var fallback := get_node("VisualRoot/ConstructionFallback") as Node3D
+	for child in fallback.get_children():
+		child.free()
+
+	var slab := MeshInstance3D.new()
+	slab.name = "Foundation"
+	var slab_mesh := BoxMesh.new()
+	slab_mesh.size = Vector3(
+		maxf(float(data.footprint.x) * 0.82, 0.45),
+		0.12,
+		maxf(float(data.footprint.y) * 0.82, 0.45)
+	)
+	slab.mesh = slab_mesh
+	slab.position.y = 0.06
+	slab.material_override = _fallback_material(Color("8f806c"))
+	fallback.add_child(slab)
+
+	var frame_root := Node3D.new()
+	frame_root.name = "Frame"
+	fallback.add_child(frame_root)
+	var width := maxf(float(data.footprint.x) * 0.72, 0.38)
+	var depth := maxf(float(data.footprint.y) * 0.72, 0.38)
+	var height := maxf(data.visual_size.y * 0.72, 0.5)
+	for corner in [
+		Vector3(-width * 0.5, height * 0.5, -depth * 0.5),
+		Vector3(width * 0.5, height * 0.5, -depth * 0.5),
+		Vector3(-width * 0.5, height * 0.5, depth * 0.5),
+		Vector3(width * 0.5, height * 0.5, depth * 0.5),
+	]:
+		var post := MeshInstance3D.new()
+		var post_mesh := BoxMesh.new()
+		post_mesh.size = Vector3(0.07, height, 0.07)
+		post.mesh = post_mesh
+		post.position = corner
+		post.material_override = _fallback_material(Color("a56e3f"))
+		frame_root.add_child(post)
+
+	var half_body := MeshInstance3D.new()
+	half_body.name = "HalfBuilt"
+	var half_mesh := BoxMesh.new()
+	half_mesh.size = Vector3(width * 0.92, height * 0.58, depth * 0.92)
+	half_body.mesh = half_mesh
+	half_body.position.y = half_mesh.size.y * 0.5
+	half_body.material_override = _fallback_material(Color("b88a5a"))
+	fallback.add_child(half_body)
+
+
+func _apply_construction_stage(play_effect: bool) -> void:
+	if data == null:
+		return
+	_ensure_nodes()
+	var visual_root := get_node("VisualRoot") as Node3D
+	var back := visual_root.get_node("BackLayer") as Sprite3D
+	var front := visual_root.get_node("FrontLayer") as Sprite3D
+	var body := visual_root.get_node("FallbackBody") as MeshInstance3D
+	var roof := visual_root.get_node("FallbackRoof") as MeshInstance3D
+	var construction_layer := visual_root.get_node("ConstructionLayer") as Sprite3D
+	var construction_fallback := visual_root.get_node("ConstructionFallback") as Node3D
+	var completed := is_construction_complete()
+
+	back.visible = completed and back.texture != null
+	front.visible = completed and front.texture != null
+	body.visible = completed and back.texture == null
+	roof.visible = completed and front.texture == null
+	construction_layer.visible = not completed
+	construction_fallback.visible = not completed
+
+	if not completed:
+		var texture := _load_texture(get_construction_texture_path(construction_stage))
+		construction_layer.texture = texture
+		construction_layer.visible = texture != null
+		construction_fallback.visible = texture == null
+		if texture:
+			_configure_sprite(construction_layer, texture, Vector3.ZERO, 0.0)
+			_fade_in_geometry(construction_layer)
+		var foundation := construction_fallback.get_node("Foundation") as MeshInstance3D
+		var frame := construction_fallback.get_node("Frame") as Node3D
+		var half_body := construction_fallback.get_node("HalfBuilt") as MeshInstance3D
+		foundation.visible = true
+		frame.visible = construction_stage >= ConstructionStage.FRAME
+		half_body.visible = construction_stage >= ConstructionStage.HALF_BUILT
+	else:
+		construction_layer.texture = null
+		if back.visible:
+			_fade_in_geometry(back)
+		if front.visible:
+			_fade_in_geometry(front)
+
+	_apply_physics_state()
+	if play_effect:
+		_play_construction_effect(construction_stage)
+
+
+func _fade_in_geometry(geometry: GeometryInstance3D) -> void:
+	if not is_inside_tree():
+		return
+	if geometry is Sprite3D:
+		var sprite := geometry as Sprite3D
+		var target := sprite.modulate
+		target.a = 1.0
+		sprite.modulate.a = 0.0
+		create_tween().tween_property(sprite, "modulate", target, 0.18)
+
+
+func _play_construction_effect(stage: ConstructionStage) -> void:
+	if not is_inside_tree():
+		return
+	var effects := get_node("VisualRoot/ConstructionEffects") as Node3D
+	var particles := CPUParticles3D.new()
+	particles.name = "Dust" if stage in [ConstructionStage.FOUNDATION, ConstructionStage.COMPLETE] else "WoodChips"
+	particles.one_shot = true
+	particles.amount = 12 if particles.name == "Dust" else 8
+	particles.lifetime = 0.55
+	particles.explosiveness = 0.85
+	particles.direction = Vector3.UP
+	particles.spread = 55.0
+	particles.initial_velocity_min = 0.45
+	particles.initial_velocity_max = 0.9
+	particles.gravity = Vector3(0.0, -1.4, 0.0)
+	var particle_mesh := QuadMesh.new()
+	particle_mesh.size = Vector2(0.08, 0.08)
+	var particle_material := StandardMaterial3D.new()
+	particle_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	particle_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	particle_material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	particle_material.albedo_color = (
+		Color(0.72, 0.56, 0.34, 0.72)
+		if particles.name == "WoodChips"
+		else Color(0.77, 0.69, 0.54, 0.52)
+	)
+	particle_mesh.material = particle_material
+	particles.mesh = particle_mesh
+	particles.position.y = 0.12
+	effects.add_child(particles)
+	particles.finished.connect(particles.queue_free)
+	particles.emitting = true
+
+
 func _configure_physics() -> void:
 	var footprint_size := Vector3(
 		maxf(float(data.footprint.x) * 0.78, 0.4),
@@ -409,6 +573,26 @@ func _configure_physics() -> void:
 		data.visual_size.y * 0.45
 	)
 	set_preview_mode(_preview_mode)
+
+
+func _apply_physics_state() -> void:
+	var collision := get_node("Collision") as StaticBody3D
+	var interaction_area := get_node("InteractionArea") as Area3D
+	var camera_occluder := get_node("CameraOccluder") as Area3D
+	var active := not _preview_mode
+	var completed := is_construction_complete()
+	collision.collision_layer = COLLISION_LAYERS if active else 0
+	collision.collision_mask = 0
+	interaction_area.collision_layer = INTERACTION_LAYERS if active and completed else 0
+	interaction_area.collision_mask = 0
+	interaction_area.monitoring = active and completed
+	camera_occluder.collision_layer = (
+		CAMERA_OCCLUDER_LAYER
+		if active and construction_stage != ConstructionStage.FOUNDATION
+		else 0
+	)
+	camera_occluder.collision_mask = 0
+	camera_occluder.monitoring = false
 
 
 func _set_box_shape(node_path: NodePath, size: Vector3, center_y: float) -> void:

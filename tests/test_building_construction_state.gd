@@ -18,6 +18,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var stage_events: Array[int] = []
 	var completion_events: Array[bool] = []
+	var interaction_events: Array[bool] = []
 	instance.construction_stage_changed.connect(
 		func(_building: BuildingInstance, stage: BuildingInstance.ConstructionStage) -> void:
 			stage_events.append(int(stage))
@@ -26,16 +27,37 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		func(_building: BuildingInstance) -> void:
 			completion_events.append(true)
 	)
+	instance.interacted.connect(
+		func(_building: BuildingInstance, _player: Node) -> void:
+			interaction_events.append(true)
+	)
 
 	instance.start_construction()
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FOUNDATION, "construction starts at foundation")
 	assertions.equal(instance.construction_elapsed, 0.0, "construction starts with zero elapsed")
 	assertions.equal(instance.construction_duration, 4.0, "barn uses 2x2 duration")
 	assertions.near(instance.get_construction_progress(), 0.0, 0.0001, "initial progress is zero")
+	assertions.truthy(instance.has_node("VisualRoot/ConstructionLayer"), "construction sprite exists")
+	assertions.truthy(instance.has_node("VisualRoot/ConstructionFallback"), "construction fallback exists")
+	assertions.truthy(instance.has_node("VisualRoot/ConstructionEffects"), "construction effects root exists")
+	assertions.equal(
+		instance.get_construction_texture_path(BuildingInstance.ConstructionStage.FOUNDATION),
+		"res://assets/buildings/construction/barn/barn_foundation.png",
+		"foundation texture path is deterministic"
+	)
+	assertions.equal(instance.get_node("Collision").collision_layer, 16 | 64, "foundation blocks movement")
+	assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "foundation interaction is disabled")
+	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 0, "foundation camera occluder is disabled")
+	assertions.equal(instance.get_node("VisualRoot/BackLayer").visible, false, "foundation hides finished back art")
+	assertions.equal(instance.get_node("VisualRoot/FrontLayer").visible, false, "foundation hides finished front art")
+	instance.interact(instance)
+	assertions.equal(interaction_events.size(), 0, "unfinished building rejects interaction")
 
 	instance.advance_construction(instance.construction_duration / 3.0)
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FRAME, "time advances to frame")
 	assertions.equal(stage_events, [BuildingInstance.ConstructionStage.FRAME], "frame transition emits once")
+	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "frame enables camera occlusion")
+	assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "frame keeps interaction disabled")
 
 	instance.advance_construction_stage()
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.HALF_BUILT, "manual advance moves exactly one stage")
@@ -46,6 +68,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.near(instance.get_construction_progress(), 1.0, 0.0001, "completed progress is one")
 	assertions.equal(stage_events.size(), 3, "complete transition emits once")
 	assertions.equal(completion_events.size(), 1, "completion signal emits once")
+	assertions.equal(instance.get_node("InteractionArea").collision_layer, 64 | 256, "completion enables interaction")
+	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "completion keeps camera occlusion")
+	assertions.truthy(instance.get_node("VisualRoot/BackLayer").visible, "completion shows finished back art")
+	assertions.truthy(instance.get_node("VisualRoot/FrontLayer").visible, "completion shows finished front art")
+	assertions.equal(instance.get_node("VisualRoot/ConstructionLayer").visible, false, "completion hides construction sprite")
+	instance.interact(instance)
+	assertions.equal(interaction_events.size(), 1, "completed building accepts interaction")
 
 	instance.advance_construction(20.0)
 	instance.advance_construction_stage()
