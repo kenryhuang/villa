@@ -8,6 +8,9 @@ signal building_removed(building_id: String)
 signal building_preview_moved(gx: int, gz: int, can_place: bool)
 signal building_instance_placed(instance: BuildingInstance)
 signal building_instance_removed(instance: BuildingInstance)
+signal building_construction_started(instance: BuildingInstance)
+signal building_construction_stage_changed(instance: BuildingInstance, stage: int)
+signal building_construction_completed(instance: BuildingInstance)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const BUILDABLE_STATES := [GridCell.State.WASTELAND, GridCell.State.FARMLAND]
@@ -188,10 +191,15 @@ func place_building(building: Variant, gx: int, gz: int) -> BuildingInstance:
 
 	buildings_container.add_child(instance)
 	_buildings.append(instance)
+	_connect_construction_signals(instance)
+	instance.start_construction()
 	building_placed.emit(resolved.building_id, gx, gz)
 	building_instance_placed.emit(instance)
+	building_construction_started.emit(instance)
 	if _event_bus and _event_bus.has_signal("building_placed"):
 		_event_bus.building_placed.emit(instance)
+	if _event_bus and _event_bus.has_signal("building_construction_started"):
+		_event_bus.building_construction_started.emit(instance)
 	if _in_build_mode:
 		exit_preview_mode()
 	return instance
@@ -315,6 +323,7 @@ func restore_buildings(records: Array) -> int:
 		instance.position = _world_position_for(resolved, gx, gz)
 		buildings_container.add_child(instance)
 		_buildings.append(instance)
+		_connect_construction_signals(instance)
 		restored += 1
 	return restored
 
@@ -337,6 +346,28 @@ func get_buildings_of_type(effect_type: String) -> Array[BuildingInstance]:
 
 func get_buildings_by_effect(effect: String) -> Array[BuildingInstance]:
 	return get_buildings_of_type(effect)
+
+
+func _connect_construction_signals(instance: BuildingInstance) -> void:
+	if not instance.construction_stage_changed.is_connected(_on_construction_stage_changed):
+		instance.construction_stage_changed.connect(_on_construction_stage_changed)
+	if not instance.construction_completed.is_connected(_on_construction_completed):
+		instance.construction_completed.connect(_on_construction_completed)
+
+
+func _on_construction_stage_changed(
+	instance: BuildingInstance,
+	stage: BuildingInstance.ConstructionStage
+) -> void:
+	building_construction_stage_changed.emit(instance, int(stage))
+	if _event_bus and _event_bus.has_signal("building_construction_stage_changed"):
+		_event_bus.building_construction_stage_changed.emit(instance, int(stage))
+
+
+func _on_construction_completed(instance: BuildingInstance) -> void:
+	building_construction_completed.emit(instance)
+	if _event_bus and _event_bus.has_signal("building_construction_completed"):
+		_event_bus.building_construction_completed.emit(instance)
 
 
 func _resolve_data(building: Variant) -> BuildingData:

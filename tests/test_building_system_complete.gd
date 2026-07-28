@@ -47,6 +47,24 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(signal_shapes.get("building_preview_moved", -1), 3, "preview movement signal is available")
 	assertions.equal(signal_shapes.get("building_instance_placed", -1), 1, "typed placement signal is available")
 	assertions.equal(signal_shapes.get("building_instance_removed", -1), 1, "typed removal signal is available")
+	assertions.equal(signal_shapes.get("building_construction_started", -1), 1, "construction start signal is available")
+	assertions.equal(signal_shapes.get("building_construction_stage_changed", -1), 2, "construction stage signal is available")
+	assertions.equal(signal_shapes.get("building_construction_completed", -1), 1, "construction completion signal is available")
+	var construction_started_events: Array[BuildingInstance] = []
+	var construction_stage_events: Array[int] = []
+	var construction_completed_events: Array[BuildingInstance] = []
+	system.building_construction_started.connect(
+		func(instance: BuildingInstance) -> void:
+			construction_started_events.append(instance)
+	)
+	system.building_construction_stage_changed.connect(
+		func(_instance: BuildingInstance, stage: int) -> void:
+			construction_stage_events.append(stage)
+	)
+	system.building_construction_completed.connect(
+		func(instance: BuildingInstance) -> void:
+			construction_completed_events.append(instance)
+	)
 
 	var barn = BuildingDataScript.from_dictionary(game_data.get_building("barn"))
 	assertions.equal(system.configure(grid, null, container), false, "configure rejects a missing economy")
@@ -68,6 +86,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(system.get_building_count(), 1, "placement tracks one building")
 	assertions.equal(container.get_child_count(), 1, "placement uses configured container")
 	assertions.equal(economy.spend_calls, 1, "successful placement spends once")
+	assertions.equal(placed.construction_stage, BuildingInstance.ConstructionStage.FOUNDATION, "placement starts at foundation")
+	assertions.equal(construction_started_events, [placed], "successful placement emits one construction start")
+	placed.advance_construction_stage()
+	assertions.equal(
+		construction_stage_events,
+		[BuildingInstance.ConstructionStage.FRAME],
+		"system forwards construction stage"
+	)
+	placed.complete_construction()
+	assertions.equal(construction_completed_events, [placed], "system forwards construction completion")
 	for z in range(3, 5):
 		for x in range(3, 5):
 			assertions.equal(grid.get_cell(x, z).state, GridCell.State.BUILDING, "footprint cell %d,%d is occupied" % [x, z])
@@ -102,6 +130,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(system.get_preview_grid(), Vector2i(10, 10), "preview stores grid coordinate")
 	assertions.equal(system.get_preview_marker_count(), 1, "preview has one marker per footprint cell")
 	assertions.truthy(system.get_preview_can_place(), "preview reports valid placement")
+	var preview_instance := system.get_node("BuildingPreview/VisualProxy").get_child(0) as BuildingInstance
+	assertions.truthy(preview_instance.is_construction_complete(), "preview never starts construction")
+	assertions.equal(preview_instance.get_node("Collision").collision_layer, 0, "preview construction collision stays disabled")
 	var preview_marker := system.get_node("BuildingPreview/FootprintMarkers").get_child(0) as MeshInstance3D
 	var valid_material := preview_marker.material_override as StandardMaterial3D
 	assertions.truthy(valid_material.albedo_color.g > valid_material.albedo_color.r, "valid preview markers are green")
