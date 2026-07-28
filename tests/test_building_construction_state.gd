@@ -53,11 +53,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	instance.interact(instance)
 	assertions.equal(interaction_events.size(), 0, "unfinished building rejects interaction")
 
+	var foundation_texture: Texture2D = instance.get_node("VisualRoot/ConstructionLayer").texture
 	instance.advance_construction(instance.construction_duration / 3.0)
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FRAME, "time advances to frame")
 	assertions.equal(stage_events, [BuildingInstance.ConstructionStage.FRAME], "frame transition emits once")
 	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "frame enables camera occlusion")
 	assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "frame keeps interaction disabled")
+	var transitions := instance.get_node_or_null("VisualRoot/ConstructionTransitions")
+	assertions.truthy(transitions != null, "construction transitions root exists")
+	assertions.truthy(transitions != null and transitions.get_child_count() == 1, "stage change retains one outgoing sprite")
+	if transitions != null and transitions.get_child_count() == 1:
+		var outgoing := transitions.get_child(0) as Sprite3D
+		assertions.equal(outgoing.texture, foundation_texture, "outgoing sprite keeps previous stage texture")
+	assertions.near(instance.STAGE_FADE_OUT_DURATION, 0.12, 0.001, "outgoing stage fade duration")
+	assertions.near(instance.STAGE_FADE_IN_DURATION, 0.18, 0.001, "incoming stage fade duration")
 
 	instance.advance_construction_stage()
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.HALF_BUILT, "manual advance moves exactly one stage")
@@ -98,4 +107,34 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(completion_events.size(), 1, "large delta completes once")
 
 	instance.free()
+
+	var missing_art = barn.duplicate(true) as BuildingData
+	missing_art.building_id = "missing_construction_art"
+	var fallback_instance = (load(missing_art.scene_path) as PackedScene).instantiate() as BuildingInstance
+	tree.root.add_child(fallback_instance)
+	fallback_instance.configure(missing_art, 8, 8, [])
+	fallback_instance.start_construction()
+	assertions.equal(
+		fallback_instance.get_missing_construction_art_warning_count(),
+		1,
+		"missing construction art emits one deduplicated warning"
+	)
+	fallback_instance.restore_construction(BuildingInstance.ConstructionStage.FOUNDATION, 0.0)
+	assertions.equal(
+		fallback_instance.get_missing_construction_art_warning_count(),
+		1,
+		"reapplying a missing stage does not repeat its warning"
+	)
+	fallback_instance.advance_construction_stage()
+	var fallback := fallback_instance.get_node("VisualRoot/ConstructionFallback") as Node3D
+	var frame_post := fallback.get_node("Frame").get_child(0) as MeshInstance3D
+	assertions.truthy(fallback.visible, "missing frame art shows procedural fallback")
+	assertions.truthy(
+		fallback_instance._visual_geometry().has(frame_post),
+		"camera opacity traversal includes nested fallback geometry"
+	)
+	fallback_instance.set_camera_occluded(true)
+	fallback_instance._process(1.0)
+	assertions.near(frame_post.transparency, 0.7, 0.001, "nested fallback fades when camera-occluded")
+	fallback_instance.free()
 	game_data.free()

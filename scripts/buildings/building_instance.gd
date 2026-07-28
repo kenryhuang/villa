@@ -22,6 +22,8 @@ const CAMERA_OCCLUDER_LAYER := 32
 const OCCLUDED_OPACITY := 0.3
 const CLEAR_OPACITY := 1.0
 const FADE_RATE := 10.0
+const STAGE_FADE_OUT_DURATION := 0.12
+const STAGE_FADE_IN_DURATION := 0.18
 
 @export var authored_building_id := ""
 
@@ -36,6 +38,7 @@ var _preview_mode := false
 var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
 var _completion_emitted := false
+var _missing_construction_art_warnings := {}
 
 var building_id: String:
 	get:
@@ -314,6 +317,10 @@ func _ensure_nodes() -> void:
 		var construction_fallback := Node3D.new()
 		construction_fallback.name = "ConstructionFallback"
 		visual_root.add_child(construction_fallback)
+	if visual_root.get_node_or_null("ConstructionTransitions") == null:
+		var construction_transitions := Node3D.new()
+		construction_transitions.name = "ConstructionTransitions"
+		visual_root.add_child(construction_transitions)
 	if visual_root.get_node_or_null("ConstructionEffects") == null:
 		var construction_effects := Node3D.new()
 		construction_effects.name = "ConstructionEffects"
@@ -374,6 +381,10 @@ func get_construction_texture_path(stage: ConstructionStage) -> String:
 		data.building_id,
 		suffix,
 	]
+
+
+func get_missing_construction_art_warning_count() -> int:
+	return _missing_construction_art_warnings.size()
 
 
 func _configure_sprite(
@@ -495,6 +506,8 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	var construction_fallback := visual_root.get_node("ConstructionFallback") as Node3D
 	var completed := is_construction_complete()
 
+	if play_effect:
+		_retain_outgoing_construction_visual(construction_layer)
 	back.visible = completed and back.texture != null
 	front.visible = completed and front.texture != null
 	body.visible = completed and back.texture == null
@@ -503,13 +516,16 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	construction_fallback.visible = not completed
 
 	if not completed:
-		var texture := _load_texture(get_construction_texture_path(construction_stage))
+		var texture_path := get_construction_texture_path(construction_stage)
+		var texture := _load_texture(texture_path)
 		construction_layer.texture = texture
 		construction_layer.visible = texture != null
 		construction_fallback.visible = texture == null
 		if texture:
 			_configure_sprite(construction_layer, texture, Vector3.ZERO, 0.0)
 			_fade_in_geometry(construction_layer)
+		else:
+			_warn_missing_construction_art(texture_path)
 		var foundation := construction_fallback.get_node("Foundation") as MeshInstance3D
 		var frame := construction_fallback.get_node("Frame") as Node3D
 		var half_body := construction_fallback.get_node("HalfBuilt") as MeshInstance3D
@@ -528,6 +544,33 @@ func _apply_construction_stage(play_effect: bool) -> void:
 		_play_construction_effect(construction_stage)
 
 
+func _retain_outgoing_construction_visual(source: Sprite3D) -> void:
+	if not is_inside_tree() or not source.visible or source.texture == null:
+		return
+	var transitions := get_node("VisualRoot/ConstructionTransitions") as Node3D
+	var outgoing := source.duplicate() as Sprite3D
+	if outgoing == null:
+		return
+	outgoing.name = "ConstructionOutgoing"
+	outgoing.sorting_offset = source.sorting_offset + 0.01
+	transitions.add_child(outgoing)
+	var target := outgoing.modulate
+	target.a = 0.0
+	var tween := create_tween()
+	tween.tween_property(outgoing, "modulate", target, STAGE_FADE_OUT_DURATION)
+	tween.finished.connect(outgoing.queue_free)
+
+
+func _warn_missing_construction_art(path: String) -> void:
+	if path.is_empty() or _missing_construction_art_warnings.has(path):
+		return
+	_missing_construction_art_warnings[path] = true
+	push_warning(
+		"Missing construction stage art '%s'; using procedural fallback for %s."
+		% [path, building_id]
+	)
+
+
 func _fade_in_geometry(geometry: GeometryInstance3D) -> void:
 	if not is_inside_tree():
 		return
@@ -536,7 +579,7 @@ func _fade_in_geometry(geometry: GeometryInstance3D) -> void:
 		var target := sprite.modulate
 		target.a = 1.0
 		sprite.modulate.a = 0.0
-		create_tween().tween_property(sprite, "modulate", target, 0.18)
+		create_tween().tween_property(sprite, "modulate", target, STAGE_FADE_IN_DURATION)
 
 
 func _play_construction_effect(stage: ConstructionStage) -> void:
@@ -645,7 +688,16 @@ func _visual_geometry() -> Array[GeometryInstance3D]:
 	var visual_root := get_node_or_null("VisualRoot")
 	if visual_root == null:
 		return result
-	for child in visual_root.get_children():
+	_collect_visual_geometry(visual_root, result)
+	return result
+
+
+func _collect_visual_geometry(
+	parent: Node,
+	result: Array[GeometryInstance3D]
+) -> void:
+	for child in parent.get_children():
 		if child is GeometryInstance3D:
 			result.append(child)
-	return result
+		if child.get_child_count() > 0:
+			_collect_visual_geometry(child, result)

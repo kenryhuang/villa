@@ -11,6 +11,7 @@ class EconomyDouble:
 	var available := true
 	var spend_succeeds := true
 	var spend_calls := 0
+	var refund_calls := 0
 
 	func has_resources(_cost: Dictionary) -> bool:
 		return available
@@ -18,6 +19,9 @@ class EconomyDouble:
 	func spend_resources(_cost: Dictionary) -> bool:
 		spend_calls += 1
 		return spend_succeeds
+
+	func refund_resources(_cost: Dictionary) -> void:
+		refund_calls += 1
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -165,6 +169,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(restored_count, 1, "saved building records reconstruct instances without spending")
 	assertions.equal(system.get_building_at(20, 12).occupied_cells[0].previous_state, GridCell.State.WASTELAND, "restore preserves prior cell state")
 	assertions.equal(economy.spend_calls, 5, "restore does not spend resources")
+
+	grid.set_cell_state(22, 20, GridCell.State.FARMLAND)
+	grid.set_cell_state(23, 21, GridCell.State.FARMLAND)
+	var unfinished_barn = system.place_building(barn, 22, 20)
+	assertions.equal(
+		unfinished_barn.construction_stage,
+		BuildingInstance.ConstructionStage.FOUNDATION,
+		"multi-cell cancellation fixture remains unfinished"
+	)
+	var spend_calls_before_cancel := economy.spend_calls
+	assertions.truthy(system.remove_building(unfinished_barn), "unfinished multi-cell building can be cancelled")
+	assertions.equal(grid.get_cell(22, 20).state, GridCell.State.FARMLAND, "cancel restores first farmland snapshot")
+	assertions.equal(grid.get_cell(23, 21).state, GridCell.State.FARMLAND, "cancel restores second farmland snapshot")
+	assertions.equal(grid.get_cell(23, 20).state, GridCell.State.WASTELAND, "cancel restores first wasteland snapshot")
+	assertions.equal(grid.get_cell(22, 21).state, GridCell.State.WASTELAND, "cancel restores second wasteland snapshot")
+	assertions.equal(economy.spend_calls, spend_calls_before_cancel, "cancel does not alter spent-resource count")
+	assertions.equal(economy.refund_calls, 0, "cancel does not refund resources")
 
 	system.free()
 	container.free()
