@@ -1,10 +1,9 @@
 extends Node3D
 
 const PLOT_COORDS: Array[Vector2i] = [
-	Vector2i(10, 19),
-	Vector2i(11, 19),
-	Vector2i(12, 19),
-	Vector2i(13, 19),
+	Vector2i(10, 18), Vector2i(11, 18), Vector2i(12, 18), Vector2i(13, 18),
+	Vector2i(10, 19), Vector2i(11, 19), Vector2i(12, 19), Vector2i(13, 19),
+	Vector2i(10, 20), Vector2i(11, 20), Vector2i(12, 20), Vector2i(13, 20),
 ]
 const STAGE_NAMES := ["种子", "幼苗", "生长期", "成熟"]
 
@@ -67,7 +66,7 @@ func _reset_verification() -> void:
 		if cell and grid_system.set_cell_state(cell.gx, cell.gz, GridCell.State.FARMLAND):
 			var crop := farming_system.plant(cell, _crop_data)
 			if crop:
-				crop.growth_progress = float(index)
+				crop.growth_progress = float(index % STAGE_NAMES.size())
 				_cells.append(cell)
 	farming_system.rebuild_visuals()
 	_selected_index = 0
@@ -179,7 +178,7 @@ func _build_plot_overlay() -> void:
 func _build_stage_labels() -> void:
 	for child in stage_labels.get_children():
 		child.free()
-	for index in _cells.size():
+	for index in mini(STAGE_NAMES.size(), _cells.size()):
 		var cell := _cells[index]
 		var label := Label3D.new()
 		label.text = "%d  %s" % [index + 1, STAGE_NAMES[index]]
@@ -188,7 +187,7 @@ func _build_stage_labels() -> void:
 		label.outline_size = 8
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		var position := cell.world_position_3d()
-		label.position = Vector3(position.x, position.y + 1.35, position.z)
+		label.position = Vector3(position.x, position.y + 1.5, position.z - 0.35)
 		stage_labels.add_child(label)
 
 
@@ -199,10 +198,11 @@ func _update_ui() -> void:
 			mature_count += 1
 	var checks := [
 		["FarmingSystem 绑定 GridSystem", farming_system.grid_system == grid_system],
-		["农田作物：%d / 4" % farming_system.get_all_planted_cells().size(), farming_system.get_all_planted_cells().size() == 4],
-		["作物视觉：%d / 4" % farming_system.get_visual_count(), farming_system.get_visual_count() == farming_system.get_all_planted_cells().size()],
-		["四阶段初始展示", mature_count == 1],
-		["谷物3D阶段模型：4 / 4", _count_grain_models() == 4],
+		["农田作物：%d / 12" % farming_system.get_all_planted_cells().size(), farming_system.get_all_planted_cells().size() == 12],
+		["作物视觉：%d / 12" % farming_system.get_visual_count(), farming_system.get_visual_count() == farming_system.get_all_planted_cells().size()],
+		["四阶段初始展示", mature_count == 3],
+		["手绘分层谷物：12 / 12", _count_grain_models() == 12],
+		["三种作物外观：3 / 阶段", _all_stages_show_three_variants()],
 		["每日生长由 FarmingSystem 驱动", true],
 		["季节过滤与温室接口就绪", true],
 	]
@@ -225,6 +225,18 @@ func _count_grain_models() -> int:
 		if visual and not str(visual.get_meta("stage_scene", "")).is_empty():
 			count += 1
 	return count
+
+
+func _all_stages_show_three_variants() -> bool:
+	for stage in STAGE_NAMES.size():
+		var variants := {}
+		for index in range(stage, _cells.size(), STAGE_NAMES.size()):
+			var visual := farming_system.get_crop_visual(_cells[index])
+			if visual and visual.has_method("get_variant_index"):
+				variants[visual.call("get_variant_index")] = true
+		if variants.size() != 3:
+			return false
+	return true
 
 
 func _update_inspector() -> void:

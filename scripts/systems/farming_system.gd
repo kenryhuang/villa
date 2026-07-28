@@ -14,7 +14,7 @@ var _greenhouse_cells := {}
 static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
 	if cell == null:
 		return crop_id.hash()
-	return GridSystemScript.cell_key(cell.gx, cell.gz) ^ crop_id.hash()
+	return GridSystemScript.cell_key(cell.gx, cell.gz) + crop_id.hash()
 
 
 func configure(gs, ss, gs_state) -> bool:

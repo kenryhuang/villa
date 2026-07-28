@@ -14,7 +14,7 @@ rings = 4
 script = ExtResource("CropSpriteClusterScript")
 back_texture_paths = Array[String](["res://assets/crops/grain/painted/stage_0/variant_0_back.png", "res://assets/crops/grain/painted/stage_0/variant_1_back.png", "res://assets/crops/grain/painted/stage_0/variant_2_back.png"])
 front_texture_paths = Array[String](["res://assets/crops/grain/painted/stage_0/variant_0_front.png", "res://assets/crops/grain/painted/stage_0/variant_1_front.png", "res://assets/crops/grain/painted/stage_0/variant_2_front.png"])
-canvas_world_height = 0.28
+canvas_world_height = 0.45
 
 [node name="KernelLeft" type="MeshInstance3D" parent="."]
 position = Vector3(-0.11, 0.05, 0.02)
