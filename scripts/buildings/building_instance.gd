@@ -2,6 +2,18 @@ class_name BuildingInstance
 extends Node3D
 
 signal interacted(building: BuildingInstance, player: Node)
+signal construction_stage_changed(
+	building: BuildingInstance,
+	stage: ConstructionStage
+)
+signal construction_completed(building: BuildingInstance)
+
+enum ConstructionStage {
+	FOUNDATION,
+	FRAME,
+	HALF_BUILT,
+	COMPLETE,
+}
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const COLLISION_LAYERS := 16 | 64
@@ -17,9 +29,13 @@ var data: BuildingData
 var grid_x := 0
 var grid_z := 0
 var occupied_cells: Array[Dictionary] = []
+var construction_stage := ConstructionStage.COMPLETE
+var construction_elapsed := 0.0
+var construction_duration := 0.0
 var _preview_mode := false
 var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
+var _completion_emitted := false
 
 var building_id: String:
 	get:
@@ -49,6 +65,88 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 		return 1.0
 	var pixel_size := target_size.x / texture_size.x
 	return target_size.y / (texture_size.y * pixel_size)
+
+
+static func construction_duration_for(footprint: Vector2i) -> float:
+	var largest_side := maxi(footprint.x, footprint.y)
+	if largest_side <= 1:
+		return 3.0
+	if largest_side == 2:
+		return 4.0
+	return 5.0
+
+
+func start_construction() -> void:
+	if data == null:
+		return
+	construction_duration = construction_duration_for(data.footprint)
+	construction_elapsed = 0.0
+	construction_stage = ConstructionStage.FOUNDATION
+	_completion_emitted = false
+
+
+func advance_construction(delta: float) -> void:
+	if delta <= 0.0 or is_construction_complete():
+		return
+	if construction_duration <= 0.0:
+		complete_construction()
+		return
+	construction_elapsed = clampf(
+		construction_elapsed + delta,
+		0.0,
+		construction_duration
+	)
+	var first_threshold := construction_duration / 3.0
+	var second_threshold := first_threshold * 2.0
+	if construction_stage == ConstructionStage.FOUNDATION and construction_elapsed >= first_threshold:
+		_transition_construction_stage(ConstructionStage.FRAME)
+	if construction_stage == ConstructionStage.FRAME and construction_elapsed >= second_threshold:
+		_transition_construction_stage(ConstructionStage.HALF_BUILT)
+	if construction_stage == ConstructionStage.HALF_BUILT and construction_elapsed >= construction_duration:
+		_transition_construction_stage(ConstructionStage.COMPLETE)
+
+
+func advance_construction_stage() -> void:
+	if is_construction_complete():
+		return
+	match construction_stage:
+		ConstructionStage.FOUNDATION:
+			construction_elapsed = maxf(construction_elapsed, construction_duration / 3.0)
+			_transition_construction_stage(ConstructionStage.FRAME)
+		ConstructionStage.FRAME:
+			construction_elapsed = maxf(construction_elapsed, construction_duration * 2.0 / 3.0)
+			_transition_construction_stage(ConstructionStage.HALF_BUILT)
+		ConstructionStage.HALF_BUILT:
+			complete_construction()
+
+
+func complete_construction() -> void:
+	if is_construction_complete() and _completion_emitted:
+		return
+	construction_elapsed = maxf(construction_duration, 0.0)
+	_transition_construction_stage(ConstructionStage.COMPLETE)
+
+
+func is_construction_complete() -> bool:
+	return construction_stage == ConstructionStage.COMPLETE
+
+
+func get_construction_progress() -> float:
+	if is_construction_complete():
+		return 1.0
+	if construction_duration <= 0.0:
+		return 0.0
+	return clampf(construction_elapsed / construction_duration, 0.0, 1.0)
+
+
+func _transition_construction_stage(next_stage: ConstructionStage) -> void:
+	if construction_stage == next_stage:
+		return
+	construction_stage = next_stage
+	construction_stage_changed.emit(self, construction_stage)
+	if construction_stage == ConstructionStage.COMPLETE and not _completion_emitted:
+		_completion_emitted = true
+		construction_completed.emit(self)
 
 
 func _ready() -> void:
@@ -153,6 +251,8 @@ func to_dict() -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	if not _preview_mode and not is_construction_complete():
+		advance_construction(delta)
 	if _preview_mode:
 		return
 	for geometry in _visual_geometry():
