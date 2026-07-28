@@ -3,6 +3,10 @@ extends CanvasLayer
 
 ## 农庄 HUD - 体力、金币、等级、季节/日期、时间、快捷栏
 
+signal quick_slot_selected(index: int)
+
+const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
+
 @onready var stamina_bar: ProgressBar = $TopBar/StaminaBar
 @onready var gold_label: Label = $TopBar/GoldLabel
 @onready var level_label: Label = $TopBar/LevelLabel
@@ -13,6 +17,8 @@ extends CanvasLayer
 @onready var tool_label: Label = $BottomBar/ToolLabel
 
 var _event_bus
+var action_controller: Variant
+var inventory_ref: Variant
 
 
 func _ready() -> void:
@@ -118,9 +124,74 @@ func set_tool_name(name: String) -> void:
 		tool_label.text = name
 
 
+func configure_action_bar(
+	controller: Variant,
+	inventory: Variant
+) -> void:
+	action_controller = controller
+	inventory_ref = inventory
+	for index in range(quick_bar.get_child_count()):
+		var button := quick_bar.get_child(index) as Button
+		if button == null:
+			continue
+		var callback := _on_quick_slot_pressed.bind(index)
+		if not button.pressed.is_connected(callback):
+			button.pressed.connect(callback)
+	if (
+		action_controller
+		and not action_controller.selection_changed.is_connected(
+			_on_action_selection_changed
+		)
+	):
+		action_controller.selection_changed.connect(_on_action_selection_changed)
+	if (
+		action_controller
+		and not action_controller.inventory_changed.is_connected(refresh_action_bar)
+	):
+		action_controller.inventory_changed.connect(refresh_action_bar)
+	refresh_action_bar()
+	if action_controller:
+		var selected: int = action_controller.get_selected_slot()
+		_on_action_selection_changed(selected, ACTION_NAMES[selected])
+
+
+func refresh_action_bar() -> void:
+	if quick_bar == null:
+		return
+	var selected: int = action_controller.get_selected_slot() if action_controller else 0
+	for index in range(quick_bar.get_child_count()):
+		var button := quick_bar.get_child(index) as Button
+		if button == null:
+			continue
+		var action_name: String = ACTION_NAMES[index]
+		if index == PlayerActionController.SEED_SLOT:
+			var quantity: int = (
+				inventory_ref.get_item_count(PlayerActionController.SEED_ITEM_ID)
+				if inventory_ref
+				else 0
+			)
+			button.text = "%d\n%s x%d" % [index + 1, action_name, quantity]
+		else:
+			button.text = "%d\n%s" % [index + 1, action_name]
+		button.set_pressed_no_signal(index == selected)
+		button.modulate = Color(1.0, 0.91, 0.55) if index == selected else Color.WHITE
+
+
+func _on_quick_slot_pressed(index: int) -> void:
+	quick_slot_selected.emit(index)
+	if action_controller:
+		action_controller.select_slot(index)
+
+
+func _on_action_selection_changed(index: int, label: String) -> void:
+	if tool_label:
+		tool_label.text = label
+	refresh_action_bar()
+
+
 func set_quick_slot(index: int, item_name: String, quantity: int) -> void:
 	if quick_bar == null or index < 0 or index >= quick_bar.get_child_count():
 		return
-	var slot = quick_bar.get_child(index)
-	if slot.has_node("Label"):
-		slot.get_node("Label").text = "%s x%d" % [item_name, quantity]
+	var slot := quick_bar.get_child(index) as Button
+	if slot:
+		slot.text = "%d\n%s x%d" % [index + 1, item_name, quantity]

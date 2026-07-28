@@ -72,62 +72,38 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Slot1" type="PanelContainer" parent="BottomBar/QuickBar"]
+[node name="Slot1" type="Button" parent="BottomBar/QuickBar"]
 custom_minimum_size = Vector2(68, 50)
 layout_mode = 2
+toggle_mode = true
+text = "1\n锄头"
 
-[node name="Label" type="Label" parent="BottomBar/QuickBar/Slot1"]
-layout_mode = 2
-text = "1"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Slot2" type="PanelContainer" parent="BottomBar/QuickBar"]
+[node name="Slot2" type="Button" parent="BottomBar/QuickBar"]
 custom_minimum_size = Vector2(68, 50)
 layout_mode = 2
+toggle_mode = true
+text = "2\n浇水壶"
 
-[node name="Label" type="Label" parent="BottomBar/QuickBar/Slot2"]
-layout_mode = 2
-text = "2"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Slot3" type="PanelContainer" parent="BottomBar/QuickBar"]
+[node name="Slot3" type="Button" parent="BottomBar/QuickBar"]
 custom_minimum_size = Vector2(68, 50)
 layout_mode = 2
+toggle_mode = true
+text = "3\n斧头"
 
-[node name="Label" type="Label" parent="BottomBar/QuickBar/Slot3"]
-layout_mode = 2
-text = "3"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Slot4" type="PanelContainer" parent="BottomBar/QuickBar"]
+[node name="Slot4" type="Button" parent="BottomBar/QuickBar"]
 custom_minimum_size = Vector2(68, 50)
 layout_mode = 2
+toggle_mode = true
+text = "4\n镐"
 
-[node name="Label" type="Label" parent="BottomBar/QuickBar/Slot4"]
-layout_mode = 2
-text = "4"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Slot5" type="PanelContainer" parent="BottomBar/QuickBar"]
+[node name="Slot5" type="Button" parent="BottomBar/QuickBar"]
 custom_minimum_size = Vector2(68, 50)
 layout_mode = 2
+toggle_mode = true
+text = "5\n鱼竿"
 
-[node name="Label" type="Label" parent="BottomBar/QuickBar/Slot5"]
-layout_mode = 2
-text = "5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Slot6" type="PanelContainer" parent="BottomBar/QuickBar"]
+[node name="Slot6" type="Button" parent="BottomBar/QuickBar"]
 custom_minimum_size = Vector2(68, 50)
 layout_mode = 2
-
-[node name="Label" type="Label" parent="BottomBar/QuickBar/Slot6"]
-layout_mode = 2
-text = "6"
-horizontal_alignment = 1
-vertical_alignment = 1
+toggle_mode = true
+text = "6\n谷物种子 x0"
