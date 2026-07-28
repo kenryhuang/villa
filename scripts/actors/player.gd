@@ -83,6 +83,15 @@ static func movement_from_input(input_vector: Vector2, forward: Vector3, right: 
 	return direction.normalized() if direction.length_squared() > 1.0 else direction
 
 
+static func find_interaction_target(node: Node) -> Node:
+	var current := node
+	while current:
+		if current.has_method("interact") or current.has_method("start_dialogue") or current.has_method("collect"):
+			return current
+		current = current.get_parent()
+	return null
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# 工具使用（鼠标左键）
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -134,6 +143,8 @@ func _interact() -> void:
 	query.exclude = [get_rid()]
 	# 检测 NPC 层(4) + 建筑层(64) + 收集品层(128)
 	query.collision_mask = 4 | 64 | 128
+	query.collide_with_areas = true
+	query.collide_with_bodies = true
 
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
@@ -142,16 +153,19 @@ func _interact() -> void:
 	var collider = hit.get("collider")
 	if collider == null:
 		return
+	var target := find_interaction_target(collider)
+	if target == null:
+		return
 
 	# NPC 对话
-	if collider.has_method("start_dialogue"):
-		collider.start_dialogue()
+	if target.has_method("start_dialogue"):
+		target.start_dialogue()
 	# 建筑交互
-	elif collider.has_method("interact"):
-		collider.interact(self)
+	elif target.has_method("interact"):
+		target.interact(self)
 	# 收集品
-	elif collider.has_method("collect"):
-		collider.collect()
+	elif target.has_method("collect"):
+		target.collect()
 
 
 func _raycast_to_grid_cell() -> GridCell:

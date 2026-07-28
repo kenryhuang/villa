@@ -17,10 +17,19 @@ const DRAG_SENSITIVITY := 0.008
 const CAMERA_OCCLUDER_MASK := 32
 const MAX_OCCLUDERS := 8
 
-static func apply_occlusion_state(trees: Array[Node], occluded: Array[Node]) -> void:
-	for tree in trees:
-		if is_instance_valid(tree) and tree.has_method("set_camera_occluded"):
-			tree.set_camera_occluded(tree in occluded)
+static func apply_occlusion_state(occluders: Array[Node], occluded: Array[Node]) -> void:
+	for occluder in occluders:
+		if is_instance_valid(occluder) and occluder.has_method("set_camera_occluded"):
+			occluder.set_camera_occluded(occluder in occluded)
+
+
+static func find_occlusion_target(node: Node) -> Node:
+	var current := node
+	while current:
+		if current.has_method("set_camera_occluded"):
+			return current
+		current = current.get_parent()
+	return null
 
 func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -45,7 +54,7 @@ func _process(delta: float) -> void:
 	if target:
 		global_position = global_position.lerp(target.global_position, 1.0 - exp(-8.0 * delta))
 	_apply_camera_transform()
-	update_tree_occlusion()
+	update_occlusion()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -64,13 +73,15 @@ func _apply_camera_transform() -> void:
 	camera.size = orthographic_size
 	camera.look_at(global_position, Vector3.UP)
 
-func update_tree_occlusion() -> void:
+func update_occlusion() -> void:
 	if not is_inside_tree():
 		return
-	var trees: Array[Node] = get_tree().get_nodes_in_group("tree_instance")
+	var occluders: Array[Node] = []
+	occluders.append_array(get_tree().get_nodes_in_group("tree_instance"))
+	occluders.append_array(get_tree().get_nodes_in_group("building_instance"))
 	var occluded: Array[Node] = []
 	if not is_instance_valid(target):
-		apply_occlusion_state(trees, occluded)
+		apply_occlusion_state(occluders, occluded)
 		return
 
 	var excluded: Array[RID] = []
@@ -87,7 +98,11 @@ func update_tree_occlusion() -> void:
 		if not collider is Area3D:
 			break
 		excluded.append(collider.get_rid())
-		var tree := collider.get_parent() as Node
-		if is_instance_valid(tree) and tree not in occluded:
-			occluded.append(tree)
-	apply_occlusion_state(trees, occluded)
+		var occlusion_target := find_occlusion_target(collider)
+		if is_instance_valid(occlusion_target) and occlusion_target not in occluded:
+			occluded.append(occlusion_target)
+	apply_occlusion_state(occluders, occluded)
+
+
+func update_tree_occlusion() -> void:
+	update_occlusion()
