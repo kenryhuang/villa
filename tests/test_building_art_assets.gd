@@ -12,25 +12,34 @@ const IDS := [
 	"fence",
 ]
 const LAYERS := ["back", "front"]
+const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
 
 
 static func texture_path(id: String, layer: String) -> String:
 	return "res://assets/buildings/painted/%s/%s_%s.png" % [id, id, layer]
 
 
+static func construction_texture_path(id: String, stage: String) -> String:
+	return "res://assets/buildings/construction/%s/%s_%s.png" % [id, id, stage]
+
+
 func run(assertions: TestAssert) -> void:
 	for id in IDS:
 		for layer in LAYERS:
-			var path := texture_path(id, layer)
-			assertions.truthy(ResourceLoader.exists(path), "%s exists" % path)
-			if not ResourceLoader.exists(path):
-				continue
-			var texture := load(path) as Texture2D
-			assertions.truthy(texture != null, "%s imports as Texture2D" % path)
-			if texture == null:
-				continue
-			assertions.equal(texture.get_size(), Vector2(1024, 1024), "%s is 1024 square" % path)
-			var image := texture.get_image()
-			assertions.truthy(image.detect_alpha(), "%s contains alpha" % path)
-			assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s has a transparent corner" % path)
+			_validate_texture(texture_path(id, layer), assertions)
+		for stage in CONSTRUCTION_STAGES:
+			_validate_texture(construction_texture_path(id, stage), assertions)
 
+
+func _validate_texture(path: String, assertions: TestAssert) -> void:
+	assertions.truthy(ResourceLoader.exists(path), "%s exists" % path)
+	if not ResourceLoader.exists(path):
+		return
+	var texture := load(path) as Texture2D
+	assertions.truthy(texture != null, "%s imports as Texture2D" % path)
+	if texture == null:
+		return
+	assertions.equal(texture.get_size(), Vector2(1024, 1024), "%s is 1024 square" % path)
+	var image := texture.get_image()
+	assertions.truthy(image.detect_alpha(), "%s contains alpha" % path)
+	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s has a transparent corner" % path)
