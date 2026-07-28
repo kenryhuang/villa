@@ -5,6 +5,7 @@ const FarmingSystemTest = preload("res://tests/test_farming_system.gd")
 const CropVisualTest = preload("res://tests/test_crop_visual.gd")
 const FarmingSystemCompleteTest = preload("res://tests/test_farming_system_complete.gd")
 const GrainCropArtAssetsTest = preload("res://tests/test_grain_crop_art_assets.gd")
+const CropSpriteClusterTest = preload("res://tests/test_crop_sprite_cluster.gd")
 const GrainCropModelsTest = preload("res://tests/test_grain_crop_models.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
@@ -20,6 +21,7 @@ func _run() -> void:
 	CropVisualTest.new().run(assertions)
 	FarmingSystemCompleteTest.new().run(assertions, self)
 	GrainCropArtAssetsTest.new().run(assertions)
+	CropSpriteClusterTest.new().run(assertions, self)
 	GrainCropModelsTest.new().run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d farming system checks" % assertions.checks)
