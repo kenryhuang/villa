@@ -1,6 +1,7 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource path="res://assets/crops/grain/materials/sprout_green.tres" type="Material" id="1"]
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
 
 [sub_resource type="CylinderMesh" id="StemMesh"]
 material = ExtResource("1")
@@ -15,6 +16,10 @@ material = ExtResource("1")
 size = Vector3(0.055, 0.22, 0.018)
 
 [node name="GrainStage1Sprout" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/grain/painted/stage_1/variant_0_back.png", "res://assets/crops/grain/painted/stage_1/variant_1_back.png", "res://assets/crops/grain/painted/stage_1/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/grain/painted/stage_1/variant_0_front.png", "res://assets/crops/grain/painted/stage_1/variant_1_front.png", "res://assets/crops/grain/painted/stage_1/variant_2_front.png"])
+canvas_world_height = 0.48
 
 [node name="Stem" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0.125, 0)

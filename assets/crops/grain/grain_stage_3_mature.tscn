@@ -1,7 +1,8 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource path="res://assets/crops/grain/materials/stalk_gold.tres" type="Material" id="1"]
 [ext_resource path="res://assets/crops/grain/materials/grain_gold.tres" type="Material" id="2"]
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
 
 [sub_resource type="CylinderMesh" id="StemMesh"]
 material = ExtResource("1")
@@ -31,6 +32,10 @@ radial_segments = 5
 rings = 1
 
 [node name="GrainStage3Mature" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/grain/painted/stage_3/variant_0_back.png", "res://assets/crops/grain/painted/stage_3/variant_1_back.png", "res://assets/crops/grain/painted/stage_3/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/grain/painted/stage_3/variant_0_front.png", "res://assets/crops/grain/painted/stage_3/variant_1_front.png", "res://assets/crops/grain/painted/stage_3/variant_2_front.png"])
+canvas_world_height = 1.15
 
 [node name="Stem1" type="MeshInstance3D" parent="."]
 position = Vector3(-0.28, 0.39, 0.12)

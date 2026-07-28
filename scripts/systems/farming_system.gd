@@ -11,6 +11,12 @@ var _crop_visuals := {}
 var _greenhouse_cells := {}
 
 
+static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
+	if cell == null:
+		return crop_id.hash()
+	return GridSystemScript.cell_key(cell.gx, cell.gz) ^ crop_id.hash()
+
+
 func configure(gs, ss, gs_state) -> bool:
 	if gs == null:
 		return false
@@ -161,9 +167,13 @@ func _instantiate_stage_visual(cell: GridCell, instance: CropInstance) -> Node3D
 	var visual := packed.instantiate() as Node3D
 	visual.name = "CropVisual_%d_%d" % [cell.gx, cell.gz]
 	visual.position = cell.world_position_3d() + Vector3(0.0, 0.035, 0.0)
+	var visual_seed := crop_visual_seed(cell, instance.crop_data.crop_id)
+	if visual.has_method("configure_variant_seed"):
+		visual.call("configure_variant_seed", visual_seed)
 	visual.set_meta("crop_id", instance.crop_data.crop_id)
 	visual.set_meta("crop_stage", instance.get_current_stage())
 	visual.set_meta("stage_scene", scene_path)
+	visual.set_meta("visual_seed", visual_seed)
 	_visual_parent().add_child(visual)
 	return visual
 
