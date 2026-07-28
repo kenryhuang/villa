@@ -42,6 +42,16 @@ func is_greenhouse_cell(cell: GridCell) -> bool:
 	return cell != null and _greenhouse_cells.has(GridSystemScript.cell_key(cell.gx, cell.gz))
 
 
+func can_plant(cell: GridCell, crop_data: CropData) -> bool:
+	if cell == null or crop_data == null or cell.state != GridCell.State.FARMLAND:
+		return false
+	if cell.crop_instance != null:
+		return false
+	if is_greenhouse_cell(cell) or season_system == null:
+		return true
+	return crop_data.seasons.is_empty() or season_system.current_season in crop_data.seasons
+
+
 func plant(grid_cell, crop_data) -> CropInstance:
 	if grid_system == null or grid_cell == null or crop_data == null:
 		return null
