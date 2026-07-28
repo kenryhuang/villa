@@ -42,6 +42,7 @@ const ITEMS := {
 	"sunflower_seed": {"id": "sunflower_seed", "name": "向日葵种子", "category": "seed", "sell_price": 0, "buy_price": 8, "max_stack": 99},
 	"rose_seed": {"id": "rose_seed", "name": "玫瑰种子", "category": "seed", "sell_price": 0, "buy_price": 10, "max_stack": 99},
 	"lavender_seed": {"id": "lavender_seed", "name": "薰衣草种子", "category": "seed", "sell_price": 0, "buy_price": 8, "max_stack": 99},
+	"grain_seed": {"id": "grain_seed", "name": "谷物种子", "category": "seed", "sell_price": 0, "buy_price": 4, "max_stack": 99},
 	# 作物
 	"tomato": {"id": "tomato", "name": "番茄", "category": "crop", "sell_price": 8, "buy_price": 0, "max_stack": 99},
 	"carrot": {"id": "carrot", "name": "胡萝卜", "category": "crop", "sell_price": 7, "buy_price": 0, "max_stack": 99},
@@ -52,6 +53,7 @@ const ITEMS := {
 	"sunflower": {"id": "sunflower", "name": "向日葵", "category": "crop", "sell_price": 12, "buy_price": 0, "max_stack": 99},
 	"rose": {"id": "rose", "name": "玫瑰", "category": "crop", "sell_price": 16, "buy_price": 0, "max_stack": 99},
 	"lavender": {"id": "lavender", "name": "薰衣草", "category": "crop", "sell_price": 14, "buy_price": 0, "max_stack": 99},
+	"grain": {"id": "grain", "name": "谷物", "category": "crop", "sell_price": 7, "buy_price": 0, "max_stack": 99},
 	# 材料
 	"wood": {"id": "wood", "name": "木材", "category": "material", "sell_price": 1, "buy_price": 2, "max_stack": 99},
 	"stone": {"id": "stone", "name": "石头", "category": "material", "sell_price": 1, "buy_price": 3, "max_stack": 99},

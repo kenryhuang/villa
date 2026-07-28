@@ -85,6 +85,23 @@ func get_item_count(item_id: String) -> int:
 	return total
 
 
+func can_add_item(item_id: String, quantity: int = 1) -> bool:
+	if item_id.is_empty() or quantity <= 0:
+		return false
+	var item_data = GameData.get_item(item_id)
+	if item_data.is_empty():
+		return false
+	var max_stack := int(item_data.get("max_stack", 99))
+	var remaining := quantity
+	for slot in slots:
+		if slot.item_id == item_id:
+			remaining -= maxi(0, max_stack - int(slot.quantity))
+			if remaining <= 0:
+				return true
+	var free_slots := maxi(0, max_slots - slots.size())
+	return remaining <= free_slots * max_stack
+
+
 func swap_slots(from_index: int, to_index: int) -> void:
 	if from_index < 0 or from_index >= slots.size():
 		return
