@@ -45,26 +45,73 @@ func _run() -> void:
 		instance.free()
 		quit(1)
 		return
-	root.add_child(instance)
-	await process_frame
-	var building_system := instance.get_node("BuildingSystem") as BuildingSystem
-	if building_system.get_building_count() != 9:
-		push_error("building visual verifier must place all nine buildings")
+	if not constants.has("CONSTRUCTION_DEMO_ORIGIN"):
+		push_error("building visual verifier must expose construction demo origin")
 		instance.free()
 		quit(1)
 		return
+	for method_name in ["_advance_active_construction", "_construction_contract_passes"]:
+		if not instance.has_method(method_name):
+			push_error("building visual verifier missing method: %s" % method_name)
+			instance.free()
+			quit(1)
+			return
+	root.add_child(instance)
+	await process_frame
+	var building_system := instance.get_node("BuildingSystem") as BuildingSystem
+	if building_system.get_building_count() != 10:
+		push_error("building visual verifier must place nine gallery buildings plus one construction demo")
+		instance.free()
+		quit(1)
+		return
+	var completed_count := 0
+	var frame_count := 0
 	for building in building_system.get_all_buildings():
 		if not building is BuildingInstance:
 			push_error("gallery entry is not a BuildingInstance")
 			instance.free()
 			quit(1)
 			return
-		for required_path in ["VisualRoot/BackLayer", "VisualRoot/FrontLayer", "Collision", "InteractionArea", "CameraOccluder"]:
+		for required_path in [
+			"VisualRoot/BackLayer",
+			"VisualRoot/FrontLayer",
+			"VisualRoot/ConstructionLayer",
+			"Collision",
+			"InteractionArea",
+			"CameraOccluder",
+		]:
 			if not building.has_node(required_path):
 				push_error("%s missing %s" % [building.building_id, required_path])
 				instance.free()
 				quit(1)
 				return
+		if building.construction_stage == BuildingInstance.ConstructionStage.COMPLETE:
+			completed_count += 1
+		elif building.construction_stage == BuildingInstance.ConstructionStage.FRAME:
+			frame_count += 1
+			var construction_layer := building.get_node("VisualRoot/ConstructionLayer") as Sprite3D
+			var collision := building.get_node("Collision") as StaticBody3D
+			var interaction := building.get_node("InteractionArea") as Area3D
+			if construction_layer.texture == null or not construction_layer.visible:
+				push_error("frame construction demo must show dedicated stage art")
+				instance.free()
+				quit(1)
+				return
+			if collision.collision_layer == 0 or interaction.collision_layer != 0:
+				push_error("frame construction demo must block movement and disable interaction")
+				instance.free()
+				quit(1)
+				return
+	if completed_count != 9 or frame_count != 1:
+		push_error("building visual verifier must expose nine complete buildings and one frame construction")
+		instance.free()
+		quit(1)
+		return
+	if not bool(instance.call("_construction_contract_passes")):
+		push_error("building visual construction contract failed")
+		instance.free()
+		quit(1)
+		return
 	if not bool(instance.call("verification_contract_passes")):
 		push_error("building visual verification status contract failed")
 		instance.free()
@@ -73,4 +120,3 @@ func _run() -> void:
 	instance.free()
 	print("PASS: building visual verification scene contract")
 	quit(0)
-

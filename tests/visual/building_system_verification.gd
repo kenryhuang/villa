@@ -23,6 +23,8 @@ const GALLERY_ORIGINS: Array[Vector2i] = [
 	Vector2i(18, 18),
 ]
 const PREVIEW_START := Vector2i(23, 14)
+const CONSTRUCTION_DEMO_ORIGIN := Vector2i(27, 14)
+const UI_UPDATE_INTERVAL := 0.1
 
 
 class VerificationEconomy:
@@ -55,8 +57,11 @@ var _last_message := "九类建筑已就绪；绿色预览区可交互"
 var _resource_rejection_verified := false
 var _resource_spend_verified := false
 var _removal_restore_verified := false
+var _construction_cancel_verified := false
 var _preview_colors_verified := false
 var _manual_blocked_states := {}
+var _active_construction: BuildingInstance
+var _ui_update_elapsed := 0.0
 
 
 func _ready() -> void:
@@ -65,11 +70,21 @@ func _ready() -> void:
 	var focus := Vector3(-4.0, 0.0, -1.5)
 	camera.position = focus + Vector3(12.5, 14.5, 12.5)
 	camera.look_at(focus)
+	building_system.building_construction_stage_changed.connect(_on_construction_stage_changed)
+	building_system.building_construction_completed.connect(_on_construction_completed)
 	_reset_verification()
+
+
+func _process(delta: float) -> void:
+	_ui_update_elapsed += delta
+	if _ui_update_elapsed >= UI_UPDATE_INTERVAL:
+		_ui_update_elapsed = 0.0
+		_update_ui()
 
 
 func _reset_verification() -> void:
 	building_system.clear_buildings()
+	_active_construction = null
 	grid_system.configure(world.terrain, [], [])
 	grid_system.set_grid_visible(true)
 	_economy.materials_available = true
@@ -80,8 +95,20 @@ func _reset_verification() -> void:
 		var placed := building_system.place_building(BUILDING_IDS[index], GALLERY_ORIGINS[index].x, GALLERY_ORIGINS[index].y)
 		if placed == null:
 			_last_message = "画廊放置失败：%s" % BUILDING_IDS[index]
+		else:
+			placed.complete_construction()
 	_build_gallery_labels()
 	_verify_failure_paths()
+	_active_construction = building_system.place_building(
+		"barn",
+		CONSTRUCTION_DEMO_ORIGIN.x,
+		CONSTRUCTION_DEMO_ORIGIN.y
+	)
+	if _active_construction:
+		_active_construction.advance_construction_stage()
+		_last_message = "施工演示：谷仓已推进到 FRAME；按 N 继续"
+	else:
+		_last_message = "施工演示放置失败"
 	_selected_index = 0
 	_preview_grid = PREVIEW_START
 	_enter_selected_preview()
@@ -106,10 +133,15 @@ func _verify_failure_paths() -> void:
 	grid_system.set_cell_state(restore_cell.gx, restore_cell.gz, GridCell.State.FARMLAND)
 	var removable := building_system.place_building("fence", restore_cell.gx, restore_cell.gz)
 	_resource_spend_verified = removable != null and _economy.spend_calls == spend_count_before_rejection + 1
+	var spend_count_before_cancel := _economy.spend_calls
 	_removal_restore_verified = (
 		removable != null
 		and building_system.remove_building(removable)
 		and restore_cell.state == GridCell.State.FARMLAND
+	)
+	_construction_cancel_verified = (
+		_removal_restore_verified
+		and _economy.spend_calls == spend_count_before_cancel
 	)
 
 
@@ -131,6 +163,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_move_preview(Vector2i.DOWN)
 		KEY_P, KEY_ENTER, KEY_KP_ENTER:
 			_place_selected()
+		KEY_N:
+			_advance_active_construction()
 		KEY_X:
 			_remove_at_preview()
 		KEY_B:
@@ -233,21 +267,51 @@ func _place_selected() -> void:
 		return
 	var placed := building_system.place_selected_building(_preview_grid.x, _preview_grid.y)
 	if placed:
-		_last_message = "放置成功：%s" % placed.data.display_name
+		_active_construction = placed
+		_last_message = "开始施工：%s（%s）" % [
+			placed.data.display_name,
+			_stage_name(placed.construction_stage),
+		]
 		_preview_grid.x = mini(_preview_grid.x + placed.data.footprint.x + 1, GridSystem.GRID_WIDTH - 1)
 		_enter_selected_preview()
 	else:
 		_last_message = "放置被拒绝：检查占用格或材料"
 
 
+func _advance_active_construction() -> void:
+	if not is_instance_valid(_active_construction):
+		_active_construction = null
+		_last_message = "当前没有可推进的施工建筑"
+		return
+	if _active_construction.is_construction_complete():
+		_last_message = "%s 已经完工" % _active_construction.data.display_name
+		return
+	_active_construction.advance_construction_stage()
+	_last_message = "推进施工：%s → %s" % [
+		_active_construction.data.display_name,
+		_stage_name(_active_construction.construction_stage),
+	]
+
+
 func _remove_at_preview() -> void:
 	var building := building_system.get_building_at(_preview_grid.x, _preview_grid.y)
 	if building == null:
-		_last_message = "当前预览格没有建筑"
-		return
+		if is_instance_valid(_active_construction) and not _active_construction.is_construction_complete():
+			building = _active_construction
+		else:
+			_last_message = "当前预览格没有建筑，也没有未完工施工"
+			return
 	var display_name := building.data.display_name
+	var was_active := building == _active_construction
+	var was_incomplete := not building.is_construction_complete()
 	building_system.remove_building(building)
-	_last_message = "已拆除：%s；原网格状态已恢复" % display_name
+	if was_active:
+		_active_construction = null
+	_last_message = (
+		"已取消施工：%s；网格恢复，不退材料"
+		if was_incomplete
+		else "已拆除：%s；原网格状态已恢复"
+	) % display_name
 	if not building_system.is_in_build_mode():
 		_enter_selected_preview()
 	else:
@@ -279,39 +343,75 @@ func _build_gallery_labels() -> void:
 func verification_contract_passes() -> bool:
 	return (
 		building_system.grid_system_ref == grid_system
-		and building_system.get_building_count() >= 9
-		and _count_painted_buildings() >= 9
-		and _count_physics_contracts() >= 9
+		and building_system.get_building_count() >= 10
+		and _count_completed_painted_buildings() >= 9
+		and _count_completed_physics_contracts() >= 9
+		and _construction_contract_passes()
 		and _occupied_grid_count() == _expected_occupied_count()
 		and _resource_rejection_verified
 		and _resource_spend_verified
 		and _removal_restore_verified
+		and _construction_cancel_verified
 		and _preview_colors_verified
 		and building_system.is_in_build_mode()
 		and building_system.get_preview_marker_count() == _selected_data().footprint.x * _selected_data().footprint.y
 	)
 
 
-func _count_painted_buildings() -> int:
+func _count_completed_painted_buildings() -> int:
 	var count := 0
 	for building in building_system.get_all_buildings():
 		var back := building.get_node_or_null("VisualRoot/BackLayer") as Sprite3D
 		var front := building.get_node_or_null("VisualRoot/FrontLayer") as Sprite3D
-		if back and front and back.texture != null and front.texture != null and back.visible and front.visible:
+		if (
+			building.is_construction_complete()
+			and back
+			and front
+			and back.texture != null
+			and front.texture != null
+			and back.visible
+			and front.visible
+		):
 			count += 1
 	return count
 
 
-func _count_physics_contracts() -> int:
+func _count_completed_physics_contracts() -> int:
 	var count := 0
 	for building in building_system.get_all_buildings():
 		if (
-			building.get_node("Collision").collision_layer == 16 | 64
-			and building.get_node("InteractionArea").collision_layer == 64 | 256
+			building.is_construction_complete()
+			and building.get_node("Collision").collision_layer == (16 | 64)
+			and building.get_node("InteractionArea").collision_layer == (64 | 256)
 			and building.get_node("CameraOccluder").collision_layer == 32
 		):
 			count += 1
 	return count
+
+
+func _construction_contract_passes() -> bool:
+	if not is_instance_valid(_active_construction):
+		return false
+	if not building_system.get_all_buildings().has(_active_construction):
+		return false
+	var collision := _active_construction.get_node("Collision") as StaticBody3D
+	var interaction := _active_construction.get_node("InteractionArea") as Area3D
+	var occluder := _active_construction.get_node("CameraOccluder") as Area3D
+	var construction_layer := _active_construction.get_node("VisualRoot/ConstructionLayer") as Sprite3D
+	if collision.collision_layer != (16 | 64):
+		return false
+	if _active_construction.is_construction_complete():
+		return interaction.collision_layer == (64 | 256) and not construction_layer.visible
+	return (
+		interaction.collision_layer == 0
+		and construction_layer.texture != null
+		and construction_layer.visible
+		and (
+			occluder.collision_layer == 0
+			if _active_construction.construction_stage == BuildingInstance.ConstructionStage.FOUNDATION
+			else occluder.collision_layer == 32
+		)
+	)
 
 
 func _expected_occupied_count() -> int:
@@ -332,19 +432,20 @@ func _occupied_grid_count() -> int:
 func _update_ui() -> void:
 	var checks := [
 		["BuildingSystem 绑定 GridSystem", building_system.grid_system_ref == grid_system],
-		["建筑画廊：%d / 9" % building_system.get_building_count(), building_system.get_building_count() >= 9],
-		["手绘双层模型：%d / 9" % _count_painted_buildings(), _count_painted_buildings() >= 9],
-		["碰撞 / 交互 / 遮挡：%d / 9" % _count_physics_contracts(), _count_physics_contracts() >= 9],
+		["完成态画廊：%d / 9" % _count_completed_painted_buildings(), _count_completed_painted_buildings() >= 9],
+		["成品碰撞 / 交互 / 遮挡：%d / 9" % _count_completed_physics_contracts(), _count_completed_physics_contracts() >= 9],
+		["施工阶段图 / 碰撞契约", _construction_contract_passes()],
 		["占用格：%d / %d" % [_occupied_grid_count(), _expected_occupied_count()], _occupied_grid_count() == _expected_occupied_count()],
 		["材料不足时原子拒绝", _resource_rejection_verified],
 		["成功放置扣除一次资源", _resource_spend_verified],
 		["拆除逐格恢复原状态", _removal_restore_verified],
+		["取消施工不退材料", _construction_cancel_verified],
 		["绿色 / 红色预览状态", _preview_colors_verified],
 		["预览足迹：%d 格" % building_system.get_preview_marker_count(), building_system.get_preview_marker_count() == _selected_data().footprint.x * _selected_data().footprint.y],
 	]
 	var lines: Array[String] = [
 		"BUILDING SYSTEM 独立视觉验收",
-		"固定朝向 · 2.5D 手绘双层 · 真实 3D 碰撞",
+		"成品画廊 · 施工阶段图 · 真实 3D 碰撞",
 	]
 	for check in checks:
 		lines.append("%s %s" % ["✓" if check[1] else "✗", check[0]])
@@ -359,8 +460,24 @@ func _update_inspector() -> void:
 	var cost_parts: Array[String] = []
 	for item_id in data.cost:
 		cost_parts.append("%s × %d" % [item_id, data.cost[item_id]])
+	var construction_text := "Active Construction: none\n"
+	if is_instance_valid(_active_construction):
+		var collision := _active_construction.get_node("Collision") as StaticBody3D
+		var interaction := _active_construction.get_node("InteractionArea") as Area3D
+		construction_text = (
+			"Active Construction: %s\n" % _active_construction.data.display_name
+			+ "Stage: %s\n" % _stage_name(_active_construction.construction_stage)
+			+ "Progress: %d%% / %.1fs\n" % [
+				roundi(_active_construction.get_construction_progress() * 100.0),
+				_active_construction.construction_duration,
+			]
+			+ "Collision: %s\n" % ("enabled" if collision.collision_layer != 0 else "disabled")
+			+ "Interaction: %s\n" % ("enabled" if interaction.collision_layer != 0 else "disabled")
+		)
 	inspector_label.text = (
 		"BUILDING INSPECTOR\n\n"
+		+ construction_text
+		+ "\n"
 		+ "%d  %s\n" % [_selected_index + 1, data.display_name]
 		+ "ID: %s\n" % data.building_id
 		+ "Footprint: %d × %d\n" % [data.footprint.x, data.footprint.y]
@@ -370,3 +487,18 @@ func _update_inspector() -> void:
 		+ "Can Place: %s\n" % ("true" if building_system.get_preview_can_place() else "false")
 		+ "Materials: %s" % ("available" if _economy.materials_available else "missing")
 	)
+
+
+func _stage_name(stage: int) -> String:
+	return BuildingInstance.ConstructionStage.keys()[int(stage)]
+
+
+func _on_construction_stage_changed(building: BuildingInstance, _stage: int) -> void:
+	if building == _active_construction:
+		_update_ui()
+
+
+func _on_construction_completed(building: BuildingInstance) -> void:
+	if building == _active_construction:
+		_last_message = "施工完成：%s；功能交互已启用" % building.data.display_name
+		_update_ui()

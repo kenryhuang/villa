@@ -15,6 +15,10 @@ func _capture() -> void:
 	current_scene = instance
 	for _frame in 10:
 		await process_frame
+	if not bool(instance.call("_construction_contract_passes")):
+		push_error("building verification capture has no valid staged construction")
+		quit(1)
+		return
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
 	var error := image.save_png(OUTPUT_PATH)
@@ -24,4 +28,3 @@ func _capture() -> void:
 		return
 	print("CAPTURE: %s (%dx%d)" % [OUTPUT_PATH, image.get_width(), image.get_height()])
 	quit(0)
-

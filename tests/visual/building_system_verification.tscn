@@ -29,7 +29,7 @@ content_margin_right = 22.0
 content_margin_bottom = 18.0
 
 [sub_resource type="LabelSettings" id="LabelSettings"]
-font_size = 24
+font_size = 21
 font_color = Color(0.94, 0.97, 0.88, 1)
 line_spacing = 5.0
 
@@ -64,7 +64,7 @@ shadow_enabled = true
 offset_left = 28.0
 offset_top = 28.0
 offset_right = 660.0
-offset_bottom = 485.0
+offset_bottom = 570.0
 theme_override_styles/panel = SubResource("PanelStyle")
 
 [node name="StatusLabel" type="Label" parent="UI/StatusPanel"]
@@ -78,7 +78,7 @@ anchor_right = 1.0
 offset_left = -570.0
 offset_top = 28.0
 offset_right = -28.0
-offset_bottom = 390.0
+offset_bottom = 500.0
 grow_horizontal = 0
 theme_override_styles/panel = SubResource("PanelStyle")
 
@@ -97,6 +97,6 @@ offset_right = -25.0
 offset_bottom = -22.0
 grow_horizontal = 2
 grow_vertical = 0
-text = "1–9 选择建筑   方向键移动预览   P / Enter 放置   X 拆除   B 阻塞目标格   M 材料开关   R 重置   Esc 退出"
+text = "1–9 选择建筑   方向键移动   P/Enter 开工   N 推进阶段   X 取消/拆除   B 阻塞   M 材料   R 重置   Esc 退出"
 label_settings = SubResource("LabelSettings")
 horizontal_alignment = 1
