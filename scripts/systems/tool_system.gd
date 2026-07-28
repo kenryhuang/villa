@@ -62,25 +62,26 @@ func use_tool_on(target: Variant) -> bool:
 	if game_state.player_state.stamina < stamina_cost:
 		return false
 
-	# 消耗体力
+	# 执行工具功能
+	var succeeded := false
+	match current_tool:
+		ToolType.HOE:
+			succeeded = _use_hoe(target)
+		ToolType.WATERING_CAN:
+			succeeded = _use_watering_can(target)
+		ToolType.AXE:
+			succeeded = _use_axe(target)
+		ToolType.PICKAXE:
+			succeeded = _use_pickaxe(target)
+		ToolType.FISHING_ROD:
+			succeeded = _use_fishing_rod(target)
+
+	if not succeeded:
+		return false
 	game_state.player_state.stamina -= stamina_cost
 	if _event_bus:
 		_event_bus.stamina_changed.emit(game_state.player_state.stamina)
-
-	# 执行工具功能
-	match current_tool:
-		ToolType.HOE:
-			return _use_hoe(target)
-		ToolType.WATERING_CAN:
-			return _use_watering_can(target)
-		ToolType.AXE:
-			return _use_axe(target)
-		ToolType.PICKAXE:
-			return _use_pickaxe(target)
-		ToolType.FISHING_ROD:
-			return _use_fishing_rod(target)
-
-	return false
+	return true
 
 
 func _use_hoe(target: Variant) -> bool:
