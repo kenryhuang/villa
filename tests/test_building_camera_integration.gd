@@ -35,11 +35,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		building,
 		"player resolves building from collision child"
 	)
+	assertions.truthy(
+		PlayerScript.is_interaction_hit_in_range(Vector3.ZERO, Vector3(2.4, 8.0, 0.0), 2.5),
+		"interaction range uses horizontal player distance"
+	)
+	assertions.equal(
+		PlayerScript.is_interaction_hit_in_range(Vector3.ZERO, Vector3(2.6, 0.0, 0.0), 2.5),
+		false,
+		"interaction rejects hits beyond the player range"
+	)
 	var unrelated := Node3D.new()
 	assertions.equal(PlayerScript.find_interaction_target(unrelated), null, "unrelated node is not interactive")
 
 	unrelated.free()
 	tree_instance.free()
-	building.queue_free()
+	building.free()
 	game_data.free()
-

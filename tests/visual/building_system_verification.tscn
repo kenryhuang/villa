@@ -97,7 +97,6 @@ offset_right = -25.0
 offset_bottom = -22.0
 grow_horizontal = 2
 grow_vertical = 0
-text = "1–9 选择建筑   方向键移动预览   P / Enter 放置   X 拆除   B 预览开关   M 材料开关   R 重置   Esc 退出"
+text = "1–9 选择建筑   方向键移动预览   P / Enter 放置   X 拆除   B 阻塞目标格   M 材料开关   R 重置   Esc 退出"
 label_settings = SubResource("LabelSettings")
 horizontal_alignment = 1
-

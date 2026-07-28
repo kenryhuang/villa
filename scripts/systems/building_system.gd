@@ -3,8 +3,11 @@ extends Node3D
 
 signal build_mode_entered
 signal build_mode_exited
-signal building_placed(building: BuildingInstance)
+signal building_placed(building_id: String, gx: int, gz: int)
 signal building_removed(building_id: String)
+signal building_preview_moved(gx: int, gz: int, can_place: bool)
+signal building_instance_placed(instance: BuildingInstance)
+signal building_instance_removed(instance: BuildingInstance)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const BUILDABLE_STATES := [GridCell.State.WASTELAND, GridCell.State.FARMLAND]
@@ -27,22 +30,24 @@ var _buildings: Array[BuildingInstance] = []
 
 func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
+	add_to_group("building_system")
 	_ensure_scene_nodes()
 	_preview_root.visible = false
 	if buildings_container == null:
 		buildings_container = _default_buildings_container
 
 
-func configure(grid_sys: GridSystem, economy: Variant, container: Node3D = null) -> void:
+func configure(grid_sys: GridSystem, economy: Variant, container: Node3D = null) -> bool:
 	grid_system_ref = grid_sys
 	economy_ref = economy
 	_ensure_scene_nodes()
 	buildings_container = container if container != null else _default_buildings_container
+	return grid_system_ref != null and economy_ref != null and buildings_container != null
 
 
 func enter_preview_mode(building: Variant) -> bool:
 	var resolved := _resolve_data(building)
-	if resolved == null or not resolved.is_valid():
+	if resolved == null or not resolved.is_valid() or not load(resolved.scene_path) is PackedScene:
 		return false
 	exit_preview_mode()
 	_current_data = resolved
@@ -77,16 +82,24 @@ func get_selected_building_id() -> String:
 	return _current_data.building_id if _current_data else ""
 
 
-func update_preview_position(world_x: float, world_z: float) -> void:
+func get_preview_data() -> BuildingData:
+	return _current_data
+
+
+func update_preview_position(world_x: float, world_z: float) -> bool:
 	if grid_system_ref == null:
-		return
+		return false
 	var grid_position := grid_system_ref.world_to_grid(world_x, world_z)
-	update_preview_grid(grid_position.x, grid_position.y)
+	return update_preview(grid_position.x, grid_position.y)
 
 
-func update_preview_grid(gx: int, gz: int) -> void:
+func update_preview(gx: int, gz: int) -> bool:
+	return update_preview_grid(gx, gz)
+
+
+func update_preview_grid(gx: int, gz: int) -> bool:
 	if not _in_build_mode or _current_data == null or grid_system_ref == null:
-		return
+		return false
 	_preview_grid = Vector2i(gx, gz)
 	_preview_can_place = can_place(_current_data, gx, gz)
 	var position_3d := _world_position_for(_current_data, gx, gz)
@@ -95,6 +108,10 @@ func update_preview_grid(gx: int, gz: int) -> void:
 			child.position = position_3d
 			child.set_preview_valid(_preview_can_place)
 	_update_markers(gx, gz)
+	building_preview_moved.emit(gx, gz, _preview_can_place)
+	if _event_bus and _event_bus.has_signal("building_preview_moved"):
+		_event_bus.building_preview_moved.emit(gx, gz, _preview_can_place)
+	return _preview_can_place
 
 
 func get_preview_grid() -> Vector2i:
@@ -111,17 +128,20 @@ func get_preview_marker_count() -> int:
 
 func can_place(building: Variant, gx: int, gz: int) -> bool:
 	var resolved := _resolve_data(building)
-	if resolved == null or not resolved.is_valid() or grid_system_ref == null:
+	if resolved == null or not resolved.is_valid() or grid_system_ref == null or economy_ref == null:
+		return false
+	if not load(resolved.scene_path) is PackedScene:
 		return false
 	for cell_data in _footprint_cells(resolved, gx, gz):
 		var cell := grid_system_ref.get_cell(cell_data.x, cell_data.y)
 		if cell == null or cell.state not in BUILDABLE_STATES:
 			return false
-	if economy_ref != null:
-		if not economy_ref.has_method("has_resources"):
+		if not is_finite(grid_system_ref.get_terrain_height_at_cell(cell_data.x, cell_data.y)):
 			return false
-		if not bool(economy_ref.has_resources(resolved.cost)):
-			return false
+	if not economy_ref.has_method("has_resources"):
+		return false
+	if not bool(economy_ref.has_resources(resolved.cost)):
+		return false
 	return true
 
 
@@ -168,9 +188,10 @@ func place_building(building: Variant, gx: int, gz: int) -> BuildingInstance:
 
 	buildings_container.add_child(instance)
 	_buildings.append(instance)
-	building_placed.emit(instance)
-	if _event_bus and economy_ref != null and "gold" in economy_ref:
-		_event_bus.gold_changed.emit(economy_ref.gold)
+	building_placed.emit(resolved.building_id, gx, gz)
+	building_instance_placed.emit(instance)
+	if _event_bus and _event_bus.has_signal("building_placed"):
+		_event_bus.building_placed.emit(instance)
 	if _in_build_mode:
 		exit_preview_mode()
 	return instance
@@ -182,7 +203,15 @@ func place_selected_building(gx: int, gz: int) -> BuildingInstance:
 	return place_building(_current_data, gx, gz)
 
 
+func place_building_by_id(building_id: String, gx: int, gz: int) -> BuildingInstance:
+	return place_building(building_id, gx, gz)
+
+
 func remove_building(building: Variant) -> bool:
+	return _remove_building_internal(building, true)
+
+
+func _remove_building_internal(building: Variant, restore_grid: bool) -> bool:
 	var instance: BuildingInstance
 	if building is BuildingInstance:
 		instance = building
@@ -192,20 +221,25 @@ func remove_building(building: Variant) -> bool:
 			instance = _buildings[index]
 	if instance == null or not _buildings.has(instance):
 		return false
-	for snapshot in instance.occupied_cells:
-		var cell := grid_system_ref.get_cell(snapshot.gx, snapshot.gz) if grid_system_ref else null
-		if cell != null and cell.state == GridCell.State.BUILDING:
-			grid_system_ref.set_cell_state(snapshot.gx, snapshot.gz, int(snapshot.previous_state))
+	if restore_grid:
+		for snapshot in instance.occupied_cells:
+			var cell := grid_system_ref.get_cell(snapshot.gx, snapshot.gz) if grid_system_ref else null
+			if cell != null and cell.state == GridCell.State.BUILDING:
+				grid_system_ref.set_cell_state(snapshot.gx, snapshot.gz, int(snapshot.previous_state))
 	_buildings.erase(instance)
 	var id := instance.data.building_id if instance.data else instance.authored_building_id
-	instance.queue_free()
+	instance.deactivate()
 	building_removed.emit(id)
+	building_instance_removed.emit(instance)
+	if _event_bus and _event_bus.has_signal("building_removed"):
+		_event_bus.building_removed.emit(instance)
+	instance.queue_free()
 	return true
 
 
-func clear_buildings() -> void:
+func clear_buildings(restore_grid := true) -> void:
 	for instance in _buildings.duplicate():
-		remove_building(instance)
+		_remove_building_internal(instance, restore_grid)
 
 
 func get_all_buildings() -> Array[BuildingInstance]:
@@ -216,6 +250,75 @@ func get_building_count() -> int:
 	return _buildings.size()
 
 
+func restore_buildings(records: Array) -> int:
+	clear_buildings(false)
+	var restored := 0
+	for record_value in records:
+		if not record_value is Dictionary:
+			continue
+		var record := record_value as Dictionary
+		var resolved := _resolve_data(str(record.get("building_id", "")))
+		var gx := int(record.get("gx", -1))
+		var gz := int(record.get("gz", -1))
+		if resolved == null or not resolved.is_valid() or grid_system_ref == null:
+			continue
+		var packed := load(resolved.scene_path) as PackedScene
+		if packed == null:
+			continue
+		var instance := packed.instantiate() as BuildingInstance
+		if instance == null:
+			continue
+
+		var saved_states := {}
+		var saved_cells: Variant = record.get("occupied_cells", [])
+		if saved_cells is Array:
+			for saved_value in saved_cells:
+				if saved_value is Dictionary:
+					var saved := saved_value as Dictionary
+					saved_states[Vector2i(int(saved.get("gx", -1)), int(saved.get("gz", -1)))] = int(
+						saved.get("previous_state", GridCell.State.WASTELAND)
+					)
+
+		var snapshots: Array[Dictionary] = []
+		var changed: Array[Dictionary] = []
+		var valid := true
+		for location in _footprint_cells(resolved, gx, gz):
+			var cell := grid_system_ref.get_cell(location.x, location.y)
+			var height := grid_system_ref.get_terrain_height_at_cell(location.x, location.y)
+			if cell == null or not is_finite(height):
+				valid = false
+				break
+			snapshots.append({
+				"gx": location.x,
+				"gz": location.y,
+				"previous_state": saved_states.get(location, GridCell.State.WASTELAND),
+			})
+			if cell.state != GridCell.State.BUILDING:
+				var previous_state := cell.state
+				if cell.state not in BUILDABLE_STATES or not grid_system_ref.set_cell_state(
+					location.x,
+					location.y,
+					GridCell.State.BUILDING
+				):
+					valid = false
+					break
+				changed.append({
+					"gx": location.x,
+					"gz": location.y,
+					"previous_state": previous_state,
+				})
+		if not valid:
+			_restore_snapshots(changed)
+			instance.free()
+			continue
+		instance.configure(resolved, gx, gz, snapshots)
+		instance.position = _world_position_for(resolved, gx, gz)
+		buildings_container.add_child(instance)
+		_buildings.append(instance)
+		restored += 1
+	return restored
+
+
 func get_building_at(gx: int, gz: int) -> BuildingInstance:
 	for instance in _buildings:
 		for snapshot in instance.occupied_cells:
@@ -224,12 +327,16 @@ func get_building_at(gx: int, gz: int) -> BuildingInstance:
 	return null
 
 
-func get_buildings_by_effect(effect: String) -> Array[BuildingInstance]:
+func get_buildings_of_type(effect_type: String) -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []
 	for instance in _buildings:
-		if instance.data and instance.data.effect == effect:
+		if instance.data and instance.data.effect_type == effect_type:
 			result.append(instance)
 	return result
+
+
+func get_buildings_by_effect(effect: String) -> Array[BuildingInstance]:
+	return get_buildings_of_type(effect)
 
 
 func _resolve_data(building: Variant) -> BuildingData:

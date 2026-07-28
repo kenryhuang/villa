@@ -30,12 +30,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		instance.configure(data, 3, 4, [
 			{"gx": 3, "gz": 4, "previous_state": 0},
 		])
+		assertions.equal(instance.building_data, data, "%s exposes typed building data" % id)
 		assertions.truthy(instance.is_in_group("building_instance"), "%s joins building group" % id)
 		assertions.truthy(instance.has_node("VisualRoot/BackLayer"), "%s has back layer" % id)
 		assertions.truthy(instance.has_node("VisualRoot/FrontLayer"), "%s has front layer" % id)
 		assertions.equal(instance.get_node("Collision").collision_layer, 16 | 64, "%s collision layers" % id)
 		assertions.equal(instance.get_node("InteractionArea").collision_layer, 64 | 256, "%s interaction layers" % id)
 		assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "%s occluder layer" % id)
+		assertions.equal(instance.get_node("Collision").collision_mask, 0, "%s collision mask" % id)
+		assertions.equal(instance.get_node("InteractionArea").collision_mask, 0, "%s interaction mask" % id)
+		assertions.equal(instance.get_node("CameraOccluder").collision_mask, 0, "%s occluder mask" % id)
 		assertions.equal(instance.to_dict().building_id, id, "%s serializes id" % id)
 		assertions.equal(instance.to_dict().gx, 3, "%s serializes grid x" % id)
 
@@ -47,7 +51,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(instance.get_node("CameraOccluder").collision_layer, 0, "%s preview disables occluder" % id)
 		instance.set_preview_mode(false)
 		assertions.equal(instance.get_node("Collision").collision_layer, 16 | 64, "%s restores collision" % id)
+		instance.deactivate()
+		assertions.equal(instance.get_node("Collision").collision_layer, 0, "%s removal disables collision immediately" % id)
+		assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "%s removal disables interaction immediately" % id)
+		assertions.equal(instance.get_node("CameraOccluder").collision_layer, 0, "%s removal disables occlusion immediately" % id)
+		assertions.equal(instance.is_in_group("building_instance"), false, "%s removal leaves building group immediately" % id)
 		instance.queue_free()
 
 	game_data.free()
-

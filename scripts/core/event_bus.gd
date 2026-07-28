@@ -11,6 +11,9 @@ signal crop_planted(gx: int, gz: int, crop_id: String)
 signal crop_grew(gx: int, gz: int, stage: int)
 signal crop_matured(gx: int, gz: int)
 signal crop_harvested(gx: int, gz: int, crop_id: String)
+signal building_placed(building: BuildingInstance)
+signal building_removed(building: BuildingInstance)
+signal building_preview_moved(gx: int, gz: int, can_place: bool)
 
 # Economy signals
 signal gold_changed(new_gold: int)

@@ -5,6 +5,7 @@ extends Node
 const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
+const GameDataScript = preload("res://scripts/core/game_data.gd")
 
 var _event_bus
 
@@ -81,16 +82,9 @@ func _gather_save_data() -> Dictionary:
 		data["grid"] = grid_system.to_dict()
 
 	# 建筑
-	var building_system = get_node_or_null("/root/BuildingSystem")
+	var building_system = _get_building_system()
 	if building_system:
-		var buildings_data = []
-		for b in building_system.get_all_buildings():
-			buildings_data.append({
-				"building_id": b.building_id,
-				"gx": b.gx,
-				"gz": b.gz,
-			})
-		data["buildings"] = buildings_data
+		data["buildings"] = _serialize_buildings(building_system)
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
@@ -106,8 +100,10 @@ func _gather_save_data() -> Dictionary:
 	var villager_system = get_node_or_null("/root/VillagerSystem")
 	if villager_system:
 		var affinity_data = {}
-		for v in GameData.get_all_villagers():
+		var game_data = GameDataScript.new()
+		for v in game_data.get_all_villagers():
 			affinity_data[v.id] = villager_system.get_affinity(v.id)
+		game_data.free()
 		data["villager_affinity"] = affinity_data
 
 	# 迷雾
@@ -188,8 +184,13 @@ func _apply_save_data(data: Dictionary) -> void:
 
 	# 网格状态
 	var grid_system = _get_grid_system()
+	var building_system = _get_building_system()
+	if building_system:
+		building_system.clear_buildings(true)
 	if grid_system and data.has("grid"):
 		grid_system.from_dict(data.grid)
+	if building_system and data.has("buildings"):
+		building_system.restore_buildings(data.buildings)
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
@@ -264,3 +265,19 @@ func _get_grid_system() -> Node:
 	if get_tree() == null:
 		return null
 	return get_tree().get_first_node_in_group("grid_system")
+
+
+func _get_building_system() -> Node:
+	if get_tree() == null:
+		return null
+	return get_tree().get_first_node_in_group("building_system")
+
+
+func _serialize_buildings(building_system: Node) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	if building_system == null or not building_system.has_method("get_all_buildings"):
+		return records
+	for building in building_system.get_all_buildings():
+		if building != null and building.has_method("to_dict"):
+			records.append(building.to_dict())
+	return records

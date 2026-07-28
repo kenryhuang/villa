@@ -30,10 +30,28 @@ const VISUAL_SIZES := {
 @export var footprint := Vector2i.ZERO
 @export var cost: Dictionary = {}
 @export_multiline var description := ""
-@export var effect := ""
+@export var effect_type := ""
 @export var effect_value := 0
 @export_file("*.tscn") var scene_path := ""
 @export var visual_size := Vector2.ZERO
+
+var effect: String:
+	get:
+		return effect_type
+	set(value):
+		effect_type = value
+
+var visual_width: float:
+	get:
+		return visual_size.x
+	set(value):
+		visual_size.x = value
+
+var visual_height: float:
+	get:
+		return visual_size.y
+	set(value):
+		visual_size.y = value
 
 
 static func from_dictionary(source: Dictionary) -> BuildingData:
@@ -48,7 +66,7 @@ static func from_dictionary(source: Dictionary) -> BuildingData:
 	)
 	data.cost = source.get("cost", {}).duplicate(true)
 	data.description = str(source.get("description", ""))
-	data.effect = str(source.get("effect", ""))
+	data.effect_type = str(source.get("effect", ""))
 	data.effect_value = int(source.get("effect_value", 0))
 	data.scene_path = str(SCENE_PATHS.get(data.building_id, ""))
 	data.visual_size = VISUAL_SIZES.get(data.building_id, Vector2.ZERO)
@@ -66,4 +84,3 @@ func is_valid() -> bool:
 		and visual_size.y > 0.0
 		and ResourceLoader.exists(scene_path)
 	)
-

@@ -5,6 +5,8 @@ const BuildingInstanceTest = preload("res://tests/test_building_instance.gd")
 const BuildingSystemCompleteTest = preload("res://tests/test_building_system_complete.gd")
 const BuildingArtAssetsTest = preload("res://tests/test_building_art_assets.gd")
 const BuildingCameraIntegrationTest = preload("res://tests/test_building_camera_integration.gd")
+const BuildUIBuildModeTest = preload("res://tests/test_build_ui_build_mode.gd")
+const BuildingSaveIntegrationTest = preload("res://tests/test_building_save_integration.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -19,6 +21,8 @@ func _run() -> void:
 	BuildingSystemCompleteTest.new().run(assertions, self)
 	BuildingArtAssetsTest.new().run(assertions)
 	BuildingCameraIntegrationTest.new().run(assertions, self)
+	BuildUIBuildModeTest.new().run(assertions, self)
+	BuildingSaveIntegrationTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d building system checks" % assertions.checks)
 		quit(0)

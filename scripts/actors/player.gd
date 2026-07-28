@@ -92,6 +92,16 @@ static func find_interaction_target(node: Node) -> Node:
 	return null
 
 
+static func is_interaction_hit_in_range(
+	player_position: Vector3,
+	hit_position: Vector3,
+	maximum_range: float
+) -> bool:
+	return Vector2(player_position.x, player_position.z).distance_to(
+		Vector2(hit_position.x, hit_position.z)
+	) <= maximum_range
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# 工具使用（鼠标左键）
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -137,9 +147,8 @@ func _interact() -> void:
 	var ray_origin = camera.project_ray_origin(mouse_pos)
 	var ray_dir = camera.project_ray_normal(mouse_pos)
 
-	var query = PhysicsRayQueryParameters3D.create(
-		ray_origin, ray_origin + ray_dir * interaction_range
-	)
+	var ray_length := maxf(camera.far, ray_origin.distance_to(global_position) + interaction_range + 1.0)
+	var query = PhysicsRayQueryParameters3D.create(ray_origin, ray_origin + ray_dir * ray_length)
 	query.exclude = [get_rid()]
 	# 检测 NPC 层(4) + 建筑层(64) + 收集品层(128)
 	query.collision_mask = 4 | 64 | 128
@@ -148,6 +157,9 @@ func _interact() -> void:
 
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
+		return
+	var hit_position: Vector3 = hit.get("position", ray_origin)
+	if not is_interaction_hit_in_range(global_position, hit_position, interaction_range):
 		return
 
 	var collider = hit.get("collider")

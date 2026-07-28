@@ -53,7 +53,10 @@ var _selected_index := 0
 var _preview_grid := PREVIEW_START
 var _last_message := "九类建筑已就绪；绿色预览区可交互"
 var _resource_rejection_verified := false
+var _resource_spend_verified := false
 var _removal_restore_verified := false
+var _preview_colors_verified := false
+var _manual_blocked_states := {}
 
 
 func _ready() -> void:
@@ -71,6 +74,7 @@ func _reset_verification() -> void:
 	grid_system.set_grid_visible(true)
 	_economy.materials_available = true
 	_economy.spend_calls = 0
+	_manual_blocked_states.clear()
 	building_system.configure(grid_system, _economy)
 	for index in BUILDING_IDS.size():
 		var placed := building_system.place_building(BUILDING_IDS[index], GALLERY_ORIGINS[index].x, GALLERY_ORIGINS[index].y)
@@ -81,20 +85,27 @@ func _reset_verification() -> void:
 	_selected_index = 0
 	_preview_grid = PREVIEW_START
 	_enter_selected_preview()
+	_verify_preview_states()
 	_update_ui()
 
 
 func _verify_failure_paths() -> void:
 	var rejection_cell := grid_system.get_cell(30, 23)
 	var rejection_state := rejection_cell.state
+	var spend_count_before_rejection := _economy.spend_calls
 	_economy.materials_available = false
 	var rejected := building_system.place_building("well", 30, 23)
-	_resource_rejection_verified = rejected == null and rejection_cell.state == rejection_state
+	_resource_rejection_verified = (
+		rejected == null
+		and rejection_cell.state == rejection_state
+		and _economy.spend_calls == spend_count_before_rejection
+	)
 	_economy.materials_available = true
 
 	var restore_cell := grid_system.get_cell(31, 23)
 	grid_system.set_cell_state(restore_cell.gx, restore_cell.gz, GridCell.State.FARMLAND)
 	var removable := building_system.place_building("fence", restore_cell.gx, restore_cell.gz)
+	_resource_spend_verified = removable != null and _economy.spend_calls == spend_count_before_rejection + 1
 	_removal_restore_verified = (
 		removable != null
 		and building_system.remove_building(removable)
@@ -123,12 +134,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_X:
 			_remove_at_preview()
 		KEY_B:
-			if building_system.is_in_build_mode():
-				building_system.exit_preview_mode()
-				_last_message = "建造预览已关闭"
-			else:
-				_enter_selected_preview()
-				_last_message = "建造预览已开启"
+			_toggle_preview_blocked()
 		KEY_M:
 			_economy.materials_available = not _economy.materials_available
 			_last_message = "材料：%s" % ("充足" if _economy.materials_available else "不足")
@@ -150,6 +156,64 @@ func _selected_data() -> BuildingData:
 func _enter_selected_preview() -> void:
 	building_system.enter_preview_mode(_selected_data())
 	building_system.update_preview_grid(_preview_grid.x, _preview_grid.y)
+
+
+func _verify_preview_states() -> void:
+	var cell := grid_system.get_cell(_preview_grid.x, _preview_grid.y)
+	if cell == null or cell.state not in [GridCell.State.WASTELAND, GridCell.State.FARMLAND]:
+		_preview_colors_verified = false
+		return
+	var previous_state := cell.state
+	var valid_before := building_system.update_preview(_preview_grid.x, _preview_grid.y)
+	var green_before := _preview_marker_matches(true)
+	var blocked := grid_system.set_cell_state(_preview_grid.x, _preview_grid.y, GridCell.State.BUILDING)
+	var invalid_while_blocked := not building_system.update_preview(_preview_grid.x, _preview_grid.y)
+	var red_while_blocked := _preview_marker_matches(false)
+	var restored := grid_system.set_cell_state(_preview_grid.x, _preview_grid.y, previous_state)
+	var valid_after := building_system.update_preview(_preview_grid.x, _preview_grid.y)
+	_preview_colors_verified = (
+		valid_before
+		and green_before
+		and blocked
+		and invalid_while_blocked
+		and red_while_blocked
+		and restored
+		and valid_after
+		and _preview_marker_matches(true)
+	)
+
+
+func _preview_marker_matches(expect_valid: bool) -> bool:
+	var markers := building_system.get_node_or_null("BuildingPreview/FootprintMarkers")
+	if markers == null or markers.get_child_count() == 0:
+		return false
+	var marker := markers.get_child(0) as MeshInstance3D
+	var material := marker.material_override as StandardMaterial3D
+	if material == null:
+		return false
+	return material.albedo_color.g > material.albedo_color.r if expect_valid else material.albedo_color.r > material.albedo_color.g
+
+
+func _toggle_preview_blocked() -> void:
+	if not building_system.is_in_build_mode():
+		_enter_selected_preview()
+	var location := _preview_grid
+	var cell := grid_system.get_cell(location.x, location.y)
+	if cell == null:
+		return
+	if _manual_blocked_states.has(location):
+		grid_system.set_cell_state(location.x, location.y, int(_manual_blocked_states[location]))
+		_manual_blocked_states.erase(location)
+		_last_message = "目标格阻塞已解除"
+	elif building_system.get_building_at(location.x, location.y) != null:
+		_last_message = "目标格已有真实建筑，请用 X 拆除"
+	elif cell.state in [GridCell.State.WASTELAND, GridCell.State.FARMLAND]:
+		_manual_blocked_states[location] = cell.state
+		grid_system.set_cell_state(location.x, location.y, GridCell.State.BUILDING)
+		_last_message = "目标格已设为阻塞（红色预览）"
+	else:
+		_last_message = "当前地块状态不能切换阻塞"
+	building_system.update_preview_grid(location.x, location.y)
 
 
 func _move_preview(direction: Vector2i) -> void:
@@ -220,7 +284,9 @@ func verification_contract_passes() -> bool:
 		and _count_physics_contracts() >= 9
 		and _occupied_grid_count() == _expected_occupied_count()
 		and _resource_rejection_verified
+		and _resource_spend_verified
 		and _removal_restore_verified
+		and _preview_colors_verified
 		and building_system.is_in_build_mode()
 		and building_system.get_preview_marker_count() == _selected_data().footprint.x * _selected_data().footprint.y
 	)
@@ -252,7 +318,7 @@ func _expected_occupied_count() -> int:
 	var count := 0
 	for building in building_system.get_all_buildings():
 		count += building.occupied_cells.size()
-	return count
+	return count + _manual_blocked_states.size()
 
 
 func _occupied_grid_count() -> int:
@@ -271,7 +337,9 @@ func _update_ui() -> void:
 		["碰撞 / 交互 / 遮挡：%d / 9" % _count_physics_contracts(), _count_physics_contracts() >= 9],
 		["占用格：%d / %d" % [_occupied_grid_count(), _expected_occupied_count()], _occupied_grid_count() == _expected_occupied_count()],
 		["材料不足时原子拒绝", _resource_rejection_verified],
+		["成功放置扣除一次资源", _resource_spend_verified],
 		["拆除逐格恢复原状态", _removal_restore_verified],
+		["绿色 / 红色预览状态", _preview_colors_verified],
 		["预览足迹：%d 格" % building_system.get_preview_marker_count(), building_system.get_preview_marker_count() == _selected_data().footprint.x * _selected_data().footprint.y],
 	]
 	var lines: Array[String] = [

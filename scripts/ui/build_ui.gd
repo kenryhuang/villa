@@ -3,6 +3,8 @@ extends Control
 
 ## 建造界面 - 建筑选择面板
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 @onready var grid_container: GridContainer = $ScrollContainer/GridContainer
 @onready var close_button: Button = $CloseButton
 
@@ -40,12 +42,14 @@ func _refresh_building_list() -> void:
 	for child in grid_container.get_children():
 		child.queue_free()
 
-	for building_data in GameData.get_all_buildings():
-		var card = _create_building_card(building_data)
+	var game_data = GameDataScript.new()
+	for building_data in game_data.get_all_buildings():
+		var card = _create_building_card(building_data, game_data)
 		grid_container.add_child(card)
+	game_data.free()
 
 
-func _create_building_card(data: Dictionary) -> PanelContainer:
+func _create_building_card(data: Dictionary, game_data: Node) -> PanelContainer:
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(120, 100)
 
@@ -65,7 +69,8 @@ func _create_building_card(data: Dictionary) -> PanelContainer:
 	# 造价
 	var cost_text = ""
 	for item_id in data.cost:
-		cost_text += "%s:%d " % [GameData.get_item(item_id).name if GameData.get_item(item_id) else item_id, data.cost[item_id]]
+		var item: Dictionary = game_data.get_item(item_id)
+		cost_text += "%s:%d " % [item.name if not item.is_empty() else item_id, data.cost[item_id]]
 	var cost_label = Label.new()
 	cost_label.text = cost_text
 	cost_label.add_theme_font_size_override("font_size", 10)
@@ -81,9 +86,9 @@ func _create_building_card(data: Dictionary) -> PanelContainer:
 
 
 func _on_build_pressed(building_id: String) -> void:
-	if building_system_ref:
-		building_system_ref.enter_preview_mode(building_id)
-		close()
+	if building_system_ref and building_system_ref.enter_preview_mode(building_id):
+		_is_open = false
+		visible = false
 
 
 func _unhandled_input(event: InputEvent) -> void:

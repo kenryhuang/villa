@@ -25,6 +25,12 @@ var building_id: String:
 	get:
 		return data.building_id if data else authored_building_id
 
+var building_data: BuildingData:
+	get:
+		return data
+	set(value):
+		data = value
+
 var gx: int:
 	get:
 		return grid_x
@@ -83,15 +89,36 @@ func set_preview_mode(value: bool) -> void:
 	var interaction_area := get_node("InteractionArea") as Area3D
 	var camera_occluder := get_node("CameraOccluder") as Area3D
 	collision.collision_layer = 0 if value else COLLISION_LAYERS
+	collision.collision_mask = 0
 	interaction_area.collision_layer = 0 if value else INTERACTION_LAYERS
+	interaction_area.collision_mask = 0
 	interaction_area.monitoring = not value
 	camera_occluder.collision_layer = 0 if value else CAMERA_OCCLUDER_LAYER
+	camera_occluder.collision_mask = 0
 	camera_occluder.monitoring = false
 	if value:
 		remove_from_group("building_instance")
 	else:
 		add_to_group("building_instance")
 	_apply_visual_color()
+
+
+func deactivate() -> void:
+	_ensure_nodes()
+	var collision := get_node("Collision") as StaticBody3D
+	var interaction_area := get_node("InteractionArea") as Area3D
+	var camera_occluder := get_node("CameraOccluder") as Area3D
+	collision.collision_layer = 0
+	collision.collision_mask = 0
+	interaction_area.collision_layer = 0
+	interaction_area.collision_mask = 0
+	interaction_area.monitoring = false
+	camera_occluder.collision_layer = 0
+	camera_occluder.collision_mask = 0
+	camera_occluder.monitoring = false
+	remove_from_group("building_instance")
+	visible = false
+	set_process(false)
 
 
 func set_preview_valid(value: bool) -> void:
