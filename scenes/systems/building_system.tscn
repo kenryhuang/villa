@@ -1,0 +1,16 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/systems/building_system.gd" id="1"]
+
+[node name="BuildingSystem" type="Node3D" groups=["building_system"]]
+script = ExtResource("1")
+
+[node name="BuildingPreview" type="Node3D" parent="."]
+visible = false
+
+[node name="VisualProxy" type="Node3D" parent="BuildingPreview"]
+
+[node name="FootprintMarkers" type="Node3D" parent="BuildingPreview"]
+
+[node name="BuildingInstances" type="Node3D" parent="."]
+

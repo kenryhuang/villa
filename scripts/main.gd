@@ -5,6 +5,7 @@ extends Node3D
 
 const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
 const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn")
+const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
 
 @onready var world = $World
 @onready var player = $Actors/Player
@@ -69,8 +70,7 @@ func _initialize_systems() -> void:
 	inventory_system.name = "InventorySystem"
 	add_child(inventory_system)
 
-	building_system = BuildingSystem.new()
-	building_system.name = "BuildingSystem"
+	building_system = BUILDING_SYSTEM_SCENE.instantiate() as BuildingSystem
 	add_child(building_system)
 
 	tool_system = ToolSystem.new()
@@ -118,7 +118,7 @@ func _connect_systems() -> void:
 	economy_system.configure(inventory_system)
 
 	# BuildingSystem 依赖 GridSystem + EconomySystem
-	building_system.configure(grid_system, economy_system)
+	building_system.configure(grid_system, economy_system, buildings_container)
 
 	# ToolSystem 依赖 GridSystem + InventorySystem + Player
 	tool_system.configure(grid_system, inventory_system, player)
@@ -271,7 +271,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			var hit_point = _raycast_to_ground()
 			if hit_point:
 				var grid_pos = grid_system.world_to_grid(hit_point.x, hit_point.z)
-				building_system.place_building(building_system._current_building_id, grid_pos.x, grid_pos.y)
+				building_system.place_selected_building(grid_pos.x, grid_pos.y)
 			get_viewport().set_input_as_handled()
 
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:

@@ -21,6 +21,18 @@ var _preview_mode := false
 var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
 
+var building_id: String:
+	get:
+		return data.building_id if data else authored_building_id
+
+var gx: int:
+	get:
+		return grid_x
+
+var gz: int:
+	get:
+		return grid_z
+
 
 static func opacity_step(current: float, target: float, delta: float) -> float:
 	return lerpf(current, target, 1.0 - exp(-FADE_RATE * delta))
