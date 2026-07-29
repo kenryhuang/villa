@@ -55,9 +55,9 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -228.0
-offset_top = -100.0
-offset_right = 228.0
+offset_left = -360.0
+offset_top = -112.0
+offset_right = 360.0
 offset_bottom = -18.0
 grow_horizontal = 2
 grow_vertical = 0
@@ -68,42 +68,36 @@ layout_mode = 2
 text = "锄头"
 horizontal_alignment = 1
 
-[node name="QuickBar" type="HBoxContainer" parent="BottomBar"]
+[node name="ModeMenu" type="PopupPanel" parent="BottomBar"]
+size = Vector2i(170, 96)
+
+[node name="VBox" type="VBoxContainer" parent="BottomBar/ModeMenu"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 162.0
+offset_bottom = 88.0
+theme_override_constants/separation = 4
+
+[node name="FarmingModeButton" type="Button" parent="BottomBar/ModeMenu/VBox"]
+custom_minimum_size = Vector2(154, 36)
+layout_mode = 2
+text = "种植模式  P"
+
+[node name="BuildingModeButton" type="Button" parent="BottomBar/ModeMenu/VBox"]
+custom_minimum_size = Vector2(154, 36)
+layout_mode = 2
+text = "建造模式  B"
+
+[node name="ActionRow" type="HBoxContainer" parent="BottomBar"]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="ModeButton" type="Button" parent="BottomBar/ActionRow"]
+custom_minimum_size = Vector2(72, 58)
+layout_mode = 2
+text = "种植"
+
+[node name="QuickBar" type="HBoxContainer" parent="BottomBar/ActionRow"]
 layout_mode = 2
 theme_override_constants/separation = 8
-
-[node name="Slot1" type="Button" parent="BottomBar/QuickBar"]
-custom_minimum_size = Vector2(68, 50)
-layout_mode = 2
-toggle_mode = true
-text = "1\n锄头"
-
-[node name="Slot2" type="Button" parent="BottomBar/QuickBar"]
-custom_minimum_size = Vector2(68, 50)
-layout_mode = 2
-toggle_mode = true
-text = "2\n浇水壶"
-
-[node name="Slot3" type="Button" parent="BottomBar/QuickBar"]
-custom_minimum_size = Vector2(68, 50)
-layout_mode = 2
-toggle_mode = true
-text = "3\n斧头"
-
-[node name="Slot4" type="Button" parent="BottomBar/QuickBar"]
-custom_minimum_size = Vector2(68, 50)
-layout_mode = 2
-toggle_mode = true
-text = "4\n镐"
-
-[node name="Slot5" type="Button" parent="BottomBar/QuickBar"]
-custom_minimum_size = Vector2(68, 50)
-layout_mode = 2
-toggle_mode = true
-text = "5\n鱼竿"
-
-[node name="Slot6" type="Button" parent="BottomBar/QuickBar"]
-custom_minimum_size = Vector2(68, 50)
-layout_mode = 2
-toggle_mode = true
-text = "6\n谷物种子 x0"
