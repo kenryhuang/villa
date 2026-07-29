@@ -70,8 +70,37 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		action_controller.select_slot(1)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player waters grain")
-		for day in range(3):
-			main.farming_system.on_day_changed(day + 1)
+		var event_bus = tree.root.get_node_or_null("EventBus")
+		var autosave_callback := Callable(main.save_manager, "_on_day_changed")
+		var autosave_was_connected: bool = (
+			event_bus != null
+			and event_bus.day_changed.is_connected(autosave_callback)
+		)
+		if autosave_was_connected:
+			event_bus.day_changed.disconnect(autosave_callback)
+		var next_day := InputEventKey.new()
+		next_day.keycode = KEY_N
+		next_day.pressed = true
+		main._unhandled_input(next_day)
+		assertions.near(
+			farm_cell.crop_instance.growth_progress,
+			1.5,
+			0.001,
+			"debug N advances watered grain through the normal day event"
+		)
+		assertions.equal(
+			farm_cell.crop_instance.get_current_stage(),
+			1,
+			"first watered day displays the sprout stage"
+		)
+		assertions.equal(main.hud.season_label.text, "春 2/7", "debug N refreshes the HUD day")
+		assertions.truthy(
+			action_controller.perform_cell_action(farm_cell),
+			"grain can be watered again on the next day"
+		)
+		main._unhandled_input(next_day)
+		if autosave_was_connected:
+			event_bus.day_changed.connect(autosave_callback)
 		assertions.truthy(farm_cell.crop_instance.is_mature(), "main grain reaches maturity")
 		var grain_before: int = main.inventory_system.get_item_count("grain")
 		action_controller.select_slot(0)

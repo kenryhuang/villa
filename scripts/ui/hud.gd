@@ -19,6 +19,7 @@ const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物
 var _event_bus
 var action_controller: Variant
 var inventory_ref: Variant
+var season_system_ref: Variant
 
 
 func _ready() -> void:
@@ -43,7 +44,7 @@ func _init_display() -> void:
 		_on_gold_changed(game_state.gold)
 		_on_level_changed(game_state.player_state.level)
 
-	var season_system = get_node_or_null("/root/SeasonSystem")
+	var season_system = _get_season_system()
 	if season_system:
 		_update_season_display(season_system)
 		_update_time_display(season_system.hour, season_system.minute)
@@ -85,13 +86,13 @@ func _on_exp_gained(_amount: int) -> void:
 
 
 func _on_season_changed(_new_season: int) -> void:
-	var season_system = get_node_or_null("/root/SeasonSystem")
+	var season_system = _get_season_system()
 	if season_system:
 		_update_season_display(season_system)
 
 
 func _on_day_changed(_total_day: int) -> void:
-	var season_system = get_node_or_null("/root/SeasonSystem")
+	var season_system = _get_season_system()
 	if season_system:
 		_update_season_display(season_system)
 
@@ -124,6 +125,19 @@ func set_tool_name(name: String) -> void:
 		tool_label.text = name
 
 
+func configure_season_system(system: Variant) -> void:
+	season_system_ref = system
+	if season_system_ref:
+		_update_season_display(season_system_ref)
+		_update_time_display(season_system_ref.hour, season_system_ref.minute)
+
+
+func _get_season_system() -> Variant:
+	if season_system_ref:
+		return season_system_ref
+	return get_node_or_null("/root/SeasonSystem")
+
+
 func configure_action_bar(
 	controller: Variant,
 	inventory: Variant
@@ -152,13 +166,16 @@ func configure_action_bar(
 	refresh_action_bar()
 	if action_controller:
 		var selected: int = action_controller.get_selected_slot()
-		_on_action_selection_changed(selected, ACTION_NAMES[selected])
+		var selected_label: String = (
+			String(ACTION_NAMES[selected]) if selected >= 0 else "未选择工具"
+		)
+		_on_action_selection_changed(selected, selected_label)
 
 
 func refresh_action_bar() -> void:
 	if quick_bar == null:
 		return
-	var selected: int = action_controller.get_selected_slot() if action_controller else 0
+	var selected: int = action_controller.get_selected_slot() if action_controller else -1
 	for index in range(quick_bar.get_child_count()):
 		var button := quick_bar.get_child(index) as Button
 		if button == null:

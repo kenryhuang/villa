@@ -49,6 +49,19 @@ func _ready() -> void:
 	_initial_game_state()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if (
+		OS.is_debug_build()
+		and event is InputEventKey
+		and event.pressed
+		and not event.echo
+		and event.keycode == KEY_N
+		and season_system != null
+	):
+		season_system.advance_to_next_day()
+		get_viewport().set_input_as_handled()
+
+
 # ============================================================
 # 系统初始化
 # ============================================================
@@ -168,6 +181,7 @@ func _setup_ui() -> void:
 	# HUD 初始化
 	if hud:
 		hud.visible = true
+		hud.configure_season_system(season_system)
 		hud.configure_action_bar(action_controller, inventory_system)
 
 	# 背包 UI

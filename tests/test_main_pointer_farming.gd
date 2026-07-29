@@ -44,6 +44,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		highlight.visible,
 		"slot one shows a hover grid at the mouse event position"
 	)
+	var cancel := InputEventKey.new()
+	cancel.keycode = KEY_ESCAPE
+	cancel.pressed = true
+	main.action_controller._unhandled_input(cancel)
+	main.action_controller._process(0.0)
+	assertions.equal(
+		main.action_controller.get_selected_slot(),
+		-1,
+		"escape clears the active tool"
+	)
+	assertions.truthy(not highlight.visible, "escape immediately hides the hover grid")
+	main.action_controller.select_slot(0)
+	main.action_controller._process(0.0)
+	assertions.truthy(highlight.visible, "selecting a tool restores the hover grid")
 
 	main.action_controller._unhandled_input(click)
 	assertions.equal(

@@ -10,6 +10,16 @@ class ToolDouble:
 		pass
 
 
+class SeasonDouble:
+	extends Node
+
+	const DAYS_PER_SEASON := 7
+	var current_season := 0
+	var current_day := 1
+	var hour := 6
+	var minute := 0
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hud = HudScene.instantiate()
 	tree.root.add_child(hud)
@@ -27,6 +37,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(controller)
 	controller.configure(null, null, null, null, ToolDouble.new(), inventory)
 	hud.configure_action_bar(controller, inventory)
+	var season := SeasonDouble.new()
+	tree.root.add_child(season)
+	assertions.truthy(
+		hud.has_method("configure_season_system"),
+		"HUD accepts the main scene season system"
+	)
+	if hud.has_method("configure_season_system"):
+		hud.call("configure_season_system", season)
+		season.current_day = 2
+		hud.call("_on_day_changed", 2)
+		assertions.equal(hud.season_label.text, "春 2/7", "HUD refreshes the scene-local day")
 
 	var quick_bar := hud.get_node("BottomBar/QuickBar")
 	assertions.equal(quick_bar.get_child_count(), 6, "HUD keeps six action slots")
@@ -56,6 +77,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		(quick_bar.get_child(5) as Button).button_pressed,
 		"selected seed slot is highlighted"
 	)
+	assertions.truthy(controller.deselect_slot(), "selected HUD action can be cancelled")
+	assertions.equal(hud.tool_label.text, "未选择工具", "HUD shows cancelled tool state")
+	for child in quick_bar.get_children():
+		assertions.truthy(
+			not (child as Button).button_pressed,
+			"cancelled tool leaves every action button unpressed"
+		)
 
 	inventory.remove_item("grain_seed", 1)
 	hud.refresh_action_bar()
@@ -67,4 +95,5 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	controller.free()
 	inventory.free()
+	season.free()
 	hud.free()

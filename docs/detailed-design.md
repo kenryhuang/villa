@@ -478,16 +478,20 @@ var total_days: int = 1         # 总天数
 var hour: int = 6               # 游戏内小时 (0-23)
 var minute: int = 0             # 游戏内分钟
 
-# 时间流速：1 现实秒 = 1 游戏分钟（1游戏天 = 24现实分钟）
-const MINUTES_PER_REAL_SECOND := 1.0
+# 可游玩时段为 06:00 到次日 06:00，共 1080 游戏分钟。
+# 300 现实秒推进一个完整游戏日。
+const REAL_SECONDS_PER_DAY := 300.0
+const GAME_MINUTES_PER_DAY := 18.0 * 60.0
+const MINUTES_PER_REAL_SECOND := GAME_MINUTES_PER_DAY / REAL_SECONDS_PER_DAY
+
+var _accumulator := 0.0
 
 func _process(delta: float) -> void:
-    minute += int(delta * MINUTES_PER_REAL_SECOND * 60)
-    while minute >= 60:
-        minute -= 60
-        hour += 1
-        if hour >= 24:
-            _advance_day()
+    _accumulator += delta * MINUTES_PER_REAL_SECOND
+    var whole_minutes := int(_accumulator)
+    if whole_minutes > 0:
+        _accumulator -= whole_minutes
+        advance_game_minutes(whole_minutes)
 
 func _advance_day() -> void:
     hour = 6
@@ -498,7 +502,15 @@ func _advance_day() -> void:
         current_season = (current_season + 1) % 4 as Season
         EventBus.season_changed.emit(current_season)
     EventBus.day_changed.emit(total_days)
+
+# 调试构建中按 N 调用，复用正常时间和日期事件链。
+func advance_to_next_day() -> void:
+    var minutes_until_next_day := (24 - hour) * 60 - minute
+    advance_game_minutes(maxi(1, minutes_until_next_day))
 ```
+
+主场景只在调试构建中响应 `N`。未浇水作物每天增加 `1.0`
+生长进度，当天浇水则增加 `1.5`；加速生长允许跳过一个中间外观阶段。
 
 #### 季节视觉切换
 

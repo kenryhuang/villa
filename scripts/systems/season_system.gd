@@ -4,7 +4,9 @@ extends Node
 enum Season { SPRING, SUMMER, AUTUMN, WINTER }
 
 const DAYS_PER_SEASON := 7
-const MINUTES_PER_REAL_SECOND := 1.0
+const REAL_SECONDS_PER_DAY := 300.0
+const GAME_MINUTES_PER_DAY := 18.0 * 60.0
+const MINUTES_PER_REAL_SECOND := GAME_MINUTES_PER_DAY / REAL_SECONDS_PER_DAY
 
 var current_season: Season = Season.SPRING
 var current_day := 1
@@ -47,3 +49,8 @@ func advance_game_minutes(minutes_to_add: int) -> void:
 				_event_bus.day_changed.emit(total_days)
 		if _event_bus:
 			_event_bus.time_changed.emit(hour, minute)
+
+
+func advance_to_next_day() -> void:
+	var minutes_until_next_day := (24 - hour) * 60 - minute
+	advance_game_minutes(maxi(1, minutes_until_next_day))

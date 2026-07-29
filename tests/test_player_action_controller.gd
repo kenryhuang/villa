@@ -15,6 +15,15 @@ class ToolDouble:
 		return true
 
 
+class GridDouble:
+	extends RefCounted
+
+	var clear_highlights_calls := 0
+
+	func clear_highlights() -> void:
+		clear_highlights_calls += 1
+
+
 class InventoryDouble:
 	extends RefCounted
 
@@ -157,12 +166,13 @@ func _test_selection_and_transactions(
 	var farming := FarmingDouble.new()
 	farming.crop_data = crop
 	var tools := ToolDouble.new()
+	var grid := GridDouble.new()
 	var controller = controller_script.new()
 	tree.root.add_child(controller)
 	controller.crop_data_override = crop
 	controller.configure(
 		null,
-		null,
+		grid,
 		farming,
 		BuildingDouble.new(),
 		tools,
@@ -171,6 +181,23 @@ func _test_selection_and_transactions(
 
 	assertions.truthy(controller.select_slot(5), "seed slot can be selected")
 	assertions.equal(controller.get_selected_slot(), 5, "seed selection is retained")
+
+	assertions.truthy(
+		controller.has_method("deselect_slot"),
+		"controller exposes tool deselection"
+	)
+	if controller.has_method("deselect_slot"):
+		assertions.truthy(controller.call("deselect_slot"), "selected tool can be cancelled")
+		assertions.equal(controller.get_selected_slot(), -1, "cancel leaves no selected tool")
+		assertions.equal(grid.clear_highlights_calls, 1, "cancel immediately clears grid highlight")
+
+		var inactive_farmland := GridCell.new()
+		inactive_farmland.state = GridCell.State.FARMLAND
+		assertions.truthy(
+			not controller.perform_cell_action(inactive_farmland),
+			"no cell action runs while no tool is selected"
+		)
+		assertions.truthy(controller.select_slot(5), "slot can be selected again after cancel")
 
 	var farmland := GridCell.new()
 	farmland.state = GridCell.State.FARMLAND

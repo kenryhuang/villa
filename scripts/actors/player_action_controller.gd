@@ -92,6 +92,16 @@ func select_slot(index: int) -> bool:
 	return true
 
 
+func deselect_slot() -> bool:
+	if _selected_slot < 0:
+		return false
+	_selected_slot = -1
+	if grid_system != null:
+		grid_system.clear_highlights()
+	selection_changed.emit(-1, "未选择工具")
+	return true
+
+
 func get_selected_slot() -> int:
 	return _selected_slot
 
@@ -114,7 +124,7 @@ func slot_from_key(keycode: Key) -> int:
 
 
 func perform_cell_action(cell: GridCell) -> bool:
-	if cell == null:
+	if cell == null or _selected_slot < 0:
 		return false
 	if _is_mature(cell):
 		return _harvest(cell)
@@ -163,6 +173,9 @@ func _process(_delta: float) -> void:
 		if ground_point is Vector3:
 			building_system.update_preview_position(ground_point.x, ground_point.z)
 		return
+	if _selected_slot < 0:
+		grid_system.clear_highlights()
+		return
 	if not ground_point is Vector3:
 		grid_system.clear_highlights()
 		return
@@ -185,6 +198,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			and building_system.is_in_build_mode()
 		):
 			building_system.exit_preview_mode()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_ESCAPE and deselect_slot():
 			get_viewport().set_input_as_handled()
 			return
 	if (
@@ -215,6 +231,8 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if not ground_point is Vector3 or grid_system == null:
 		return false
 	if not _point_in_player_range(ground_point):
+		return false
+	if _selected_slot < 0:
 		return false
 	return perform_cell_action(
 		grid_system.get_cell_at_world(ground_point.x, ground_point.z)
