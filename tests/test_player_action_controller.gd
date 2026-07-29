@@ -82,6 +82,20 @@ class BuildingDouble:
 	extends RefCounted
 
 	var build_mode := false
+	var entered_ids: Array[String] = []
+	var exit_calls := 0
+
+	func enter_preview_mode(building: Variant) -> bool:
+		var building_id: String = str(building)
+		if building is BuildingData:
+			building_id = building.building_id
+		entered_ids.append(building_id)
+		build_mode = true
+		return true
+
+	func exit_preview_mode() -> void:
+		exit_calls += 1
+		build_mode = false
 
 	func is_in_build_mode() -> bool:
 		return build_mode
@@ -120,6 +134,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	_test_action_priority(assertions, controller_script)
 	_test_selection_and_transactions(assertions, tree, controller_script)
+	_test_action_modes(assertions, tree, controller_script)
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
 
@@ -225,6 +240,70 @@ func _test_selection_and_transactions(
 	assertions.equal(inventory.get_item_count("grain"), 1, "harvest adds grain")
 	assertions.equal(mature.state, GridCell.State.FARMLAND, "harvest restores farmland")
 
+	controller.free()
+
+
+func _test_action_modes(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var building := BuildingDouble.new()
+	var tools := ToolDouble.new()
+	var grid := GridDouble.new()
+	var controller = controller_script.new()
+	tree.root.add_child(controller)
+	controller.configure(
+		null,
+		grid,
+		null,
+		building,
+		tools,
+		InventoryDouble.new()
+	)
+
+	var has_mode_api: bool = (
+		controller.has_method("get_action_mode")
+		and controller.has_method("switch_mode")
+		and controller.has_method("select_mode_slot")
+		and controller.has_method("get_mode_selected_slot")
+		and controller.has_method("cancel_current_selection")
+	)
+	assertions.truthy(has_mode_api, "controller exposes contextual action-mode API")
+	if not has_mode_api:
+		controller.free()
+		return
+
+	assertions.equal(controller.get_action_mode(), 0, "controller starts in farming mode")
+	assertions.truthy(controller.switch_mode(1), "controller switches to building mode")
+	assertions.equal(
+		controller.get_mode_selected_slot(1),
+		0,
+		"building mode defaults to barn"
+	)
+	assertions.equal(building.entered_ids, ["barn"], "building mode enters barn preview")
+	assertions.truthy(controller.select_mode_slot(8), "building mode accepts slot nine")
+	assertions.equal(building.entered_ids[-1], "fence", "slot nine selects fence")
+	assertions.truthy(not controller.select_mode_slot(9), "building mode rejects slot ten")
+	assertions.equal(controller.slot_from_key(KEY_9), 8, "building maps key nine")
+
+	assertions.truthy(controller.switch_mode(0), "controller switches back to farming")
+	assertions.truthy(controller.select_mode_slot(5), "farming mode accepts slot six")
+	assertions.truthy(not controller.select_mode_slot(6), "farming mode rejects slot seven")
+	assertions.equal(controller.slot_from_key(KEY_7), -1, "farming rejects key seven")
+	assertions.truthy(
+		controller.cancel_current_selection(),
+		"current contextual selection can be cancelled"
+	)
+	assertions.equal(controller.get_selected_slot(), -1, "cancel clears active selection")
+
+	assertions.truthy(controller.switch_mode(1), "controller restores building mode")
+	assertions.equal(
+		controller.get_mode_selected_slot(1),
+		8,
+		"building mode remembers the last fence selection"
+	)
+	assertions.equal(building.entered_ids[-1], "fence", "restored building re-enters preview")
 	controller.free()
 
 
