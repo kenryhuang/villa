@@ -3,6 +3,7 @@ extends SceneTree
 const GridSystemTest = preload("res://tests/test_grid_system.gd")
 const GridMutationTest = preload("res://tests/test_grid_mutation.gd")
 const GridSystemCompleteTest = preload("res://tests/test_grid_system_complete.gd")
+const FarmlandTileTest = preload("res://tests/test_farmland_tile.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -15,6 +16,7 @@ func _run() -> void:
 	GridSystemTest.new().run(assertions)
 	GridMutationTest.new().run(assertions)
 	GridSystemCompleteTest.new().run(assertions)
+	FarmlandTileTest.new().run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d grid system checks" % assertions.checks)
 		quit(0)
