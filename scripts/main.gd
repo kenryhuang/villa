@@ -7,8 +7,11 @@ const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
 const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn")
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
 
+@export var load_save_on_start := true
+
 @onready var world = $World
 @onready var player = $Actors/Player
+@onready var action_controller: PlayerActionController = $Actors/Player/ActionController
 @onready var npcs: Node3D = $Actors/Npcs
 @onready var camera_rig = $CameraRig
 @onready var hud = $HUD
@@ -131,10 +134,15 @@ func _setup_player() -> void:
 	# 放置玩家到地形上
 	_place_on_terrain(player, Vector2(0.0, 0.0))
 	player.configure(camera_rig, world, tool_system, grid_system)
+	action_controller.configure(
+		player,
+		grid_system,
+		farming_system,
+		building_system,
+		tool_system,
+		inventory_system
+	)
 	camera_rig.set_target(player)
-
-	# 连接玩家信号
-	player.tool_changed.connect(_on_player_tool_changed)
 
 
 func _setup_npcs() -> void:
@@ -160,6 +168,7 @@ func _setup_ui() -> void:
 	# HUD 初始化
 	if hud:
 		hud.visible = true
+		hud.configure_action_bar(action_controller, inventory_system)
 
 	# 背包 UI
 	if inventory_ui:
@@ -179,21 +188,16 @@ func _setup_ui() -> void:
 
 
 func _initial_game_state() -> void:
-	# 给玩家初始物品
-	inventory_system.add_item("tomato_seed", 10)
-	inventory_system.add_item("carrot_seed", 10)
-	inventory_system.add_item("wood", 20)
-	inventory_system.add_item("stone", 10)
-
-	# 注册基础作物
 	_register_default_crops()
-
-	# 生成初始订单
+	var loaded: bool = load_save_on_start and save_manager.load_game(0)
+	if loaded:
+		_backfill_legacy_grain_slot()
+	else:
+		_grant_new_game_items()
+	farming_system.rebuild_visuals()
 	economy_system.generate_daily_orders()
-
-	# 尝试加载自动存档
-	if save_manager.load_game(0):
-		farming_system.rebuild_visuals()
+	if hud:
+		hud.refresh_action_bar()
 
 
 func _register_default_crops() -> void:
@@ -201,92 +205,81 @@ func _register_default_crops() -> void:
 	if game_data == null:
 		return
 
+	if game_data.get_crop("grain") == null:
+		var grain := CropData.new()
+		grain.crop_id = "grain"
+		grain.name = "谷物"
+		grain.growth_days = 3
+		grain.seasons.assign([0, 1, 2])
+		grain.exp_reward = 5
+		grain.stage_scenes.assign([
+			"res://assets/crops/grain/grain_stage_0_seed.tscn",
+			"res://assets/crops/grain/grain_stage_1_sprout.tscn",
+			"res://assets/crops/grain/grain_stage_2_growing.tscn",
+			"res://assets/crops/grain/grain_stage_3_mature.tscn",
+		])
+		game_data.register_crop(grain)
+
 	# 注册番茄
-	var tomato = CropData.new()
-	tomato.crop_id = "tomato"
-	tomato.name = "番茄"
-	tomato.growth_days = 4
-	tomato.seasons.assign([0, 1])  # 春夏
-	tomato.exp_reward = 5
-	tomato.stage_textures.assign(["seed", "sprout", "growing", "mature"])
-	game_data.register_crop(tomato)
+	if game_data.get_crop("tomato") == null:
+		var tomato = CropData.new()
+		tomato.crop_id = "tomato"
+		tomato.name = "番茄"
+		tomato.growth_days = 4
+		tomato.seasons.assign([0, 1])  # 春夏
+		tomato.exp_reward = 5
+		tomato.stage_textures.assign(["seed", "sprout", "growing", "mature"])
+		game_data.register_crop(tomato)
 
 	# 注册胡萝卜
-	var carrot = CropData.new()
-	carrot.crop_id = "carrot"
-	carrot.name = "胡萝卜"
-	carrot.growth_days = 3
-	carrot.seasons.assign([0, 2])  # 春秋
-	carrot.exp_reward = 4
-	carrot.stage_textures.assign(["seed", "sprout", "growing", "mature"])
-	game_data.register_crop(carrot)
+	if game_data.get_crop("carrot") == null:
+		var carrot = CropData.new()
+		carrot.crop_id = "carrot"
+		carrot.name = "胡萝卜"
+		carrot.growth_days = 3
+		carrot.seasons.assign([0, 2])  # 春秋
+		carrot.exp_reward = 4
+		carrot.stage_textures.assign(["seed", "sprout", "growing", "mature"])
+		game_data.register_crop(carrot)
 
 	# 注册土豆
-	var potato = CropData.new()
-	potato.crop_id = "potato"
-	potato.name = "土豆"
-	potato.growth_days = 5
-	potato.seasons.assign([0, 2])  # 春秋
-	potato.exp_reward = 6
-	potato.stage_textures.assign(["seed", "sprout", "growing", "mature"])
-	game_data.register_crop(potato)
+	if game_data.get_crop("potato") == null:
+		var potato = CropData.new()
+		potato.crop_id = "potato"
+		potato.name = "土豆"
+		potato.growth_days = 5
+		potato.seasons.assign([0, 2])  # 春秋
+		potato.exp_reward = 6
+		potato.stage_textures.assign(["seed", "sprout", "growing", "mature"])
+		game_data.register_crop(potato)
 
 
-# ============================================================
-# 每帧更新
-# ============================================================
-
-func _process(_delta: float) -> void:
-	# 建造模式下更新预览位置
-	if building_system.is_in_build_mode():
-		var hit_point = _raycast_to_ground()
-		if hit_point:
-			building_system.update_preview_position(hit_point.x, hit_point.z)
+func _grant_new_game_items() -> void:
+	inventory_system.clear()
+	inventory_system.add_item("grain_seed", 20)
+	inventory_system.add_item("wood", 250)
+	inventory_system.add_item("stone", 150)
+	inventory_system.add_item("iron", 50)
+	inventory_system.add_item("glass", 50)
+	_map_grain_seed_to_quick_slot()
 
 
-func _raycast_to_ground() -> Variant:
-	var camera = get_viewport().get_camera_3d()
-	if camera == null:
-		return null
-
-	var mouse_pos = get_viewport().get_mouse_position()
-	var ray_origin = camera.project_ray_origin(mouse_pos)
-	var ray_dir = camera.project_ray_normal(mouse_pos)
-
-	var t = -ray_origin.y / ray_dir.y if ray_dir.y != 0.0 else -1.0
-	if t < 0:
-		return null
-
-	return ray_origin + ray_dir * t
+func _backfill_legacy_grain_slot() -> void:
+	if inventory_system.get_quick_item(5) == "grain_seed":
+		return
+	_map_grain_seed_to_quick_slot()
 
 
-# ============================================================
-# 输入处理
-# ============================================================
-
-func _unhandled_input(event: InputEvent) -> void:
-	# 建造模式下点击放置建筑
-	if building_system.is_in_build_mode():
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			var hit_point = _raycast_to_ground()
-			if hit_point:
-				var grid_pos = grid_system.world_to_grid(hit_point.x, hit_point.z)
-				building_system.place_selected_building(grid_pos.x, grid_pos.y)
-			get_viewport().set_input_as_handled()
-
-		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-			building_system.exit_preview_mode()
-			get_viewport().set_input_as_handled()
+func _map_grain_seed_to_quick_slot() -> bool:
+	for index in range(inventory_system.slots.size()):
+		if inventory_system.slots[index].item_id == "grain_seed":
+			return inventory_system.set_quick_slot(index, 5)
+	return false
 
 
 # ============================================================
 # 信号回调
 # ============================================================
-
-func _on_player_tool_changed(tool_type: int) -> void:
-	if hud:
-		hud.set_tool_name(tool_system.get_current_tool_name())
-
 
 func _on_dialogue_started(villager_id: String) -> void:
 	if dialogue_ui:

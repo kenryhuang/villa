@@ -69,7 +69,7 @@ func _gather_save_data() -> Dictionary:
 		data["minute"] = season_system.minute
 
 	# 背包
-	var inventory = get_node_or_null("/root/InventorySystem")
+	var inventory = _get_inventory_system()
 	if inventory:
 		data["inventory"] = {
 			"slots": inventory.slots,
@@ -177,7 +177,7 @@ func _apply_save_data(data: Dictionary) -> void:
 		season_system.minute = data.get("minute", 0)
 
 	# 背包
-	var inventory = get_node_or_null("/root/InventorySystem")
+	var inventory = _get_inventory_system()
 	if inventory and data.has("inventory"):
 		inventory.slots = data.inventory.get("slots", [])
 		inventory.quick_slot_mappings = data.inventory.get("quick_mappings", [-1,-1,-1,-1,-1,-1])
@@ -265,6 +265,12 @@ func _get_grid_system() -> Node:
 	if get_tree() == null:
 		return null
 	return get_tree().get_first_node_in_group("grid_system")
+
+
+func _get_inventory_system() -> Node:
+	if get_tree() == null:
+		return null
+	return get_tree().get_first_node_in_group("inventory_system")
 
 
 func _get_building_system() -> Node:

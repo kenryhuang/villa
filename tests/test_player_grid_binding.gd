@@ -14,18 +14,32 @@ func _has_property(object: Object, property_name: String) -> bool:
 
 func _run() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
+	main.load_save_on_start = false
 	root.add_child(main)
 	current_scene = main
 	for _frame in 3:
 		await process_frame
 
 	var player: Node = main.get_node("Actors/Player")
-	if not _has_property(player, "grid_system"):
-		push_error("PlayerController must expose an injected grid_system")
+	var action_controller: Node = player.get_node_or_null("ActionController")
+	if action_controller == null:
+		push_error("Player must author an ActionController")
 		quit(1)
 		return
-	if player.grid_system != main.grid_system:
-		push_error("PlayerController must use Main's GridSystem instance")
+	if not _has_property(action_controller, "grid_system"):
+		push_error("ActionController must expose an injected grid_system")
+		quit(1)
+		return
+	if action_controller.grid_system != main.grid_system:
+		push_error("ActionController must use Main's GridSystem instance")
+		quit(1)
+		return
+	if action_controller.farming_system != main.farming_system:
+		push_error("ActionController must use Main's FarmingSystem instance")
+		quit(1)
+		return
+	if action_controller.building_system != main.building_system:
+		push_error("ActionController must use Main's BuildingSystem instance")
 		quit(1)
 		return
 	if not main.grid_system.has_node("GridOverlay") or not main.grid_system.has_node("GridCells/CellHighlight"):
@@ -58,7 +72,5 @@ func _run() -> void:
 		quit(1)
 		return
 
-	player.call("_raycast_to_grid_cell")
-	player.call("_use_current_tool")
 	print("PASS: player grid binding")
 	quit(0)

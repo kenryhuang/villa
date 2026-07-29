@@ -12,6 +12,7 @@ var _event_bus
 
 
 func _ready() -> void:
+	add_to_group("inventory_system")
 	_event_bus = get_node_or_null("/root/EventBus")
 
 
