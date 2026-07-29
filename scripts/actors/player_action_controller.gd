@@ -40,6 +40,7 @@ var inventory_system: Variant
 var crop_data_override: CropData
 
 var _selected_slot := 0
+var _pointer_position: Variant
 
 
 static func resolve_action(
@@ -145,13 +146,18 @@ func perform_target_interaction(target: Node) -> bool:
 	return false
 
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouse:
+		_pointer_position = event.position
+
+
 func _process(_delta: float) -> void:
 	if grid_system == null:
 		return
 	if _pointer_over_ui():
 		grid_system.clear_highlights()
 		return
-	var ground_point = _raycast_to_ground()
+	var ground_point = _raycast_to_ground(_effective_pointer_position())
 	if building_system != null and building_system.is_in_build_mode():
 		grid_system.clear_highlights()
 		if ground_point is Vector3:
@@ -185,22 +191,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		event is InputEventMouseButton
 		and event.button_index == MOUSE_BUTTON_LEFT
 		and event.pressed
-		and _perform_pointer_action()
+		and _perform_pointer_action(event.position)
 	):
 		get_viewport().set_input_as_handled()
 
 
-func _perform_pointer_action() -> bool:
+func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if _pointer_over_ui():
 		return false
-	var ground_point = _raycast_to_ground()
+	var ground_point = _raycast_to_ground(pointer_position)
 	if building_system != null and building_system.is_in_build_mode():
 		if not ground_point is Vector3 or grid_system == null:
 			return false
 		var grid_position = grid_system.world_to_grid(ground_point.x, ground_point.z)
 		return perform_build_action(grid_position.x, grid_position.y) != null
 
-	var interaction_hit := _raycast_to_interaction()
+	var interaction_hit := _raycast_to_interaction(pointer_position)
 	if not interaction_hit.is_empty():
 		var hit_position: Vector3 = interaction_hit.get("position", Vector3.ZERO)
 		if _point_in_player_range(hit_position):
@@ -215,8 +221,8 @@ func _perform_pointer_action() -> bool:
 	)
 
 
-func _raycast_to_interaction() -> Dictionary:
-	var ray := _camera_ray()
+func _raycast_to_interaction(pointer_position: Variant = null) -> Dictionary:
+	var ray := _camera_ray(pointer_position)
 	if ray.is_empty() or get_viewport().world_3d == null:
 		return {}
 	var query := PhysicsRayQueryParameters3D.create(ray.origin, ray.finish)
@@ -237,8 +243,8 @@ func _raycast_to_interaction() -> Dictionary:
 	}
 
 
-func _raycast_to_ground() -> Variant:
-	var ray := _camera_ray()
+func _raycast_to_ground(pointer_position: Variant = null) -> Variant:
+	var ray := _camera_ray(pointer_position)
 	if ray.is_empty():
 		return null
 	if get_viewport().world_3d != null:
@@ -258,11 +264,11 @@ func _raycast_to_ground() -> Variant:
 	return ray.origin + direction * ratio if ratio >= 0.0 else null
 
 
-func _camera_ray() -> Dictionary:
+func _camera_ray(pointer_position: Variant = null) -> Dictionary:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null:
 		return {}
-	var mouse_position := get_viewport().get_mouse_position()
+	var mouse_position: Vector2 = _effective_pointer_position(pointer_position)
 	var origin := camera.project_ray_origin(mouse_position)
 	var direction := camera.project_ray_normal(mouse_position)
 	return {
@@ -270,6 +276,14 @@ func _camera_ray() -> Dictionary:
 		"direction": direction,
 		"finish": origin + direction * maxf(camera.far, 100.0),
 	}
+
+
+func _effective_pointer_position(override_position: Variant = null) -> Vector2:
+	if override_position is Vector2:
+		return override_position
+	if _pointer_position is Vector2:
+		return _pointer_position
+	return get_viewport().get_mouse_position()
 
 
 func _find_interaction_target(node: Node) -> Node:

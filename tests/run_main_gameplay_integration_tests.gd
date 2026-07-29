@@ -7,6 +7,7 @@ const HudActionBarTest = preload("res://tests/test_hud_action_bar.gd")
 const MainFarmingBuildingIntegrationTest = preload(
 	"res://tests/test_main_farming_building_integration.gd"
 )
+const MainPointerFarmingTest = preload("res://tests/test_main_pointer_farming.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -21,6 +22,7 @@ func _run() -> void:
 	PlayerActionControllerTest.new().run(assertions, self)
 	HudActionBarTest.new().run(assertions, self)
 	MainFarmingBuildingIntegrationTest.new().run(assertions, self)
+	await MainPointerFarmingTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d main gameplay integration checks" % assertions.checks)
 		quit(0)
