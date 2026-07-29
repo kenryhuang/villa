@@ -46,5 +46,6 @@ func configure(
 	material.roughness = 0.96
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	material_override = material
 	return material.albedo_texture != null

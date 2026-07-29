@@ -328,6 +328,7 @@ func highlight_cell(gx: int, gz: int, color: Color) -> bool:
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.albedo_color = Color(color.r, color.g, color.b, minf(color.a, 0.58))
 	material.no_depth_test = true
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	highlight.material_override = material
 	highlight.set_meta("gx", gx)
 	highlight.set_meta("gz", gz)

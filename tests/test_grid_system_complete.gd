@@ -51,6 +51,12 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(grid.highlight_cell(18, 14, Color.YELLOW), "valid cell can be highlighted")
 	var highlight := grid.get_node_or_null("GridCells/CellHighlight") as MeshInstance3D
 	assertions.truthy(highlight != null and highlight.visible, "highlight visual becomes visible")
+	var highlight_material := highlight.material_override as StandardMaterial3D
+	assertions.equal(
+		highlight_material.cull_mode,
+		BaseMaterial3D.CULL_DISABLED,
+		"highlight surface renders from the gameplay camera side"
+	)
 	grid.clear_highlights()
 	assertions.truthy(highlight != null and not highlight.visible, "clear hides the highlight")
 	assertions.truthy(not grid.highlight_cell(-1, 0, Color.YELLOW), "out-of-bounds highlight is rejected")

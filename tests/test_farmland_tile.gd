@@ -36,5 +36,11 @@ func run(assertions: TestAssert) -> void:
 		tile.material_override is StandardMaterial3D,
 		"tile uses a standard hand-painted material"
 	)
+	var material := tile.material_override as StandardMaterial3D
+	assertions.equal(
+		material.cull_mode,
+		BaseMaterial3D.CULL_DISABLED,
+		"farmland surface renders from the gameplay camera side"
+	)
 	tile.free()
 	terrain.free()
