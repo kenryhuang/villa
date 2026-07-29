@@ -3,6 +3,8 @@ extends Control
 
 ## 商店界面 - 购买种子和材料
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 @onready var grid_container: GridContainer = $ScrollContainer/GridContainer
 @onready var gold_label: Label = $TopBar/GoldLabel
 @onready var close_button: Button = $CloseButton
@@ -36,8 +38,8 @@ func _refresh_shop() -> void:
 		child.queue_free()
 
 	# 显示可购买物品（种子 + 材料）
-	var items = GameData.get_items_by_category("seed")
-	items.append_array(GameData.get_items_by_category("material"))
+	var items = GameDataScript.get_items_by_category("seed")
+	items.append_array(GameDataScript.get_items_by_category("material"))
 
 	for item in items:
 		if item.buy_price <= 0:

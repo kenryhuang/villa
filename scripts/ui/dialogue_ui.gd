@@ -3,6 +3,8 @@ extends Control
 
 ## 对话界面 - NPC 对话面板
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 @onready var panel: PanelContainer = $DialoguePanel
 @onready var name_label: Label = $DialoguePanel/Margin/VBox/NameLabel
 @onready var text_label: Label = $DialoguePanel/Margin/VBox/TextContainer/TextLabel
@@ -50,7 +52,7 @@ func _show_current_dialogue() -> void:
 	var dialogue = _dialogues[_current_dialogue_index]
 
 	if name_label:
-		var v_data = GameData.get_villager(_current_villager_id)
+		var v_data = GameDataScript.get_villager(_current_villager_id)
 		name_label.text = v_data.name if not v_data.is_empty() else _current_villager_id
 
 	if text_label:

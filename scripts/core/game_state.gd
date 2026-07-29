@@ -8,7 +8,7 @@ var _event_bus
 
 
 func _ready() -> void:
-	_event_bus = get_node_or_null("/root/EventBus")
+	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	player_state = preload("res://scripts/data/player_state.gd").new()
 	player_state.stamina = 100
 	player_state.max_stamina = 100

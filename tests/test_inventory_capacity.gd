@@ -23,6 +23,7 @@ func run(assertions: TestAssert) -> void:
 		return
 	var inventory = inventory_script.new()
 	inventory.max_slots = 1
+	inventory.reset_slots()
 	var has_capacity_api: bool = inventory.has_method("can_add_item")
 	assertions.truthy(has_capacity_api, "inventory exposes capacity preflight")
 	if not has_capacity_api:

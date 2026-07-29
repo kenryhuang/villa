@@ -3,15 +3,18 @@ extends Node
 
 ## 经济系统 - 金币管理、订单系统、资源消耗
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 var gold: int = 100
 var orders: Array[Dictionary] = []
 
 var _inventory_ref: InventorySystem
 var _event_bus
+var _affinity: Dictionary = {}
 
 
 func _ready() -> void:
-	_event_bus = get_node_or_null("/root/EventBus")
+	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 
 
 func configure(inventory: InventorySystem) -> void:
@@ -59,15 +62,15 @@ func generate_daily_orders() -> void:
 
 func _generate_single_order() -> Dictionary:
 	# 从作物和材料中随机选择
-	var candidates = GameData.get_items_by_category("crop")
-	candidates.append_array(GameData.get_items_by_category("material"))
+	var candidates = GameDataScript.get_items_by_category("crop")
+	candidates.append_array(GameDataScript.get_items_by_category("material"))
 	if candidates.is_empty():
 		return {}
 
 	var item = candidates[randi() % candidates.size()]
 	var quantity = randi_range(1, 5)
 	var reward_gold = _calculate_reward(item.id, quantity)
-	var villagers = GameData.get_all_villagers()
+	var villagers = GameDataScript.get_all_villagers()
 	var villager_id = ""
 	if not villagers.is_empty():
 		villager_id = villagers[randi() % villagers.size()].id
@@ -84,7 +87,7 @@ func _generate_single_order() -> Dictionary:
 
 
 func _calculate_reward(item_id: String, quantity: int) -> int:
-	var base_price = GameData.get_sell_price(item_id)
+	var base_price = GameDataScript.get_sell_price(item_id)
 	if base_price <= 0:
 		base_price = 5
 	return base_price * quantity * 2
@@ -105,13 +108,14 @@ func complete_order(order_index: int) -> bool:
 
 	# 奖励金币和经验
 	add_gold(order.reward_gold)
-	var game_state = get_node_or_null("/root/GameState")
+	var game_state = get_node_or_null("/root/GameState") if is_inside_tree() else null
 	if game_state:
 		game_state.add_exp(order.reward_exp)
 
 	# 提升村民好感度
 	if not order.villager_id.is_empty():
-		var villager_system = get_node_or_null("/root/VillagerSystem")
+		_affinity[order.villager_id] = get_affinity(order.villager_id) + 10
+		var villager_system = get_node_or_null("/root/VillagerSystem") if is_inside_tree() else null
 		if villager_system:
 			villager_system.add_affinity(order.villager_id, 10)
 
@@ -120,6 +124,10 @@ func complete_order(order_index: int) -> bool:
 
 	orders.remove_at(order_index)
 	return true
+
+
+func get_affinity(villager_id: String) -> int:
+	return int(_affinity.get(villager_id, 0))
 
 
 func get_order_count() -> int:

@@ -65,29 +65,29 @@ const ITEMS := {
 	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "max_stack": 1},
 }
 
-func get_item(item_id: String) -> Dictionary:
-	return ITEMS.get(item_id, {})
+static func get_item(item_id: String):
+	return ITEMS.get(item_id, null)
 
-func get_all_items() -> Array:
+static func get_all_items() -> Array:
 	var result := []
 	for item in ITEMS.values():
 		result.append(item)
 	return result
 
-func get_items_by_category(category: String) -> Array:
+static func get_items_by_category(category: String) -> Array:
 	var result := []
 	for item in ITEMS.values():
 		if item.get("category") == category:
 			result.append(item)
 	return result
 
-func get_sell_price(item_id: String) -> int:
+static func get_sell_price(item_id: String) -> int:
 	var item = ITEMS.get(item_id)
 	if item:
 		return item.get("sell_price", 0)
 	return 0
 
-func get_buy_price(item_id: String) -> int:
+static func get_buy_price(item_id: String) -> int:
 	var item = ITEMS.get(item_id)
 	if item:
 		return item.get("buy_price", 0)
@@ -163,10 +163,10 @@ const BUILDINGS := {
 	},
 }
 
-func get_building(building_id: String) -> Dictionary:
+static func get_building(building_id: String) -> Dictionary:
 	return BUILDINGS.get(building_id, {})
 
-func get_all_buildings() -> Array:
+static func get_all_buildings() -> Array:
 	var result := []
 	for b in BUILDINGS.values():
 		result.append(b)
@@ -179,7 +179,7 @@ func get_all_buildings() -> Array:
 const VILLAGERS := {
 	"lao_li": {
 		"id": "lao_li", "name": "老李", "role": "杂货商",
-		"schedule": {6: "home", 8: "shop", 12: "shop", 13: "shop", 17: "wander", 19: "home", 21: "home"},
+		"schedule": {6: "home", 8: "shop", 12: "shop", 13: "shop", 17: "wander", 19: "home", 21: "home", "8-12": "shop"},
 		"affinity_rewards": {"order": 10, "gift": 5, "chat": 1},
 	},
 	"xiao_hua": {
@@ -204,10 +204,10 @@ const VILLAGERS := {
 	},
 }
 
-func get_villager(villager_id: String) -> Dictionary:
+static func get_villager(villager_id: String) -> Dictionary:
 	return VILLAGERS.get(villager_id, {})
 
-func get_all_villagers() -> Array:
+static func get_all_villagers() -> Array:
 	var result := []
 	for v in VILLAGERS.values():
 		result.append(v)
@@ -270,23 +270,23 @@ const COLLECTIBLES := {
 	"specimen_20": {"id": "specimen_20", "name": "植物标本 #20", "category": "specimen", "description": "稀有植物标本"},
 }
 
-func get_collectible(collectible_id: String) -> Dictionary:
+static func get_collectible(collectible_id: String) -> Dictionary:
 	return COLLECTIBLES.get(collectible_id, {})
 
-func get_all_collectibles() -> Array:
+static func get_all_collectibles() -> Array:
 	var result := []
 	for c in COLLECTIBLES.values():
 		result.append(c)
 	return result
 
-func get_collectibles_by_category(category: String) -> Array:
+static func get_collectibles_by_category(category: String) -> Array:
 	var result := []
 	for c in COLLECTIBLES.values():
 		if c.get("category") == category:
 			result.append(c)
 	return result
 
-func get_collectible_count_by_category(category: String) -> int:
+static func get_collectible_count_by_category(category: String) -> int:
 	var count := 0
 	for c in COLLECTIBLES.values():
 		if c.get("category") == category:

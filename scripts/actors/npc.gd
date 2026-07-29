@@ -4,10 +4,14 @@ extends CharacterBody3D
 ## 状态：IDLE → MOVING → WORKING → WANDERING → SLEEPING
 
 signal dialogue_started(villager_id: String)
+signal defeated(npc: CharacterBody3D)
 
 @export var villager_id: String = "lao_li"
 @export var move_speed: float = 2.0
+@export var health: int = 3
 
+var knockback_velocity: Vector3 = Vector3.ZERO
+var _defeated_emitted := false
 var _current_state: String = "IDLE"
 var _target_position: Vector3 = Vector3.ZERO
 var _player_ref
@@ -27,6 +31,17 @@ func _ready() -> void:
 
 func configure(player: Node3D) -> void:
 	_player_ref = player
+
+
+func take_hit(damage: int, direction: Vector3) -> void:
+	if damage <= 0 or health <= 0:
+		return
+	health = maxi(0, health - damage)
+	if direction.length_squared() > 0.0001:
+		knockback_velocity = direction.normalized() * float(damage)
+	if health == 0 and not _defeated_emitted:
+		_defeated_emitted = true
+		defeated.emit(self)
 
 
 func set_target_location(location: String) -> void:

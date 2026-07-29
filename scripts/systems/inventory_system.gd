@@ -4,6 +4,8 @@ extends Node
 ## 背包系统 - 管理玩家物品
 ## 包含主背包（20格）和快捷栏（6格）
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 var slots: Array[Dictionary] = []  # [{item_id, quantity}, ...]
 var max_slots: int = 20
 var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, -1]  # 快捷栏 → 背包槽位映射
@@ -11,21 +13,35 @@ var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, -1]  # 快捷栏 → 
 var _event_bus
 
 
+func _init() -> void:
+	reset_slots()
+
+
 func _ready() -> void:
 	add_to_group("inventory_system")
-	_event_bus = get_node_or_null("/root/EventBus")
+	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 
 
 func add_item(item_id: String, quantity: int = 1) -> bool:
 	if item_id.is_empty() or quantity <= 0:
 		return false
+	var item_data = GameDataScript.get_item(item_id)
+	if item_data == null:
+		return false
+	var max_stack := int(item_data.get("max_stack", 99))
+	var capacity := 0
+	for slot in slots:
+		if slot.is_empty():
+			capacity += max_stack
+		elif slot.get("item_id", "") == item_id:
+			capacity += maxi(0, max_stack - int(slot.get("quantity", 0)))
+	if capacity < quantity:
+		return false
 
 	# 1. 尝试堆叠到已有槽位
 	for i in range(slots.size()):
 		var slot = slots[i]
-		if slot.item_id == item_id:
-			var item_data = GameData.get_item(item_id)
-			var max_stack = item_data.get("max_stack", 99) if item_data else 99
+		if not slot.is_empty() and slot.get("item_id", "") == item_id:
 			var can_add = mini(quantity, max_stack - slot.quantity)
 			if can_add > 0:
 				slot.quantity += can_add
@@ -36,14 +52,15 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 					return true
 
 	# 2. 放入空槽位
-	while quantity > 0 and slots.size() < max_slots:
-		var item_data = GameData.get_item(item_id)
-		var max_stack = item_data.get("max_stack", 99) if item_data else 99
-		var add_qty = mini(quantity, max_stack)
-		slots.append({"item_id": item_id, "quantity": add_qty})
-		quantity -= add_qty
-		if _event_bus:
-			_event_bus.item_added.emit(item_id, add_qty)
+	for i in range(slots.size()):
+		if quantity <= 0:
+			break
+		if slots[i].is_empty():
+			var add_qty = mini(quantity, max_stack)
+			slots[i] = {"item_id": item_id, "quantity": add_qty}
+			quantity -= add_qty
+			if _event_bus:
+				_event_bus.item_added.emit(item_id, add_qty)
 
 	return quantity <= 0
 
@@ -57,19 +74,17 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 		return false
 
 	var remaining = quantity
-	var i = slots.size() - 1
-	while i >= 0 and remaining > 0:
-		if slots[i].item_id == item_id:
+	var i = 0
+	while i < slots.size() and remaining > 0:
+		if not slots[i].is_empty() and slots[i].get("item_id", "") == item_id:
 			var remove_qty = mini(remaining, slots[i].quantity)
 			slots[i].quantity -= remove_qty
 			remaining -= remove_qty
 			if _event_bus:
 				_event_bus.item_removed.emit(item_id, remove_qty)
 			if slots[i].quantity <= 0:
-				# 更新快捷栏映射
-				_on_slot_removed(i)
-				slots.remove_at(i)
-		i -= 1
+				slots[i] = {}
+		i += 1
 
 	return remaining <= 0
 
@@ -81,7 +96,7 @@ func has_item(item_id: String, quantity: int = 1) -> bool:
 func get_item_count(item_id: String) -> int:
 	var total := 0
 	for slot in slots:
-		if slot.item_id == item_id:
+		if not slot.is_empty() and slot.get("item_id", "") == item_id:
 			total += slot.quantity
 	return total
 
@@ -89,18 +104,19 @@ func get_item_count(item_id: String) -> int:
 func can_add_item(item_id: String, quantity: int = 1) -> bool:
 	if item_id.is_empty() or quantity <= 0:
 		return false
-	var item_data = GameData.get_item(item_id)
-	if item_data.is_empty():
+	var item_data = GameDataScript.get_item(item_id)
+	if item_data == null:
 		return false
 	var max_stack := int(item_data.get("max_stack", 99))
-	var remaining := quantity
+	var capacity := 0
 	for slot in slots:
-		if slot.item_id == item_id:
-			remaining -= maxi(0, max_stack - int(slot.quantity))
-			if remaining <= 0:
-				return true
-	var free_slots := maxi(0, max_slots - slots.size())
-	return remaining <= free_slots * max_stack
+		if slot.is_empty():
+			capacity += max_stack
+		elif slot.get("item_id", "") == item_id:
+			capacity += maxi(0, max_stack - int(slot.get("quantity", 0)))
+		if capacity >= quantity:
+			return true
+	return false
 
 
 func swap_slots(from_index: int, to_index: int) -> void:
@@ -129,47 +145,51 @@ func get_quick_item(quick_index: int) -> String:
 	var slot_idx = quick_slot_mappings[quick_index]
 	if slot_idx < 0 or slot_idx >= slots.size():
 		return ""
-	return slots[slot_idx].item_id
+	return slots[slot_idx].get("item_id", "")
 
 
 func use_item(slot_index: int) -> bool:
 	if slot_index < 0 or slot_index >= slots.size():
 		return false
 	var slot = slots[slot_index]
-	if slot.quantity <= 0:
+	if slot.is_empty() or slot.get("quantity", 0) <= 0:
 		return false
 
 	# 消耗品使用后减少数量
-	var item_data = GameData.get_item(slot.item_id)
+	var item_data = GameDataScript.get_item(slot.item_id)
 	if item_data and item_data.get("category") in ["crop", "material"]:
 		slot.quantity -= 1
 		if _event_bus:
 			_event_bus.item_removed.emit(slot.item_id, 1)
 		if slot.quantity <= 0:
-			_on_slot_removed(slot_index)
-			slots.remove_at(slot_index)
+			slots[slot_index] = {}
 		return true
 
 	return false
 
 
-func _on_slot_removed(slot_index: int) -> void:
-	# 更新快捷栏映射
-	for i in range(quick_slot_mappings.size()):
-		if quick_slot_mappings[i] == slot_index:
-			quick_slot_mappings[i] = -1
-		elif quick_slot_mappings[i] > slot_index:
-			quick_slot_mappings[i] -= 1
-
-
 func get_slot_count() -> int:
-	return slots.size()
+	var count := 0
+	for slot in slots:
+		if not slot.is_empty():
+			count += 1
+	return count
 
 
 func is_full() -> bool:
-	return slots.size() >= max_slots
+	for slot in slots:
+		if slot.is_empty():
+			return false
+	return true
 
 
 func clear() -> void:
+	reset_slots()
+
+
+func reset_slots() -> void:
 	slots.clear()
+	slots.resize(max_slots)
+	for i in range(max_slots):
+		slots[i] = {}
 	quick_slot_mappings = [-1, -1, -1, -1, -1, -1]

@@ -3,6 +3,8 @@ extends Node
 
 ## 收集品系统 - 图鉴管理、收集状态
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 signal collectible_collected(collectible_id: String)
 signal category_completed(category: String)
 
@@ -22,7 +24,7 @@ func _init_category_stats() -> void:
 	var categories = ["diary", "fossil", "relic", "specimen"]
 	for cat in categories:
 		_category_stats[cat] = {
-			"total": GameData.get_collectible_count_by_category(cat),
+			"total": GameDataScript.get_collectible_count_by_category(cat),
 			"found": 0,
 		}
 
@@ -31,7 +33,7 @@ func collect(collectible_id: String) -> void:
 	if discovered.has(collectible_id):
 		return
 
-	var data = GameData.get_collectible(collectible_id)
+	var data = GameDataScript.get_collectible(collectible_id)
 	if data.is_empty():
 		push_error("Unknown collectible: %s" % collectible_id)
 		return
@@ -62,7 +64,7 @@ func get_discovered_count() -> int:
 func get_category_count(category: String) -> int:
 	var count := 0
 	for id in discovered:
-		var data = GameData.get_collectible(id)
+		var data = GameDataScript.get_collectible(id)
 		if not data.is_empty() and data.get("category") == category:
 			count += 1
 	return count

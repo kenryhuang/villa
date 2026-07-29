@@ -3,6 +3,8 @@ extends Node
 
 ## 村民系统 - 管理村民 AI、好感度、对话
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 var _villagers: Dictionary = {}  # villager_id → VillagerData
 var _affinity: Dictionary = {}   # villager_id → int (0-100)
 var _event_bus
@@ -12,7 +14,7 @@ func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
 
 	# 初始化所有村民的好感度
-	for v in GameData.get_all_villagers():
+	for v in GameDataScript.get_all_villagers():
 		_affinity[v.id] = 0
 
 	# 连接时间事件
@@ -21,7 +23,7 @@ func _ready() -> void:
 
 
 func register_villager(villager_node: Node3D, villager_id: String) -> void:
-	var data = GameData.get_villager(villager_id)
+	var data = GameDataScript.get_villager(villager_id)
 	if data.is_empty():
 		push_error("Unknown villager: %s" % villager_id)
 		return
@@ -138,7 +140,7 @@ func _update_villager_schedule(villager_id: String, hour: int) -> void:
 
 func get_dialogue(villager_id: String, player_level: int = 1) -> Array:
 	# 返回对话选项
-	var v_data = GameData.get_villager(villager_id)
+	var v_data = GameDataScript.get_villager(villager_id)
 	if v_data.is_empty():
 		return []
 

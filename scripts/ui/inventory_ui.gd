@@ -3,10 +3,13 @@ extends Control
 
 ## 背包界面 - 网格布局显示背包物品和快捷栏
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+
 @export var grid_container_path: NodePath
 @export var quick_bar_path: NodePath
 
 var grid_container: GridContainer
+var inventory_grid: GridContainer
 var quick_bar: HBoxContainer
 var inventory_ref: InventorySystem
 
@@ -17,12 +20,21 @@ func _ready() -> void:
 	visible = false
 	grid_container = get_node_or_null(grid_container_path) if grid_container_path else _find_grid_container()
 	quick_bar = get_node_or_null(quick_bar_path) if quick_bar_path else _find_quick_bar()
+	if grid_container == null:
+		grid_container = GridContainer.new()
+		grid_container.columns = 5
+		add_child(grid_container)
+	if quick_bar == null:
+		quick_bar = HBoxContainer.new()
+		add_child(quick_bar)
+	inventory_grid = grid_container
 
 	# 连接 EventBus
-	var event_bus = get_node_or_null("/root/EventBus")
+	var event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	if event_bus:
 		event_bus.item_added.connect(_on_inventory_changed)
 		event_bus.item_removed.connect(_on_inventory_changed)
+	_refresh()
 
 
 func configure(inv: InventorySystem) -> void:
@@ -109,9 +121,9 @@ func _create_slot_ui(index: int) -> PanelContainer:
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	if index < inventory_ref.slots.size():
+	if index < inventory_ref.slots.size() and not inventory_ref.slots[index].is_empty():
 		var slot = inventory_ref.slots[index]
-		var item_data = GameData.get_item(slot.item_id)
+		var item_data = GameDataScript.get_item(slot.item_id)
 		var name_label = Label.new()
 		name_label.text = item_data.name if item_data else slot.item_id
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -148,7 +160,7 @@ func _create_quick_slot_ui(index: int) -> PanelContainer:
 
 	var item_id = inventory_ref.get_quick_item(index)
 	if not item_id.is_empty():
-		var item_data = GameData.get_item(item_id)
+		var item_data = GameDataScript.get_item(item_id)
 		var name_label = Label.new()
 		name_label.text = item_data.name if item_data else item_id
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
