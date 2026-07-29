@@ -5,6 +5,8 @@ extends Control
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
+@export var keyboard_shortcut_enabled := true
+
 @onready var grid_container: GridContainer = $ScrollContainer/GridContainer
 @onready var close_button: Button = $CloseButton
 
@@ -92,6 +94,8 @@ func _on_build_pressed(building_id: String) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not keyboard_shortcut_enabled:
+		return
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_B:
 			if _is_open:

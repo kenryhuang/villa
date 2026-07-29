@@ -232,7 +232,14 @@ func perform_cell_action(cell: GridCell) -> bool:
 func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 	if building_system == null or not building_system.is_in_build_mode():
 		return null
-	return building_system.place_selected_building(gx, gz)
+	var placed: BuildingInstance = building_system.place_selected_building(gx, gz)
+	if (
+		placed != null
+		and _action_mode == ActionMode.BUILDING
+		and _selected_slot >= 0
+	):
+		building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+	return placed
 
 
 func perform_target_interaction(target: Node) -> bool:
@@ -262,9 +269,14 @@ func _process(_delta: float) -> void:
 		grid_system.clear_highlights()
 		return
 	var ground_point = _raycast_to_ground(_effective_pointer_position())
-	if building_system != null and building_system.is_in_build_mode():
+	if _action_mode == ActionMode.BUILDING:
 		grid_system.clear_highlights()
-		if ground_point is Vector3:
+		if (
+			_selected_slot >= 0
+			and building_system != null
+			and building_system.is_in_build_mode()
+			and ground_point is Vector3
+		):
 			building_system.update_preview_position(ground_point.x, ground_point.z)
 		return
 	if _selected_slot < 0:
@@ -308,7 +320,13 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if _pointer_over_ui():
 		return false
 	var ground_point = _raycast_to_ground(pointer_position)
-	if building_system != null and building_system.is_in_build_mode():
+	if _action_mode == ActionMode.BUILDING:
+		if (
+			_selected_slot < 0
+			or building_system == null
+			or not building_system.is_in_build_mode()
+		):
+			return false
 		if not ground_point is Vector3 or grid_system == null:
 			return false
 		var grid_position = grid_system.world_to_grid(ground_point.x, ground_point.z)

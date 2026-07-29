@@ -240,8 +240,8 @@ main.action_controller._process(0.0)
 assertions.truthy(main.building_system.is_in_build_mode(), "building mode owns preview")
 assertions.equal(
     main.building_system.get_preview_marker_count(),
-    6,
-    "barn preview shows its 3x2 footprint"
+    4,
+    "barn preview shows its 2x2 footprint"
 )
 ```
 

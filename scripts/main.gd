@@ -182,7 +182,7 @@ func _setup_ui() -> void:
 	if hud:
 		hud.visible = true
 		hud.configure_season_system(season_system)
-		hud.configure_action_bar(action_controller, inventory_system)
+		hud.configure_action_bar(action_controller, inventory_system, economy_system)
 
 	# 背包 UI
 	if inventory_ui:
@@ -190,6 +190,7 @@ func _setup_ui() -> void:
 
 	# 建造 UI
 	if build_ui:
+		build_ui.keyboard_shortcut_enabled = false
 		build_ui.configure(building_system)
 
 	# 地图 UI
