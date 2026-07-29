@@ -11,6 +11,8 @@ cast_shadow = 0
 
 [node name="GridCells" type="Node3D" parent="."]
 
+[node name="FarmlandVisuals" type="Node3D" parent="GridCells"]
+
 [node name="CellHighlight" type="MeshInstance3D" parent="GridCells"]
 visible = false
 cast_shadow = 0

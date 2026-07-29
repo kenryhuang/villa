@@ -9,6 +9,7 @@ const WORLD_ORIGIN_Z := -14.0
 const SLOPE_THRESHOLD := 0.35
 const GRID_LINE_LIFT := 0.035
 const HIGHLIGHT_LIFT := 0.045
+const FarmlandTileScript = preload("res://scripts/visual/farmland_tile.gd")
 
 var terrain: TerrainBuilder
 var _cells := {}
@@ -37,6 +38,7 @@ func configure(
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	_initialize_cells()
 	_build_grid_overlay()
+	rebuild_farmland_visuals()
 	clear_highlights()
 	return true
 
@@ -194,6 +196,7 @@ func set_cell_state(gx: int, gz: int, next_state: int) -> bool:
 	if not _transition_allowed(cell.state, next_state):
 		return false
 	cell.state = next_state
+	_sync_farmland_visual(cell)
 	_emit_cell_state_changed(cell)
 	return true
 
@@ -220,6 +223,7 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 	instance.crop_data = crop_data
 	cell.crop_instance = instance
 	cell.state = GridCell.State.PLANTED
+	_sync_farmland_visual(cell)
 	_emit_cell_state_changed(cell)
 	if _event_bus:
 		_event_bus.crop_planted.emit(gx, gz, crop_data.crop_id)
@@ -239,6 +243,7 @@ func harvest_crop(gx: int, gz: int) -> Dictionary:
 	cell.crop_instance = null
 	cell.watered = false
 	cell.state = GridCell.State.FARMLAND
+	_sync_farmland_visual(cell)
 	_emit_cell_state_changed(cell)
 	return {"items": [crop_id], "exp": exp_reward}
 
@@ -324,6 +329,8 @@ func highlight_cell(gx: int, gz: int, color: Color) -> bool:
 	material.albedo_color = Color(color.r, color.g, color.b, minf(color.a, 0.58))
 	material.no_depth_test = true
 	highlight.material_override = material
+	highlight.set_meta("gx", gx)
+	highlight.set_meta("gz", gz)
 	highlight.visible = true
 	return true
 
@@ -332,6 +339,60 @@ func clear_highlights() -> void:
 	var highlight := get_node_or_null("GridCells/CellHighlight") as MeshInstance3D
 	if highlight:
 		highlight.visible = false
+
+
+func get_farmland_visual(gx: int, gz: int) -> FarmlandTile:
+	var container := get_node_or_null("GridCells/FarmlandVisuals")
+	if container == null:
+		return null
+	return container.get_node_or_null(
+		"FarmlandVisual_%d_%d" % [gx, gz]
+	) as FarmlandTile
+
+
+func get_farmland_visual_count() -> int:
+	var container := get_node_or_null("GridCells/FarmlandVisuals")
+	return container.get_child_count() if container else 0
+
+
+func rebuild_farmland_visuals() -> void:
+	var container := get_node_or_null("GridCells/FarmlandVisuals")
+	if container == null:
+		return
+	for child in container.get_children():
+		child.free()
+	for cell in _cells.values():
+		_sync_farmland_visual(cell)
+
+
+func _sync_farmland_visual(cell: GridCell) -> void:
+	if cell == null:
+		return
+	var visual := get_farmland_visual(cell.gx, cell.gz)
+	var needs_visual := cell.state in [
+		GridCell.State.FARMLAND,
+		GridCell.State.PLANTED,
+	]
+	if not needs_visual:
+		if visual:
+			visual.free()
+		return
+	if visual:
+		return
+	var container := get_node_or_null("GridCells/FarmlandVisuals")
+	if container == null:
+		return
+	visual = FarmlandTileScript.new()
+	if visual.configure(
+		cell,
+		terrain,
+		WORLD_ORIGIN_X,
+		WORLD_ORIGIN_Z,
+		CELL_SIZE
+	):
+		container.add_child(visual)
+	else:
+		visual.free()
 
 
 func to_dict() -> Dictionary:
@@ -383,4 +444,5 @@ func from_dict(data: Dictionary) -> bool:
 				instance.growth_progress = float(crop_entry.get("growth_progress", 0.0))
 				instance.is_watered_today = bool(crop_entry.get("is_watered_today", false))
 				cell.crop_instance = instance
+	rebuild_farmland_visuals()
 	return true

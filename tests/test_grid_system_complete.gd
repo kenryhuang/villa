@@ -55,9 +55,64 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(highlight != null and not highlight.visible, "clear hides the highlight")
 	assertions.truthy(not grid.highlight_cell(-1, 0, Color.YELLOW), "out-of-bounds highlight is rejected")
 
-	var farm_cell = grid.get_cell(18, 14)
-	if farm_cell.state == GridCell.State.WASTELAND and grid.can_farm_at(18, 14):
-		assertions.truthy(grid.set_cell_state(18, 14, GridCell.State.FARMLAND), "farmable cell cultivates")
+	var farm_cell: GridCell = null
+	for candidate in grid._cells.values():
+		if grid.can_farm_at(candidate.gx, candidate.gz):
+			farm_cell = candidate
+			break
+	assertions.truthy(farm_cell != null, "configured grid has a farmable cell")
+	if farm_cell:
+		assertions.truthy(
+			grid.set_cell_state(
+				farm_cell.gx,
+				farm_cell.gz,
+				GridCell.State.FARMLAND
+			),
+			"farmable cell cultivates"
+		)
+		var has_farmland_visual_api: bool = grid.has_method("get_farmland_visual")
+		assertions.truthy(
+			has_farmland_visual_api,
+			"GridSystem exposes farmland visual lookup"
+		)
+		if has_farmland_visual_api:
+			var farmland_visual = grid.call("get_farmland_visual", farm_cell.gx, farm_cell.gz)
+			assertions.truthy(
+				farmland_visual != null,
+				"cultivation creates farmland visual"
+			)
+			assertions.truthy(
+				grid.set_cell_state(
+					farm_cell.gx,
+					farm_cell.gz,
+					GridCell.State.FARMLAND
+				),
+				"same-state farmland sync succeeds"
+			)
+			assertions.equal(
+				grid.call("get_farmland_visual", farm_cell.gx, farm_cell.gz),
+				farmland_visual,
+				"same-state sync does not duplicate farmland visual"
+			)
+
+			var crop := CropData.new()
+			crop.crop_id = "visual_lifecycle_crop"
+			crop.growth_days = 1
+			assertions.truthy(
+				grid.plant_crop(farm_cell.gx, farm_cell.gz, crop) != null,
+				"visual lifecycle crop plants"
+			)
+			assertions.equal(
+				grid.call("get_farmland_visual", farm_cell.gx, farm_cell.gz),
+				farmland_visual,
+				"planted cell retains its farmland visual"
+			)
+			farm_cell.crop_instance.growth_progress = 1.0
+			grid.harvest_crop(farm_cell.gx, farm_cell.gz)
+			assertions.truthy(
+				grid.call("get_farmland_visual", farm_cell.gx, farm_cell.gz) != null,
+				"harvested farmland retains its visual"
+			)
 		farm_cell.watered = true
 	var saved: Dictionary = grid.to_dict()
 	assertions.truthy(saved.has("cells"), "grid serializes changed cells")
@@ -68,8 +123,55 @@ func run(assertions: TestAssert) -> void:
 		"second GridSystem configures before restore"
 	)
 	assertions.truthy(restored.from_dict(saved), "serialized grid restores")
-	assertions.equal(restored.get_cell(18, 14).state, farm_cell.state, "restored cell state matches")
-	assertions.equal(restored.get_cell(18, 14).watered, farm_cell.watered, "restored watered flag matches")
+	if farm_cell:
+		assertions.equal(
+			restored.get_cell(farm_cell.gx, farm_cell.gz).state,
+			farm_cell.state,
+			"restored cell state matches"
+		)
+		assertions.equal(
+			restored.get_cell(farm_cell.gx, farm_cell.gz).watered,
+			farm_cell.watered,
+			"restored watered flag matches"
+		)
+	if farm_cell and restored.has_method("get_farmland_visual"):
+		assertions.truthy(
+			restored.call("get_farmland_visual", farm_cell.gx, farm_cell.gz) != null,
+			"save restore rebuilds farmland visual"
+		)
+
+	var removable_cell: GridCell = null
+	for candidate in grid._cells.values():
+		if grid.can_farm_at(candidate.gx, candidate.gz):
+			removable_cell = candidate
+			break
+	if removable_cell and grid.has_method("get_farmland_visual"):
+		grid.set_cell_state(
+			removable_cell.gx,
+			removable_cell.gz,
+			GridCell.State.FARMLAND
+		)
+		assertions.truthy(
+			grid.call(
+				"get_farmland_visual",
+				removable_cell.gx,
+				removable_cell.gz
+			) != null,
+			"second farmland cell creates a visual"
+		)
+		grid.set_cell_state(
+			removable_cell.gx,
+			removable_cell.gz,
+			GridCell.State.BUILDING
+		)
+		assertions.truthy(
+			grid.call(
+				"get_farmland_visual",
+				removable_cell.gx,
+				removable_cell.gz
+			) == null,
+			"building transition removes farmland visual"
+		)
 
 	var steep_terrain = TerrainBuilderScript.new()
 	var steep_image := Image.create(64, 64, false, Image.FORMAT_L8)
