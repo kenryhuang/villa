@@ -1,6 +1,9 @@
 extends RefCounted
 
 const HudScene = preload("res://scenes/ui/hud.tscn")
+const ActionPaletteButtonScript = preload(
+	"res://scripts/ui/action_palette_button.gd"
+)
 
 
 class ToolDouble:
@@ -34,6 +37,13 @@ class SeasonDouble:
 	var current_day := 1
 	var hour := 6
 	var minute := 0
+
+
+class EconomyDouble:
+	extends RefCounted
+
+	func has_resources(_cost: Dictionary) -> bool:
+		return false
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -100,7 +110,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		ToolDouble.new(),
 		inventory
 	)
-	hud.configure_action_bar(controller, inventory)
+	hud.configure_action_bar(controller, inventory, EconomyDouble.new())
 	var season := SeasonDouble.new()
 	tree.root.add_child(season)
 	assertions.truthy(
@@ -116,17 +126,26 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var quick_bar: HBoxContainer = hud.quick_bar
 	assertions.equal(quick_bar.get_child_count(), 6, "HUD keeps six action slots")
 	for child in quick_bar.get_children():
-		assertions.truthy(child is Button, "every action slot is clickable")
-	assertions.equal(
-		(quick_bar.get_child(0) as Button).text,
-		"1\n锄头",
-		"first slot labels the hoe"
-	)
-	assertions.equal(
-		(quick_bar.get_child(5) as Button).text,
-		"6\n谷物种子 x2",
-		"seed slot shows inventory count"
-	)
+		assertions.truthy(
+			child is ActionPaletteButtonScript,
+			"farming uses readable action tiles"
+		)
+		if child is ActionPaletteButtonScript:
+			assertions.equal(
+				child.icon_rect.custom_minimum_size,
+				Vector2(84, 84),
+				"tile icon is large"
+			)
+	var first_tile := quick_bar.get_child(0)
+	var seed_tile := quick_bar.get_child(5)
+	if first_tile is ActionPaletteButtonScript:
+		assertions.equal(first_tile.name_label.text, "锄头", "first tile labels the hoe")
+	if seed_tile is ActionPaletteButtonScript:
+		assertions.equal(
+			seed_tile.name_label.text,
+			"种子 ×2",
+			"seed tile keeps quantity concise and readable"
+		)
 
 	var emitted_indices: Array[int] = []
 	hud.quick_slot_selected.connect(
@@ -151,11 +170,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	inventory.remove_item("grain_seed", 1)
 	hud.refresh_action_bar()
-	assertions.equal(
-		(quick_bar.get_child(5) as Button).text,
-		"6\n谷物种子 x1",
-		"seed count refreshes after inventory change"
-	)
+	seed_tile = quick_bar.get_child(5)
+	if seed_tile is ActionPaletteButtonScript:
+		assertions.equal(
+			seed_tile.name_label.text,
+			"种子 ×1",
+			"seed count refreshes after inventory change"
+		)
 
 	var has_mode_palette_api := (
 		hud.has_method("rebuild_action_palette")
@@ -171,7 +192,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		return
 
 	assertions.equal(hud.get_palette_button_count(), 6, "farming palette has six buttons")
-	assertions.equal(hud.mode_button.text, "种植", "mode button shows farming mode")
+	assertions.truthy(
+		hud.mode_button is ActionPaletteButtonScript,
+		"mode switch uses the large tile"
+	)
+	if hud.mode_button is ActionPaletteButtonScript:
+		assertions.equal(
+			hud.mode_button.name_label.text,
+			"种植",
+			"mode button shows farming mode"
+		)
+	assertions.truthy(
+		hud.tool_label.get_theme_font_size("font_size") >= 28,
+		"selection text is readable"
+	)
 	var tool_icon_paths: Array[String] = [
 		"res://assets/ui/action_icons/hoe.png",
 		"res://assets/ui/action_icons/watering_can.png",
@@ -187,7 +221,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			assertions.equal(texture.get_height(), 256, "tool icon height is 256")
 	for child in quick_bar.get_children():
 		assertions.truthy(
-			(child as Button).icon != null,
+			child is ActionPaletteButtonScript and child.icon_rect.texture != null,
 			"every farming palette button has an icon"
 		)
 	assertions.truthy(
@@ -195,15 +229,31 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"controller enters building mode for HUD"
 	)
 	assertions.equal(hud.get_palette_button_count(), 9, "building palette has nine buttons")
-	assertions.equal(hud.mode_button.text, "建造", "mode button shows building mode")
+	if hud.mode_button is ActionPaletteButtonScript:
+		assertions.equal(
+			hud.mode_button.name_label.text,
+			"建造",
+			"mode button shows building mode"
+		)
 	assertions.truthy(
 		hud.get_node("BottomBar/ActionRow").get_combined_minimum_size().x <= 1280.0,
 		"complete building palette fits a 1280-pixel-wide window"
 	)
 	for child in quick_bar.get_children():
 		assertions.truthy(
-			(child as Button).icon != null,
+			child is ActionPaletteButtonScript and child.icon_rect.texture != null,
 			"every building palette button has an icon"
+		)
+	var unavailable_tile := quick_bar.get_child(0)
+	if unavailable_tile is ActionPaletteButtonScript:
+		assertions.equal(
+			unavailable_tile.name_label.modulate,
+			Color.WHITE,
+			"resource dimming keeps text opaque"
+		)
+		assertions.truthy(
+			unavailable_tile.icon_rect.modulate != Color.WHITE,
+			"resource dimming targets icon"
 		)
 	(quick_bar.get_child(8) as Button).pressed.emit()
 	assertions.equal(

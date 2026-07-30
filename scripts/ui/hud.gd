@@ -6,6 +6,12 @@ extends CanvasLayer
 signal quick_slot_selected(index: int)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const ActionPaletteButtonScene = preload(
+	"res://scenes/ui/action_palette_button.tscn"
+)
+const ActionPaletteButtonScript = preload(
+	"res://scripts/ui/action_palette_button.gd"
+)
 const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
 const BUILDING_NAMES := ["谷仓", "温室", "风车", "鸡舍", "蜂箱", "水井", "工作台", "路灯", "围栏"]
 const FARMING_ICON_PATHS: Array[String] = [
@@ -214,34 +220,39 @@ func rebuild_action_palette() -> void:
 	var building_mode := _is_building_mode()
 	var labels: Array = BUILDING_NAMES if building_mode else ACTION_NAMES
 	quick_bar.add_theme_constant_override("separation", 4 if building_mode else 8)
-	mode_button.text = "建造" if building_mode else "种植"
-	mode_button.tooltip_text = "当前：%s模式\n悬停选择模式（P / B）" % mode_button.text
-	mode_button.expand_icon = true
-	mode_button.icon = _load_palette_icon(
-		_building_icon_path("barn")
-		if building_mode
-		else FARMING_ICON_PATHS[PlayerActionController.SEED_SLOT]
+	var mode_name := "建造" if building_mode else "种植"
+	mode_button.configure(
+		0,
+		mode_name,
+		_load_palette_icon(
+			_building_icon_path("barn")
+			if building_mode
+			else FARMING_ICON_PATHS[PlayerActionController.SEED_SLOT]
+		)
 	)
+	mode_button.set_shortcut_visible(false)
+	mode_button.tooltip_text = "当前：%s模式\n悬停选择模式（P / B）" % mode_name
 	for index in range(labels.size()):
-		var button := Button.new()
+		var button = ActionPaletteButtonScene.instantiate()
 		button.name = "Slot%d" % (index + 1)
-		button.custom_minimum_size = Vector2(64.0 if building_mode else 72.0, 58.0)
-		button.toggle_mode = true
 		button.mouse_filter = Control.MOUSE_FILTER_STOP
-		button.expand_icon = true
-		button.text = "%d\n%s" % [index + 1, labels[index]]
+		quick_bar.add_child(button)
+		var display_name := str(labels[index])
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
 			var quantity: int = (
 				inventory_ref.get_item_count(PlayerActionController.SEED_ITEM_ID)
 				if inventory_ref
 				else 0
 			)
-			button.text = "%d\n%s x%d" % [index + 1, labels[index], quantity]
+			display_name = "种子 ×%d" % quantity
+		button.configure(
+			index + 1,
+			display_name,
+			_palette_texture(index, building_mode)
+		)
 		if building_mode:
 			_configure_building_button(button, index)
-		_configure_palette_button_icon(button, index, building_mode)
 		button.pressed.connect(_on_quick_slot_pressed.bind(index))
-		quick_bar.add_child(button)
 	refresh_action_bar()
 
 
@@ -251,8 +262,8 @@ func refresh_action_bar() -> void:
 	var selected: int = action_controller.get_selected_slot() if action_controller else -1
 	var building_mode := _is_building_mode()
 	for index in range(quick_bar.get_child_count()):
-		var button := quick_bar.get_child(index) as Button
-		if button == null:
+		var button = quick_bar.get_child(index)
+		if not button is ActionPaletteButtonScript:
 			continue
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
 			var quantity: int = (
@@ -260,15 +271,16 @@ func refresh_action_bar() -> void:
 				if inventory_ref
 				else 0
 			)
-			button.text = "%d\n%s x%d" % [index + 1, ACTION_NAMES[index], quantity]
-		button.set_pressed_no_signal(index == selected)
+			button.configure(
+				index + 1,
+				"种子 ×%d" % quantity,
+				_palette_texture(index, false)
+			)
+		button.set_selected(index == selected)
 		var available := true
 		if building_mode:
 			available = _building_resources_available(index)
-		if index == selected:
-			button.modulate = Color(1.0, 0.91, 0.55) if available else Color(0.72, 0.56, 0.42)
-		else:
-			button.modulate = Color.WHITE if available else Color(0.55, 0.55, 0.55)
+		button.set_available(available)
 
 
 func _on_quick_slot_pressed(index: int) -> void:
@@ -322,7 +334,7 @@ func set_mode_menu_open(open: bool) -> void:
 		mode_menu.hide()
 		return
 	var button_position := mode_button.get_screen_position()
-	var popup_size := Vector2i(170, 96)
+	var popup_size := Vector2i(260, 140)
 	var popup_position := Vector2i(
 		roundi(button_position.x),
 		roundi(button_position.y - popup_size.y - 6.0)
@@ -368,18 +380,13 @@ func _configure_building_button(button: Button, index: int) -> void:
 	]
 
 
-func _configure_palette_button_icon(
-	button: Button,
-	index: int,
-	building_mode: bool
-) -> void:
+func _palette_texture(index: int, building_mode: bool) -> Texture2D:
 	var path := ""
-	if building_mode:
-		if index >= 0 and index < PlayerActionController.BUILDING_IDS.size():
-			path = _building_icon_path(PlayerActionController.BUILDING_IDS[index])
-	elif index >= 0 and index < FARMING_ICON_PATHS.size():
+	if building_mode and index >= 0 and index < PlayerActionController.BUILDING_IDS.size():
+		path = _building_icon_path(PlayerActionController.BUILDING_IDS[index])
+	elif not building_mode and index >= 0 and index < FARMING_ICON_PATHS.size():
 		path = FARMING_ICON_PATHS[index]
-	button.icon = _load_palette_icon(path)
+	return _load_palette_icon(path)
 
 
 func _building_icon_path(building_id: String) -> String:
@@ -409,6 +416,10 @@ func _building_resources_available(index: int) -> bool:
 func set_quick_slot(index: int, item_name: String, quantity: int) -> void:
 	if quick_bar == null or index < 0 or index >= quick_bar.get_child_count():
 		return
-	var slot := quick_bar.get_child(index) as Button
-	if slot:
-		slot.text = "%d\n%s x%d" % [index + 1, item_name, quantity]
+	var slot = quick_bar.get_child(index)
+	if slot is ActionPaletteButtonScript:
+		slot.configure(
+			index + 1,
+			"%s ×%d" % [item_name, quantity],
+			slot.icon_rect.texture
+		)

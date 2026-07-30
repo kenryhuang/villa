@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource path="res://scripts/ui/hud.gd" type="Script" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/ui/action_palette_button.tscn" id="2_action"]
 
 [sub_resource type="StyleBoxFlat" id="TopPanelStyle"]
 content_margin_left = 18.0
@@ -91,9 +92,9 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -360.0
-offset_top = -112.0
-offset_right = 360.0
+offset_left = -640.0
+offset_top = -176.0
+offset_right = 640.0
 offset_bottom = -18.0
 grow_horizontal = 2
 grow_vertical = 0
@@ -101,27 +102,33 @@ theme_override_constants/separation = 6
 
 [node name="ToolLabel" type="Label" parent="BottomBar"]
 layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)
+theme_override_colors/font_outline_color = Color(0.0901961, 0.12549, 0.0980392, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 28
 text = "锄头"
 horizontal_alignment = 1
 
 [node name="ModeMenu" type="PopupPanel" parent="BottomBar"]
-size = Vector2i(170, 96)
+size = Vector2i(260, 140)
 
 [node name="VBox" type="VBoxContainer" parent="BottomBar/ModeMenu"]
-offset_left = 8.0
-offset_top = 8.0
-offset_right = 162.0
-offset_bottom = 88.0
-theme_override_constants/separation = 4
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 250.0
+offset_bottom = 130.0
+theme_override_constants/separation = 8
 
 [node name="FarmingModeButton" type="Button" parent="BottomBar/ModeMenu/VBox"]
-custom_minimum_size = Vector2(154, 36)
+custom_minimum_size = Vector2(240, 56)
 layout_mode = 2
+theme_override_font_sizes/font_size = 24
 text = "种植模式  P"
 
 [node name="BuildingModeButton" type="Button" parent="BottomBar/ModeMenu/VBox"]
-custom_minimum_size = Vector2(154, 36)
+custom_minimum_size = Vector2(240, 56)
 layout_mode = 2
+theme_override_font_sizes/font_size = 24
 text = "建造模式  B"
 
 [node name="ActionRow" type="HBoxContainer" parent="BottomBar"]
@@ -129,10 +136,9 @@ layout_mode = 2
 theme_override_constants/separation = 6
 alignment = 1
 
-[node name="ModeButton" type="Button" parent="BottomBar/ActionRow"]
-custom_minimum_size = Vector2(72, 58)
+[node name="ModeButton" parent="BottomBar/ActionRow" instance=ExtResource("2_action")]
 layout_mode = 2
-text = "种植"
+toggle_mode = false
 
 [node name="QuickBar" type="HBoxContainer" parent="BottomBar/ActionRow"]
 layout_mode = 2
