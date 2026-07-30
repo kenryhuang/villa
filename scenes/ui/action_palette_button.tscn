@@ -1,0 +1,100 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/action_palette_button.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="StyleNormal"]
+bg_color = Color(0.105, 0.145, 0.12, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.58, 0.47, 0.27, 0.88)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleHover"]
+bg_color = Color(0.145, 0.195, 0.155, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.95, 0.77, 0.39, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StylePressed"]
+bg_color = Color(0.22, 0.215, 0.12, 0.98)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 0.79, 0.31, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleShortcut"]
+bg_color = Color(0.94, 0.73, 0.31, 0.98)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="ActionPaletteButton" type="Button"]
+custom_minimum_size = Vector2(112, 116)
+mouse_default_cursor_shape = 2
+toggle_mode = true
+theme_override_styles/normal = SubResource("StyleNormal")
+theme_override_styles/hover = SubResource("StyleHover")
+theme_override_styles/pressed = SubResource("StylePressed")
+theme_override_styles/hover_pressed = SubResource("StylePressed")
+theme_override_styles/focus = SubResource("StyleHover")
+script = ExtResource("1_script")
+
+[node name="Icon" type="TextureRect" parent="."]
+custom_minimum_size = Vector2(84, 84)
+layout_mode = 0
+offset_left = 14.0
+offset_top = 5.0
+offset_right = 98.0
+offset_bottom = 89.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ShortcutLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 5.0
+offset_top = 5.0
+offset_right = 37.0
+offset_bottom = 37.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.12, 0.09, 0.045, 1)
+theme_override_colors/font_outline_color = Color(1, 0.87, 0.55, 0.55)
+theme_override_constants/outline_size = 1
+theme_override_font_sizes/font_size = 26
+theme_override_styles/normal = SubResource("StyleShortcut")
+text = "1"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 88.0
+offset_right = 108.0
+offset_bottom = 114.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.945, 0.815, 1)
+theme_override_colors/font_outline_color = Color(0.055, 0.075, 0.06, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 22
+text = "动作"
+horizontal_alignment = 1
+vertical_alignment = 1
+text_overrun_behavior = 3

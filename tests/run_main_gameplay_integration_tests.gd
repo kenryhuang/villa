@@ -3,6 +3,7 @@ extends SceneTree
 const InventoryCapacityTest = preload("res://tests/test_inventory_capacity.gd")
 const ToolActionTransactionTest = preload("res://tests/test_tool_action_transaction.gd")
 const PlayerActionControllerTest = preload("res://tests/test_player_action_controller.gd")
+const ActionPaletteButtonTest = preload("res://tests/test_action_palette_button.gd")
 const HudActionBarTest = preload("res://tests/test_hud_action_bar.gd")
 const MainFarmingBuildingIntegrationTest = preload(
 	"res://tests/test_main_farming_building_integration.gd"
@@ -20,6 +21,7 @@ func _run() -> void:
 	InventoryCapacityTest.new().run(assertions)
 	ToolActionTransactionTest.new().run(assertions, self)
 	PlayerActionControllerTest.new().run(assertions, self)
+	ActionPaletteButtonTest.new().run(assertions, self)
 	HudActionBarTest.new().run(assertions, self)
 	MainFarmingBuildingIntegrationTest.new().run(assertions, self)
 	await MainPointerFarmingTest.new().run(assertions, self)
