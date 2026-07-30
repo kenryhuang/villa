@@ -28,12 +28,12 @@ func _check_scene(path: String, required_nodes: Array[String]) -> void:
 
 func _run() -> void:
 	_check_scene("res://scenes/ui/hud.tscn", [
-		"TopBar/StaminaBar",
-		"TopBar/GoldLabel",
-		"TopBar/LevelLabel",
-		"TopBar/ExpBar",
-		"TopBar/SeasonLabel",
-		"TopBar/TimeLabel",
+		"TopBar/StatusRow/StaminaBar",
+		"TopBar/StatusRow/GoldLabel",
+		"TopBar/StatusRow/LevelLabel",
+		"TopBar/StatusRow/ExpBar",
+		"TopBar/StatusRow/SeasonLabel",
+		"TopBar/StatusRow/TimeLabel",
 		"BottomBar/ToolLabel",
 		"BottomBar/ModeMenu",
 		"BottomBar/ActionRow/ModeButton",

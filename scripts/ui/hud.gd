@@ -18,12 +18,12 @@ const FARMING_ICON_PATHS: Array[String] = [
 ]
 const MODE_MENU_CLOSE_DELAY := 0.15
 
-@onready var stamina_bar: ProgressBar = $TopBar/StaminaBar
-@onready var gold_label: Label = $TopBar/GoldLabel
-@onready var level_label: Label = $TopBar/LevelLabel
-@onready var exp_bar: ProgressBar = $TopBar/ExpBar
-@onready var season_label: Label = $TopBar/SeasonLabel
-@onready var time_label: Label = $TopBar/TimeLabel
+@onready var stamina_bar: ProgressBar = $TopBar/StatusRow/StaminaBar
+@onready var gold_label: Label = $TopBar/StatusRow/GoldLabel
+@onready var level_label: Label = $TopBar/StatusRow/LevelLabel
+@onready var exp_bar: ProgressBar = $TopBar/StatusRow/ExpBar
+@onready var season_label: Label = $TopBar/StatusRow/SeasonLabel
+@onready var time_label: Label = $TopBar/StatusRow/TimeLabel
 @onready var mode_menu: PopupPanel = $BottomBar/ModeMenu
 @onready var mode_menu_content: VBoxContainer = $BottomBar/ModeMenu/VBox
 @onready var farming_mode_button: Button = $BottomBar/ModeMenu/VBox/FarmingModeButton

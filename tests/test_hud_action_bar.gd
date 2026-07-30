@@ -39,6 +39,47 @@ class SeasonDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hud = HudScene.instantiate()
 	tree.root.add_child(hud)
+	assertions.truthy(
+		hud.get_node("TopBar") is PanelContainer,
+		"top status owns a background panel"
+	)
+	var status_labels: Array[Label] = [
+		hud.gold_label,
+		hud.level_label,
+		hud.season_label,
+		hud.time_label,
+	]
+	for label in status_labels:
+		assertions.truthy(
+			label.get_theme_font_size("font_size") >= 32,
+			"status font is readable"
+		)
+		assertions.truthy(
+			label.get_theme_constant("outline_size") >= 4,
+			"status font is outlined"
+		)
+		assertions.truthy(
+			label.get_theme_color("font_color").is_equal_approx(Color("fff1d0")),
+			"status text is cream"
+		)
+	assertions.truthy(
+		hud.stamina_bar.custom_minimum_size.y >= 44.0,
+		"stamina bar is tall enough"
+	)
+	assertions.truthy(
+		hud.exp_bar.custom_minimum_size.y >= 44.0,
+		"experience bar is tall enough"
+	)
+	var top_style := (hud.get_node("TopBar") as Control).get_theme_stylebox("panel")
+	assertions.truthy(
+		top_style is StyleBoxFlat,
+		"top status uses a flat readable panel"
+	)
+	if top_style is StyleBoxFlat:
+		assertions.truthy(
+			top_style.bg_color.a >= 0.86,
+			"top panel masks busy world backgrounds"
+		)
 	var has_action_bar_api := hud.has_method("configure_action_bar")
 	assertions.truthy(has_action_bar_api, "HUD exposes action bar configuration")
 	if not has_action_bar_api:
