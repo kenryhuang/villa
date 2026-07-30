@@ -43,7 +43,7 @@ func get_mode_selected_slot(mode: ActionMode) -> int
 func cancel_current_selection() -> bool
 ```
 
-- [ ] **Step 1: Write failing controller tests**
+- [x] **Step 1: Write failing controller tests**
 
 Extend the controller doubles so `BuildingDouble` records preview entry/exit and add assertions:
 
@@ -66,7 +66,7 @@ assertions.equal(controller.get_mode_selected_slot(1), 8, "building remembers fe
 
 Also assert that `slot_from_key(KEY_9)` returns `8` only while building mode is active.
 
-- [ ] **Step 2: Run the targeted runner and verify RED**
+- [x] **Step 2: Run the targeted runner and verify RED**
 
 Run:
 
@@ -78,7 +78,7 @@ Run:
 
 Expected: FAIL because the action-mode API and building key mapping do not exist.
 
-- [ ] **Step 3: Implement the minimal mode state**
+- [x] **Step 3: Implement the minimal mode state**
 
 Add fixed contextual data:
 
@@ -98,13 +98,13 @@ Implement `switch_mode()` to clean the old preview, restore the target mode's re
 
 Change `slot_from_key()` to accept `1–6` in farming and `1–9` in building. Handle `P`, `B`, digits, and `Esc` in `_unhandled_input()` in that order.
 
-- [ ] **Step 4: Run the targeted runner and verify GREEN**
+- [x] **Step 4: Run the targeted runner and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: controller checks pass with no parse errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/actors/player_action_controller.gd tests/test_player_action_controller.gd
@@ -132,7 +132,7 @@ func set_mode_menu_open(open: bool) -> void
 func get_palette_button_count() -> int
 ```
 
-- [ ] **Step 1: Write failing HUD tests**
+- [x] **Step 1: Write failing HUD tests**
 
 Replace assumptions about six authored static children with state-driven assertions:
 
@@ -157,7 +157,7 @@ Update the runtime scene contract to require:
 "BottomBar/ModeMenu"
 ```
 
-- [ ] **Step 2: Run the targeted runner and verify RED**
+- [x] **Step 2: Run the targeted runner and verify RED**
 
 Run:
 
@@ -169,7 +169,7 @@ Run:
 
 Expected: FAIL because the mode controls and dynamic palette API are absent.
 
-- [ ] **Step 3: Author the mode controls**
+- [x] **Step 3: Author the mode controls**
 
 Change `BottomBar` to contain:
 
@@ -187,7 +187,7 @@ BottomBar
 
 Use a `PopupPanel` or styled `PanelContainer` anchored above `ModeButton`. Connect mouse enter/exit for the button and menu; close through a short `SceneTreeTimer` only if neither control is hovered. Set all HUD controls to stop mouse input from reaching the world.
 
-- [ ] **Step 4: Implement palette rebuilding**
+- [x] **Step 4: Implement palette rebuilding**
 
 Use these ordered definitions:
 
@@ -200,13 +200,13 @@ const BUILDING_IDS := PlayerActionController.BUILDING_IDS
 
 For building mode, load `BuildingData`, display its short name, footprint and cost tooltip, and modulate the button when `economy.has_resources(data.cost)` is false without disabling it.
 
-- [ ] **Step 5: Run the targeted runner and verify GREEN**
+- [x] **Step 5: Run the targeted runner and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: dynamic palette and mouse selection checks pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scenes/ui/hud.tscn scripts/ui/hud.gd tests/test_hud_action_bar.gd tests/test_runtime_ui_scenes.gd
@@ -228,7 +228,7 @@ git commit -m "feat: add dynamic action mode palette"
 - Consumes: Task 1 selection state, `BuildingSystem.update_preview_position()`, `get_preview_can_place()`, and `place_selected_building()`.
 - Produces: a single world-preview invariant and continuous placement behavior.
 
-- [ ] **Step 1: Write failing main-scene integration tests**
+- [x] **Step 1: Write failing main-scene integration tests**
 
 Extend the pointer test:
 
@@ -255,7 +255,7 @@ assertions.truthy(main.building_system.is_in_build_mode(), "preview continues af
 
 Switch to farming and assert `BuildingPreview.visible == false`; cancel and assert the cell highlight is hidden.
 
-- [ ] **Step 2: Run the targeted runner and verify RED**
+- [x] **Step 2: Run the targeted runner and verify RED**
 
 Run:
 
@@ -267,7 +267,7 @@ Run:
 
 Expected: FAIL because placement currently exits build mode and does not restore continuous preview.
 
-- [ ] **Step 3: Implement contextual pointer processing**
+- [x] **Step 3: Implement contextual pointer processing**
 
 In `_process()`:
 
@@ -283,7 +283,7 @@ In pointer action dispatch, route building mode before interaction targets. On s
 
 When switching back to farming, exit building preview before restoring the farming slot. When cancelling building selection, exit preview and do not reactivate it until another slot click or mode re-entry.
 
-- [ ] **Step 4: Disable legacy `BuildUI` global input**
+- [x] **Step 4: Disable legacy `BuildUI` global input**
 
 Add:
 
@@ -293,13 +293,13 @@ Add:
 
 Guard its `_unhandled_input()` with this property. In `main.gd`, set it to `false`, configure the HUD with `economy_system`, and leave `BuildUI` hidden for compatibility.
 
-- [ ] **Step 5: Run the targeted runner and verify GREEN**
+- [x] **Step 5: Run the targeted runner and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: pointer, invalid placement, construction-stage, continuous-preview, mode cleanup, and prior farming checks all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/actors/player_action_controller.gd scripts/main.gd scripts/ui/build_ui.gd \
@@ -321,10 +321,10 @@ git commit -m "feat: integrate building placement into main pointer flow"
 - Modify: `tests/test_hud_action_bar.gd`
 
 **Interfaces:**
-- Consumes: built-in image generation, the installed chroma-key removal helper, existing building front PNGs, and existing grain painted PNGs.
+- Consumes: built-in image generation, the installed chroma-key removal helper, existing complete building back PNGs, and existing grain painted PNGs.
 - Produces: five alpha PNG tool icons and populated button icons in both modes.
 
-- [ ] **Step 1: Write failing asset and binding tests**
+- [x] **Step 1: Write failing asset and binding tests**
 
 For every tool icon path:
 
@@ -337,13 +337,13 @@ assertions.equal(texture.get_height(), 256, "tool icon height is 256")
 
 After configuring farming mode, assert all six buttons have non-null icons. After switching to building mode, assert all nine buttons use non-null building icons.
 
-- [ ] **Step 2: Run the targeted runner and verify RED**
+- [x] **Step 2: Run the targeted runner and verify RED**
 
 Run the main gameplay runner.
 
 Expected: FAIL because the five icon files do not exist and palette buttons do not bind images.
 
-- [ ] **Step 3: Generate five source icons**
+- [x] **Step 3: Generate five source icons**
 
 Use one built-in image-generation call per opaque tool. Use the following normalized prompt for each of the five exact subjects listed below:
 
@@ -369,7 +369,7 @@ Subject: compact wooden-handled mining pickaxe
 Subject: simple rustic fishing rod with reel and short curved line
 ```
 
-- [ ] **Step 4: Remove chroma key and validate**
+- [x] **Step 4: Remove chroma key and validate**
 
 Copy each generated source into `tmp/imagegen/`, then run:
 
@@ -386,7 +386,7 @@ done
 
 Resize final images to exactly `256 × 256` without changing aspect ratio, inspect all five with the image viewer, and verify alpha corners plus clean subject edges. Retry once with `--edge-contract 1` only if a magenta fringe remains.
 
-- [ ] **Step 5: Bind all palette icons**
+- [x] **Step 5: Bind all palette icons**
 
 Add fixed icon paths for farming mode. Use:
 
@@ -397,12 +397,12 @@ res://assets/crops/grain/painted/stage_0/variant_0_front.png
 for seed, and:
 
 ```gdscript
-"res://assets/buildings/painted/%s/%s_front.png" % [building_id, building_id]
+"res://assets/buildings/painted/%s/%s_back.png" % [building_id, building_id]
 ```
 
-for buildings. Set `expand_icon = true`, preserve aspect, and size button icons without hiding number/name text.
+for buildings. The `*_back.png` layer is used because it contains the complete building silhouette; `*_front.png` only contains foreground details. Set `expand_icon = true`, preserve aspect, and size button icons without hiding number/name text.
 
-- [ ] **Step 6: Import and run the targeted runner**
+- [x] **Step 6: Import and run the targeted runner**
 
 Run:
 
@@ -416,7 +416,7 @@ Run:
 
 Expected: all icon resources import and all palette image checks pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add assets/ui/action_icons scripts/ui/hud.gd tests/test_hud_action_bar.gd
@@ -435,15 +435,15 @@ git commit -m "art: add hand-painted action palette icons"
 - Consumes: completed Tasks 1–4.
 - Produces: aligned design documentation and fresh verification evidence.
 
-- [ ] **Step 1: Update detailed design**
+- [x] **Step 1: Update detailed design**
 
 Document the exact mode mapping, building order, mouse menu, per-mode selection memory, `Esc` behavior, and continuous placement under the main-game input/building sections.
 
-- [ ] **Step 2: Mark completed plan checkboxes**
+- [x] **Step 2: Mark completed plan checkboxes**
 
 Change each executed `- [ ]` in this plan to `- [x]` only after its command has passed.
 
-- [ ] **Step 3: Run all system test runners**
+- [x] **Step 3: Run all system test runners**
 
 ```bash
 for runner in \
@@ -461,7 +461,7 @@ done
 
 Expected: all five runners exit `0`.
 
-- [ ] **Step 4: Run editor parsing and main-scene smoke checks**
+- [x] **Step 4: Run editor parsing and main-scene smoke checks**
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot \
@@ -473,9 +473,20 @@ git diff --check
 
 Expected: every command exits `0`, with no new GDScript parse/runtime error.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/detailed-design.md docs/superpowers/plans/2026-07-30-main-action-modes-building-palette.md
 git commit -m "docs: document main action mode controls"
 ```
+
+Fresh completion evidence (2026-07-30):
+
+- Core runner: `649` checks, exit `0`.
+- Grid runner: `81` checks, exit `0`.
+- Farming runner: `322` checks, exit `0`.
+- Building runner: `693` checks, exit `0`.
+- Main gameplay integration runner: `197` checks, exit `0`.
+- Godot editor import/parse: exit `0`, no script error.
+- Main scene 10-second headless smoke run: exit `0`, no script/runtime error.
+- `git diff --check`: exit `0`.
