@@ -131,12 +131,39 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	assertions.equal(hud.get_palette_button_count(), 6, "farming palette has six buttons")
 	assertions.equal(hud.mode_button.text, "种植", "mode button shows farming mode")
+	var tool_icon_paths: Array[String] = [
+		"res://assets/ui/action_icons/hoe.png",
+		"res://assets/ui/action_icons/watering_can.png",
+		"res://assets/ui/action_icons/axe.png",
+		"res://assets/ui/action_icons/pickaxe.png",
+		"res://assets/ui/action_icons/fishing_rod.png",
+	]
+	for path in tool_icon_paths:
+		assertions.truthy(ResourceLoader.exists(path), "tool icon imports: %s" % path)
+		if ResourceLoader.exists(path):
+			var texture := load(path) as Texture2D
+			assertions.equal(texture.get_width(), 256, "tool icon width is 256")
+			assertions.equal(texture.get_height(), 256, "tool icon height is 256")
+	for child in quick_bar.get_children():
+		assertions.truthy(
+			(child as Button).icon != null,
+			"every farming palette button has an icon"
+		)
 	assertions.truthy(
 		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
 		"controller enters building mode for HUD"
 	)
 	assertions.equal(hud.get_palette_button_count(), 9, "building palette has nine buttons")
 	assertions.equal(hud.mode_button.text, "建造", "mode button shows building mode")
+	assertions.truthy(
+		hud.get_node("BottomBar/ActionRow").get_combined_minimum_size().x <= 1280.0,
+		"complete building palette fits a 1280-pixel-wide window"
+	)
+	for child in quick_bar.get_children():
+		assertions.truthy(
+			(child as Button).icon != null,
+			"every building palette button has an icon"
+		)
 	(quick_bar.get_child(8) as Button).pressed.emit()
 	assertions.equal(
 		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),

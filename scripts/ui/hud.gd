@@ -8,6 +8,14 @@ signal quick_slot_selected(index: int)
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
 const BUILDING_NAMES := ["谷仓", "温室", "风车", "鸡舍", "蜂箱", "水井", "工作台", "路灯", "围栏"]
+const FARMING_ICON_PATHS: Array[String] = [
+	"res://assets/ui/action_icons/hoe.png",
+	"res://assets/ui/action_icons/watering_can.png",
+	"res://assets/ui/action_icons/axe.png",
+	"res://assets/ui/action_icons/pickaxe.png",
+	"res://assets/ui/action_icons/fishing_rod.png",
+	"res://assets/crops/grain/painted/stage_0/variant_0_front.png",
+]
 const MODE_MENU_CLOSE_DELAY := 0.15
 
 @onready var stamina_bar: ProgressBar = $TopBar/StaminaBar
@@ -208,12 +216,19 @@ func rebuild_action_palette() -> void:
 	quick_bar.add_theme_constant_override("separation", 4 if building_mode else 8)
 	mode_button.text = "建造" if building_mode else "种植"
 	mode_button.tooltip_text = "当前：%s模式\n悬停选择模式（P / B）" % mode_button.text
+	mode_button.expand_icon = true
+	mode_button.icon = _load_palette_icon(
+		_building_icon_path("barn")
+		if building_mode
+		else FARMING_ICON_PATHS[PlayerActionController.SEED_SLOT]
+	)
 	for index in range(labels.size()):
 		var button := Button.new()
 		button.name = "Slot%d" % (index + 1)
-		button.custom_minimum_size = Vector2(56.0 if building_mode else 68.0, 58.0)
+		button.custom_minimum_size = Vector2(64.0 if building_mode else 72.0, 58.0)
 		button.toggle_mode = true
 		button.mouse_filter = Control.MOUSE_FILTER_STOP
+		button.expand_icon = true
 		button.text = "%d\n%s" % [index + 1, labels[index]]
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
 			var quantity: int = (
@@ -224,6 +239,7 @@ func rebuild_action_palette() -> void:
 			button.text = "%d\n%s x%d" % [index + 1, labels[index], quantity]
 		if building_mode:
 			_configure_building_button(button, index)
+		_configure_palette_button_icon(button, index, building_mode)
 		button.pressed.connect(_on_quick_slot_pressed.bind(index))
 		quick_bar.add_child(button)
 	refresh_action_bar()
@@ -350,6 +366,33 @@ func _configure_building_button(button: Button, index: int) -> void:
 		footprint.y,
 		"、".join(cost_parts),
 	]
+
+
+func _configure_palette_button_icon(
+	button: Button,
+	index: int,
+	building_mode: bool
+) -> void:
+	var path := ""
+	if building_mode:
+		if index >= 0 and index < PlayerActionController.BUILDING_IDS.size():
+			path = _building_icon_path(PlayerActionController.BUILDING_IDS[index])
+	elif index >= 0 and index < FARMING_ICON_PATHS.size():
+		path = FARMING_ICON_PATHS[index]
+	button.icon = _load_palette_icon(path)
+
+
+func _building_icon_path(building_id: String) -> String:
+	return "res://assets/buildings/painted/%s/%s_back.png" % [
+		building_id,
+		building_id,
+	]
+
+
+func _load_palette_icon(path: String) -> Texture2D:
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return null
+	return load(path) as Texture2D
 
 
 func _building_resources_available(index: int) -> bool:
