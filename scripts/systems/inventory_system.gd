@@ -187,6 +187,31 @@ func clear() -> void:
 	reset_slots()
 
 
+func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
+	var normalized_slots: Array[Dictionary] = []
+	if saved_slots is Array:
+		for saved_slot in saved_slots:
+			if normalized_slots.size() >= max_slots:
+				break
+			if saved_slot is Dictionary:
+				normalized_slots.append(saved_slot.duplicate(true))
+			else:
+				normalized_slots.append({})
+	while normalized_slots.size() < max_slots:
+		normalized_slots.append({})
+	slots.assign(normalized_slots)
+
+	var normalized_mappings: Array[int] = []
+	for quick_index in range(6):
+		var slot_index := -1
+		if saved_quick_mappings is Array and quick_index < saved_quick_mappings.size():
+			slot_index = int(saved_quick_mappings[quick_index])
+		if slot_index < 0 or slot_index >= slots.size():
+			slot_index = -1
+		normalized_mappings.append(slot_index)
+	quick_slot_mappings.assign(normalized_mappings)
+
+
 func reset_slots() -> void:
 	slots.clear()
 	slots.resize(max_slots)

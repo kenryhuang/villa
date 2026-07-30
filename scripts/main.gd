@@ -287,7 +287,7 @@ func _backfill_legacy_grain_slot() -> void:
 
 func _map_grain_seed_to_quick_slot() -> bool:
 	for index in range(inventory_system.slots.size()):
-		if inventory_system.slots[index].item_id == "grain_seed":
+		if inventory_system.slots[index].get("item_id", "") == "grain_seed":
 			return inventory_system.set_quick_slot(index, 5)
 	return false
 

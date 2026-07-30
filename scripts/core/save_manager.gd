@@ -179,8 +179,10 @@ func _apply_save_data(data: Dictionary) -> void:
 	# 背包
 	var inventory = _get_inventory_system()
 	if inventory and data.has("inventory"):
-		inventory.slots = data.inventory.get("slots", [])
-		inventory.quick_slot_mappings = data.inventory.get("quick_mappings", [-1,-1,-1,-1,-1,-1])
+		inventory.restore_state(
+			data.inventory.get("slots", []),
+			data.inventory.get("quick_mappings", [-1, -1, -1, -1, -1, -1])
+		)
 
 	# 网格状态
 	var grid_system = _get_grid_system()
