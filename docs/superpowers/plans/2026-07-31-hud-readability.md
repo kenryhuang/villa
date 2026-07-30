@@ -32,7 +32,7 @@
 - Create: `tests/test_action_palette_button.gd`
 - Modify: `tests/run_main_gameplay_integration_tests.gd`
 
-- [ ] **Step 1: Write the failing component test**
+- [x] **Step 1: Write the failing component test**
 
 Create `tests/test_action_palette_button.gd`:
 
@@ -84,7 +84,7 @@ const ActionPaletteButtonTest = preload("res://tests/test_action_palette_button.
 ActionPaletteButtonTest.new().run(assertions, self)
 ```
 
-- [ ] **Step 2: Run the main integration runner and verify RED**
+- [x] **Step 2: Run the main integration runner and verify RED**
 
 Run:
 
@@ -96,7 +96,7 @@ Run:
 
 Expected: parse/load failure because `action_palette_button.tscn` does not exist.
 
-- [ ] **Step 3: Implement the component script**
+- [x] **Step 3: Implement the component script**
 
 Create `scripts/ui/action_palette_button.gd`:
 
@@ -129,7 +129,7 @@ func set_shortcut_visible(visible: bool) -> void:
 	shortcut_label.visible = visible
 ```
 
-- [ ] **Step 4: Author the component scene**
+- [x] **Step 4: Author the component scene**
 
 Create `scenes/ui/action_palette_button.tscn` with:
 
@@ -150,13 +150,13 @@ NameLabel offsets: left=4, top=88, right=108, bottom=114
 
 Set all three child controls to `MOUSE_FILTER_IGNORE`. Give the root button separate deep-olive `normal`, brighter `hover`, and gold-border `pressed` `StyleBoxFlat` resources. The pressed border is `3px`; normal/hover borders are `2px`.
 
-- [ ] **Step 5: Run the targeted runner and verify GREEN**
+- [x] **Step 5: Run the targeted runner and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: component checks pass and the runner exits `0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/ui/action_palette_button.gd scenes/ui/action_palette_button.tscn \
@@ -174,7 +174,7 @@ git commit -m "feat: add readable action palette button"
 - Modify: `tests/test_hud_action_bar.gd`
 - Modify: `tests/test_runtime_ui_scenes.gd`
 
-- [ ] **Step 1: Write failing top-panel tests**
+- [x] **Step 1: Write failing top-panel tests**
 
 Add near the start of `tests/test_hud_action_bar.gd` after the HUD is added:
 
@@ -209,7 +209,7 @@ Change HUD node contracts in `tests/test_runtime_ui_scenes.gd` to:
 "TopBar/StatusRow/TimeLabel",
 ```
 
-- [ ] **Step 2: Run the main integration and runtime UI runners and verify RED**
+- [x] **Step 2: Run the main integration and runtime UI runners and verify RED**
 
 Run:
 
@@ -224,7 +224,7 @@ Run:
 
 Expected: failures because `TopBar` is an `HBoxContainer`, has no `StatusRow`, and uses default font metrics.
 
-- [ ] **Step 3: Restructure and style `TopBar`**
+- [x] **Step 3: Restructure and style `TopBar`**
 
 In `scenes/ui/hud.tscn`:
 
@@ -246,7 +246,7 @@ content_margin_top/bottom = 12
 6. Set `StatusRow` separation to `18`.
 7. Change `StaminaBar` to `260 × 44` and `ExpBar` to `220 × 44`.
 
-- [ ] **Step 4: Update HUD script paths**
+- [x] **Step 4: Update HUD script paths**
 
 Change only the six top-node paths in `scripts/ui/hud.gd`:
 
@@ -259,13 +259,13 @@ Change only the six top-node paths in `scripts/ui/hud.gd`:
 @onready var time_label: Label = $TopBar/StatusRow/TimeLabel
 ```
 
-- [ ] **Step 5: Run both targeted runners and verify GREEN**
+- [x] **Step 5: Run both targeted runners and verify GREEN**
 
 Run both commands from Step 2.
 
 Expected: top panel, node path, font, outline, and bar-size checks pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scenes/ui/hud.tscn scripts/ui/hud.gd \
@@ -282,7 +282,7 @@ git commit -m "feat: improve top status readability"
 - Modify: `scripts/ui/hud.gd`
 - Modify: `tests/test_hud_action_bar.gd`
 
-- [ ] **Step 1: Replace generic-button expectations with failing tile tests**
+- [x] **Step 1: Replace generic-button expectations with failing tile tests**
 
 Update action-bar assertions in `tests/test_hud_action_bar.gd`:
 
@@ -323,7 +323,7 @@ assertions.equal(tile.name_label.modulate, Color.WHITE, "resource dimming keeps 
 assertions.truthy(tile.icon_rect.modulate != Color.WHITE, "resource dimming targets icon")
 ```
 
-- [ ] **Step 2: Run the main integration runner and verify RED**
+- [x] **Step 2: Run the main integration runner and verify RED**
 
 Run:
 
@@ -335,7 +335,7 @@ Run:
 
 Expected: failures because the HUD still creates generic `Button` nodes and uses native icon/text layout.
 
-- [ ] **Step 3: Author the enlarged bottom layout**
+- [x] **Step 3: Author the enlarged bottom layout**
 
 In `scenes/ui/hud.tscn`:
 
@@ -346,7 +346,7 @@ In `scenes/ui/hud.tscn`:
 - Replace authored `ModeButton` with an instance of `action_palette_button.tscn`.
 - Override `ModeButton.toggle_mode=false` and keep its existing node path.
 
-- [ ] **Step 4: Instantiate and configure `ActionPaletteButton`**
+- [x] **Step 4: Instantiate and configure `ActionPaletteButton`**
 
 In `scripts/ui/hud.gd`:
 
@@ -395,7 +395,7 @@ func _palette_texture(index: int, building_mode: bool) -> Texture2D:
 
 In `refresh_action_bar()`, update the seed tile with `configure()` only when quantity changes, call `button.set_selected(index == selected)`, and call `button.set_available(available)`. Do not modulate the entire button.
 
-- [ ] **Step 5: Preserve click and mode-menu behavior**
+- [x] **Step 5: Preserve click and mode-menu behavior**
 
 Keep these existing signal connections unchanged:
 
@@ -408,13 +408,13 @@ mode_button.mouse_exited.connect(_on_mode_menu_mouse_exited)
 
 Keep Tooltip content on the root tile. If an icon fails to load, `configure()` receives `null`; shortcut and name remain visible.
 
-- [ ] **Step 6: Run the main integration runner and verify GREEN**
+- [x] **Step 6: Run the main integration runner and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: large-tile, mode switch, quantity, one-row width, mouse selection, and existing pointer integration checks all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scenes/ui/hud.tscn scripts/ui/hud.gd tests/test_hud_action_bar.gd
@@ -429,7 +429,7 @@ git commit -m "feat: enlarge HUD action palette"
 - Modify: `docs/detailed-design.md`
 - Modify: `docs/superpowers/plans/2026-07-31-hud-readability.md`
 
-- [ ] **Step 1: Update detailed design**
+- [x] **Step 1: Update detailed design**
 
 Update sections `5.4 HUD` and `7.1 HUD` to document:
 
@@ -439,11 +439,11 @@ Update sections `5.4 HUD` and `7.1 HUD` to document:
 - `112 × 116` tile and `84 × 84` icon metrics.
 - `1280px` maximum combined action-row width.
 
-- [ ] **Step 2: Mark completed plan checkboxes**
+- [x] **Step 2: Mark completed plan checkboxes**
 
 Change executed `- [ ]` steps to `- [x]` only after the corresponding commands have passed.
 
-- [ ] **Step 3: Import and run all test suites**
+- [x] **Step 3: Import and run all test suites**
 
 Run:
 
@@ -470,7 +470,7 @@ done
 
 Expected: editor and all six runners exit `0`, with no new parse/runtime error.
 
-- [ ] **Step 4: Run the main scene and static checks**
+- [x] **Step 4: Run the main scene and static checks**
 
 Run:
 
@@ -483,9 +483,21 @@ git diff --check
 
 Expected: main scene exits `0` with no `SCRIPT ERROR`; `git diff --check` exits `0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/detailed-design.md docs/superpowers/plans/2026-07-31-hud-readability.md
 git commit -m "docs: document readable HUD metrics"
 ```
+
+Fresh completion evidence (2026-07-31):
+
+- Godot editor import/parse: exit `0`.
+- Core runner: `649` checks, exit `0`.
+- Grid runner: `81` checks, exit `0`.
+- Farming runner: `322` checks, exit `0`.
+- Building runner: `693` checks, exit `0`.
+- Main gameplay integration runner: `235` checks, exit `0`.
+- Runtime UI scene contract: exit `0`.
+- Main scene 10-second headless smoke run: exit `0`, no script/runtime error.
+- `git diff --check`: exit `0`.

@@ -1905,16 +1905,18 @@ func interact(player: Node3D) -> void:
 
 HUD 已重构为经营状态栏和上下文操作栏。底部左侧模式按钮是种植/建造入口；悬停时菜单向上展开，右侧按钮行根据模式动态生成六个工具/种子按钮或九个建筑按钮。
 
+当前项目使用 `3000 × 2000` 画布，因此 HUD 使用专门的大画布可读性规格：顶部信息位于高不透明深橄榄底板上，状态字为 `32px` 米白描边字；底部按钮由 `ActionPaletteButton` 独立管理图标、快捷键角标和名称，不再使用原生 Button 的图文挤压布局。
+
 **过渡方案**（Phase 1）：
 ```gdscript
 class_name VillaHud extends CanvasLayer
 
-@onready var stamina_bar: TextureProgressBar = $TopBar/StaminaBar
-@onready var gold_label: Label = $TopBar/GoldLabel
-@onready var level_label: Label = $TopBar/LevelLabel
-@onready var season_label: Label = $TopBar/SeasonLabel
-@onready var time_label: Label = $TopBar/TimeLabel
-@onready var mode_button: Button = $BottomBar/ActionRow/ModeButton
+@onready var stamina_bar: ProgressBar = $TopBar/StatusRow/StaminaBar
+@onready var gold_label: Label = $TopBar/StatusRow/GoldLabel
+@onready var level_label: Label = $TopBar/StatusRow/LevelLabel
+@onready var season_label: Label = $TopBar/StatusRow/SeasonLabel
+@onready var time_label: Label = $TopBar/StatusRow/TimeLabel
+@onready var mode_button: ActionPaletteButton = $BottomBar/ActionRow/ModeButton
 @onready var quick_bar: HBoxContainer = $BottomBar/ActionRow/QuickBar
 
 func configure_action_bar(
@@ -2244,32 +2246,15 @@ func _on_region_unlocked_auto_save(_region: RegionData) -> void:
 ```
 HUD (CanvasLayer) — scripts/ui/hud.gd
 │
-├── TopBar (Control)                  — 顶部栏
-│   │   anchors: top=0, left=0, right=1, height=48
-│   │   layout: HFlowContainer
-│   │
-│   ├── StaminaPanel (PanelContainer)
-│   │   └── StaminaBar (TextureProgressBar)
-│   │       min=0, max=100, value=100
-│   │       tint_progress: green → red (value < 30)
-│   │
-│   ├── GoldPanel (PanelContainer)
-│   │   └── GoldLabel (Label)
-│   │       text="💰 100"
-│   │
-│   ├── LevelPanel (PanelContainer)
-│   │   ├── LevelLabel (Label)
-│   │   │   text="Lv.1"
-│   │   └── ExpBar (TextureProgressBar)
-│   │       min=0, max=100, value=0
-│   │
-│   ├── SeasonPanel (PanelContainer)
-│   │   └── SeasonLabel (Label)
-│   │       text="春 1/7"
-│   │
-│   └── TimePanel (PanelContainer)
-│       └── TimeLabel (Label)
-│           text="06:00"
+├── TopBar (PanelContainer)            — 深橄榄高对比顶部栏
+│   │   background alpha=0.90, gold border=2, corner=12
+│   └── StatusRow (HBoxContainer)
+│       ├── StaminaBar (ProgressBar)   — 260×44
+│       ├── GoldLabel (Label)          — 32px 米白字，4px 深色描边
+│       ├── LevelLabel (Label)         — 32px 米白字，4px 深色描边
+│       ├── ExpBar (ProgressBar)       — 220×44
+│       ├── SeasonLabel (Label)        — 32px 米白字，4px 深色描边
+│       └── TimeLabel (Label)          — 32px 米白字，4px 深色描边
 │
 ├── BottomBar (Control)               — 底部栏
 │   │   anchors: bottom=1, left=0, right=1
@@ -2280,11 +2265,11 @@ HUD (CanvasLayer) — scripts/ui/hud.gd
 │   │       ├── FarmingModeButton      — 种植模式（P）
 │   │       └── BuildingModeButton     — 建造模式（B）
 │   └── ActionRow (HBoxContainer)
-│       ├── ModeButton (Button)        — 当前模式图像和名称
-│       └── QuickBar (HBoxContainer)   — 动态生成 6 或 9 个 Button
+│       ├── ModeButton (ActionPaletteButton)
+│       └── QuickBar (HBoxContainer)   — 动态生成 6 或 9 个 ActionPaletteButton
 ```
 
-操作按钮包含手绘图像、数字和短名称。种植按钮最小宽度 `72px`，建造按钮最小宽度 `64px`、间距 `4px`，完整建造栏在 `1280 × 720` 下保持单行显示。模式菜单和所有按钮拦截鼠标输入，避免点击穿透到世界。
+`ActionPaletteButton` 尺寸为 `112 × 116px`，内部包含独立的 `84 × 84px TextureRect`、`26px` 快捷键角标和底部 `22px` 描边名称。资源不足时只压暗图像，文字和数字保持不透明。完整建造栏最小宽度不超过 `1280px`，九项建筑和模式按钮保持单行显示。模式菜单和所有按钮拦截鼠标输入，避免点击穿透到世界。
 
 种植工具图标来自 `assets/ui/action_icons/`，种子复用谷物幼苗图；建筑按钮复用 `assets/buildings/painted/<id>/<id>_back.png`，因为该图层包含可辨识的完整建筑轮廓。
 
@@ -2326,7 +2311,8 @@ func _on_action_palette_changed(
     selected_index: int
 ) -> void:
     for i in quick_bar.get_child_count():
-        (quick_bar.get_child(i) as Button).button_pressed = i == selected_index
+        var tile := quick_bar.get_child(i) as ActionPaletteButton
+        tile.set_selected(i == selected_index)
 ```
 
 ### 7.2 背包界面（scenes/ui/inventory_ui.tscn）
