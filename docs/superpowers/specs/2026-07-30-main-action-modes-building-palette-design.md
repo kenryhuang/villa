@@ -1,7 +1,7 @@
 # 主游戏操作模式与建造快捷栏设计
 
 日期：2026-07-30  
-状态：设计已确认
+状态：已实现
 
 ## 1. 背景
 
@@ -207,12 +207,12 @@ assets/ui/action_icons/fishing_rod.png
 建筑按钮复用：
 
 ```text
-assets/buildings/painted/<building_id>/<building_id>_front.png
+assets/buildings/painted/<building_id>/<building_id>_back.png
 ```
 
-不为建筑另做图标，不修改完成态建模。
+现有 `*_front.png` 是门、草丛等前景分层，单独使用会缺少建筑主体；按钮因此复用包含完整可辨识轮廓的 `*_back.png`。不为建筑另做图标，不修改完成态建模。
 
-模式按钮的种植图像复用谷物幼苗或种子图；建造图像复用谷仓正面图。
+模式按钮的种植图像复用谷物幼苗或种子图；建造图像复用谷仓完整建筑图。
 
 ## 9. 种植交互
 

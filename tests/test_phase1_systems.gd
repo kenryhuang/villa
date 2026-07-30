@@ -53,6 +53,37 @@ func _test_inventory(assertions: TestAssert) -> void:
 	assertions.truthy(not tiny_inventory.add_item("wood", 100), "full add fails atomically")
 	assertions.equal(tiny_inventory.get_item_count("wood"), 0, "failed add does not mutate inventory")
 
+	var legacy_inventory = InventorySystemScript.new()
+	var legacy_state: Dictionary = JSON.parse_string(
+		'{"slots":[{"item_id":"grain_seed","quantity":3},{}],'
+		+ '"quick_mappings":[0,-1,-1,-1,-1,-1]}'
+	)
+	assertions.truthy(
+		legacy_inventory.has_method("restore_state"),
+		"inventory exposes a typed legacy-save restore boundary"
+	)
+	if legacy_inventory.has_method("restore_state"):
+		legacy_inventory.call(
+			"restore_state",
+			legacy_state.get("slots", []),
+			legacy_state.get("quick_mappings", [])
+		)
+		assertions.equal(
+			legacy_inventory.slots.size(),
+			legacy_inventory.max_slots,
+			"legacy save slots are padded to inventory capacity"
+		)
+		assertions.equal(
+			legacy_inventory.get_item_count("grain_seed"),
+			3,
+			"legacy JSON dictionaries restore into typed inventory slots"
+		)
+		assertions.equal(
+			legacy_inventory.get_quick_item(0),
+			"grain_seed",
+			"legacy quick mappings restore into the typed integer array"
+		)
+
 
 func _test_economy(assertions: TestAssert) -> void:
 	var inventory = InventorySystemScript.new()

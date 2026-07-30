@@ -3,6 +3,8 @@ extends Node
 
 signal selection_changed(index: int, label: String)
 signal inventory_changed
+signal mode_changed(mode: ActionMode)
+signal palette_changed(mode: ActionMode, selected_index: int)
 
 enum Action {
 	NONE,
@@ -13,10 +15,37 @@ enum Action {
 	TOOL,
 }
 
+enum ActionMode {
+	FARMING,
+	BUILDING,
+}
+
 const SEED_SLOT := 5
 const SEED_ITEM_ID := "grain_seed"
 const CROP_ID := "grain"
 const SLOT_LABELS := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
+const BUILDING_IDS: Array[String] = [
+	"barn",
+	"greenhouse",
+	"windmill",
+	"chicken_coop",
+	"beehive",
+	"well",
+	"workbench",
+	"lamp",
+	"fence",
+]
+const BUILDING_LABELS: Array[String] = [
+	"谷仓",
+	"温室",
+	"风车",
+	"鸡舍",
+	"蜂箱",
+	"水井",
+	"工作台",
+	"路灯",
+	"围栏",
+]
 const TOOL_BY_SLOT := [
 	ToolSystem.ToolType.HOE,
 	ToolSystem.ToolType.WATERING_CAN,
@@ -39,7 +68,10 @@ var tool_system: Variant
 var inventory_system: Variant
 var crop_data_override: CropData
 
+var _action_mode := ActionMode.FARMING
 var _selected_slot := 0
+var _last_farming_slot := 0
+var _last_building_slot := 0
 var _pointer_position: Variant
 
 
@@ -79,27 +111,98 @@ func configure(
 	building_system = building
 	tool_system = tools
 	inventory_system = inventory
-	select_slot(_selected_slot)
+	select_mode_slot(_selected_slot)
 
 
 func select_slot(index: int) -> bool:
-	if index < 0 or index >= SLOT_LABELS.size():
+	if _action_mode != ActionMode.FARMING:
+		switch_mode(ActionMode.FARMING)
+	return select_mode_slot(index)
+
+
+func switch_mode(mode: ActionMode) -> bool:
+	if mode not in [ActionMode.FARMING, ActionMode.BUILDING]:
+		return false
+	if building_system != null and building_system.is_in_build_mode():
+		building_system.exit_preview_mode()
+	if grid_system != null:
+		grid_system.clear_highlights()
+	_action_mode = mode
+	_selected_slot = (
+		_last_farming_slot
+		if _action_mode == ActionMode.FARMING
+		else _last_building_slot
+	)
+	var activated := _activate_current_slot()
+	mode_changed.emit(_action_mode)
+	palette_changed.emit(_action_mode, _selected_slot)
+	return activated
+
+
+func get_action_mode() -> ActionMode:
+	return _action_mode
+
+
+func select_mode_slot(index: int) -> bool:
+	var labels := SLOT_LABELS if _action_mode == ActionMode.FARMING else BUILDING_LABELS
+	if index < 0 or index >= labels.size():
 		return false
 	_selected_slot = index
-	if index < TOOL_BY_SLOT.size() and tool_system != null:
-		tool_system.switch_tool(TOOL_BY_SLOT[index])
-	selection_changed.emit(index, SLOT_LABELS[index])
+	if _action_mode == ActionMode.FARMING:
+		_last_farming_slot = index
+	else:
+		_last_building_slot = index
+	var activated := _activate_current_slot()
+	if activated:
+		palette_changed.emit(_action_mode, _selected_slot)
+	return activated
+
+
+func get_mode_selected_slot(mode: ActionMode) -> int:
+	return _last_farming_slot if mode == ActionMode.FARMING else _last_building_slot
+
+
+func cancel_current_selection() -> bool:
+	if _selected_slot < 0:
+		return false
+	if _action_mode == ActionMode.BUILDING:
+		if building_system != null and building_system.is_in_build_mode():
+			building_system.exit_preview_mode()
+	else:
+		if grid_system != null:
+			grid_system.clear_highlights()
+	_selected_slot = -1
+	var empty_label := "未选择工具" if _action_mode == ActionMode.FARMING else "未选择建筑"
+	selection_changed.emit(-1, empty_label)
+	palette_changed.emit(_action_mode, -1)
+	return true
+
+
+func _activate_current_slot() -> bool:
+	if _selected_slot < 0:
+		return false
+	if _action_mode == ActionMode.BUILDING:
+		if grid_system != null:
+			grid_system.clear_highlights()
+		if building_system == null:
+			return false
+		var entered: bool = building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+		if entered:
+			selection_changed.emit(
+				_selected_slot,
+				BUILDING_LABELS[_selected_slot]
+			)
+		return entered
+	if building_system != null and building_system.is_in_build_mode():
+		building_system.exit_preview_mode()
+	if _selected_slot < TOOL_BY_SLOT.size() and tool_system != null:
+		tool_system.switch_tool(TOOL_BY_SLOT[_selected_slot])
+	selection_changed.emit(_selected_slot, SLOT_LABELS[_selected_slot])
 	return true
 
 
 func deselect_slot() -> bool:
-	if _selected_slot < 0:
-		return false
-	_selected_slot = -1
-	if grid_system != null:
-		grid_system.clear_highlights()
-	selection_changed.emit(-1, "未选择工具")
-	return true
+	return cancel_current_selection()
 
 
 func get_selected_slot() -> int:
@@ -107,24 +210,15 @@ func get_selected_slot() -> int:
 
 
 func slot_from_key(keycode: Key) -> int:
-	match keycode:
-		KEY_1:
-			return 0
-		KEY_2:
-			return 1
-		KEY_3:
-			return 2
-		KEY_4:
-			return 3
-		KEY_5:
-			return 4
-		KEY_6:
-			return 5
-	return -1
+	var index := -1
+	if keycode >= KEY_1 and keycode <= KEY_9:
+		index = int(keycode - KEY_1)
+	var maximum := SLOT_LABELS.size() if _action_mode == ActionMode.FARMING else BUILDING_IDS.size()
+	return index if index >= 0 and index < maximum else -1
 
 
 func perform_cell_action(cell: GridCell) -> bool:
-	if cell == null or _selected_slot < 0:
+	if _action_mode != ActionMode.FARMING or cell == null or _selected_slot < 0:
 		return false
 	if _is_mature(cell):
 		return _harvest(cell)
@@ -138,7 +232,14 @@ func perform_cell_action(cell: GridCell) -> bool:
 func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 	if building_system == null or not building_system.is_in_build_mode():
 		return null
-	return building_system.place_selected_building(gx, gz)
+	var placed: BuildingInstance = building_system.place_selected_building(gx, gz)
+	if (
+		placed != null
+		and _action_mode == ActionMode.BUILDING
+		and _selected_slot >= 0
+	):
+		building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+	return placed
 
 
 func perform_target_interaction(target: Node) -> bool:
@@ -168,9 +269,14 @@ func _process(_delta: float) -> void:
 		grid_system.clear_highlights()
 		return
 	var ground_point = _raycast_to_ground(_effective_pointer_position())
-	if building_system != null and building_system.is_in_build_mode():
+	if _action_mode == ActionMode.BUILDING:
 		grid_system.clear_highlights()
-		if ground_point is Vector3:
+		if (
+			_selected_slot >= 0
+			and building_system != null
+			and building_system.is_in_build_mode()
+			and ground_point is Vector3
+		):
 			building_system.update_preview_position(ground_point.x, ground_point.z)
 		return
 	if _selected_slot < 0:
@@ -188,19 +294,17 @@ func _process(_delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_P and switch_mode(ActionMode.FARMING):
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_B and switch_mode(ActionMode.BUILDING):
+			get_viewport().set_input_as_handled()
+			return
 		var slot := slot_from_key(event.keycode)
-		if slot >= 0 and select_slot(slot):
+		if slot >= 0 and select_mode_slot(slot):
 			get_viewport().set_input_as_handled()
 			return
-		if (
-			event.keycode == KEY_ESCAPE
-			and building_system != null
-			and building_system.is_in_build_mode()
-		):
-			building_system.exit_preview_mode()
-			get_viewport().set_input_as_handled()
-			return
-		if event.keycode == KEY_ESCAPE and deselect_slot():
+		if event.keycode == KEY_ESCAPE and cancel_current_selection():
 			get_viewport().set_input_as_handled()
 			return
 	if (
@@ -216,7 +320,13 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if _pointer_over_ui():
 		return false
 	var ground_point = _raycast_to_ground(pointer_position)
-	if building_system != null and building_system.is_in_build_mode():
+	if _action_mode == ActionMode.BUILDING:
+		if (
+			_selected_slot < 0
+			or building_system == null
+			or not building_system.is_in_build_mode()
+		):
+			return false
 		if not ground_point is Vector3 or grid_system == null:
 			return false
 		var grid_position = grid_system.world_to_grid(ground_point.x, ground_point.z)

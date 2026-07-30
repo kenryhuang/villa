@@ -10,6 +10,22 @@ class ToolDouble:
 		pass
 
 
+class BuildingDouble:
+	extends RefCounted
+
+	var build_mode := false
+
+	func enter_preview_mode(_building: Variant) -> bool:
+		build_mode = true
+		return true
+
+	func exit_preview_mode() -> void:
+		build_mode = false
+
+	func is_in_build_mode() -> bool:
+		return build_mode
+
+
 class SeasonDouble:
 	extends Node
 
@@ -35,7 +51,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	inventory.add_item("grain_seed", 2)
 	var controller = controller_script.new()
 	tree.root.add_child(controller)
-	controller.configure(null, null, null, null, ToolDouble.new(), inventory)
+	controller.configure(
+		null,
+		null,
+		null,
+		BuildingDouble.new(),
+		ToolDouble.new(),
+		inventory
+	)
 	hud.configure_action_bar(controller, inventory)
 	var season := SeasonDouble.new()
 	tree.root.add_child(season)
@@ -49,7 +72,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		hud.call("_on_day_changed", 2)
 		assertions.equal(hud.season_label.text, "春 2/7", "HUD refreshes the scene-local day")
 
-	var quick_bar := hud.get_node("BottomBar/QuickBar")
+	var quick_bar: HBoxContainer = hud.quick_bar
 	assertions.equal(quick_bar.get_child_count(), 6, "HUD keeps six action slots")
 	for child in quick_bar.get_children():
 		assertions.truthy(child is Button, "every action slot is clickable")
@@ -92,6 +115,63 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"6\n谷物种子 x1",
 		"seed count refreshes after inventory change"
 	)
+
+	var has_mode_palette_api := (
+		hud.has_method("rebuild_action_palette")
+		and hud.has_method("set_mode_menu_open")
+		and hud.has_method("get_palette_button_count")
+	)
+	assertions.truthy(has_mode_palette_api, "HUD exposes dynamic mode palette API")
+	if not has_mode_palette_api:
+		controller.free()
+		inventory.free()
+		season.free()
+		hud.free()
+		return
+
+	assertions.equal(hud.get_palette_button_count(), 6, "farming palette has six buttons")
+	assertions.equal(hud.mode_button.text, "种植", "mode button shows farming mode")
+	var tool_icon_paths: Array[String] = [
+		"res://assets/ui/action_icons/hoe.png",
+		"res://assets/ui/action_icons/watering_can.png",
+		"res://assets/ui/action_icons/axe.png",
+		"res://assets/ui/action_icons/pickaxe.png",
+		"res://assets/ui/action_icons/fishing_rod.png",
+	]
+	for path in tool_icon_paths:
+		assertions.truthy(ResourceLoader.exists(path), "tool icon imports: %s" % path)
+		if ResourceLoader.exists(path):
+			var texture := load(path) as Texture2D
+			assertions.equal(texture.get_width(), 256, "tool icon width is 256")
+			assertions.equal(texture.get_height(), 256, "tool icon height is 256")
+	for child in quick_bar.get_children():
+		assertions.truthy(
+			(child as Button).icon != null,
+			"every farming palette button has an icon"
+		)
+	assertions.truthy(
+		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
+		"controller enters building mode for HUD"
+	)
+	assertions.equal(hud.get_palette_button_count(), 9, "building palette has nine buttons")
+	assertions.equal(hud.mode_button.text, "建造", "mode button shows building mode")
+	assertions.truthy(
+		hud.get_node("BottomBar/ActionRow").get_combined_minimum_size().x <= 1280.0,
+		"complete building palette fits a 1280-pixel-wide window"
+	)
+	for child in quick_bar.get_children():
+		assertions.truthy(
+			(child as Button).icon != null,
+			"every building palette button has an icon"
+		)
+	(quick_bar.get_child(8) as Button).pressed.emit()
+	assertions.equal(
+		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),
+		8,
+		"mouse selects fence through the shared controller API"
+	)
+	hud.set_mode_menu_open(true)
+	assertions.truthy(hud.mode_menu.visible, "mode menu can open above the palette")
 
 	controller.free()
 	inventory.free()

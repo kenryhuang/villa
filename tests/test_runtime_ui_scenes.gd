@@ -34,8 +34,10 @@ func _run() -> void:
 		"TopBar/ExpBar",
 		"TopBar/SeasonLabel",
 		"TopBar/TimeLabel",
-		"BottomBar/QuickBar",
 		"BottomBar/ToolLabel",
+		"BottomBar/ModeMenu",
+		"BottomBar/ActionRow/ModeButton",
+		"BottomBar/ActionRow/QuickBar",
 	])
 	_check_scene("res://scenes/ui/inventory_ui.tscn", ["Panel/VBox/GridContainer", "Panel/VBox/QuickBar"])
 	_check_scene("res://scenes/ui/dialogue_ui.tscn", [

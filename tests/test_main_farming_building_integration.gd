@@ -36,6 +36,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.inventory_system,
 		"controller shares inventory"
 	)
+	assertions.truthy(
+		_has_property(main.build_ui, "keyboard_shortcut_enabled"),
+		"legacy build UI exposes shortcut ownership"
+	)
+	if _has_property(main.build_ui, "keyboard_shortcut_enabled"):
+		assertions.truthy(
+			not main.build_ui.keyboard_shortcut_enabled,
+			"main disables the legacy build UI B shortcut"
+		)
 
 	var game_data = tree.root.get_node_or_null("GameData")
 	var grain: CropData = game_data.get_crop("grain") if game_data else null
@@ -143,6 +152,18 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			main.inventory_system.quick_slot_mappings[5],
 			"save manager preserves seed quick mapping"
 		)
+
+	main.inventory_system.reset_slots()
+	main.inventory_system.slots[1] = {"item_id": "grain_seed", "quantity": 3}
+	assertions.truthy(
+		main.call("_map_grain_seed_to_quick_slot"),
+		"legacy seed backfill skips empty dictionary slots"
+	)
+	assertions.equal(
+		main.inventory_system.get_quick_item(5),
+		"grain_seed",
+		"legacy seed backfill maps the discovered dictionary slot"
+	)
 
 	main.free()
 

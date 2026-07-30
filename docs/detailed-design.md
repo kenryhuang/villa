@@ -269,6 +269,24 @@ func place_building(building_data: BuildingData, gx: int, gz: int) -> BuildingIn
     return instance
 ```
 
+#### 主游戏操作模式与连续建造
+
+主游戏由 `PlayerActionController` 统一管理种植和建造两种操作模式。HUD 只呈现控制器状态，并将数字键或鼠标按钮选择转发给同一个 `select_mode_slot()` 接口，不保存第二份选择状态。
+
+| 模式 | 切换键 | 数字键 | 固定顺序 |
+|---|---|---|---|
+| 种植 | `P` | `1–6` | 锄头、浇水壶、斧头、镐、鱼竿、谷物种子 |
+| 建造 | `B` | `1–9` | 谷仓、温室、风车、鸡舍、蜂箱、水井、工作台、路灯、围栏 |
+
+- 首次进入种植模式默认锄头，首次进入建造模式默认谷仓。
+- 两种模式分别记忆最后一次有效选择；切换回来时恢复各自选择。
+- `Esc` 清除当前选择、单格阴影或建筑预览，但不改变当前模式和记忆项。
+- 种植模式由鼠标地面射线显示单格绿/红阴影，左键执行翻地、浇水、播种或收获。
+- 建造模式调用 `BuildingSystem` 的现有完成态模型和 footprint 预览；可建造为绿色，不可建造为红色。
+- 红色位置点击不扣资源、不修改网格、不创建建筑。
+- 绿色位置点击创建 `FOUNDATION` 阶段的建筑；成功后立即恢复同类预览，允许连续建造。
+- 任一时刻只允许显示一种世界预览。模式切换和取消操作必须先清理旧预览。
+
 #### 建筑场景结构
 
 每种建筑有独立 `.tscn` 场景：
@@ -1885,9 +1903,7 @@ func interact(player: Node3D) -> void:
 
 ### 5.4 HUD（scripts/ui/hud.gd, scenes/ui/hud.tscn）
 
-**完全重构**。现有 HUD 只显示 4 个 Label（生命、状态、NPC数、弹丸数）。
-
-新 HUD 结构见 [第 7 节 UI 布局详细设计](#7-ui-布局详细设计)。
+HUD 已重构为经营状态栏和上下文操作栏。底部左侧模式按钮是种植/建造入口；悬停时菜单向上展开，右侧按钮行根据模式动态生成六个工具/种子按钮或九个建筑按钮。
 
 **过渡方案**（Phase 1）：
 ```gdscript
@@ -1898,7 +1914,21 @@ class_name VillaHud extends CanvasLayer
 @onready var level_label: Label = $TopBar/LevelLabel
 @onready var season_label: Label = $TopBar/SeasonLabel
 @onready var time_label: Label = $TopBar/TimeLabel
-@onready var quick_bar: HBoxContainer = $BottomBar/QuickBar
+@onready var mode_button: Button = $BottomBar/ActionRow/ModeButton
+@onready var quick_bar: HBoxContainer = $BottomBar/ActionRow/QuickBar
+
+func configure_action_bar(
+    controller: PlayerActionController,
+    inventory: InventorySystem,
+    economy: EconomySystem
+) -> void:
+    # 监听 mode_changed / palette_changed，并按权威状态重建按钮。
+    pass
+
+func rebuild_action_palette() -> void:
+    # FARMING 创建 6 项，BUILDING 创建 9 项。
+    # 每个按钮调用 controller.select_mode_slot(index)。
+    pass
 
 func set_stamina(value: int, max_value: int) -> void:
     stamina_bar.max_value = max_value
@@ -2183,6 +2213,13 @@ func _apply_save_data(data: Dictionary) -> void:
     SeasonSystem._apply_season_visuals(SeasonSystem.current_season)
 ```
 
+JSON 解析得到的是无类型 `Array`，不能直接赋给
+`InventorySystem.slots: Array[Dictionary]` 或
+`quick_slot_mappings: Array[int]`。存档恢复必须通过
+`InventorySystem.restore_state()`：逐项复制合法字典、把槽位补齐到
+`max_slots`、把快捷映射转换为整数并将越界索引归一化为 `-1`。这样旧版
+JSON 存档也不会在主场景启动时触发类型赋值错误。
+
 ### 6.3 自动存档触发点
 
 ```gdscript
@@ -2235,28 +2272,21 @@ HUD (CanvasLayer) — scripts/ui/hud.gd
 │           text="06:00"
 │
 ├── BottomBar (Control)               — 底部栏
-│   │   anchors: bottom=1, left=0, right=1, height=64
-│   │   layout: HBoxContainer
+│   │   anchors: bottom=1, left=0, right=1
 │   │
-│   ├── QuickBar (HBoxContainer)      — 快捷栏
-│   │   │   alignment: center
-│   │   │
-│   │   ├── QuickSlot_0 (TextureRect) — 6个快捷槽位
-│   │   ├── QuickSlot_1 (TextureRect)
-│   │   ├── QuickSlot_2 (TextureRect)
-│   │   ├── QuickSlot_3 (TextureRect)
-│   │   ├── QuickSlot_4 (TextureRect)
-│   │   └── QuickSlot_5 (TextureRect)
-│   │       每个槽位: 48x48, 带数字标签(1-6)
-│   │       选中状态: 白色边框高亮
-│   │
-│   └── MiniMapPanel (PanelContainer) — 小地图
-│       anchors: right=1, bottom=1
-│       └── MiniMap (SubViewportContainer)
-│           size: 120x90
-│           └── SubViewport
-│               └── MiniMapCamera (Camera2D)
+│   ├── ToolLabel (Label)              — 当前动作说明
+│   ├── ModeMenu (PopupPanel)          — 模式按钮上方的悬停菜单
+│   │   └── VBox
+│   │       ├── FarmingModeButton      — 种植模式（P）
+│   │       └── BuildingModeButton     — 建造模式（B）
+│   └── ActionRow (HBoxContainer)
+│       ├── ModeButton (Button)        — 当前模式图像和名称
+│       └── QuickBar (HBoxContainer)   — 动态生成 6 或 9 个 Button
 ```
+
+操作按钮包含手绘图像、数字和短名称。种植按钮最小宽度 `72px`，建造按钮最小宽度 `64px`、间距 `4px`，完整建造栏在 `1280 × 720` 下保持单行显示。模式菜单和所有按钮拦截鼠标输入，避免点击穿透到世界。
+
+种植工具图标来自 `assets/ui/action_icons/`，种子复用谷物幼苗图；建筑按钮复用 `assets/buildings/painted/<id>/<id>_back.png`，因为该图层包含可辨识的完整建筑轮廓。
 
 #### 数据绑定
 
@@ -2271,10 +2301,9 @@ func _ready() -> void:
     EventBus.season_changed.connect(_on_season_changed)
     EventBus.day_changed.connect(_on_day_changed)
     EventBus.time_changed.connect(_on_time_changed)
-    EventBus.tool_changed.connect(_on_tool_changed)
-    
-    # 初始化快捷栏
-    _refresh_quick_slots()
+    action_controller.mode_changed.connect(_on_action_mode_changed)
+    action_controller.palette_changed.connect(_on_action_palette_changed)
+    rebuild_action_palette()
 
 func _on_stamina_changed(value: int) -> void:
     stamina_bar.value = value
@@ -2289,15 +2318,15 @@ func _on_gold_changed(amount: int) -> void:
 func _on_time_changed(hour: int, minute: int) -> void:
     time_label.text = "%02d:%02d" % [hour, minute]
 
-func _on_tool_changed(tool: Tool) -> void:
-    # 高亮当前选中的快捷槽位
-    for i in 6:
-        var slot: TextureRect = quick_bar.get_child(i)
-        slot.material = null
-    if tool:
-        var idx := PlayerController.tool_index
-        if idx >= 0 and idx < 6:
-            quick_bar.get_child(idx).material = _highlight_material
+func _on_action_mode_changed(_mode: PlayerActionController.ActionMode) -> void:
+    rebuild_action_palette()
+
+func _on_action_palette_changed(
+    _mode: PlayerActionController.ActionMode,
+    selected_index: int
+) -> void:
+    for i in quick_bar.get_child_count():
+        (quick_bar.get_child(i) as Button).button_pressed = i == selected_index
 ```
 
 ### 7.2 背包界面（scenes/ui/inventory_ui.tscn）
@@ -2379,6 +2408,10 @@ func _gui_input(event: InputEvent) -> void:
 ```
 
 ### 7.3 建造界面（scenes/ui/build_ui.tscn）
+
+`BuildUI` 作为兼容场景保留，供独立验证或后续建筑详情面板使用。主游戏把
+`keyboard_shortcut_enabled` 设为 `false`，全局 `B` 由
+`PlayerActionController` 切换底部建造模式，避免两个入口同时响应。
 
 ```
 BuildUI (Control) — scripts/ui/build_ui.gd
