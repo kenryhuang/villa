@@ -1,6 +1,6 @@
 extends SceneTree
 
-const OUTPUT_PATH := "/private/tmp/villa-main-gameplay-integration.png"
+const OUTPUT_PATH := "res://.godot/villa-main-gameplay-integration.png"
 const CROP_PROGRESS := [0.0, 1.0, 2.0, 3.0]
 
 
@@ -9,7 +9,7 @@ func _init() -> void:
 
 
 func _capture() -> void:
-	root.size = Vector2i(1600, 1000)
+	root.size = Vector2i(1280, 720)
 	var main_scene := load("res://scenes/main.tscn") as PackedScene
 	if main_scene == null:
 		_fail("main scene cannot load")
@@ -72,6 +72,10 @@ func _capture() -> void:
 		_fail("cannot place completed well")
 		return
 	well.complete_construction()
+	main.action_controller.switch_mode(PlayerActionController.ActionMode.BUILDING)
+	if not main.action_controller.select_mode_slot(4):
+		_fail("cannot select affordable beehive for HUD verification")
+		return
 
 	if main.farming_system.get_visual_count() < 4:
 		_fail("main tree is missing crop visuals")
@@ -96,14 +100,15 @@ func _capture() -> void:
 
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
-	var error := image.save_png(OUTPUT_PATH)
+	var absolute_output_path := ProjectSettings.globalize_path(OUTPUT_PATH)
+	var error := image.save_png(absolute_output_path)
 	if error != OK:
 		_fail("cannot save capture: %s" % error_string(error))
 		return
 	print(
 		"CAPTURED: %s (%dx%d) crops=%d buildings=%d"
 		% [
-			OUTPUT_PATH,
+			absolute_output_path,
 			image.get_width(),
 			image.get_height(),
 			main.farming_system.get_visual_count(),
