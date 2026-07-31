@@ -64,6 +64,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"grain_seed",
 		"new game maps grain seed to slot six"
 	)
+	assertions.equal(main.hud.get_material_count_text("wood"), "250", "HUD shows starting wood")
+	assertions.equal(main.hud.get_material_count_text("stone"), "150", "HUD shows starting stone")
+	assertions.equal(main.hud.get_material_count_text("iron"), "50", "HUD shows starting iron")
+	assertions.equal(main.hud.get_material_count_text("glass"), "50", "HUD shows starting glass")
 
 	var farm_cell := _find_farm_cell(main.grid_system)
 	assertions.truthy(farm_cell != null, "main has a buildable farm cell")
@@ -139,9 +143,32 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(building != null, "main player places fence")
 		if building:
 			assertions.equal(
+				main.inventory_system.get_item_count("wood"),
+				240,
+				"main fence placement spends ten wood"
+			)
+			assertions.equal(
+				main.hud.get_material_count_text("wood"),
+				"240",
+				"HUD immediately reflects building material spend"
+			)
+			assertions.equal(
 				building.construction_stage,
 				BuildingInstance.ConstructionStage.FOUNDATION,
 				"main building starts at foundation"
+			)
+			assertions.truthy(
+				main.inventory_system.remove_item("wood", 231),
+				"integration fixture drains wood below fence cost"
+			)
+			assertions.truthy(
+				action_controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
+				"main switches to building palette with low materials"
+			)
+			var fence_button := main.hud.quick_bar.get_child(8) as Button
+			assertions.truthy(
+				fence_button.disabled,
+				"real main HUD disables fence below ten wood"
 			)
 
 	var save_data: Dictionary = main.save_manager.call("_gather_save_data")
