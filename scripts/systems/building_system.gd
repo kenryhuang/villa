@@ -130,39 +130,102 @@ func get_preview_marker_count() -> int:
 
 
 func can_place(building: Variant, gx: int, gz: int) -> bool:
+	return bool(diagnose_placement(building, gx, gz).allowed)
+
+
+func diagnose_resources(building: Variant) -> Dictionary:
 	var resolved := _resolve_data(building)
-	if resolved == null or not resolved.is_valid() or grid_system_ref == null or economy_ref == null:
-		return false
-	if not load(resolved.scene_path) is PackedScene:
-		return false
+	if not _is_valid_building_data(resolved):
+		return _diagnostic(false, "invalid_building", "无法建造：建筑数据无效")
+	if economy_ref == null or not economy_ref.has_method("has_resources"):
+		return _diagnostic(false, "system_unavailable", "建造系统尚未就绪")
+	var report: Dictionary = (
+		economy_ref.get_resource_report(resolved.cost)
+		if economy_ref.has_method("get_resource_report")
+		else {}
+	)
+	var missing := {}
+	for item_id in report:
+		var entry: Dictionary = report[item_id]
+		if int(entry.get("missing", 0)) > 0:
+			missing[item_id] = entry
+	if missing.is_empty() and bool(economy_ref.has_resources(resolved.cost)):
+		var allowed := _diagnostic(true, "ok", "")
+		allowed.building_id = resolved.building_id
+		return allowed
+	var result := _diagnostic(
+		false,
+		"insufficient_resources",
+		_resource_failure_message(resolved, missing)
+	)
+	result.building_id = resolved.building_id
+	result.missing_resources = missing
+	return result
+
+
+func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
+	var resolved := _resolve_data(building)
+	if not _is_valid_building_data(resolved):
+		var invalid := _diagnostic(false, "invalid_building", "无法建造：建筑数据无效")
+		invalid.grid = Vector2i(gx, gz)
+		return invalid
+	if grid_system_ref == null or economy_ref == null or buildings_container == null:
+		var unavailable := _diagnostic(false, "system_unavailable", "建造系统尚未就绪")
+		unavailable.building_id = resolved.building_id
+		unavailable.grid = Vector2i(gx, gz)
+		return unavailable
 	for cell_data in _footprint_cells(resolved, gx, gz):
 		var cell := grid_system_ref.get_cell(cell_data.x, cell_data.y)
-		if cell == null or cell.state not in BUILDABLE_STATES:
-			return false
+		if cell == null:
+			return _blocked_diagnostic(
+				resolved,
+				gx,
+				gz,
+				cell_data,
+				-1,
+				"out_of_bounds",
+				"无法建造%s：目标区域超出地图范围" % resolved.display_name
+			)
 		if not is_finite(grid_system_ref.get_terrain_height_at_cell(cell_data.x, cell_data.y)):
-			return false
-	if not economy_ref.has_method("has_resources"):
-		return false
-	if not bool(economy_ref.has_resources(resolved.cost)):
-		return false
-	return true
+			return _blocked_diagnostic(
+				resolved,
+				gx,
+				gz,
+				cell_data,
+				cell.state,
+				"invalid_terrain",
+				"无法建造%s：目标地形无效" % resolved.display_name
+			)
+		if cell.state not in BUILDABLE_STATES:
+			return _cell_state_diagnostic(resolved, gx, gz, cell_data, cell.state)
+	var resources := diagnose_resources(resolved)
+	resources.building_id = resolved.building_id
+	resources.grid = Vector2i(gx, gz)
+	return resources
 
 
 func can_place_building(building_id: String, gx: int, gz: int) -> bool:
 	return can_place(building_id, gx, gz)
 
 
-func place_building(building: Variant, gx: int, gz: int) -> BuildingInstance:
+func try_place_building(building: Variant, gx: int, gz: int) -> Dictionary:
 	var resolved := _resolve_data(building)
-	if resolved == null or not can_place(resolved, gx, gz):
-		return null
+	var diagnostic := diagnose_placement(resolved, gx, gz)
+	if not bool(diagnostic.allowed):
+		return _placement_result(null, diagnostic)
 
 	var packed := load(resolved.scene_path) as PackedScene
 	if packed == null:
-		return null
+		return _placement_result(
+			null,
+			_commit_diagnostic(resolved, gx, gz, "invalid_building", "无法建造：建筑场景无效")
+		)
 	var instance := packed.instantiate() as BuildingInstance
 	if instance == null:
-		return null
+		return _placement_result(
+			null,
+			_commit_diagnostic(resolved, gx, gz, "invalid_building", "无法建造：建筑场景无效")
+		)
 
 	var snapshots: Array[Dictionary] = []
 	for location in _footprint_cells(resolved, gx, gz):
@@ -180,14 +243,32 @@ func place_building(building: Variant, gx: int, gz: int) -> BuildingInstance:
 		if not grid_system_ref.set_cell_state(snapshot.gx, snapshot.gz, GridCell.State.BUILDING):
 			_restore_snapshots(applied)
 			instance.free()
-			return null
+			return _placement_result(
+				null,
+				_commit_diagnostic(
+					resolved,
+					gx,
+					gz,
+					"grid_commit_failed",
+					"建造提交失败，请重试"
+				)
+			)
 		applied.append(snapshot)
 
 	if economy_ref != null:
 		if not economy_ref.has_method("spend_resources") or not bool(economy_ref.spend_resources(resolved.cost)):
 			_restore_snapshots(snapshots)
 			instance.free()
-			return null
+			return _placement_result(
+				null,
+				_commit_diagnostic(
+					resolved,
+					gx,
+					gz,
+					"resource_commit_failed",
+					"建造提交失败，请重试"
+				)
+			)
 
 	buildings_container.add_child(instance)
 	_buildings.append(instance)
@@ -202,13 +283,28 @@ func place_building(building: Variant, gx: int, gz: int) -> BuildingInstance:
 		_event_bus.building_construction_started.emit(instance)
 	if _in_build_mode:
 		exit_preview_mode()
-	return instance
+	var success := _diagnostic(true, "ok", "")
+	success.building_id = resolved.building_id
+	success.grid = Vector2i(gx, gz)
+	return _placement_result(instance, success)
+
+
+func place_building(building: Variant, gx: int, gz: int) -> BuildingInstance:
+	return try_place_building(building, gx, gz).get("instance") as BuildingInstance
 
 
 func place_selected_building(gx: int, gz: int) -> BuildingInstance:
 	if _current_data == null:
 		return null
 	return place_building(_current_data, gx, gz)
+
+
+func try_place_selected_building(gx: int, gz: int) -> Dictionary:
+	if _current_data == null:
+		var diagnostic := _diagnostic(false, "invalid_building", "未选择建筑")
+		diagnostic.grid = Vector2i(gx, gz)
+		return _placement_result(null, diagnostic)
+	return try_place_building(_current_data, gx, gz)
 
 
 func place_building_by_id(building_id: String, gx: int, gz: int) -> BuildingInstance:
@@ -389,6 +485,115 @@ func _resolve_data(building: Variant) -> BuildingData:
 		game_data.free()
 		return result
 	return null
+
+
+func _is_valid_building_data(data: BuildingData) -> bool:
+	return (
+		data != null
+		and data.is_valid()
+		and load(data.scene_path) is PackedScene
+	)
+
+
+func _diagnostic(allowed: bool, code: String, message: String) -> Dictionary:
+	return {
+		"allowed": allowed,
+		"code": code,
+		"message": message,
+		"building_id": "",
+		"grid": Vector2i(-1, -1),
+		"missing_resources": {},
+		"blocked_cell": {},
+	}
+
+
+func _blocked_diagnostic(
+	data: BuildingData,
+	gx: int,
+	gz: int,
+	location: Vector2i,
+	state: int,
+	code: String,
+	message: String
+) -> Dictionary:
+	var result := _diagnostic(false, code, message)
+	result.building_id = data.building_id
+	result.grid = Vector2i(gx, gz)
+	result.blocked_cell = {
+		"grid": location,
+		"state": state,
+	}
+	return result
+
+
+func _cell_state_diagnostic(
+	data: BuildingData,
+	gx: int,
+	gz: int,
+	location: Vector2i,
+	state: int
+) -> Dictionary:
+	var code := "invalid_cell_state"
+	var reason := "该地块不能建造"
+	match state:
+		GridCell.State.ROAD:
+			code = "road"
+			reason = "目标区域包含道路"
+		GridCell.State.BUILDING:
+			code = "occupied"
+			reason = "这里已经有建筑"
+		GridCell.State.PLANTED:
+			code = "planted"
+			reason = "地块上仍有作物"
+		GridCell.State.WATER:
+			code = "water"
+			reason = "水域不能建造"
+		GridCell.State.DECORATION:
+			code = "decoration"
+			reason = "目标区域被装饰占用"
+	return _blocked_diagnostic(
+		data,
+		gx,
+		gz,
+		location,
+		state,
+		code,
+		"无法建造%s：%s" % [data.display_name, reason]
+	)
+
+
+func _resource_failure_message(data: BuildingData, missing: Dictionary) -> String:
+	if missing.is_empty():
+		return "无法建造%s：材料不足" % data.display_name
+	var parts: Array[String] = []
+	for item_id in data.cost:
+		if not missing.has(item_id):
+			continue
+		var item = GameDataScript.get_item(str(item_id))
+		var item_name := str(item.get("name", item_id)) if item is Dictionary else str(item_id)
+		parts.append("%s还缺 %d" % [item_name, int(missing[item_id].missing)])
+	return "无法建造%s：%s" % [data.display_name, "、".join(parts)]
+
+
+func _commit_diagnostic(
+	data: BuildingData,
+	gx: int,
+	gz: int,
+	code: String,
+	message: String
+) -> Dictionary:
+	var result := _diagnostic(false, code, message)
+	result.building_id = data.building_id if data else ""
+	result.grid = Vector2i(gx, gz)
+	return result
+
+
+func _placement_result(instance: BuildingInstance, diagnostic: Dictionary) -> Dictionary:
+	return {
+		"placed": instance != null,
+		"instance": instance,
+		"diagnostic": diagnostic,
+	}
 
 
 func _footprint_cells(data: BuildingData, gx: int, gz: int) -> Array[Vector2i]:

@@ -12,9 +12,32 @@ class EconomyDouble:
 	var spend_succeeds := true
 	var spend_calls := 0
 	var refund_calls := 0
+	var holdings := {
+		"wood": 10000,
+		"stone": 10000,
+		"iron": 10000,
+		"glass": 10000,
+	}
 
-	func has_resources(_cost: Dictionary) -> bool:
-		return available
+	func get_resource_report(cost: Dictionary) -> Dictionary:
+		var report := {}
+		for item_id in cost:
+			var required := int(cost[item_id])
+			var held := int(holdings.get(item_id, 0))
+			report[item_id] = {
+				"required": required,
+				"available": held,
+				"missing": maxi(required - held, 0),
+			}
+		return report
+
+	func has_resources(cost: Dictionary) -> bool:
+		if not available:
+			return false
+		for entry in get_resource_report(cost).values():
+			if int(entry.missing) > 0:
+				return false
+		return true
 
 	func spend_resources(_cost: Dictionary) -> bool:
 		spend_calls += 1
@@ -75,13 +98,79 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	system.economy_ref = null
 	assertions.equal(system.can_place(barn, 3, 3), false, "missing economy rejects free placement")
 	system.economy_ref = economy
+	var invalid_diagnostic: Dictionary = system.diagnose_placement("missing", 3, 3)
+	assertions.equal(invalid_diagnostic.code, "invalid_building", "invalid building diagnostic is specific")
+	var bounds_diagnostic: Dictionary = system.diagnose_placement(barn, 35, 27)
+	assertions.equal(bounds_diagnostic.code, "out_of_bounds", "out-of-bounds diagnostic is specific")
+	assertions.equal(
+		bounds_diagnostic.blocked_cell.grid,
+		Vector2i(36, 27),
+		"out-of-bounds diagnostic identifies first missing footprint cell"
+	)
 	grid.get_cell(3, 3).terrain_height = NAN
 	assertions.equal(system.can_place(barn, 3, 3), false, "non-finite terrain height rejects placement")
+	var terrain_diagnostic: Dictionary = system.diagnose_placement(barn, 3, 3)
+	assertions.equal(terrain_diagnostic.code, "invalid_terrain", "terrain diagnostic is specific")
+	assertions.equal(terrain_diagnostic.blocked_cell.grid, Vector2i(3, 3), "terrain diagnostic identifies cell")
 	grid.get_cell(3, 3).terrain_height = 0.0
 	var invalid_scene_data := barn.duplicate(true) as BuildingData
 	invalid_scene_data.scene_path = "res://assets/buildings/painted/barn/barn_back.png"
 	assertions.equal(system.can_place(invalid_scene_data, 3, 3), false, "non-scene resource rejects placement")
 	assertions.equal(system.enter_preview_mode(invalid_scene_data), false, "non-scene resource rejects preview mode")
+	var well = BuildingDataScript.from_dictionary(game_data.get_building("well"))
+	var blocked_states := {
+		GridCell.State.ROAD: "road",
+		GridCell.State.BUILDING: "occupied",
+		GridCell.State.PLANTED: "planted",
+		GridCell.State.WATER: "water",
+		GridCell.State.DECORATION: "decoration",
+	}
+	var blocked_index := 0
+	for state in blocked_states:
+		var gx := 24 + blocked_index
+		var gz := 4
+		grid.get_cell(gx, gz).state = state
+		var blocked_diagnostic: Dictionary = system.diagnose_placement(well, gx, gz)
+		assertions.equal(
+			blocked_diagnostic.code,
+			blocked_states[state],
+			"state %d diagnostic is specific" % state
+		)
+		assertions.equal(
+			blocked_diagnostic.blocked_cell.grid,
+			Vector2i(gx, gz),
+			"state %d diagnostic identifies cell" % state
+		)
+		grid.get_cell(gx, gz).state = GridCell.State.WASTELAND
+		blocked_index += 1
+	economy.holdings.wood = 42
+	var resource_diagnostic: Dictionary = system.diagnose_placement(barn, 8, 8)
+	assertions.equal(
+		resource_diagnostic.code,
+		"insufficient_resources",
+		"resource diagnostic is specific"
+	)
+	assertions.equal(
+		resource_diagnostic.missing_resources.wood.required,
+		100,
+		"resource report includes requirement"
+	)
+	assertions.equal(
+		resource_diagnostic.missing_resources.wood.available,
+		42,
+		"resource report includes inventory"
+	)
+	assertions.equal(
+		resource_diagnostic.missing_resources.wood.missing,
+		58,
+		"resource report includes shortage"
+	)
+	assertions.equal(
+		system.can_place(barn, 8, 8),
+		resource_diagnostic.allowed,
+		"can_place wraps placement diagnostic"
+	)
+	economy.holdings.wood = 10000
 	grid.set_cell_state(3, 3, GridCell.State.FARMLAND)
 	grid.set_cell_state(4, 4, GridCell.State.FARMLAND)
 	assertions.truthy(system.can_place(barn, 3, 3), "mixed wasteland and farmland footprint is valid")
@@ -114,10 +203,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(grid.get_cell(4, 3).state, GridCell.State.WASTELAND, "removal restores wasteland cell")
 	assertions.equal(system.get_building_count(), 0, "removal untracks building")
 
-	var well = BuildingDataScript.from_dictionary(game_data.get_building("well"))
 	economy.spend_succeeds = false
-	var failed = system.place_building(well, 8, 8)
+	var failed_result: Dictionary = system.try_place_building(well, 8, 8)
+	var failed = failed_result.instance
 	assertions.equal(failed, null, "failed spend returns no building")
+	assertions.equal(failed_result.placed, false, "failed transaction reports rejection")
+	assertions.equal(
+		failed_result.diagnostic.code,
+		"resource_commit_failed",
+		"failed spend reports commit code"
+	)
 	assertions.equal(grid.get_cell(8, 8).state, GridCell.State.WASTELAND, "failed spend rolls grid back")
 	assertions.equal(system.get_building_count(), 0, "failed spend leaves no tracked building")
 

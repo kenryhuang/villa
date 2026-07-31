@@ -139,12 +139,34 @@ func get_order_count() -> int:
 # ============================================================
 
 func has_resources(cost_dict: Dictionary) -> bool:
-	if _inventory_ref == null:
-		return false
+	return get_resource_shortages(cost_dict).is_empty()
+
+
+func get_resource_report(cost_dict: Dictionary) -> Dictionary:
+	var report := {}
 	for item_id in cost_dict:
-		if not _inventory_ref.has_item(item_id, cost_dict[item_id]):
-			return false
-	return true
+		var required := int(cost_dict[item_id])
+		var available := (
+			_inventory_ref.get_item_count(str(item_id))
+			if _inventory_ref != null
+			else 0
+		)
+		report[str(item_id)] = {
+			"required": required,
+			"available": available,
+			"missing": maxi(required - available, 0),
+		}
+	return report
+
+
+func get_resource_shortages(cost_dict: Dictionary) -> Dictionary:
+	var shortages := {}
+	var report := get_resource_report(cost_dict)
+	for item_id in report:
+		var entry: Dictionary = report[item_id]
+		if int(entry.missing) > 0:
+			shortages[item_id] = entry
+	return shortages
 
 
 func spend_resources(cost_dict: Dictionary) -> bool:
