@@ -13,7 +13,8 @@ const IDS := [
 ]
 const LAYERS := ["back", "front"]
 const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
-const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer.svg"
+const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
+const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_progress.gdshader"
 
 
 static func texture_path(id: String, layer: String) -> String:
@@ -34,6 +35,34 @@ func run(assertions: TestAssert) -> void:
 	if ResourceLoader.exists(HAMMER_ICON_PATH):
 		var hammer_texture := load(HAMMER_ICON_PATH) as Texture2D
 		assertions.truthy(hammer_texture != null, "construction hammer imports as Texture2D")
+		if hammer_texture != null:
+			assertions.equal(
+				hammer_texture.get_size(),
+				Vector2(512, 512),
+				"painted hammer is 512 square"
+			)
+			var hammer_image := hammer_texture.get_image()
+			assertions.truthy(hammer_image.detect_alpha(), "painted hammer contains alpha")
+			for corner in [
+				Vector2i(0, 0),
+				Vector2i(511, 0),
+				Vector2i(0, 511),
+				Vector2i(511, 511),
+			]:
+				assertions.equal(
+					hammer_image.get_pixelv(corner).a,
+					0.0,
+					"painted hammer corner is transparent"
+				)
+	assertions.truthy(
+		ResourceLoader.exists(PROGRESS_SHADER_PATH),
+		"construction progress shader exists"
+	)
+	if ResourceLoader.exists(PROGRESS_SHADER_PATH):
+		assertions.truthy(
+			load(PROGRESS_SHADER_PATH) is Shader,
+			"construction progress imports as Shader"
+		)
 
 
 func _validate_texture(path: String, assertions: TestAssert) -> void:
