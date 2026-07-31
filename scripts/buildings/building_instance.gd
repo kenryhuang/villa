@@ -16,6 +16,9 @@ enum ConstructionStage {
 }
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const ConstructionFeedbackScript = preload(
+	"res://scripts/buildings/construction_feedback.gd"
+)
 const COLLISION_LAYERS := 16 | 64
 const INTERACTION_LAYERS := 64 | 256
 const CAMERA_OCCLUDER_LAYER := 32
@@ -28,10 +31,6 @@ const CONSTRUCTION_SECONDS_PER_STAGE := 10.0
 const CONSTRUCTION_TRANSITION_COUNT := (
 	int(ConstructionStage.COMPLETE) - int(ConstructionStage.FOUNDATION)
 )
-const CONSTRUCTION_HAMMER_PATH := "res://assets/buildings/construction/construction_hammer.svg"
-const HAMMER_SWING_PERIOD := 0.8
-const HAMMER_SWING_MIN := deg_to_rad(-25.0)
-const HAMMER_SWING_MAX := deg_to_rad(22.0)
 
 @export var authored_building_id := ""
 
@@ -47,7 +46,6 @@ var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
 var _completion_emitted := false
 var _missing_construction_art_warnings := {}
-var _hammer_phase := 0.0
 
 var building_id: String:
 	get:
@@ -90,7 +88,6 @@ func start_construction() -> void:
 	construction_elapsed = 0.0
 	construction_stage = ConstructionStage.FOUNDATION
 	_completion_emitted = false
-	_hammer_phase = 0.0
 	_apply_construction_stage(true)
 
 
@@ -225,7 +222,7 @@ func set_preview_mode(value: bool) -> void:
 	else:
 		add_to_group("building_instance")
 	_apply_visual_color()
-	_update_construction_hammer_visibility()
+	_sync_construction_feedback()
 
 
 func deactivate() -> void:
@@ -242,9 +239,7 @@ func deactivate() -> void:
 	camera_occluder.collision_mask = 0
 	camera_occluder.monitoring = false
 	remove_from_group("building_instance")
-	var hammer := get_node_or_null("VisualRoot/ConstructionHammer") as Node3D
-	if hammer:
-		hammer.visible = false
+	_sync_construction_feedback(false)
 	visible = false
 	set_process(false)
 
@@ -288,7 +283,10 @@ func to_dict() -> Dictionary:
 func _process(delta: float) -> void:
 	if not _preview_mode and not is_construction_complete():
 		advance_construction(delta)
-	_animate_construction_hammer(delta)
+	_sync_construction_feedback()
+	var feedback := get_node_or_null("ConstructionFeedback") as ConstructionFeedback
+	if feedback != null:
+		feedback.advance_animation(delta)
 	if _preview_mode:
 		return
 	for geometry in _visual_geometry():
@@ -341,13 +339,10 @@ func _ensure_nodes() -> void:
 		var construction_effects := Node3D.new()
 		construction_effects.name = "ConstructionEffects"
 		visual_root.add_child(construction_effects)
-	if visual_root.get_node_or_null("ConstructionHammer") == null:
-		var hammer := Node3D.new()
-		hammer.name = "ConstructionHammer"
-		visual_root.add_child(hammer)
-		var hammer_sprite := Sprite3D.new()
-		hammer_sprite.name = "HammerSprite"
-		hammer.add_child(hammer_sprite)
+	if get_node_or_null("ConstructionFeedback") == null:
+		var feedback := ConstructionFeedbackScript.new() as ConstructionFeedback
+		feedback.name = "ConstructionFeedback"
+		add_child(feedback)
 	_ensure_physics_node("Collision", StaticBody3D)
 	_ensure_physics_node("InteractionArea", Area3D)
 	_ensure_physics_node("CameraOccluder", Area3D)
@@ -380,7 +375,8 @@ func _configure_visuals() -> void:
 		_configure_sprite(front, front_texture, Vector3(0.025, 0.0, 0.025), 0.1)
 	_configure_fallback(not has_painted_layers)
 	_configure_construction_fallback()
-	_configure_construction_hammer()
+	var feedback := get_node("ConstructionFeedback") as ConstructionFeedback
+	feedback.configure(data.visual_size)
 	_apply_visual_color()
 
 
@@ -390,57 +386,16 @@ func _load_texture(path: String) -> Texture2D:
 	return load(path) as Texture2D
 
 
-func _configure_construction_hammer() -> void:
-	var hammer := get_node("VisualRoot/ConstructionHammer") as Node3D
-	var sprite := hammer.get_node("HammerSprite") as Sprite3D
-	var texture := _load_texture(CONSTRUCTION_HAMMER_PATH)
-	sprite.texture = texture
-	if texture == null:
-		hammer.visible = false
-		if not _missing_construction_art_warnings.has(CONSTRUCTION_HAMMER_PATH):
-			_missing_construction_art_warnings[CONSTRUCTION_HAMMER_PATH] = true
-			push_warning("Missing construction hammer art '%s'." % CONSTRUCTION_HAMMER_PATH)
+func _sync_construction_feedback(active := true) -> void:
+	var feedback := get_node_or_null("ConstructionFeedback") as ConstructionFeedback
+	if feedback == null:
 		return
-	var desired_height := clampf(
-		minf(data.visual_size.x, data.visual_size.y) * 0.24,
-		0.28,
-		0.5
+	feedback.update_state(
+		get_construction_progress(),
+		_preview_mode,
+		is_construction_complete(),
+		active
 	)
-	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
-	sprite.shaded = false
-	sprite.no_depth_test = true
-	sprite.pixel_size = desired_height / float(texture.get_height())
-	sprite.position.y = desired_height * 0.42
-	sprite.sorting_offset = 0.35
-	hammer.position = Vector3(
-		data.visual_size.x * 0.38,
-		data.visual_size.y * 0.88,
-		0.08
-	)
-	_update_construction_hammer_visibility()
-
-
-func _update_construction_hammer_visibility() -> void:
-	var hammer := get_node_or_null("VisualRoot/ConstructionHammer") as Node3D
-	if hammer == null:
-		return
-	var sprite := hammer.get_node_or_null("HammerSprite") as Sprite3D
-	hammer.visible = (
-		not _preview_mode
-		and not is_construction_complete()
-		and sprite != null
-		and sprite.texture != null
-	)
-
-
-func _animate_construction_hammer(delta: float) -> void:
-	var hammer := get_node_or_null("VisualRoot/ConstructionHammer") as Node3D
-	if hammer == null or not hammer.visible or delta <= 0.0:
-		return
-	_hammer_phase = fmod(_hammer_phase + delta / HAMMER_SWING_PERIOD, 1.0)
-	var weight := (sin(_hammer_phase * TAU) + 1.0) * 0.5
-	hammer.rotation.z = lerpf(HAMMER_SWING_MIN, HAMMER_SWING_MAX, weight)
 
 
 func get_construction_texture_path(stage: ConstructionStage) -> String:
@@ -616,7 +571,7 @@ func _apply_construction_stage(play_effect: bool) -> void:
 		if front.visible:
 			_fade_in_geometry(front)
 
-	_update_construction_hammer_visibility()
+	_sync_construction_feedback()
 	_apply_physics_state()
 	if play_effect:
 		_play_construction_effect(construction_stage)
@@ -775,8 +730,6 @@ func _collect_visual_geometry(
 	result: Array[GeometryInstance3D]
 ) -> void:
 	for child in parent.get_children():
-		if child.name == "ConstructionHammer":
-			continue
 		if child is GeometryInstance3D:
 			result.append(child)
 		if child.get_child_count() > 0:
