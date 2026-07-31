@@ -57,6 +57,7 @@ func configure(visual_size: Vector2) -> void:
 		hammer_material.shader = hammer_shader
 		hammer_material.set_shader_parameter("albedo_texture", hammer_texture)
 		hammer_material.set_shader_parameter("sprite_height", hammer_height)
+		hammer_material.set_shader_parameter("pivot_uv", _painted_hammer_pivot_uv(hammer_texture))
 		hammer_material.set_shader_parameter("strike_angle", pivot.rotation.z)
 		hammer_sprite.material_override = hammer_material
 	else:
@@ -96,10 +97,10 @@ func update_state(
 
 
 func advance_animation(delta: float) -> void:
-	if delta <= 0.0 or not visible:
+	var pivot := get_node("HammerPivot") as Node3D
+	if delta <= 0.0 or not visible or not _hammer_ready or not pivot.visible:
 		return
 	_phase = fmod(_phase + delta / STRIKE_PERIOD, 1.0)
-	var pivot := get_node("HammerPivot") as Node3D
 	pivot.rotation.z = strike_angle_for_phase(_phase)
 	var hammer_sprite := pivot.get_node("HammerSprite") as Sprite3D
 	var material := hammer_sprite.material_override as ShaderMaterial
@@ -176,6 +177,20 @@ func _load_shader(path: String) -> Shader:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path) as Shader
+
+
+func _painted_hammer_pivot_uv(texture: Texture2D) -> Vector2:
+	var image := texture.get_image()
+	if image == null:
+		return Vector2(0.5, 1.0)
+	var painted_bounds := image.get_used_rect()
+	if painted_bounds.size == Vector2i.ZERO:
+		return Vector2(0.5, 1.0)
+	var last_painted_row := painted_bounds.end.y - 1
+	return Vector2(
+		0.5,
+		float(last_painted_row) / float(maxi(texture.get_height() - 1, 1))
+	)
 
 
 func _warn_missing(path: String) -> void:

@@ -74,9 +74,33 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			0.001,
 			"hammer shader starts at the raised angle"
 		)
+		var supports_painted_pivot := hammer_material.shader.code.contains("pivot_uv")
+		assertions.truthy(supports_painted_pivot, "hammer material exposes painted pivot UV")
+		if supports_painted_pivot:
+			var hammer_bounds := hammer_sprite.texture.get_image().get_used_rect()
+			var expected_pivot_v := float(hammer_bounds.end.y - 1) / float(
+				hammer_sprite.texture.get_height() - 1
+			)
+			var pivot_uv: Vector2 = hammer_material.get_shader_parameter("pivot_uv")
+			assertions.near(pivot_uv.x, 0.5, 0.001, "painted handle pivot stays horizontally centered")
+			assertions.near(
+				pivot_uv.y,
+				expected_pivot_v,
+				0.001,
+				"painted handle pivot follows the visible alpha endpoint"
+			)
 	var fixed_pivot := pivot.position
 	feedback.advance_animation(0.0)
 	assertions.near(pivot.rotation.z, deg_to_rad(25.0), 0.001, "zero delta leaves animation phase unchanged")
+	pivot.visible = false
+	feedback.advance_animation(0.3)
+	assertions.near(
+		pivot.rotation.z,
+		deg_to_rad(25.0),
+		0.001,
+		"hidden hammer does not advance its strike animation"
+	)
+	pivot.visible = true
 	feedback.advance_animation(0.43)
 	assertions.equal(pivot.position, fixed_pivot, "hammer handle end remains the fixed pivot")
 	assertions.truthy(

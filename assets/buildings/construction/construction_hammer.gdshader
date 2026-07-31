@@ -1,12 +1,17 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
+render_mode unshaded, cull_disabled, depth_draw_never, depth_test_disabled, blend_mix;
 
 uniform sampler2D albedo_texture : source_color, filter_linear, repeat_disable;
 uniform float strike_angle = 0.436332313;
 uniform float sprite_height = 0.72;
+uniform vec2 pivot_uv = vec2(0.5, 1.0);
 
 void vertex() {
-	vec2 anchored = VERTEX.xy + vec2(0.0, sprite_height * 0.5);
+	vec2 pivot_local = vec2(
+		(pivot_uv.x - 0.5) * sprite_height,
+		(0.5 - pivot_uv.y) * sprite_height
+	);
+	vec2 anchored = VERTEX.xy - pivot_local;
 	float cosine = cos(strike_angle);
 	float sine = sin(strike_angle);
 	VERTEX.xy = vec2(

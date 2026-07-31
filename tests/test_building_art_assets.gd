@@ -14,6 +14,7 @@ const IDS := [
 const LAYERS := ["back", "front"]
 const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
 const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
+const HAMMER_SHADER_PATH := "res://assets/buildings/construction/construction_hammer.gdshader"
 const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_progress.gdshader"
 
 
@@ -65,6 +66,23 @@ func run(assertions: TestAssert) -> void:
 			assertions.truthy(
 				progress_shader.code.contains("MODELVIEW_MATRIX"),
 				"construction progress shader billboards its custom material"
+			)
+			assertions.truthy(
+				progress_shader.code.contains("depth_test_disabled"),
+				"construction progress remains readable over building art"
+			)
+	assertions.truthy(ResourceLoader.exists(HAMMER_SHADER_PATH), "construction hammer shader exists")
+	if ResourceLoader.exists(HAMMER_SHADER_PATH):
+		var hammer_shader := load(HAMMER_SHADER_PATH) as Shader
+		assertions.truthy(hammer_shader != null, "construction hammer shader imports")
+		if hammer_shader != null:
+			assertions.truthy(
+				hammer_shader.code.contains("depth_test_disabled"),
+				"construction hammer remains readable over building art"
+			)
+			assertions.truthy(
+				hammer_shader.code.contains("pivot_uv"),
+				"construction hammer shader supports the painted handle endpoint"
 			)
 
 

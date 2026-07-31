@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
+render_mode unshaded, cull_disabled, depth_draw_never, depth_test_disabled, blend_mix;
 
 uniform float progress : hint_range(0.0, 1.0) = 0.0;
 uniform vec4 ring_color : source_color = vec4(1.0, 0.95, 0.78, 0.34);
