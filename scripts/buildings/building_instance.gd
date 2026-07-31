@@ -386,7 +386,7 @@ func _load_texture(path: String) -> Texture2D:
 	return load(path) as Texture2D
 
 
-func _sync_construction_feedback(active := true) -> void:
+func _sync_construction_feedback(active: bool = true) -> void:
 	var feedback := get_node_or_null("ConstructionFeedback") as ConstructionFeedback
 	if feedback == null:
 		return

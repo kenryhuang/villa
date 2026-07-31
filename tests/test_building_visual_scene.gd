@@ -76,7 +76,9 @@ func _run() -> void:
 			"VisualRoot/BackLayer",
 			"VisualRoot/FrontLayer",
 			"VisualRoot/ConstructionLayer",
-			"VisualRoot/ConstructionHammer",
+			"ConstructionFeedback",
+			"ConstructionFeedback/HammerPivot",
+			"ConstructionFeedback/Progress",
 			"Collision",
 			"InteractionArea",
 			"CameraOccluder",
@@ -103,19 +105,40 @@ func _run() -> void:
 				instance.free()
 				quit(1)
 				return
-			var hammer := building.get_node("VisualRoot/ConstructionHammer") as Node3D
-			if not hammer.visible:
-				push_error("frame construction demo must show swinging hammer")
+			var feedback := building.get_node("ConstructionFeedback") as ConstructionFeedback
+			var hammer := feedback.get_node("HammerPivot") as Node3D
+			var progress := feedback.get_node("Progress") as Sprite3D
+			if not feedback.visible:
+				push_error("frame construction demo must show strike feedback")
 				instance.free()
 				quit(1)
 				return
-			hammer.visible = false
+			if hammer.position.y >= building.data.visual_size.y * 0.35:
+				push_error("construction hammer pivot must sit at the building base")
+				instance.free()
+				quit(1)
+				return
+			if progress.position.x <= 0.0 or progress.position.y < building.data.visual_size.y:
+				push_error("construction progress must sit at the building upper-right")
+				instance.free()
+				quit(1)
+				return
+			var progress_material := progress.material_override as ShaderMaterial
+			if progress_material == null or not is_equal_approx(
+				float(progress_material.get_shader_parameter("progress")),
+				building.get_construction_progress()
+			):
+				push_error("construction progress disk must show total elapsed progress")
+				instance.free()
+				quit(1)
+				return
+			feedback.visible = false
 			if bool(instance.call("_construction_contract_passes")):
-				push_error("building visual contract must reject a hidden construction hammer")
+				push_error("building visual contract must reject hidden construction feedback")
 				instance.free()
 				quit(1)
 				return
-			hammer.visible = true
+			feedback.visible = true
 	if completed_count != 9 or frame_count != 1:
 		push_error("building visual verifier must expose nine complete buildings and one frame construction")
 		instance.free()

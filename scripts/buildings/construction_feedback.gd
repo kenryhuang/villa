@@ -2,6 +2,7 @@ class_name ConstructionFeedback
 extends Node3D
 
 const HAMMER_TEXTURE_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
+const HAMMER_SHADER_PATH := "res://assets/buildings/construction/construction_hammer.gdshader"
 const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_progress.gdshader"
 const STRIKE_PERIOD := 0.9
 const RAISED_ANGLE := deg_to_rad(25.0)
@@ -34,21 +35,35 @@ func configure(visual_size: Vector2) -> void:
 	var hammer_sprite := pivot.get_node("HammerSprite") as Sprite3D
 	var progress_sprite := get_node("Progress") as Sprite3D
 
-	pivot.position = Vector3(visual_size.x * 0.38, 0.12, 0.16)
-	pivot.rotation.z = strike_angle_for_phase(_phase)
 	var hammer_height := clampf(
 		minf(visual_size.x, visual_size.y) * 0.32,
 		0.38,
 		0.72
 	)
+	pivot.position = Vector3(
+		visual_size.x * 0.40,
+		hammer_height * 0.85,
+		-visual_size.x * 0.27
+	)
+	pivot.rotation.z = strike_angle_for_phase(_phase)
 	var hammer_texture := _load_texture(HAMMER_TEXTURE_PATH)
+	var hammer_shader := _load_shader(HAMMER_SHADER_PATH)
 	hammer_sprite.texture = hammer_texture
-	_hammer_ready = hammer_texture != null
+	_hammer_ready = hammer_texture != null and hammer_shader != null
 	if _hammer_ready:
 		hammer_sprite.pixel_size = hammer_height / float(hammer_texture.get_height())
-		hammer_sprite.position = Vector3(0.0, hammer_height * 0.5, 0.0)
+		hammer_sprite.position = Vector3.ZERO
+		var hammer_material := ShaderMaterial.new()
+		hammer_material.shader = hammer_shader
+		hammer_material.set_shader_parameter("albedo_texture", hammer_texture)
+		hammer_material.set_shader_parameter("sprite_height", hammer_height)
+		hammer_material.set_shader_parameter("strike_angle", pivot.rotation.z)
+		hammer_sprite.material_override = hammer_material
 	else:
-		_warn_missing(HAMMER_TEXTURE_PATH)
+		if hammer_texture == null:
+			_warn_missing(HAMMER_TEXTURE_PATH)
+		if hammer_shader == null:
+			_warn_missing(HAMMER_SHADER_PATH)
 
 	progress_sprite.position = Vector3(
 		visual_size.x * 0.52,
@@ -86,6 +101,10 @@ func advance_animation(delta: float) -> void:
 	_phase = fmod(_phase + delta / STRIKE_PERIOD, 1.0)
 	var pivot := get_node("HammerPivot") as Node3D
 	pivot.rotation.z = strike_angle_for_phase(_phase)
+	var hammer_sprite := pivot.get_node("HammerSprite") as Sprite3D
+	var material := hammer_sprite.material_override as ShaderMaterial
+	if material != null:
+		material.set_shader_parameter("strike_angle", pivot.rotation.z)
 
 
 func _ensure_nodes() -> void:

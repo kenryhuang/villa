@@ -5,6 +5,15 @@ uniform float progress : hint_range(0.0, 1.0) = 0.0;
 uniform vec4 ring_color : source_color = vec4(1.0, 0.95, 0.78, 0.34);
 uniform vec4 fill_color : source_color = vec4(1.0, 0.68, 0.20, 0.56);
 
+void vertex() {
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(
+		vec4(INV_VIEW_MATRIX[0].xyz, 0.0),
+		vec4(INV_VIEW_MATRIX[1].xyz, 0.0),
+		vec4(INV_VIEW_MATRIX[2].xyz, 0.0),
+		MODEL_MATRIX[3]
+	);
+}
+
 void fragment() {
 	vec2 centered = UV - vec2(0.5);
 	float radius = length(centered);

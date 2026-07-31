@@ -59,10 +59,13 @@ func run(assertions: TestAssert) -> void:
 		"construction progress shader exists"
 	)
 	if ResourceLoader.exists(PROGRESS_SHADER_PATH):
-		assertions.truthy(
-			load(PROGRESS_SHADER_PATH) is Shader,
-			"construction progress imports as Shader"
-		)
+		var progress_shader := load(PROGRESS_SHADER_PATH) as Shader
+		assertions.truthy(progress_shader != null, "construction progress imports as Shader")
+		if progress_shader != null:
+			assertions.truthy(
+				progress_shader.code.contains("MODELVIEW_MATRIX"),
+				"construction progress shader billboards its custom material"
+			)
 
 
 func _validate_texture(path: String, assertions: TestAssert) -> void:

@@ -40,7 +40,40 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	feedback.configure(Vector2(3.0, 2.4))
 	feedback.update_state(1.0 / 3.0, false, false, true)
 	var pivot := feedback.get_node("HammerPivot") as Node3D
+	var hammer_sprite := pivot.get_node("HammerSprite") as Sprite3D
 	var progress := feedback.get_node("Progress") as Sprite3D
+	assertions.near(
+		pivot.position.x,
+		3.0 * 0.40,
+		0.001,
+		"hammer pivot aligns with the right side of the isometric base"
+	)
+	assertions.near(
+		pivot.position.z,
+		-3.0 * 0.27,
+		0.001,
+		"hammer pivot aligns with the front side of the isometric base"
+	)
+	assertions.near(
+		pivot.position.y,
+		0.72 * 0.85,
+		0.001,
+		"raised handle-end pivot lets the head strike the base"
+	)
+	assertions.equal(
+		hammer_sprite.position,
+		Vector3.ZERO,
+		"hammer sprite geometry is anchored directly at the handle-end pivot"
+	)
+	var hammer_material := hammer_sprite.material_override as ShaderMaterial
+	assertions.truthy(hammer_material != null, "hammer uses a pivot-aware billboard shader")
+	if hammer_material != null:
+		assertions.near(
+			float(hammer_material.get_shader_parameter("strike_angle")),
+			deg_to_rad(25.0),
+			0.001,
+			"hammer shader starts at the raised angle"
+		)
 	var fixed_pivot := pivot.position
 	feedback.advance_animation(0.0)
 	assertions.near(pivot.rotation.z, deg_to_rad(25.0), 0.001, "zero delta leaves animation phase unchanged")
@@ -50,6 +83,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		pivot.rotation.z > deg_to_rad(25.0),
 		"strike rotates the head down toward the base"
 	)
+	if hammer_material != null:
+		assertions.near(
+			float(hammer_material.get_shader_parameter("strike_angle")),
+			pivot.rotation.z,
+			0.001,
+			"rendered hammer angle follows the logical pivot angle"
+		)
 	assertions.truthy(feedback.visible, "active unfinished construction shows feedback")
 	var progress_material := progress.material_override as ShaderMaterial
 	assertions.truthy(progress_material != null, "progress uses a shader material")
