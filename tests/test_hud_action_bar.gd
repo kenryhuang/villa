@@ -49,6 +49,39 @@ class EconomyDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hud = HudScene.instantiate()
 	tree.root.add_child(hud)
+	for item_id in ["wood", "stone", "iron", "glass"]:
+		var entry_path := "MaterialsPanel/MaterialsRow/%s" % item_id.capitalize()
+		var entry := hud.get_node_or_null(entry_path)
+		assertions.truthy(entry != null, "%s material entry is authored" % item_id)
+		if entry:
+			assertions.truthy(
+				entry.get_node_or_null("Icon") is TextureRect,
+				"%s has a material icon" % item_id
+			)
+			assertions.truthy(
+				entry.get_node("Icon").texture != null,
+				"%s material icon has a local texture" % item_id
+			)
+			assertions.truthy(
+				entry.get_node_or_null("Count") is Label,
+				"%s has a count label" % item_id
+			)
+			assertions.truthy(
+				not entry.has_node("Name"),
+				"%s has no visible name label" % item_id
+			)
+	assertions.truthy(
+		hud.get_node_or_null("BottomBar/BuildCostBar") is PanelContainer,
+		"selected building cost bar is authored"
+	)
+	assertions.truthy(
+		hud.get_node_or_null("BottomBar/BuildFeedbackToast") is PanelContainer,
+		"building feedback toast is authored"
+	)
+	assertions.truthy(
+		hud.get_node_or_null("BuildFeedbackTimer") is Timer,
+		"building feedback timer is authored"
+	)
 	assertions.truthy(
 		hud.get_node("TopBar") is PanelContainer,
 		"top status owns a background panel"
