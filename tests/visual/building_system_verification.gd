@@ -398,14 +398,20 @@ func _construction_contract_passes() -> bool:
 	var interaction := _active_construction.get_node("InteractionArea") as Area3D
 	var occluder := _active_construction.get_node("CameraOccluder") as Area3D
 	var construction_layer := _active_construction.get_node("VisualRoot/ConstructionLayer") as Sprite3D
+	var hammer := _active_construction.get_node("VisualRoot/ConstructionHammer") as Node3D
 	if collision.collision_layer != (16 | 64):
 		return false
 	if _active_construction.is_construction_complete():
-		return interaction.collision_layer == (64 | 256) and not construction_layer.visible
+		return (
+			interaction.collision_layer == (64 | 256)
+			and not construction_layer.visible
+			and not hammer.visible
+		)
 	return (
 		interaction.collision_layer == 0
 		and construction_layer.texture != null
 		and construction_layer.visible
+		and hammer.visible
 		and (
 			occluder.collision_layer == 0
 			if _active_construction.construction_stage == BuildingInstance.ConstructionStage.FOUNDATION

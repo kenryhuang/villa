@@ -76,6 +76,7 @@ func _run() -> void:
 			"VisualRoot/BackLayer",
 			"VisualRoot/FrontLayer",
 			"VisualRoot/ConstructionLayer",
+			"VisualRoot/ConstructionHammer",
 			"Collision",
 			"InteractionArea",
 			"CameraOccluder",
@@ -102,6 +103,19 @@ func _run() -> void:
 				instance.free()
 				quit(1)
 				return
+			var hammer := building.get_node("VisualRoot/ConstructionHammer") as Node3D
+			if not hammer.visible:
+				push_error("frame construction demo must show swinging hammer")
+				instance.free()
+				quit(1)
+				return
+			hammer.visible = false
+			if bool(instance.call("_construction_contract_passes")):
+				push_error("building visual contract must reject a hidden construction hammer")
+				instance.free()
+				quit(1)
+				return
+			hammer.visible = true
 	if completed_count != 9 or frame_count != 1:
 		push_error("building visual verifier must expose nine complete buildings and one frame construction")
 		instance.free()
