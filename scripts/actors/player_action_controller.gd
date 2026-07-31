@@ -5,6 +5,7 @@ signal selection_changed(index: int, label: String)
 signal inventory_changed
 signal mode_changed(mode: ActionMode)
 signal palette_changed(mode: ActionMode, selected_index: int)
+signal build_feedback_requested(message: String, details: Dictionary)
 
 enum Action {
 	NONE,
@@ -136,7 +137,7 @@ func switch_mode(mode: ActionMode) -> bool:
 	var activated := _activate_current_slot()
 	mode_changed.emit(_action_mode)
 	palette_changed.emit(_action_mode, _selected_slot)
-	return activated
+	return activated or (_action_mode == ActionMode.BUILDING and _selected_slot < 0)
 
 
 func get_action_mode() -> ActionMode:
@@ -147,6 +148,11 @@ func select_mode_slot(index: int) -> bool:
 	var labels := SLOT_LABELS if _action_mode == ActionMode.FARMING else BUILDING_LABELS
 	if index < 0 or index >= labels.size():
 		return false
+	if _action_mode == ActionMode.BUILDING:
+		var diagnostic := get_building_resource_diagnostic(index)
+		if not bool(diagnostic.get("allowed", false)):
+			_emit_build_feedback(diagnostic, "BuildSelectionRejected")
+			return false
 	_selected_slot = index
 	if _action_mode == ActionMode.FARMING:
 		_last_farming_slot = index
@@ -160,6 +166,26 @@ func select_mode_slot(index: int) -> bool:
 
 func get_mode_selected_slot(mode: ActionMode) -> int:
 	return _last_farming_slot if mode == ActionMode.FARMING else _last_building_slot
+
+
+func get_building_resource_diagnostic(index: int) -> Dictionary:
+	if index < 0 or index >= BUILDING_IDS.size() or building_system == null:
+		return {
+			"allowed": false,
+			"code": "invalid_building",
+			"message": "建筑不可用",
+			"building_id": "",
+			"missing_resources": {},
+		}
+	if building_system.has_method("diagnose_resources"):
+		return building_system.diagnose_resources(BUILDING_IDS[index])
+	return {
+		"allowed": true,
+		"code": "ok",
+		"message": "",
+		"building_id": BUILDING_IDS[index],
+		"missing_resources": {},
+	}
 
 
 func cancel_current_selection() -> bool:
@@ -185,6 +211,12 @@ func _activate_current_slot() -> bool:
 		if grid_system != null:
 			grid_system.clear_highlights()
 		if building_system == null:
+			return false
+		var diagnostic := get_building_resource_diagnostic(_selected_slot)
+		if not bool(diagnostic.get("allowed", false)):
+			_selected_slot = -1
+			selection_changed.emit(-1, "未选择建筑")
+			_emit_build_feedback(diagnostic, "BuildSelectionRejected")
 			return false
 		var entered: bool = building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
 		if entered:
@@ -232,13 +264,37 @@ func perform_cell_action(cell: GridCell) -> bool:
 func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 	if building_system == null or not building_system.is_in_build_mode():
 		return null
-	var placed: BuildingInstance = building_system.place_selected_building(gx, gz)
+	var placed: BuildingInstance
+	if building_system.has_method("try_place_selected_building"):
+		var result: Dictionary = building_system.try_place_selected_building(gx, gz)
+		placed = result.get("instance") as BuildingInstance
+		if placed == null:
+			var diagnostic: Dictionary = result.get("diagnostic", {})
+			_emit_build_feedback(diagnostic, "BuildRejected")
+			return null
+	else:
+		placed = building_system.place_selected_building(gx, gz)
+		if placed == null:
+			return null
 	if (
 		placed != null
 		and _action_mode == ActionMode.BUILDING
 		and _selected_slot >= 0
 	):
-		building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+		inventory_changed.emit()
+		var next_diagnostic := get_building_resource_diagnostic(_selected_slot)
+		if bool(next_diagnostic.get("allowed", false)):
+			building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+		else:
+			if building_system.is_in_build_mode():
+				building_system.exit_preview_mode()
+			_selected_slot = -1
+			selection_changed.emit(-1, "未选择建筑")
+			palette_changed.emit(_action_mode, -1)
+			var exhausted := next_diagnostic.duplicate(true)
+			exhausted.code = "continuous_build_exhausted"
+			exhausted.message = "材料不足，已结束连续建造"
+			_emit_build_feedback(exhausted, "BuildSelectionRejected")
 	return placed
 
 
@@ -301,7 +357,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		var slot := slot_from_key(event.keycode)
-		if slot >= 0 and select_mode_slot(slot):
+		if slot >= 0:
+			select_mode_slot(slot)
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_ESCAPE and cancel_current_selection():
@@ -439,6 +496,27 @@ func _point_in_player_range(point: Vector3) -> bool:
 func _pointer_over_ui() -> bool:
 	var hovered := get_viewport().gui_get_hovered_control()
 	return hovered != null and hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE
+
+
+func _emit_build_feedback(details: Dictionary, prefix: String) -> void:
+	var normalized := details.duplicate(true)
+	if normalized.is_empty():
+		normalized = {
+			"code": "unknown",
+			"message": "无法建造",
+			"building_id": "",
+			"grid": Vector2i(-1, -1),
+		}
+	var message := str(normalized.get("message", "无法建造"))
+	build_feedback_requested.emit(message, normalized)
+	if OS.is_debug_build():
+		print("[%s] building=%s grid=%s code=%s details=%s" % [
+			prefix,
+			str(normalized.get("building_id", "")),
+			str(normalized.get("grid", Vector2i(-1, -1))),
+			str(normalized.get("code", "unknown")),
+			str(normalized),
+		])
 
 
 func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:

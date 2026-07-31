@@ -84,6 +84,9 @@ class BuildingDouble:
 	var build_mode := false
 	var entered_ids: Array[String] = []
 	var exit_calls := 0
+	var resource_allowed := true
+	var placement_allowed := true
+	var exhaust_after_place := false
 
 	func enter_preview_mode(building: Variant) -> bool:
 		var building_id: String = str(building)
@@ -102,6 +105,64 @@ class BuildingDouble:
 
 	func place_selected_building(_gx: int, _gz: int) -> BuildingInstance:
 		return null
+
+	func diagnose_resources(building: Variant) -> Dictionary:
+		var building_id := str(building)
+		return {
+			"allowed": resource_allowed,
+			"code": "ok" if resource_allowed else "insufficient_resources",
+			"message": "" if resource_allowed else "无法建造谷仓：木材还缺 58",
+			"building_id": building_id,
+			"grid": Vector2i(-1, -1),
+			"missing_resources": (
+				{}
+				if resource_allowed
+				else {
+					"wood": {
+						"required": 100,
+						"available": 42,
+						"missing": 58,
+					},
+				}
+			),
+			"blocked_cell": {},
+		}
+
+	func try_place_selected_building(gx: int, gz: int) -> Dictionary:
+		if not placement_allowed:
+			return {
+				"placed": false,
+				"instance": null,
+				"diagnostic": {
+					"allowed": false,
+					"code": "road",
+					"message": "无法建造谷仓：目标区域包含道路",
+					"building_id": "barn",
+					"grid": Vector2i(gx, gz),
+					"missing_resources": {},
+					"blocked_cell": {
+						"grid": Vector2i(gx, gz),
+						"state": GridCell.State.ROAD,
+					},
+				},
+			}
+		var instance := BuildingInstance.new()
+		build_mode = false
+		if exhaust_after_place:
+			resource_allowed = false
+		return {
+			"placed": true,
+			"instance": instance,
+			"diagnostic": {
+				"allowed": true,
+				"code": "ok",
+				"message": "",
+				"building_id": "barn",
+				"grid": Vector2i(gx, gz),
+				"missing_resources": {},
+				"blocked_cell": {},
+			},
+		}
 
 
 class SeasonDouble:
@@ -135,6 +196,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_action_priority(assertions, controller_script)
 	_test_selection_and_transactions(assertions, tree, controller_script)
 	_test_action_modes(assertions, tree, controller_script)
+	_test_build_feedback_and_exhaustion(assertions, tree, controller_script)
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
 
@@ -304,6 +366,74 @@ func _test_action_modes(
 		"building mode remembers the last fence selection"
 	)
 	assertions.equal(building.entered_ids[-1], "fence", "restored building re-enters preview")
+	controller.free()
+
+
+func _test_build_feedback_and_exhaustion(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var building := BuildingDouble.new()
+	var controller = controller_script.new()
+	tree.root.add_child(controller)
+	controller.configure(
+		null,
+		GridDouble.new(),
+		null,
+		building,
+		ToolDouble.new(),
+		InventoryDouble.new()
+	)
+	var feedback_events: Array[Dictionary] = []
+	controller.build_feedback_requested.connect(
+		func(_message: String, details: Dictionary) -> void:
+			feedback_events.append(details)
+	)
+	assertions.truthy(controller.switch_mode(1), "feedback fixture enters building mode")
+	assertions.truthy(controller.cancel_current_selection(), "feedback fixture clears default building")
+	building.resource_allowed = false
+	assertions.truthy(
+		not controller.select_mode_slot(0),
+		"unaffordable building cannot be selected"
+	)
+	assertions.equal(controller.get_selected_slot(), -1, "rejected selection stays unselected")
+	assertions.equal(
+		feedback_events[-1].code,
+		"insufficient_resources",
+		"selection emits material feedback"
+	)
+
+	building.resource_allowed = true
+	assertions.truthy(controller.select_mode_slot(0), "affordable building can be selected")
+	building.placement_allowed = false
+	assertions.equal(
+		controller.perform_build_action(6, 7),
+		null,
+		"rejected placement returns no instance"
+	)
+	assertions.equal(feedback_events[-1].code, "road", "placement emits specific feedback")
+	assertions.equal(feedback_events[-1].grid, Vector2i(6, 7), "placement feedback keeps grid")
+
+	building.placement_allowed = true
+	building.exhaust_after_place = false
+	var continued: BuildingInstance = controller.perform_build_action(8, 9)
+	assertions.truthy(continued != null, "successful placement returns an instance")
+	assertions.truthy(building.build_mode, "sufficient materials continue building preview")
+	assertions.equal(controller.get_selected_slot(), 0, "continuous build keeps selection")
+	continued.free()
+
+	building.exhaust_after_place = true
+	var exhausted: BuildingInstance = controller.perform_build_action(10, 11)
+	assertions.truthy(exhausted != null, "exhausting placement still succeeds")
+	assertions.truthy(not building.build_mode, "exhausted materials stop preview")
+	assertions.equal(controller.get_selected_slot(), -1, "exhausted materials clear selection")
+	assertions.equal(
+		feedback_events[-1].code,
+		"continuous_build_exhausted",
+		"exhausted continuous build emits feedback"
+	)
+	exhausted.free()
 	controller.free()
 
 
