@@ -24,6 +24,10 @@ const CLEAR_OPACITY := 1.0
 const FADE_RATE := 10.0
 const STAGE_FADE_OUT_DURATION := 0.12
 const STAGE_FADE_IN_DURATION := 0.18
+const CONSTRUCTION_SECONDS_PER_STAGE := 10.0
+const CONSTRUCTION_TRANSITION_COUNT := (
+	int(ConstructionStage.COMPLETE) - int(ConstructionStage.FOUNDATION)
+)
 
 @export var authored_building_id := ""
 
@@ -70,13 +74,8 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 	return target_size.y / (texture_size.y * pixel_size)
 
 
-static func construction_duration_for(footprint: Vector2i) -> float:
-	var largest_side := maxi(footprint.x, footprint.y)
-	if largest_side <= 1:
-		return 3.0
-	if largest_side == 2:
-		return 4.0
-	return 5.0
+static func construction_duration_for(_footprint: Vector2i) -> float:
+	return CONSTRUCTION_SECONDS_PER_STAGE * float(CONSTRUCTION_TRANSITION_COUNT)
 
 
 func start_construction() -> void:
@@ -100,8 +99,8 @@ func advance_construction(delta: float) -> void:
 		0.0,
 		construction_duration
 	)
-	var first_threshold := construction_duration / 3.0
-	var second_threshold := first_threshold * 2.0
+	var first_threshold := CONSTRUCTION_SECONDS_PER_STAGE
+	var second_threshold := CONSTRUCTION_SECONDS_PER_STAGE * 2.0
 	if construction_stage == ConstructionStage.FOUNDATION and construction_elapsed >= first_threshold:
 		_transition_construction_stage(ConstructionStage.FRAME)
 	if construction_stage == ConstructionStage.FRAME and construction_elapsed >= second_threshold:
@@ -115,10 +114,13 @@ func advance_construction_stage() -> void:
 		return
 	match construction_stage:
 		ConstructionStage.FOUNDATION:
-			construction_elapsed = maxf(construction_elapsed, construction_duration / 3.0)
+			construction_elapsed = maxf(construction_elapsed, CONSTRUCTION_SECONDS_PER_STAGE)
 			_transition_construction_stage(ConstructionStage.FRAME)
 		ConstructionStage.FRAME:
-			construction_elapsed = maxf(construction_elapsed, construction_duration * 2.0 / 3.0)
+			construction_elapsed = maxf(
+				construction_elapsed,
+				CONSTRUCTION_SECONDS_PER_STAGE * 2.0
+			)
 			_transition_construction_stage(ConstructionStage.HALF_BUILT)
 		ConstructionStage.HALF_BUILT:
 			complete_construction()
@@ -143,9 +145,12 @@ func restore_construction(stage: int, elapsed: float) -> void:
 	else:
 		construction_elapsed = clampf(elapsed, 0.0, construction_duration)
 		if construction_stage == ConstructionStage.FRAME:
-			construction_elapsed = maxf(construction_elapsed, construction_duration / 3.0)
+			construction_elapsed = maxf(construction_elapsed, CONSTRUCTION_SECONDS_PER_STAGE)
 		elif construction_stage == ConstructionStage.HALF_BUILT:
-			construction_elapsed = maxf(construction_elapsed, construction_duration * 2.0 / 3.0)
+			construction_elapsed = maxf(
+				construction_elapsed,
+				CONSTRUCTION_SECONDS_PER_STAGE * 2.0
+			)
 	_completion_emitted = construction_stage == ConstructionStage.COMPLETE
 	_apply_construction_stage(false)
 

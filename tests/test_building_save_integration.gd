@@ -30,8 +30,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var placed = system.place_building_by_id("fence", 6, 6)
 	assertions.truthy(placed is BuildingInstance, "save fixture places a building")
 	assertions.equal(manager._get_building_system(), system, "save manager discovers the main-scene building system")
-	placed.advance_construction_stage()
+	placed.advance_construction(15.0)
 	assertions.equal(placed.construction_stage, BuildingInstance.ConstructionStage.FRAME, "save fixture reaches frame stage")
+	assertions.near(placed.construction_elapsed, 15.0, 0.001, "save fixture stores time inside frame stage")
 
 	var records: Array = manager._serialize_buildings(system)
 	assertions.equal(records.size(), system.get_building_count(), "save manager serializes every tracked building")
@@ -51,10 +52,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(restored is BuildingInstance, "loaded building is queryable at its occupied cell")
 	assertions.equal(restored.occupied_cells[0].previous_state, GridCell.State.FARMLAND, "load preserves exact removal state")
 	assertions.equal(restored.construction_stage, BuildingInstance.ConstructionStage.FRAME, "load restores construction stage")
-	var restored_elapsed: float = restored.construction_elapsed
-	restored.advance_construction(0.1)
-	assertions.truthy(restored.construction_elapsed > restored_elapsed, "loaded construction continues advancing")
+	assertions.near(restored.construction_elapsed, 15.0, 0.001, "load restores partial frame elapsed time")
+	restored.advance_construction(4.99)
+	assertions.equal(restored.construction_stage, BuildingInstance.ConstructionStage.FRAME, "restored frame waits for remaining time")
+	restored.advance_construction(0.01)
+	assertions.equal(restored.construction_stage, BuildingInstance.ConstructionStage.HALF_BUILT, "restored frame advances at twenty seconds")
 	assertions.equal(economy.spend_calls, 1, "load does not spend resources again")
+
+	var short_duration_record: Dictionary = records[0].duplicate(true)
+	short_duration_record.construction_stage = BuildingInstance.ConstructionStage.HALF_BUILT
+	short_duration_record.construction_elapsed = 2.7
+	short_duration_record.construction_duration = 4.0
+	manager._apply_save_data({"grid": saved_grid, "buildings": [short_duration_record]})
+	restored = system.get_building_at(6, 6)
+	assertions.equal(restored.construction_stage, BuildingInstance.ConstructionStage.HALF_BUILT, "old save keeps authoritative stage")
+	assertions.near(restored.construction_elapsed, 20.0, 0.001, "old short duration aligns to new half-built threshold")
 
 	var legacy_record: Dictionary = records[0].duplicate(true)
 	legacy_record.erase("construction_stage")
