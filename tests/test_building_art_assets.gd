@@ -13,6 +13,7 @@ const IDS := [
 ]
 const LAYERS := ["back", "front"]
 const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
+const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer.svg"
 
 
 static func texture_path(id: String, layer: String) -> String:
@@ -29,6 +30,10 @@ func run(assertions: TestAssert) -> void:
 			_validate_texture(texture_path(id, layer), assertions)
 		for stage in CONSTRUCTION_STAGES:
 			_validate_texture(construction_texture_path(id, stage), assertions)
+	assertions.truthy(ResourceLoader.exists(HAMMER_ICON_PATH), "construction hammer icon exists")
+	if ResourceLoader.exists(HAMMER_ICON_PATH):
+		var hammer_texture := load(HAMMER_ICON_PATH) as Texture2D
+		assertions.truthy(hammer_texture != null, "construction hammer imports as Texture2D")
 
 
 func _validate_texture(path: String, assertions: TestAssert) -> void:

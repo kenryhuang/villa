@@ -35,6 +35,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 
 	instance.start_construction()
+	var hammer := instance.get_node_or_null("VisualRoot/ConstructionHammer") as Node3D
+	var hammer_sprite := instance.get_node_or_null("VisualRoot/ConstructionHammer/HammerSprite") as Sprite3D
+	assertions.truthy(hammer != null, "construction creates hammer pivot")
+	assertions.truthy(hammer_sprite != null, "construction creates hammer sprite")
+	if hammer != null and hammer_sprite != null:
+		assertions.truthy(hammer.visible, "unfinished construction shows hammer")
+		assertions.truthy(hammer_sprite.texture != null, "hammer uses imported icon")
+		var starting_rotation := hammer.rotation.z
+		instance._animate_construction_hammer(0.2)
+		assertions.truthy(not is_equal_approx(hammer.rotation.z, starting_rotation), "hammer swings while construction runs")
+		instance.set_preview_mode(true)
+		assertions.truthy(not hammer.visible, "building preview hides construction hammer")
+		instance.set_preview_mode(false)
+		assertions.truthy(hammer.visible, "leaving preview restores unfinished hammer")
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FOUNDATION, "construction starts at foundation")
 	assertions.equal(instance.construction_elapsed, 0.0, "construction starts with zero elapsed")
 	assertions.equal(instance.construction_duration, 30.0, "barn uses three ten-second frame transitions")
@@ -91,6 +105,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(instance.get_node("VisualRoot/BackLayer").visible, "completion shows finished back art")
 	assertions.truthy(instance.get_node("VisualRoot/FrontLayer").visible, "completion shows finished front art")
 	assertions.equal(instance.get_node("VisualRoot/ConstructionLayer").visible, false, "completion hides construction sprite")
+	if hammer != null:
+		assertions.truthy(not hammer.visible, "completed construction hides hammer")
 	instance.interact(instance)
 	assertions.equal(interaction_events.size(), 1, "completed building accepts interaction")
 
