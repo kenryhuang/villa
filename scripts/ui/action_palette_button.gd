@@ -17,6 +17,7 @@ func set_selected(selected: bool) -> void:
 
 
 func set_available(available: bool) -> void:
+	disabled = not available
 	icon_rect.modulate = (
 		Color.WHITE if available else Color(0.48, 0.48, 0.48, 0.82)
 	)

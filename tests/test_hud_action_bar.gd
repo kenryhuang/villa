@@ -4,6 +4,7 @@ const HudScene = preload("res://scenes/ui/hud.tscn")
 const ActionPaletteButtonScript = preload(
 	"res://scripts/ui/action_palette_button.gd"
 )
+const GameDataScript = preload("res://scripts/core/game_data.gd")
 
 
 class ToolDouble:
@@ -17,6 +18,7 @@ class BuildingDouble:
 	extends RefCounted
 
 	var build_mode := false
+	var inventory: InventorySystem
 
 	func enter_preview_mode(_building: Variant) -> bool:
 		build_mode = true
@@ -27,6 +29,27 @@ class BuildingDouble:
 
 	func is_in_build_mode() -> bool:
 		return build_mode
+
+	func diagnose_resources(building: Variant) -> Dictionary:
+		var building_id := str(building)
+		var source: Dictionary = GameDataScript.get_building(building_id)
+		var missing := {}
+		for item_id in source.get("cost", {}):
+			var required := int(source.cost[item_id])
+			var available := inventory.get_item_count(str(item_id)) if inventory else 0
+			if available < required:
+				missing[item_id] = {
+					"required": required,
+					"available": available,
+					"missing": required - available,
+				}
+		return {
+			"allowed": missing.is_empty(),
+			"code": "ok" if missing.is_empty() else "insufficient_resources",
+			"message": "" if missing.is_empty() else "材料不足",
+			"building_id": building_id,
+			"missing_resources": missing,
+		}
 
 
 class SeasonDouble:
@@ -132,18 +155,34 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var inventory_script = load("res://scripts/systems/inventory_system.gd")
 	var controller_script = load("res://scripts/actors/player_action_controller.gd")
 	var inventory = inventory_script.new()
+	tree.root.add_child(inventory)
 	inventory.add_item("grain_seed", 2)
+	inventory.add_item("wood", 42)
+	inventory.add_item("stone", 150)
+	inventory.add_item("iron", 50)
+	inventory.add_item("glass", 50)
+	var building := BuildingDouble.new()
+	building.inventory = inventory
 	var controller = controller_script.new()
 	tree.root.add_child(controller)
 	controller.configure(
 		null,
 		null,
 		null,
-		BuildingDouble.new(),
+		building,
 		ToolDouble.new(),
 		inventory
 	)
 	hud.configure_action_bar(controller, inventory, EconomyDouble.new())
+	assertions.truthy(
+		hud.has_method("get_material_count_text"),
+		"HUD exposes material count inspection"
+	)
+	if hud.has_method("get_material_count_text"):
+		assertions.equal(hud.get_material_count_text("wood"), "42", "HUD shows current wood")
+		assertions.equal(hud.get_material_count_text("stone"), "150", "HUD shows current stone")
+		assertions.equal(hud.get_material_count_text("iron"), "50", "HUD shows current iron")
+		assertions.equal(hud.get_material_count_text("glass"), "50", "HUD shows current glass")
 	var season := SeasonDouble.new()
 	tree.root.add_child(season)
 	assertions.truthy(
@@ -279,6 +318,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 	var unavailable_tile := quick_bar.get_child(0)
 	if unavailable_tile is ActionPaletteButtonScript:
+		assertions.truthy(unavailable_tile.disabled, "unaffordable building is truly disabled")
 		assertions.equal(
 			unavailable_tile.name_label.modulate,
 			Color.WHITE,
@@ -288,6 +328,48 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			unavailable_tile.icon_rect.modulate != Color.WHITE,
 			"resource dimming targets icon"
 		)
+		assertions.truthy(
+			unavailable_tile.tooltip_text.contains("木材"),
+			"disabled building keeps localized cost tooltip"
+		)
+	assertions.truthy(
+		hud.has_method("show_build_feedback"),
+		"HUD exposes building feedback Toast"
+	)
+	if hud.has_method("show_build_feedback"):
+		var toast = hud.get_node("BottomBar/BuildFeedbackToast")
+		hud.show_build_feedback("无法建造谷仓：木材还缺 58", {})
+		assertions.truthy(toast.visible, "building feedback Toast becomes visible")
+		assertions.equal(
+			toast.get_node("Message").text,
+			"无法建造谷仓：木材还缺 58",
+			"building feedback Toast shows the specific reason"
+		)
+		hud.show_build_feedback("无法建造谷仓：目标区域包含道路", {})
+		assertions.equal(
+			hud.get_node("BottomBar/BuildFeedbackToast"),
+			toast,
+			"repeated feedback reuses one Toast"
+		)
+
+	inventory.add_item("wood", 58)
+	if hud.has_method("get_material_count_text"):
+		assertions.equal(
+			hud.get_material_count_text("wood"),
+			"100",
+			"material count refreshes"
+		)
+	unavailable_tile = quick_bar.get_child(0)
+	assertions.truthy(not unavailable_tile.disabled, "building re-enables when cost is met")
+	assertions.truthy(controller.select_mode_slot(0), "affordable barn can be selected")
+	assertions.truthy(
+		hud.get_node("BottomBar/BuildCostBar").visible,
+		"selected building shows persistent cost bar"
+	)
+	assertions.truthy(
+		hud.get_node("BottomBar/BuildCostBar/CostRow/BuildingLabel").text.contains("占地 2×2"),
+		"cost bar shows building footprint"
+	)
 	(quick_bar.get_child(8) as Button).pressed.emit()
 	assertions.equal(
 		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),

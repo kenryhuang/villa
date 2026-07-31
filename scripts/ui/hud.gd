@@ -22,7 +22,22 @@ const FARMING_ICON_PATHS: Array[String] = [
 	"res://assets/ui/action_icons/fishing_rod.png",
 	"res://assets/crops/grain/painted/stage_0/variant_0_front.png",
 ]
+const MATERIAL_IDS: Array[String] = ["wood", "stone", "iron", "glass"]
+const MATERIAL_NAMES := {
+	"wood": "木材",
+	"stone": "石头",
+	"iron": "铁",
+	"glass": "玻璃",
+}
+const MATERIAL_ICON_PATHS := {
+	"wood": "res://assets/ui/material_icons/wood.svg",
+	"stone": "res://assets/ui/material_icons/stone.svg",
+	"iron": "res://assets/ui/material_icons/iron.svg",
+	"glass": "res://assets/ui/material_icons/glass.svg",
+}
 const MODE_MENU_CLOSE_DELAY := 0.15
+const COST_AVAILABLE_COLOR := Color(1.0, 0.945, 0.816, 1.0)
+const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 
 @onready var stamina_bar: ProgressBar = $TopBar/StatusRow/StaminaBar
 @onready var gold_label: Label = $TopBar/StatusRow/GoldLabel
@@ -37,6 +52,18 @@ const MODE_MENU_CLOSE_DELAY := 0.15
 @onready var mode_button: Button = $BottomBar/ActionRow/ModeButton
 @onready var quick_bar: HBoxContainer = $BottomBar/ActionRow/QuickBar
 @onready var tool_label: Label = $BottomBar/ToolLabel
+@onready var build_cost_bar: PanelContainer = $BottomBar/BuildCostBar
+@onready var building_cost_label: Label = $BottomBar/BuildCostBar/CostRow/BuildingLabel
+@onready var building_costs: HBoxContainer = $BottomBar/BuildCostBar/CostRow/Costs
+@onready var build_feedback_toast: PanelContainer = $BottomBar/BuildFeedbackToast
+@onready var build_feedback_label: Label = $BottomBar/BuildFeedbackToast/Message
+@onready var build_feedback_timer: Timer = $BuildFeedbackTimer
+@onready var _material_count_labels := {
+	"wood": $MaterialsPanel/MaterialsRow/Wood/Count,
+	"stone": $MaterialsPanel/MaterialsRow/Stone/Count,
+	"iron": $MaterialsPanel/MaterialsRow/Iron/Count,
+	"glass": $MaterialsPanel/MaterialsRow/Glass/Count,
+}
 
 var _event_bus
 var action_controller: Variant
@@ -56,6 +83,8 @@ func _ready() -> void:
 		_event_bus.season_changed.connect(_on_season_changed)
 		_event_bus.time_changed.connect(_on_time_changed)
 		_event_bus.day_changed.connect(_on_day_changed)
+		_event_bus.item_added.connect(_on_inventory_item_changed)
+		_event_bus.item_removed.connect(_on_inventory_item_changed)
 
 	# 初始化显示
 	_init_display()
@@ -70,6 +99,7 @@ func _ready() -> void:
 	mode_button.mouse_exited.connect(_on_mode_menu_mouse_exited)
 	mode_menu_content.mouse_entered.connect(_on_mode_menu_mouse_entered)
 	mode_menu_content.mouse_exited.connect(_on_mode_menu_mouse_exited)
+	build_feedback_timer.timeout.connect(_on_build_feedback_timeout)
 
 
 func _init_display() -> void:
@@ -205,6 +235,14 @@ func configure_action_bar(
 		and not action_controller.palette_changed.is_connected(_on_action_palette_changed)
 	):
 		action_controller.palette_changed.connect(_on_action_palette_changed)
+	if (
+		action_controller
+		and action_controller.has_signal("build_feedback_requested")
+		and not action_controller.build_feedback_requested.is_connected(
+			show_build_feedback
+		)
+	):
+		action_controller.build_feedback_requested.connect(show_build_feedback)
 	rebuild_action_palette()
 	if action_controller:
 		var selected: int = action_controller.get_selected_slot()
@@ -257,6 +295,7 @@ func rebuild_action_palette() -> void:
 
 
 func refresh_action_bar() -> void:
+	_refresh_material_counts()
 	if quick_bar == null:
 		return
 	var selected: int = action_controller.get_selected_slot() if action_controller else -1
@@ -276,11 +315,14 @@ func refresh_action_bar() -> void:
 				"种子 ×%d" % quantity,
 				_palette_texture(index, false)
 			)
+		elif building_mode:
+			_configure_building_button(button, index)
 		button.set_selected(index == selected)
 		var available := true
 		if building_mode:
 			available = _building_resources_available(index)
 		button.set_available(available)
+	_refresh_build_cost_bar(selected)
 
 
 func _on_quick_slot_pressed(index: int) -> void:
@@ -302,6 +344,11 @@ func _on_action_mode_changed(_mode: int) -> void:
 
 func _on_action_palette_changed(_mode: int, _selected_index: int) -> void:
 	refresh_action_bar()
+
+
+func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
+	if item_id in MATERIAL_IDS or item_id == PlayerActionController.SEED_ITEM_ID:
+		refresh_action_bar()
 
 
 func _on_mode_requested(mode: int) -> void:
@@ -371,7 +418,20 @@ func _configure_building_button(button: Button, index: int) -> void:
 	)
 	var cost_parts: Array[String] = []
 	for item_id in source.get("cost", {}):
-		cost_parts.append("%s × %d" % [item_id, int(source.cost[item_id])])
+		var required := int(source.cost[item_id])
+		var available: int = (
+			inventory_ref.get_item_count(str(item_id))
+			if inventory_ref != null
+			else 0
+		)
+		var part := "%s %d/%d" % [
+			MATERIAL_NAMES.get(item_id, item_id),
+			required,
+			available,
+		]
+		if available < required:
+			part += "（缺 %d）" % (required - available)
+		cost_parts.append(part)
 	button.tooltip_text = "%s\n占地 %d × %d\n%s" % [
 		str(source.get("name", BUILDING_NAMES[index])),
 		footprint.x,
@@ -403,6 +463,15 @@ func _load_palette_icon(path: String) -> Texture2D:
 
 
 func _building_resources_available(index: int) -> bool:
+	if action_controller != null and action_controller.has_method(
+		"get_building_resource_diagnostic"
+	):
+		return bool(
+			action_controller.get_building_resource_diagnostic(index).get(
+				"allowed",
+				false
+			)
+		)
 	if economy_ref == null or not economy_ref.has_method("has_resources"):
 		return true
 	if index < 0 or index >= PlayerActionController.BUILDING_IDS.size():
@@ -411,6 +480,83 @@ func _building_resources_available(index: int) -> bool:
 		PlayerActionController.BUILDING_IDS[index]
 	)
 	return bool(economy_ref.has_resources(source.get("cost", {})))
+
+
+func get_material_count_text(item_id: String) -> String:
+	var label = _material_count_labels.get(item_id)
+	return label.text if label is Label else ""
+
+
+func show_build_feedback(message: String, _details: Dictionary = {}) -> void:
+	build_feedback_label.text = message
+	build_feedback_toast.visible = true
+	build_feedback_timer.start()
+
+
+func _on_build_feedback_timeout() -> void:
+	build_feedback_toast.visible = false
+
+
+func _refresh_material_counts() -> void:
+	for item_id in MATERIAL_IDS:
+		var count: int = inventory_ref.get_item_count(item_id) if inventory_ref else 0
+		var label = _material_count_labels.get(item_id)
+		if label is Label:
+			label.text = str(count)
+
+
+func _refresh_build_cost_bar(selected_index: int) -> void:
+	if (
+		not _is_building_mode()
+		or selected_index < 0
+		or selected_index >= PlayerActionController.BUILDING_IDS.size()
+	):
+		build_cost_bar.visible = false
+		return
+	var building_id: String = PlayerActionController.BUILDING_IDS[selected_index]
+	var source: Dictionary = GameDataScript.get_building(building_id)
+	if source.is_empty():
+		build_cost_bar.visible = false
+		return
+	building_cost_label.text = "%s　占地 %d×%d" % [
+		str(source.get("name", BUILDING_NAMES[selected_index])),
+		int(source.get("footprint_x", 0)),
+		int(source.get("footprint_z", 0)),
+	]
+	for child in building_costs.get_children():
+		child.free()
+	for item_id in source.get("cost", {}):
+		building_costs.add_child(
+			_create_cost_entry(
+				str(item_id),
+				int(source.cost[item_id]),
+				inventory_ref.get_item_count(str(item_id)) if inventory_ref else 0
+			)
+		)
+	build_cost_bar.visible = true
+
+
+func _create_cost_entry(item_id: String, required: int, available: int) -> HBoxContainer:
+	var entry := HBoxContainer.new()
+	entry.add_theme_constant_override("separation", 4)
+	entry.tooltip_text = str(MATERIAL_NAMES.get(item_id, item_id))
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(28, 28)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture = _load_palette_icon(str(MATERIAL_ICON_PATHS.get(item_id, "")))
+	entry.add_child(icon)
+	var amount := Label.new()
+	amount.add_theme_font_size_override("font_size", 22)
+	amount.add_theme_color_override(
+		"font_color",
+		COST_AVAILABLE_COLOR if available >= required else COST_MISSING_COLOR
+	)
+	amount.add_theme_color_override("font_outline_color", Color(0.09, 0.125, 0.098, 1))
+	amount.add_theme_constant_override("outline_size", 3)
+	amount.text = "%d/%d" % [required, available]
+	entry.add_child(amount)
+	return entry
 
 
 func set_quick_slot(index: int, item_name: String, quantity: int) -> void:
