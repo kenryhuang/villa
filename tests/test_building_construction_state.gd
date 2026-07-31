@@ -82,6 +82,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(stage_events, [BuildingInstance.ConstructionStage.FRAME], "frame transition emits once")
 	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "frame enables camera occlusion")
 	assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "frame keeps interaction disabled")
+	var construction_sprite := instance.get_node("VisualRoot/ConstructionLayer") as Sprite3D
+	instance.set_camera_occluded(true)
+	instance._process(1.0)
+	assertions.near(construction_sprite.modulate.a, 0.3, 0.001, "camera occlusion fades construction art")
+	if hammer_sprite != null:
+		assertions.near(hammer_sprite.modulate.a, 1.0, 0.001, "camera occlusion does not fade construction hammer")
+	instance.set_camera_occluded(false)
 	var transitions := instance.get_node_or_null("VisualRoot/ConstructionTransitions")
 	assertions.truthy(transitions != null, "construction transitions root exists")
 	assertions.truthy(transitions != null and transitions.get_child_count() == 1, "stage change retains one outgoing sprite")

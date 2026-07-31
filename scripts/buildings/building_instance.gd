@@ -775,6 +775,8 @@ func _collect_visual_geometry(
 	result: Array[GeometryInstance3D]
 ) -> void:
 	for child in parent.get_children():
+		if child.name == "ConstructionHammer":
+			continue
 		if child is GeometryInstance3D:
 			result.append(child)
 		if child.get_child_count() > 0:
