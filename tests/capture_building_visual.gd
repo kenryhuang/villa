@@ -1,6 +1,6 @@
 extends SceneTree
 
-const OUTPUT_PATH := "/tmp/villa-building-system-verification.png"
+const OUTPUT_PATH := "res://.godot/villa-building-system-verification.png"
 
 
 func _init() -> void:
@@ -21,10 +21,11 @@ func _capture() -> void:
 		return
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
-	var error := image.save_png(OUTPUT_PATH)
+	var absolute_output_path := ProjectSettings.globalize_path(OUTPUT_PATH)
+	var error := image.save_png(absolute_output_path)
 	if error != OK:
 		push_error("failed to save building verification capture: %s" % error_string(error))
 		quit(1)
 		return
-	print("CAPTURE: %s (%dx%d)" % [OUTPUT_PATH, image.get_width(), image.get_height()])
+	print("CAPTURE: %s (%dx%d)" % [absolute_output_path, image.get_width(), image.get_height()])
 	quit(0)
