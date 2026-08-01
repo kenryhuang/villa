@@ -10,6 +10,7 @@ var orders: Array[Dictionary] = []
 var _inventory_ref: InventorySystem
 var _wallet_ref: Node
 var _market_ref: Node
+var _is_configured := false
 var _event_bus
 var _affinity: Dictionary = {}
 
@@ -22,9 +23,13 @@ func configure(inventory: InventorySystem, wallet: Node, market: Node = null) ->
 	_inventory_ref = inventory
 	_wallet_ref = wallet
 	_market_ref = market
-	if _inventory_ref == null or _wallet_ref == null:
-		return false
-	if not _wallet_ref.has_method("add_gold") or not _wallet_ref.has_method("spend_gold"):
+	_is_configured = (
+		_inventory_ref != null
+		and _wallet_ref != null
+		and _wallet_ref.has_method("add_gold")
+		and _wallet_ref.has_method("spend_gold")
+	)
+	if not _is_configured:
 		return false
 	# 连接每日事件
 	if _event_bus:
@@ -37,13 +42,13 @@ func configure(inventory: InventorySystem, wallet: Node, market: Node = null) ->
 # ============================================================
 
 func add_gold(amount: int) -> bool:
-	if _wallet_ref == null:
+	if not _is_configured or _wallet_ref == null:
 		return false
 	return bool(_wallet_ref.call("add_gold", amount))
 
 
 func spend_gold(amount: int) -> bool:
-	if _wallet_ref == null:
+	if not _is_configured or _wallet_ref == null:
 		return false
 	return bool(_wallet_ref.call("spend_gold", amount))
 

@@ -22,6 +22,18 @@ class WalletDouble:
 		return true
 
 
+class AddOnlyWalletDouble:
+	extends Node
+
+	var gold := 100
+
+	func add_gold(amount: int) -> bool:
+		if amount <= 0:
+			return false
+		gold += amount
+		return true
+
+
 func run(assertions: TestAssert) -> void:
 	var inventory := InventorySystem.new()
 	var wallet := WalletDouble.new()
@@ -34,3 +46,16 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(not economy.configure(inventory, null), "missing wallet rejected")
 	assertions.truthy(not economy.add_gold(10), "rejected wallet configuration clears delegation")
 	assertions.equal(wallet.gold, 80, "rejected configuration preserves prior wallet balance")
+
+	var inventoryless_wallet := WalletDouble.new()
+	assertions.truthy(not economy.configure(null, inventoryless_wallet), "missing inventory rejected")
+	assertions.truthy(not economy.add_gold(10), "missing inventory blocks income delegation")
+	assertions.equal(inventoryless_wallet.gold, 100, "missing inventory preserves wallet after income")
+	assertions.truthy(not economy.spend_gold(10), "missing inventory blocks spending delegation")
+	assertions.equal(inventoryless_wallet.gold, 100, "missing inventory preserves wallet after spending")
+
+	var malformed_wallet := AddOnlyWalletDouble.new()
+	assertions.truthy(not economy.configure(inventory, malformed_wallet), "malformed wallet rejected")
+	assertions.truthy(not economy.add_gold(10), "malformed wallet blocks income delegation")
+	assertions.equal(malformed_wallet.gold, 100, "malformed wallet preserves balance after income")
+	assertions.truthy(not economy.spend_gold(10), "malformed wallet blocks spending delegation")
