@@ -4,6 +4,7 @@ extends CanvasLayer
 ## 农庄 HUD - 体力、金币、等级、季节/日期、时间、快捷栏
 
 signal quick_slot_selected(index: int)
+signal debug_reset_requested
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const ActionPaletteButtonScene = preload(
@@ -45,6 +46,7 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var exp_bar: ProgressBar = $TopBar/StatusRow/ExpBar
 @onready var season_label: Label = $TopBar/StatusRow/SeasonLabel
 @onready var time_label: Label = $TopBar/StatusRow/TimeLabel
+@onready var debug_reset_button: Button = $DebugResetButton
 @onready var mode_menu: PopupPanel = $BottomBar/ModeMenu
 @onready var mode_menu_content: VBoxContainer = $BottomBar/ModeMenu/VBox
 @onready var farming_mode_button: Button = $BottomBar/ModeMenu/VBox/FarmingModeButton
@@ -85,6 +87,8 @@ func _ready() -> void:
 		_event_bus.day_changed.connect(_on_day_changed)
 		_event_bus.item_added.connect(_on_inventory_item_changed)
 		_event_bus.item_removed.connect(_on_inventory_item_changed)
+	if not debug_reset_button.pressed.is_connected(_on_debug_reset_pressed):
+		debug_reset_button.pressed.connect(_on_debug_reset_pressed)
 
 	# 初始化显示
 	_init_display()
@@ -195,6 +199,15 @@ func configure_season_system(system: Variant) -> void:
 	if season_system_ref:
 		_update_season_display(season_system_ref)
 		_update_time_display(season_system_ref.hour, season_system_ref.minute)
+
+
+func configure_debug_reset(available: bool) -> void:
+	debug_reset_button.visible = available
+
+
+func _on_debug_reset_pressed() -> void:
+	if debug_reset_button.visible:
+		debug_reset_requested.emit()
 
 
 func _get_season_system() -> Variant:

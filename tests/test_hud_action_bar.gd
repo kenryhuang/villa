@@ -72,6 +72,50 @@ class EconomyDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hud = HudScene.instantiate()
 	tree.root.add_child(hud)
+	var debug_reset_button := hud.get_node_or_null("DebugResetButton")
+	var has_debug_reset_api := hud.has_method("configure_debug_reset")
+	var has_debug_reset_signal := hud.has_signal("debug_reset_requested")
+	assertions.truthy(
+		debug_reset_button is Button,
+		"HUD authors the debug reset button"
+	)
+	assertions.truthy(
+		has_debug_reset_api,
+		"HUD exposes debug reset availability configuration"
+	)
+	assertions.truthy(
+		has_debug_reset_signal,
+		"HUD exposes the debug reset request signal"
+	)
+	if debug_reset_button is Button and has_debug_reset_api and has_debug_reset_signal:
+		var debug_reset_requests: Array[bool] = []
+		hud.debug_reset_requested.connect(
+			func() -> void:
+				debug_reset_requests.append(true)
+		)
+		hud.configure_debug_reset(false)
+		assertions.truthy(
+			not debug_reset_button.visible,
+			"debug reset is hidden when unavailable"
+		)
+		hud.configure_debug_reset(true)
+		assertions.truthy(
+			debug_reset_button.visible,
+			"debug reset appears when available"
+		)
+		debug_reset_button.pressed.emit()
+		assertions.equal(
+			debug_reset_requests.size(),
+			1,
+			"available debug reset emits one request"
+		)
+		hud.configure_debug_reset(false)
+		debug_reset_button.pressed.emit()
+		assertions.equal(
+			debug_reset_requests.size(),
+			1,
+			"unavailable debug reset does not emit a request"
+		)
 	for item_id in ["wood", "stone", "iron", "glass"]:
 		var entry_path := "MaterialsPanel/MaterialsRow/%s" % item_id.capitalize()
 		var entry := hud.get_node_or_null(entry_path)
