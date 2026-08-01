@@ -113,6 +113,12 @@ func _test_state_round_trip(assertions: TestAssert) -> void:
 	var restored := ProducerStateScript.new()
 	assertions.truthy(restored.from_dict(saved), "producer state round-trip succeeds")
 	assertions.equal(restored.to_dict(), saved, "producer state round-trip is exact")
+	var json_saved: Variant = JSON.parse_string(JSON.stringify(original.to_dict()))
+	var json_restored := ProducerStateScript.new()
+	assertions.truthy(json_saved is Dictionary, "producer state crosses real JSON boundary")
+	if json_saved is Dictionary:
+		assertions.truthy(json_restored.from_dict(json_saved), "producer state restores JSON numeric values")
+		assertions.equal(json_restored.to_dict(), original.to_dict(), "producer JSON round-trip is exact")
 	saved.jobs[0].remaining_minutes = 1
 	saved.outputs.plank = 99
 	assertions.equal(restored.jobs[0].remaining_minutes, 90, "jobs are deep copied")
@@ -136,6 +142,29 @@ func _test_state_round_trip(assertions: TestAssert) -> void:
 		"outputs": {},
 		"inputs": {},
 	}), "fractional producer limits are rejected")
+	for invalid_state in [
+		_with_producer_field(before, "max_queue_slots", NAN),
+		_with_producer_field(before, "max_queue_slots", 9223372036854775807),
+		_with_producer_field(before, "output_capacity", -1),
+		_with_producer_job_field(before, "batches", 1.5),
+		_with_producer_job_field(before, "remaining_minutes", 1.25),
+		_with_producer_count(before, "outputs", "plank", 1.5),
+		_with_producer_count(before, "outputs", "plank", -1),
+		_with_producer_count(before, "inputs", "animal_feed", NAN),
+		_with_producer_count(before, "outputs", "unknown_saved_item", 1),
+		_with_producer_count(before, "inputs", "unknown_saved_item", 1),
+		_with_producer_job_field(before, "recipe_id", "unknown_saved_recipe"),
+	]:
+		var candidate := ProducerStateScript.new()
+		candidate.from_dict(before)
+		assertions.truthy(not candidate.from_dict(invalid_state), "invalid persisted producer number or id is rejected")
+		assertions.equal(candidate.to_dict(), before, "invalid producer payload leaves state unchanged")
+	var wrong_station_job := before.duplicate(true)
+	wrong_station_job.station_id = "furnace"
+	var station_candidate := ProducerStateScript.new()
+	station_candidate.from_dict(before)
+	assertions.truthy(not station_candidate.from_dict(wrong_station_job), "persisted job must match producer station")
+	assertions.equal(station_candidate.to_dict(), before, "station-invalid producer payload is atomic")
 
 
 func _test_queue_lifecycle(assertions: TestAssert) -> void:
@@ -279,6 +308,7 @@ func _test_building_round_trip(assertions: TestAssert) -> void:
 	var building := _building("workbench")
 	building.grid_x = 7
 	building.grid_z = 8
+	building.occupied_cells = [{"gx": 7, "gz": 8, "previous_state": 0}]
 	building.producer_state.outputs = {"plank": 2}
 	building.producer_state.jobs = [{
 		"recipe_id": "plank",
@@ -293,6 +323,12 @@ func _test_building_round_trip(assertions: TestAssert) -> void:
 	assertions.equal(restored.producer_state.to_dict(), building.producer_state.to_dict(), "building restores producer state")
 	assertions.equal(restored.grid_x, 7, "building restores grid x")
 	assertions.equal(restored.grid_z, 8, "building restores grid z")
+	var json_saved: Variant = JSON.parse_string(JSON.stringify(saved))
+	var json_restored := _track(BuildingInstance.new()) as BuildingInstance
+	assertions.truthy(json_saved is Dictionary, "building state crosses real JSON boundary")
+	if json_saved is Dictionary:
+		assertions.truthy(json_restored.from_dict(json_saved), "building restores JSON numeric values")
+		assertions.equal(json_restored.to_dict(), saved, "building JSON round-trip preserves producer state")
 
 	var legacy := saved.duplicate(true)
 	legacy.erase("producer_state")
@@ -310,6 +346,21 @@ func _test_building_round_trip(assertions: TestAssert) -> void:
 	mismatched.producer_state.jobs = []
 	assertions.truthy(not restored.from_dict(mismatched), "building rejects mismatched producer station")
 	assertions.equal(restored.to_dict(), before, "station mismatch restore is atomic")
+	for invalid_building in [
+		_with_building_field(saved, "gx", 7.5),
+		_with_building_field(saved, "gz", NAN),
+		_with_building_field(saved, "gx", -1),
+		_with_building_field(saved, "construction_stage", 1.5),
+		_with_building_field(saved, "construction_stage", 99),
+		_with_occupied_field(saved, "gx", 7.25),
+		_with_occupied_field(saved, "gz", NAN),
+		_with_occupied_field(saved, "previous_state", 1.5),
+		_with_occupied_field(saved, "previous_state", 99),
+	]:
+		var candidate := _track(BuildingInstance.new()) as BuildingInstance
+		candidate.from_dict(before)
+		assertions.truthy(not candidate.from_dict(invalid_building), "invalid persisted building number is rejected")
+		assertions.equal(candidate.to_dict(), before, "invalid building payload leaves state unchanged")
 
 
 func _test_clock(assertions: TestAssert, tree: SceneTree) -> void:
@@ -401,6 +452,46 @@ func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> v
 	assertions.equal(restored.producer_state.jobs.size(), 1, "building system restores queued job")
 	if not restored.producer_state.jobs.is_empty():
 		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, 40, "building system restores remaining job time")
+	assertions.truthy(system.remove_building(restored), "valid restored producer can be removed")
+	assertions.truthy(grid.get_cell(10, 10).state != GridCell.State.BUILDING, "removal clears authoritative producer footprint")
+
+	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
+	var outside_state := grid.get_cell(11, 10).state
+	var displaced_record: Dictionary = records[0].duplicate(true)
+	displaced_record.occupied_cells = [{
+		"gx": 11,
+		"gz": 10,
+		"previous_state": GridCell.State.WASTELAND,
+	}]
+	assertions.equal(system.restore_buildings([displaced_record]), 0, "restore rejects displaced saved footprint")
+	if system.get_building_count() > 0:
+		system.remove_building(system.get_all_buildings()[0])
+	assertions.truthy(grid.get_cell(10, 10).state != GridCell.State.BUILDING, "rejected footprint leaves authoritative cell clear")
+	assertions.equal(grid.get_cell(11, 10).state, outside_state, "rejected footprint never mutates outside cell")
+
+	var duplicate_record: Dictionary = records[0].duplicate(true)
+	duplicate_record.occupied_cells.append(duplicate_record.occupied_cells[0].duplicate(true))
+	assertions.equal(system.restore_buildings([duplicate_record]), 0, "restore rejects duplicate saved footprint coordinates")
+	assertions.truthy(grid.get_cell(10, 10).state != GridCell.State.BUILDING, "duplicate footprint rejection clears authoritative mark")
+
+	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
+	var malicious_state_record: Dictionary = records[0].duplicate(true)
+	malicious_state_record.occupied_cells[0].previous_state = GridCell.State.BUILDING
+	assertions.equal(system.restore_buildings([malicious_state_record]), 0, "restore rejects a saved building previous state")
+	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.FARMLAND, "malicious previous state cannot leave a building mark")
+
+	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
+	var invalid_overlap: Dictionary = records[0].duplicate(true)
+	invalid_overlap.producer_state.station_id = "furnace"
+	invalid_overlap.producer_state.jobs = []
+	assertions.equal(system.restore_buildings([records[0], invalid_overlap]), 1, "invalid overlapping record is skipped")
+	assertions.equal(system.get_building_count(), 1, "valid overlapping record remains registered")
+	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.BUILDING, "invalid overlap preserves accepted building mark")
+	var accepted := system.get_building_at(10, 10)
+	assertions.truthy(accepted is BuildingInstance, "valid overlapping building remains addressable")
+	if accepted is BuildingInstance:
+		assertions.truthy(system.remove_building(accepted), "valid overlapping building can be removed")
+	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.FARMLAND, "accepted overlap removal restores prior state")
 
 
 func _building(station_id: String, state: ProducerState = null) -> BuildingInstance:
@@ -408,6 +499,43 @@ func _building(station_id: String, state: ProducerState = null) -> BuildingInsta
 	building.authored_building_id = station_id
 	building.producer_state = state if state != null else ProducerStateScript.new(station_id)
 	return building
+
+
+func _with_producer_field(source: Dictionary, field: String, value: Variant) -> Dictionary:
+	var result := source.duplicate(true)
+	result[field] = value
+	return result
+
+
+func _with_producer_job_field(source: Dictionary, field: String, value: Variant) -> Dictionary:
+	var result := source.duplicate(true)
+	result.jobs[0][field] = value
+	return result
+
+
+func _with_producer_count(
+	source: Dictionary,
+	map_name: String,
+	item_id: String,
+	value: Variant
+) -> Dictionary:
+	var result := source.duplicate(true)
+	result[map_name][item_id] = value
+	return result
+
+
+func _with_building_field(source: Dictionary, field: String, value: Variant) -> Dictionary:
+	var result := source.duplicate(true)
+	result[field] = value
+	return result
+
+
+func _with_occupied_field(source: Dictionary, field: String, value: Variant) -> Dictionary:
+	var result := source.duplicate(true)
+	if result.occupied_cells.is_empty():
+		result.occupied_cells = [{"gx": 7, "gz": 8, "previous_state": 0}]
+	result.occupied_cells[0][field] = value
+	return result
 
 
 func _production() -> ProductionSystem:

@@ -30,6 +30,8 @@ const FADE_RATE := 10.0
 const STAGE_FADE_OUT_DURATION := 0.12
 const STAGE_FADE_IN_DURATION := 0.18
 const CONSTRUCTION_SECONDS_PER_STAGE := 10.0
+const MAX_SAFE_INTEGER := 9007199254740991
+const MAX_GRID_COORDINATE := 2147483647
 const CONSTRUCTION_TRANSITION_COUNT := (
 	int(ConstructionStage.COMPLETE) - int(ConstructionStage.FOUNDATION)
 )
@@ -291,29 +293,65 @@ func to_dict() -> Dictionary:
 func from_dict(source: Dictionary) -> bool:
 	if typeof(source.get("building_id")) != TYPE_STRING:
 		return false
-	if typeof(source.get("gx")) != TYPE_INT or typeof(source.get("gz")) != TYPE_INT:
+	var parsed_gx: Variant = _integer_number(source.get("gx"))
+	var parsed_gz: Variant = _integer_number(source.get("gz"))
+	if not _is_grid_coordinate(parsed_gx) or not _is_grid_coordinate(parsed_gz):
 		return false
 	var saved_cells: Variant = source.get("occupied_cells", [])
 	if not saved_cells is Array:
 		return false
-	var next_cells: Array[Dictionary] = []
+	var normalized_saved_cells: Array[Dictionary] = []
+	var saved_cell_states := {}
 	for value in saved_cells:
 		if not value is Dictionary:
 			return false
 		var cell := value as Dictionary
-		if (
-			typeof(cell.get("gx")) != TYPE_INT
-			or typeof(cell.get("gz")) != TYPE_INT
-			or typeof(cell.get("previous_state")) != TYPE_INT
-		):
+		var cell_gx: Variant = _integer_number(cell.get("gx"))
+		var cell_gz: Variant = _integer_number(cell.get("gz"))
+		var previous_state: Variant = _integer_number(cell.get("previous_state"))
+		if not _is_grid_coordinate(cell_gx) or not _is_grid_coordinate(cell_gz):
 			return false
-		next_cells.append(cell.duplicate(true))
+		if previous_state == null or int(previous_state) not in [
+			GridCell.State.WASTELAND,
+			GridCell.State.FARMLAND,
+		]:
+			return false
+		var location := Vector2i(int(cell_gx), int(cell_gz))
+		if saved_cell_states.has(location):
+			return false
+		saved_cell_states[location] = int(previous_state)
+		normalized_saved_cells.append({
+			"gx": location.x,
+			"gz": location.y,
+			"previous_state": int(previous_state),
+		})
+	var next_cells: Array[Dictionary] = []
+	if occupied_cells.is_empty():
+		next_cells.assign(normalized_saved_cells)
+	else:
+		if occupied_cells.size() != saved_cell_states.size():
+			return false
+		var authoritative_locations := {}
+		for authoritative_cell in occupied_cells:
+			var location := Vector2i(
+				int(authoritative_cell.get("gx", -1)),
+				int(authoritative_cell.get("gz", -1))
+			)
+			if authoritative_locations.has(location) or not saved_cell_states.has(location):
+				return false
+			authoritative_locations[location] = true
+			next_cells.append({
+				"gx": location.x,
+				"gz": location.y,
+				"previous_state": int(saved_cell_states[location]),
+			})
 	var saved_stage: Variant = source.get("construction_stage", int(ConstructionStage.COMPLETE))
 	var saved_elapsed: Variant = source.get("construction_elapsed", 0.0)
 	var saved_duration: Variant = source.get("construction_duration", 0.0)
-	if typeof(saved_stage) != TYPE_INT:
+	var parsed_stage: Variant = _integer_number(saved_stage)
+	if parsed_stage == null:
 		return false
-	if int(saved_stage) < int(ConstructionStage.FOUNDATION) or int(saved_stage) > int(ConstructionStage.COMPLETE):
+	if int(parsed_stage) < int(ConstructionStage.FOUNDATION) or int(parsed_stage) > int(ConstructionStage.COMPLETE):
 		return false
 	if not saved_elapsed is float and not saved_elapsed is int:
 		return false
@@ -339,15 +377,34 @@ func from_dict(source: Dictionary) -> bool:
 		return false
 	if data == null:
 		authored_building_id = str(source.building_id)
-	grid_x = int(source.gx)
-	grid_z = int(source.gz)
+	grid_x = int(parsed_gx)
+	grid_z = int(parsed_gz)
 	occupied_cells.assign(next_cells)
-	construction_stage = int(saved_stage) as ConstructionStage
+	construction_stage = int(parsed_stage) as ConstructionStage
 	construction_elapsed = float(saved_elapsed)
 	construction_duration = float(saved_duration)
 	_completion_emitted = construction_stage == ConstructionStage.COMPLETE
 	producer_state = next_producer
 	return true
+
+
+static func _integer_number(value: Variant) -> Variant:
+	if typeof(value) == TYPE_INT:
+		if int(value) < -MAX_SAFE_INTEGER or int(value) > MAX_SAFE_INTEGER:
+			return null
+		return value
+	if typeof(value) != TYPE_FLOAT:
+		return null
+	var number := float(value)
+	if not is_finite(number) or absf(number) > float(MAX_SAFE_INTEGER):
+		return null
+	if number != floorf(number):
+		return null
+	return int(number)
+
+
+static func _is_grid_coordinate(value: Variant) -> bool:
+	return value != null and int(value) >= 0 and int(value) <= MAX_GRID_COORDINATE
 
 
 func _process(delta: float) -> void:

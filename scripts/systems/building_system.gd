@@ -384,12 +384,15 @@ func restore_buildings(records: Array) -> int:
 					)
 
 		var snapshots: Array[Dictionary] = []
-		var changed: Array[Dictionary] = []
 		var valid := true
 		for location in _footprint_cells(resolved, gx, gz):
 			var cell := grid_system_ref.get_cell(location.x, location.y)
 			var height := grid_system_ref.get_terrain_height_at_cell(location.x, location.y)
-			if cell == null or not is_finite(height):
+			if (
+				cell == null
+				or not is_finite(height)
+				or (cell.state != GridCell.State.BUILDING and cell.state not in BUILDABLE_STATES)
+			):
 				valid = false
 				break
 			snapshots.append({
@@ -397,26 +400,33 @@ func restore_buildings(records: Array) -> int:
 				"gz": location.y,
 				"previous_state": saved_states.get(location, GridCell.State.WASTELAND),
 			})
-			if cell.state != GridCell.State.BUILDING:
-				var previous_state := cell.state
-				if cell.state not in BUILDABLE_STATES or not grid_system_ref.set_cell_state(
-					location.x,
-					location.y,
-					GridCell.State.BUILDING
-				):
-					valid = false
-					break
-				changed.append({
-					"gx": location.x,
-					"gz": location.y,
-					"previous_state": previous_state,
-				})
 		if not valid:
-			_restore_snapshots(changed)
 			instance.free()
 			continue
 		instance.configure(resolved, gx, gz, snapshots)
 		if not instance.from_dict(record):
+			instance.free()
+			continue
+
+		var changed: Array[Dictionary] = []
+		for location in _footprint_cells(resolved, gx, gz):
+			var cell := grid_system_ref.get_cell(location.x, location.y)
+			if cell.state == GridCell.State.BUILDING:
+				continue
+			var previous_state := cell.state
+			if cell.state not in BUILDABLE_STATES or not grid_system_ref.set_cell_state(
+				location.x,
+				location.y,
+				GridCell.State.BUILDING
+			):
+				valid = false
+				break
+			changed.append({
+				"gx": location.x,
+				"gz": location.y,
+				"previous_state": previous_state,
+			})
+		if not valid:
 			_restore_snapshots(changed)
 			instance.free()
 			continue
