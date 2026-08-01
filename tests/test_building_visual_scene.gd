@@ -119,11 +119,7 @@ func _run() -> void:
 				0.38,
 				0.72
 			)
-			if (
-				not is_zero_approx(hammer.position.x)
-				or not is_equal_approx(hammer.position.y, hammer_height * 0.22)
-				or not is_zero_approx(hammer.position.z)
-			):
+			if not hammer.position.is_equal_approx(Vector3.ZERO):
 				push_error("construction hammer pivot must stay at its configured foundation anchor")
 				instance.free()
 				quit(1)
@@ -135,16 +131,22 @@ func _run() -> void:
 				quit(1)
 				return
 			var screen_offset: Vector2 = hammer_material.get_shader_parameter("screen_offset")
+			var expected_screen_offset := ConstructionFeedback.hammer_screen_offset_for(
+				building.data.visual_size, hammer_height
+			)
 			if (
-				screen_offset.x <= 0.0
-				or not is_equal_approx(screen_offset.x, building.data.visual_size.x * 0.30)
-				or not is_zero_approx(screen_offset.y)
+				not screen_offset.is_equal_approx(expected_screen_offset)
+				or screen_offset.x <= building.data.visual_size.x * 0.30
+				or screen_offset.y <= 0.0
 			):
-				push_error("construction hammer screen offset must place it right of the foundation anchor")
+				push_error("construction hammer screen offset must back-solve its impact head contact")
 				instance.free()
 				quit(1)
 				return
-			if hammer_sprite.extra_cull_margin < screen_offset.length() + hammer_height:
+			if not is_equal_approx(
+				hammer_sprite.extra_cull_margin,
+				expected_screen_offset.length() + hammer_height
+			):
 				push_error("construction hammer cull margin must cover its screen offset and height")
 				instance.free()
 				quit(1)

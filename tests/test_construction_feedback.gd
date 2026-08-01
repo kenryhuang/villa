@@ -48,23 +48,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var pivot := feedback.get_node("HammerPivot") as Node3D
 	var hammer_sprite := pivot.get_node("HammerSprite") as Sprite3D
 	var progress := feedback.get_node("Progress") as Sprite3D
-	assertions.near(
-		pivot.position.x,
-		0.0,
-		0.001,
-		"hammer pivot stays at the building anchor in world x"
-	)
-	assertions.near(
-		pivot.position.z,
-		0.0,
-		0.001,
-		"hammer pivot stays at the building anchor in world z"
-	)
-	assertions.near(
-		pivot.position.y,
-		0.72 * 0.22,
-		0.001,
-		"handle-end pivot stays close to the foundation"
+	assertions.equal(
+		pivot.position,
+		Vector3.ZERO,
+		"hammer billboard pivot stays at the building foundation origin"
 	)
 	assertions.equal(
 		hammer_sprite.position,
@@ -74,6 +61,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hammer_material := hammer_sprite.material_override as ShaderMaterial
 	assertions.truthy(hammer_material != null, "hammer uses a pivot-aware billboard shader")
 	if hammer_material != null:
+		assertions.equal(
+			hammer_material.render_priority,
+			10,
+			"hammer feedback renders above transparent construction layers"
+		)
 		assertions.near(
 			float(hammer_material.get_shader_parameter("strike_angle")),
 			deg_to_rad(25.0),
@@ -102,22 +94,43 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		if supports_screen_offset:
 			var screen_offset: Vector2 = hammer_material.get_shader_parameter("screen_offset")
-			assertions.truthy(screen_offset.x > 0.0, "hammer screen offset moves toward the right")
+			var expected_screen_offset := FeedbackScript.hammer_screen_offset_for(
+				Vector2(3.0, 2.4), 0.72
+			)
+			var expected_lever := 0.72 * 0.72
+			var expected_head_from_pivot := Vector2(
+				-sin(FeedbackScript.IMPACT_ANGLE) * expected_lever,
+				cos(FeedbackScript.IMPACT_ANGLE) * expected_lever
+			)
+			var expected_contact_offset := Vector2(3.0 * 0.42, 0.0) - expected_head_from_pivot
 			assertions.near(
-				screen_offset.x,
-				3.0 * 0.30,
+				expected_screen_offset.x,
+				expected_contact_offset.x,
 				0.001,
-				"hammer screen offset scales with building width"
+				"hammer offset helper back-solves the impact head contact x"
 			)
 			assertions.near(
-				screen_offset.y,
-				0.0,
+				expected_screen_offset.y,
+				expected_contact_offset.y,
 				0.001,
-				"hammer screen offset does not lift the world-space foundation anchor"
+				"hammer offset helper back-solves the impact head contact y"
+			)
+			assertions.equal(
+				screen_offset,
+				expected_screen_offset,
+				"hammer material receives the impact head contact offset"
+			)
+			assertions.truthy(
+				screen_offset.x > 3.0 * 0.30,
+				"impact contact places the handle pivot right of the old width-only offset"
+			)
+			assertions.truthy(
+				screen_offset.y > 0.0,
+				"impact contact lifts the handle pivot so the hammer head meets the foundation"
 			)
 			assertions.near(
 				hammer_sprite.extra_cull_margin,
-				screen_offset.length() + 0.72,
+				expected_screen_offset.length() + 0.72,
 				0.001,
 				"hammer cull margin covers its camera-plane offset and rotated sprite radius"
 			)

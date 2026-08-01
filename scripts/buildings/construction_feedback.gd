@@ -7,6 +7,8 @@ const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_
 const STRIKE_PERIOD := 0.6
 const RAISED_ANGLE := deg_to_rad(25.0)
 const IMPACT_ANGLE := deg_to_rad(105.0)
+const FOUNDATION_CONTACT_X_RATIO := 0.42
+const HAMMER_HEAD_LEVER_RATIO := 0.72
 const PROGRESS_TEXTURE_SIZE := 128
 
 var _phase := 0.0
@@ -29,6 +31,16 @@ static func strike_angle_for_phase(phase: float) -> float:
 	return lerpf(IMPACT_ANGLE, RAISED_ANGLE, eased)
 
 
+static func hammer_screen_offset_for(visual_size: Vector2, hammer_height: float) -> Vector2:
+	var lever := hammer_height * HAMMER_HEAD_LEVER_RATIO
+	var impact_head_from_pivot := Vector2(
+		-sin(IMPACT_ANGLE) * lever,
+		cos(IMPACT_ANGLE) * lever
+	)
+	var target_head := Vector2(visual_size.x * FOUNDATION_CONTACT_X_RATIO, 0.0)
+	return target_head - impact_head_from_pivot
+
+
 func configure(visual_size: Vector2) -> void:
 	_ensure_nodes()
 	var pivot := get_node("HammerPivot") as Node3D
@@ -40,7 +52,7 @@ func configure(visual_size: Vector2) -> void:
 		0.38,
 		0.72
 	)
-	pivot.position = Vector3(0.0, hammer_height * 0.22, 0.0)
+	pivot.position = Vector3.ZERO
 	pivot.rotation.z = strike_angle_for_phase(_phase)
 	var hammer_texture := _load_texture(HAMMER_TEXTURE_PATH)
 	var hammer_shader := _load_shader(HAMMER_SHADER_PATH)
@@ -49,10 +61,11 @@ func configure(visual_size: Vector2) -> void:
 	if _hammer_ready:
 		hammer_sprite.pixel_size = hammer_height / float(hammer_texture.get_height())
 		hammer_sprite.position = Vector3.ZERO
-		var screen_offset := Vector2(visual_size.x * 0.30, 0.0)
+		var screen_offset := hammer_screen_offset_for(visual_size, hammer_height)
 		hammer_sprite.extra_cull_margin = screen_offset.length() + hammer_height
 		var hammer_material := ShaderMaterial.new()
 		hammer_material.shader = hammer_shader
+		hammer_material.render_priority = 10
 		hammer_material.set_shader_parameter("albedo_texture", hammer_texture)
 		hammer_material.set_shader_parameter("sprite_height", hammer_height)
 		hammer_material.set_shader_parameter("pivot_uv", _painted_hammer_pivot_uv(hammer_texture))
