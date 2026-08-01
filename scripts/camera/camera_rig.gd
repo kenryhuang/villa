@@ -8,12 +8,11 @@ const CameraMathScript = preload("res://scripts/camera/camera_math.gd")
 var target: Node3D
 var yaw := -PI / 4.0
 var orthographic_size := CameraMathScript.DEFAULT_SIZE
+var pan_offset := Vector3.ZERO
 var dragging := false
 
 const ORBIT_DISTANCE := 10.0
 const ORBIT_HEIGHT := 8.8
-const KEY_ROTATION_SPEED := 1.6
-const DRAG_SENSITIVITY := 0.008
 const CAMERA_OCCLUDER_MASK := 32
 const MAX_OCCLUDERS := 8
 
@@ -39,7 +38,7 @@ func _ready() -> void:
 func set_target(value: Node3D) -> void:
 	target = value
 	if target:
-		global_position = target.global_position
+		global_position = target.global_position + pan_offset
 
 func get_planar_forward() -> Vector3:
 	return Vector3(-sin(yaw), 0.0, -cos(yaw)).normalized()
@@ -47,12 +46,13 @@ func get_planar_forward() -> Vector3:
 func get_planar_right() -> Vector3:
 	return get_planar_forward().cross(Vector3.UP).normalized()
 
+static func pan_delta_for(relative: Vector2, view_size: float, viewport_height: float, planar_right: Vector3, planar_forward: Vector3) -> Vector3:
+	var world_per_pixel := view_size / maxf(viewport_height, 1.0)
+	return (-planar_right * relative.x + planar_forward * relative.y) * world_per_pixel
+
 func _process(delta: float) -> void:
-	var rotation_axis := Input.get_axis("camera_left", "camera_right")
-	if not is_zero_approx(rotation_axis):
-		yaw += rotation_axis * KEY_ROTATION_SPEED * delta
 	if target:
-		global_position = global_position.lerp(target.global_position, 1.0 - exp(-8.0 * delta))
+		global_position = global_position.lerp(target.global_position + pan_offset, 1.0 - exp(-8.0 * delta))
 	_apply_camera_transform()
 	update_occlusion()
 
@@ -65,7 +65,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			orthographic_size = CameraMathScript.clamp_size(orthographic_size + 0.6)
 	elif event is InputEventMouseMotion and dragging:
-		yaw -= event.relative.x * DRAG_SENSITIVITY
+		var viewport_height := get_viewport().get_visible_rect().size.y
+		pan_offset += pan_delta_for(event.relative, orthographic_size, viewport_height, get_planar_right(), get_planar_forward())
 
 func _apply_camera_transform() -> void:
 	var offset := Vector3(sin(yaw) * ORBIT_DISTANCE, ORBIT_HEIGHT, cos(yaw) * ORBIT_DISTANCE)
