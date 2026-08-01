@@ -4,7 +4,7 @@ extends Node3D
 const HAMMER_TEXTURE_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
 const HAMMER_SHADER_PATH := "res://assets/buildings/construction/construction_hammer.gdshader"
 const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_progress.gdshader"
-const STRIKE_PERIOD := 0.9
+const STRIKE_PERIOD := 0.6
 const RAISED_ANGLE := deg_to_rad(25.0)
 const IMPACT_ANGLE := deg_to_rad(105.0)
 const PROGRESS_TEXTURE_SIZE := 128
@@ -40,11 +40,7 @@ func configure(visual_size: Vector2) -> void:
 		0.38,
 		0.72
 	)
-	pivot.position = Vector3(
-		visual_size.x * 0.40,
-		hammer_height * 0.85,
-		-visual_size.x * 0.27
-	)
+	pivot.position = Vector3(0.0, hammer_height * 0.22, 0.0)
 	pivot.rotation.z = strike_angle_for_phase(_phase)
 	var hammer_texture := _load_texture(HAMMER_TEXTURE_PATH)
 	var hammer_shader := _load_shader(HAMMER_SHADER_PATH)
@@ -58,6 +54,7 @@ func configure(visual_size: Vector2) -> void:
 		hammer_material.set_shader_parameter("albedo_texture", hammer_texture)
 		hammer_material.set_shader_parameter("sprite_height", hammer_height)
 		hammer_material.set_shader_parameter("pivot_uv", _painted_hammer_pivot_uv(hammer_texture))
+		hammer_material.set_shader_parameter("screen_offset", Vector2(visual_size.x * 0.30, 0.0))
 		hammer_material.set_shader_parameter("strike_angle", pivot.rotation.z)
 		hammer_sprite.material_override = hammer_material
 	else:

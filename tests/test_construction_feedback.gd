@@ -5,6 +5,12 @@ const FeedbackScript = preload("res://scripts/buildings/construction_feedback.gd
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.near(
+		FeedbackScript.STRIKE_PERIOD,
+		0.6,
+		0.001,
+		"hammer completes a full strike every 0.6 seconds"
+	)
+	assertions.near(
 		rad_to_deg(FeedbackScript.strike_angle_for_phase(0.0)),
 		25.0,
 		0.01,
@@ -44,21 +50,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var progress := feedback.get_node("Progress") as Sprite3D
 	assertions.near(
 		pivot.position.x,
-		3.0 * 0.40,
+		0.0,
 		0.001,
-		"hammer pivot aligns with the right side of the isometric base"
+		"hammer pivot stays at the building anchor in world x"
 	)
 	assertions.near(
 		pivot.position.z,
-		-3.0 * 0.27,
+		0.0,
 		0.001,
-		"hammer pivot aligns with the front side of the isometric base"
+		"hammer pivot stays at the building anchor in world z"
 	)
 	assertions.near(
 		pivot.position.y,
-		0.72 * 0.85,
+		0.72 * 0.22,
 		0.001,
-		"raised handle-end pivot lets the head strike the base"
+		"handle-end pivot stays close to the foundation"
 	)
 	assertions.equal(
 		hammer_sprite.position,
@@ -89,6 +95,26 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				0.001,
 				"painted handle pivot follows the visible alpha endpoint"
 			)
+		var supports_screen_offset := hammer_material.shader.code.contains("screen_offset")
+		assertions.truthy(
+			supports_screen_offset,
+			"hammer material exposes a camera-plane screen offset"
+		)
+		if supports_screen_offset:
+			var screen_offset: Vector2 = hammer_material.get_shader_parameter("screen_offset")
+			assertions.truthy(screen_offset.x > 0.0, "hammer screen offset moves toward the right")
+			assertions.near(
+				screen_offset.x,
+				3.0 * 0.30,
+				0.001,
+				"hammer screen offset scales with building width"
+			)
+			assertions.near(
+				screen_offset.y,
+				0.0,
+				0.001,
+				"hammer screen offset does not lift the world-space foundation anchor"
+			)
 	var fixed_pivot := pivot.position
 	feedback.advance_animation(0.0)
 	assertions.near(pivot.rotation.z, deg_to_rad(25.0), 0.001, "zero delta leaves animation phase unchanged")
@@ -101,7 +127,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"hidden hammer does not advance its strike animation"
 	)
 	pivot.visible = true
-	feedback.advance_animation(0.43)
+	feedback.advance_animation(0.15)
+	assertions.near(
+		pivot.rotation.z,
+		deg_to_rad(25.0),
+		0.001,
+		"0.15 seconds reaches phase 0.25 and remains at the raised angle"
+	)
+	feedback.advance_animation(0.12)
 	assertions.equal(pivot.position, fixed_pivot, "hammer handle end remains the fixed pivot")
 	assertions.truthy(
 		pivot.rotation.z > deg_to_rad(25.0),

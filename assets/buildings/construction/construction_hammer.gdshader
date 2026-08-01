@@ -5,6 +5,7 @@ uniform sampler2D albedo_texture : source_color, filter_linear, repeat_disable;
 uniform float strike_angle = 0.436332313;
 uniform float sprite_height = 0.72;
 uniform vec2 pivot_uv = vec2(0.5, 1.0);
+uniform vec2 screen_offset = vec2(0.0);
 
 void vertex() {
 	vec2 pivot_local = vec2(
@@ -18,6 +19,7 @@ void vertex() {
 		anchored.x * cosine - anchored.y * sine,
 		anchored.x * sine + anchored.y * cosine
 	);
+	VERTEX.xy += screen_offset;
 	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(
 		vec4(INV_VIEW_MATRIX[0].xyz, 0.0),
 		vec4(INV_VIEW_MATRIX[1].xyz, 0.0),
