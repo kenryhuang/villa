@@ -31,7 +31,7 @@ func save_game(slot: int = 0) -> bool:
 		return false
 
 	var json_string = JSON.stringify(data)
-	var file_path = SAVE_DIR + SAVE_PREFIX + str(slot) + SAVE_EXT
+	var file_path := _save_path(slot)
 
 	var file = FileAccess.open(file_path, FileAccess.WRITE)
 	if file == null:
@@ -125,7 +125,7 @@ func _gather_save_data() -> Dictionary:
 # ============================================================
 
 func load_game(slot: int = 0) -> bool:
-	var file_path = SAVE_DIR + SAVE_PREFIX + str(slot) + SAVE_EXT
+	var file_path := _save_path(slot)
 
 	if not FileAccess.file_exists(file_path):
 		return false
@@ -228,7 +228,7 @@ func _apply_save_data(data: Dictionary) -> void:
 func get_save_slots() -> Array:
 	var slots = []
 	for i in range(5):
-		var file_path = SAVE_DIR + SAVE_PREFIX + str(i) + SAVE_EXT
+		var file_path := _save_path(i)
 		if FileAccess.file_exists(file_path):
 			var file = FileAccess.open(file_path, FileAccess.READ)
 			if file:
@@ -251,11 +251,24 @@ func get_save_slots() -> Array:
 
 
 func delete_save(slot: int) -> bool:
-	var file_path = SAVE_DIR + SAVE_PREFIX + str(slot) + SAVE_EXT
-	if not FileAccess.file_exists(file_path):
+	if not has_save(slot):
 		return false
-	DirAccess.remove_absolute(file_path)
-	return true
+	return clear_save(slot)
+
+
+func has_save(slot: int) -> bool:
+	return FileAccess.file_exists(_save_path(slot))
+
+
+func clear_save(slot: int) -> bool:
+	var file_path := _save_path(slot)
+	if not FileAccess.file_exists(file_path):
+		return true
+	return DirAccess.remove_absolute(file_path) == OK
+
+
+func _save_path(slot: int) -> String:
+	return SAVE_DIR + SAVE_PREFIX + str(slot) + SAVE_EXT
 
 
 func _on_day_changed(_total_day: int) -> void:

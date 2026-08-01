@@ -8,6 +8,9 @@ const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn"
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
 
 @export var load_save_on_start := true
+@export var save_slot := 0
+
+static var _pending_debug_reload_save_slot := -1
 
 @onready var world = $World
 @onready var player = $Actors/Player
@@ -183,6 +186,10 @@ func _setup_ui() -> void:
 		hud.visible = true
 		hud.configure_season_system(season_system)
 		hud.configure_action_bar(action_controller, inventory_system, economy_system)
+		hud.configure_debug_reset(OS.is_debug_build())
+		var reset_callback := Callable(self, "_on_debug_reset_requested")
+		if not hud.debug_reset_requested.is_connected(reset_callback):
+			hud.debug_reset_requested.connect(reset_callback)
 
 	# 背包 UI
 	if inventory_ui:
@@ -203,8 +210,9 @@ func _setup_ui() -> void:
 
 
 func _initial_game_state() -> void:
+	_consume_debug_reload_save_slot()
 	_register_default_crops()
-	var loaded: bool = load_save_on_start and save_manager.load_game(0)
+	var loaded: bool = load_save_on_start and save_manager.load_game(save_slot)
 	if loaded:
 		_backfill_legacy_grain_slot()
 	else:
@@ -292,9 +300,45 @@ func _map_grain_seed_to_quick_slot() -> bool:
 	return false
 
 
+func reset_debug_state() -> bool:
+	if not OS.is_debug_build():
+		return false
+	if not save_manager.clear_save(save_slot):
+		return false
+	if building_system.is_in_build_mode():
+		building_system.exit_preview_mode()
+	building_system.clear_buildings(true)
+	_grant_new_game_items()
+	if hud:
+		hud.refresh_action_bar()
+	return true
+
+
+func _prepare_debug_reload() -> void:
+	_pending_debug_reload_save_slot = save_slot
+
+
+func _consume_debug_reload_save_slot() -> void:
+	if _pending_debug_reload_save_slot < 0:
+		return
+	save_slot = _pending_debug_reload_save_slot
+	_pending_debug_reload_save_slot = -1
+
+
 # ============================================================
 # 信号回调
 # ============================================================
+
+func _on_debug_reset_requested() -> void:
+	if not OS.is_debug_build():
+		return
+	if not reset_debug_state():
+		push_error("Unable to clear the current debug save.")
+		return
+	_prepare_debug_reload()
+	var reload_error := get_tree().reload_current_scene()
+	if reload_error != OK:
+		push_error("Unable to reload the current scene: %s" % error_string(reload_error))
 
 func _on_dialogue_started(villager_id: String) -> void:
 	if dialogue_ui:
