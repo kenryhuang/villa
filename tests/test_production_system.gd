@@ -493,6 +493,26 @@ func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> v
 		assertions.truthy(system.remove_building(accepted), "valid overlapping building can be removed")
 	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.FARMLAND, "accepted overlap removal restores prior state")
 
+	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
+	var duplicate_valid: Dictionary = records[0].duplicate(true)
+	assertions.equal(system.restore_buildings([records[0], duplicate_valid]), 1, "duplicate valid footprint restores only once")
+	assertions.equal(system.get_building_count(), 1, "duplicate valid footprint has one owner")
+	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.BUILDING, "accepted duplicate footprint remains marked")
+	var duplicate_owner := system.get_building_at(10, 10)
+	assertions.truthy(duplicate_owner is BuildingInstance, "accepted duplicate footprint is addressable")
+	if duplicate_owner is BuildingInstance:
+		assertions.truthy(system.remove_building(duplicate_owner), "accepted duplicate footprint can be removed")
+	assertions.equal(system.get_building_count(), 0, "duplicate footprint removal clears its only owner")
+	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.FARMLAND, "duplicate footprint removal restores prior state once")
+
+	grid.set_cell_state(10, 10, GridCell.State.BUILDING)
+	assertions.equal(system.restore_buildings(records), 1, "unclaimed loaded building mark can be restored")
+	var loaded_owner := system.get_building_at(10, 10)
+	assertions.truthy(loaded_owner is BuildingInstance, "loaded building mark gains an owner")
+	if loaded_owner is BuildingInstance:
+		assertions.truthy(system.remove_building(loaded_owner), "loaded building owner can be removed")
+	assertions.equal(grid.get_cell(10, 10).state, GridCell.State.FARMLAND, "loaded building removal restores saved terrain")
+
 
 func _building(station_id: String, state: ProducerState = null) -> BuildingInstance:
 	var building := _track(BuildingInstance.new()) as BuildingInstance

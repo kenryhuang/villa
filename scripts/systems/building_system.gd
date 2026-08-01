@@ -357,6 +357,7 @@ func get_building_count() -> int:
 func restore_buildings(records: Array) -> int:
 	clear_buildings(false)
 	var restored := 0
+	var claimed_cells := {}
 	for record_value in records:
 		if not record_value is Dictionary:
 			continue
@@ -365,6 +366,14 @@ func restore_buildings(records: Array) -> int:
 		var gx := int(record.get("gx", -1))
 		var gz := int(record.get("gz", -1))
 		if resolved == null or not resolved.is_valid() or grid_system_ref == null:
+			continue
+		var footprint := _footprint_cells(resolved, gx, gz)
+		var overlaps_claimed := false
+		for location in footprint:
+			if claimed_cells.has(location):
+				overlaps_claimed = true
+				break
+		if overlaps_claimed:
 			continue
 		var packed := load(resolved.scene_path) as PackedScene
 		if packed == null:
@@ -385,7 +394,7 @@ func restore_buildings(records: Array) -> int:
 
 		var snapshots: Array[Dictionary] = []
 		var valid := true
-		for location in _footprint_cells(resolved, gx, gz):
+		for location in footprint:
 			var cell := grid_system_ref.get_cell(location.x, location.y)
 			var height := grid_system_ref.get_terrain_height_at_cell(location.x, location.y)
 			if (
@@ -409,7 +418,7 @@ func restore_buildings(records: Array) -> int:
 			continue
 
 		var changed: Array[Dictionary] = []
-		for location in _footprint_cells(resolved, gx, gz):
+		for location in footprint:
 			var cell := grid_system_ref.get_cell(location.x, location.y)
 			if cell.state == GridCell.State.BUILDING:
 				continue
@@ -444,6 +453,8 @@ func restore_buildings(records: Array) -> int:
 		buildings_container.add_child(instance)
 		_buildings.append(instance)
 		_connect_construction_signals(instance)
+		for location in footprint:
+			claimed_cells[location] = true
 		restored += 1
 	return restored
 
