@@ -115,7 +115,7 @@ static func get_market_items() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for item in ITEMS.values():
 		if item.get("base_price", 0) > 0 and item.get("category", "") != "legacy":
-			result.append(item)
+			result.append(item.duplicate(true))
 	return result
 
 static func get_items_by_category(category: String) -> Array:
