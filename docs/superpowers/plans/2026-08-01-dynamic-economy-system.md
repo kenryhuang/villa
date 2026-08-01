@@ -18,9 +18,9 @@ Implement five testable phases:
 2. Production: recipes, queues, passive outputs, irrigation, crop yields and regrowth.
 3. World supply: finite gathering targets and material acquisition.
 4. NPC market: important-NPC inventories, background demand, shortage-backed orders.
-5. Delivery: market UI, saves, waterwheel content, and a 28-day simulation.
+5. Delivery: economy hub, market chart/trade, orders/contracts, building panels, services, notifications, responsive visual verification, saves, waterwheel content, and a 28-day simulation.
 
-Pause for review after Tasks 5, 9, 11, and 15. Do not change building-construction timing or fixed-camera behavior.
+Pause for review after Tasks 5, 9, 11, 17, and 20. Do not change building-construction timing or fixed-camera behavior.
 
 ## File map
 
@@ -35,6 +35,19 @@ Pause for review after Tasks 5, 9, 11, and 15. Do not change building-constructi
 - `scripts/systems/production_system.gd` — queues, passive output, collection.
 - `scripts/systems/npc_economy_system.gd` — NPC decisions/background demand.
 - `scripts/systems/daily_simulation_system.gd` — authoritative day order.
+- `scripts/systems/economy_notification_system.gd` — persisted notifications, unread state, and toast deduplication.
+- `scripts/ui/economy_modal_coordinator.gd` — modal ownership and pause/resume semantics.
+- `scripts/ui/market_panel.gd` — market categories, sorting, selection, and snapshots.
+- `scripts/ui/market_price_chart.gd` — seven-day price graph and hover points.
+- `scripts/ui/trade_panel.gd` — quantity, quotes, slippage, confirmation, and transaction feedback.
+- `scripts/ui/order_panel.gd` — order filters, details, and delivery.
+- `scripts/ui/contract_panel.gd` — contract signing, daily progress, and delivery.
+- `scripts/ui/service_panel.gd` — blueprints, repairs, upgrades, and maintenance.
+- `scripts/ui/building_economy_ui.gd` — routes building interaction to the correct panel.
+- `scripts/ui/building_production_panel.gd` — recipes, queues, storage, and collection.
+- `scripts/ui/building_status_panel.gd` — passive producer, irrigation, greenhouse, and barn status.
+- `scripts/ui/world_range_overlay.gd` — waterwheel coverage visualization.
+- `scripts/ui/economy_notification_ui.gd` — toast stack and notification center.
 - `tests/run_economy_system_tests.gd` and focused `tests/test_economy_*.gd` files.
 
 **Modify**
@@ -50,8 +63,9 @@ Pause for review after Tasks 5, 9, 11, and 15. Do not change building-constructi
 - `scripts/systems/tool_system.gd` — target-gated gathering.
 - `scripts/actors/player_action_controller.gd` — axe/pickaxe routing.
 - `scripts/main.gd` — construct/configure all systems.
-- `scripts/ui/shop_ui.gd`, `scenes/ui/shop_ui.tscn` — dynamic market UI.
+- `scripts/ui/shop_ui.gd`, `scenes/ui/shop_ui.tscn` — compatible economy-hub shell and tabs.
 - `scripts/ui/hud.gd`, `scenes/ui/hud.tscn` — market entry point.
+- `scenes/ui/economy/*.tscn` — focused market, order, contract, service, building, and notification panels.
 
 Whenever a task creates an economy test, register it in `tests/run_economy_system_tests.gd` in the same commit using this exact pattern, replacing the class/path with that task's test:
 
@@ -412,7 +426,23 @@ Also test missing inputs, station mismatch, two-slot limit, full output pause, f
 
 Each recipe contains `id`, `display_name`, `station`, `inputs`, `outputs`, `duration_minutes`, `unlock_tier`. Register all section 7.2 recipes from the design, using 120–360 minutes for materials, 360–720 for food, and 1080–2160 for durable/luxury goods.
 
-`ProducerState` owns `station_id`, `max_queue_slots=2`, `output_capacity=3`, `jobs`, `outputs` and `to_dict/from_dict`. `ProductionSystem` exposes `start_recipe`, `advance_minutes`, `collect_all`, `apply_daily_effects`, `finish_daily_outputs`.
+`ProducerState` owns `station_id`, `max_queue_slots=2`, `output_capacity=3`, `jobs`, `outputs` and `to_dict/from_dict`. `ProductionSystem` exposes:
+
+~~~gdscript
+func get_building_snapshot(building: BuildingInstance) -> Dictionary
+func preflight_recipe(building: BuildingInstance, recipe_id: String,
+		batches: int, inventory: InventorySystem) -> Dictionary
+func start_recipe(building: BuildingInstance, recipe_id: String,
+		batches: int, inventory: InventorySystem) -> bool
+func add_input(building: BuildingInstance, item_id: String,
+		quantity: int, inventory: InventorySystem) -> bool
+func advance_minutes(minutes: int) -> void
+func collect_all(building: BuildingInstance, inventory: InventorySystem) -> bool
+func collect_item(building: BuildingInstance, item_id: String,
+		inventory: InventorySystem) -> bool
+func apply_daily_effects(total_day: int) -> void
+func finish_daily_outputs(total_day: int) -> void
+~~~
 
 Preflight all multiplied inputs and queue capacity before removing materials. Completed jobs wait if output is full. Collection preflights every output quantity before moving anything. Attach and serialize `producer_state` through `BuildingInstance.to_dict()`.
 
@@ -609,6 +639,18 @@ A ten-iron shortage creates at most ten units for that NPC. Daily premium is 15�
 
 `generate_demand_orders` reads actual NPC shortages and deduplicates NPC/item. `complete_order` atomically transfers to NPC inventory then pays. Contracts add `quantity_per_day`, `start_day`, `end_day`, `delivered_days`, `breaches`. Persist IDs/completion; add `order_updated` and `contract_updated` signals.
 
+Replace index-based order access with stable IDs and expose:
+
+~~~gdscript
+func get_orders() -> Array[Dictionary]
+func get_contracts() -> Array[Dictionary]
+func complete_order(order_id: String) -> bool
+func sign_contract(contract_id: String) -> bool
+func deliver_contract(contract_id: String, quantity: int) -> bool
+~~~
+
+Update legacy callers/tests in the same task; no UI may mutate an order dictionary directly.
+
 - [ ] **Step 4: Verify and commit**
 
 ~~~powershell
@@ -619,10 +661,34 @@ git commit -m "feat: generate orders from npc shortages"
 
 ## Phase 5 — UI, saves, presentation, and balance
 
-### Task 12: Replace the static shop with the dynamic market UI
+Implement design section 15 exactly. Do not add a real-time order book, tomorrow-price prediction, draggable/cancellable production queues, simultaneous economy windows, gamepad-only layout, mobile layout, or technical stock charts in this phase.
+
+UI design coverage:
+
+| Design sections | Implementation tasks |
+|---|---|
+| 15.1–15.5 goals, hierarchy, HUD, hub, market | Task 12 |
+| 15.6–15.7 orders and contracts | Task 15 |
+| 15.8 services | Task 14 |
+| 15.9–15.11 production, passive buildings, interaction | Task 16 |
+| 15.12 notifications | Task 17 |
+| 15.13 empty/error/disabled states | Tasks 12, 15, 16, 19 |
+| 15.14–15.15 visual language, input, adaptation | Task 18 |
+| 15.16–15.18 boundaries, data flow, acceptance | Task 19 |
+| 15.19 automated and visual verification | Tasks 18–19 |
+| 15.20 first-release exclusions | Phase 5 scope guard above |
+
+### Task 12: Build the economy hub shell, modal behavior, and market UI
 
 **Files:**
 - Create: `tests/test_market_ui.gd`
+- Create: `tests/test_market_price_chart.gd`
+- Create: `scripts/ui/economy_modal_coordinator.gd`
+- Create: `scripts/ui/market_panel.gd`
+- Create: `scripts/ui/market_price_chart.gd`
+- Create: `scripts/ui/trade_panel.gd`
+- Create: `scenes/ui/economy/market_panel.tscn`
+- Create: `scenes/ui/economy/trade_panel.tscn`
 - Modify: `scripts/ui/shop_ui.gd`
 - Modify: `scenes/ui/shop_ui.tscn`
 - Modify: `scripts/ui/hud.gd`
@@ -630,29 +696,83 @@ git commit -m "feat: generate orders from npc shortages"
 - Modify: `scripts/main.gd`
 - Modify: `tests/test_runtime_ui_scenes.gd`
 
-- [ ] **Step 1: Test nodes and behavior**
+- [ ] **Step 1: Write failing shell, pause, chart, and trade tests**
 
-Require category tabs, item list, name, stock, trend, seven-day history, quantity spin, buy/sell buttons, gold, close button. Selecting wood displays finite stock and both totals; quantity refreshes totals; trade refreshes all state; Escape closes; HUD emits one market request.
+Require `Header`, four economy tabs, modal layer, category list, item list, price chart, stock/trend labels, quantity spin, buy/sell buttons, gold, and close button. Assert opening pauses the tree, closing restores the prior pause state, Escape closes only the top panel, and HUD emits one market request.
 
-- [ ] **Step 2: Run UI tests; expect old scene failure**
+Test chart normalization directly:
+
+~~~gdscript
+assertions.equal(
+	MarketPriceChart.normalized_points([10]),
+	PackedVector2Array([Vector2(0.5, 0.5)]),
+	"one price renders at chart center"
+)
+var flat := MarketPriceChart.normalized_points([10, 10, 10])
+assertions.near(flat[0].y, 0.5, 0.001, "flat history uses centered y")
+var trend := MarketPriceChart.normalized_points([10, 15, 20])
+assertions.equal(trend[0], Vector2(0.0, 1.0), "lowest first price maps bottom-left")
+assertions.equal(trend[2], Vector2(1.0, 0.0), "highest latest price maps top-right")
+~~~
+
+Test the large-trade threshold:
+
+~~~gdscript
+assertions.truthy(TradePanel.needs_confirmation(20, 20, 100, 1000, 10, 9), "daily liquidity triggers confirmation")
+assertions.truthy(TradePanel.needs_confirmation(1, 20, 600, 1000, 10, 10), "half-wallet spend triggers confirmation")
+assertions.truthy(TradePanel.needs_confirmation(10, 100, 100, 1000, 10, 8), "ten-percent tail drop triggers confirmation")
+assertions.truthy(not TradePanel.needs_confirmation(1, 20, 10, 1000, 10, 10), "ordinary trade stays immediate")
+~~~
+
+Selecting wood must display finite stock, three prices, supply, demand, liquidity, 1–7 history points, tags, player quantity, and slippage-adjusted totals. A successful trade refreshes gold/inventory/stock in one frame; every failed trade preserves all three.
+
+- [ ] **Step 2: Run UI tests and verify the old scene fails**
 
 ~~~powershell
 godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
 ~~~
 
-- [ ] **Step 3: Implement UI API**
+Expected: FAIL on missing tabs, chart, modal coordinator, or trade helpers.
+
+- [ ] **Step 3: Implement the shell and focused panel APIs**
 
 ~~~gdscript
-func configure(inventory:InventorySystem, economy:EconomySystem,
-		market:MarketSystem) -> bool
-func select_category(category:String) -> void
-func select_item(item_id:String) -> void
-func refresh_market() -> void
-func _on_buy_pressed() -> void
-func _on_sell_pressed() -> void
+# shop_ui.gd: compatible root and tab router
+func configure(inventory: InventorySystem, economy: EconomySystem,
+		market: MarketSystem) -> bool
+func open(tab_id: String = "market") -> void
+func select_tab(tab_id: String) -> bool
+func close() -> void
+
+# market_panel.gd
+func configure(inventory: InventorySystem, economy: EconomySystem,
+		market: MarketSystem) -> bool
+func select_category(category: String) -> void
+func set_sort_mode(mode: String) -> void
+func select_item(item_id: String) -> void
+func refresh_snapshot() -> void
+
+# trade_panel.gd
+static func needs_confirmation(quantity: int, liquidity: int, total: int,
+		gold: int, first_unit: int, last_unit: int) -> bool
+func set_item(item_id: String) -> void
+func refresh_quote() -> void
+func request_buy() -> void
+func request_sell() -> void
 ~~~
 
-Categories: raw, crops, processed, food/handicraft, rare. Display buy/sell total, stock level, yesterday arrow, seven history values, demand tags. Disable invalid actions. Mutate only through EconomySystem. Add HUD `market_requested` and top-right `市场` button; main opens/configures ShopUI.
+`EconomyModalCoordinator.acquire(owner)` stores the prior tree pause state, sets `get_tree().paused = true`, and makes the owner process while paused. `release(owner)` restores the prior state only when the owner owns the modal. ShopUI uses it for open/close and preserves the selected tab/category/item.
+
+Create the exact shell hierarchy from design section 15.4. Market categories are raw materials, crops, processed materials, food/handicrafts, and rare goods. Sorting supports recommended, rise, fall, shortage, owned quantity, and name.
+
+`MarketPriceChart.normalized_points()` maps 1–7 integer prices into normalized coordinates; `_draw()` converts them into the control rectangle with 10% vertical padding, thickens the final segment, and registers hover points without predicting future values.
+
+Declare `class_name MarketPriceChart`, `class_name TradePanel`, `class_name MarketPanel`, and `class_name EconomyModalCoordinator` so tests and sibling panels use the same typed names shown in this plan.
+
+Trade controls show reference unit price, actual total, stock/capacity limits, and `none/light/clear/severe` impact. Disabled buttons show the exact reason. Ordinary actions call only `EconomySystem.buy_item`/`sell_item`; the modal confirmation shows first unit, last unit, total, and next-day pressure.
+
+Add HUD `market_requested`, top-right `市场`, and notification-count buttons without overlapping `DebugResetButton`. Main configures ShopUI and connects the market request. Add the warm paper/card colors from design section 15.14 using scene-local `StyleBoxFlat` resources; Task 18 centralizes them into a shared theme.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -660,8 +780,8 @@ Categories: raw, crops, processed, food/handicraft, rare. Display buy/sell total
 godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
 godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
 godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
-git add scripts/ui/shop_ui.gd scenes/ui/shop_ui.tscn scripts/ui/hud.gd scenes/ui/hud.tscn scripts/main.gd tests/test_market_ui.gd tests/test_runtime_ui_scenes.gd
-git commit -m "feat: replace shop with dynamic market"
+git add scripts/ui/economy_modal_coordinator.gd scripts/ui/market_panel.gd scripts/ui/market_price_chart.gd scripts/ui/trade_panel.gd scripts/ui/shop_ui.gd scenes/ui/shop_ui.tscn scenes/ui/economy/market_panel.tscn scenes/ui/economy/trade_panel.tscn scripts/ui/hud.gd scenes/ui/hud.tscn scripts/main.gd tests/test_market_ui.gd tests/test_market_price_chart.gd tests/test_runtime_ui_scenes.gd
+git commit -m "feat: add economy hub and market ui"
 ~~~
 
 ### Task 13: Finalize versioned saves, new-game economy, and waterwheel art
@@ -683,6 +803,13 @@ Round-trip market history, NPC state, queued job, output, contract, depleted res
 
 - [ ] **Step 2: Run; expect migration/new-game/asset failures**
 
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_building_system_tests.gd
+~~~
+
+Expected: FAIL on missing migration fields, formal starter values, or waterwheel assets.
+
 - [ ] **Step 3: Implement version 1 save and art**
 
 Save all section 11 state under `economy_version:1`. Migrate legacy stacks without losing quantities. Configure the stated new-game inventory/gold.
@@ -703,7 +830,10 @@ git commit -m "feat: finalize economy saves and waterwheel"
 
 **Files:**
 - Create: `scripts/systems/economy_progression_system.gd`
+- Create: `scripts/ui/service_panel.gd`
+- Create: `scenes/ui/economy/service_panel.tscn`
 - Create: `tests/test_economy_progression.gd`
+- Create: `tests/test_service_panel.gd`
 - Modify: `scripts/systems/tool_system.gd`
 - Modify: `scripts/systems/production_system.gd`
 - Modify: `scripts/core/save_manager.gd`
@@ -715,24 +845,395 @@ git commit -m "feat: finalize economy saves and waterwheel"
 
 Assert a new game exposes workbench, stone kiln, and beehive recipes; windmill/coop/waterwheel/furnace require tier-one blueprints; greenhouse/mine/textile machine require tier two. Purchasing a blueprint deducts once and persists. Tool use reduces durability only after a successful action; repair deducts the quoted cost and restores durability atomically. A producer with overdue weekly maintenance pauses without consuming inputs and resumes after the exact material/coin payment. Building upgrades increase queue slots, speed, or storage but never mutate market price.
 
+Instantiate `service_panel.tscn` and assert category filters for blueprints, recipes, repairs, upgrades, maintenance, transport/storage, and land expansion. A service card must expose gate, current level/owned state, exact gold/material cost, effect, action button, and disabled-reason label. Purchasing an owned blueprint or activating a disabled service must not deduct gold.
+
 - [ ] **Step 2: Run; expect missing progression contracts**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+~~~
+
+Expected: FAIL on missing progression/service APIs or scene nodes.
 
 - [ ] **Step 3: Implement progression state**
 
 `EconomyProgressionSystem` owns `unlocked_blueprints`, `unlocked_recipes`, and per-building `upgrade_levels`. Tier zero is granted on new game; tier-one/tier-two blueprints are purchased from market service entries after day/level gates. `ToolSystem` stores current/max durability per tool and exposes `get_repair_quote`/`repair_tool`. `ProductionSystem` stores `maintenance_due_day` and pauses before starting or advancing work when overdue. Save every progression, durability, upgrade, and maintenance field under economy version 1.
 
-Add a `服务` category to the market UI for available blueprints, repairs, and building maintenance. Each service row shows gate, exact cost, owned/available state, and calls only the progression/tool/production transaction API; disabled services cannot deduct gold.
+Expose the service transaction boundary:
+
+~~~gdscript
+func get_available_services() -> Array[Dictionary]
+func purchase(service_id: String) -> bool
+func repair(tool_id: String) -> bool
+func upgrade(building: BuildingInstance, upgrade_id: String) -> bool
+func maintain(building: BuildingInstance) -> bool
+~~~
+
+Implement:
+
+~~~gdscript
+func configure(progression: EconomyProgressionSystem,
+		tool_system: ToolSystem, production: ProductionSystem) -> bool
+func select_category(category_id: String) -> void
+func refresh_services() -> void
+func request_service(service_id: String) -> void
+~~~
+
+Add a `服务` tab to ShopUI. Each service card calls only the progression/tool/production transaction API. Purchased blueprints show `已拥有`; repair shows current/max durability and restored value; upgrade shows queue/speed/capacity deltas and never implies price gain.
 
 - [ ] **Step 4: Verify and commit**
 
 ~~~powershell
 godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
 godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
-git add scripts/systems/economy_progression_system.gd scripts/systems/tool_system.gd scripts/systems/production_system.gd scripts/core/save_manager.gd scripts/main.gd scripts/ui/shop_ui.gd scenes/ui/shop_ui.tscn tests/test_economy_progression.gd
+git add scripts/systems/economy_progression_system.gd scripts/systems/tool_system.gd scripts/systems/production_system.gd scripts/core/save_manager.gd scripts/main.gd scripts/ui/service_panel.gd scenes/ui/economy/service_panel.tscn scripts/ui/shop_ui.gd scenes/ui/shop_ui.tscn tests/test_economy_progression.gd tests/test_service_panel.gd
 git commit -m "feat: add economy progression and upkeep"
 ~~~
 
-### Task 15: Verify and tune a deterministic 28-day economy
+### Task 15: Add order and contract UI
+
+**Files:**
+- Create: `scripts/ui/order_panel.gd`
+- Create: `scripts/ui/contract_panel.gd`
+- Create: `scenes/ui/economy/order_panel.tscn`
+- Create: `scenes/ui/economy/contract_panel.tscn`
+- Create: `tests/test_order_contract_ui.gd`
+- Modify: `scripts/ui/shop_ui.gd`
+- Modify: `scenes/ui/shop_ui.tscn`
+- Modify: `scripts/main.gd`
+- Modify: `tests/run_economy_system_tests.gd`
+
+- [ ] **Step 1: Write failing status, filter, delivery, and signing tests**
+
+Test the exact order status mapping:
+
+~~~gdscript
+assertions.equal(OrderPanel.status_for({"completed":true}, 0, 2), "completed", "completed wins")
+assertions.equal(OrderPanel.status_for({"expires_day":1}, 5, 2), "expired", "past deadline expires")
+assertions.equal(OrderPanel.status_for({"quantity":5,"expires_day":3}, 5, 2), "deliverable", "owned quantity enables delivery")
+assertions.equal(OrderPanel.status_for({"quantity":5,"expires_day":3}, 2, 2), "accepted", "short inventory remains accepted")
+~~~
+
+Instantiate both scenes and require order filters `all/daily/urgent/event/construction/completed`, NPC/title/item/owned/deadline/premium/detail/deliver nodes, and contract active/available lists with daily progress, next deadline, breaches, total income, sign, and deliver controls.
+
+Deliver an order and assert player inventory, NPC inventory, player gold, row status, and HUD unread count update once. Sign a contract and assert one confirmation; daily delivery has no confirmation. Loading the same day cannot add another breach or payment.
+
+- [ ] **Step 2: Run and verify the panels are missing**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+~~~
+
+Expected: FAIL on missing scripts/scenes.
+
+- [ ] **Step 3: Implement focused panel APIs**
+
+~~~gdscript
+# order_panel.gd
+static func status_for(order: Dictionary, owned: int, total_day: int) -> String
+func configure(economy: EconomySystem, npc_economy: NpcEconomySystem,
+		inventory: InventorySystem) -> bool
+func set_filter(filter_id: String) -> void
+func select_order(order_id: String) -> void
+func request_delivery(order_id: String) -> void
+func refresh_orders() -> void
+
+# contract_panel.gd
+func configure(economy: EconomySystem, inventory: InventorySystem) -> bool
+func select_contract(contract_id: String) -> void
+func request_sign(contract_id: String) -> void
+func request_delivery(contract_id: String, quantity: int) -> void
+func refresh_contracts() -> void
+~~~
+
+Use the layouts in design sections 15.6–15.7. Order cards show NPC/role, item, requested/owned, days, kind, premium, and state. Details show the real NPC shortage reason. Delivery calls only `EconomySystem.complete_order`.
+
+Contract signing uses `ShopUI/ModalLayer` confirmation because it creates a cross-day obligation. Contract delivery calls only `EconomySystem.deliver_contract`, displays daily/total progress, and never pays twice. Both panels preserve filter/selection across tab changes and use explicit empty states.
+
+- [ ] **Step 4: Verify and commit**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+git add scripts/ui/order_panel.gd scripts/ui/contract_panel.gd scenes/ui/economy/order_panel.tscn scenes/ui/economy/contract_panel.tscn scripts/ui/shop_ui.gd scenes/ui/shop_ui.tscn scripts/main.gd tests/test_order_contract_ui.gd tests/run_economy_system_tests.gd
+git commit -m "feat: add order and contract ui"
+~~~
+
+### Task 16: Add production-building and passive-building UI
+
+**Files:**
+- Create: `scripts/ui/building_economy_ui.gd`
+- Create: `scripts/ui/building_production_panel.gd`
+- Create: `scripts/ui/building_status_panel.gd`
+- Create: `scripts/ui/world_range_overlay.gd`
+- Create: `scenes/ui/economy/building_economy_ui.tscn`
+- Create: `scenes/ui/economy/building_production_panel.tscn`
+- Create: `scenes/ui/economy/building_status_panel.tscn`
+- Create: `tests/test_building_economy_ui.gd`
+- Modify: `scripts/main.gd`
+- Modify: `scripts/buildings/building_instance.gd`
+- Modify: `scripts/core/event_bus.gd`
+- Modify: `tests/run_main_gameplay_integration_tests.gd`
+
+- [ ] **Step 1: Write failing routing, preflight, collection, and range tests**
+
+~~~gdscript
+assertions.equal(BuildingEconomyUI.panel_kind_for("windmill", "crafting"), "production", "windmill uses production panel")
+assertions.equal(BuildingEconomyUI.panel_kind_for("beehive", "honey"), "status", "hive uses status panel")
+assertions.equal(BuildingEconomyUI.panel_kind_for("waterwheel", "irrigation"), "status", "waterwheel uses status panel")
+assertions.equal(BuildingEconomyUI.panel_kind_for("unknown", ""), "", "unknown effect opens nothing")
+~~~
+
+Instantiate a completed windmill and require recipe list, input/output values, batch controls, two queue slots, state labels, storage list, collect-all, and per-item collect. Assert missing inputs show exact quantity; starting once deducts once; closing and reopening preserves the job; output-full and maintenance-paused states match `ProductionSystem`.
+
+Instantiate hive, coop, waterwheel, greenhouse, barn, lumberyard, quarry, and mine fixtures. Require their section-15.10 fields. Assert `WorldRangeOverlay` receives the same `Vector2i` cells as `ProductionSystem.get_irrigated_cells`; close/build-mode removes every overlay cell.
+
+- [ ] **Step 2: Run and verify building UI is missing**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
+~~~
+
+Expected: FAIL on missing building economy UI.
+
+- [ ] **Step 3: Implement the routing and panel contracts**
+
+~~~gdscript
+# building_economy_ui.gd
+static func panel_kind_for(building_id: String, effect_type: String) -> String
+func configure(production: ProductionSystem, inventory: InventorySystem,
+		progression: EconomyProgressionSystem,
+		modal: EconomyModalCoordinator) -> bool
+func open_for(building: BuildingInstance) -> bool
+func close() -> void
+
+# building_production_panel.gd
+func show_building(building: BuildingInstance) -> void
+func select_recipe(recipe_id: String) -> void
+func set_batches(batches: int) -> void
+func request_start() -> void
+func request_collect_all() -> void
+func request_collect_item(item_id: String) -> void
+func refresh_snapshot() -> void
+
+# building_status_panel.gd
+func show_building(building: BuildingInstance) -> void
+func request_add_input(item_id: String, quantity: int) -> void
+func request_collect_all() -> void
+func set_range_preview(enabled: bool) -> void
+func refresh_snapshot() -> void
+~~~
+
+Build the three-column production layout from section 15.9. Recipe entries show lock/material/time/margin states. Batch maximum is constrained by inventory, input capacity, and queue slots. Queue states are waiting, running, completed-awaiting-storage, output-full, maintenance-paused. First release exposes no cancel/refund action.
+
+`BuildingStatusPanel` switches typed ViewData for hive, coop, waterwheel, greenhouse, barn, and resource producers. Feed/input transfers and all collection calls are atomic. Waterwheel preview uses semi-transparent blue-green grid geometry, has no collision, and clears on close/build-mode.
+
+Connect `BuildingInstance.interacted` through Main. Construction-state buildings keep their construction UI and cannot open economy panels. Full-screen building panels acquire the modal coordinator and pause time; the range overlay alone does not.
+
+- [ ] **Step 4: Verify and commit**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_building_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
+git add scripts/ui/building_economy_ui.gd scripts/ui/building_production_panel.gd scripts/ui/building_status_panel.gd scripts/ui/world_range_overlay.gd scenes/ui/economy/building_economy_ui.tscn scenes/ui/economy/building_production_panel.tscn scenes/ui/economy/building_status_panel.tscn scripts/main.gd scripts/buildings/building_instance.gd scripts/core/event_bus.gd tests/test_building_economy_ui.gd tests/run_main_gameplay_integration_tests.gd
+git commit -m "feat: add building economy ui"
+~~~
+
+### Task 17: Add persisted economy notifications and HUD toasts
+
+**Files:**
+- Create: `scripts/systems/economy_notification_system.gd`
+- Create: `scripts/ui/economy_notification_ui.gd`
+- Create: `scenes/ui/economy/economy_notification_ui.tscn`
+- Create: `tests/test_economy_notifications.gd`
+- Modify: `scripts/core/event_bus.gd`
+- Modify: `scripts/core/save_manager.gd`
+- Modify: `scripts/ui/hud.gd`
+- Modify: `scenes/ui/hud.tscn`
+- Modify: `scripts/main.gd`
+- Modify: `tests/run_economy_system_tests.gd`
+
+- [ ] **Step 1: Write failing deduplication, unread, persistence, and navigation tests**
+
+Use this record shape:
+
+~~~gdscript
+{"notification_id":"production:12:windmill@4,5","kind":"completed",
+ "title":"生产完成","body":"风车完成了面粉 ×3","total_day":12,
+ "target_type":"building","target_id":"windmill@4,5","unread":true}
+~~~
+
+Assert same-kind/same-target messages within three real seconds merge and increment `count`; unrelated messages remain separate; only the newest 20 persist; unread count caps visually at `9+`; reading changes only unread state; save/load preserves records without replay; click routes market item, building, order, or contract.
+
+Require a maximum of three visible toast cards. Ordinary timeout is three seconds, urgent timeout six seconds, hover pauses timeout, and toast cards use `MOUSE_FILTER_PASS` so world input is not blocked outside the card.
+
+- [ ] **Step 2: Run and verify notification components are missing**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+~~~
+
+Expected: FAIL on missing notification scripts/scenes.
+
+- [ ] **Step 3: Implement system-owned notification state**
+
+~~~gdscript
+func push(kind: String, title: String, body: String, total_day: int,
+		target_type: String = "", target_id: String = "") -> String
+func mark_read(notification_id: String) -> bool
+func mark_all_read() -> void
+func get_recent(limit: int = 20) -> Array[Dictionary]
+func get_unread_count() -> int
+func to_dict() -> Dictionary
+func from_dict(data: Dictionary) -> bool
+~~~
+
+Subscribe the system to ≥10% price movement, shortage/recovery, caravan, production completed/full, feed/maintenance, order/contract, and unlock signals. Generate each event once using stable IDs. `EconomyNotificationUI` owns `ToastStack` and `NotificationCenter`; it merges presentation only after the system has merged state.
+
+HUD shows `[市场] [通知 N]`, at most two urgent summaries, and an overflow summary. Target clicks call Main routing methods that open the correct economy tab/item, select the building, or select the order/contract.
+
+- [ ] **Step 4: Verify and commit checkpoint**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
+git add scripts/systems/economy_notification_system.gd scripts/ui/economy_notification_ui.gd scenes/ui/economy/economy_notification_ui.tscn scripts/core/event_bus.gd scripts/core/save_manager.gd scripts/ui/hud.gd scenes/ui/hud.tscn scripts/main.gd tests/test_economy_notifications.gd tests/run_economy_system_tests.gd
+git commit -m "feat: add economy notifications"
+~~~
+
+### Task 18: Apply the shared economy theme and responsive/accessibility rules
+
+**Files:**
+- Create: `assets/ui/economy/economy_theme.tres`
+- Create: `scripts/ui/economy_layout.gd`
+- Create: `tests/test_economy_ui_responsive.gd`
+- Modify: `scenes/ui/shop_ui.tscn`
+- Modify: `scenes/ui/economy/market_panel.tscn`
+- Modify: `scenes/ui/economy/trade_panel.tscn`
+- Modify: `scenes/ui/economy/order_panel.tscn`
+- Modify: `scenes/ui/economy/contract_panel.tscn`
+- Modify: `scenes/ui/economy/service_panel.tscn`
+- Modify: `scenes/ui/economy/building_economy_ui.tscn`
+- Modify: `scenes/ui/economy/building_production_panel.tscn`
+- Modify: `scenes/ui/economy/building_status_panel.tscn`
+- Modify: `scenes/ui/economy/economy_notification_ui.tscn`
+
+- [ ] **Step 1: Write failing layout, focus, scale, and contrast tests**
+
+~~~gdscript
+assertions.equal(EconomyLayout.mode_for_size(Vector2(3000,2000)), "three_column", "target viewport uses columns")
+assertions.equal(EconomyLayout.mode_for_size(Vector2(1920,1080)), "three_column", "desktop uses columns")
+assertions.equal(EconomyLayout.mode_for_size(Vector2(1280,720)), "drawer", "minimum viewport uses drawer")
+assertions.equal(EconomyLayout.clamp_scale(0.5), 0.8, "scale has lower bound")
+assertions.equal(EconomyLayout.clamp_scale(2.0), 1.4, "scale has upper bound")
+~~~
+
+Instantiate every panel at 3000×2000, 1920×1080, and 1280×720. Assert controls remain within viewport, visible text has positive size, trade total/disabled reason stay visible, modal layers consume clicks, toast background does not, and focus traversal reaches every interactive control. Calculate WCAG relative contrast for primary text/background and require ≥4.5.
+
+- [ ] **Step 2: Run and verify style/layout tests fail**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+~~~
+
+Expected: FAIL on missing theme/layout helpers or responsive assertions.
+
+- [ ] **Step 3: Implement shared tokens and responsive layout**
+
+`EconomyLayout.mode_for_size()` returns drawer below 1500 logical pixels; `clamp_scale()` permits only 0.8–1.4. In drawer mode, selecting an item opens details over the list while preserving trade total and disabled reason.
+
+Create theme colors exactly from design section 15.14: panel `#F1E5C8`, card `#FFF7E6`, primary text `#513B2F`, secondary `#7B6758`, positive `#5F8755`, warning `#C58B35`, error `#B65C4B`, selection `#7E9D70`, modal `#211A16A6`. Use 18 minimum body, 20 button, and 28–36 title sizes, 8–12 corner radii, visible keyboard focus borders, text tooltips for icon buttons, and arrow/text alongside colors.
+
+Wire Esc, Tab/Shift+Tab, arrow navigation, Enter activation, numeric keyboard entry, and mouse-wheel quantity changes. Preserve selected tab/category/item/scroll during resize.
+
+- [ ] **Step 4: Verify and commit**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_system_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+godot --headless --path D:\UnityProject\villa --editor --quit
+git add assets/ui/economy/economy_theme.tres scripts/ui/economy_layout.gd scenes/ui/shop_ui.tscn scenes/ui/economy tests/test_economy_ui_responsive.gd
+git commit -m "feat: add responsive economy ui theme"
+~~~
+
+### Task 19: Verify complete economy UI flows and visual presentation
+
+**Files:**
+- Create: `tests/test_economy_ui_integration.gd`
+- Create: `tests/capture_economy_ui.gd`
+- Create: `tests/run_economy_ui_tests.gd`
+- Modify: `tests/test_runtime_ui_scenes.gd`
+- Modify: `tests/run_main_gameplay_integration_tests.gd`
+
+- [ ] **Step 1: Write end-to-end UI scenarios**
+
+The dedicated runner must execute these scenarios:
+
+1. HUD → market → select wood → adjust quantity → immediate sale.
+2. Shortage item → large sale → confirmation with first/last/total/pressure.
+3. Order delivery → NPC inventory/player wallet/row/notification update.
+4. Contract sign → daily delivery → reload → no duplicate payment/breach.
+5. Windmill interaction → start flour → finish → collect.
+6. Chicken coop with no feed → add feed → next-day eggs → collect.
+7. Waterwheel panel → range preview → close → overlay clears.
+8. Service blueprint → owned state → repeat click does not charge.
+9. Three merged production notifications → target navigation.
+10. Open/close every modal → original pause state restored.
+
+Assert exact state invariants after every scenario, not just visible labels.
+
+- [ ] **Step 2: Run and verify integration failures before final wiring**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_ui_tests.gd
+~~~
+
+Expected: FAIL until every cross-panel route and refresh signal is wired.
+
+- [ ] **Step 3: Complete routing without cross-panel state access**
+
+Main owns navigation methods:
+
+~~~gdscript
+func open_economy_tab(tab_id: String, target_id: String = "") -> void
+func open_building_economy(building: BuildingInstance) -> void
+func close_economy_modal() -> void
+func navigate_economy_target(target_type: String, target_id: String) -> bool
+~~~
+
+Panels query systems or read immutable ViewData; they do not inspect sibling nodes. Route EventBus changes to local refresh methods. A full market refresh updates rows in place and preserves scroll/selection. A failed command always reloads the system snapshot before displaying its reason.
+
+- [ ] **Step 4: Capture all required visual states**
+
+`capture_economy_ui.gd` saves deterministic PNGs under `res://.godot/economy-ui-verification/` for:
+
+- market normal;
+- shortage plus large confirmation;
+- running producer;
+- full/maintenance-paused producer;
+- orders/contracts;
+- waterwheel overlay;
+- three merged toasts;
+- empty/error state;
+
+at 3000×2000, 1920×1080, and 1280×720. Inspect captures for truncation, overlap, unreadable chart, offscreen detail, focus/disabled ambiguity, and click-through.
+
+- [ ] **Step 5: Run UI matrix and commit**
+
+~~~powershell
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_ui_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/capture_economy_ui.gd
+git add scripts/main.gd tests/test_economy_ui_integration.gd tests/capture_economy_ui.gd tests/run_economy_ui_tests.gd tests/test_runtime_ui_scenes.gd tests/run_main_gameplay_integration_tests.gd
+git commit -m "test: verify complete economy ui flows"
+~~~
+
+### Task 20: Verify and tune a deterministic 28-day economy
 
 **Files:**
 - Create: `tests/test_economy_simulation.gd`
@@ -767,6 +1268,7 @@ godot --headless --path D:\UnityProject\villa --script res://tests/run_farming_s
 godot --headless --path D:\UnityProject\villa --script res://tests/run_building_system_tests.gd
 godot --headless --path D:\UnityProject\villa --script res://tests/run_main_gameplay_integration_tests.gd
 godot --headless --path D:\UnityProject\villa --script res://tests/test_runtime_ui_scenes.gd
+godot --headless --path D:\UnityProject\villa --script res://tests/run_economy_ui_tests.gd
 godot --headless --path D:\UnityProject\villa --editor --quit
 godot --headless --path D:\UnityProject\villa --quit-after 5
 ~~~
@@ -775,7 +1277,7 @@ Expected: every command exits 0 with no parse, resource, runtime, or assertion f
 
 - [ ] **Step 5: Check every approved section**
 
-Verify manual/automated/market material paths; crop and building outputs; finite player/NPC market; real NPC state; shortage orders; non-guaranteed processing profit; complete persistence; stock/quotes/trend/history UI; and unchanged construction/camera/farming regressions.
+Verify manual/automated/market material paths; crop and building outputs; finite player/NPC market; real NPC state; shortage orders; non-guaranteed processing profit; complete persistence; economy-hub pause semantics; market stock/quotes/chart/slippage; order/contract delivery; production/passive-building panels; services; notification deduplication/navigation; 3000×2000, 1920×1080, and 1280×720 layouts; and unchanged construction/camera/farming regressions.
 
 - [ ] **Step 6: Commit verified balance**
 
@@ -786,4 +1288,4 @@ git commit -m "test: verify twenty-eight day economy balance"
 
 ## Checkpoints
 
-After Tasks 5, 9, 11, and 15, report exact commands/results, commits, save migrations, and any numeric deviation from the approved design. Do not advance past a failing checkpoint.
+After Tasks 5, 9, 11, 17, and 20, report exact commands/results, commits, save migrations, visual-capture paths, and any numeric deviation from the approved design. Do not advance past a failing checkpoint.
