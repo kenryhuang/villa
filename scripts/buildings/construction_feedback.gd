@@ -62,14 +62,27 @@ static func painted_foundation_contact_for(
 		visual_size.x * FOUNDATION_CONTACT_X_RATIO,
 		visual_size.y * FOUNDATION_CONTACT_Y_RATIO
 	)
-	if construction_texture == null:
+	var selected_pixel := painted_foundation_pixel_for(construction_texture)
+	if selected_pixel.x < 0 or selected_pixel.y < 0:
 		return fallback
 	var image := construction_texture.get_image()
+	var u := float(selected_pixel.x) / float(maxi(image.get_width() - 1, 1))
+	var v := float(selected_pixel.y) / float(maxi(image.get_height() - 1, 1))
+	return Vector2(
+		(u - 0.5) * visual_size.x,
+		(1.0 - v) * visual_size.y + hammer_height * HAMMER_HEAD_CENTER_LIFT_RATIO
+	)
+
+
+static func painted_foundation_pixel_for(construction_texture: Texture2D) -> Vector2i:
+	if construction_texture == null:
+		return Vector2i(-1, -1)
+	var image := construction_texture.get_image()
 	if image == null or image.is_empty():
-		return fallback
+		return Vector2i(-1, -1)
 	var painted_bounds := image.get_used_rect()
 	if painted_bounds.size == Vector2i.ZERO:
-		return fallback
+		return Vector2i(-1, -1)
 	var band_height := maxi(
 		ceili(float(painted_bounds.size.y) * FOUNDATION_BOTTOM_BAND_RATIO),
 		1
@@ -78,22 +91,14 @@ static func painted_foundation_contact_for(
 		painted_bounds.position.y,
 		painted_bounds.end.y - band_height
 	)
-	var right_x := -1
-	var bottom_y := -1
+	var selected_pixel := Vector2i(-1, -1)
 	for y in range(band_start_y, painted_bounds.end.y):
 		for x in range(painted_bounds.position.x, painted_bounds.end.x):
 			if image.get_pixel(x, y).a <= FOUNDATION_ALPHA_THRESHOLD:
 				continue
-			right_x = maxi(right_x, x)
-			bottom_y = maxi(bottom_y, y)
-	if right_x < 0 or bottom_y < 0:
-		return fallback
-	var u := float(right_x) / float(maxi(image.get_width() - 1, 1))
-	var v := float(bottom_y) / float(maxi(image.get_height() - 1, 1))
-	return Vector2(
-		(u - 0.5) * visual_size.x,
-		(1.0 - v) * visual_size.y + hammer_height * HAMMER_HEAD_CENTER_LIFT_RATIO
-	)
+			if x > selected_pixel.x or (x == selected_pixel.x and y > selected_pixel.y):
+				selected_pixel = Vector2i(x, y)
+	return selected_pixel
 
 
 func configure(visual_size: Vector2, construction_texture: Texture2D = null) -> void:

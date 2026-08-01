@@ -2,6 +2,7 @@ extends RefCounted
 
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const TEST_SAVE_SLOT := 4
+const TEST_SIBLING_SAVE_SLOT := 2
 const TEST_SAVE_DIR := "user://villa_test_saves/debug_reset/"
 
 class FailingClearSaveManager:
@@ -58,6 +59,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	isolated_save_manager.name = "DebugResetTestSaveManager"
 	isolated_save_manager.save_directory = TEST_SAVE_DIR
 	tree.root.add_child(isolated_save_manager)
+	assertions.truthy(
+		not DirAccess.dir_exists_absolute(TEST_SAVE_DIR.trim_suffix("/")),
+		"readying a save manager does not touch its save directory before a write"
+	)
 	main.save_manager = isolated_save_manager
 	main.save_slot = TEST_SAVE_SLOT
 	tree.root.add_child(main)
@@ -356,6 +361,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.save_manager.has_save(TEST_SAVE_SLOT),
 		"save manager reports the isolated fixture save"
 	)
+	assertions.truthy(
+		main.save_manager.save_game(TEST_SIBLING_SAVE_SLOT),
+		"debug reset fixture creates a sibling slot"
+	)
+	var sibling_path := _test_save_path(TEST_SIBLING_SAVE_SLOT)
+	var sibling_hash_before := FileAccess.get_sha256(sibling_path)
 	var reset_result: bool = main.reset_debug_state()
 	assertions.truthy(reset_result, "debug reset prepares a clean new game")
 	assertions.equal(
@@ -424,6 +435,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(
 		not main.save_manager.has_save(TEST_SAVE_SLOT),
 		"debug reset deletes only the current isolated slot"
+	)
+	assertions.truthy(
+		main.save_manager.has_save(TEST_SIBLING_SAVE_SLOT),
+		"debug reset preserves a sibling save slot"
+	)
+	assertions.equal(
+		FileAccess.get_sha256(sibling_path),
+		sibling_hash_before,
+		"debug reset leaves sibling save contents unchanged"
 	)
 	assertions.truthy(
 		main.save_manager.clear_save(TEST_SAVE_SLOT),
@@ -503,7 +523,10 @@ func _get_method_source(source: String, method_name: String) -> String:
 
 
 func _snapshot_save_directory(directory: String) -> Dictionary:
-	var snapshot := {}
+	var snapshot := {
+		"exists": DirAccess.dir_exists_absolute(directory.trim_suffix("/")),
+		"files": {},
+	}
 	var dir := DirAccess.open(directory)
 	if dir == null:
 		return snapshot
@@ -512,7 +535,7 @@ func _snapshot_save_directory(directory: String) -> Dictionary:
 	while not file_name.is_empty():
 		if not dir.current_is_dir():
 			var path := directory.path_join(file_name)
-			snapshot[file_name] = {
+			snapshot.files[file_name] = {
 				"sha256": FileAccess.get_sha256(path),
 				"modified": FileAccess.get_modified_time(path),
 			}
@@ -522,7 +545,7 @@ func _snapshot_save_directory(directory: String) -> Dictionary:
 
 
 func _cleanup_test_save_directory() -> void:
-	for slot in [0, TEST_SAVE_SLOT]:
+	for slot in [0, TEST_SIBLING_SAVE_SLOT, TEST_SAVE_SLOT]:
 		var path := TEST_SAVE_DIR.path_join("save_%d.json" % slot)
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)

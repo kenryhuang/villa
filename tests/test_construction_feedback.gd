@@ -154,6 +154,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(texture_feedback)
 	var supports_texture_configure := _method_argument_count(texture_feedback, "configure") >= 2
 	var has_painted_contact_helper := texture_feedback.has_method("painted_foundation_contact_for")
+	var has_painted_pixel_helper := texture_feedback.has_method("painted_foundation_pixel_for")
 	assertions.truthy(
 		supports_texture_configure,
 		"construction feedback configure accepts the current construction texture"
@@ -162,6 +163,51 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		has_painted_contact_helper,
 		"construction feedback exposes a painted foundation contact helper"
 	)
+	assertions.truthy(
+		has_painted_pixel_helper,
+		"construction feedback exposes the actual painted foundation pixel"
+	)
+	if has_painted_pixel_helper and has_painted_contact_helper:
+		var synthetic_image := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+		synthetic_image.fill(Color.TRANSPARENT)
+		synthetic_image.set_pixel(2, 0, Color.WHITE)
+		synthetic_image.set_pixel(4, 6, Color.WHITE)
+		synthetic_image.set_pixel(5, 7, Color.WHITE)
+		synthetic_image.set_pixel(6, 6, Color.WHITE)
+		synthetic_image.set_pixel(7, 7, Color(1.0, 1.0, 1.0, 0.05))
+		var synthetic_texture := ImageTexture.create_from_image(synthetic_image)
+		var selected_pixel: Vector2i = texture_feedback.call(
+			"painted_foundation_pixel_for", synthetic_texture
+		)
+		assertions.equal(
+			selected_pixel,
+			Vector2i(6, 6),
+			"foundation scan keeps x and y from one real opaque edge pixel"
+		)
+		assertions.truthy(
+			synthetic_image.get_pixelv(selected_pixel).a > 0.10,
+			"foundation scan never combines coordinates into transparent space"
+		)
+		var synthetic_size := Vector2(2.0, 2.0)
+		var synthetic_height := 0.5
+		var synthetic_contact: Vector2 = texture_feedback.call(
+			"painted_foundation_contact_for",
+			synthetic_size,
+			synthetic_height,
+			synthetic_texture
+		)
+		assertions.near(
+			synthetic_contact.x,
+			(float(6) / 7.0 - 0.5) * synthetic_size.x,
+			0.001,
+			"foundation contact maps the selected pixel x into visual space"
+		)
+		assertions.near(
+			synthetic_contact.y,
+			(1.0 - float(6) / 7.0) * synthetic_size.y + synthetic_height * -0.30,
+			0.001,
+			"foundation contact maps the same selected pixel y into visual space"
+		)
 	var game_data := GameDataScript.new()
 	var offsets_by_id := {}
 	for building_id in FRAME_BUILDING_IDS:
@@ -177,11 +223,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			0.38,
 			0.72
 		)
-		var expected_contact_info := _expected_painted_foundation_contact(
-			building_data.visual_size,
-			frame_hammer_height,
-			frame_texture
+		var frame_image := frame_texture.get_image()
+		var selected_pixel := Vector2i(-1, -1)
+		if has_painted_pixel_helper:
+			selected_pixel = texture_feedback.call("painted_foundation_pixel_for", frame_texture)
+		assertions.truthy(
+			selected_pixel.x >= 0 and selected_pixel.y >= 0,
+			"%s frame exposes a real foundation edge pixel" % building_id
 		)
+		if selected_pixel.x >= 0 and selected_pixel.y >= 0:
+			assertions.truthy(
+				frame_image.get_pixelv(selected_pixel).a > 0.10,
+				"%s foundation edge pixel is opaque in the source art" % building_id
+			)
 		if supports_texture_configure:
 			texture_feedback.call("configure", building_data.visual_size, frame_texture)
 		else:
@@ -198,23 +252,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			cos(FeedbackScript.IMPACT_ANGLE) * frame_lever
 		)
 		var actual_contact := frame_offset + frame_head_from_pivot
-		var expected_contact: Vector2 = expected_contact_info.contact
-		var bottom_band_edge_x: float = expected_contact_info.edge_x
-		assertions.truthy(
-			actual_contact.x <= bottom_band_edge_x + 0.001,
-			"%s hammer contact does not pass the bottom-band alpha right edge" % building_id
-		)
+		var expected_contact := actual_contact
+		if selected_pixel.x >= 0 and selected_pixel.y >= 0:
+			var u := float(selected_pixel.x) / float(maxi(frame_image.get_width() - 1, 1))
+			var v := float(selected_pixel.y) / float(maxi(frame_image.get_height() - 1, 1))
+			expected_contact = Vector2(
+				(u - 0.5) * building_data.visual_size.x,
+				(1.0 - v) * building_data.visual_size.y + frame_hammer_height * -0.30
+			)
 		assertions.near(
-			actual_contact.x,
-			bottom_band_edge_x,
+			actual_contact.distance_to(expected_contact),
+			0.0,
 			0.001,
-			"%s hammer contact reaches the bottom-band alpha right edge" % building_id
-		)
-		assertions.near(
-			actual_contact.y,
-			expected_contact.y,
-			0.001,
-			"%s hammer contact follows the painted foundation bottom" % building_id
+			"%s hammer head targets the selected opaque foundation pixel" % building_id
 		)
 		if has_painted_contact_helper:
 			var helper_contact: Vector2 = texture_feedback.call(
@@ -320,39 +370,3 @@ static func _method_argument_count(instance: Object, method_name: String) -> int
 		if method.get("name", "") == method_name:
 			return (method.get("args", []) as Array).size()
 	return 0
-
-
-static func _expected_painted_foundation_contact(
-	visual_size: Vector2,
-	hammer_height: float,
-	texture: Texture2D
-) -> Dictionary:
-	var fallback := Vector2(visual_size.x * 0.34, visual_size.y * 0.10)
-	if texture == null:
-		return {"contact": fallback, "edge_x": fallback.x}
-	var image := texture.get_image()
-	if image == null or image.is_empty():
-		return {"contact": fallback, "edge_x": fallback.x}
-	var painted_bounds := image.get_used_rect()
-	if painted_bounds.size == Vector2i.ZERO:
-		return {"contact": fallback, "edge_x": fallback.x}
-	var band_height := maxi(ceili(float(painted_bounds.size.y) * 0.20), 1)
-	var band_start_y := maxi(painted_bounds.position.y, painted_bounds.end.y - band_height)
-	var right_x := -1
-	var bottom_y := -1
-	for y in range(band_start_y, painted_bounds.end.y):
-		for x in range(painted_bounds.position.x, painted_bounds.end.x):
-			if image.get_pixel(x, y).a <= 0.10:
-				continue
-			right_x = maxi(right_x, x)
-			bottom_y = maxi(bottom_y, y)
-	if right_x < 0 or bottom_y < 0:
-		return {"contact": fallback, "edge_x": fallback.x}
-	var u := float(right_x) / float(maxi(image.get_width() - 1, 1))
-	var v := float(bottom_y) / float(maxi(image.get_height() - 1, 1))
-	var edge_x := (u - 0.5) * visual_size.x
-	var head_center_lift := hammer_height * -0.30
-	return {
-		"contact": Vector2(edge_x, (1.0 - v) * visual_size.y + head_center_lift),
-		"edge_x": edge_x,
-	}

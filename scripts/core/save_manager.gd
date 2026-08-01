@@ -15,9 +15,6 @@ var _event_bus
 func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
 
-	# 确保存档目录存在
-	DirAccess.make_dir_recursive_absolute(save_directory)
-
 	# 连接自动存档
 	if _event_bus:
 		_event_bus.day_changed.connect(_on_day_changed)
