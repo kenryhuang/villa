@@ -71,8 +71,10 @@ func buy_item(item_id: String, quantity: int) -> bool:
 	var market_before: Dictionary = _market_ref.call("to_dict")
 	var inventory_before := _snapshot_inventory()
 	var wallet_before: Variant = _get_wallet_balance()
-	var owns_event_bus_transaction := _begin_event_bus_transaction()
 	var owns_market_transaction := _begin_market_transaction()
+	if _market_supports_atomic_transactions() and not owns_market_transaction:
+		return false
+	var owns_event_bus_transaction := _begin_event_bus_transaction()
 	if not spend_gold(total):
 		_restore_wallet(wallet_before)
 		_end_market_transaction(owns_market_transaction, false)
@@ -107,8 +109,10 @@ func sell_item(item_id: String, quantity: int) -> bool:
 	var market_before: Dictionary = _market_ref.call("to_dict")
 	var inventory_before := _snapshot_inventory()
 	var wallet_before: Variant = _get_wallet_balance()
-	var owns_event_bus_transaction := _begin_event_bus_transaction()
 	var owns_market_transaction := _begin_market_transaction()
+	if _market_supports_atomic_transactions() and not owns_market_transaction:
+		return false
+	var owns_event_bus_transaction := _begin_event_bus_transaction()
 	if not _inventory_ref.remove_item(item_id, quantity):
 		_restore_inventory(inventory_before)
 		_end_market_transaction(owns_market_transaction, false)
@@ -157,14 +161,21 @@ func _restore_market(snapshot: Dictionary) -> bool:
 
 func _begin_market_transaction() -> bool:
 	return (
-		_market_ref != null
-		and _market_ref.has_method("begin_atomic_transaction")
+		_market_supports_atomic_transactions()
 		and bool(_market_ref.call("begin_atomic_transaction"))
 	)
 
 
+func _market_supports_atomic_transactions() -> bool:
+	return (
+		_market_ref != null
+		and _market_ref.has_method("begin_atomic_transaction")
+		and _market_ref.has_method("end_atomic_transaction")
+	)
+
+
 func _end_market_transaction(owns_transaction: bool, commit_changes: bool) -> void:
-	if owns_transaction and _market_ref != null and _market_ref.has_method("end_atomic_transaction"):
+	if owns_transaction and _market_supports_atomic_transactions():
 		_market_ref.call("end_atomic_transaction", commit_changes)
 
 
