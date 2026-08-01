@@ -33,36 +33,73 @@ func get_all_crops() -> Array:
 
 const ITEMS := {
 	# 种子
-	"tomato_seed": {"id": "tomato_seed", "name": "番茄种子", "category": "seed", "sell_price": 0, "buy_price": 5, "max_stack": 99},
-	"carrot_seed": {"id": "carrot_seed", "name": "胡萝卜种子", "category": "seed", "sell_price": 0, "buy_price": 4, "max_stack": 99},
-	"potato_seed": {"id": "potato_seed", "name": "土豆种子", "category": "seed", "sell_price": 0, "buy_price": 3, "max_stack": 99},
-	"strawberry_seed": {"id": "strawberry_seed", "name": "草莓种子", "category": "seed", "sell_price": 0, "buy_price": 10, "max_stack": 99},
-	"blueberry_seed": {"id": "blueberry_seed", "name": "蓝莓种子", "category": "seed", "sell_price": 0, "buy_price": 12, "max_stack": 99},
-	"watermelon_seed": {"id": "watermelon_seed", "name": "西瓜种子", "category": "seed", "sell_price": 0, "buy_price": 15, "max_stack": 99},
-	"sunflower_seed": {"id": "sunflower_seed", "name": "向日葵种子", "category": "seed", "sell_price": 0, "buy_price": 8, "max_stack": 99},
-	"rose_seed": {"id": "rose_seed", "name": "玫瑰种子", "category": "seed", "sell_price": 0, "buy_price": 10, "max_stack": 99},
-	"lavender_seed": {"id": "lavender_seed", "name": "薰衣草种子", "category": "seed", "sell_price": 0, "buy_price": 8, "max_stack": 99},
-	"grain_seed": {"id": "grain_seed", "name": "谷物种子", "category": "seed", "sell_price": 0, "buy_price": 4, "max_stack": 99},
+	"tomato_seed": {"id": "tomato_seed", "name": "番茄种子", "category": "seed", "sell_price": 0, "buy_price": 5, "base_price": 5, "target_stock": 50, "initial_stock": 45, "daily_liquidity": 20, "volatility": "essential", "max_stack": 99},
+	"carrot_seed": {"id": "carrot_seed", "name": "胡萝卜种子", "category": "seed", "sell_price": 0, "buy_price": 4, "base_price": 4, "target_stock": 50, "initial_stock": 45, "daily_liquidity": 20, "volatility": "essential", "max_stack": 99},
+	"potato_seed": {"id": "potato_seed", "name": "土豆种子", "category": "seed", "sell_price": 0, "buy_price": 3, "base_price": 3, "target_stock": 50, "initial_stock": 45, "daily_liquidity": 20, "volatility": "essential", "max_stack": 99},
+	"strawberry_seed": {"id": "strawberry_seed", "name": "草莓种子", "category": "seed", "sell_price": 0, "buy_price": 10, "base_price": 10, "target_stock": 35, "initial_stock": 30, "daily_liquidity": 12, "volatility": "seasonal", "max_stack": 99},
+	"blueberry_seed": {"id": "blueberry_seed", "name": "蓝莓种子", "category": "seed", "sell_price": 0, "buy_price": 12, "base_price": 12, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"watermelon_seed": {"id": "watermelon_seed", "name": "西瓜种子", "category": "seed", "sell_price": 0, "buy_price": 15, "base_price": 15, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 8, "volatility": "seasonal", "max_stack": 99},
+	"sunflower_seed": {"id": "sunflower_seed", "name": "向日葵种子", "category": "seed", "sell_price": 0, "buy_price": 8, "base_price": 8, "target_stock": 35, "initial_stock": 30, "daily_liquidity": 12, "volatility": "seasonal", "max_stack": 99},
+	"rose_seed": {"id": "rose_seed", "name": "玫瑰种子", "category": "seed", "sell_price": 0, "buy_price": 10, "base_price": 10, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"lavender_seed": {"id": "lavender_seed", "name": "薰衣草种子", "category": "seed", "sell_price": 0, "buy_price": 8, "base_price": 8, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"grain_seed": {"id": "grain_seed", "name": "谷物种子", "category": "seed", "sell_price": 0, "buy_price": 4, "base_price": 4, "target_stock": 60, "initial_stock": 50, "daily_liquidity": 25, "volatility": "essential", "max_stack": 99},
 	# 作物
-	"tomato": {"id": "tomato", "name": "番茄", "category": "crop", "sell_price": 8, "buy_price": 0, "max_stack": 99},
-	"carrot": {"id": "carrot", "name": "胡萝卜", "category": "crop", "sell_price": 7, "buy_price": 0, "max_stack": 99},
-	"potato": {"id": "potato", "name": "土豆", "category": "crop", "sell_price": 6, "buy_price": 0, "max_stack": 99},
-	"strawberry": {"id": "strawberry", "name": "草莓", "category": "crop", "sell_price": 15, "buy_price": 0, "max_stack": 99},
-	"blueberry": {"id": "blueberry", "name": "蓝莓", "category": "crop", "sell_price": 18, "buy_price": 0, "max_stack": 99},
-	"watermelon": {"id": "watermelon", "name": "西瓜", "category": "crop", "sell_price": 25, "buy_price": 0, "max_stack": 99},
-	"sunflower": {"id": "sunflower", "name": "向日葵", "category": "crop", "sell_price": 12, "buy_price": 0, "max_stack": 99},
-	"rose": {"id": "rose", "name": "玫瑰", "category": "crop", "sell_price": 16, "buy_price": 0, "max_stack": 99},
-	"lavender": {"id": "lavender", "name": "薰衣草", "category": "crop", "sell_price": 14, "buy_price": 0, "max_stack": 99},
-	"grain": {"id": "grain", "name": "谷物", "category": "crop", "sell_price": 7, "buy_price": 0, "max_stack": 99},
+	"tomato": {"id": "tomato", "name": "番茄", "category": "crop", "sell_price": 8, "buy_price": 0, "base_price": 9, "target_stock": 50, "initial_stock": 45, "daily_liquidity": 22, "volatility": "perishable", "max_stack": 99},
+	"carrot": {"id": "carrot", "name": "胡萝卜", "category": "crop", "sell_price": 7, "buy_price": 0, "base_price": 8, "target_stock": 55, "initial_stock": 50, "daily_liquidity": 24, "volatility": "perishable", "max_stack": 99},
+	"potato": {"id": "potato", "name": "土豆", "category": "crop", "sell_price": 6, "buy_price": 0, "base_price": 7, "target_stock": 60, "initial_stock": 55, "daily_liquidity": 25, "volatility": "stable", "max_stack": 99},
+	"strawberry": {"id": "strawberry", "name": "草莓", "category": "crop", "sell_price": 15, "buy_price": 0, "base_price": 18, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 12, "volatility": "seasonal", "max_stack": 99},
+	"blueberry": {"id": "blueberry", "name": "蓝莓", "category": "crop", "sell_price": 18, "buy_price": 0, "base_price": 21, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"watermelon": {"id": "watermelon", "name": "西瓜", "category": "crop", "sell_price": 25, "buy_price": 0, "base_price": 29, "target_stock": 20, "initial_stock": 16, "daily_liquidity": 8, "volatility": "seasonal", "max_stack": 99},
+	"sunflower": {"id": "sunflower", "name": "向日葵", "category": "crop", "sell_price": 12, "buy_price": 0, "base_price": 14, "target_stock": 35, "initial_stock": 30, "daily_liquidity": 14, "volatility": "seasonal", "max_stack": 99},
+	"rose": {"id": "rose", "name": "玫瑰", "category": "crop", "sell_price": 16, "buy_price": 0, "base_price": 19, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"lavender": {"id": "lavender", "name": "薰衣草", "category": "crop", "sell_price": 14, "buy_price": 0, "base_price": 17, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"grain": {"id": "grain", "name": "谷物", "category": "crop", "sell_price": 7, "buy_price": 0, "base_price": 8, "target_stock": 70, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
 	# 材料
-	"wood": {"id": "wood", "name": "木材", "category": "material", "sell_price": 1, "buy_price": 2, "max_stack": 99},
-	"stone": {"id": "stone", "name": "石头", "category": "material", "sell_price": 1, "buy_price": 3, "max_stack": 99},
-	"iron": {"id": "iron", "name": "铁", "category": "material", "sell_price": 3, "buy_price": 8, "max_stack": 99},
-	"fiber": {"id": "fiber", "name": "纤维", "category": "material", "sell_price": 0, "buy_price": 1, "max_stack": 99},
-	"glass": {"id": "glass", "name": "玻璃", "category": "material", "sell_price": 2, "buy_price": 5, "max_stack": 99},
+	"wood": {"id": "wood", "name": "木材", "category": "material", "sell_price": 1, "buy_price": 2, "base_price": 3, "target_stock": 80, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
+	"stone": {"id": "stone", "name": "石头", "category": "material", "sell_price": 1, "buy_price": 3, "base_price": 3, "target_stock": 80, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
+	"iron": {"id": "iron", "name": "铁", "category": "legacy", "sell_price": 0, "buy_price": 0, "base_price": 0, "migrate_to": "iron_ingot", "max_stack": 99},
+	"fiber": {"id": "fiber", "name": "纤维", "category": "material", "sell_price": 0, "buy_price": 1, "base_price": 2, "target_stock": 70, "initial_stock": 55, "daily_liquidity": 28, "volatility": "essential", "max_stack": 99},
+	"glass": {"id": "glass", "name": "玻璃", "category": "material", "sell_price": 2, "buy_price": 5, "base_price": 10, "target_stock": 40, "initial_stock": 30, "daily_liquidity": 15, "volatility": "industrial", "max_stack": 99},
+	"clay": {"id": "clay", "name": "黏土", "category": "material", "sell_price": 1, "buy_price": 3, "base_price": 2, "target_stock": 65, "initial_stock": 50, "daily_liquidity": 24, "volatility": "essential", "max_stack": 99},
+	"sand": {"id": "sand", "name": "沙子", "category": "material", "sell_price": 1, "buy_price": 3, "base_price": 2, "target_stock": 65, "initial_stock": 50, "daily_liquidity": 24, "volatility": "essential", "max_stack": 99},
+	"coal": {"id": "coal", "name": "煤", "category": "material", "sell_price": 2, "buy_price": 4, "base_price": 3, "target_stock": 55, "initial_stock": 40, "daily_liquidity": 20, "volatility": "industrial", "max_stack": 99},
+	"copper_ore": {"id": "copper_ore", "name": "铜矿", "category": "material", "sell_price": 5, "buy_price": 8, "base_price": 6, "target_stock": 40, "initial_stock": 30, "daily_liquidity": 14, "volatility": "industrial", "max_stack": 99},
+	"iron_ore": {"id": "iron_ore", "name": "铁矿", "category": "material", "sell_price": 6, "buy_price": 9, "base_price": 7, "target_stock": 40, "initial_stock": 30, "daily_liquidity": 14, "volatility": "industrial", "max_stack": 99},
+	"silver_ore": {"id": "silver_ore", "name": "银矿", "category": "rare", "sell_price": 15, "buy_price": 22, "base_price": 18, "target_stock": 16, "initial_stock": 10, "daily_liquidity": 5, "volatility": "rare", "max_stack": 99},
+	"gold_ore": {"id": "gold_ore", "name": "金矿", "category": "rare", "sell_price": 24, "buy_price": 34, "base_price": 28, "target_stock": 12, "initial_stock": 8, "daily_liquidity": 4, "volatility": "rare", "max_stack": 99},
+	"crystal": {"id": "crystal", "name": "水晶", "category": "rare", "sell_price": 30, "buy_price": 42, "base_price": 35, "target_stock": 10, "initial_stock": 6, "daily_liquidity": 3, "volatility": "rare", "max_stack": 99},
+	# 加工材料
+	"plank": {"id": "plank", "name": "木板", "category": "processed_material", "sell_price": 7, "buy_price": 10, "base_price": 8, "target_stock": 45, "initial_stock": 35, "daily_liquidity": 18, "volatility": "industrial", "max_stack": 99},
+	"charcoal": {"id": "charcoal", "name": "木炭", "category": "processed_material", "sell_price": 5, "buy_price": 8, "base_price": 6, "target_stock": 40, "initial_stock": 30, "daily_liquidity": 16, "volatility": "industrial", "max_stack": 99},
+	"stone_brick": {"id": "stone_brick", "name": "石砖", "category": "processed_material", "sell_price": 6, "buy_price": 9, "base_price": 7, "target_stock": 40, "initial_stock": 30, "daily_liquidity": 16, "volatility": "industrial", "max_stack": 99},
+	"brick": {"id": "brick", "name": "砖块", "category": "processed_material", "sell_price": 9, "buy_price": 12, "base_price": 10, "target_stock": 35, "initial_stock": 25, "daily_liquidity": 14, "volatility": "industrial", "max_stack": 99},
+	"rope": {"id": "rope", "name": "绳索", "category": "processed_material", "sell_price": 5, "buy_price": 8, "base_price": 6, "target_stock": 45, "initial_stock": 35, "daily_liquidity": 18, "volatility": "industrial", "max_stack": 99},
+	"cloth": {"id": "cloth", "name": "布料", "category": "processed_material", "sell_price": 13, "buy_price": 18, "base_price": 15, "target_stock": 30, "initial_stock": 22, "daily_liquidity": 12, "volatility": "crafted", "max_stack": 99},
+	"copper_ingot": {"id": "copper_ingot", "name": "铜锭", "category": "processed_material", "sell_price": 18, "buy_price": 25, "base_price": 21, "target_stock": 25, "initial_stock": 18, "daily_liquidity": 10, "volatility": "industrial", "max_stack": 99},
+	"iron_ingot": {"id": "iron_ingot", "name": "铁锭", "category": "processed_material", "sell_price": 21, "buy_price": 28, "base_price": 24, "target_stock": 25, "initial_stock": 18, "daily_liquidity": 10, "volatility": "industrial", "max_stack": 99},
+	"steel": {"id": "steel", "name": "钢材", "category": "processed_material", "sell_price": 58, "buy_price": 72, "base_price": 65, "target_stock": 12, "initial_stock": 8, "daily_liquidity": 4, "volatility": "crafted", "max_stack": 99},
+	# 被动产出
+	"honey": {"id": "honey", "name": "蜂蜜", "category": "output", "sell_price": 10, "buy_price": 15, "base_price": 12, "target_stock": 30, "initial_stock": 22, "daily_liquidity": 12, "volatility": "seasonal", "max_stack": 99},
+	"beeswax": {"id": "beeswax", "name": "蜂蜡", "category": "output", "sell_price": 7, "buy_price": 10, "base_price": 8, "target_stock": 25, "initial_stock": 18, "daily_liquidity": 9, "volatility": "crafted", "max_stack": 99},
+	"egg": {"id": "egg", "name": "鸡蛋", "category": "output", "sell_price": 7, "buy_price": 10, "base_price": 8, "target_stock": 40, "initial_stock": 32, "daily_liquidity": 18, "volatility": "perishable", "max_stack": 99},
+	"feather": {"id": "feather", "name": "羽毛", "category": "output", "sell_price": 3, "buy_price": 5, "base_price": 4, "target_stock": 35, "initial_stock": 28, "daily_liquidity": 14, "volatility": "stable", "max_stack": 99},
+	# 容器与调味品
+	"glass_jar": {"id": "glass_jar", "name": "玻璃罐", "category": "container", "sell_price": 12, "buy_price": 16, "base_price": 13, "target_stock": 30, "initial_stock": 22, "daily_liquidity": 11, "volatility": "industrial", "max_stack": 99},
+	"glass_bottle": {"id": "glass_bottle", "name": "玻璃瓶", "category": "container", "sell_price": 13, "buy_price": 17, "base_price": 14, "target_stock": 30, "initial_stock": 22, "daily_liquidity": 11, "volatility": "industrial", "max_stack": 99},
+	"salt": {"id": "salt", "name": "盐", "category": "container", "sell_price": 4, "buy_price": 7, "base_price": 5, "target_stock": 45, "initial_stock": 40, "daily_liquidity": 20, "volatility": "essential", "max_stack": 99},
+	# 食品和成品
+	"flour": {"id": "flour", "name": "面粉", "category": "product", "sell_price": 15, "buy_price": 20, "base_price": 18, "target_stock": 35, "initial_stock": 28, "daily_liquidity": 16, "volatility": "essential", "max_stack": 99},
+	"animal_feed": {"id": "animal_feed", "name": "动物饲料", "category": "product", "sell_price": 9, "buy_price": 13, "base_price": 10, "target_stock": 40, "initial_stock": 32, "daily_liquidity": 18, "volatility": "essential", "max_stack": 99},
+	"sunflower_oil": {"id": "sunflower_oil", "name": "葵花油", "category": "product", "sell_price": 46, "buy_price": 56, "base_price": 50, "target_stock": 18, "initial_stock": 12, "daily_liquidity": 7, "volatility": "seasonal", "max_stack": 99},
+	"fruit_jam": {"id": "fruit_jam", "name": "水果果酱", "category": "product", "sell_price": 36, "buy_price": 46, "base_price": 40, "target_stock": 20, "initial_stock": 14, "daily_liquidity": 8, "volatility": "crafted", "max_stack": 99},
+	"pickles": {"id": "pickles", "name": "腌菜", "category": "product", "sell_price": 27, "buy_price": 35, "base_price": 30, "target_stock": 22, "initial_stock": 16, "daily_liquidity": 9, "volatility": "crafted", "max_stack": 99},
+	"tomato_sauce": {"id": "tomato_sauce", "name": "番茄酱", "category": "product", "sell_price": 31, "buy_price": 40, "base_price": 35, "target_stock": 20, "initial_stock": 14, "daily_liquidity": 8, "volatility": "crafted", "max_stack": 99},
+	"fruit_juice": {"id": "fruit_juice", "name": "果汁", "category": "product", "sell_price": 38, "buy_price": 48, "base_price": 42, "target_stock": 18, "initial_stock": 12, "daily_liquidity": 7, "volatility": "perishable", "max_stack": 99},
+	"bread": {"id": "bread", "name": "面包", "category": "product", "sell_price": 26, "buy_price": 34, "base_price": 30, "target_stock": 30, "initial_stock": 24, "daily_liquidity": 14, "volatility": "essential", "max_stack": 99},
+	"honey_cake": {"id": "honey_cake", "name": "蜂蜜蛋糕", "category": "product", "sell_price": 48, "buy_price": 60, "base_price": 54, "target_stock": 14, "initial_stock": 10, "daily_liquidity": 5, "volatility": "luxury", "max_stack": 99},
 	# 稀有
-	"moonflower": {"id": "moonflower", "name": "月光花", "category": "rare", "sell_price": 50, "buy_price": 0, "max_stack": 1},
-	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "max_stack": 1},
+	"moonflower": {"id": "moonflower", "name": "月光花", "category": "rare", "sell_price": 50, "buy_price": 0, "base_price": 60, "target_stock": 8, "initial_stock": 5, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
+	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "base_price": 95, "target_stock": 6, "initial_stock": 4, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
 }
 
 static func get_item(item_id: String):
@@ -72,6 +109,13 @@ static func get_all_items() -> Array:
 	var result := []
 	for item in ITEMS.values():
 		result.append(item)
+	return result
+
+static func get_market_items() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for item in ITEMS.values():
+		if item.get("base_price", 0) > 0 and item.get("category", "") != "legacy":
+			result.append(item)
 	return result
 
 static func get_items_by_category(category: String) -> Array:

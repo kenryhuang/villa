@@ -34,7 +34,8 @@ func run(assertions: TestAssert) -> void:
 
 func _test_game_data(assertions: TestAssert) -> void:
 	var data = GameDataScript.new()
-	assertions.equal(data.get_all_items().size(), 27, "all Phase 1 items are registered")
+	for item_id in ["wood", "clay", "iron_ingot", "honey", "flour", "fruit_jam"]:
+		assertions.truthy(not data.get_item(item_id).is_empty(), item_id + " is registered")
 	assertions.equal(data.get_item("tomato_seed").buy_price, 5, "seed buy price is available")
 	assertions.equal(data.get_item("moonflower").max_stack, 1, "rare item stack limit is one")
 	assertions.equal(data.get_all_buildings().size(), 9, "all buildings are registered")
