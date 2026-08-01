@@ -7,7 +7,8 @@ const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_
 const STRIKE_PERIOD := 0.6
 const RAISED_ANGLE := deg_to_rad(25.0)
 const IMPACT_ANGLE := deg_to_rad(105.0)
-const FOUNDATION_CONTACT_X_RATIO := 0.42
+const FOUNDATION_CONTACT_X_RATIO := 0.34
+const FOUNDATION_CONTACT_Y_RATIO := 0.10
 const HAMMER_HEAD_LEVER_RATIO := 0.72
 const PROGRESS_TEXTURE_SIZE := 128
 
@@ -37,7 +38,10 @@ static func hammer_screen_offset_for(visual_size: Vector2, hammer_height: float)
 		-sin(IMPACT_ANGLE) * lever,
 		cos(IMPACT_ANGLE) * lever
 	)
-	var target_head := Vector2(visual_size.x * FOUNDATION_CONTACT_X_RATIO, 0.0)
+	var target_head := Vector2(
+		visual_size.x * FOUNDATION_CONTACT_X_RATIO,
+		visual_size.y * FOUNDATION_CONTACT_Y_RATIO
+	)
 	return target_head - impact_head_from_pivot
 
 

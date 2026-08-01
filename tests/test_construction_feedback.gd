@@ -102,7 +102,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				-sin(FeedbackScript.IMPACT_ANGLE) * expected_lever,
 				cos(FeedbackScript.IMPACT_ANGLE) * expected_lever
 			)
-			var expected_contact_offset := Vector2(3.0 * 0.42, 0.0) - expected_head_from_pivot
+			var expected_contact_offset := (
+				Vector2(3.0 * 0.34, 2.4 * 0.10) - expected_head_from_pivot
+			)
 			assertions.near(
 				expected_screen_offset.x,
 				expected_contact_offset.x,
