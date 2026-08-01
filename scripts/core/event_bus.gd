@@ -23,6 +23,11 @@ signal gold_changed(new_gold: int)
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
 signal market_settled(total_day: int)
+signal production_job_started(building: BuildingInstance, recipe_id: String, batches: int)
+signal production_job_completed(building: BuildingInstance, recipe_id: String, outputs: Dictionary)
+signal production_output_blocked(building: BuildingInstance, recipe_id: String)
+signal production_output_changed(building: BuildingInstance, item_id: String, new_quantity: int)
+signal production_input_changed(building: BuildingInstance, item_id: String, new_quantity: int)
 
 # Time signals
 signal season_changed(new_season: int)

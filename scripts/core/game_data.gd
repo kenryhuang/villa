@@ -102,12 +102,29 @@ const ITEMS := {
 	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "base_price": 95, "target_stock": 6, "initial_stock": 4, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
 }
 
+# Section 7.2 names these craft outputs but does not assign market balance.
+# Keep them collectible without silently inventing prices, stock, or liquidity.
+const INVENTORY_ONLY_ITEMS := {
+	"wooden_crate": {"id": "wooden_crate", "name": "木箱", "category": "crafted_good", "max_stack": 99},
+	"furniture": {"id": "furniture", "name": "家具", "category": "crafted_good", "max_stack": 99},
+	"farm_tools": {"id": "farm_tools", "name": "农具", "category": "crafted_good", "max_stack": 99},
+	"machine_parts": {"id": "machine_parts", "name": "机械零件", "category": "crafted_good", "max_stack": 99},
+	"lamp": {"id": "lamp", "name": "灯具", "category": "crafted_good", "max_stack": 99},
+	"sachet": {"id": "sachet", "name": "香包", "category": "crafted_good", "max_stack": 99},
+	"candle": {"id": "candle", "name": "蜡烛", "category": "crafted_good", "max_stack": 99},
+	"perfume": {"id": "perfume", "name": "香水", "category": "crafted_good", "max_stack": 99},
+	"bouquet": {"id": "bouquet", "name": "花束", "category": "crafted_good", "max_stack": 99},
+	"jewelry": {"id": "jewelry", "name": "珠宝", "category": "crafted_good", "max_stack": 99},
+}
+
 static func get_item(item_id: String):
-	return ITEMS.get(item_id, null)
+	return ITEMS.get(item_id, INVENTORY_ONLY_ITEMS.get(item_id, null))
 
 static func get_all_items() -> Array:
 	var result := []
 	for item in ITEMS.values():
+		result.append(item)
+	for item in INVENTORY_ONLY_ITEMS.values():
 		result.append(item)
 	return result
 
@@ -121,6 +138,9 @@ static func get_market_items() -> Array[Dictionary]:
 static func get_items_by_category(category: String) -> Array:
 	var result := []
 	for item in ITEMS.values():
+		if item.get("category") == category:
+			result.append(item)
+	for item in INVENTORY_ONLY_ITEMS.values():
 		if item.get("category") == category:
 			result.append(item)
 	return result

@@ -16,6 +16,8 @@ enum ConstructionStage {
 }
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
+const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ConstructionFeedbackScript = preload(
 	"res://scripts/buildings/construction_feedback.gd"
 )
@@ -41,6 +43,7 @@ var occupied_cells: Array[Dictionary] = []
 var construction_stage := ConstructionStage.COMPLETE
 var construction_elapsed := 0.0
 var construction_duration := 0.0
+var producer_state: ProducerState
 var _preview_mode := false
 var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
@@ -202,6 +205,8 @@ func configure(
 	for cell in cells:
 		if cell is Dictionary:
 			occupied_cells.append((cell as Dictionary).duplicate(true))
+	if producer_state == null and data != null and RecipeDatabaseScript.has_station(data.building_id):
+		producer_state = ProducerStateScript.new(data.building_id)
 	_ensure_nodes()
 	if data == null or not data.is_valid():
 		return
@@ -269,7 +274,7 @@ func interact(player: Node) -> void:
 
 
 func to_dict() -> Dictionary:
-	return {
+	var result := {
 		"building_id": data.building_id if data else authored_building_id,
 		"gx": grid_x,
 		"gz": grid_z,
@@ -278,6 +283,71 @@ func to_dict() -> Dictionary:
 		"construction_elapsed": construction_elapsed,
 		"construction_duration": construction_duration,
 	}
+	if producer_state != null:
+		result["producer_state"] = producer_state.to_dict()
+	return result
+
+
+func from_dict(source: Dictionary) -> bool:
+	if typeof(source.get("building_id")) != TYPE_STRING:
+		return false
+	if typeof(source.get("gx")) != TYPE_INT or typeof(source.get("gz")) != TYPE_INT:
+		return false
+	var saved_cells: Variant = source.get("occupied_cells", [])
+	if not saved_cells is Array:
+		return false
+	var next_cells: Array[Dictionary] = []
+	for value in saved_cells:
+		if not value is Dictionary:
+			return false
+		var cell := value as Dictionary
+		if (
+			typeof(cell.get("gx")) != TYPE_INT
+			or typeof(cell.get("gz")) != TYPE_INT
+			or typeof(cell.get("previous_state")) != TYPE_INT
+		):
+			return false
+		next_cells.append(cell.duplicate(true))
+	var saved_stage: Variant = source.get("construction_stage", int(ConstructionStage.COMPLETE))
+	var saved_elapsed: Variant = source.get("construction_elapsed", 0.0)
+	var saved_duration: Variant = source.get("construction_duration", 0.0)
+	if typeof(saved_stage) != TYPE_INT:
+		return false
+	if int(saved_stage) < int(ConstructionStage.FOUNDATION) or int(saved_stage) > int(ConstructionStage.COMPLETE):
+		return false
+	if not saved_elapsed is float and not saved_elapsed is int:
+		return false
+	if not saved_duration is float and not saved_duration is int:
+		return false
+	if not is_finite(float(saved_elapsed)) or float(saved_elapsed) < 0.0:
+		return false
+	if not is_finite(float(saved_duration)) or float(saved_duration) < 0.0:
+		return false
+	var next_producer: ProducerState
+	if source.has("producer_state"):
+		if not source.producer_state is Dictionary:
+			return false
+		next_producer = ProducerStateScript.new()
+		if not next_producer.from_dict(source.producer_state):
+			return false
+	elif RecipeDatabaseScript.has_station(str(source.building_id)):
+		next_producer = ProducerStateScript.new(str(source.building_id))
+	if next_producer != null and next_producer.station_id != str(source.building_id):
+		return false
+
+	if data != null and str(source.building_id) != data.building_id:
+		return false
+	if data == null:
+		authored_building_id = str(source.building_id)
+	grid_x = int(source.gx)
+	grid_z = int(source.gz)
+	occupied_cells.assign(next_cells)
+	construction_stage = int(saved_stage) as ConstructionStage
+	construction_elapsed = float(saved_elapsed)
+	construction_duration = float(saved_duration)
+	_completion_emitted = construction_stage == ConstructionStage.COMPLETE
+	producer_state = next_producer
+	return true
 
 
 func _process(delta: float) -> void:

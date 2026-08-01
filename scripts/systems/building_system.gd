@@ -416,6 +416,10 @@ func restore_buildings(records: Array) -> int:
 			instance.free()
 			continue
 		instance.configure(resolved, gx, gz, snapshots)
+		if not instance.from_dict(record):
+			_restore_snapshots(changed)
+			instance.free()
+			continue
 		if record.has("construction_stage") and record.has("construction_elapsed"):
 			instance.restore_construction(
 				int(record.construction_stage),

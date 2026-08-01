@@ -7,6 +7,8 @@ const MarketSystemTest = preload("res://tests/test_market_system.gd")
 const EconomyTransactionsTest = preload("res://tests/test_economy_transactions.gd")
 const DailySimulationSystemTest = preload("res://tests/test_daily_simulation_system.gd")
 const EconomySaveIntegrationTest = preload("res://tests/test_economy_save_integration.gd")
+const RecipeDatabaseTest = preload("res://tests/test_recipe_database.gd")
+const ProductionSystemTest = preload("res://tests/test_production_system.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -23,6 +25,8 @@ func _run() -> void:
 	EconomyTransactionsTest.new().run(assertions)
 	DailySimulationSystemTest.new().run(assertions, self)
 	EconomySaveIntegrationTest.new().run(assertions, self)
+	RecipeDatabaseTest.new().run(assertions)
+	ProductionSystemTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d economy checks" % assertions.checks)
 		quit(0)
