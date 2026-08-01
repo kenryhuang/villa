@@ -32,3 +32,5 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(economy.add_gold(10), "income delegates")
 	assertions.equal(wallet.gold, 80, "same wallet changes")
 	assertions.truthy(not economy.configure(inventory, null), "missing wallet rejected")
+	assertions.truthy(not economy.add_gold(10), "rejected wallet configuration clears delegation")
+	assertions.equal(wallet.gold, 80, "rejected configuration preserves prior wallet balance")

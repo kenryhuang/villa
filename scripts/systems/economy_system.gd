@@ -19,13 +19,13 @@ func _ready() -> void:
 
 
 func configure(inventory: InventorySystem, wallet: Node, market: Node = null) -> bool:
-	if inventory == null or wallet == null:
-		return false
-	if not wallet.has_method("add_gold") or not wallet.has_method("spend_gold"):
-		return false
 	_inventory_ref = inventory
 	_wallet_ref = wallet
 	_market_ref = market
+	if _inventory_ref == null or _wallet_ref == null:
+		return false
+	if not _wallet_ref.has_method("add_gold") or not _wallet_ref.has_method("spend_gold"):
+		return false
 	# 连接每日事件
 	if _event_bus:
 		_event_bus.day_changed.connect(_on_day_changed)
