@@ -187,12 +187,16 @@ func add_external_supply(item_id: String, quantity: int) -> bool:
 	return true
 
 
+func can_settle_day(total_day: int) -> bool:
+	return total_day > last_settled_day and total_day > 0 and not _items.is_empty()
+
+
 func settle_day(
 	total_day: int,
 	season_factors: Dictionary = {},
 	event_factors: Dictionary = {}
 ) -> bool:
-	if total_day <= last_settled_day or total_day <= 0 or _items.is_empty():
+	if not can_settle_day(total_day):
 		return false
 	for item_id_value in _items.keys():
 		var item_id := str(item_id_value)

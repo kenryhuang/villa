@@ -56,7 +56,9 @@ func _ready() -> void:
 		save_manager = get_node("/root/SaveManager")
 	_sync_save_slot()
 	_initialize_systems()
-	_connect_systems()
+	if not _connect_systems():
+		push_error("Unable to configure required gameplay economy systems.")
+		return
 	_setup_player()
 	_setup_npcs()
 	_setup_ui()
@@ -145,7 +147,7 @@ func _initialize_systems() -> void:
 	buildings_container.name = "Buildings"
 	add_child(buildings_container)
 
-func _connect_systems() -> void:
+func _connect_systems() -> bool:
 	# GridSystem 需要地形引用
 	var terrain = world.terrain if world else null
 	if terrain:
@@ -159,31 +161,37 @@ func _connect_systems() -> void:
 
 	# MarketSystem 使用静态市场目录创建运行时库存
 	var game_data = get_node_or_null("/root/GameData")
-	if game_data:
-		market_system.configure(game_data.get_market_items())
+	if game_data == null or not market_system.configure(game_data.get_market_items()):
+		return false
 
 	# EconomySystem 依赖 InventorySystem + GameState 钱包 + MarketSystem
-	economy_system.configure(
+	if not economy_system.configure(
 		inventory_system,
 		get_node_or_null("/root/GameState"),
 		market_system
-	)
+	):
+		return false
 
 	# SaveManager 与每日协调器共享同一份市场状态
-	if save_manager.has_method("configure_economy"):
-		save_manager.configure_economy(
-			market_system,
-			daily_simulation_system,
-			season_system
-		)
-	daily_simulation_system.configure(
+	if not save_manager.has_method("configure_economy"):
+		return false
+	var save_manager_configured := bool(save_manager.call(
+		"configure_economy",
+		market_system,
+		daily_simulation_system,
+		season_system
+	))
+	if not save_manager_configured:
+		return false
+	if not daily_simulation_system.configure(
 		null,
 		farming_system,
 		null,
 		economy_system,
 		market_system,
 		save_manager
-	)
+	):
+		return false
 
 	# BuildingSystem 依赖 GridSystem + EconomySystem
 	building_system.configure(grid_system, economy_system, buildings_container)
@@ -193,6 +201,7 @@ func _connect_systems() -> void:
 
 	# ExplorationSystem 依赖 Player
 	exploration_system.configure(player)
+	return true
 
 
 func _setup_player() -> void:
@@ -265,6 +274,8 @@ func _initial_game_state() -> void:
 	if loaded:
 		_backfill_legacy_grain_slot()
 	else:
+		market_system.last_settled_day = season_system.total_days
+		daily_simulation_system.last_simulated_day = season_system.total_days
 		_grant_new_game_items()
 	farming_system.rebuild_visuals()
 	economy_system.generate_daily_orders()

@@ -92,6 +92,18 @@ func _test_settlement_is_idempotent_and_bounded(assertions: TestAssert) -> void:
 		price_events.append({"item_id": item_id, "price": price})
 	)
 	assertions.truthy(market.configure([_wood_definition()]), "settlement fixture configures")
+	assertions.truthy(market.has_method("can_settle_day"), "market exposes settlement preflight")
+	if not market.has_method("can_settle_day"):
+		market.free()
+		return
+	var empty_market := MarketSystem.new()
+	assertions.truthy(
+		not bool(empty_market.call("can_settle_day", 2)),
+		"unconfigured market cannot settle"
+	)
+	empty_market.free()
+	assertions.truthy(bool(market.call("can_settle_day", 2)), "new positive day can settle")
+	assertions.truthy(not bool(market.call("can_settle_day", 0)), "nonpositive day cannot settle")
 	assertions.truthy(market.add_external_demand("wood", 10), "external demand is recorded")
 	assertions.truthy(market.add_external_supply("wood", 2), "external supply is recorded")
 	assertions.truthy(
@@ -105,6 +117,8 @@ func _test_settlement_is_idempotent_and_bounded(assertions: TestAssert) -> void:
 	var after_day_two := market.to_dict()
 	assertions.truthy(not market.settle_day(2), "same day settlement is rejected")
 	assertions.truthy(not market.settle_day(1), "older day settlement is rejected")
+	assertions.truthy(not bool(market.call("can_settle_day", 2)), "settled day fails preflight")
+	assertions.truthy(not bool(market.call("can_settle_day", 1)), "older day fails preflight")
 	assertions.equal(market.to_dict(), after_day_two, "rejected settlement preserves state")
 	for day in range(3, 12):
 		assertions.truthy(market.settle_day(day), "later day settles")

@@ -173,6 +173,7 @@ func load_game(slot: int = 0) -> bool:
 	if not _apply_save_data(data):
 		return false
 
+	current_slot = slot
 	print("Game loaded from slot %d" % slot)
 	return true
 
@@ -341,6 +342,14 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 		or int(data["last_simulated_day"]) < 0
 	):
 		return false
+	if _has_injected_season_system() and not _validate_calendar_bundle(data):
+		return false
+	if data.has("total_days") and (
+		not _is_integer_number(data["total_days"])
+		or int(data["total_days"]) < 0
+		or int(data["total_days"]) != int(data["last_simulated_day"])
+	):
+		return false
 	var validation_market := MarketSystemScript.new()
 	var valid := validation_market.from_dict(data["market"])
 	if valid:
@@ -370,6 +379,35 @@ func _has_valid_economy_configuration() -> bool:
 		and is_instance_valid(_daily_simulation_system)
 		and _has_methods(_market_system, ["configure", "to_dict", "from_dict"])
 		and _has_property(_daily_simulation_system, "last_simulated_day")
+	)
+
+
+func _has_injected_season_system() -> bool:
+	return _season_system != null and is_instance_valid(_season_system)
+
+
+func _validate_calendar_bundle(data: Dictionary) -> bool:
+	for field in ["season", "day", "total_days", "hour", "minute"]:
+		if not data.has(field) or not _is_integer_number(data[field]):
+			return false
+	var total_days := int(data["total_days"])
+	if total_days < 1:
+		return false
+	var elapsed_days := total_days - 1
+	var expected_day := elapsed_days % 7 + 1
+	var expected_season := floori(float(elapsed_days) / 7.0) % 4
+	return (
+		int(data["season"]) >= 0
+		and int(data["season"]) <= 3
+		and int(data["season"]) == expected_season
+		and int(data["day"]) >= 1
+		and int(data["day"]) <= 7
+		and int(data["day"]) == expected_day
+		and total_days == int(data["last_simulated_day"])
+		and int(data["hour"]) >= 0
+		and int(data["hour"]) <= 23
+		and int(data["minute"]) >= 0
+		and int(data["minute"]) <= 59
 	)
 
 

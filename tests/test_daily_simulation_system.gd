@@ -2,6 +2,7 @@ extends RefCounted
 
 const DailySimulationSystem = preload("res://scripts/systems/daily_simulation_system.gd")
 const EconomySystemScript = preload("res://scripts/systems/economy_system.gd")
+const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 
 
 class ProductionDouble:
@@ -61,9 +62,27 @@ class MarketDouble:
 	func _init(recorded_calls: Array) -> void:
 		calls = recorded_calls
 
+	func can_settle_day(_day: int) -> bool:
+		return true
+
 	func settle_day(day: int) -> bool:
 		calls.append("market.settle:%d" % day)
 		return true
+
+
+class RejectingSettlementMarketDouble:
+	extends Node
+	var calls: Array
+
+	func _init(recorded_calls: Array) -> void:
+		calls = recorded_calls
+
+	func can_settle_day(_day: int) -> bool:
+		return false
+
+	func settle_day(day: int) -> bool:
+		calls.append("market.settle:%d" % day)
+		return false
 
 
 class SaveDouble:
@@ -83,7 +102,10 @@ class SaveDouble:
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_unconfigured_coordinator_rejects_days(assertions)
+	_test_empty_real_market_is_rejected(assertions)
 	_test_exact_order_and_idempotence(assertions)
+	_test_incoherent_real_market_rejects_before_mutation(assertions)
+	_test_rejected_settlement_preflight_is_retry_safe(assertions)
 	_test_failed_autosave_does_not_replay_partial_day(assertions)
 	_test_single_authoritative_listener(assertions, tree)
 	_test_order_processing_split(assertions)
@@ -94,6 +116,23 @@ func _test_unconfigured_coordinator_rejects_days(assertions: TestAssert) -> void
 	assertions.truthy(not daily.run_day(1), "unconfigured coordinator rejects a day")
 	assertions.equal(daily.last_simulated_day, 0, "rejected unconfigured day preserves progress")
 	daily.free()
+
+
+func _test_empty_real_market_is_rejected(assertions: TestAssert) -> void:
+	var calls: Array = []
+	var farming := FarmingDouble.new(calls)
+	var economy := EconomyDouble.new(calls)
+	var market := MarketSystemScript.new()
+	var save := SaveDouble.new(calls)
+	var daily := DailySimulationSystem.new()
+	assertions.truthy(
+		not daily.configure(null, farming, null, economy, market, save),
+		"daily coordinator rejects an unconfigured real market"
+	)
+	assertions.truthy(not daily.run_day(2), "empty market cannot consume a day")
+	assertions.equal(calls, [], "empty market performs no daily work or save")
+	for dependency in [farming, economy, market, save, daily]:
+		dependency.free()
 
 
 func _test_exact_order_and_idempotence(assertions: TestAssert) -> void:
@@ -124,6 +163,50 @@ func _test_exact_order_and_idempotence(assertions: TestAssert) -> void:
 	assertions.truthy(not daily.run_day(2), "same day is rejected")
 	assertions.equal(calls, calls_after_first_day, "rejected day performs no work")
 	assertions.equal(daily.last_simulated_day, 2, "coordinator records the consumed day")
+	for dependency in [production, farming, npc, economy, market, save, daily]:
+		dependency.free()
+
+
+func _test_incoherent_real_market_rejects_before_mutation(assertions: TestAssert) -> void:
+	var calls: Array = []
+	var farming := FarmingDouble.new(calls)
+	var economy := EconomyDouble.new(calls)
+	var market := MarketSystemScript.new()
+	var save := SaveDouble.new(calls)
+	var daily := DailySimulationSystem.new()
+	assertions.truthy(market.configure([_wood_definition()]), "cursor fixture configures market")
+	assertions.truthy(market.settle_day(5), "cursor fixture advances market ahead")
+	assertions.truthy(
+		daily.configure(null, farming, null, economy, market, save),
+		"cursor fixture configures coordinator"
+	)
+	daily.last_simulated_day = 3
+	var market_before := market.to_dict()
+	assertions.truthy(not daily.run_day(4), "incoherent market cursor rejects day before mutation")
+	assertions.equal(calls, [], "cursor rejection performs no farming, orders, or save")
+	assertions.equal(market.to_dict(), market_before, "cursor rejection preserves market")
+	assertions.equal(daily.last_simulated_day, 3, "cursor rejection preserves simulated day")
+	for dependency in [farming, economy, market, save, daily]:
+		dependency.free()
+
+
+func _test_rejected_settlement_preflight_is_retry_safe(assertions: TestAssert) -> void:
+	var calls: Array = []
+	var production := ProductionDouble.new(calls)
+	var farming := FarmingDouble.new(calls)
+	var npc := NpcDouble.new(calls)
+	var economy := EconomyDouble.new(calls)
+	var market := RejectingSettlementMarketDouble.new(calls)
+	var save := SaveDouble.new(calls)
+	var daily := DailySimulationSystem.new()
+	assertions.truthy(
+		daily.configure(production, farming, npc, economy, market, save),
+		"settlement preflight fixture configures"
+	)
+	assertions.truthy(not daily.run_day(2), "rejected settlement preflight stops day")
+	assertions.truthy(not daily.run_day(2), "rejected settlement retry also stops day")
+	assertions.equal(calls, [], "settlement preflight rejection performs no work on retries")
+	assertions.equal(daily.last_simulated_day, 0, "settlement preflight does not record day")
 	for dependency in [production, farming, npc, economy, market, save, daily]:
 		dependency.free()
 
@@ -201,3 +284,13 @@ func _test_order_processing_split(assertions: TestAssert) -> void:
 	economy.generate_demand_orders(7)
 	assertions.truthy(economy.orders.size() >= 3, "demand generation delegates to legacy generator")
 	economy.free()
+
+
+func _wood_definition() -> Dictionary:
+	return {
+		"id": "wood",
+		"base_price": 100,
+		"initial_stock": 10,
+		"target_stock": 10,
+		"daily_liquidity": 10,
+	}

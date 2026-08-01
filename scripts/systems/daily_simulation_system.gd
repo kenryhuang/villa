@@ -30,7 +30,9 @@ func configure(
 		return false
 	if not _has_methods(economy_system, ["advance_order_deadlines", "generate_demand_orders"]):
 		return false
-	if not _has_methods(market_system, ["settle_day"]):
+	if not _has_methods(market_system, ["can_settle_day", "settle_day"]):
+		return false
+	if not _is_market_state_ready(market_system):
 		return false
 	if not _has_methods(save_manager, ["save_game"]) or not _has_property(save_manager, "current_slot"):
 		return false
@@ -57,6 +59,10 @@ func configure(
 func run_day(day: int) -> bool:
 	if not _is_configured or day <= last_simulated_day:
 		return false
+	if not _market_cursor_is_coherent():
+		return false
+	if not bool(_market_system.call("can_settle_day", day)):
+		return false
 	if _production_system != null:
 		_production_system.call("apply_daily_effects", day)
 	_farming_system.call("on_day_changed", day)
@@ -65,7 +71,9 @@ func run_day(day: int) -> bool:
 	if _npc_economy_system != null:
 		_npc_economy_system.call("simulate_day", day)
 	_economy_system.call("advance_order_deadlines", day)
-	_market_system.call("settle_day", day)
+	var settlement_result: Variant = _market_system.call("settle_day", day)
+	if settlement_result is bool and not settlement_result:
+		return false
 	_economy_system.call("generate_demand_orders", day)
 	last_simulated_day = day
 	_save_manager.call("save_game", int(_save_manager.get("current_slot")))
@@ -100,3 +108,25 @@ func _has_property(target: Variant, property_name: String) -> bool:
 		if str(property.get("name", "")) == property_name:
 			return true
 	return false
+
+
+func _is_market_state_ready(market_system: Variant) -> bool:
+	if not market_system.has_method("to_dict"):
+		return true
+	var state: Variant = market_system.call("to_dict")
+	if not state is Dictionary:
+		return false
+	var items: Variant = state.get("items", null)
+	return items is Dictionary and not items.is_empty()
+
+
+func _market_cursor_is_coherent() -> bool:
+	if not _has_property(_market_system, "last_settled_day"):
+		return true
+	var market_day: Variant = _market_system.get("last_settled_day")
+	return (
+		(typeof(market_day) == TYPE_INT or typeof(market_day) == TYPE_FLOAT)
+		and is_finite(float(market_day))
+		and floorf(float(market_day)) == float(market_day)
+		and int(market_day) == last_simulated_day
+	)
