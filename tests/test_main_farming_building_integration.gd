@@ -1,10 +1,20 @@
 extends RefCounted
 
+const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const TEST_SAVE_SLOT := 4
-const TEST_SAVE_PATH := "user://villa_saves/save_4.json"
+const TEST_SAVE_DIR := "user://villa_test_saves/debug_reset/"
+
+class FailingClearSaveManager:
+	extends Node
+	var current_slot := 0
+
+	func clear_save(_slot: int) -> bool:
+		return false
+
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
-	_cleanup_test_save()
+	var official_saves_before := _snapshot_save_directory(SaveManagerScript.SAVE_DIR)
+	_cleanup_test_save_directory()
 	var main_scene = load("res://scenes/main.tscn") as PackedScene
 	assertions.truthy(main_scene != null, "main scene loads")
 	if main_scene == null:
@@ -19,12 +29,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"main exposes debug reset state preparation"
 	)
 	default_main.free()
-	var save_manager := tree.root.get_node_or_null("SaveManager")
-	assertions.truthy(save_manager != null, "save manager autoload is available")
-	if save_manager:
-		assertions.truthy(save_manager.has_method("has_save"), "save manager can query a slot")
+	var official_save_manager := tree.root.get_node_or_null("SaveManager")
+	assertions.truthy(official_save_manager != null, "save manager autoload is available")
+	if official_save_manager:
 		assertions.truthy(
-			save_manager.has_method("clear_save"),
+			official_save_manager.has_method("has_save"),
+			"save manager can query a slot"
+		)
+		assertions.truthy(
+			official_save_manager.has_method("clear_save"),
 			"save manager can idempotently clear a slot"
 		)
 
@@ -41,8 +54,28 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if not has_save_slot:
 		main.free()
 		return
+	var isolated_save_manager := SaveManagerScript.new()
+	isolated_save_manager.name = "DebugResetTestSaveManager"
+	isolated_save_manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(isolated_save_manager)
+	main.save_manager = isolated_save_manager
 	main.save_slot = TEST_SAVE_SLOT
 	tree.root.add_child(main)
+	var has_current_slot := _has_property(isolated_save_manager, "current_slot")
+	assertions.truthy(has_current_slot, "save manager exposes its autosave slot")
+	if has_current_slot:
+		assertions.equal(
+			isolated_save_manager.current_slot,
+			TEST_SAVE_SLOT,
+			"Main synchronizes its selected slot to autosave"
+		)
+	main.save_slot = 3
+	assertions.equal(
+		isolated_save_manager.current_slot,
+		3,
+		"changing Main's selected slot updates autosave immediately"
+	)
+	main.save_slot = TEST_SAVE_SLOT
 	assertions.truthy(
 		main.hud.debug_reset_requested.is_connected(
 			Callable(main, "_on_debug_reset_requested")
@@ -73,6 +106,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(
 		handler_source.contains("_prepare_debug_reload()"),
 		"Main handler preserves the selected slot before reloading"
+	)
+	assertions.truthy(
+		handler_source.contains("_cancel_debug_reload()"),
+		"Main handler cancels the pending slot when reload fails"
 	)
 
 	var action_controller = main.get_node_or_null("Actors/Player/ActionController")
@@ -142,13 +179,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		action_controller.select_slot(1)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player waters grain")
 		var event_bus = tree.root.get_node_or_null("EventBus")
-		var autosave_callback := Callable(main.save_manager, "_on_day_changed")
-		var autosave_was_connected: bool = (
-			event_bus != null
-			and event_bus.day_changed.is_connected(autosave_callback)
+		var official_autosave_callback := Callable(
+			official_save_manager,
+			"_on_day_changed"
 		)
-		if autosave_was_connected:
-			event_bus.day_changed.disconnect(autosave_callback)
+		var official_autosave_was_connected: bool = (
+			event_bus != null
+			and official_save_manager != null
+			and event_bus.day_changed.is_connected(official_autosave_callback)
+		)
+		if official_autosave_was_connected:
+			event_bus.day_changed.disconnect(official_autosave_callback)
 		var next_day := InputEventKey.new()
 		next_day.keycode = KEY_N
 		next_day.pressed = true
@@ -170,8 +211,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"grain can be watered again on the next day"
 		)
 		main._unhandled_input(next_day)
-		if autosave_was_connected:
-			event_bus.day_changed.connect(autosave_callback)
+		if official_autosave_was_connected:
+			event_bus.day_changed.connect(official_autosave_callback)
+		assertions.truthy(
+			FileAccess.file_exists(_test_save_path(TEST_SAVE_SLOT)),
+			"day change autosaves the isolated current slot"
+		)
+		assertions.truthy(
+			not FileAccess.file_exists(_test_save_path(0)),
+			"day change never falls back to isolated slot zero"
+		)
 		assertions.truthy(farm_cell.crop_instance.is_mature(), "main grain reaches maturity")
 		var grain_before: int = main.inventory_system.get_item_count("grain")
 		action_controller.select_slot(0)
@@ -187,6 +236,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"main harvest restores farmland"
 		)
 
+	var occupied_cell_snapshots: Array[Dictionary] = []
 	var build_cell := _find_build_cell(main)
 	assertions.truthy(build_cell != null, "main has a valid fence cell")
 	if build_cell:
@@ -200,6 +250,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.truthy(building != null, "main player places fence")
 		if building:
+			for snapshot in building.occupied_cells:
+				occupied_cell_snapshots.append({
+					"gx": snapshot.gx,
+					"gz": snapshot.gz,
+					"previous_state": snapshot.previous_state,
+				})
 			assertions.equal(
 				main.inventory_system.get_item_count("wood"),
 				240,
@@ -255,6 +311,43 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		1,
 		"debug reset fixture has one real building"
 	)
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "game state autoload is available")
+	if game_state:
+		game_state.gold = 999
+		game_state.player_state.stamina = 12
+		game_state.player_state.max_stamina = 222
+		game_state.player_state.level = 7
+		game_state.player_state.exp = 345
+		game_state.play_time = 456.0
+		var reset_event_bus = tree.root.get_node_or_null("EventBus")
+		if reset_event_bus:
+			reset_event_bus.gold_changed.emit(game_state.gold)
+			reset_event_bus.stamina_changed.emit(game_state.player_state.stamina)
+			reset_event_bus.level_changed.emit(game_state.player_state.level)
+			reset_event_bus.exp_gained.emit(0)
+	var failing_save_manager := FailingClearSaveManager.new()
+	tree.root.add_child(failing_save_manager)
+	main.save_manager = failing_save_manager
+	var wood_before_failed_clear: int = main.inventory_system.get_item_count("wood")
+	assertions.truthy(
+		not main.reset_debug_state(),
+		"debug reset reports a save clear failure"
+	)
+	assertions.equal(
+		main.building_system.get_building_count(),
+		1,
+		"save clear failure preserves runtime buildings"
+	)
+	assertions.equal(
+		main.inventory_system.get_item_count("wood"),
+		wood_before_failed_clear,
+		"save clear failure preserves runtime inventory"
+	)
+	if game_state:
+		assertions.equal(game_state.gold, 999, "save clear failure preserves game state")
+	main.save_manager = isolated_save_manager
+	failing_save_manager.free()
 	assertions.truthy(
 		main.save_manager.save_game(TEST_SAVE_SLOT),
 		"debug reset fixture saves only the isolated slot"
@@ -270,6 +363,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		0,
 		"debug reset clears every building"
 	)
+	for snapshot in occupied_cell_snapshots:
+		var restored_cell = main.grid_system.get_cell(snapshot.gx, snapshot.gz)
+		assertions.truthy(restored_cell != null, "debug reset keeps occupied grid cells")
+		if restored_cell:
+			assertions.equal(
+				restored_cell.state,
+				snapshot.previous_state,
+				"debug reset restores each building cell's previous state"
+			)
 	assertions.equal(
 		main.inventory_system.get_item_count("wood"),
 		250,
@@ -300,6 +402,25 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"grain_seed",
 		"debug reset restores the starter quick slot"
 	)
+	if game_state:
+		assertions.equal(game_state.gold, 100, "debug reset restores starter gold")
+		assertions.equal(
+			game_state.player_state.stamina,
+			100,
+			"debug reset restores starter stamina"
+		)
+		assertions.equal(
+			game_state.player_state.max_stamina,
+			100,
+			"debug reset restores maximum stamina"
+		)
+		assertions.equal(game_state.player_state.level, 1, "debug reset restores level one")
+		assertions.equal(game_state.player_state.exp, 0, "debug reset clears experience")
+		assertions.near(game_state.play_time, 0.0, 0.001, "debug reset clears play time")
+		assertions.equal(main.hud.gold_label.text, "💰 100", "debug reset refreshes HUD gold")
+		assertions.near(main.hud.stamina_bar.value, 100.0, 0.001, "debug reset refreshes HUD stamina")
+		assertions.equal(main.hud.level_label.text, "Lv.1", "debug reset refreshes HUD level")
+		assertions.near(main.hud.exp_bar.value, 0.0, 0.001, "debug reset refreshes HUD experience")
 	assertions.truthy(
 		not main.save_manager.has_save(TEST_SAVE_SLOT),
 		"debug reset deletes only the current isolated slot"
@@ -319,21 +440,51 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	if not has_reload_slot_handoff:
 		main.free()
-		_cleanup_test_save()
+		isolated_save_manager.free()
+		_cleanup_test_save_directory()
 		return
+	main.call("_prepare_debug_reload")
+	var has_reload_cancel := main.has_method("_cancel_debug_reload")
+	assertions.truthy(has_reload_cancel, "Main can cancel a failed debug reload handoff")
+	if has_reload_cancel:
+		main.call("_cancel_debug_reload")
+	var cancelled_reload_probe = main_scene.instantiate()
+	cancelled_reload_probe.call("_consume_debug_reload_save_slot")
+	assertions.equal(
+		cancelled_reload_probe.save_slot,
+		0,
+		"a failed reload cannot leak its pending slot into a later Main"
+	)
+	cancelled_reload_probe.free()
 	main.call("_prepare_debug_reload")
 
 	main.free()
 	var reloaded_main = main_scene.instantiate()
 	reloaded_main.load_save_on_start = false
+	reloaded_main.save_manager = isolated_save_manager
 	tree.root.add_child(reloaded_main)
 	assertions.equal(
 		reloaded_main.save_slot,
 		TEST_SAVE_SLOT,
 		"a reloaded Main continues the reset slot instead of loading slot zero"
 	)
+	assertions.equal(
+		isolated_save_manager.current_slot,
+		TEST_SAVE_SLOT,
+		"reloaded Main keeps autosave on the inherited slot"
+	)
 	reloaded_main.free()
-	_cleanup_test_save()
+	isolated_save_manager.free()
+	_cleanup_test_save_directory()
+	assertions.truthy(
+		not DirAccess.dir_exists_absolute(TEST_SAVE_DIR.trim_suffix("/")),
+		"debug reset integration removes its isolated save directory"
+	)
+	assertions.equal(
+		_snapshot_save_directory(SaveManagerScript.SAVE_DIR),
+		official_saves_before,
+		"debug reset integration leaves every official save file unchanged"
+	)
 
 
 func _has_property(object: Object, property_name: String) -> bool:
@@ -351,9 +502,37 @@ func _get_method_source(source: String, method_name: String) -> String:
 	return source.substr(start) if next_method < 0 else source.substr(start, next_method - start)
 
 
-func _cleanup_test_save() -> void:
-	if FileAccess.file_exists(TEST_SAVE_PATH):
-		DirAccess.remove_absolute(TEST_SAVE_PATH)
+func _snapshot_save_directory(directory: String) -> Dictionary:
+	var snapshot := {}
+	var dir := DirAccess.open(directory)
+	if dir == null:
+		return snapshot
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while not file_name.is_empty():
+		if not dir.current_is_dir():
+			var path := directory.path_join(file_name)
+			snapshot[file_name] = {
+				"sha256": FileAccess.get_sha256(path),
+				"modified": FileAccess.get_modified_time(path),
+			}
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return snapshot
+
+
+func _cleanup_test_save_directory() -> void:
+	for slot in [0, TEST_SAVE_SLOT]:
+		var path := TEST_SAVE_DIR.path_join("save_%d.json" % slot)
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	var directory_path := TEST_SAVE_DIR.trim_suffix("/")
+	if DirAccess.dir_exists_absolute(directory_path):
+		DirAccess.remove_absolute(directory_path)
+
+
+func _test_save_path(slot: int) -> String:
+	return TEST_SAVE_DIR.path_join("save_%d.json" % slot)
 
 
 func _find_farm_cell(grid: GridSystem) -> GridCell:

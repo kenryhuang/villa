@@ -8,7 +8,10 @@ const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn"
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
 
 @export var load_save_on_start := true
-@export var save_slot := 0
+@export var save_slot := 0:
+	set(value):
+		save_slot = value
+		_sync_save_slot()
 
 static var _pending_debug_reload_save_slot := -1
 
@@ -37,19 +40,27 @@ var exploration_system: ExplorationSystem
 var collectible_system: CollectibleSystem
 var story_system: StorySystem
 var puzzle_system: PuzzleSystem
-@onready var save_manager: Node = get_node("/root/SaveManager")
+var save_manager: Node
 
 # 建筑容器
 var buildings_container: Node3D
 
 
 func _ready() -> void:
+	if save_manager == null:
+		save_manager = get_node("/root/SaveManager")
+	_sync_save_slot()
 	_initialize_systems()
 	_connect_systems()
 	_setup_player()
 	_setup_npcs()
 	_setup_ui()
 	_initial_game_state()
+
+
+func _sync_save_slot() -> void:
+	if save_manager != null:
+		save_manager.current_slot = save_slot
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -305,6 +316,9 @@ func reset_debug_state() -> bool:
 		return false
 	if not save_manager.clear_save(save_slot):
 		return false
+	var game_state = get_node_or_null("/root/GameState")
+	if game_state:
+		game_state.reset_to_new_game()
 	if building_system.is_in_build_mode():
 		building_system.exit_preview_mode()
 	building_system.clear_buildings(true)
@@ -316,6 +330,10 @@ func reset_debug_state() -> bool:
 
 func _prepare_debug_reload() -> void:
 	_pending_debug_reload_save_slot = save_slot
+
+
+func _cancel_debug_reload() -> void:
+	_pending_debug_reload_save_slot = -1
 
 
 func _consume_debug_reload_save_slot() -> void:
@@ -338,6 +356,7 @@ func _on_debug_reset_requested() -> void:
 	_prepare_debug_reload()
 	var reload_error := get_tree().reload_current_scene()
 	if reload_error != OK:
+		_cancel_debug_reload()
 		push_error("Unable to reload the current scene: %s" % error_string(reload_error))
 
 func _on_dialogue_started(villager_id: String) -> void:

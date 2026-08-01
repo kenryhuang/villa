@@ -43,3 +43,17 @@ func add_exp(amount: int) -> bool:
 		if leveled:
 			_event_bus.level_changed.emit(player_state.level)
 	return true
+
+
+func reset_to_new_game() -> void:
+	gold = 100
+	player_state.stamina = 100
+	player_state.max_stamina = 100
+	player_state.level = 1
+	player_state.exp = 0
+	play_time = 0.0
+	if _event_bus:
+		_event_bus.gold_changed.emit(gold)
+		_event_bus.stamina_changed.emit(player_state.stamina)
+		_event_bus.level_changed.emit(player_state.level)
+		_event_bus.exp_gained.emit(0)

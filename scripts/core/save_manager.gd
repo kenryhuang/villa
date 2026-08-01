@@ -7,6 +7,8 @@ const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
+var save_directory := SAVE_DIR
+var current_slot := 0
 var _event_bus
 
 
@@ -14,7 +16,7 @@ func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
 
 	# 确保存档目录存在
-	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
+	DirAccess.make_dir_recursive_absolute(save_directory)
 
 	# 连接自动存档
 	if _event_bus:
@@ -32,6 +34,7 @@ func save_game(slot: int = 0) -> bool:
 
 	var json_string = JSON.stringify(data)
 	var file_path := _save_path(slot)
+	DirAccess.make_dir_recursive_absolute(save_directory)
 
 	var file = FileAccess.open(file_path, FileAccess.WRITE)
 	if file == null:
@@ -268,12 +271,11 @@ func clear_save(slot: int) -> bool:
 
 
 func _save_path(slot: int) -> String:
-	return SAVE_DIR + SAVE_PREFIX + str(slot) + SAVE_EXT
+	return save_directory.path_join(SAVE_PREFIX + str(slot) + SAVE_EXT)
 
 
 func _on_day_changed(_total_day: int) -> void:
-	# 自动存档到 slot 0
-	save_game(0)
+	save_game(current_slot)
 
 
 func _get_grid_system() -> Node:
