@@ -10,6 +10,9 @@ const IMPACT_ANGLE := deg_to_rad(105.0)
 const FOUNDATION_CONTACT_X_RATIO := 0.34
 const FOUNDATION_CONTACT_Y_RATIO := 0.10
 const HAMMER_HEAD_LEVER_RATIO := 0.72
+const HAMMER_HEAD_CENTER_LIFT_RATIO := -0.30
+const FOUNDATION_BOTTOM_BAND_RATIO := 0.20
+const FOUNDATION_ALPHA_THRESHOLD := 0.10
 const PROGRESS_TEXTURE_SIZE := 128
 
 var _phase := 0.0
@@ -32,20 +35,68 @@ static func strike_angle_for_phase(phase: float) -> float:
 	return lerpf(IMPACT_ANGLE, RAISED_ANGLE, eased)
 
 
-static func hammer_screen_offset_for(visual_size: Vector2, hammer_height: float) -> Vector2:
+static func hammer_screen_offset_for(
+	visual_size: Vector2,
+	hammer_height: float,
+	construction_texture: Texture2D = null
+) -> Vector2:
 	var lever := hammer_height * HAMMER_HEAD_LEVER_RATIO
 	var impact_head_from_pivot := Vector2(
 		-sin(IMPACT_ANGLE) * lever,
 		cos(IMPACT_ANGLE) * lever
 	)
-	var target_head := Vector2(
-		visual_size.x * FOUNDATION_CONTACT_X_RATIO,
-		visual_size.y * FOUNDATION_CONTACT_Y_RATIO
+	var target_head := painted_foundation_contact_for(
+		visual_size,
+		hammer_height,
+		construction_texture
 	)
 	return target_head - impact_head_from_pivot
 
 
-func configure(visual_size: Vector2) -> void:
+static func painted_foundation_contact_for(
+	visual_size: Vector2,
+	hammer_height: float,
+	construction_texture: Texture2D
+) -> Vector2:
+	var fallback := Vector2(
+		visual_size.x * FOUNDATION_CONTACT_X_RATIO,
+		visual_size.y * FOUNDATION_CONTACT_Y_RATIO
+	)
+	if construction_texture == null:
+		return fallback
+	var image := construction_texture.get_image()
+	if image == null or image.is_empty():
+		return fallback
+	var painted_bounds := image.get_used_rect()
+	if painted_bounds.size == Vector2i.ZERO:
+		return fallback
+	var band_height := maxi(
+		ceili(float(painted_bounds.size.y) * FOUNDATION_BOTTOM_BAND_RATIO),
+		1
+	)
+	var band_start_y := maxi(
+		painted_bounds.position.y,
+		painted_bounds.end.y - band_height
+	)
+	var right_x := -1
+	var bottom_y := -1
+	for y in range(band_start_y, painted_bounds.end.y):
+		for x in range(painted_bounds.position.x, painted_bounds.end.x):
+			if image.get_pixel(x, y).a <= FOUNDATION_ALPHA_THRESHOLD:
+				continue
+			right_x = maxi(right_x, x)
+			bottom_y = maxi(bottom_y, y)
+	if right_x < 0 or bottom_y < 0:
+		return fallback
+	var u := float(right_x) / float(maxi(image.get_width() - 1, 1))
+	var v := float(bottom_y) / float(maxi(image.get_height() - 1, 1))
+	return Vector2(
+		(u - 0.5) * visual_size.x,
+		(1.0 - v) * visual_size.y + hammer_height * HAMMER_HEAD_CENTER_LIFT_RATIO
+	)
+
+
+func configure(visual_size: Vector2, construction_texture: Texture2D = null) -> void:
 	_ensure_nodes()
 	var pivot := get_node("HammerPivot") as Node3D
 	var hammer_sprite := pivot.get_node("HammerSprite") as Sprite3D
@@ -65,7 +116,11 @@ func configure(visual_size: Vector2) -> void:
 	if _hammer_ready:
 		hammer_sprite.pixel_size = hammer_height / float(hammer_texture.get_height())
 		hammer_sprite.position = Vector3.ZERO
-		var screen_offset := hammer_screen_offset_for(visual_size, hammer_height)
+		var screen_offset := hammer_screen_offset_for(
+			visual_size,
+			hammer_height,
+			construction_texture
+		)
 		hammer_sprite.extra_cull_margin = screen_offset.length() + hammer_height
 		var hammer_material := ShaderMaterial.new()
 		hammer_material.shader = hammer_shader

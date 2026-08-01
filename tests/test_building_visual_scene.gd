@@ -131,17 +131,10 @@ func _run() -> void:
 				quit(1)
 				return
 			var screen_offset: Vector2 = hammer_material.get_shader_parameter("screen_offset")
-			var expected_lever := hammer_height * 0.72
-			var expected_head_from_pivot := Vector2(
-				-sin(ConstructionFeedback.IMPACT_ANGLE) * expected_lever,
-				cos(ConstructionFeedback.IMPACT_ANGLE) * expected_lever
-			)
-			var expected_screen_offset := (
-				Vector2(
-					building.data.visual_size.x * 0.34,
-					building.data.visual_size.y * 0.10
-				)
-				- expected_head_from_pivot
+			var expected_screen_offset := ConstructionFeedback.hammer_screen_offset_for(
+				building.data.visual_size,
+				hammer_height,
+				construction_layer.texture
 			)
 			if (
 				not screen_offset.is_equal_approx(expected_screen_offset)

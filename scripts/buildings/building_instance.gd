@@ -571,6 +571,8 @@ func _apply_construction_stage(play_effect: bool) -> void:
 		if front.visible:
 			_fade_in_geometry(front)
 
+	var feedback := get_node("ConstructionFeedback") as ConstructionFeedback
+	feedback.configure(data.visual_size, construction_layer.texture)
 	_sync_construction_feedback()
 	_apply_physics_state()
 	if play_effect:

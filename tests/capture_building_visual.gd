@@ -3,6 +3,7 @@ extends SceneTree
 const OUTPUT_PATH := "res://.godot/villa-building-system-verification.png"
 const CLOSEUP_OUTPUT_PATH := "res://.godot/villa-building-construction-closeup.png"
 const ROTATED_CLOSEUP_OUTPUT_PATH := "res://.godot/villa-building-construction-rotated-closeup.png"
+const WINDMILL_CLOSEUP_OUTPUT_PATH := "res://.godot/villa-building-construction-windmill-closeup.png"
 
 
 func _init() -> void:
@@ -53,6 +54,37 @@ func _capture() -> void:
 	await RenderingServer.frame_post_draw
 	var rotated_closeup := root.get_texture().get_image()
 	if not _save_capture(rotated_closeup, ROTATED_CLOSEUP_OUTPUT_PATH):
+		quit(1)
+		return
+
+	feedback.visible = false
+	var building_system := instance.get_node("BuildingSystem") as BuildingSystem
+	var windmill: BuildingInstance
+	for building in building_system.get_all_buildings():
+		if building is BuildingInstance and building.building_id == "windmill":
+			windmill = building
+			break
+	if windmill == null:
+		push_error("building verification capture has no windmill gallery entry")
+		quit(1)
+		return
+	windmill.start_construction()
+	windmill.advance_construction_stage()
+	windmill.set_process(false)
+	var windmill_feedback := windmill.get_node("ConstructionFeedback") as ConstructionFeedback
+	windmill_feedback.set("_phase", 0.48)
+	windmill_feedback.advance_animation(0.0001)
+	var windmill_focus := (
+		windmill.global_position + Vector3(0.0, windmill.data.visual_size.y * 0.45, 0.0)
+	)
+	camera.size = 4.2
+	camera.position = windmill_focus + Vector3(5.0, 5.8, 5.0)
+	camera.look_at(windmill_focus)
+	for _frame in 5:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	var windmill_closeup := root.get_texture().get_image()
+	if not _save_capture(windmill_closeup, WINDMILL_CLOSEUP_OUTPUT_PATH):
 		quit(1)
 		return
 	quit(0)

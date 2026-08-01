@@ -14,6 +14,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var game_data = GameDataScript.new()
 	var barn = BuildingDataScript.from_dictionary(game_data.get_building("barn"))
+	var feedback_hammer_height := clampf(
+		minf(barn.visual_size.x, barn.visual_size.y) * 0.32,
+		0.38,
+		0.72
+	)
 	var instance = (load(barn.scene_path) as PackedScene).instantiate() as BuildingInstance
 	tree.root.add_child(instance)
 	instance.configure(barn, 4, 5, [])
@@ -43,6 +48,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var progress_disk := instance.get_node_or_null(
 		"ConstructionFeedback/Progress"
 	) as Sprite3D
+	var construction_sprite := instance.get_node("VisualRoot/ConstructionLayer") as Sprite3D
+	var foundation_hammer_offset := Vector2.ZERO
 	assertions.truthy(feedback != null, "construction creates independent feedback component")
 	assertions.truthy(
 		hammer != null and hammer_sprite != null,
@@ -60,6 +67,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			not instance._visual_geometry().has(progress_disk),
 			"progress remains outside building visual tint and occlusion"
 		)
+		var foundation_material := hammer_sprite.material_override as ShaderMaterial
+		assertions.truthy(foundation_material != null, "foundation configures hammer material")
+		if foundation_material != null:
+			foundation_hammer_offset = foundation_material.get_shader_parameter("screen_offset")
+			var expected_foundation_offset := ConstructionFeedback.hammer_screen_offset_for(
+				barn.visual_size,
+				feedback_hammer_height,
+				construction_sprite.texture
+			)
+			assertions.near(
+				foundation_hammer_offset.distance_to(expected_foundation_offset),
+				0.0,
+				0.001,
+				"foundation stage syncs its painted alpha contact to feedback"
+			)
 		var starting_rotation := hammer.rotation.z
 		feedback.advance_animation(0.43)
 		assertions.truthy(
@@ -113,7 +135,26 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			)
 	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "frame enables camera occlusion")
 	assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "frame keeps interaction disabled")
-	var construction_sprite := instance.get_node("VisualRoot/ConstructionLayer") as Sprite3D
+	if hammer_sprite != null:
+		var frame_material := hammer_sprite.material_override as ShaderMaterial
+		assertions.truthy(frame_material != null, "frame stage keeps hammer material")
+		if frame_material != null:
+			var frame_hammer_offset: Vector2 = frame_material.get_shader_parameter("screen_offset")
+			var expected_frame_offset := ConstructionFeedback.hammer_screen_offset_for(
+				barn.visual_size,
+				feedback_hammer_height,
+				construction_sprite.texture
+			)
+			assertions.near(
+				frame_hammer_offset.distance_to(expected_frame_offset),
+				0.0,
+				0.001,
+				"frame stage recomputes hammer offset from its current texture"
+			)
+			assertions.truthy(
+				frame_hammer_offset.distance_to(foundation_hammer_offset) > 0.001,
+				"stage change updates hammer offset when painted bounds change"
+			)
 	instance.set_camera_occluded(true)
 	instance._process(1.0)
 	assertions.near(construction_sprite.modulate.a, 0.3, 0.001, "camera occlusion fades construction art")
