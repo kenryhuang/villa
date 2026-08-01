@@ -107,14 +107,45 @@ func _run() -> void:
 				return
 			var feedback := building.get_node("ConstructionFeedback") as ConstructionFeedback
 			var hammer := feedback.get_node("HammerPivot") as Node3D
+			var hammer_sprite := hammer.get_node("HammerSprite") as Sprite3D
 			var progress := feedback.get_node("Progress") as Sprite3D
 			if not feedback.visible:
 				push_error("frame construction demo must show strike feedback")
 				instance.free()
 				quit(1)
 				return
-			if hammer.position.y >= building.data.visual_size.y * 0.35:
-				push_error("construction hammer pivot must sit at the building base")
+			var hammer_height := clampf(
+				minf(building.data.visual_size.x, building.data.visual_size.y) * 0.32,
+				0.38,
+				0.72
+			)
+			if (
+				not is_zero_approx(hammer.position.x)
+				or not is_equal_approx(hammer.position.y, hammer_height * 0.22)
+				or not is_zero_approx(hammer.position.z)
+			):
+				push_error("construction hammer pivot must stay at its configured foundation anchor")
+				instance.free()
+				quit(1)
+				return
+			var hammer_material := hammer_sprite.material_override as ShaderMaterial
+			if hammer_material == null or hammer_material.shader == null:
+				push_error("construction hammer must use its screen-space offset shader material")
+				instance.free()
+				quit(1)
+				return
+			var screen_offset: Vector2 = hammer_material.get_shader_parameter("screen_offset")
+			if (
+				screen_offset.x <= 0.0
+				or not is_equal_approx(screen_offset.x, building.data.visual_size.x * 0.30)
+				or not is_zero_approx(screen_offset.y)
+			):
+				push_error("construction hammer screen offset must place it right of the foundation anchor")
+				instance.free()
+				quit(1)
+				return
+			if hammer_sprite.extra_cull_margin < screen_offset.length() + hammer_height:
+				push_error("construction hammer cull margin must cover its screen offset and height")
 				instance.free()
 				quit(1)
 				return

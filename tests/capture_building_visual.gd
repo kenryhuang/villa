@@ -2,6 +2,7 @@ extends SceneTree
 
 const OUTPUT_PATH := "res://.godot/villa-building-system-verification.png"
 const CLOSEUP_OUTPUT_PATH := "res://.godot/villa-building-construction-closeup.png"
+const ROTATED_CLOSEUP_OUTPUT_PATH := "res://.godot/villa-building-construction-rotated-closeup.png"
 
 
 func _init() -> void:
@@ -42,6 +43,16 @@ func _capture() -> void:
 	await RenderingServer.frame_post_draw
 	var closeup := root.get_texture().get_image()
 	if not _save_capture(closeup, CLOSEUP_OUTPUT_PATH):
+		quit(1)
+		return
+
+	camera.position = focus + Vector3(-5.0, 5.8, 5.0)
+	camera.look_at(focus)
+	for _frame in 5:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	var rotated_closeup := root.get_texture().get_image()
+	if not _save_capture(rotated_closeup, ROTATED_CLOSEUP_OUTPUT_PATH):
 		quit(1)
 		return
 	quit(0)
