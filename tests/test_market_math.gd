@@ -6,6 +6,8 @@ const MarketMath = preload("res://scripts/shared/market_math.gd")
 func run(assertions: TestAssert) -> void:
 	_test_target_price_limits(assertions)
 	_test_smooth_price_daily_caps(assertions)
+	_test_smooth_price_low_value_movement(assertions)
+	_test_smooth_price_normalizes_out_of_bounds_current(assertions)
 	_test_quote_spread_and_slippage(assertions)
 	_test_safe_boundaries(assertions)
 	_test_deterministic_results(assertions)
@@ -27,6 +29,21 @@ func _test_target_price_limits(assertions: TestAssert) -> void:
 func _test_smooth_price_daily_caps(assertions: TestAssert) -> void:
 	assertions.equal(MarketMath.smooth_price(100, 250, 100), 115, "smoothing limits a daily rise")
 	assertions.equal(MarketMath.smooth_price(100, 50, 100), 85, "smoothing limits a daily fall")
+
+
+func _test_smooth_price_low_value_movement(assertions: TestAssert) -> void:
+	assertions.equal(MarketMath.smooth_price(3, 8, 3), 4, "low price advances toward an upward target")
+	assertions.equal(MarketMath.smooth_price(3, 1, 3), 2, "low price falls toward a downward target")
+	assertions.equal(MarketMath.smooth_price(2, 5, 2), 3, "base two price advances by one")
+	var price := 3
+	for day in range(4):
+		price = MarketMath.smooth_price(price, 7, 3)
+	assertions.equal(price, 7, "repeated low-price smoothing reaches its target")
+
+
+func _test_smooth_price_normalizes_out_of_bounds_current(assertions: TestAssert) -> void:
+	assertions.equal(MarketMath.smooth_price(20, 2, 3), 6, "above-ceiling current normalizes before falling")
+	assertions.equal(MarketMath.smooth_price(0, 7, 3), 3, "below-floor current normalizes before rising")
 
 
 func _test_quote_spread_and_slippage(assertions: TestAssert) -> void:

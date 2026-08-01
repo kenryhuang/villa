@@ -21,11 +21,16 @@ static func target_price(
 
 
 static func smooth_price(current: int, target: int, base: int) -> int:
-	return clampi(
-		target,
-		maxi(ceili(base * 0.5), ceili(float(current * 85) / 100.0)),
-		mini(floori(base * 2.5), floori(float(current * 115) / 100.0))
-	)
+	var global_min := ceili(base * 0.5)
+	var global_max := floori(base * 2.5)
+	var normalized_current := clampi(current, global_min, global_max)
+	var daily_lower := maxi(global_min, ceili(float(normalized_current * 85) / 100.0))
+	var daily_upper := mini(global_max, floori(float(normalized_current * 115) / 100.0))
+	if target > normalized_current:
+		daily_upper = maxi(daily_upper, mini(global_max, normalized_current + 1))
+	elif target < normalized_current:
+		daily_lower = mini(daily_lower, maxi(global_min, normalized_current - 1))
+	return clampi(target, daily_lower, daily_upper)
 
 
 static func quote_total(mid: int, quantity: int, liquidity: int, is_buy: bool) -> int:
