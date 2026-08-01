@@ -6,18 +6,33 @@ const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 
 var save_directory := SAVE_DIR
 var current_slot := 0
-var _event_bus
+var _market_system: Variant
+var _daily_simulation_system: Variant
+var _season_system: Variant
 
 
-func _ready() -> void:
-	_event_bus = get_node_or_null("/root/EventBus")
-
-	# 连接自动存档
-	if _event_bus:
-		_event_bus.day_changed.connect(_on_day_changed)
+func configure_economy(
+	market_system: Variant,
+	daily_simulation_system: Variant,
+	season_system: Variant = null
+) -> bool:
+	if not _has_methods(market_system, ["configure", "to_dict", "from_dict"]):
+		return false
+	if not _has_property(daily_simulation_system, "last_simulated_day"):
+		return false
+	if season_system != null and not _has_properties(
+		season_system,
+		["current_season", "current_day", "total_days", "hour", "minute"]
+	):
+		return false
+	_market_system = market_system
+	_daily_simulation_system = daily_simulation_system
+	_season_system = season_system
+	return true
 
 
 # ============================================================
@@ -60,7 +75,7 @@ func _gather_save_data() -> Dictionary:
 		}
 
 	# 季节/时间
-	var season_system = get_node_or_null("/root/SeasonSystem")
+	var season_system = _get_season_system()
 	if season_system:
 		data["season"] = season_system.current_season
 		data["day"] = season_system.current_day
@@ -111,6 +126,12 @@ func _gather_save_data() -> Dictionary:
 	if exploration and exploration.fog_image:
 		data["fog_data"] = Marshalls.raw_to_base64(exploration.fog_image.save_png_to_buffer())
 
+	# 经济状态
+	if _has_valid_economy_configuration():
+		data["economy_version"] = 1
+		data["market"] = _market_system.call("to_dict")
+		data["last_simulated_day"] = int(_daily_simulation_system.get("last_simulated_day"))
+
 	# 存档元数据
 	data["meta"] = {
 		"save_time": Time.get_datetime_string_from_system(),
@@ -149,13 +170,17 @@ func load_game(slot: int = 0) -> bool:
 		push_error("Invalid save data format")
 		return false
 
-	_apply_save_data(data)
+	if not _apply_save_data(data):
+		return false
 
 	print("Game loaded from slot %d" % slot)
 	return true
 
 
-func _apply_save_data(data: Dictionary) -> void:
+func _apply_save_data(data: Dictionary) -> bool:
+	if not _validate_economy_save_data(data):
+		return false
+
 	# 游戏状态
 	var game_state = get_node_or_null("/root/GameState")
 	if game_state and data.has("gold"):
@@ -168,7 +193,7 @@ func _apply_save_data(data: Dictionary) -> void:
 			game_state.player_state.exp = p.get("exp", 0)
 
 	# 季节/时间
-	var season_system = get_node_or_null("/root/SeasonSystem")
+	var season_system = _get_season_system()
 	if season_system and data.has("season"):
 		season_system.current_season = data.season
 		season_system.current_day = data.get("day", 1)
@@ -219,6 +244,9 @@ func _apply_save_data(data: Dictionary) -> void:
 		if loaded_image.load_png_from_buffer(fog_bytes) == OK:
 			exploration.fog_image = loaded_image
 			exploration.fog_texture = ImageTexture.create_from_image(loaded_image)
+
+	_apply_economy_save_data(data)
+	return true
 
 
 # ============================================================
@@ -271,10 +299,6 @@ func _save_path(slot: int) -> String:
 	return save_directory.path_join(SAVE_PREFIX + str(slot) + SAVE_EXT)
 
 
-func _on_day_changed(_total_day: int) -> void:
-	save_game(current_slot)
-
-
 func _get_grid_system() -> Node:
 	if get_tree() == null:
 		return null
@@ -301,3 +325,88 @@ func _serialize_buildings(building_system: Node) -> Array[Dictionary]:
 		if building != null and building.has_method("to_dict"):
 			records.append(building.to_dict())
 	return records
+
+
+func _validate_economy_save_data(data: Dictionary) -> bool:
+	if not data.has("economy_version"):
+		return not data.has("market") and not data.has("last_simulated_day")
+	if not _is_integer_number(data.get("economy_version")) or int(data["economy_version"]) != 1:
+		return false
+	if not _has_valid_economy_configuration():
+		return false
+	if not data.get("market", null) is Dictionary:
+		return false
+	if (
+		not _is_integer_number(data.get("last_simulated_day"))
+		or int(data["last_simulated_day"]) < 0
+	):
+		return false
+	var validation_market := MarketSystemScript.new()
+	var valid := validation_market.from_dict(data["market"])
+	if valid:
+		valid = validation_market.last_settled_day == int(data["last_simulated_day"])
+	validation_market.free()
+	return valid
+
+
+func _apply_economy_save_data(data: Dictionary) -> void:
+	if not _has_valid_economy_configuration():
+		return
+	if data.has("economy_version"):
+		_market_system.call("from_dict", data["market"])
+		_daily_simulation_system.set("last_simulated_day", int(data["last_simulated_day"]))
+		return
+	var loaded_day := maxi(int(data.get("total_days", 1)), 0)
+	_market_system.call("configure", GameDataScript.get_market_items())
+	_market_system.set("last_settled_day", loaded_day)
+	_daily_simulation_system.set("last_simulated_day", loaded_day)
+
+
+func _has_valid_economy_configuration() -> bool:
+	return (
+		_market_system != null
+		and is_instance_valid(_market_system)
+		and _daily_simulation_system != null
+		and is_instance_valid(_daily_simulation_system)
+		and _has_methods(_market_system, ["configure", "to_dict", "from_dict"])
+		and _has_property(_daily_simulation_system, "last_simulated_day")
+	)
+
+
+func _has_methods(target: Variant, methods: Array[String]) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	for method_name in methods:
+		if not target.has_method(method_name):
+			return false
+	return true
+
+
+func _has_property(target: Variant, property_name: String) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	for property in target.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
+
+
+func _has_properties(target: Variant, property_names: Array[String]) -> bool:
+	for property_name in property_names:
+		if not _has_property(target, property_name):
+			return false
+	return true
+
+
+func _get_season_system() -> Variant:
+	if _season_system != null and is_instance_valid(_season_system):
+		return _season_system
+	return get_node_or_null("/root/SeasonSystem")
+
+
+func _is_integer_number(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+	)

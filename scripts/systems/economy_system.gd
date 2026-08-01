@@ -32,9 +32,6 @@ func configure(inventory: InventorySystem, wallet: Node, market: Node = null) ->
 	)
 	if not _is_configured:
 		return false
-	# 连接每日事件
-	if _event_bus:
-		_event_bus.day_changed.connect(_on_day_changed)
 	return true
 
 
@@ -377,8 +374,7 @@ func spend_resources(cost_dict: Dictionary) -> bool:
 # 事件处理
 # ============================================================
 
-func _on_day_changed(_total_day: int) -> void:
-	# 订单倒计时
+func advance_order_deadlines(_day: int) -> void:
 	var i = orders.size() - 1
 	while i >= 0:
 		orders[i].days_remaining -= 1
@@ -386,5 +382,6 @@ func _on_day_changed(_total_day: int) -> void:
 			orders.remove_at(i)
 		i -= 1
 
-	# 生成新订单
+
+func generate_demand_orders(_day: int) -> void:
 	generate_daily_orders()

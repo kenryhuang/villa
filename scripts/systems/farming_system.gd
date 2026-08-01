@@ -20,14 +20,10 @@ static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
 func configure(gs, ss, gs_state) -> bool:
 	if gs == null:
 		return false
-	if _event_bus and _event_bus.day_changed.is_connected(on_day_changed):
-		_event_bus.day_changed.disconnect(on_day_changed)
 	grid_system = gs
 	season_system = ss
 	game_state = gs_state
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
-	if _event_bus and not _event_bus.day_changed.is_connected(on_day_changed):
-		_event_bus.day_changed.connect(on_day_changed)
 	return true
 
 

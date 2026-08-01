@@ -6,6 +6,9 @@ extends Node3D
 const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
 const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn")
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
+const DailySimulationSystemScript := preload(
+	"res://scripts/systems/daily_simulation_system.gd"
+)
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -32,6 +35,8 @@ var grid_system: GridSystem
 var farming_system: FarmingSystem
 var season_system: SeasonSystem
 var economy_system: EconomySystem
+var market_system: MarketSystem
+var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var building_system: BuildingSystem
 var tool_system: ToolSystem
@@ -92,9 +97,17 @@ func _initialize_systems() -> void:
 	season_system.name = "SeasonSystem"
 	add_child(season_system)
 
+	market_system = MarketSystem.new()
+	market_system.name = "MarketSystem"
+	add_child(market_system)
+
 	economy_system = EconomySystem.new()
 	economy_system.name = "EconomySystem"
 	add_child(economy_system)
+
+	daily_simulation_system = DailySimulationSystemScript.new()
+	daily_simulation_system.name = "DailySimulationSystem"
+	add_child(daily_simulation_system)
 
 	inventory_system = InventorySystem.new()
 	inventory_system.name = "InventorySystem"
@@ -144,8 +157,33 @@ func _connect_systems() -> void:
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))
 
-	# EconomySystem 依赖 InventorySystem + GameState 钱包
-	economy_system.configure(inventory_system, get_node_or_null("/root/GameState"))
+	# MarketSystem 使用静态市场目录创建运行时库存
+	var game_data = get_node_or_null("/root/GameData")
+	if game_data:
+		market_system.configure(game_data.get_market_items())
+
+	# EconomySystem 依赖 InventorySystem + GameState 钱包 + MarketSystem
+	economy_system.configure(
+		inventory_system,
+		get_node_or_null("/root/GameState"),
+		market_system
+	)
+
+	# SaveManager 与每日协调器共享同一份市场状态
+	if save_manager.has_method("configure_economy"):
+		save_manager.configure_economy(
+			market_system,
+			daily_simulation_system,
+			season_system
+		)
+	daily_simulation_system.configure(
+		null,
+		farming_system,
+		null,
+		economy_system,
+		market_system,
+		save_manager
+	)
 
 	# BuildingSystem 依赖 GridSystem + EconomySystem
 	building_system.configure(grid_system, economy_system, buildings_container)
