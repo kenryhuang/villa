@@ -115,6 +115,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				0.001,
 				"hammer screen offset does not lift the world-space foundation anchor"
 			)
+			assertions.near(
+				hammer_sprite.extra_cull_margin,
+				screen_offset.length() + 0.72,
+				0.001,
+				"hammer cull margin covers its camera-plane offset and rotated sprite radius"
+			)
 	var fixed_pivot := pivot.position
 	feedback.advance_animation(0.0)
 	assertions.near(pivot.rotation.z, deg_to_rad(25.0), 0.001, "zero delta leaves animation phase unchanged")
@@ -136,9 +142,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	feedback.advance_animation(0.12)
 	assertions.equal(pivot.position, fixed_pivot, "hammer handle end remains the fixed pivot")
-	assertions.truthy(
-		pivot.rotation.z > deg_to_rad(25.0),
-		"strike rotates the head down toward the base"
+	assertions.near(
+		pivot.rotation.z,
+		FeedbackScript.strike_angle_for_phase(0.45),
+		0.001,
+		"0.27 seconds reaches the exact non-boundary strike angle at phase 0.45"
 	)
 	if hammer_material != null:
 		assertions.near(

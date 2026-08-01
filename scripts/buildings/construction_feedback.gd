@@ -49,12 +49,14 @@ func configure(visual_size: Vector2) -> void:
 	if _hammer_ready:
 		hammer_sprite.pixel_size = hammer_height / float(hammer_texture.get_height())
 		hammer_sprite.position = Vector3.ZERO
+		var screen_offset := Vector2(visual_size.x * 0.30, 0.0)
+		hammer_sprite.extra_cull_margin = screen_offset.length() + hammer_height
 		var hammer_material := ShaderMaterial.new()
 		hammer_material.shader = hammer_shader
 		hammer_material.set_shader_parameter("albedo_texture", hammer_texture)
 		hammer_material.set_shader_parameter("sprite_height", hammer_height)
 		hammer_material.set_shader_parameter("pivot_uv", _painted_hammer_pivot_uv(hammer_texture))
-		hammer_material.set_shader_parameter("screen_offset", Vector2(visual_size.x * 0.30, 0.0))
+		hammer_material.set_shader_parameter("screen_offset", screen_offset)
 		hammer_material.set_shader_parameter("strike_angle", pivot.rotation.z)
 		hammer_sprite.material_override = hammer_material
 	else:

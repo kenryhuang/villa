@@ -84,6 +84,10 @@ func run(assertions: TestAssert) -> void:
 				hammer_shader.code.contains("pivot_uv"),
 				"construction hammer shader supports the painted handle endpoint"
 			)
+			assertions.truthy(
+				hammer_shader.code.contains("VERTEX.xy += screen_offset"),
+				"construction hammer applies screen offset after pivot rotation"
+			)
 
 
 func _validate_texture(path: String, assertions: TestAssert) -> void:
