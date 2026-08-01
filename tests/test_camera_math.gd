@@ -39,6 +39,7 @@ func run(assertions) -> void:
 	var edge_direction: Vector3 = -rig.camera.global_basis.z
 	assertions.near(center_direction.distance_to(edge_direction), 0.0, 0.0001, "camera translation does not rotate view")
 	var initial_yaw: float = rig.yaw
+	assertions.near(initial_yaw, -PI / 4.0, 0.0001, "camera rig starts at the fixed default direction")
 	Input.action_press("camera_right")
 	rig._process(0.25)
 	Input.action_release("camera_right")
@@ -71,6 +72,21 @@ func run(assertions) -> void:
 		var released_offset: Vector3 = rig.get("pan_offset")
 		rig._unhandled_input(_motion_event(Vector2(20.0, 20.0)))
 		assertions.near((rig.get("pan_offset") as Vector3).distance_to(released_offset), 0.0, 0.0001, "released middle drag no longer pans the map")
+
+		rig.set("pan_offset", Vector3.ZERO)
+		rig._unhandled_input(_middle_button_event(true))
+		if rig.has_method("_input"):
+			rig.call("_input", _middle_button_event(false))
+		var ui_release_offset: Vector3 = rig.get("pan_offset")
+		rig._unhandled_input(_motion_event(Vector2(30.0, -15.0)))
+		assertions.equal(rig.dragging, false, "middle release observed before UI handling cancels drag")
+		assertions.near((rig.get("pan_offset") as Vector3).distance_to(ui_release_offset), 0.0, 0.0001, "motion after UI-consumed middle release does not pan")
+		rig._unhandled_input(_middle_button_event(false))
+
+		rig._unhandled_input(_middle_button_event(true))
+		rig.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+		assertions.equal(rig.dragging, false, "application focus out cancels camera drag")
+		rig._unhandled_input(_middle_button_event(false))
 
 	if _has_property(rig, &"pan_offset"):
 		var follow_target := Node3D.new()

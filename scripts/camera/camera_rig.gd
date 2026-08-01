@@ -56,6 +56,14 @@ func _process(delta: float) -> void:
 	_apply_camera_transform()
 	update_occlusion()
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE and not event.pressed:
+		dragging = false
+
+func _notification(what: int) -> void:
+	if what == Node.NOTIFICATION_APPLICATION_FOCUS_OUT:
+		dragging = false
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
