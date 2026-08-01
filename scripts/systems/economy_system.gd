@@ -5,10 +5,11 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
-var gold: int = 100
 var orders: Array[Dictionary] = []
 
 var _inventory_ref: InventorySystem
+var _wallet_ref: Node
+var _market_ref: Node
 var _event_bus
 var _affinity: Dictionary = {}
 
@@ -17,11 +18,18 @@ func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 
 
-func configure(inventory: InventorySystem) -> void:
+func configure(inventory: InventorySystem, wallet: Node, market: Node = null) -> bool:
+	if inventory == null or wallet == null:
+		return false
+	if not wallet.has_method("add_gold") or not wallet.has_method("spend_gold"):
+		return false
 	_inventory_ref = inventory
+	_wallet_ref = wallet
+	_market_ref = market
 	# 连接每日事件
 	if _event_bus:
 		_event_bus.day_changed.connect(_on_day_changed)
+	return true
 
 
 # ============================================================
@@ -29,21 +37,15 @@ func configure(inventory: InventorySystem) -> void:
 # ============================================================
 
 func add_gold(amount: int) -> bool:
-	if amount <= 0:
+	if _wallet_ref == null:
 		return false
-	gold += amount
-	if _event_bus:
-		_event_bus.gold_changed.emit(gold)
-	return true
+	return bool(_wallet_ref.call("add_gold", amount))
 
 
 func spend_gold(amount: int) -> bool:
-	if amount <= 0 or gold < amount:
+	if _wallet_ref == null:
 		return false
-	gold -= amount
-	if _event_bus:
-		_event_bus.gold_changed.emit(gold)
-	return true
+	return bool(_wallet_ref.call("spend_gold", amount))
 
 
 # ============================================================

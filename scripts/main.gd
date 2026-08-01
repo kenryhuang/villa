@@ -144,8 +144,8 @@ func _connect_systems() -> void:
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))
 
-	# EconomySystem 依赖 InventorySystem
-	economy_system.configure(inventory_system)
+	# EconomySystem 依赖 InventorySystem + GameState 钱包
+	economy_system.configure(inventory_system, get_node_or_null("/root/GameState"))
 
 	# BuildingSystem 依赖 GridSystem + EconomySystem
 	building_system.configure(grid_system, economy_system, buildings_container)

@@ -7,6 +7,24 @@ const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd
 const InventoryUIScript = preload("res://scripts/ui/inventory_ui.gd")
 
 
+class WalletDouble:
+	extends Node
+
+	var gold := 100
+
+	func add_gold(amount: int) -> bool:
+		if amount <= 0:
+			return false
+		gold += amount
+		return true
+
+	func spend_gold(amount: int) -> bool:
+		if amount <= 0 or amount > gold:
+			return false
+		gold -= amount
+		return true
+
+
 func run(assertions: TestAssert) -> void:
 	_test_game_data(assertions)
 	_test_inventory(assertions)
@@ -87,13 +105,14 @@ func _test_inventory(assertions: TestAssert) -> void:
 
 func _test_economy(assertions: TestAssert) -> void:
 	var inventory = InventorySystemScript.new()
+	var wallet = WalletDouble.new()
 	var economy = EconomySystemScript.new()
-	economy.configure(inventory)
+	assertions.truthy(economy.configure(inventory, wallet), "economy accepts a wallet")
 	assertions.truthy(economy.spend_gold(30), "economy can spend available gold")
-	assertions.equal(economy.gold, 70, "spending changes gold")
+	assertions.equal(wallet.gold, 70, "spending changes wallet gold")
 	assertions.truthy(not economy.spend_gold(71), "economy rejects overspending")
 	assertions.truthy(economy.add_gold(10), "economy adds positive gold")
-	assertions.equal(economy.gold, 80, "adding changes gold")
+	assertions.equal(wallet.gold, 80, "adding changes wallet gold")
 	assertions.truthy(not economy.add_gold(-1), "economy rejects negative gold")
 
 	assertions.truthy(inventory.add_item("wood", 100), "resources can be prepared")
@@ -109,9 +128,9 @@ func _test_economy(assertions: TestAssert) -> void:
 	var order: Dictionary = economy.orders[0]
 	assertions.equal(order.days_remaining, 3, "new order lasts three days")
 	assertions.truthy(inventory.add_item(order.item_id, order.quantity), "order items can be prepared")
-	var old_gold: int = economy.gold
+	var old_gold: int = wallet.gold
 	assertions.truthy(economy.complete_order(0), "complete order consumes inventory")
-	assertions.equal(economy.gold, old_gold + order.reward_gold, "order grants gold")
+	assertions.equal(wallet.gold, old_gold + order.reward_gold, "order grants gold")
 	assertions.equal(economy.get_affinity(order.villager_id), 10, "order grants ten affinity")
 
 
