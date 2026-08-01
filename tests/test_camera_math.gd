@@ -95,6 +95,12 @@ func run(assertions) -> void:
 	wheel_down.pressed = true
 	rig._unhandled_input(wheel_down)
 	assertions.near(rig.orthographic_size, CameraMath.clamp_size(original_size), 0.0001, "wheel down keeps the zoom step and clamp")
+	rig.orthographic_size = CameraMath.MIN_SIZE
+	rig._unhandled_input(wheel_up)
+	assertions.near(rig.orthographic_size, CameraMath.MIN_SIZE, 0.0001, "wheel up clamps at the minimum zoom")
+	rig.orthographic_size = CameraMath.MAX_SIZE
+	rig._unhandled_input(wheel_down)
+	assertions.near(rig.orthographic_size, CameraMath.MAX_SIZE, 0.0001, "wheel down clamps at the maximum zoom")
 	rig.free()
 
 	var tree_a = TreeInstanceScript.new()
