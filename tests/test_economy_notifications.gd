@@ -19,6 +19,11 @@ class FakeDailySimulation:
 	var last_simulated_day := 1
 
 
+class FakeSeason:
+	extends Node
+	var total_days := 0
+
+
 class FakeRouteTarget:
 	extends Node
 	var selected_id := ""
@@ -75,6 +80,7 @@ func run_core(assertions: TestAssert) -> void:
 
 func run_integration(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_real_clock_and_event_bus_connections(assertions, tree)
+	_test_contract_breach_occurrence_dedup(assertions, tree)
 	_test_save_manager_round_trip_without_replay(assertions, tree)
 	await _test_scene_toasts_center_and_hud(assertions, tree)
 	_test_main_four_way_routing(assertions)
@@ -164,6 +170,27 @@ func _test_read_and_strict_atomic_persistence(assertions: TestAssert) -> void:
 	assertions.equal(loaded.get_recent().size(), 3, "load never merges against persisted monotonic time")
 	loaded.free()
 	restored.free()
+	var unlock_source = NotificationSystemScript.new()
+	unlock_source.call("_on_service_unlocked", "recipe", "honey_cake")
+	var unlock_records := unlock_source.get_recent()
+	assertions.equal(unlock_records.size(), 1, "service unlock source creates one record")
+	if not unlock_records.is_empty():
+		assertions.equal(str(unlock_records[0].target_type), "", "service unlock persists no unsupported route type")
+		assertions.equal(str(unlock_records[0].target_id), "", "service unlock persists no unsupported route id")
+	var unlock_restored = NotificationSystemScript.new()
+	assertions.truthy(unlock_restored.from_dict(unlock_source.to_dict()), "targetless unlock record restores")
+	assertions.equal(str(unlock_restored.get_recent()[0].target_id), "", "targetless unlock stays targetless after load")
+	var upgraded_building := BuildingInstance.new()
+	upgraded_building.authored_building_id = "windmill"
+	upgraded_building.grid_x = 7
+	upgraded_building.grid_z = 8
+	unlock_source.call("_on_building_upgrade_changed", upgraded_building, "storage", 2)
+	var upgrade_record: Dictionary = unlock_source.get_recent()[0]
+	assertions.equal(str(upgrade_record.target_type), "building", "building upgrade keeps its supported route type")
+	assertions.equal(str(upgrade_record.target_id), "windmill:7:8", "building upgrade keeps its stable building route")
+	upgraded_building.free()
+	unlock_restored.free()
+	unlock_source.free()
 	system.free()
 
 
@@ -175,6 +202,8 @@ func _test_real_clock_and_event_bus_connections(assertions: TestAssert, tree: Sc
 	assertions.truthy(event_bus.has_signal("market_caravan_changed"), "EventBus exposes caravan notification source")
 	assertions.truthy(event_bus.has_signal("production_feed_shortage"), "EventBus exposes feed shortage source")
 	assertions.truthy(event_bus.has_signal("economy_notification_changed"), "EventBus exposes system-owned notification changes")
+	assertions.equal(_signal_argument_count(event_bus, "market_caravan_changed"), 5, "caravan signal carries id, item, quantity, day, and arrival state")
+	assertions.equal(_signal_argument_count(event_bus, "production_feed_shortage"), 4, "feed signal carries building, item, state, and day")
 
 	var market = MarketSystemScript.new()
 	assertions.truthy(market.configure([{
@@ -192,9 +221,6 @@ func _test_real_clock_and_event_bus_connections(assertions: TestAssert, tree: Sc
 	event_bus.emit_signal("market_stock_changed", "wood", 3)
 	event_bus.emit_signal("market_stock_changed", "wood", 8)
 	assertions.equal(system.get_recent().size(), 3, "shortage and recovery are distinct notifications")
-	event_bus.emit_signal("market_caravan_changed", "summer_caravan", true)
-	event_bus.emit_signal("production_feed_shortage", null, "grain")
-	assertions.equal(system.get_recent().size(), 5, "caravan and feed signals are subscribed")
 
 	var real_clock_system = NotificationSystemScript.new()
 	var real_id: String = real_clock_system.push("unlock", "解锁", "蓝图解锁", 4, "service", "barn")
@@ -203,6 +229,59 @@ func _test_real_clock_and_event_bus_connections(assertions: TestAssert, tree: Sc
 	real_clock_system.free()
 	system.free()
 	market.free()
+
+
+func _test_contract_breach_occurrence_dedup(assertions: TestAssert, tree: SceneTree) -> void:
+	var event_bus := tree.root.get_node("EventBus")
+	var economy = EconomySystemScript.new()
+	var season := FakeSeason.new()
+	var notifications = NotificationSystemScript.new()
+	tree.root.add_child(economy)
+	tree.root.add_child(season)
+	tree.root.add_child(notifications)
+	var contract_id := "lao_li:wood:1:6"
+	economy.set("_last_processed_day", 1)
+	var contracts: Array[Dictionary] = [{
+		"contract_id": contract_id,
+		"npc_id": "lao_li",
+		"item_id": "wood",
+		"quantity_per_day": 1,
+		"unit_price": 10,
+		"reward_gold": 10,
+		"start_day": 1,
+		"end_day": 6,
+		"delivered_days": [],
+		"breaches": 0,
+		"signed": true,
+		"completed": false,
+		"expired": false,
+	}]
+	economy.set("_contracts", contracts)
+	assertions.truthy(notifications.configure(event_bus, null, economy, season), "contract notification fixture configures")
+	season.total_days = 2
+	economy.advance_order_deadlines(2)
+	assertions.equal(notifications.get_recent().size(), 1, "first authoritative missed day creates one breach record")
+	notifications.call("_on_contract_updated", contract_id)
+	assertions.equal(notifications.get_recent().size(), 1, "repeated same-day breach callback creates no duplicate")
+	season.total_days = 3
+	economy.advance_order_deadlines(3)
+	var records := notifications.get_recent()
+	assertions.equal(records.size(), 2, "consecutive missed days create separate breach records")
+	if records.size() == 2:
+		assertions.equal(int(records[0].count), 1, "second breach record is not merged")
+		assertions.equal(int(records[1].count), 1, "first breach record remains singular")
+		assertions.truthy(str(records[0].body).contains("2"), "breach record persists its occurrence count")
+	var saved := notifications.to_dict()
+	notifications.free()
+	var loaded = NotificationSystemScript.new()
+	tree.root.add_child(loaded)
+	assertions.truthy(loaded.configure(event_bus, null, economy, season), "loaded contract notification fixture configures")
+	assertions.truthy(loaded.from_dict(saved), "breach records restore")
+	loaded.call("_on_contract_updated", contract_id)
+	assertions.equal(loaded.get_recent().size(), 2, "load followed by replayed breach callback creates no record")
+	loaded.free()
+	season.free()
+	economy.free()
 
 
 func _test_save_manager_round_trip_without_replay(assertions: TestAssert, tree: SceneTree) -> void:
@@ -287,7 +366,21 @@ func _test_scene_toasts_center_and_hud(assertions: TestAssert, tree: SceneTree) 
 	assertions.equal(system.get_unread_count(), unread_before - 1, "target click marks read exactly once")
 	assertions.truthy(not ui.activate_notification(target_id), "already-read activation is idempotent")
 	assertions.equal(router.calls.size(), 1, "idempotent activation does not route twice")
-	system.push("unlock", "次日解锁", "次日记录", 3, "service", "day3_service", 33.0)
+	var no_target_id: String = system.push("unlock", "次日解锁", "次日记录", 3, "", "", 33.0)
+	var no_target_unread := system.get_unread_count()
+	assertions.truthy(ui.activate_notification(no_target_id), "targetless notification activates as a read action")
+	assertions.equal(router.calls.size(), 1, "targetless notification never invokes routing")
+	assertions.equal(system.get_unread_count(), no_target_unread - 1, "targetless click marks only its record read")
+	var upgrade_building := BuildingInstance.new()
+	upgrade_building.authored_building_id = "windmill"
+	upgrade_building.grid_x = 4
+	upgrade_building.grid_z = 5
+	system.call("_on_building_upgrade_changed", upgrade_building, "storage", 2)
+	var upgrade_notification_id := str(system.get_recent()[0].notification_id)
+	assertions.truthy(ui.activate_notification(upgrade_notification_id), "building upgrade notification activates its supported route")
+	assertions.equal(router.calls.size(), 2, "building upgrade invokes routing exactly once")
+	assertions.equal(router.calls[1], {"target_type": "building", "target_id": "windmill:4:5"}, "building upgrade routes to its stable building target")
+	upgrade_building.free()
 	ui.show_center()
 	assertions.truthy(ui.get_node("NotificationCenter").visible, "notification center can open")
 	assertions.equal(ui.get_center_record_count(), system.get_recent().size(), "center renders system snapshot without duplicate state")
@@ -367,3 +460,10 @@ func _test_main_four_way_routing(assertions: TestAssert) -> void:
 	building_system.free()
 	shop.free()
 	main.free()
+
+
+func _signal_argument_count(event_bus: Node, signal_name: String) -> int:
+	for definition in event_bus.get_signal_list():
+		if str(definition.get("name", "")) == signal_name:
+			return (definition.get("args", []) as Array).size()
+	return -1

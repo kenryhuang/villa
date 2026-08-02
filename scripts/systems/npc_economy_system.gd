@@ -29,6 +29,11 @@ var _item_definitions: Dictionary = {}
 var _essential_zero_streaks: Dictionary = {}
 var _demand_tags: Dictionary = {}
 var _is_configured := false
+var _event_bus: Node
+
+
+func _ready() -> void:
+	_event_bus = get_node_or_null("/root/EventBus")
 
 
 func configure(
@@ -106,7 +111,7 @@ func simulate_day(
 		_simulate_npc(_states[npc_id], _profiles[npc_id])
 		(_states[npc_id] as NpcEconomyState).last_simulated_day = total_day
 	_apply_population_demand(season_factors, event_factors)
-	_update_shortages_and_imports()
+	_update_shortages_and_imports(total_day)
 	last_simulated_day = total_day
 	return true
 
@@ -477,7 +482,7 @@ func _apply_population_demand(season_factors: Dictionary, event_factors: Diction
 		_demand_tags[group_id] = "%s（需求 %d）" % [str(profile.demand_tag), total_quantity]
 
 
-func _update_shortages_and_imports() -> void:
+func _update_shortages_and_imports(total_day: int) -> void:
 	for item_id_value in _essential_zero_streaks.keys():
 		var item_id := str(item_id_value)
 		if int(_market_system.call("get_stock", item_id)) > 0:
@@ -485,11 +490,11 @@ func _update_shortages_and_imports() -> void:
 			continue
 		var streak := int(_essential_zero_streaks[item_id]) + 1
 		_essential_zero_streaks[item_id] = streak
-		if streak >= IMPORT_DAY_THRESHOLD and _import_essential(item_id):
+		if streak >= IMPORT_DAY_THRESHOLD and _import_essential(item_id, total_day):
 			_essential_zero_streaks[item_id] = 0
 
 
-func _import_essential(item_id: String) -> bool:
+func _import_essential(item_id: String, total_day: int) -> bool:
 	var importer := _importer_state()
 	if importer == null:
 		return false
@@ -513,7 +518,17 @@ func _import_essential(item_id: String) -> bool:
 	_demand_tags["import:%s" % item_id] = "老李商队高价补货 %s ×%d（成本 %d）" % [
 		str(definition.get("name", item_id)), quantity, import_cost,
 	]
+	_emit_event("market_caravan_changed", [
+		"lao_li_emergency_import", item_id, quantity, total_day, true,
+	])
 	return true
+
+
+func _emit_event(signal_name: StringName, arguments: Array) -> void:
+	if _event_bus == null:
+		_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if _event_bus != null and _event_bus.has_signal(signal_name):
+		_event_bus.callv("emit_signal", [signal_name] + arguments)
 
 
 func _importer_state() -> NpcEconomyState:

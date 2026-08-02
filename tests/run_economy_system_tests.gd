@@ -37,7 +37,7 @@ func _run() -> void:
 	ProductionSystemTest.new().run(assertions, self)
 	BuildingEconomyEffectsTest.new().run(assertions, self)
 	ResourceGatheringTest.new().run(assertions, self)
-	NpcEconomySystemTest.new().run(assertions)
+	NpcEconomySystemTest.new().run(assertions, self)
 	EconomyOrdersTest.new().run(assertions, self)
 	EconomyProgressionTest.new().run(assertions, self)
 	ServicePanelTest.new().run(assertions, self)

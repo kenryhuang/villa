@@ -28,6 +28,8 @@ var _current_day := 0
 var maintenance_due_days: Dictionary = {}
 var speed_accumulators: Dictionary = {}
 var _active_maintenance_transactions: Dictionary = {}
+var _feed_shortage_active: Dictionary = {}
+var _passive_output_blocked: Dictionary = {}
 
 
 func _ready() -> void:
@@ -314,7 +316,12 @@ func begin_day(total_day: int) -> bool:
 		return false
 	if total_day == _current_day:
 		return true
+	var previous_day := _current_day
 	_current_day = total_day
+	for building in _valid_registered_buildings():
+		var due_day := get_maintenance_due_day(building)
+		if due_day > previous_day and due_day <= total_day:
+			_emit_event("production_maintenance_changed", [building, due_day])
 	_refresh_greenhouse_cells()
 	return true
 
@@ -325,6 +332,8 @@ func sync_daily_cursor(total_day: int) -> bool:
 	_last_daily_effects_day = total_day
 	_last_finished_outputs_day = total_day
 	_current_day = total_day
+	_feed_shortage_active.clear()
+	_passive_output_blocked.clear()
 	_refresh_greenhouse_cells()
 	return true
 
@@ -355,6 +364,8 @@ func unregister_building(building: BuildingInstance) -> void:
 		var key := building_key(building)
 		maintenance_due_days.erase(key)
 		speed_accumulators.erase(key)
+		_feed_shortage_active.erase(key)
+		_passive_output_blocked.erase(key)
 	_refresh_greenhouse_cells()
 
 
@@ -370,6 +381,8 @@ func register_existing_buildings() -> int:
 
 func rebuild_registered_buildings() -> int:
 	_registered_buildings.clear()
+	_feed_shortage_active.clear()
+	_passive_output_blocked.clear()
 	return register_existing_buildings()
 
 
@@ -397,9 +410,11 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 		return false
 	if not _registered_buildings.has(building):
 		return false
+	var previous_due_day := get_maintenance_due_day(building)
 	maintenance_due_days[building_key(building)] = due_day
 	_refresh_greenhouse_cells()
-	_emit_event("production_maintenance_changed", [building, due_day])
+	if due_day <= _current_day and (previous_due_day < 0 or previous_due_day > _current_day):
+		_emit_event("production_maintenance_changed", [building, due_day])
 	return true
 
 
@@ -556,6 +571,8 @@ func reset_maintenance(total_day: int = 0) -> bool:
 	_current_day = total_day
 	maintenance_due_days.clear()
 	speed_accumulators.clear()
+	_feed_shortage_active.clear()
+	_passive_output_blocked.clear()
 	return true
 
 
@@ -971,8 +988,13 @@ func _finish_passive_building(building: BuildingInstance, total_day: int) -> voi
 		output = passive_output_for(id, total_day, 0)
 	else:
 		output = _resource_output_for(building, total_day)
-	if output.is_empty() or not _can_store_passive_outputs(building, state, output):
+	if output.is_empty():
 		return
+	var passive_id := "passive:%s" % id
+	if not _can_store_passive_outputs(building, state, output):
+		_set_passive_output_blocked(building, passive_id, true)
+		return
+	_set_passive_output_blocked(building, passive_id, false)
 	var inputs_snapshot: Dictionary = state.inputs.duplicate(true)
 	var outputs_snapshot: Dictionary = state.outputs.duplicate(true)
 	if id == "chicken_coop":
@@ -980,16 +1002,53 @@ func _finish_passive_building(building: BuildingInstance, total_day: int) -> voi
 		var feed_item := str(config.get("feed_item", "animal_feed"))
 		var feed_count := int(config.get("feed_per_day", 1))
 		if feed_count <= 0 or not state.remove_input(feed_item, feed_count):
+			_set_feed_shortage(building, feed_item, true, total_day)
 			return
+		_set_feed_shortage(building, feed_item, false, total_day)
 	if not state.add_outputs(output):
 		state.inputs = inputs_snapshot
 		state.outputs = outputs_snapshot
+		_set_passive_output_blocked(building, passive_id, true)
 		return
 	if id == "chicken_coop":
 		var feed_item := str(_effect_config(building).get("feed_item", "animal_feed"))
 		_emit_event("production_input_changed", [building, feed_item, state.get_input_count(feed_item)])
 	for item_id in output:
 		_emit_event("production_output_changed", [building, str(item_id), state.get_output_count(str(item_id))])
+	_emit_event("production_job_completed", [building, passive_id, output.duplicate(true)])
+
+
+func _set_feed_shortage(
+	building: BuildingInstance,
+	item_id: String,
+	shortage: bool,
+	total_day: int
+) -> void:
+	var key := building_key(building)
+	var previous := bool(_feed_shortage_active.get(key, false))
+	if previous == shortage:
+		return
+	if shortage:
+		_feed_shortage_active[key] = true
+	else:
+		_feed_shortage_active.erase(key)
+	_emit_event("production_feed_shortage", [building, item_id, shortage, total_day])
+
+
+func _set_passive_output_blocked(
+	building: BuildingInstance,
+	passive_id: String,
+	blocked: bool
+) -> void:
+	var key := building_key(building)
+	var previous := bool(_passive_output_blocked.get(key, false))
+	if previous == blocked:
+		return
+	if blocked:
+		_passive_output_blocked[key] = true
+		_emit_event("production_output_blocked", [building, passive_id])
+	else:
+		_passive_output_blocked.erase(key)
 
 
 func _can_store_passive_outputs(

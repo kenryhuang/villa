@@ -91,6 +91,36 @@ class QuickMappingRecorder:
 		events.append({"quick_index": quick_index, "item_id": item_id})
 
 
+class ProductionEventRecorder:
+	extends RefCounted
+	var feed_changes: Array[Dictionary] = []
+	var completed: Array[Dictionary] = []
+	var blocked: Array[Dictionary] = []
+	var maintenance: Array[Dictionary] = []
+
+	func on_feed_shortage(
+		building: BuildingInstance,
+		item_id: String,
+		shortage: bool,
+		total_day: int
+	) -> void:
+		feed_changes.append({
+			"building": building,
+			"item_id": item_id,
+			"shortage": shortage,
+			"total_day": total_day,
+		})
+
+	func on_completed(building: BuildingInstance, recipe_id: String, outputs: Dictionary) -> void:
+		completed.append({"building": building, "recipe_id": recipe_id, "outputs": outputs.duplicate(true)})
+
+	func on_blocked(building: BuildingInstance, recipe_id: String) -> void:
+		blocked.append({"building": building, "recipe_id": recipe_id})
+
+	func on_maintenance(building: BuildingInstance, due_day: int) -> void:
+		maintenance.append({"building": building, "due_day": due_day})
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
@@ -104,6 +134,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_building_round_trip(assertions)
 	_test_building_system_restore(assertions, tree)
 	_test_clock(assertions, tree)
+	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
 
@@ -456,6 +487,84 @@ func _test_clock(assertions: TestAssert, tree: SceneTree) -> void:
 	production.apply_daily_effects(2)
 	production.finish_daily_outputs(2)
 	production.finish_daily_outputs(2)
+
+
+func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree) -> void:
+	var production := _production()
+	tree.root.add_child(production)
+	var event_bus := tree.root.get_node("EventBus")
+	var recorder := ProductionEventRecorder.new()
+	event_bus.production_feed_shortage.connect(recorder.on_feed_shortage)
+	event_bus.production_job_completed.connect(recorder.on_completed)
+	event_bus.production_output_blocked.connect(recorder.on_blocked)
+	event_bus.production_maintenance_changed.connect(recorder.on_maintenance)
+
+	var maintenance_building := _building("workbench")
+	maintenance_building.grid_x = 1
+	maintenance_building.grid_z = 1
+	assertions.truthy(production.register_building(maintenance_building), "maintenance fixture registers")
+	assertions.truthy(production.set_maintenance_due_day(maintenance_building, 2), "maintenance due day configures")
+	assertions.equal(recorder.maintenance.size(), 0, "future maintenance date is not announced early")
+	production.begin_day(1)
+	assertions.equal(recorder.maintenance.size(), 0, "maintenance stays quiet before due day")
+	production.begin_day(2)
+	assertions.equal(recorder.maintenance.size(), 1, "crossing the due day emits once")
+	production.begin_day(2)
+	assertions.equal(recorder.maintenance.size(), 1, "repeating the due day emits no duplicate")
+
+	var chicken := _building("chicken_coop")
+	chicken.grid_x = 2
+	chicken.grid_z = 2
+	var lumberyard := _building("lumberyard")
+	lumberyard.grid_x = 4
+	lumberyard.grid_z = 4
+	lumberyard.producer_state.outputs = {"wood": 9}
+	assertions.truthy(production.register_building(chicken), "chicken fixture registers")
+	assertions.truthy(production.register_building(lumberyard), "passive output fixture registers")
+
+	production.finish_daily_outputs(3)
+	production.finish_daily_outputs(4)
+	assertions.equal(recorder.feed_changes.size(), 1, "continuous feed shortage emits once")
+	if not recorder.feed_changes.is_empty():
+		assertions.equal(recorder.feed_changes[0].item_id, "animal_feed", "feed event keeps stable item id")
+		assertions.equal(recorder.feed_changes[0].shortage, true, "feed event marks shortage entry")
+		assertions.equal(recorder.feed_changes[0].total_day, 3, "feed event keeps transition day")
+	assertions.equal(recorder.blocked.size(), 1, "continuous passive-full state emits once")
+	if not recorder.blocked.is_empty():
+		assertions.equal(recorder.blocked[0].recipe_id, "passive:lumberyard", "passive-full event has stable source id")
+
+	var feed_inventory := _inventory()
+	feed_inventory.add_item("animal_feed", 1)
+	assertions.truthy(production.add_input(chicken, "animal_feed", 1, feed_inventory), "feeding uses real production transfer")
+	var output_inventory := _inventory()
+	assertions.truthy(production.collect_all(lumberyard, output_inventory), "collection clears passive-full state")
+	production.finish_daily_outputs(5)
+	production.finish_daily_outputs(6)
+	assertions.equal(recorder.feed_changes.size(), 3, "feed recovery and a later shortage are separate transitions")
+	if recorder.feed_changes.size() >= 3:
+		assertions.equal(recorder.feed_changes[1].shortage, false, "successful feeding emits recovery")
+		assertions.equal(recorder.feed_changes[2].shortage, true, "later missing feed emits a new shortage")
+		assertions.equal(recorder.feed_changes[2].total_day, 6, "later shortage keeps its new day")
+	production.finish_daily_outputs(7)
+	production.finish_daily_outputs(8)
+	assertions.equal(recorder.blocked.size(), 2, "passive-full recovery permits one future full transition")
+	var saw_chicken_completion := false
+	for event in recorder.completed:
+		if event.building == chicken and event.recipe_id == "passive:chicken_coop" and event.outputs == {"egg": 2}:
+			saw_chicken_completion = true
+	assertions.truthy(
+		saw_chicken_completion,
+		"successful passive animal output emits a completion event"
+	)
+	assertions.truthy(production.sync_daily_cursor(2), "load rewind resets the authoritative production cursor")
+	production.finish_daily_outputs(3)
+	assertions.equal(recorder.feed_changes.size(), 4, "load rewind clears stale feed-transition suppression")
+	assertions.equal(recorder.blocked.size(), 3, "load rewind clears stale passive-full suppression")
+
+	event_bus.production_feed_shortage.disconnect(recorder.on_feed_shortage)
+	event_bus.production_job_completed.disconnect(recorder.on_completed)
+	event_bus.production_output_blocked.disconnect(recorder.on_blocked)
+	event_bus.production_maintenance_changed.disconnect(recorder.on_maintenance)
 
 
 func _test_rollback_signals_are_atomic(assertions: TestAssert, tree: SceneTree) -> void:

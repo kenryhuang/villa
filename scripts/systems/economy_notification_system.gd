@@ -429,8 +429,19 @@ func _on_market_stock_changed(item_id: String, new_stock: int) -> void:
 	push(kind, "库存紧缺" if shortage else "库存恢复", "%s%s" % [_item_name(item_id), "进入紧缺" if shortage else "恢复正常"], _current_day(), "market_item", item_id)
 
 
-func _on_market_caravan_changed(caravan_id: String, arrived: bool) -> void:
-	push("caravan_arrived" if arrived else "caravan_departed", "商队到访" if arrived else "商队离开", "%s%s" % [caravan_id, "已到访" if arrived else "已离开"], _current_day())
+func _on_market_caravan_changed(
+	caravan_id: String,
+	item_id: String,
+	quantity: int,
+	total_day: int,
+	arrived: bool
+) -> void:
+	push(
+		"caravan_arrived" if arrived else "caravan_departed",
+		"商队到访" if arrived else "商队离开",
+		"%s%s：%s ×%d" % [caravan_id, "已到访" if arrived else "已离开", item_id, quantity],
+		total_day
+	)
 
 
 func _on_production_completed(building: BuildingInstance, recipe_id: String, outputs: Dictionary) -> void:
@@ -447,8 +458,15 @@ func _on_production_blocked(building: BuildingInstance, _recipe_id: String) -> v
 	push("full", "产物已满", "%s的产物仓库已满" % _building_name(building), _current_day(), "building" if building != null else "", _building_key(building))
 
 
-func _on_feed_shortage(building: BuildingInstance, item_id: String) -> void:
-	push("feed_shortage", "缺少饲料", "%s缺少%s" % [_building_name(building), _item_name(item_id)], _current_day(), "building" if building != null else "", _building_key(building))
+func _on_feed_shortage(
+	building: BuildingInstance,
+	item_id: String,
+	shortage: bool,
+	total_day: int
+) -> void:
+	if not shortage:
+		return
+	push("feed_shortage", "缺少饲料", "%s缺少%s" % [_building_name(building), _item_name(item_id)], total_day, "building" if building != null else "", _building_key(building))
 
 
 func _on_maintenance_changed(building: BuildingInstance, due_day: int) -> void:
@@ -483,6 +501,7 @@ func _on_contract_updated(contract_id: String) -> void:
 		return
 	var kind := ""
 	var title := ""
+	var body := contract_id
 	if bool(contract.get("completed", false)):
 		kind = "contract_completed"
 		title = "合同全部履约"
@@ -492,10 +511,27 @@ func _on_contract_updated(contract_id: String) -> void:
 	elif int(contract.get("breaches", 0)) > 0:
 		kind = "contract_breached"
 		title = "合同未完成"
+		body = "%s：第 %d 次违约" % [contract_id, int(contract.get("breaches", 0))]
 	if not kind.is_empty():
-		if _has_record(kind, "contract", contract_id):
+		if kind == "contract_breached" and _has_contract_breach_occurrence(contract_id, body):
 			return
-		push(kind, title, contract_id, _current_day(), "contract", contract_id)
+		if kind != "contract_breached" and _has_record(kind, "contract", contract_id):
+			return
+		if kind == "contract_breached":
+			_merge_state.erase(_merge_key(kind, "contract", contract_id))
+		push(kind, title, body, _current_day(), "contract", contract_id)
+
+
+func _has_contract_breach_occurrence(contract_id: String, body: String) -> bool:
+	for record in _records:
+		if (
+			str(record.kind) == "contract_breached"
+			and str(record.target_type) == "contract"
+			and str(record.target_id) == contract_id
+			and str(record.body) == body
+		):
+			return true
+	return false
 
 
 func _has_record(kind: String, target_type: String, target_id: String) -> bool:
@@ -506,7 +542,7 @@ func _has_record(kind: String, target_type: String, target_id: String) -> bool:
 
 
 func _on_service_unlocked(kind: String, target_id: String) -> void:
-	push("unlock", "经营解锁", "%s：%s" % [kind, target_id], _current_day(), "service", target_id)
+	push("unlock", "经营解锁", "%s：%s" % [kind, target_id], _current_day())
 
 
 func _on_building_upgrade_changed(building: BuildingInstance, upgrade_id: String, level: int) -> void:

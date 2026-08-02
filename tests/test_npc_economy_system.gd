@@ -4,9 +4,10 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomyStateScript = preload("res://scripts/data/npc_economy_state.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
+const NotificationSystemScript = preload("res://scripts/systems/economy_notification_system.gd")
 
 
-func run(assertions: TestAssert) -> void:
+func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_state_contract_is_strict_and_atomic(assertions)
 	_test_woodworker_uses_finite_market_and_protects_reserves(assertions)
 	_test_failed_trades_have_no_partial_mutations(assertions)
@@ -14,7 +15,7 @@ func run(assertions: TestAssert) -> void:
 	_test_unmet_reserve_blocks_excess_sale_and_investment(assertions)
 	_test_sale_floor_protects_overlapping_reserve(assertions)
 	_test_population_groups_add_tagged_factor_demand(assertions)
-	_test_third_zero_stock_day_imports_essentials_only(assertions)
+	_test_third_zero_stock_day_imports_essentials_only(assertions, tree)
 	_test_day_cursor_and_snapshot_are_atomic(assertions)
 	_test_registered_profiles_and_determinism(assertions)
 	_test_default_crafted_sale_targets_trade_on_finite_market(assertions)
@@ -262,20 +263,30 @@ func _test_population_groups_add_tagged_factor_demand(assertions: TestAssert) ->
 	system.free()
 
 
-func _test_third_zero_stock_day_imports_essentials_only(assertions: TestAssert) -> void:
+func _test_third_zero_stock_day_imports_essentials_only(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
 	var market := MarketSystemScript.new()
 	market.configure([
 		_definition("wood", 10, 0, 12, 4, "essential", "material"),
 		_definition("crystal", 50, 0, 8, 3, "rare", "rare"),
 	])
 	var system := NpcEconomySystemScript.new()
+	var notifications := NotificationSystemScript.new()
 	var importer := {
 		"id": "lao_li", "display_name": "老李", "gold": 1000,
 		"inventory": {}, "essential_targets": {}, "reserve_targets": {},
 		"production_recipes": [], "sale_targets": {},
 		"investment_gold_threshold": 2000, "import_buffer": true,
 	}
-	system.configure(market, [importer], [])
+	tree.root.add_child(system)
+	tree.root.add_child(notifications)
+	assertions.truthy(system.configure(market, [importer], []), "import NPC fixture configures")
+	assertions.truthy(
+		notifications.configure(tree.root.get_node("EventBus"), market),
+		"caravan notifications subscribe to the real EventBus"
+	)
 	var start_gold := system.get_npc_state("lao_li").gold
 	assertions.truthy(system.simulate_day(1), "first shortage day simulates")
 	assertions.truthy(system.simulate_day(2), "second shortage day simulates")
@@ -286,9 +297,18 @@ func _test_third_zero_stock_day_imports_essentials_only(assertions: TestAssert) 
 	assertions.truthy(system.get_npc_state("lao_li").gold < start_gold, "import charges Lao Li an elevated cost")
 	assertions.equal(market.get_stock("crystal"), 0, "rare goods are never imported")
 	assertions.equal(system.get_essential_zero_streaks().get("wood"), 0, "successful import resets shortage streak")
+	var caravan_records := notifications.get_recent()
+	assertions.equal(caravan_records.size(), 1, "authoritative third-day import emits one caravan notification")
+	if not caravan_records.is_empty():
+		assertions.equal(str(caravan_records[0].kind), "caravan_arrived", "successful import is an arrival")
+		assertions.equal(int(caravan_records[0].total_day), 3, "caravan notification keeps the import day")
+		assertions.truthy(str(caravan_records[0].body).contains("wood"), "caravan notification keeps the item id")
+		assertions.truthy(str(caravan_records[0].body).contains("×4"), "caravan notification keeps the quantity")
 	var after := system.to_dict()
 	assertions.truthy(not system.simulate_day(3), "import cannot repeat on the same day")
 	assertions.equal(system.to_dict(), after, "same-day import retry changes nothing")
+	assertions.equal(notifications.get_recent().size(), 1, "same-day retry emits no duplicate caravan notification")
+	notifications.free()
 	market.free()
 	system.free()
 
