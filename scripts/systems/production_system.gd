@@ -21,6 +21,7 @@ var _inventory_system: InventorySystem
 
 
 func _ready() -> void:
+	add_to_group("production_system")
 	_event_bus = get_node_or_null("/root/EventBus")
 	if _event_bus != null and not _event_bus.time_changed.is_connected(_on_time_changed):
 		_event_bus.time_changed.connect(_on_time_changed)
@@ -279,6 +280,11 @@ func register_existing_buildings() -> int:
 		if register_building(building):
 			registered += 1
 	return registered
+
+
+func rebuild_registered_buildings() -> int:
+	_registered_buildings.clear()
+	return register_existing_buildings()
 
 
 func get_registered_buildings() -> Array[BuildingInstance]:

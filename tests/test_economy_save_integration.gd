@@ -33,12 +33,50 @@ class LoadObserver:
 		assert(slot == adopted_slot)
 
 
+class RegistryLoadObserver:
+	extends RefCounted
+	var main: Node
+	var observed_producers: Array[Dictionary] = []
+
+	func on_load_completed(_slot: int) -> void:
+		observed_producers.clear()
+		for building in main.production_system.get_registered_buildings():
+			if building != null and building.has_method("to_dict"):
+				observed_producers.append(building.to_dict())
+
+
 class SettlementObserver:
 	extends RefCounted
 	var calls := 0
 
 	func on_market_settled(_total_day: int) -> void:
 		calls += 1
+
+
+class BuildingSignalObserver:
+	extends RefCounted
+	var local_removed := 0
+	var local_placed := 0
+	var bus_removed := 0
+	var bus_placed := 0
+
+	func on_local_removed(_building_id: String) -> void:
+		local_removed += 1
+
+	func on_local_placed(_building: BuildingInstance) -> void:
+		local_placed += 1
+
+	func on_bus_removed(_building: BuildingInstance) -> void:
+		bus_removed += 1
+
+	func on_bus_placed(_building: BuildingInstance) -> void:
+		bus_placed += 1
+
+	func reset() -> void:
+		local_removed = 0
+		local_placed = 0
+		bus_removed = 0
+		bus_placed = 0
 
 
 class RejectingResourceWorld:
@@ -71,6 +109,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_resource_apply_failure_rolls_back_economy(assertions, tree)
 	_test_task13_corrupt_producer_load_is_atomic(assertions, tree)
 	_test_task13_short_building_restore_is_atomic(assertions, tree)
+	_test_task13_invalid_top_level_and_inventory_schema_is_atomic(assertions, tree)
+	_test_task13_legacy_inventory_repack_preserves_quick_items(assertions, tree)
+	_test_task13_building_load_signals_are_transactional(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
 
 
@@ -422,6 +463,305 @@ func _test_task13_short_building_restore_is_atomic(
 	tree: SceneTree
 ) -> void:
 	_test_task13_failed_building_load_is_atomic(assertions, tree, true)
+
+
+func _test_task13_invalid_top_level_and_inventory_schema_is_atomic(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	for scenario in [
+		"negative_gold",
+		"fractional_gold",
+		"player_wrong_type",
+		"player_nonfinite",
+		"missing_gold",
+		"missing_player",
+		"inventory_wrong_type",
+		"missing_inventory",
+		"unknown_item",
+		"negative_quantity",
+		"zero_quantity",
+		"over_max_stack",
+		"over_max_slots",
+		"duplicate_underfilled_stack",
+		"malformed_stack",
+		"invalid_quick_index",
+		"quick_mapping_to_empty_slot",
+		"grid_cells_wrong_type",
+		"malformed_grid_entry",
+		"duplicate_grid_cell",
+		"invalid_grid_state",
+		"watered_wrong_type",
+		"crop_wrong_type",
+		"unknown_crop",
+		"crop_negative_progress",
+		"crop_nonfinite_progress",
+		"crop_progress_past_growth",
+		"crop_fractional_harvest_count",
+		"crop_watered_wrong_type",
+		"crop_extra_stage_field",
+		"crop_on_non_planted_cell",
+		"planted_cell_without_crop",
+		"missing_buildings",
+		"orphan_building_cell",
+	]:
+		_test_task13_invalid_schema_case(assertions, tree, scenario)
+
+
+func _test_task13_invalid_schema_case(
+	assertions: TestAssert,
+	tree: SceneTree,
+	scenario: String
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task13SchemaSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var game_state := tree.root.get_node_or_null("GameState")
+	var location := _find_restore_location(main, "workbench")
+	assertions.equal(
+		main.building_system.restore_buildings([_producer_building_record(main, location)]),
+		1,
+		"%s fixture restores a producer" % scenario
+	)
+	main.production_system.register_existing_buildings()
+	main.inventory_system.restore_state(
+		[{"item_id": "grain_seed", "quantity": 7}, {"item_id": "wood", "quantity": 9}],
+		[1, 0, -1, -1, -1, -1]
+	)
+	game_state.gold = 211
+	manager.current_slot = TEST_SLOT
+	var before := _capture_atomic_load_state(main, manager, game_state)
+	var incoming: Dictionary = JSON.parse_string(JSON.stringify(manager._gather_save_data()))
+	_mutate_invalid_schema_payload(incoming, scenario)
+	_write_json(manager._save_path(BAD_SLOT), incoming)
+
+	assertions.truthy(not manager.load_game(BAD_SLOT), "%s rejects real JSON" % scenario)
+	assertions.equal(manager.current_slot, TEST_SLOT, "%s preserves current slot" % scenario)
+	_assert_atomic_load_state(assertions, main, manager, game_state, before, scenario)
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _mutate_invalid_schema_payload(payload: Dictionary, scenario: String) -> void:
+	match scenario:
+		"negative_gold":
+			payload.gold = -1
+		"fractional_gold":
+			payload.gold = 1.5
+		"player_wrong_type":
+			payload.player = "invalid"
+		"player_nonfinite":
+			payload.player.stamina = INF
+		"missing_gold":
+			payload.erase("gold")
+		"missing_player":
+			payload.erase("player")
+		"inventory_wrong_type":
+			payload.inventory = []
+		"missing_inventory":
+			payload.erase("inventory")
+		"unknown_item":
+			payload.inventory.slots[0] = {"item_id": "missing_item", "quantity": 1}
+		"negative_quantity":
+			payload.inventory.slots[0].quantity = -1
+		"zero_quantity":
+			payload.inventory.slots[0].quantity = 0
+		"over_max_stack":
+			payload.inventory.slots[0] = {"item_id": "moonflower", "quantity": 2}
+		"over_max_slots":
+			payload.inventory.slots.append({})
+		"duplicate_underfilled_stack":
+			payload.inventory.slots[0] = {"item_id": "wood", "quantity": 1}
+			payload.inventory.slots[1] = {"item_id": "wood", "quantity": 1}
+		"malformed_stack":
+			payload.inventory.slots[0] = "invalid"
+		"invalid_quick_index":
+			payload.inventory.quick_mappings[0] = 999
+		"quick_mapping_to_empty_slot":
+			payload.inventory.quick_mappings[0] = payload.inventory.slots.size() - 1
+		"grid_cells_wrong_type":
+			payload.grid.cells = {}
+		"malformed_grid_entry":
+			payload.grid.cells.append("invalid")
+		"duplicate_grid_cell":
+			payload.grid.cells.append(payload.grid.cells[0].duplicate(true))
+		"invalid_grid_state":
+			payload.grid.cells.append({"gx": 1, "gz": 0, "state": 999, "watered": false})
+		"watered_wrong_type":
+			payload.grid.cells.append({"gx": 1, "gz": 0, "state": GridCell.State.FARMLAND, "watered": "yes"})
+		"crop_wrong_type":
+			var entry := _valid_crop_grid_entry()
+			entry.crop = "invalid"
+			payload.grid.cells.append(entry)
+		"unknown_crop":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.crop_id = "missing_crop"
+			payload.grid.cells.append(entry)
+		"crop_negative_progress":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.growth_progress = -1
+			payload.grid.cells.append(entry)
+		"crop_nonfinite_progress":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.growth_progress = INF
+			payload.grid.cells.append(entry)
+		"crop_progress_past_growth":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.growth_progress = 999
+			payload.grid.cells.append(entry)
+		"crop_fractional_harvest_count":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.harvest_count = 1.5
+			payload.grid.cells.append(entry)
+		"crop_watered_wrong_type":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.is_watered_today = "yes"
+			payload.grid.cells.append(entry)
+		"crop_extra_stage_field":
+			var entry := _valid_crop_grid_entry()
+			entry.crop.growth_stage = 99
+			payload.grid.cells.append(entry)
+		"crop_on_non_planted_cell":
+			var entry := _valid_crop_grid_entry()
+			entry.state = GridCell.State.FARMLAND
+			payload.grid.cells.append(entry)
+		"planted_cell_without_crop":
+			payload.grid.cells.append({"gx": 1, "gz": 0, "state": GridCell.State.PLANTED, "watered": false})
+		"missing_buildings":
+			payload.erase("buildings")
+		"orphan_building_cell":
+			payload.grid.cells.append({"gx": 1, "gz": 0, "state": GridCell.State.BUILDING, "watered": false})
+
+
+func _valid_crop_grid_entry() -> Dictionary:
+	return {
+		"gx": 1,
+		"gz": 0,
+		"state": GridCell.State.PLANTED,
+		"watered": true,
+		"crop": {
+			"crop_id": "grain",
+			"growth_progress": 1,
+			"is_watered_today": true,
+			"harvest_count": 0,
+		},
+	}
+
+
+func _test_task13_legacy_inventory_repack_preserves_quick_items(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task13LegacyRepackSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var slots: Array[Dictionary] = [{"item_id": "iron_ingot", "quantity": 8}]
+	while slots.size() < main.inventory_system.max_slots - 1:
+		slots.append({})
+	slots.append({"item_id": "iron", "quantity": 5})
+	_write_json(manager._save_path(TEST_SLOT), {
+		"total_days": 3,
+		"inventory": {
+			"slots": slots,
+			"quick_mappings": [slots.size() - 1, 0, -1, -1, -1, -1],
+		},
+	})
+	assertions.truthy(manager.load_game(TEST_SLOT), "legacy inventory repacks migrated iron")
+	assertions.equal(main.inventory_system.get_item_count("iron"), 0, "legacy repack removes iron")
+	assertions.equal(main.inventory_system.get_item_count("iron_ingot"), 13, "legacy repack preserves total quantity")
+	assertions.equal(main.inventory_system.get_quick_item(0), "iron_ingot", "moved legacy quick item follows migrated stack")
+	assertions.equal(main.inventory_system.get_quick_item(1), "iron_ingot", "existing target quick item remains mapped")
+	assertions.equal(main.inventory_system.quick_slot_mappings[0], 0, "legacy source quick index relocates deterministically")
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _test_task13_building_load_signals_are_transactional(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task13SilentBuildingSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var registry_observer := RegistryLoadObserver.new()
+	manager.load_completed.connect(registry_observer.on_load_completed)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	registry_observer.main = main
+	var game_state := tree.root.get_node_or_null("GameState")
+	var location := _find_restore_location(main, "workbench")
+	assertions.equal(
+		main.building_system.restore_buildings([_producer_building_record(main, location)]),
+		1,
+		"silent load fixture restores existing producer"
+	)
+	main.production_system.register_existing_buildings()
+	manager.current_slot = TEST_SLOT
+	var before := _capture_atomic_load_state(main, manager, game_state)
+	var valid_payload: Dictionary = manager._gather_save_data().duplicate(true)
+	var invalid_payload: Dictionary = valid_payload.duplicate(true)
+	invalid_payload.buildings.append((invalid_payload.buildings[0] as Dictionary).duplicate(true))
+	var observer := BuildingSignalObserver.new()
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	main.building_system.building_removed.connect(observer.on_local_removed)
+	main.building_system.building_instance_placed.connect(observer.on_local_placed)
+	event_bus.building_removed.connect(observer.on_bus_removed)
+	event_bus.building_placed.connect(observer.on_bus_placed)
+
+	_write_json(manager._save_path(BAD_SLOT), invalid_payload)
+	assertions.truthy(not manager.load_game(BAD_SLOT), "invalid second building rejects before commit")
+	_assert_no_public_building_signals(assertions, observer, "failed building load")
+	_assert_atomic_load_state(assertions, main, manager, game_state, before, "failed building load")
+
+	observer.reset()
+	var load_observer := LoadObserver.new(manager)
+	manager.load_completed.connect(load_observer.on_load_completed)
+	_write_json(manager._save_path(BAD_SLOT), valid_payload)
+	assertions.truthy(manager.load_game(BAD_SLOT), "valid building load commits")
+	assertions.equal(load_observer.calls, 1, "successful building load emits one load completion")
+	_assert_no_public_building_signals(assertions, observer, "successful building load")
+	assertions.equal(
+		_serialize_registered_producers(main),
+		before.registered_producers,
+		"successful silent building load rebuilds producer registry"
+	)
+	assertions.equal(
+		registry_observer.observed_producers,
+		before.registered_producers,
+		"early load observer sees rebuilt producer registry"
+	)
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _assert_no_public_building_signals(
+	assertions: TestAssert,
+	observer: BuildingSignalObserver,
+	scenario: String
+) -> void:
+	assertions.equal(observer.local_removed, 0, "%s emits no BuildingSystem removal" % scenario)
+	assertions.equal(observer.local_placed, 0, "%s emits no BuildingSystem placement" % scenario)
+	assertions.equal(observer.bus_removed, 0, "%s emits no EventBus removal" % scenario)
+	assertions.equal(observer.bus_placed, 0, "%s emits no EventBus placement" % scenario)
 
 
 func _test_task13_failed_building_load_is_atomic(

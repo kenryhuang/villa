@@ -325,7 +325,11 @@ func remove_building(building: Variant) -> bool:
 	return _remove_building_internal(building, true)
 
 
-func _remove_building_internal(building: Variant, restore_grid: bool) -> bool:
+func _remove_building_internal(
+	building: Variant,
+	restore_grid: bool,
+	emit_public_signals := true
+) -> bool:
 	var instance: BuildingInstance
 	if building is BuildingInstance:
 		instance = building
@@ -343,17 +347,18 @@ func _remove_building_internal(building: Variant, restore_grid: bool) -> bool:
 	_buildings.erase(instance)
 	var id := instance.data.building_id if instance.data else instance.authored_building_id
 	instance.deactivate()
-	building_removed.emit(id)
-	building_instance_removed.emit(instance)
-	if _event_bus and _event_bus.has_signal("building_removed"):
-		_event_bus.building_removed.emit(instance)
+	if emit_public_signals:
+		building_removed.emit(id)
+		building_instance_removed.emit(instance)
+		if _event_bus and _event_bus.has_signal("building_removed"):
+			_event_bus.building_removed.emit(instance)
 	instance.queue_free()
 	return true
 
 
-func clear_buildings(restore_grid := true) -> void:
+func clear_buildings(restore_grid := true, emit_public_signals := true) -> void:
 	for instance in _buildings.duplicate():
-		_remove_building_internal(instance, restore_grid)
+		_remove_building_internal(instance, restore_grid, emit_public_signals)
 
 
 func get_all_buildings() -> Array[BuildingInstance]:
@@ -364,8 +369,72 @@ func get_building_count() -> int:
 	return _buildings.size()
 
 
-func restore_buildings(records: Array) -> int:
-	clear_buildings(false)
+func validate_restore_buildings(records: Array, grid_data: Dictionary) -> bool:
+	if grid_system_ref == null or not grid_data.get("cells", null) is Array:
+		return false
+	var claimed_cells := {}
+	for record_value in records:
+		if not record_value is Dictionary:
+			return false
+		var record := record_value as Dictionary
+		var gx_value: Variant = record.get("gx")
+		var gz_value: Variant = record.get("gz")
+		if not _is_integer_number(gx_value) or not _is_integer_number(gz_value):
+			return false
+		var resolved := _resolve_data(str(record.get("building_id", "")))
+		var gx := int(gx_value)
+		var gz := int(gz_value)
+		if resolved == null or not resolved.is_valid():
+			return false
+		var footprint := _footprint_cells(resolved, gx, gz)
+		for location in footprint:
+			if claimed_cells.has(location):
+				return false
+			var state := grid_system_ref.saved_cell_state(grid_data, location.x, location.y)
+			if (
+				state < 0
+				or not is_finite(grid_system_ref.get_terrain_height_at_cell(location.x, location.y))
+				or (state != GridCell.State.BUILDING and state not in BUILDABLE_STATES)
+			):
+				return false
+		if resolved.effect_type == "irrigation" and not _saved_footprint_borders_water(
+			resolved,
+			gx,
+			gz,
+			grid_data
+		):
+			return false
+		var packed := load(resolved.scene_path) as PackedScene
+		if packed == null:
+			return false
+		var instance := packed.instantiate() as BuildingInstance
+		if instance == null:
+			return false
+		var snapshots: Array[Dictionary] = []
+		for location in footprint:
+			snapshots.append({
+				"gx": location.x,
+				"gz": location.y,
+				"previous_state": GridCell.State.WASTELAND,
+			})
+		instance.configure(resolved, gx, gz, snapshots)
+		var valid := instance.from_dict(record)
+		instance.free()
+		if not valid:
+			return false
+		for location in footprint:
+			claimed_cells[location] = true
+	for entry_value in grid_data.cells:
+		var entry := entry_value as Dictionary
+		if int(entry.state) == GridCell.State.BUILDING and not claimed_cells.has(
+			Vector2i(int(entry.gx), int(entry.gz))
+		):
+			return false
+	return true
+
+
+func restore_buildings(records: Array, emit_public_signals := true) -> int:
+	clear_buildings(false, emit_public_signals)
 	var restored := 0
 	var claimed_cells := {}
 	for record_value in records:
@@ -467,7 +536,8 @@ func restore_buildings(records: Array) -> int:
 		_connect_construction_signals(instance)
 		for location in footprint:
 			claimed_cells[location] = true
-		building_instance_placed.emit(instance)
+		if emit_public_signals:
+			building_instance_placed.emit(instance)
 		restored += 1
 	return restored
 
@@ -656,6 +726,31 @@ func _footprint_borders_water(data: BuildingData, gx: int, gz: int) -> bool:
 			if cell != null and cell.state == GridCell.State.WATER:
 				return true
 	return false
+
+
+func _saved_footprint_borders_water(
+	data: BuildingData,
+	gx: int,
+	gz: int,
+	grid_data: Dictionary
+) -> bool:
+	for x in range(gx, gx + data.footprint.x):
+		for z in [gz - 1, gz + data.footprint.y]:
+			if grid_system_ref.saved_cell_state(grid_data, x, z) == GridCell.State.WATER:
+				return true
+	for z in range(gz, gz + data.footprint.y):
+		for x in [gx - 1, gx + data.footprint.x]:
+			if grid_system_ref.saved_cell_state(grid_data, x, z) == GridCell.State.WATER:
+				return true
+	return false
+
+
+func _is_integer_number(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+	)
 
 
 func _world_position_for(data: BuildingData, gx: int, gz: int) -> Vector3:

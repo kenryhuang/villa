@@ -448,8 +448,90 @@ func reset_state() -> void:
 	rebuild_farmland_visuals()
 
 
+func saved_cell_state(data: Dictionary, gx: int, gz: int) -> int:
+	if not _is_in_bounds(gx, gz) or not data.get("cells", null) is Array:
+		return -1
+	for entry_value in data.cells:
+		if not entry_value is Dictionary:
+			continue
+		var entry := entry_value as Dictionary
+		if int(entry.get("gx", -1)) == gx and int(entry.get("gz", -1)) == gz:
+			return int(entry.get("state", -1))
+	return int(_base_states.get(cell_key(gx, gz), GridCell.State.WASTELAND))
+
+
+func validate_dict(data: Dictionary) -> bool:
+	if (
+		data.size() != 2
+		or not data.has("version")
+		or not _is_integer_number(data.version)
+		or int(data.version) != 1
+		or not data.get("cells", null) is Array
+	):
+		return false
+	var seen_cells := {}
+	var game_data = get_node_or_null("/root/GameData") if is_inside_tree() else null
+	for entry_value in data.cells:
+		if not entry_value is Dictionary:
+			return false
+		var entry := entry_value as Dictionary
+		for field in ["gx", "gz", "state", "watered"]:
+			if not entry.has(field):
+				return false
+		for field in entry.keys():
+			if field not in ["gx", "gz", "state", "watered", "crop"]:
+				return false
+		if (
+			not _is_integer_number(entry.gx)
+			or not _is_integer_number(entry.gz)
+			or not _is_integer_number(entry.state)
+			or typeof(entry.watered) != TYPE_BOOL
+		):
+			return false
+		var gx := int(entry.gx)
+		var gz := int(entry.gz)
+		var state := int(entry.state)
+		var location := Vector2i(gx, gz)
+		if (
+			not _is_in_bounds(gx, gz)
+			or seen_cells.has(location)
+			or state < GridCell.State.WASTELAND
+			or state > GridCell.State.DECORATION
+		):
+			return false
+		seen_cells[location] = true
+		if entry.has("crop"):
+			if state != GridCell.State.PLANTED or not entry.crop is Dictionary or game_data == null:
+				return false
+			var crop_entry := entry.crop as Dictionary
+			for field in ["crop_id", "growth_progress", "is_watered_today"]:
+				if not crop_entry.has(field):
+					return false
+			for field in crop_entry.keys():
+				if field not in ["crop_id", "growth_progress", "is_watered_today", "harvest_count"]:
+					return false
+			if (
+				typeof(crop_entry.crop_id) != TYPE_STRING
+				or typeof(crop_entry.is_watered_today) != TYPE_BOOL
+			):
+				return false
+			var crop_data = game_data.get_crop(str(crop_entry.crop_id))
+			if crop_data == null:
+				return false
+			var instance := CropInstance.new()
+			instance.crop_data = crop_data
+			if (
+				not instance.from_dict(crop_entry)
+				or float(crop_entry.growth_progress) > float(crop_data.growth_days)
+			):
+				return false
+		elif state == GridCell.State.PLANTED:
+			return false
+	return true
+
+
 func from_dict(data: Dictionary) -> bool:
-	if not data.has("cells") or not data.cells is Array:
+	if not validate_dict(data):
 		return false
 	for entry in data.cells:
 		if not entry is Dictionary:
@@ -476,3 +558,11 @@ func from_dict(data: Dictionary) -> bool:
 					cell.crop_instance = instance
 	rebuild_farmland_visuals()
 	return true
+
+
+func _is_integer_number(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+	)

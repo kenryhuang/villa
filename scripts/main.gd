@@ -247,7 +247,6 @@ func _connect_save_load_completed() -> void:
 func _on_save_load_completed(_slot: int) -> void:
 	if production_system == null or season_system == null:
 		return
-	production_system.register_existing_buildings()
 	production_system.sync_daily_cursor(season_system.total_days)
 	production_system.sync_clock(season_system.hour, season_system.minute)
 	if npc_economy_system != null:
@@ -344,7 +343,7 @@ func _initial_game_state() -> void:
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
 		economy_system.reset_order_state(season_system.total_days)
 		_grant_new_game_items()
-	production_system.register_existing_buildings()
+	production_system.rebuild_registered_buildings()
 	production_system.sync_daily_cursor(season_system.total_days)
 	production_system.sync_clock(season_system.hour, season_system.minute)
 	farming_system.rebuild_visuals()

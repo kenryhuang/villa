@@ -206,14 +206,18 @@ func load_game(slot: int = 0) -> bool:
 		return false
 
 	current_slot = slot
+	_finalize_committed_load()
 	load_completed.emit(slot)
 	print("Game loaded from slot %d" % slot)
 	return true
 
 
 func _apply_save_data(data: Dictionary) -> bool:
-	var migrated_data := _migrate_save_data(data)
-	if not _validate_economy_save_data(migrated_data):
+	var migrated_value: Variant = _migrate_save_data(data)
+	if not migrated_value is Dictionary:
+		return false
+	var migrated_data := migrated_value as Dictionary
+	if not _validate_save_data(migrated_data):
 		return false
 	var previous_state := _gather_save_data().duplicate(true)
 	if _apply_migrated_save_data(migrated_data):
@@ -263,7 +267,7 @@ func _apply_migrated_save_data(data: Dictionary) -> bool:
 	if data.has("buildings") and not data["buildings"] is Array:
 		return false
 	if building_system:
-		building_system.clear_buildings(true)
+		building_system.clear_buildings(true, false)
 	if grid_system and data.has("grid"):
 		if grid_system.has_method("reset_state"):
 			grid_system.reset_state()
@@ -275,7 +279,7 @@ func _apply_migrated_save_data(data: Dictionary) -> bool:
 		if building_system == null:
 			return false
 		var building_records := data["buildings"] as Array
-		var restored_count := int(building_system.restore_buildings(building_records))
+		var restored_count := int(building_system.restore_buildings(building_records, false))
 		if restored_count != building_records.size():
 			return false
 
@@ -451,6 +455,93 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 	return valid
 
 
+func _validate_save_data(data: Dictionary) -> bool:
+	if not _validate_economy_save_data(data):
+		return false
+	var inventory = _get_inventory_system()
+	var grid_system = _get_grid_system()
+	var building_system = _get_building_system()
+	var has_world_snapshot_runtime := (
+		inventory != null or grid_system != null or building_system != null
+	)
+	if data.has("economy_version") and has_world_snapshot_runtime:
+		if get_node_or_null("/root/GameState") != null and (
+			not data.has("gold") or not data.has("player")
+		):
+			return false
+		if inventory != null and not data.has("inventory"):
+			return false
+		if grid_system != null and not data.has("grid"):
+			return false
+		if building_system != null and not data.has("buildings"):
+			return false
+	if data.has("grid") != data.has("buildings"):
+		return false
+	if data.has("gold") and (
+		not _is_integer_number(data.gold) or int(data.gold) < 0
+	):
+		return false
+	if data.has("player") and not _validate_player_save_data(data.player):
+		return false
+	if data.has("inventory"):
+		if inventory == null or not data.inventory is Dictionary:
+			return false
+		var inventory_data := data.inventory as Dictionary
+		if not inventory_data.has("slots") or not inventory_data.has("quick_mappings"):
+			return false
+		if inventory.normalize_saved_state(
+			inventory_data.slots,
+			inventory_data.quick_mappings
+		) == null:
+			return false
+	if data.has("grid"):
+		if (
+			not data.grid is Dictionary
+			or grid_system == null
+			or not grid_system.has_method("validate_dict")
+			or not bool(grid_system.validate_dict(data.grid))
+		):
+			return false
+	if data.has("buildings"):
+		if not data.buildings is Array or not data.get("grid", null) is Dictionary:
+			return false
+		if (
+			building_system == null
+			or not building_system.has_method("validate_restore_buildings")
+			or not bool(building_system.validate_restore_buildings(data.buildings, data.grid))
+		):
+			return false
+	return true
+
+
+func _finalize_committed_load() -> void:
+	if get_tree() == null:
+		return
+	for production_system in get_tree().get_nodes_in_group("production_system"):
+		if production_system.has_method("rebuild_registered_buildings"):
+			production_system.rebuild_registered_buildings()
+
+
+func _validate_player_save_data(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var player := value as Dictionary
+	for field in ["stamina", "max_stamina", "level", "exp"]:
+		if player.has(field) and not _is_integer_number(player[field]):
+			return false
+	var stamina := int(player.get("stamina", 100))
+	var max_stamina := int(player.get("max_stamina", 100))
+	var level := int(player.get("level", 1))
+	var exp := int(player.get("exp", 0))
+	return (
+		stamina >= 0
+		and max_stamina > 0
+		and stamina <= max_stamina
+		and level > 0
+		and exp >= 0
+	)
+
+
 func _apply_economy_save_data(data: Dictionary) -> bool:
 	if not _has_valid_economy_configuration():
 		return true
@@ -518,29 +609,26 @@ func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> bool:
 	return true
 
 
-func _migrate_save_data(data: Dictionary) -> Dictionary:
+func _migrate_save_data(data: Dictionary) -> Variant:
 	var migrated := data.duplicate(true)
 	var inventory_value: Variant = migrated.get("inventory")
+	if inventory_value == null:
+		return migrated
 	if not inventory_value is Dictionary:
-		return migrated
-	var slots_value: Variant = (inventory_value as Dictionary).get("slots")
-	if not slots_value is Array:
-		return migrated
-	for index in range((slots_value as Array).size()):
-		var slot_value: Variant = (slots_value as Array)[index]
-		if not slot_value is Dictionary:
-			continue
-		var item_id := str((slot_value as Dictionary).get("item_id", ""))
-		var definition: Variant = GameDataScript.get_item(item_id)
-		if not definition is Dictionary:
-			continue
-		var replacement := str((definition as Dictionary).get("migrate_to", ""))
-		if replacement.is_empty() or GameDataScript.get_item(replacement) == null:
-			continue
-		(slot_value as Dictionary)["item_id"] = replacement
-		(slots_value as Array)[index] = slot_value
-	(inventory_value as Dictionary)["slots"] = slots_value
-	migrated["inventory"] = inventory_value
+		return null
+	var inventory_data := inventory_value as Dictionary
+	if not inventory_data.has("slots") or not inventory_data.has("quick_mappings"):
+		return null
+	var inventory = _get_inventory_system()
+	if inventory == null or not inventory.has_method("normalize_saved_state"):
+		return null
+	var normalized: Variant = inventory.normalize_saved_state(
+		inventory_data.slots,
+		inventory_data.quick_mappings
+	)
+	if not normalized is Dictionary:
+		return null
+	migrated["inventory"] = normalized
 	return migrated
 
 

@@ -5,6 +5,7 @@ extends Node
 ## 包含主背包（20格）和快捷栏（6格）
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const QUICK_SLOT_COUNT := 6
 
 signal quick_slot_mapping_changed(quick_index: int, item_id: String)
 
@@ -239,7 +240,7 @@ func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
 	slots.assign(normalized_slots)
 
 	var normalized_mappings: Array[int] = []
-	for quick_index in range(6):
+	for quick_index in range(QUICK_SLOT_COUNT):
 		var slot_index := -1
 		if saved_quick_mappings is Array and quick_index < saved_quick_mappings.size():
 			slot_index = int(saved_quick_mappings[quick_index])
@@ -248,6 +249,102 @@ func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
 		normalized_mappings.append(slot_index)
 	quick_slot_mappings.assign(normalized_mappings)
 	_emit_changed_quick_items(previous_items)
+
+
+func normalize_saved_state(saved_slots: Variant, saved_quick_mappings: Variant) -> Variant:
+	if (
+		not saved_slots is Array
+		or saved_slots.size() > max_slots
+		or not saved_quick_mappings is Array
+		or saved_quick_mappings.size() != QUICK_SLOT_COUNT
+	):
+		return null
+	var normalized: Array[Dictionary] = []
+	var target_by_index: Array[String] = []
+	var migration_targets: Array[String] = []
+	var previous_stack_quantity := {}
+	for slot_value in saved_slots:
+		if not slot_value is Dictionary:
+			return null
+		var slot := slot_value as Dictionary
+		if slot.is_empty():
+			normalized.append({})
+			target_by_index.append("")
+			continue
+		if slot.size() != 2 or not slot.has("item_id") or not slot.has("quantity"):
+			return null
+		if typeof(slot.item_id) != TYPE_STRING or not _is_integer_number(slot.quantity):
+			return null
+		var item_id := str(slot.item_id)
+		var definition: Variant = GameDataScript.get_item(item_id)
+		if not definition is Dictionary:
+			return null
+		var max_stack := int((definition as Dictionary).get("max_stack", 0))
+		var quantity := int(slot.quantity)
+		if max_stack <= 0 or quantity <= 0 or quantity > max_stack:
+			return null
+		if previous_stack_quantity.has(item_id) and int(previous_stack_quantity[item_id]) < max_stack:
+			return null
+		previous_stack_quantity[item_id] = quantity
+		var target_id := str((definition as Dictionary).get("migrate_to", item_id))
+		if target_id.is_empty():
+			target_id = item_id
+		var target_definition: Variant = GameDataScript.get_item(target_id)
+		if not target_definition is Dictionary:
+			return null
+		if target_id != item_id and not migration_targets.has(target_id):
+			migration_targets.append(target_id)
+		normalized.append({"item_id": item_id, "quantity": quantity})
+		target_by_index.append(target_id)
+
+	var mappings: Array[int] = []
+	for mapping_value in saved_quick_mappings:
+		if not _is_integer_number(mapping_value):
+			return null
+		var slot_index := int(mapping_value)
+		if slot_index < -1 or slot_index >= normalized.size():
+			return null
+		if slot_index >= 0 and normalized[slot_index].is_empty():
+			return null
+		mappings.append(slot_index)
+
+	while normalized.size() < max_slots:
+		normalized.append({})
+		target_by_index.append("")
+	for target_id in migration_targets:
+		var affected: Array[int] = []
+		var total := 0
+		for index in range(target_by_index.size()):
+			if target_by_index[index] == target_id:
+				affected.append(index)
+				total += int(normalized[index].get("quantity", 0))
+		var target_definition: Dictionary = GameDataScript.get_item(target_id)
+		var target_max_stack := int(target_definition.get("max_stack", 0))
+		if target_max_stack <= 0:
+			return null
+		for index in affected:
+			normalized[index] = {}
+		var destinations := affected.duplicate()
+		for index in range(normalized.size()):
+			if normalized[index].is_empty() and not destinations.has(index):
+				destinations.append(index)
+		var needed := ceili(float(total) / float(target_max_stack))
+		if needed > destinations.size():
+			return null
+		var first_destination := int(destinations[0])
+		var remaining := total
+		for destination_index in range(needed):
+			var quantity := mini(remaining, target_max_stack)
+			normalized[destinations[destination_index]] = {
+				"item_id": target_id,
+				"quantity": quantity,
+			}
+			remaining -= quantity
+		for quick_index in range(mappings.size()):
+			if mappings[quick_index] in affected:
+				mappings[quick_index] = first_destination
+
+	return {"slots": normalized, "quick_mappings": mappings}
 
 
 func reset_slots() -> void:
@@ -262,7 +359,7 @@ func reset_slots() -> void:
 
 func _snapshot_quick_items() -> Array[String]:
 	var result: Array[String] = []
-	for quick_index in range(6):
+	for quick_index in range(QUICK_SLOT_COUNT):
 		result.append(get_quick_item(quick_index))
 	return result
 
@@ -279,3 +376,11 @@ func _emit_changed_quick_items(previous_items: Array[String]) -> void:
 		var current_item := get_quick_item(quick_index)
 		if previous_item != current_item:
 			quick_slot_mapping_changed.emit(quick_index, current_item)
+
+
+func _is_integer_number(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+	)
