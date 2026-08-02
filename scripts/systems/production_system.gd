@@ -293,6 +293,7 @@ func sync_daily_cursor(total_day: int) -> bool:
 	_last_daily_effects_day = total_day
 	_last_finished_outputs_day = total_day
 	_current_day = total_day
+	_refresh_greenhouse_cells()
 	return true
 
 

@@ -59,6 +59,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_passive_output_helper(assertions)
 	_test_daily_cursor_can_rewind_for_loaded_day(assertions)
+	_test_loaded_maintenance_refreshes_greenhouse_on_cursor_sync(assertions)
 	_test_beehive_flowers_and_storage_pause(assertions)
 	_test_coop_feed_is_atomic(assertions)
 	_test_waterwheel_geometry_and_daily_order(assertions)
@@ -101,6 +102,31 @@ func _test_daily_cursor_can_rewind_for_loaded_day(assertions: TestAssert) -> voi
 	production.finish_daily_outputs(4)
 	assertions.equal(coop.producer_state.outputs, {"egg": 2}, "repeating the post-load day does not produce twice")
 	assertions.equal(coop.producer_state.inputs, {"animal_feed": 1}, "repeating the post-load day does not consume twice")
+
+
+func _test_loaded_maintenance_refreshes_greenhouse_on_cursor_sync(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var farming := _farming(grid)
+	var production := _production(grid, farming)
+	var greenhouse := _building("greenhouse", 18, 18, false)
+	var key := ProductionSystemScript.building_key(greenhouse)
+	assertions.truthy(production.sync_daily_cursor(1), "load fixture starts from old runtime day")
+	assertions.truthy(production.from_dict({
+		"version": 1,
+		"maintenance": [{"building_key": key, "due_day": 5}],
+		"speed_accumulators": [],
+	}), "load fixture restores overdue maintenance before building registration")
+	assertions.truthy(production.register_building(greenhouse), "load fixture registers restored greenhouse")
+	var greenhouse_cell := production.get_greenhouse_cells(greenhouse)[0]
+	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "old runtime day initially exposes restored greenhouse coverage")
+	assertions.truthy(production.sync_daily_cursor(10), "load fixture synchronizes authoritative loaded day")
+	assertions.truthy(not farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "loaded overdue greenhouse coverage is removed immediately on cursor sync")
+	assertions.truthy(production.sync_daily_cursor(10), "repeated loaded-day sync is safe")
+	var inventory := _inventory()
+	inventory.add_item("wood", 1)
+	inventory.add_item("stone", 1)
+	assertions.truthy(production.maintain(greenhouse, WalletDouble.new(), inventory), "loaded overdue greenhouse can be maintained")
+	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "maintenance restores loaded greenhouse coverage")
 
 
 func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
