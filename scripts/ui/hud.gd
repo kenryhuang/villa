@@ -221,6 +221,8 @@ func configure_action_bar(
 	inventory: Variant,
 	economy: Variant = null
 ) -> void:
+	if action_controller != controller:
+		_disconnect_action_controller(action_controller)
 	action_controller = controller
 	var mapping_handler := Callable(self, "_on_quick_slot_mapping_changed")
 	if (
@@ -238,43 +240,94 @@ func configure_action_bar(
 	):
 		inventory_ref.connect("quick_slot_mapping_changed", mapping_handler)
 	economy_ref = economy
-	if (
-		action_controller
-		and not action_controller.selection_changed.is_connected(
-			_on_action_selection_changed
-		)
-	):
-		action_controller.selection_changed.connect(_on_action_selection_changed)
-	if (
-		action_controller
-		and not action_controller.inventory_changed.is_connected(refresh_action_bar)
-	):
-		action_controller.inventory_changed.connect(refresh_action_bar)
-	if (
-		action_controller
-		and action_controller.has_signal("mode_changed")
-		and not action_controller.mode_changed.is_connected(_on_action_mode_changed)
-	):
-		action_controller.mode_changed.connect(_on_action_mode_changed)
-	if (
-		action_controller
-		and action_controller.has_signal("palette_changed")
-		and not action_controller.palette_changed.is_connected(_on_action_palette_changed)
-	):
-		action_controller.palette_changed.connect(_on_action_palette_changed)
-	if (
-		action_controller
-		and action_controller.has_signal("build_feedback_requested")
-		and not action_controller.build_feedback_requested.is_connected(
-			show_build_feedback
-		)
-	):
-		action_controller.build_feedback_requested.connect(show_build_feedback)
+	_connect_action_controller(action_controller)
 	rebuild_action_palette()
 	if action_controller:
 		var selected: int = action_controller.get_selected_slot()
 		var selected_label := _selection_label(selected)
 		_on_action_selection_changed(selected, selected_label)
+
+
+func _connect_action_controller(controller: Variant) -> void:
+	_connect_controller_signal(
+		controller,
+		"selection_changed",
+		Callable(self, "_on_action_selection_changed")
+	)
+	_connect_controller_signal(
+		controller,
+		"inventory_changed",
+		Callable(self, "refresh_action_bar")
+	)
+	_connect_controller_signal(
+		controller,
+		"mode_changed",
+		Callable(self, "_on_action_mode_changed")
+	)
+	_connect_controller_signal(
+		controller,
+		"palette_changed",
+		Callable(self, "_on_action_palette_changed")
+	)
+	_connect_controller_signal(
+		controller,
+		"build_feedback_requested",
+		Callable(self, "show_build_feedback")
+	)
+
+
+func _disconnect_action_controller(controller: Variant) -> void:
+	_disconnect_controller_signal(
+		controller,
+		"selection_changed",
+		Callable(self, "_on_action_selection_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"inventory_changed",
+		Callable(self, "refresh_action_bar")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"mode_changed",
+		Callable(self, "_on_action_mode_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"palette_changed",
+		Callable(self, "_on_action_palette_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"build_feedback_requested",
+		Callable(self, "show_build_feedback")
+	)
+
+
+func _connect_controller_signal(
+	controller: Variant,
+	signal_name: StringName,
+	callback: Callable
+) -> void:
+	if (
+		controller != null
+		and controller.has_signal(signal_name)
+		and not controller.is_connected(signal_name, callback)
+	):
+		controller.connect(signal_name, callback)
+
+
+func _disconnect_controller_signal(
+	controller: Variant,
+	signal_name: StringName,
+	callback: Callable
+) -> void:
+	if (
+		controller != null
+		and controller.has_signal(signal_name)
+		and controller.is_connected(signal_name, callback)
+	):
+		controller.disconnect(signal_name, callback)
 
 
 func rebuild_action_palette() -> void:

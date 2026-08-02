@@ -39,9 +39,12 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 			capacity += maxi(0, max_stack - int(slot.get("quantity", 0)))
 	if capacity < quantity:
 		return false
+	var previous_items := _snapshot_quick_items()
 
 	# 1. 尝试堆叠到已有槽位
 	for i in range(slots.size()):
+		if quantity <= 0:
+			break
 		var slot = slots[i]
 		if not slot.is_empty() and slot.get("item_id", "") == item_id:
 			var can_add = mini(quantity, max_stack - slot.quantity)
@@ -50,8 +53,6 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 				quantity -= can_add
 				if _event_bus:
 					_event_bus.item_added.emit(item_id, can_add)
-				if quantity <= 0:
-					return true
 
 	# 2. 放入空槽位
 	for i in range(slots.size()):
@@ -64,7 +65,9 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 			if _event_bus:
 				_event_bus.item_added.emit(item_id, add_qty)
 
-	return quantity <= 0
+	var added_all := quantity <= 0
+	_emit_changed_quick_items(previous_items)
+	return added_all
 
 
 func remove_item(item_id: String, quantity: int = 1) -> bool:
@@ -74,6 +77,7 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 	var total = get_item_count(item_id)
 	if total < quantity:
 		return false
+	var previous_items := _snapshot_quick_items()
 
 	var remaining = quantity
 	var i = 0
@@ -88,7 +92,9 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 				slots[i] = {}
 		i += 1
 
-	return remaining <= 0
+	var removed_all: bool = remaining <= 0
+	_emit_changed_quick_items(previous_items)
+	return removed_all
 
 
 func has_item(item_id: String, quantity: int = 1) -> bool:
@@ -126,9 +132,11 @@ func swap_slots(from_index: int, to_index: int) -> void:
 		return
 	if to_index < 0 or to_index >= slots.size():
 		return
+	var previous_items := _snapshot_quick_items()
 	var temp = slots[from_index]
 	slots[from_index] = slots[to_index]
 	slots[to_index] = temp
+	_emit_changed_quick_items(previous_items)
 
 
 func set_quick_slot(slot_index: int, quick_index: int) -> bool:
@@ -136,9 +144,10 @@ func set_quick_slot(slot_index: int, quick_index: int) -> bool:
 		return false
 	var valid_slot := slot_index >= 0 and slot_index < slots.size()
 	var next_mapping := slot_index if valid_slot else -1
+	var previous_items := _snapshot_quick_items()
 	if quick_slot_mappings[quick_index] != next_mapping:
 		quick_slot_mappings[quick_index] = next_mapping
-		quick_slot_mapping_changed.emit(quick_index, get_quick_item(quick_index))
+		_emit_changed_quick_items(previous_items)
 	return valid_slot
 
 
@@ -161,11 +170,13 @@ func use_item(slot_index: int) -> bool:
 	# 消耗品使用后减少数量
 	var item_data = GameDataScript.get_item(slot.item_id)
 	if item_data and item_data.get("category") in ["crop", "material"]:
+		var previous_items := _snapshot_quick_items()
 		slot.quantity -= 1
 		if _event_bus:
 			_event_bus.item_removed.emit(slot.item_id, 1)
 		if slot.quantity <= 0:
 			slots[slot_index] = {}
+		_emit_changed_quick_items(previous_items)
 		return true
 
 	return false
@@ -191,10 +202,7 @@ func clear() -> void:
 
 
 func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
-	var previous_mappings := quick_slot_mappings.duplicate()
-	var previous_items: Array[String] = []
-	for quick_index in range(6):
-		previous_items.append(get_quick_item(quick_index))
+	var previous_items := _snapshot_quick_items()
 
 	var normalized_slots: Array[Dictionary] = []
 	if saved_slots is Array:
@@ -218,40 +226,33 @@ func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
 			slot_index = -1
 		normalized_mappings.append(slot_index)
 	quick_slot_mappings.assign(normalized_mappings)
-	_emit_changed_quick_mappings(previous_mappings, previous_items)
+	_emit_changed_quick_items(previous_items)
 
 
 func reset_slots() -> void:
-	var previous_mappings := quick_slot_mappings.duplicate()
-	var previous_items: Array[String] = []
-	for quick_index in range(6):
-		previous_items.append(get_quick_item(quick_index))
+	var previous_items := _snapshot_quick_items()
 	slots.clear()
 	slots.resize(max_slots)
 	for i in range(max_slots):
 		slots[i] = {}
 	quick_slot_mappings = [-1, -1, -1, -1, -1, -1]
-	_emit_changed_quick_mappings(previous_mappings, previous_items)
+	_emit_changed_quick_items(previous_items)
 
 
-func _emit_changed_quick_mappings(
-	previous_mappings: Array,
-	previous_items: Array[String]
-) -> void:
+func _snapshot_quick_items() -> Array[String]:
+	var result: Array[String] = []
 	for quick_index in range(6):
-		var previous_mapping := (
-			int(previous_mappings[quick_index])
-			if quick_index < previous_mappings.size()
-			else -1
-		)
+		result.append(get_quick_item(quick_index))
+	return result
+
+
+func _emit_changed_quick_items(previous_items: Array[String]) -> void:
+	for quick_index in range(6):
 		var previous_item := (
 			previous_items[quick_index]
 			if quick_index < previous_items.size()
 			else ""
 		)
 		var current_item := get_quick_item(quick_index)
-		if (
-			previous_mapping != quick_slot_mappings[quick_index]
-			or previous_item != current_item
-		):
+		if previous_item != current_item:
 			quick_slot_mapping_changed.emit(quick_index, current_item)

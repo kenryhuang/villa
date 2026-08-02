@@ -144,6 +144,63 @@ func _test_inventory(assertions: TestAssert) -> void:
 			"resetting inventory emits a cleared mapping"
 		)
 
+	var lifecycle_inventory = InventorySystemScript.new()
+	lifecycle_inventory.add_item("grain_seed", 2)
+	lifecycle_inventory.add_item("carrot_seed", 1)
+	lifecycle_inventory.add_item("wood", 1)
+	var lifecycle_recorder := QuickMappingRecorder.new()
+	lifecycle_inventory.quick_slot_mapping_changed.connect(
+		lifecycle_recorder.on_mapping_changed
+	)
+	lifecycle_inventory.set_quick_slot(0, 5)
+	lifecycle_recorder.events.clear()
+	lifecycle_inventory.swap_slots(0, 1)
+	assertions.equal(
+		lifecycle_recorder.events,
+		[{"quick_index": 5, "item_id": "carrot_seed"}],
+		"swapping a mapped slot emits its final effective item once"
+	)
+	lifecycle_inventory.swap_slots(0, 1)
+	assertions.equal(
+		lifecycle_recorder.events.back(),
+		{"quick_index": 5, "item_id": "grain_seed"},
+		"swapping the mapped item back emits the restored effective item"
+	)
+	var event_count_before_partial_remove := lifecycle_recorder.events.size()
+	lifecycle_inventory.remove_item("grain_seed", 1)
+	assertions.equal(
+		lifecycle_recorder.events.size(),
+		event_count_before_partial_remove,
+		"partial removal with the same effective item emits no mapping event"
+	)
+	lifecycle_inventory.remove_item("grain_seed", 1)
+	assertions.equal(
+		lifecycle_recorder.events.back(),
+		{"quick_index": 5, "item_id": ""},
+		"depleting a mapped slot emits empty after the slot is cleared"
+	)
+	lifecycle_inventory.add_item("rose_seed", 2)
+	assertions.equal(
+		lifecycle_recorder.events.back(),
+		{"quick_index": 5, "item_id": "rose_seed"},
+		"refilling a mapped empty slot emits its new effective item"
+	)
+	var event_count_before_partial_add := lifecycle_recorder.events.size()
+	lifecycle_inventory.add_item("rose_seed", 1)
+	assertions.equal(
+		lifecycle_recorder.events.size(),
+		event_count_before_partial_add,
+		"adding quantity to the same effective item emits no mapping event"
+	)
+	lifecycle_inventory.set_quick_slot(2, 0)
+	lifecycle_recorder.events.clear()
+	assertions.truthy(lifecycle_inventory.use_item(2), "mapped material can be consumed")
+	assertions.equal(
+		lifecycle_recorder.events,
+		[{"quick_index": 0, "item_id": ""}],
+		"using the last mapped item emits empty after final depletion"
+	)
+
 	var tiny_inventory = InventorySystemScript.new()
 	tiny_inventory.max_slots = 1
 	tiny_inventory.reset_slots()
