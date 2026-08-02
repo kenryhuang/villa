@@ -352,8 +352,8 @@ func _test_authoritative_greenhouse_crop_and_wheel_scope(assertions: TestAssert)
 		assertions.equal(crops.size(), 1, "greenhouse query returns only seeded crops in that greenhouse")
 		if not crops.is_empty():
 			assertions.equal(crops[0].get("crop_id"), "tomato", "crop maturity snapshot exposes crop id")
-			assertions.equal(crops[0].get("remaining_days"), 3, "crop maturity rounds the remaining growth time up")
-			assertions.equal(crops[0].get("maturity_day"), production.get_current_day() + 3, "crop maturity exposes the authoritative calendar day")
+			assertions.equal(crops[0].get("remaining_days"), 2, "connected waterwheel projects the same 1.5 daily growth used by day simulation")
+			assertions.equal(crops[0].get("maturity_day"), production.get_current_day() + 2, "connected crop maturity exposes the accelerated calendar day")
 	var has_wheel_query := production.has_method("get_covered_greenhouses")
 	var has_covered_cells := production.has_method("get_waterwheel_covered_cells")
 	assertions.truthy(has_wheel_query and has_covered_cells, "ProductionSystem owns per-waterwheel covered cells and greenhouse intersection")
@@ -361,6 +361,13 @@ func _test_authoritative_greenhouse_crop_and_wheel_scope(assertions: TestAssert)
 		assertions.truthy(planted in production.call("get_waterwheel_covered_cells", wheel_a), "waterwheel authoritative cells include the intersected greenhouse cell")
 		assertions.equal(production.call("get_covered_greenhouses", wheel_a), [ProductionSystemScript.building_key(greenhouse_a)], "first wheel reports only its nearby greenhouse")
 		assertions.equal(production.call("get_covered_greenhouses", wheel_b), [ProductionSystemScript.building_key(greenhouse_b)], "far second wheel cannot leak into first wheel coverage")
+	grid.get_cell(5, 10).state = GridCell.State.WASTELAND
+	var disconnected: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
+	assertions.equal(disconnected[0].get("remaining_days"), 3, "water-disconnected wheel falls back to one growth point per day")
+	grid.get_cell(5, 10).state = GridCell.State.WATER
+	production.set_maintenance_due_day(wheel_a, production.get_current_day())
+	var maintenance_paused: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
+	assertions.equal(maintenance_paused[0].get("remaining_days"), 3, "maintenance-paused wheel does not accelerate crop maturity")
 
 
 func _test_barn_collection_is_atomic(assertions: TestAssert) -> void:

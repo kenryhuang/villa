@@ -360,6 +360,7 @@ func _setup_ui() -> void:
 		production_system,
 		inventory_system,
 		economy_progression_system,
+		grid_system,
 		building_economy_modal
 	):
 		push_error("Unable to configure building economy UI.")

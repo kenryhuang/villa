@@ -48,46 +48,6 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="Slot1" type="VBoxContainer" parent="ThreeColumns/QueueColumn/QueueSlots"]
-custom_minimum_size = Vector2(0, 120)
-layout_mode = 2
-
-[node name="RecipeLabel" type="Label" parent="ThreeColumns/QueueColumn/QueueSlots/Slot1"]
-layout_mode = 2
-text = "空闲"
-
-[node name="StateLabel" type="Label" parent="ThreeColumns/QueueColumn/QueueSlots/Slot1"]
-layout_mode = 2
-text = "idle"
-
-[node name="RemainingLabel" type="Label" parent="ThreeColumns/QueueColumn/QueueSlots/Slot1"]
-layout_mode = 2
-text = "剩余 0 分钟"
-
-[node name="ProgressBar" type="ProgressBar" parent="ThreeColumns/QueueColumn/QueueSlots/Slot1"]
-layout_mode = 2
-show_percentage = false
-
-[node name="Slot2" type="VBoxContainer" parent="ThreeColumns/QueueColumn/QueueSlots"]
-custom_minimum_size = Vector2(0, 120)
-layout_mode = 2
-
-[node name="RecipeLabel" type="Label" parent="ThreeColumns/QueueColumn/QueueSlots/Slot2"]
-layout_mode = 2
-text = "空闲"
-
-[node name="StateLabel" type="Label" parent="ThreeColumns/QueueColumn/QueueSlots/Slot2"]
-layout_mode = 2
-text = "idle"
-
-[node name="RemainingLabel" type="Label" parent="ThreeColumns/QueueColumn/QueueSlots/Slot2"]
-layout_mode = 2
-text = "剩余 0 分钟"
-
-[node name="ProgressBar" type="ProgressBar" parent="ThreeColumns/QueueColumn/QueueSlots/Slot2"]
-layout_mode = 2
-show_percentage = false
-
 [node name="StorageColumn" type="VBoxContainer" parent="ThreeColumns"]
 custom_minimum_size = Vector2(250, 0)
 layout_mode = 2

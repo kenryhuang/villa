@@ -50,8 +50,7 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 	])
 	_check_scene(assertions, PRODUCTION_SCENE, [
 		"ThreeColumns/RecipeColumn/RecipeList",
-		"ThreeColumns/QueueColumn/QueueSlots/Slot1/StateLabel",
-		"ThreeColumns/QueueColumn/QueueSlots/Slot2/StateLabel",
+		"ThreeColumns/QueueColumn/QueueSlots",
 		"ThreeColumns/StorageColumn/StorageList",
 		"ThreeColumns/StorageColumn/CollectAllButton",
 		"RecipeDetails/InputLabel",
@@ -90,8 +89,8 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	production.register_building(windmill)
 	var ui = _instantiate_scene(UI_SCENE, tree)
 	var modal := ModalCoordinatorScript.new()
-	assertions.truthy(ui.configure(production, inventory, progression, modal), "building UI configures real economy systems")
-	assertions.truthy(ui.configure(production, inventory, progression, modal), "repeated building UI configure is idempotent")
+	assertions.truthy(ui.configure(production, inventory, progression, fixture.grid, modal), "building UI configures real economy systems")
+	assertions.truthy(ui.configure(production, inventory, progression, fixture.grid, modal), "repeated building UI configure is idempotent")
 	assertions.truthy(ui.open_for(windmill), "completed windmill opens")
 	var panel = ui.production_panel
 	assertions.equal(panel.recipe_rows.size(), 3, "windmill exposes all three recipes")
@@ -136,7 +135,7 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	blocked_production.register_building(blocked)
 	assertions.truthy(blocked_production.start_recipe(blocked, "flour", 1, blocked_inventory), "output-full fixture starts through ProductionSystem")
 	blocked_production.advance_minutes(360)
-	ui.configure(blocked_production, blocked_inventory, progression, modal)
+	ui.configure(blocked_production, blocked_inventory, progression, fixture.grid, modal)
 	ui.open_for(blocked)
 	panel = ui.production_panel
 	assertions.equal(panel.queue_slots[0].state, "output-full", "UI output-full state comes from production snapshot")
@@ -159,6 +158,32 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.failure_reason, "inventory_capacity", "production collect-all exposes structured capacity reason")
 	panel.refresh_snapshot()
 	assertions.truthy(panel.feedback_label.text.contains("×1"), "production collection failure survives refresh")
+
+	var upgraded := _scene_building("windmill", tree)
+	upgraded.grid_x = 12
+	production.register_building(upgraded)
+	assertions.truthy(production.apply_upgrade(upgraded, "queue_slots", 2), "level-two queue upgrade applies through ProductionSystem")
+	upgraded.producer_state.jobs.assign([
+		{"recipe_id": "flour", "batches": 1, "remaining_minutes": 300, "status": "running"},
+		{"recipe_id": "flour", "batches": 1, "remaining_minutes": 300, "status": "queued"},
+		{"recipe_id": "flour", "batches": 1, "remaining_minutes": 300, "status": "queued"},
+		{"recipe_id": "flour", "batches": 1, "remaining_minutes": 300, "status": "queued"},
+	])
+	ui.configure(production, inventory, progression, fixture.grid, modal)
+	ui.open_for(upgraded)
+	panel = ui.production_panel
+	assertions.equal(panel.queue_slots.size(), 4, "level-two queue upgrade exposes all four authoritative slots")
+	assertions.equal(panel.queue_slot_nodes.size(), 4, "queue UI builds four visible slot nodes dynamically")
+	if panel.queue_slot_nodes.size() >= 4:
+		assertions.equal(panel.queue_slot_nodes[3].get_node("StateLabel").text, "waiting", "fourth queued job is visible")
+		var stale_slot: WeakRef = weakref(panel.queue_slot_nodes[3])
+		upgraded.producer_state.jobs.resize(1)
+		upgraded.producer_state.max_queue_slots = 2
+		panel.refresh_snapshot()
+		assertions.equal(panel.queue_slot_nodes.size(), 2, "queue downgrade removes surplus slot nodes")
+		assertions.truthy(stale_slot.get_ref() == null, "queue downgrade frees stale slot nodes and callbacks")
+	panel.show_building(windmill)
+	assertions.equal(panel.queue_slot_nodes.size(), 2, "switching to a normal building rebuilds exactly its authoritative slots")
 	ui.close()
 
 
@@ -169,7 +194,7 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	var panel = _instantiate_scene(STATUS_SCENE, tree)
 	var overlay = preload("res://scripts/ui/world_range_overlay.gd").new()
 	_track(overlay)
-	panel.configure(production, inventory, overlay)
+	panel.configure(production, inventory, fixture.grid, overlay)
 	var required := {
 		"beehive": ["next_output", "mature_flowers", "bonus", "storage"],
 		"chicken_coop": ["animal_count", "feed_stock", "feed_days", "daily_egg_output"],
@@ -281,16 +306,25 @@ func _test_range_and_modal_lifecycle(assertions: TestAssert, tree: SceneTree) ->
 	waterwheel.grid_z = 10
 	for position in [Vector2i(8, 10), Vector2i(9, 10), Vector2i(10, 8), Vector2i(14, 11)]:
 		grid.get_cell(position.x, position.y).state = GridCell.State.FARMLAND
+	grid.get_cell(8, 10).terrain_height = 1.25
+	grid.get_cell(9, 10).terrain_height = -0.5
 	production.register_building(waterwheel)
 	var ui = _instantiate_scene(UI_SCENE, tree)
 	var modal := ModalCoordinatorScript.new()
-	assertions.truthy(ui.configure(production, fixture.inventory, fixture.progression, modal), "range fixture configures UI")
+	assertions.truthy(ui.configure(production, fixture.inventory, fixture.progression, grid, modal), "range fixture configures UI")
 	tree.paused = false
 	assertions.truthy(ui.open_for(waterwheel), "waterwheel opens status panel")
 	assertions.truthy(tree.paused, "full-screen building UI pauses previously running tree")
 	ui.status_panel.set_range_preview(true)
 	assertions.equal(ui.range_overlay.cells, production.get_irrigated_cells(waterwheel), "range overlay exactly matches authoritative irrigated cells")
 	assertions.equal(ui.range_overlay.get_child_count(), ui.range_overlay.cells.size(), "range overlay creates only non-collision cell geometry")
+	var high_cell := _overlay_cell(ui.range_overlay, Vector2i(8, 10))
+	var low_cell := _overlay_cell(ui.range_overlay, Vector2i(9, 10))
+	assertions.truthy(high_cell != null and low_cell != null, "range overlay authors geometry for both terrain samples")
+	if high_cell != null and low_cell != null:
+		assertions.near(high_cell.position.y, 1.25 + ui.range_overlay.CELL_LIFT, 0.0001, "range overlay follows the high terrain sample")
+		assertions.near(low_cell.position.y, -0.5 + ui.range_overlay.CELL_LIFT, 0.0001, "range overlay follows the low terrain sample")
+		assertions.truthy(not is_equal_approx(high_cell.position.y, low_cell.position.y), "range overlay height is not a constant plane")
 	for child in ui.range_overlay.get_children():
 		assertions.truthy(child is MeshInstance3D, "range preview geometry has no collision node")
 	ui.close()
@@ -375,6 +409,13 @@ func _instantiate_scene(path: String, tree: SceneTree) -> Node:
 	_track(node)
 	tree.root.add_child(node)
 	return node
+
+
+func _overlay_cell(overlay: Node3D, position: Vector2i) -> MeshInstance3D:
+	for child in overlay.get_children():
+		if child is MeshInstance3D and child.get_meta("grid_cell", Vector2i(-1, -1)) == position:
+			return child
+	return null
 
 
 func _check_scene(assertions: TestAssert, path: String, required_paths: Array[String]) -> void:

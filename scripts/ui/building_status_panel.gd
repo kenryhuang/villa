@@ -33,6 +33,7 @@ var failure_message := ""
 
 var _production: ProductionSystem
 var _inventory: InventorySystem
+var _grid: GridSystem
 var _range_overlay: WorldRangeOverlay
 var _building_ref: WeakRef
 var _range_preview_enabled := false
@@ -49,12 +50,14 @@ func _ready() -> void:
 func configure(
 	production: ProductionSystem,
 	inventory: InventorySystem,
+	grid: GridSystem,
 	range_overlay: WorldRangeOverlay
 ) -> bool:
-	if production == null or inventory == null or range_overlay == null:
+	if production == null or inventory == null or grid == null or range_overlay == null:
 		return false
 	_production = production
 	_inventory = inventory
+	_grid = grid
 	_range_overlay = range_overlay
 	_connect_event_bus()
 	refresh_snapshot()
@@ -141,7 +144,7 @@ func set_range_preview(enabled: bool) -> void:
 	_range_preview_enabled = enabled and building != null and building.building_id == "waterwheel"
 	if _range_overlay != null:
 		if _range_preview_enabled and _production != null:
-			_range_overlay.show_cells(_production.get_irrigated_cells(building))
+			_range_overlay.show_cells(_production.get_irrigated_cells(building), _grid)
 		else:
 			_range_overlay.clear()
 	if is_node_ready():

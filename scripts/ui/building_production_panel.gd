@@ -9,10 +9,7 @@ const DEFAULT_INPUT_CAPACITY := 99
 signal snapshot_changed(state: String)
 
 @onready var recipe_list: VBoxContainer = $ThreeColumns/RecipeColumn/RecipeList
-@onready var queue_slot_nodes := [
-	$ThreeColumns/QueueColumn/QueueSlots/Slot1,
-	$ThreeColumns/QueueColumn/QueueSlots/Slot2,
-]
+@onready var queue_slots_container: VBoxContainer = $ThreeColumns/QueueColumn/QueueSlots
 @onready var storage_list: VBoxContainer = $ThreeColumns/StorageColumn/StorageList
 @onready var storage_empty_label: Label = $ThreeColumns/StorageColumn/EmptyLabel
 @onready var storage_capacity_label: Label = $ThreeColumns/StorageColumn/CapacityLabel
@@ -29,6 +26,7 @@ signal snapshot_changed(state: String)
 @onready var feedback_label: Label = $FeedbackLabel
 
 var recipe_rows: Array[Dictionary] = []
+var queue_slot_nodes: Array[VBoxContainer] = []
 var recipe_detail: Dictionary = {}
 var queue_slots: Array[Dictionary] = []
 var storage: Dictionary = {}
@@ -238,7 +236,7 @@ func _build_recipe_detail(building: BuildingInstance) -> void:
 func _build_queue_slots() -> void:
 	queue_slots.clear()
 	var jobs: Array = snapshot.get("jobs", [])
-	var maximum := 2
+	var maximum := maxi(int(snapshot.get("max_queue_slots", 2)), jobs.size())
 	for index in range(maximum):
 		if index >= jobs.size():
 			queue_slots.append({"state": "idle", "recipe_id": "", "batches": 0, "remaining_minutes": 0, "progress": 0.0})
@@ -255,8 +253,6 @@ func _build_queue_slots() -> void:
 			"remaining_minutes": remaining,
 			"progress": clampf(1.0 - float(remaining) / float(total), 0.0, 1.0),
 		})
-	while queue_slots.size() < 2:
-		queue_slots.append({"state": "idle", "recipe_id": "", "batches": 0, "remaining_minutes": 0, "progress": 0.0})
 
 
 func _queue_state(job: Dictionary, index: int) -> String:
@@ -341,6 +337,7 @@ func _render() -> void:
 		button.tooltip_text = str(row.lock_reason)
 		button.pressed.connect(select_recipe.bind(str(row.recipe_id)))
 		recipe_list.add_child(button)
+	_sync_queue_slot_nodes(queue_slots.size())
 	for index in range(queue_slot_nodes.size()):
 		var slot: Dictionary = queue_slots[index] if index < queue_slots.size() else {"state": "idle", "recipe_id": "", "batches": 0, "remaining_minutes": 0, "progress": 0.0}
 		queue_slot_nodes[index].get_node("RecipeLabel").text = "空闲" if str(slot.state) == "idle" else "%s ×%d" % [str(slot.get("display_name", slot.recipe_id)), int(slot.batches)]
@@ -380,6 +377,40 @@ func _render() -> void:
 	start_button.disabled = not bool(preflight.get("ok", false))
 	start_button.tooltip_text = disabled_reason
 	feedback_label.text = failure_message
+
+
+func _sync_queue_slot_nodes(target_count: int) -> void:
+	while queue_slot_nodes.size() > target_count:
+		var stale: VBoxContainer = queue_slot_nodes.pop_back()
+		queue_slots_container.remove_child(stale)
+		stale.free()
+	while queue_slot_nodes.size() < target_count:
+		var slot: VBoxContainer = _create_queue_slot_node(queue_slot_nodes.size())
+		queue_slot_nodes.append(slot)
+		queue_slots_container.add_child(slot)
+
+
+func _create_queue_slot_node(index: int) -> VBoxContainer:
+	var slot := VBoxContainer.new()
+	slot.name = "Slot%d" % (index + 1)
+	slot.custom_minimum_size = Vector2(0, 120)
+	var recipe_label := Label.new()
+	recipe_label.name = "RecipeLabel"
+	recipe_label.text = "空闲"
+	var state_label := Label.new()
+	state_label.name = "StateLabel"
+	state_label.text = "idle"
+	var remaining_label := Label.new()
+	remaining_label.name = "RemainingLabel"
+	remaining_label.text = "剩余 0 分钟"
+	var progress_bar := ProgressBar.new()
+	progress_bar.name = "ProgressBar"
+	progress_bar.show_percentage = false
+	slot.add_child(recipe_label)
+	slot.add_child(state_label)
+	slot.add_child(remaining_label)
+	slot.add_child(progress_bar)
+	return slot
 
 
 func _clear_view() -> void:

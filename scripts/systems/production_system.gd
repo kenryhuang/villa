@@ -711,7 +711,15 @@ func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Diction
 		var growth_days := maxi(0, int(_property_value(crop_data, "growth_days", 0)))
 		if crop_id.is_empty() or growth_days <= 0:
 			continue
-		var remaining_days := maxi(0, ceili(float(growth_days) - float(cell.crop_instance.growth_progress)))
+		var total_half_steps := growth_days * 2
+		var completed_half_steps := clampi(
+			roundi(float(cell.crop_instance.growth_progress) * 2.0),
+			0,
+			total_half_steps
+		)
+		var remaining_half_steps := total_half_steps - completed_half_steps
+		var daily_half_steps := 3 if _is_crop_cell_currently_irrigated(position) else 2
+		var remaining_days := ceili(float(remaining_half_steps) / float(daily_half_steps))
 		result.append({
 			"cell": position,
 			"crop_id": crop_id,
@@ -724,6 +732,20 @@ func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Diction
 		return a_cell.y < b_cell.y or (a_cell.y == b_cell.y and a_cell.x < b_cell.x)
 	)
 	return result
+
+
+func _is_crop_cell_currently_irrigated(position: Vector2i) -> bool:
+	for waterwheel in _valid_registered_buildings():
+		if (
+			not _building_is_active(waterwheel)
+			or not _has_effect(waterwheel, "irrigation")
+			or is_maintenance_overdue(waterwheel)
+			or not is_water_connected(waterwheel)
+		):
+			continue
+		if position in get_irrigated_cells(waterwheel):
+			return true
+	return false
 
 
 func get_covered_greenhouses(waterwheel: BuildingInstance) -> Array[String]:

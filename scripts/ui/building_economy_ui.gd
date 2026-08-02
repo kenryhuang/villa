@@ -19,6 +19,7 @@ const STATUS_BUILDINGS := [
 var _production: ProductionSystem
 var _inventory: InventorySystem
 var _progression: EconomyProgressionSystem
+var _grid: GridSystem
 var _modal: EconomyModalCoordinator
 var _building_ref: WeakRef
 var _is_open := false
@@ -32,7 +33,7 @@ func _ready() -> void:
 	_connect_panel_signals()
 	if is_configured():
 		production_panel.configure(_production, _inventory, _progression)
-		status_panel.configure(_production, _inventory, range_overlay)
+		status_panel.configure(_production, _inventory, _grid, range_overlay)
 
 
 static func panel_kind_for(building_id: String, effect_type: String) -> String:
@@ -47,18 +48,20 @@ func configure(
 	production: ProductionSystem,
 	inventory: InventorySystem,
 	progression: EconomyProgressionSystem,
+	grid: GridSystem,
 	modal: EconomyModalCoordinator
 ) -> bool:
-	if production == null or inventory == null or progression == null or modal == null:
+	if production == null or inventory == null or progression == null or grid == null or modal == null:
 		return false
 	_production = production
 	_inventory = inventory
 	_progression = progression
+	_grid = grid
 	_modal = modal
 	if not is_node_ready():
 		return true
 	_connect_panel_signals()
-	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, range_overlay)
+	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, grid, range_overlay)
 
 
 func open_for(building: BuildingInstance) -> bool:
@@ -115,7 +118,7 @@ func is_open() -> bool:
 
 
 func is_configured() -> bool:
-	return _production != null and _inventory != null and _progression != null and _modal != null
+	return _production != null and _inventory != null and _progression != null and _grid != null and _modal != null
 
 
 func current_building() -> BuildingInstance:
