@@ -36,15 +36,38 @@ class WalletDouble extends Node:
 		return true
 
 
+class ReentrantDeliveryObserver extends RefCounted:
+	var reenter: Callable
+	var attempted := false
+	var inner_result := true
+	var gold_events := 0
+	var item_events := 0
+
+	func _init(action: Callable) -> void:
+		reenter = action
+
+	func on_gold_changed(_new_gold: int) -> void:
+		gold_events += 1
+		if attempted:
+			return
+		attempted = true
+		inner_result = bool(reenter.call())
+
+	func on_item_removed(_item_id: String, _quantity: int) -> void:
+		item_events += 1
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_required_api(assertions)
 	_test_stable_event_bus_signal_shape(assertions)
 	_test_shortage_premiums_cap_and_dedup(assertions)
 	_test_order_completion_is_atomic_and_once_only(assertions)
+	_test_reentrant_delivery_signals_settle_once(assertions, tree)
 	_test_expired_and_failed_orders_preserve_assets(assertions)
 	_test_contract_delivery_reload_and_breach_idempotence(assertions)
 	_test_snapshots_and_strict_atomic_restore(assertions)
 	_test_save_manager_round_trip(assertions, tree)
+	_test_generation_requires_current_safe_day(assertions)
 
 
 func _test_required_api(assertions: TestAssert) -> void:
@@ -146,6 +169,72 @@ func _test_order_completion_is_atomic_and_once_only(assertions: TestAssert) -> v
 	_free_fixture(fixture)
 
 
+func _test_reentrant_delivery_signals_settle_once(assertions: TestAssert, tree: SceneTree) -> void:
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(event_bus != null, "real EventBus exists for reentrant delivery coverage")
+	if event_bus == null:
+		return
+	var fixture := _fixture([_profile("urgent_npc", {"iron_ore": 10})])
+	var economy: Node = fixture.economy
+	tree.root.add_child(economy)
+	economy.call("advance_order_deadlines", 12)
+	assertions.equal(economy.call("generate_demand_orders", 12), true, "reentrant order fixture generates on its current day")
+	var order: Dictionary = (economy.call("get_orders") as Array)[0]
+	var quantity := int(order.quantity)
+	var reward := int(order.reward_gold)
+	assertions.truthy(fixture.inventory.add_item("iron_ore", quantity * 2), "reentrant order fixture owns two deliveries")
+	var gold_before := int(fixture.wallet.gold)
+	var order_observer := ReentrantDeliveryObserver.new(
+		Callable(economy, "complete_order").bind(str(order.order_id))
+	)
+	event_bus.gold_changed.connect(order_observer.on_gold_changed)
+	event_bus.item_removed.connect(order_observer.on_item_removed)
+	assertions.truthy(bool(economy.call("complete_order", str(order.order_id))), "outer order delivery succeeds")
+	event_bus.gold_changed.disconnect(order_observer.on_gold_changed)
+	event_bus.item_removed.disconnect(order_observer.on_item_removed)
+	assertions.truthy(order_observer.attempted, "gold signal attempts one reentrant order completion")
+	assertions.truthy(not order_observer.inner_result, "reentrant completion of the same order is rejected")
+	assertions.equal(fixture.inventory.get_item_count("iron_ore"), quantity, "reentrant order consumes one delivery")
+	assertions.equal(fixture.npc.get_npc_state("urgent_npc").inventory.get("iron_ore", 0), quantity, "reentrant order credits NPC once")
+	assertions.equal(fixture.wallet.gold, gold_before + reward, "reentrant order pays once")
+	assertions.truthy(bool((economy.call("get_orders") as Array)[0].completed), "reentrant order records one completion")
+	assertions.equal(order_observer.gold_events, 1, "reentrant order emits one final gold signal")
+	assertions.equal(order_observer.item_events, 1, "reentrant order emits one final item signal")
+	tree.root.remove_child(economy)
+	_free_fixture(fixture)
+
+	fixture = _fixture([_profile("grain_npc", {"grain": 15})])
+	economy = fixture.economy
+	tree.root.add_child(economy)
+	assertions.truthy(bool(economy.call("from_dict", {
+		"last_processed_day": 0,
+		"orders": [],
+		"contracts": [_contract_record()],
+	})), "reentrant contract fixture restores")
+	assertions.truthy(bool(economy.call("sign_contract", "grain_npc:grain:1:3")), "reentrant contract fixture signs")
+	economy.call("advance_order_deadlines", 1)
+	assertions.truthy(fixture.inventory.add_item("grain", 10), "reentrant contract fixture owns two deliveries")
+	gold_before = int(fixture.wallet.gold)
+	var contract_observer := ReentrantDeliveryObserver.new(
+		Callable(economy, "deliver_contract").bind("grain_npc:grain:1:3", 5)
+	)
+	event_bus.gold_changed.connect(contract_observer.on_gold_changed)
+	event_bus.item_removed.connect(contract_observer.on_item_removed)
+	assertions.truthy(bool(economy.call("deliver_contract", "grain_npc:grain:1:3", 5)), "outer contract delivery succeeds")
+	event_bus.gold_changed.disconnect(contract_observer.on_gold_changed)
+	event_bus.item_removed.disconnect(contract_observer.on_item_removed)
+	assertions.truthy(contract_observer.attempted, "gold signal attempts one reentrant contract delivery")
+	assertions.truthy(not contract_observer.inner_result, "reentrant delivery of the same contract day is rejected")
+	assertions.equal(fixture.inventory.get_item_count("grain"), 5, "reentrant contract consumes one delivery")
+	assertions.equal(fixture.npc.get_npc_state("grain_npc").inventory.get("grain", 0), 5, "reentrant contract credits NPC once")
+	assertions.equal(fixture.wallet.gold, gold_before + 50, "reentrant contract pays once")
+	assertions.equal((economy.call("get_contracts") as Array)[0].delivered_days, [1], "reentrant contract records one delivered day")
+	assertions.equal(contract_observer.gold_events, 1, "reentrant contract emits one final gold signal")
+	assertions.equal(contract_observer.item_events, 1, "reentrant contract emits one final item signal")
+	tree.root.remove_child(economy)
+	_free_fixture(fixture)
+
+
 func _test_expired_and_failed_orders_preserve_assets(assertions: TestAssert) -> void:
 	var fixture := _fixture([_profile("urgent_npc", {"iron_ore": 10})])
 	var economy: Node = fixture.economy
@@ -176,7 +265,20 @@ func _test_expired_and_failed_orders_preserve_assets(assertions: TestAssert) -> 
 	assertions.truthy(not bool(economy.call("complete_order", str(order.order_id))), "wallet failure rejects completion")
 	_assert_assets(assertions, fixture, before, "urgent_npc", "iron_ore", "wallet failure")
 	assertions.truthy(not bool((economy.call("get_orders") as Array)[0].completed), "failed payment leaves order incomplete")
+	assertions.truthy(bool(economy.call("complete_order", str(order.order_id))), "delivery guard clears after a failed transfer")
 	assertions.truthy(not bool(economy.call("complete_order", "unknown:iron_ore:12")), "unknown order ID is rejected")
+	_free_fixture(fixture)
+
+	fixture = _fixture([_profile("urgent_npc", {"iron_ore": 10})])
+	economy = fixture.economy
+	economy.call("advance_order_deadlines", 12)
+	economy.call("generate_demand_orders", 12)
+	order = (economy.call("get_orders") as Array)[0]
+	assertions.truthy(fixture.inventory.add_item("iron_ore", int(order.quantity)), "future-created defense fixture owns items")
+	before = _asset_snapshot(fixture, "urgent_npc", "iron_ore")
+	economy.set("_last_processed_day", 11)
+	assertions.truthy(not bool(economy.call("complete_order", str(order.order_id))), "completion rejects an order created after the current cursor")
+	_assert_assets(assertions, fixture, before, "urgent_npc", "iron_ore", "future-created completion defense")
 	_free_fixture(fixture)
 
 	fixture = _fixture([_profile("urgent_npc", {"iron_ore": 10})])
@@ -364,6 +466,27 @@ func _test_save_manager_round_trip(assertions: TestAssert, tree: SceneTree) -> v
 		tree.root.remove_child(node)
 		node.free()
 	_cleanup_save()
+
+
+func _test_generation_requires_current_safe_day(assertions: TestAssert) -> void:
+	var fixture := _fixture([_profile("daily_npc", {"iron_ore": 5})])
+	var economy: Node = fixture.economy
+	economy.call("advance_order_deadlines", 12)
+	var before: Dictionary = economy.call("to_dict")
+	assertions.equal(economy.call("generate_demand_orders", 13), false, "future generation day is rejected")
+	assertions.equal(economy.call("to_dict"), before, "future generation adds no order and preserves cursor")
+	assertions.equal(economy.call("generate_demand_orders", 0), false, "nonpositive generation day is rejected")
+	assertions.equal(economy.call("generate_demand_orders", 12), true, "current generation day is accepted")
+	assertions.equal((economy.call("get_orders") as Array).size(), 1, "accepted current day creates one shortage order")
+	_free_fixture(fixture)
+
+	fixture = _fixture([_profile("daily_npc", {"iron_ore": 5})])
+	economy = fixture.economy
+	economy.call("advance_order_deadlines", 9223372036854775807)
+	before = economy.call("to_dict")
+	assertions.equal(economy.call("generate_demand_orders", 9223372036854775807), false, "maximum integer generation day is rejected safely")
+	assertions.equal(economy.call("to_dict"), before, "maximum day creates no wrapped ID or expiry")
+	_free_fixture(fixture)
 
 
 func _fixture(profiles: Array, iron_price: int = 100, grain_price: int = 10) -> Dictionary:

@@ -21,10 +21,12 @@ const CONTRACT_FIELDS := [
 	"signed", "completed", "expired",
 ]
 const STATE_FIELDS := ["last_processed_day", "orders", "contracts"]
+const MAX_ORDER_CREATION_DAY := 9223372036854775805
 
 var _orders: Array[Dictionary] = []
 var _contracts: Array[Dictionary] = []
 var _last_processed_day := 0
+var _active_deliveries: Dictionary = {}
 
 var _inventory_ref: InventorySystem
 var _wallet_ref: Node
@@ -312,13 +314,17 @@ func complete_order(order_id: String) -> bool:
 	if index < 0:
 		return false
 	var order: Dictionary = _orders[index]
+	var created_day := _order_created_day(order)
 	if (
 		bool(order.completed)
 		or bool(order.expired)
+		or created_day <= 0
+		or created_day > _last_processed_day
 		or _last_processed_day > int(order.expires_day)
 	):
 		return false
-	if not _transfer_player_delivery(
+	if not _transfer_record_delivery(
+		"order:%s" % order_id,
 		str(order.npc_id), str(order.item_id), int(order.quantity), int(order.reward_gold)
 	):
 		return false
@@ -359,7 +365,8 @@ func deliver_contract(contract_id: String, quantity: int) -> bool:
 		or _last_processed_day in (contract.delivered_days as Array)
 	):
 		return false
-	if not _transfer_player_delivery(
+	if not _transfer_record_delivery(
+		"contract:%s" % contract_id,
 		str(contract.npc_id), str(contract.item_id), quantity, int(contract.reward_gold)
 	):
 		return false
@@ -369,6 +376,21 @@ func deliver_contract(contract_id: String, quantity: int) -> bool:
 	_contracts[index]["completed"] = delivered_days.size() == _contract_duration(contract)
 	_emit_record_updated("contract_updated", contract_id)
 	return true
+
+
+func _transfer_record_delivery(
+	delivery_key: String,
+	npc_id: String,
+	item_id: String,
+	quantity: int,
+	reward_gold: int
+) -> bool:
+	if _active_deliveries.has(delivery_key):
+		return false
+	_active_deliveries[delivery_key] = true
+	var transferred := _transfer_player_delivery(npc_id, item_id, quantity, reward_gold)
+	_active_deliveries.erase(delivery_key)
+	return transferred
 
 
 func _transfer_player_delivery(
@@ -445,6 +467,13 @@ func _find_record(records: Array[Dictionary], id_field: String, record_id: Strin
 		if str(records[index].get(id_field, "")) == record_id:
 			return index
 	return -1
+
+
+func _order_created_day(order: Dictionary) -> int:
+	var parts := str(order.get("order_id", "")).split(":")
+	if parts.size() != 3 or not parts[2].is_valid_int():
+		return -1
+	return int(parts[2])
 
 
 func get_affinity(villager_id: String) -> int:
@@ -526,9 +555,15 @@ func advance_order_deadlines(day: int) -> void:
 	_last_processed_day = day
 
 
-func generate_demand_orders(day: int) -> void:
-	if day <= 0 or _npc_ref == null or _market_ref == null:
-		return
+func generate_demand_orders(day: int) -> bool:
+	if (
+		day <= 0
+		or day != _last_processed_day
+		or day > MAX_ORDER_CREATION_DAY
+		or _npc_ref == null
+		or _market_ref == null
+	):
+		return false
 	var shortages: Array = _npc_ref.call("get_shortages")
 	for shortage_value in shortages:
 		if not shortage_value is Dictionary:
@@ -567,6 +602,7 @@ func generate_demand_orders(day: int) -> void:
 			"expired": false,
 		})
 		_emit_record_updated("order_updated", order_id)
+	return true
 
 
 func _has_open_order(npc_id: String, item_id: String) -> bool:
@@ -757,7 +793,7 @@ func _normalize_order(value: Variant, cursor: int) -> Variant:
 	if not parts[2].is_valid_int() or int(parts[2]) <= 0:
 		return null
 	var created_day := int(parts[2])
-	if created_day > 9223372036854775805 or created_day > cursor:
+	if created_day > MAX_ORDER_CREATION_DAY or created_day > cursor:
 		return null
 	var expected_expiry := created_day + (1 if str(order.kind) == "urgent" else 2)
 	if (
