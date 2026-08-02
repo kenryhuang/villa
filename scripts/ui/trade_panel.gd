@@ -117,6 +117,18 @@ static func impact_for(quantity: int, liquidity: int) -> String:
 	return "severe"
 
 
+static func needs_sell_confirmation(
+	quantity: int,
+	liquidity: int,
+	first_unit: int,
+	last_unit: int
+) -> bool:
+	return (
+		(liquidity > 0 and quantity >= liquidity)
+		or (first_unit > 0 and last_unit * 10 <= first_unit * 9)
+	)
+
+
 func request_buy() -> void:
 	refresh_quote()
 	if buy_button.disabled:
@@ -141,7 +153,7 @@ func request_sell() -> void:
 	var total := market_ref.quote_sell(item_id, quantity)
 	var first := market_ref.quote_sell(item_id, 1)
 	var last := total - market_ref.quote_sell(item_id, quantity - 1) if quantity > 1 else first
-	if needs_confirmation(quantity, _liquidity(), total, _gold(), first, last):
+	if needs_sell_confirmation(quantity, _liquidity(), first, last):
 		_open_confirmation("sell", quantity, first, last, total)
 		return
 	_execute_trade("sell", quantity)

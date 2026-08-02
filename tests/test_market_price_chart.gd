@@ -3,7 +3,7 @@ extends RefCounted
 const CHART_SCRIPT_PATH := "res://scripts/ui/market_price_chart.gd"
 
 
-func run(assertions: TestAssert) -> void:
+func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(ResourceLoader.exists(CHART_SCRIPT_PATH), "market price chart script exists")
 	if not ResourceLoader.exists(CHART_SCRIPT_PATH):
 		return
@@ -33,3 +33,36 @@ func run(assertions: TestAssert) -> void:
 	assertions.near(seven[3].x, 0.5, 0.001, "seven-day history spaces observations evenly")
 	assertions.equal(seven[0].y, 0.0, "descending high starts at chart top")
 	assertions.equal(seven[6].y, 1.0, "descending low ends at chart bottom")
+	await _test_drawn_hover_context(assertions, tree, chart_script)
+
+
+func _test_drawn_hover_context(
+	assertions: TestAssert,
+	tree: SceneTree,
+	chart_script: Script
+) -> void:
+	var chart := chart_script.new() as Control
+	chart.size = Vector2(320.0, 180.0)
+	tree.root.add_child(chart)
+	assertions.truthy(chart.has_method("set_series"), "chart accepts dated history and change reasons")
+	if not chart.has_method("set_series"):
+		chart.free()
+		return
+	chart.call(
+		"set_series",
+		[10, 12, 11],
+		["春 1", "春 2", "春 3"],
+		["历史起点", "库存偏紧", "供给高于需求"]
+	)
+	await tree.process_frame
+	await tree.process_frame
+	var hover_points: PackedVector2Array = chart.get("_hover_points")
+	assertions.equal(hover_points.size(), 3, "real chart draw registers one hover point per observation")
+	if hover_points.size() == 3:
+		var motion := InputEventMouseMotion.new()
+		motion.position = hover_points[1]
+		chart.call("_gui_input", motion)
+		assertions.truthy(chart.tooltip_text.contains("春 2"), "hover shows the observed game date")
+		assertions.truthy(chart.tooltip_text.contains("价格 12"), "hover shows the observed price")
+		assertions.truthy(chart.tooltip_text.contains("主要变化：库存偏紧"), "hover shows the principal change reason")
+	chart.free()

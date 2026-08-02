@@ -34,7 +34,7 @@ func _check_scene(path: String, required_nodes: Array[String]) -> void:
 
 func _run() -> void:
 	var market_assertions = TestAssertScript.new()
-	MarketPriceChartTest.new().run(market_assertions)
+	await MarketPriceChartTest.new().run(market_assertions, self)
 	await MarketUITest.new().run(market_assertions, self)
 	for failure in market_assertions.failures:
 		failures.append(failure)

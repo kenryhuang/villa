@@ -24,6 +24,7 @@ const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名�
 }
 @onready var sort_option: OptionButton = $Columns/CatalogColumn/SortMode
 @onready var item_list: ItemList = $Columns/CatalogColumn/ItemList
+@onready var item_rows: VBoxContainer = $Columns/CatalogColumn/ItemScroll/ItemRows
 @onready var empty_label: Label = $Columns/CatalogColumn/EmptyLabel
 @onready var item_name_label: Label = $Columns/DetailColumn/ItemNameLabel
 @onready var mid_price_label: Label = $Columns/DetailColumn/MidPriceLabel
@@ -98,6 +99,10 @@ func select_item(next_item_id: String) -> void:
 	var row := _item_ids.find(selected_item_id)
 	if row >= 0:
 		item_list.select(row)
+	for item_row in item_rows.get_children():
+		var select_button := item_row.get_node_or_null("Content/SelectButton") as Button
+		if select_button != null:
+			select_button.button_pressed = str(item_row.get_meta("item_id", "")) == selected_item_id
 	refresh_snapshot()
 
 
@@ -129,7 +134,11 @@ func refresh_snapshot() -> void:
 		int(state.get("demand", 0)),
 		int(state.get("daily_liquidity", 0)),
 	]
-	price_chart.set_history(history)
+	price_chart.set_series(
+		history,
+		_history_dates(history.size()),
+		_history_reasons(history, state, definition)
+	)
 	tags_label.text = "标签：%s　季节 —　事件 —　NPC需求 %s" % [
 		str(definition.get("volatility", "stable")),
 		"活跃" if int(state.get("demand", 0)) > 0 else "平稳",
@@ -155,6 +164,8 @@ func _rebuild_item_list() -> void:
 		candidates.append(definition)
 	candidates.sort_custom(_compare_items)
 	item_list.clear()
+	for child in item_rows.get_children():
+		child.free()
 	_item_ids.clear()
 	for definition in candidates:
 		var candidate_id := str(definition.get("id", ""))
@@ -169,9 +180,10 @@ func _rebuild_item_list() -> void:
 		]
 		item_list.add_item(row_text)
 		item_list.set_item_metadata(item_list.item_count - 1, candidate_id)
+		item_rows.add_child(_create_item_row(definition, state, history, row_text))
 		_item_ids.append(candidate_id)
 	empty_label.visible = _item_ids.is_empty()
-	item_list.visible = not _item_ids.is_empty()
+	$Columns/CatalogColumn/ItemScroll.visible = not _item_ids.is_empty()
 	if _item_ids.is_empty():
 		selected_item_id = ""
 		_show_empty_detail()
@@ -205,6 +217,107 @@ func _compare_items(a: Dictionary, b: Dictionary) -> bool:
 			return a_score > b_score
 
 
+func _create_item_row(
+	definition: Dictionary,
+	state: Dictionary,
+	_history: Array,
+	row_text: String
+) -> PanelContainer:
+	var item_id := str(definition.get("id", ""))
+	var row := PanelContainer.new()
+	row.name = "ItemRow_%s" % item_id
+	row.set_meta("item_id", item_id)
+	row.tooltip_text = "%s；%s" % [_stock_status(state), "紧急需求" if _is_urgent(state) else "供需平稳"]
+	var row_style := StyleBoxFlat.new()
+	row_style.bg_color = Color("#FFF7E6")
+	row_style.corner_radius_top_left = 8
+	row_style.corner_radius_top_right = 8
+	row_style.corner_radius_bottom_left = 8
+	row_style.corner_radius_bottom_right = 8
+	row.add_theme_stylebox_override("panel", row_style)
+
+	var content := HBoxContainer.new()
+	content.name = "Content"
+	content.add_theme_constant_override("separation", 8)
+	row.add_child(content)
+	var icon_info := _item_icon_info(definition)
+	var icon := TextureRect.new()
+	icon.name = "Icon"
+	icon.custom_minimum_size = Vector2(34.0, 34.0)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture = icon_info.get("texture") as Texture2D
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(icon)
+	row.set_meta("uses_fallback_icon", bool(icon_info.get("fallback", false)))
+
+	var select_button := Button.new()
+	select_button.name = "SelectButton"
+	select_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	select_button.flat = true
+	select_button.toggle_mode = true
+	select_button.text = row_text
+	select_button.tooltip_text = "选择%s" % str(definition.get("name", item_id))
+	select_button.pressed.connect(select_item.bind(item_id))
+	content.add_child(select_button)
+
+	var stock_bar := ColorRect.new()
+	stock_bar.name = "StockColorBar"
+	stock_bar.custom_minimum_size = Vector2(8.0, 36.0)
+	stock_bar.color = _stock_color(state)
+	stock_bar.tooltip_text = "库存状态：%s" % _stock_status(state)
+	stock_bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	content.add_child(stock_bar)
+
+	var urgent_badge := Label.new()
+	urgent_badge.name = "UrgentBadge"
+	urgent_badge.visible = _is_urgent(state)
+	urgent_badge.text = "紧急需求"
+	urgent_badge.add_theme_color_override("font_color", Color("#B65C4B"))
+	urgent_badge.add_theme_font_size_override("font_size", 16)
+	urgent_badge.tooltip_text = "库存紧缺或今日需求达到流动量"
+	content.add_child(urgent_badge)
+	return row
+
+
+func _item_icon_info(definition: Dictionary) -> Dictionary:
+	var item_id := str(definition.get("id", ""))
+	var icon_paths := {
+		"wood": "res://assets/ui/material_icons/wood.svg",
+		"stone": "res://assets/ui/material_icons/stone.svg",
+		"glass": "res://assets/ui/material_icons/glass.svg",
+		"iron_ore": "res://assets/ui/material_icons/iron.svg",
+		"iron_ingot": "res://assets/ui/material_icons/iron.svg",
+		"grain": "res://assets/crops/grain/painted/stage_3/variant_0_front.png",
+		"grain_seed": "res://assets/crops/grain/painted/stage_0/variant_0_front.png",
+	}
+	var icon_path := str(icon_paths.get(item_id, ""))
+	if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
+		return {"texture": load(icon_path) as Texture2D, "fallback": false}
+	var placeholder := PlaceholderTexture2D.new()
+	placeholder.size = Vector2(34.0, 34.0)
+	return {"texture": placeholder, "fallback": true}
+
+
+func _stock_color(state: Dictionary) -> Color:
+	var ratio := _stock_ratio(state)
+	if ratio < 0.35:
+		return Color("#B65C4B")
+	if ratio < 0.75:
+		return Color("#C58B35")
+	if ratio > 1.25:
+		return Color("#7E9D70")
+	return Color("#5F8755")
+
+
+func _is_urgent(state: Dictionary) -> bool:
+	var liquidity := maxi(1, int(state.get("daily_liquidity", 1)))
+	var demand := int(state.get("demand", 0))
+	var supply := int(state.get("supply", 0))
+	return _stock_ratio(state) < 0.35 or (demand >= liquidity and demand > supply)
+
+
 func _category_for(source_category: String) -> String:
 	match source_category:
 		"material", "container":
@@ -229,6 +342,59 @@ func _trend_text(history: Array) -> String:
 func _trend_delta(state: Dictionary) -> int:
 	var history: Array = state.get("history", [])
 	return int(history[-1]) - int(history[-2]) if history.size() >= 2 else 0
+
+
+func _history_dates(history_size: int) -> Array[String]:
+	var result: Array[String] = []
+	var settled_day := market_ref.last_settled_day if market_ref != null else 1
+	var end_day := maxi(1, maxi(history_size, settled_day))
+	var start_day := maxi(1, end_day - history_size + 1)
+	for index in range(history_size):
+		var total_day := start_day + index
+		var day_zero := total_day - 1
+		var season_names := ["春", "夏", "秋", "冬"]
+		var season_index := floori(float(day_zero) / 7.0) % season_names.size()
+		var season_name: String = season_names[season_index]
+		result.append("%s %d" % [season_name, day_zero % 7 + 1])
+	return result
+
+
+func _history_reasons(
+	history: Array,
+	state: Dictionary,
+	definition: Dictionary
+) -> Array[String]:
+	var result: Array[String] = []
+	var demand := int(state.get("demand", 0))
+	var supply := int(state.get("supply", 0))
+	var stock := int(state.get("stock", 0))
+	var target := maxi(1, int(state.get("target_stock", 1)))
+	for index in range(history.size()):
+		if index == 0:
+			result.append("历史起点（%s）" % str(definition.get("volatility", "stable")))
+			continue
+		var delta := int(history[index]) - int(history[index - 1])
+		if delta > 0:
+			if demand > supply:
+				result.append("需求高于供给")
+			elif stock < target:
+				result.append("库存偏紧")
+			else:
+				result.append("市场价格上涨")
+		elif delta < 0:
+			if supply > demand:
+				result.append("供给高于需求")
+			elif stock > target:
+				result.append("库存充裕")
+			else:
+				result.append("市场价格下跌")
+		elif demand > supply:
+			result.append("需求增加但价格持平")
+		elif supply > demand:
+			result.append("供给增加但价格持平")
+		else:
+			result.append("供需稳定")
+	return result
 
 
 func _stock_ratio(state: Dictionary) -> float:

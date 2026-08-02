@@ -49,6 +49,7 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Columns/CatalogColumn/CategoryList/RareGoods",
 		"Columns/CatalogColumn/SortMode",
 		"Columns/CatalogColumn/ItemList",
+		"Columns/CatalogColumn/ItemScroll/ItemRows",
 		"Columns/DetailColumn/ItemNameLabel",
 		"Columns/DetailColumn/MidPriceLabel",
 		"Columns/DetailColumn/BuyPriceLabel",
@@ -118,6 +119,9 @@ func _test_trade_thresholds(assertions: TestAssert) -> void:
 	assertions.equal(trade_script.call("impact_for", 4, 20), "light", "moderate trade has light impact")
 	assertions.equal(trade_script.call("impact_for", 10, 20), "clear", "large trade has clear impact")
 	assertions.equal(trade_script.call("impact_for", 20, 20), "severe", "liquidity trade has severe impact")
+	assertions.truthy(trade_script.call("needs_sell_confirmation", 20, 20, 10, 10), "sell liquidity threshold still confirms")
+	assertions.truthy(trade_script.call("needs_sell_confirmation", 1, 20, 10, 9), "sell tail drop still confirms")
+	assertions.truthy(not trade_script.call("needs_sell_confirmation", 1, 20, 10, 10), "ordinary sell ignores wallet-only threshold")
 
 
 func _test_modal_coordinator(assertions: TestAssert, tree: SceneTree) -> void:
@@ -237,6 +241,11 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.truthy(market_panel.get_node("Columns/DetailColumn/TagsLabel").text.contains("essential"), "wood selection shows market tags")
 	var chart = market_panel.get_node("Columns/DetailColumn/PriceChart")
 	assertions.equal(chart.get("history").size(), market.get_history("wood").size(), "chart uses only observed 1-7 day history")
+	assertions.equal(chart.get("dates").size(), chart.get("history").size(), "market binds one date per observed price")
+	assertions.equal(chart.get("change_reasons").size(), chart.get("history").size(), "market binds one reason per observed price")
+	assertions.truthy(not str(chart.get("dates")[0]).is_empty(), "market history date is explicit")
+	assertions.truthy(not str(chart.get("change_reasons")[0]).is_empty(), "market history reason is explicit")
+	_test_market_row_affordances(assertions, market_panel, market)
 
 	var trade = market_panel.get_node("Columns/TradePanel")
 	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
@@ -246,6 +255,24 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.truthy(trade.get_node("MarketQuantityLabel").text.contains(str(market.get_stock("wood"))), "trade shows market quantity")
 	assertions.truthy(trade.get_node("BuyTotalLabel").text.contains(str(market.quote_buy("wood", 2))), "trade shows slippage-adjusted buy total")
 	assertions.truthy(trade.get_node("SellTotalLabel").text.contains(str(market.quote_sell("wood", 2))), "trade shows slippage-adjusted sell total")
+
+	quantity_spin.value = 1
+	wallet.gold = 5
+	trade.call("refresh_quote")
+	var owned_before_low_gold_sell := inventory.get_item_count("wood")
+	trade.call("request_sell")
+	assertions.truthy(not trade.get_node("ConfirmationLayer").visible, "low-wallet ordinary sell does not confirm for wallet ratio")
+	assertions.equal(inventory.get_item_count("wood"), owned_before_low_gold_sell - 1, "low-wallet ordinary sell executes immediately")
+	trade.call("dismiss_confirmation")
+	wallet.gold = 5
+	trade.call("refresh_quote")
+	var owned_before_low_gold_buy := inventory.get_item_count("wood")
+	trade.call("request_buy")
+	assertions.truthy(trade.get_node("ConfirmationLayer").visible, "same low-wallet buy confirms for half-wallet spend")
+	assertions.equal(inventory.get_item_count("wood"), owned_before_low_gold_buy, "confirmed buy waits for player approval")
+	trade.call("dismiss_confirmation")
+	wallet.gold = 1000
+	trade.call("refresh_quote")
 
 	quantity_spin.value = 1
 	trade.call("refresh_quote")
@@ -304,3 +331,47 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	economy.free()
 	market.free()
 	inventory.free()
+
+
+func _test_market_row_affordances(
+	assertions: TestAssert,
+	market_panel: Node,
+	market: MarketSystem
+) -> void:
+	if not market_panel.has_node("Columns/CatalogColumn/ItemScroll/ItemRows"):
+		return
+	var normal_snapshot := market.to_dict()
+	var shortage_snapshot := normal_snapshot.duplicate(true)
+	var wood_state: Dictionary = shortage_snapshot["items"]["wood"]
+	wood_state["stock"] = 1
+	wood_state["demand"] = int(wood_state["daily_liquidity"])
+	wood_state["supply"] = 0
+	shortage_snapshot["items"]["wood"] = wood_state
+	assertions.truthy(market.from_dict(shortage_snapshot), "shortage row fixture restores valid finite market state")
+	market_panel.call("select_category", "raw_materials")
+	var rows := market_panel.get_node("Columns/CatalogColumn/ItemScroll/ItemRows")
+	var wood_row := _find_item_row(rows, "wood")
+	var stone_row := _find_item_row(rows, "stone")
+	var fiber_row := _find_item_row(rows, "fiber")
+	assertions.truthy(wood_row != null, "market renders a wood row")
+	assertions.truthy(stone_row != null, "market renders a normal-stock row")
+	assertions.truthy(fiber_row != null, "market renders a fallback-icon row")
+	if wood_row != null:
+		assertions.truthy(wood_row.get_node("Content/Icon").texture != null, "wood row renders a product icon")
+		assertions.equal(wood_row.get_node("Content/StockColorBar").color, Color("#B65C4B"), "finite shortage renders error stock color bar")
+		assertions.truthy(wood_row.get_node("Content/UrgentBadge").visible, "finite shortage and real demand show urgent badge")
+	if stone_row != null:
+		assertions.truthy(not stone_row.get_node("Content/UrgentBadge").visible, "normal stock without demand hides urgent badge")
+	if fiber_row != null:
+		assertions.truthy(fiber_row.get_node("Content/Icon").texture != null, "missing product art uses a safe placeholder")
+		assertions.truthy(bool(fiber_row.get_meta("uses_fallback_icon", false)), "fallback icon is marked consistently")
+	assertions.truthy(market.from_dict(normal_snapshot), "market row fixture restores normal state")
+	market_panel.call("select_category", "raw_materials")
+	market_panel.call("select_item", "wood")
+
+
+func _find_item_row(rows: Node, item_id: String) -> Node:
+	for row in rows.get_children():
+		if str(row.get_meta("item_id", "")) == item_id:
+			return row
+	return null
