@@ -237,8 +237,8 @@ func sync_clock(hour: int, minute: int) -> bool:
 func sync_daily_cursor(total_day: int) -> bool:
 	if total_day < 0:
 		return false
-	_last_daily_effects_day = maxi(_last_daily_effects_day, total_day)
-	_last_finished_outputs_day = maxi(_last_finished_outputs_day, total_day)
+	_last_daily_effects_day = total_day
+	_last_finished_outputs_day = total_day
 	return true
 
 

@@ -4,6 +4,7 @@ const DailySimulationSystem = preload("res://scripts/systems/daily_simulation_sy
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
+const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const TEST_SAVE_DIR := "user://villa_test_saves/economy_task_5/"
 const TEST_SLOT := 3
 const BAD_SLOT := 4
@@ -14,6 +15,21 @@ class RejectingMarketDouble:
 
 	func configure(_definitions: Array) -> bool:
 		return false
+
+
+class LoadObserver:
+	extends RefCounted
+	var calls := 0
+	var adopted_slot := -1
+	var manager: Node
+
+	func _init(source: Node) -> void:
+		manager = source
+
+	func on_load_completed(slot: int) -> void:
+		calls += 1
+		adopted_slot = int(manager.get("current_slot"))
+		assert(slot == adopted_slot)
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -149,8 +165,10 @@ func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTr
 
 
 func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -> void:
+	_cleanup()
 	var manager := SaveManagerScript.new()
 	manager.name = "EconomyMainWiringSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
 	tree.root.add_child(manager)
 	var main_scene := load("res://scenes/main.tscn") as PackedScene
 	assertions.truthy(main_scene != null, "main scene loads for economy wiring")
@@ -261,6 +279,61 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	assertions.equal(main.season_system.total_days, 11, "load restores authoritative total day")
 	assertions.equal(main.season_system.hour, 13, "load restores hour")
 	assertions.equal(main.season_system.minute, 20, "load restores minute")
+
+	var restore_location := _find_restore_location(main, "chicken_coop")
+	assertions.truthy(restore_location.x >= 0, "runtime load fixture finds a buildable coop footprint")
+	var restored_record := _passive_building_record(main, "chicken_coop", restore_location)
+	var runtime_save := main_save.duplicate(true)
+	runtime_save["season"] = SeasonSystem.Season.SPRING
+	runtime_save["day"] = 4
+	runtime_save["total_days"] = 4
+	runtime_save["hour"] = 9
+	runtime_save["minute"] = 15
+	runtime_save["last_simulated_day"] = 4
+	runtime_save.market["last_settled_day"] = 4
+	runtime_save["buildings"] = [restored_record]
+	_write_json(manager._save_path(TEST_SLOT), runtime_save)
+	var observer := LoadObserver.new(manager)
+	var has_load_completed := manager.has_signal("load_completed")
+	assertions.truthy(has_load_completed, "save manager exposes a successful-load notification")
+	if has_load_completed:
+		manager.connect("load_completed", observer.on_load_completed)
+	main.production_system.sync_daily_cursor(12)
+	main.production_system.sync_clock(21, 40)
+	main.building_system.clear_buildings(true)
+	assertions.equal(main.production_system.get_registered_buildings().size(), 0, "runtime fixture clears the production registry")
+	assertions.truthy(manager.load_game(TEST_SLOT), "later public load succeeds")
+	assertions.equal(observer.calls, 1, "successful public load emits one completion notification")
+	assertions.equal(observer.adopted_slot, TEST_SLOT, "load completion follows current-slot adoption")
+	assertions.equal(main.production_system._last_daily_effects_day, 4, "runtime load rewinds daily effects to the restored day")
+	assertions.equal(main.production_system._last_finished_outputs_day, 4, "runtime load rewinds passive outputs to the restored day")
+	assertions.equal(main.production_system._last_clock_minutes, 9 * 60 + 15, "runtime load synchronizes the restored clock")
+	assertions.equal(main.building_system.get_building_count(), 1, "runtime load restores the saved building")
+	assertions.equal(main.production_system.get_registered_buildings().size(), 1, "runtime load re-registers the restored building")
+	var restored_coop := main.building_system.get_all_buildings()[0] as BuildingInstance
+	main.production_system.finish_daily_outputs(5)
+	assertions.equal(restored_coop.producer_state.outputs, {"egg": 2}, "first day after runtime load produces exactly once")
+	assertions.equal(restored_coop.producer_state.inputs, {"animal_feed": 1}, "first day after runtime load consumes exactly one feed")
+	main.production_system.finish_daily_outputs(5)
+	assertions.equal(restored_coop.producer_state.outputs, {"egg": 2}, "runtime load cannot duplicate the next-day output")
+
+	var main_load_connections := 0
+	if has_load_completed:
+		for connection in manager.get_signal_connection_list("load_completed"):
+			var callback: Callable = connection.get("callable", Callable())
+			if callback.is_valid() and callback.get_object() == main:
+				main_load_connections += 1
+	assertions.equal(main_load_connections, 1, "Main owns exactly one load-completed connection")
+	main.production_system.sync_daily_cursor(12)
+	main.production_system.sync_clock(21, 40)
+	var registered_before_failed_load: Array[BuildingInstance] = main.production_system.get_registered_buildings()
+	_write_json(manager._save_path(BAD_SLOT), {"economy_version": 1, "market": {}})
+	assertions.truthy(not manager.load_game(BAD_SLOT), "failed later public load is rejected")
+	assertions.equal(observer.calls, 1, "failed public load emits no completion notification")
+	assertions.equal(main.production_system._last_daily_effects_day, 12, "failed load preserves the daily effect cursor")
+	assertions.equal(main.production_system._last_finished_outputs_day, 12, "failed load preserves the passive output cursor")
+	assertions.equal(main.production_system._last_clock_minutes, 21 * 60 + 40, "failed load preserves the production clock")
+	assertions.equal(main.production_system.get_registered_buildings(), registered_before_failed_load, "failed load preserves the production registry")
 	var event_bus := tree.root.get_node_or_null("EventBus")
 	var daily_connections := 0
 	if event_bus != null:
@@ -291,7 +364,73 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 				replacement_connections += 1
 	assertions.equal(replacement_connections, 0, "failed main wiring leaves no live coordinator")
 	main.free()
+
+	var startup_main := main_scene.instantiate()
+	startup_main.save_manager = manager
+	startup_main.save_slot = TEST_SLOT
+	startup_main.load_save_on_start = true
+	tree.root.add_child(startup_main)
+	assertions.equal(observer.calls, 2, "startup public load emits one additional completion notification")
+	assertions.equal(startup_main.season_system.total_days, 4, "startup load restores the saved day")
+	assertions.equal(startup_main.production_system._last_daily_effects_day, 4, "startup handler and setup leave the exact effect cursor")
+	assertions.equal(startup_main.production_system._last_finished_outputs_day, 4, "startup handler and setup leave the exact output cursor")
+	assertions.equal(startup_main.production_system._last_clock_minutes, 9 * 60 + 15, "startup handler and setup leave the exact clock")
+	assertions.equal(startup_main.production_system.get_registered_buildings().size(), 1, "startup handler and setup register one restored building")
+	var startup_coop := startup_main.building_system.get_all_buildings()[0] as BuildingInstance
+	startup_main.production_system.finish_daily_outputs(5)
+	assertions.equal(startup_coop.producer_state.outputs, {"egg": 2}, "startup load produces once on the following day")
+	assertions.equal(startup_coop.producer_state.inputs, {"animal_feed": 1}, "startup load consumes one feed on the following day")
+	startup_main.production_system.finish_daily_outputs(5)
+	assertions.equal(startup_coop.producer_state.outputs, {"egg": 2}, "startup synchronization cannot duplicate following-day output")
+	var startup_load_connections := 0
+	for connection in manager.get_signal_connection_list("load_completed"):
+		var callback: Callable = connection.get("callable", Callable())
+		if callback.is_valid() and callback.get_object() == startup_main:
+			startup_load_connections += 1
+	assertions.equal(startup_load_connections, 1, "startup Main owns one load-completed connection")
+	startup_main.free()
 	manager.free()
+	_cleanup()
+
+
+func _find_restore_location(main: Node, building_id: String) -> Vector2i:
+	var definition: Dictionary = GameDataScript.get_building(building_id)
+	var width := int(definition.get("footprint_x", 1))
+	var depth := int(definition.get("footprint_z", 1))
+	for gz in range(GridSystem.GRID_DEPTH - depth + 1):
+		for gx in range(GridSystem.GRID_WIDTH - width + 1):
+			var valid := true
+			for z in range(gz, gz + depth):
+				for x in range(gx, gx + width):
+					var cell: GridCell = main.grid_system.get_cell(x, z)
+					if cell == null or cell.state not in [GridCell.State.WASTELAND, GridCell.State.FARMLAND]:
+						valid = false
+						break
+				if not valid:
+					break
+			if valid:
+				return Vector2i(gx, gz)
+	return Vector2i(-1, -1)
+
+
+func _passive_building_record(main: Node, building_id: String, location: Vector2i) -> Dictionary:
+	if location.x < 0:
+		return {}
+	var definition: Dictionary = GameDataScript.get_building(building_id)
+	var occupied_cells: Array[Dictionary] = []
+	for z in range(location.y, location.y + int(definition.get("footprint_z", 1))):
+		for x in range(location.x, location.x + int(definition.get("footprint_x", 1))):
+			var cell: GridCell = main.grid_system.get_cell(x, z)
+			occupied_cells.append({"gx": x, "gz": z, "previous_state": int(cell.state)})
+	var state := ProducerStateScript.new(building_id)
+	state.inputs = {"animal_feed": 2}
+	return {
+		"building_id": building_id,
+		"gx": location.x,
+		"gz": location.y,
+		"occupied_cells": occupied_cells,
+		"producer_state": state.to_dict(),
+	}
 
 
 func _wood_definition() -> Dictionary:

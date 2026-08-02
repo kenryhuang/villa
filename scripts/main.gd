@@ -200,6 +200,7 @@ func _connect_systems() -> bool:
 	))
 	if not save_manager_configured:
 		return false
+	_connect_save_load_completed()
 	if not daily_simulation_system.configure(
 		production_system,
 		farming_system,
@@ -216,6 +217,22 @@ func _connect_systems() -> bool:
 	# ExplorationSystem 依赖 Player
 	exploration_system.configure(player)
 	return true
+
+
+func _connect_save_load_completed() -> void:
+	if save_manager == null or not save_manager.has_signal("load_completed"):
+		return
+	var callback := Callable(self, "_on_save_load_completed")
+	if not save_manager.is_connected("load_completed", callback):
+		save_manager.connect("load_completed", callback)
+
+
+func _on_save_load_completed(_slot: int) -> void:
+	if production_system == null or season_system == null:
+		return
+	production_system.register_existing_buildings()
+	production_system.sync_daily_cursor(season_system.total_days)
+	production_system.sync_clock(season_system.hour, season_system.minute)
 
 
 func _setup_player() -> void:

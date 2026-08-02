@@ -47,6 +47,7 @@ class FailingAddInventory:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_passive_output_helper(assertions)
+	_test_daily_cursor_can_rewind_for_loaded_day(assertions)
 	_test_beehive_flowers_and_storage_pause(assertions)
 	_test_coop_feed_is_atomic(assertions)
 	_test_waterwheel_geometry_and_daily_order(assertions)
@@ -68,6 +69,26 @@ func _test_passive_output_helper(assertions: TestAssert) -> void:
 	assertions.equal(production.passive_output_for("beehive", 2, 99), {"honey": 2, "beeswax": 1}, "hive bonus remains capped")
 	assertions.equal(production.passive_output_for("chicken_coop", 3, 0), {"egg": 2}, "coop helper returns approved daily egg output")
 	assertions.equal(production.passive_output_for("well", 2, 0), {}, "manual well has no passive output")
+
+
+func _test_daily_cursor_can_rewind_for_loaded_day(assertions: TestAssert) -> void:
+	var production := _production()
+	var coop := _building("chicken_coop", 4, 4, true)
+	coop.producer_state.inputs = {"animal_feed": 2}
+	production.register_building(coop)
+	assertions.truthy(production.sync_daily_cursor(10), "daily cursor accepts a later runtime day")
+	assertions.truthy(production.sync_daily_cursor(3), "daily cursor accepts an earlier loaded day")
+	assertions.equal(production._last_daily_effects_day, 3, "loaded day rewinds the daily effect cursor exactly")
+	assertions.equal(production._last_finished_outputs_day, 3, "loaded day rewinds the output cursor exactly")
+	assertions.truthy(not production.sync_daily_cursor(-1), "daily cursor rejects a negative loaded day")
+	assertions.equal(production._last_daily_effects_day, 3, "rejected day preserves the daily effect cursor")
+	assertions.equal(production._last_finished_outputs_day, 3, "rejected day preserves the output cursor")
+	production.finish_daily_outputs(4)
+	assertions.equal(coop.producer_state.outputs, {"egg": 2}, "the day after an earlier load produces once")
+	assertions.equal(coop.producer_state.inputs, {"animal_feed": 1}, "the day after an earlier load consumes one feed")
+	production.finish_daily_outputs(4)
+	assertions.equal(coop.producer_state.outputs, {"egg": 2}, "repeating the post-load day does not produce twice")
+	assertions.equal(coop.producer_state.inputs, {"animal_feed": 1}, "repeating the post-load day does not consume twice")
 
 
 func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:

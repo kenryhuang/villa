@@ -2,6 +2,8 @@ extends Node
 
 ## 存档系统 - JSON 格式存档/读档
 
+signal load_completed(slot: int)
+
 const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
@@ -174,6 +176,7 @@ func load_game(slot: int = 0) -> bool:
 		return false
 
 	current_slot = slot
+	load_completed.emit(slot)
 	print("Game loaded from slot %d" % slot)
 	return true
 
