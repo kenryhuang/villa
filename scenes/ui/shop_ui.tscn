@@ -1,8 +1,10 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource path="res://scripts/ui/shop_ui.gd" type="Script" id="1_shop"]
 [ext_resource path="res://scenes/ui/economy/market_panel.tscn" type="PackedScene" id="2_market"]
 [ext_resource path="res://scenes/ui/economy/service_panel.tscn" type="PackedScene" id="3_service"]
+[ext_resource path="res://scenes/ui/economy/order_panel.tscn" type="PackedScene" id="4_order"]
+[ext_resource path="res://scenes/ui/economy/contract_panel.tscn" type="PackedScene" id="5_contract"]
 
 [sub_resource type="StyleBoxFlat" id="PaperStyle"]
 content_margin_left = 22.0
@@ -157,7 +159,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="OrdersPage" type="PanelContainer" parent="ModalLayer/HubPanel/Margin/Shell/PageHost"]
+[node name="OrderPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("4_order")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -165,16 +167,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("PlaceholderStyle")
 
-[node name="Label" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/PageHost/OrdersPage"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "暂时没有居民发布需求"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="ContractsPage" type="PanelContainer" parent="ModalLayer/HubPanel/Margin/Shell/PageHost"]
+[node name="ContractPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("5_contract")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -182,14 +176,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("PlaceholderStyle")
-
-[node name="Label" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/PageHost/ContractsPage"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "提高关系或发展产业后会出现长期合同"
-horizontal_alignment = 1
-vertical_alignment = 1
 
 [node name="ServicesPage" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("3_service")]
 visible = false
@@ -199,6 +185,70 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="SignConfirmationLayer" type="ColorRect" parent="ModalLayer"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.129412, 0.101961, 0.0862745, 0.65098)
+
+[node name="Content" type="PanelContainer" parent="ModalLayer/SignConfirmationLayer"]
+layout_mode = 1
+anchor_left = 0.3
+anchor_top = 0.25
+anchor_right = 0.7
+anchor_bottom = 0.75
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("PlaceholderStyle")
+
+[node name="Margin" type="MarginContainer" parent="ModalLayer/SignConfirmationLayer/Content"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="ModalLayer/SignConfirmationLayer/Content/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "确认签订长期合同"
+
+[node name="SummaryLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 19
+text = "合同会产生跨日交付义务。"
+autowrap_mode = 2
+
+[node name="ErrorLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.714, 0.361, 0.294, 1)
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CancelButton" type="Button" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
+custom_minimum_size = Vector2(140, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "取消"
+
+[node name="ConfirmButton" type="Button" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
+custom_minimum_size = Vector2(140, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "确认签订"
 
 [node name="TopBar" type="HBoxContainer" parent="."]
 visible = false

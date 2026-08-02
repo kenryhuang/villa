@@ -76,6 +76,7 @@ var inventory_ref: Variant
 var economy_ref: Variant
 var season_system_ref: Variant
 var _mode_menu_hover_token := 0
+var _economy_ui_unread_count := 0
 
 
 func _ready() -> void:
@@ -83,6 +84,8 @@ func _ready() -> void:
 	if _event_bus:
 		_event_bus.stamina_changed.connect(_on_stamina_changed)
 		_event_bus.gold_changed.connect(_on_gold_changed)
+		if _event_bus.has_signal("economy_ui_notification_added"):
+			_event_bus.economy_ui_notification_added.connect(_on_economy_ui_notification_added)
 		_event_bus.level_changed.connect(_on_level_changed)
 		_event_bus.exp_gained.connect(_on_exp_gained)
 		_event_bus.season_changed.connect(_on_season_changed)
@@ -117,10 +120,15 @@ func _on_market_pressed() -> void:
 
 
 func set_notification_count(unread_count: int) -> void:
+	_economy_ui_unread_count = maxi(0, unread_count)
 	if notification_button == null:
 		return
-	var count_text := "9+" if unread_count > 9 else str(maxi(0, unread_count))
+	var count_text := "9+" if _economy_ui_unread_count > 9 else str(_economy_ui_unread_count)
 	notification_button.text = "通知 %s" % count_text
+
+
+func _on_economy_ui_notification_added(_target_type: String, _target_id: String) -> void:
+	set_notification_count(_economy_ui_unread_count + 1)
 
 
 func _init_display() -> void:

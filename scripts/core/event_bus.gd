@@ -50,6 +50,9 @@ signal item_removed(item_id: String, quantity: int)
 # Order signals
 signal order_updated(order_id: String)
 signal contract_updated(contract_id: String)
+# Presentation-only bridge for immediate unread feedback. Persisted notification
+# ownership remains separate from transaction panels.
+signal economy_ui_notification_added(target_type: String, target_id: String)
 
 # Villager signals
 signal affinity_changed(villager_id: String, value: int)

@@ -20,12 +20,19 @@ const MarketPanelScript = preload("res://scripts/ui/market_panel.gd")
 }
 @onready var pages := {
 	"market": $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel,
-	"orders": $ModalLayer/HubPanel/Margin/Shell/PageHost/OrdersPage,
-	"contracts": $ModalLayer/HubPanel/Margin/Shell/PageHost/ContractsPage,
+	"orders": $ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel,
+	"contracts": $ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel,
 	"services": $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage,
 }
 @onready var market_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel
 @onready var service_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage
+@onready var order_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel
+@onready var contract_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel
+@onready var sign_confirmation_layer: ColorRect = $ModalLayer/SignConfirmationLayer
+@onready var sign_summary_label: Label = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/SummaryLabel
+@onready var sign_error_label: Label = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/ErrorLabel
+@onready var sign_cancel_button: Button = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions/CancelButton
+@onready var sign_confirm_button: Button = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions/ConfirmButton
 
 var selected_tab := "market"
 var _is_open := false
@@ -33,7 +40,11 @@ var _has_opened := false
 var _inventory_ref: InventorySystem
 var _economy_ref: EconomySystem
 var _market_ref: MarketSystem
+var _npc_economy_ref: NpcEconomySystem
 var _modal_coordinator = EconomyModalCoordinatorScript.new()
+var _pending_contract_id := ""
+var _pending_contract_snapshot: Dictionary = {}
+var _sign_confirmation_in_progress := false
 
 
 func _ready() -> void:
@@ -41,6 +52,12 @@ func _ready() -> void:
 	close_button.pressed.connect(close)
 	for tab_id in tab_buttons:
 		tab_buttons[tab_id].pressed.connect(select_tab.bind(tab_id))
+	if not contract_panel.sign_confirmation_requested.is_connected(_on_sign_confirmation_requested):
+		contract_panel.sign_confirmation_requested.connect(_on_sign_confirmation_requested)
+	if not sign_cancel_button.pressed.is_connected(dismiss_contract_sign):
+		sign_cancel_button.pressed.connect(dismiss_contract_sign)
+	if not sign_confirm_button.pressed.is_connected(confirm_contract_sign):
+		sign_confirm_button.pressed.connect(confirm_contract_sign)
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		if not event_bus.gold_changed.is_connected(_on_gold_changed):
@@ -56,14 +73,19 @@ func configure(
 	market: MarketSystem,
 	progression: EconomyProgressionSystem = null,
 	tool_system: ToolSystem = null,
-	production: ProductionSystem = null
+	production: ProductionSystem = null,
+	npc_economy: NpcEconomySystem = null
 ) -> bool:
 	_inventory_ref = inventory
 	_economy_ref = economy
 	_market_ref = market
+	_npc_economy_ref = npc_economy
 	if _inventory_ref == null or _economy_ref == null or _market_ref == null:
 		return false
 	var configured: bool = market_panel.configure(_inventory_ref, _economy_ref, _market_ref)
+	configured = contract_panel.configure(_economy_ref, _inventory_ref) and configured
+	if _npc_economy_ref != null:
+		configured = order_panel.configure(_economy_ref, _npc_economy_ref, _inventory_ref) and configured
 	var service_dependencies := [progression, tool_system, production]
 	var has_any_service_dependency := service_dependencies.any(func(value: Variant) -> bool: return value != null)
 	if has_any_service_dependency:
@@ -91,6 +113,10 @@ func open(tab_id: String = "market") -> void:
 	_refresh_header()
 	if selected_tab == "market":
 		market_panel.refresh_snapshot()
+	elif selected_tab == "orders":
+		order_panel.refresh_orders()
+	elif selected_tab == "contracts":
+		contract_panel.refresh_contracts()
 
 
 func select_tab(tab_id: String) -> bool:
@@ -105,6 +131,10 @@ func select_tab(tab_id: String) -> bool:
 		tab_buttons[button_id].button_pressed = button_id == selected_tab
 	if selected_tab == "market" and _market_ref != null:
 		market_panel.refresh_snapshot()
+	elif selected_tab == "orders" and _economy_ref != null:
+		order_panel.refresh_orders()
+	elif selected_tab == "contracts" and _economy_ref != null:
+		contract_panel.refresh_contracts()
 	elif selected_tab == "services" and service_panel != null:
 		service_panel.refresh_services()
 	return true
@@ -114,8 +144,53 @@ func close() -> void:
 	if not _is_open:
 		return
 	_is_open = false
+	dismiss_contract_sign()
 	visible = false
 	_modal_coordinator.release(self)
+
+
+func confirm_contract_sign() -> bool:
+	if (
+		_sign_confirmation_in_progress
+		or _pending_contract_id.is_empty()
+		or _pending_contract_snapshot.is_empty()
+	):
+		return false
+	_sign_confirmation_in_progress = true
+	var contract_id := _pending_contract_id
+	var snapshot := _pending_contract_snapshot.duplicate(true)
+	var succeeded: bool = contract_panel.commit_confirmed_sign(contract_id, snapshot)
+	_sign_confirmation_in_progress = false
+	if succeeded:
+		dismiss_contract_sign()
+	else:
+		sign_error_label.text = "合同状态已变化，请重新查看后确认"
+		dismiss_contract_sign()
+	return succeeded
+
+
+func dismiss_contract_sign() -> void:
+	if sign_confirmation_layer != null:
+		sign_confirmation_layer.visible = false
+	_pending_contract_id = ""
+	_pending_contract_snapshot.clear()
+	_sign_confirmation_in_progress = false
+
+
+func _on_sign_confirmation_requested(contract_id: String, snapshot: Dictionary) -> void:
+	if contract_id.is_empty() or snapshot.is_empty() or sign_confirmation_layer.visible:
+		return
+	_pending_contract_id = contract_id
+	_pending_contract_snapshot = snapshot.duplicate(true)
+	sign_error_label.text = ""
+	sign_summary_label.text = "%s\n每日交付 %s ×%d，第 %d–%d 天。确认后会产生跨日义务。" % [
+		contract_id,
+		str(snapshot.get("item_id", "")),
+		int(snapshot.get("quantity_per_day", 0)),
+		int(snapshot.get("start_day", 0)),
+		int(snapshot.get("end_day", 0)),
+	]
+	sign_confirmation_layer.visible = true
 
 
 func _refresh_header() -> void:
@@ -174,6 +249,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		or event.echo
 		or event.keycode != KEY_ESCAPE
 	):
+		return
+	if sign_confirmation_layer.visible:
+		dismiss_contract_sign()
+		get_viewport().set_input_as_handled()
 		return
 	if selected_tab == "market" and market_panel.handle_top_escape():
 		get_viewport().set_input_as_handled()

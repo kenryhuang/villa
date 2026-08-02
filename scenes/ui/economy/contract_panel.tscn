@@ -1,0 +1,130 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/ui/contract_panel.gd" type="Script" id="1_contract"]
+
+[node name="ContractPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+process_mode = 2
+script = ExtResource("1_contract")
+
+[node name="Content" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 7
+
+[node name="ActiveTitle" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "活跃合同"
+
+[node name="ActiveScroll" type="ScrollContainer" parent="Content"]
+custom_minimum_size = Vector2(0, 145)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ActiveList" type="VBoxContainer" parent="Content/ActiveScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ActiveEmpty" type="Label" parent="Content"]
+layout_mode = 2
+text = "当前没有活跃合同"
+horizontal_alignment = 1
+
+[node name="AvailableTitle" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "可签合同"
+
+[node name="AvailableScroll" type="ScrollContainer" parent="Content"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="AvailableList" type="VBoxContainer" parent="Content/AvailableScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="AvailableEmpty" type="Label" parent="Content"]
+layout_mode = 2
+text = "提高关系或发展产业后会出现长期合同"
+horizontal_alignment = 1
+
+[node name="Details" type="VBoxContainer" parent="Content"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="TitleLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "选择合同查看详情"
+autowrap_mode = 2
+
+[node name="DailyProgressLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "今日交付：0/0"
+
+[node name="NextDeadlineLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "下一截止：—"
+
+[node name="BreachesLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "违约次数：0"
+
+[node name="TotalIncomeLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "预计总收入：0"
+
+[node name="RelationshipLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "关系影响：—"
+autowrap_mode = 2
+
+[node name="ErrorLabel" type="Label" parent="Content/Details"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.714, 0.361, 0.294, 1)
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 2
+
+[node name="DeliveryQuantity" type="SpinBox" parent="Content/Details"]
+layout_mode = 2
+min_value = 0.0
+max_value = 999.0
+step = 1.0
+allow_greater = false
+allow_lesser = false
+
+[node name="Actions" type="HBoxContainer" parent="Content/Details"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SignButton" type="Button" parent="Content/Details"]
+custom_minimum_size = Vector2(180, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+disabled = true
+text = "签订合同"
+
+[node name="DeliverButton" type="Button" parent="Content/Details"]
+custom_minimum_size = Vector2(180, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+disabled = true
+text = "今日交付"

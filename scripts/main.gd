@@ -346,7 +346,8 @@ func _setup_ui() -> void:
 		market_system,
 		economy_progression_system,
 		tool_system,
-		production_system
+		production_system,
+		npc_economy_system
 	):
 		push_error("Unable to configure economy hub UI.")
 
