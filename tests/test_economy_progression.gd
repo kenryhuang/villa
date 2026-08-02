@@ -589,6 +589,25 @@ func _test_save_json_round_trip_atomic_rejection_and_legacy(
 	assertions.equal(progression.to_dict(), before_bad.progression, "malformed upkeep preserves progression")
 	assertions.equal(tool.to_dict(), before_bad.tools, "malformed upkeep preserves durability")
 	assertions.equal(production.to_dict(), before_bad.production, "malformed upkeep preserves maintenance")
+	const MAX_SAFE_DATE := 9007199254740984
+	var too_late := gathered.duplicate(true)
+	too_late.last_simulated_day = MAX_SAFE_DATE + 1
+	too_late.market.last_settled_day = MAX_SAFE_DATE + 1
+	var before_date_rejection := {
+		"market": market.to_dict(), "daily": daily.last_simulated_day,
+		"production": production.to_dict(), "production_day": production._current_day,
+	}
+	assertions.truthy(not manager._apply_save_data(too_late), "date beyond maintenance-safe maximum rejects")
+	assertions.equal(market.to_dict(), before_date_rejection.market, "overflow date rejection preserves market")
+	assertions.equal(daily.last_simulated_day, before_date_rejection.daily, "overflow date rejection preserves daily cursor")
+	assertions.equal(production.to_dict(), before_date_rejection.production, "overflow date rejection preserves upkeep")
+	assertions.equal(production._current_day, before_date_rejection.production_day, "overflow date rejection preserves production cursor")
+	var boundary := gathered.duplicate(true)
+	boundary.last_simulated_day = MAX_SAFE_DATE
+	boundary.market.last_settled_day = MAX_SAFE_DATE
+	assertions.truthy(manager._apply_save_data(boundary), "maintenance-safe maximum date loads")
+	assertions.equal(production._current_day, MAX_SAFE_DATE, "safe boundary synchronizes production cursor during apply")
+	assertions.truthy(manager._apply_save_data(gathered), "date boundary fixture restores ordinary state")
 	var partial_upkeep := gathered.duplicate(true)
 	partial_upkeep.erase("tool_durability")
 	assertions.truthy(not manager._apply_save_data(partial_upkeep), "partial upkeep bundle rejects atomically")

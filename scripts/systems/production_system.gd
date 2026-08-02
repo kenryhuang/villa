@@ -5,11 +5,13 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
 const MAINTENANCE_INTERVAL_DAYS := 7
-const MAX_SAFE_INTEGER := 9007199254740991
+const MAX_SAFE_INTEGER := EconomyLimitsScript.MAX_SAFE_INTEGER
+const MAX_SAFE_DATE := EconomyLimitsScript.MAX_SAFE_DATE
 
 var _registered_buildings: Array[BuildingInstance] = []
 var _clock_synced := false
@@ -279,7 +281,7 @@ func sync_clock(hour: int, minute: int) -> bool:
 
 
 func begin_day(total_day: int) -> bool:
-	if total_day < _current_day or total_day > MAX_SAFE_INTEGER - MAINTENANCE_INTERVAL_DAYS:
+	if total_day < _current_day or total_day > MAX_SAFE_DATE:
 		return false
 	if total_day == _current_day:
 		return true
@@ -289,13 +291,17 @@ func begin_day(total_day: int) -> bool:
 
 
 func sync_daily_cursor(total_day: int) -> bool:
-	if total_day < 0 or total_day > MAX_SAFE_INTEGER - MAINTENANCE_INTERVAL_DAYS:
+	if total_day < 0 or total_day > MAX_SAFE_DATE:
 		return false
 	_last_daily_effects_day = total_day
 	_last_finished_outputs_day = total_day
 	_current_day = total_day
 	_refresh_greenhouse_cells()
 	return true
+
+
+func get_current_day() -> int:
+	return _current_day
 
 
 func register_building(building: BuildingInstance) -> bool:
@@ -514,7 +520,7 @@ func from_dict(data: Dictionary) -> bool:
 
 
 func reset_maintenance(total_day: int = 0) -> bool:
-	if total_day < 0 or total_day > MAX_SAFE_INTEGER - MAINTENANCE_INTERVAL_DAYS:
+	if total_day < 0 or total_day > MAX_SAFE_DATE:
 		return false
 	_current_day = total_day
 	maintenance_due_days.clear()

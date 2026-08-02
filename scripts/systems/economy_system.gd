@@ -1,6 +1,8 @@
 class_name EconomySystem
 extends Node
 
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+
 ## 经济系统 - 金币管理、订单系统、资源消耗
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
@@ -713,7 +715,7 @@ func validate_dict(data: Dictionary) -> bool:
 
 
 func reset_order_state(day: int) -> bool:
-	if day < 0:
+	if not EconomyLimitsScript.is_safe_date(day):
 		return false
 	_orders.clear()
 	_contracts.clear()
@@ -729,6 +731,8 @@ func _normalize_state(data: Dictionary) -> Variant:
 	if not data.orders is Array or not data.contracts is Array:
 		return null
 	var cursor := int(data.last_processed_day)
+	if not EconomyLimitsScript.is_safe_date(cursor):
+		return null
 	var normalized_orders: Array[Dictionary] = []
 	var order_ids: Dictionary = {}
 	var open_pairs: Dictionary = {}

@@ -11,6 +11,7 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 var save_directory := SAVE_DIR
 var current_slot := 0
@@ -76,6 +77,7 @@ func configure_economy(
 		return false
 	if production_system != null and not _has_methods(production_system, [
 		"to_dict", "from_dict", "validate_dict", "reset_maintenance",
+		"sync_daily_cursor", "get_current_day",
 	]):
 		return false
 	_market_system = market_system
@@ -443,16 +445,12 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 		return false
 	if not data.get("market", null) is Dictionary:
 		return false
-	if (
-		not _is_integer_number(data.get("last_simulated_day"))
-		or int(data["last_simulated_day"]) < 0
-	):
+	if not EconomyLimitsScript.is_safe_date(data.get("last_simulated_day")):
 		return false
 	if _has_injected_season_system() and not _validate_calendar_bundle(data):
 		return false
 	if data.has("total_days") and (
-		not _is_integer_number(data["total_days"])
-		or int(data["total_days"]) < 0
+		not EconomyLimitsScript.is_safe_date(data["total_days"])
 		or int(data["total_days"]) != int(data["last_simulated_day"])
 	):
 		return false
@@ -674,8 +672,10 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 	if _has_valid_tool_configuration():
 		tools_before = _tool_system.call("to_dict")
 	var production_before: Dictionary = {}
+	var production_day_before := 0
 	if _has_valid_production_configuration():
 		production_before = _production_system.call("to_dict")
+		production_day_before = int(_production_system.call("get_current_day"))
 	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
 	var applied := true
 	if data.has("economy_version"):
@@ -706,6 +706,8 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 				applied = bool(_production_system.call("from_dict", data["production_upkeep"]))
 			else:
 				applied = bool(_production_system.call("reset_maintenance", loaded_day))
+			if applied:
+				applied = bool(_production_system.call("sync_daily_cursor", loaded_day))
 	else:
 		applied = bool(_market_system.call("configure", GameDataScript.get_market_items()))
 		if applied:
@@ -721,6 +723,8 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			applied = bool(_tool_system.call("reset_durability"))
 		if applied and _has_valid_production_configuration():
 			applied = bool(_production_system.call("reset_maintenance", loaded_day))
+			if applied:
+				applied = bool(_production_system.call("sync_daily_cursor", loaded_day))
 	if applied:
 		applied = _apply_resource_save_data(data, loaded_day)
 	if not applied:
@@ -738,6 +742,7 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			_tool_system.call("from_dict", tools_before)
 		if _has_valid_production_configuration() and not production_before.is_empty():
 			_production_system.call("from_dict", production_before)
+			_production_system.call("sync_daily_cursor", production_day_before)
 		return false
 	return true
 
@@ -846,6 +851,7 @@ func _has_valid_production_configuration() -> bool:
 		_production_system != null and is_instance_valid(_production_system)
 		and _has_methods(_production_system, [
 			"to_dict", "from_dict", "validate_dict", "reset_maintenance",
+			"sync_daily_cursor", "get_current_day",
 		])
 	)
 
@@ -859,11 +865,11 @@ func _validate_calendar_bundle(data: Dictionary) -> bool:
 		if not data.has(field) or not _is_integer_number(data[field]):
 			return false
 	var total_days := int(data["total_days"])
-	if total_days < 1:
+	if not EconomyLimitsScript.is_safe_date(total_days, false):
 		return false
 	var elapsed_days := total_days - 1
 	var expected_day := elapsed_days % 7 + 1
-	var expected_season := floori(float(elapsed_days) / 7.0) % 4
+	var expected_season := floori(float(elapsed_days % 28) / 7.0)
 	return (
 		int(data["season"]) >= 0
 		and int(data["season"]) <= 3

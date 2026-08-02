@@ -1,6 +1,8 @@
 class_name MarketSystem
 extends Node
 
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+
 const MarketMath = preload("res://scripts/shared/market_math.gd")
 
 signal market_stock_changed(item_id: String, new_stock: int)
@@ -188,7 +190,7 @@ func add_external_supply(item_id: String, quantity: int) -> bool:
 
 
 func can_settle_day(total_day: int) -> bool:
-	return total_day > last_settled_day and total_day > 0 and not _items.is_empty()
+	return EconomyLimitsScript.is_safe_date(total_day, false) and total_day > last_settled_day and not _items.is_empty()
 
 
 func settle_day(
@@ -243,7 +245,7 @@ func to_dict() -> Dictionary:
 func from_dict(data: Dictionary) -> bool:
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
-	if not _is_integer_number(data["last_settled_day"]) or int(data["last_settled_day"]) < 0:
+	if not EconomyLimitsScript.is_safe_date(data["last_settled_day"]):
 		return false
 	if not data["items"] is Dictionary or (data["items"] as Dictionary).is_empty():
 		return false

@@ -1,6 +1,8 @@
 class_name NpcEconomySystem
 extends Node
 
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+
 const NpcEconomyStateScript = preload("res://scripts/data/npc_economy_state.gd")
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
@@ -91,7 +93,7 @@ func simulate_day(
 	season_factors: Dictionary = {},
 	event_factors: Dictionary = {}
 ) -> bool:
-	if not _is_configured or total_day <= 0 or total_day <= last_simulated_day:
+	if not _is_configured or not EconomyLimitsScript.is_safe_date(total_day, false) or total_day <= last_simulated_day:
 		return false
 	for state_value in _states.values():
 		var state: NpcEconomyState = state_value
@@ -110,7 +112,7 @@ func simulate_day(
 
 
 func sync_daily_cursor(total_day: int) -> bool:
-	if not _is_configured or total_day < 0:
+	if not _is_configured or not EconomyLimitsScript.is_safe_date(total_day):
 		return false
 	last_simulated_day = total_day
 	for state_value in _states.values():
@@ -247,6 +249,8 @@ func _normalize_system_data(data: Dictionary) -> Variant:
 	if not data.npc_states is Array or (data.npc_states as Array).size() != _states.size():
 		return null
 	var cursor := int(data.last_simulated_day)
+	if not EconomyLimitsScript.is_safe_date(cursor):
+		return null
 	var candidate_states: Dictionary = {}
 	for state_value in data.npc_states as Array:
 		if not state_value is Dictionary:

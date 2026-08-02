@@ -1,6 +1,8 @@
 class_name DailySimulationSystem
 extends Node
 
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+
 var last_simulated_day: int = 0
 
 var _production_system: Variant
@@ -62,7 +64,7 @@ func configure(
 
 
 func run_day(day: int) -> bool:
-	if not _is_configured or day != last_simulated_day + 1:
+	if not _is_configured or day > EconomyLimitsScript.MAX_SAFE_DATE or day != last_simulated_day + 1:
 		return false
 	if not _market_cursor_is_coherent():
 		return false
