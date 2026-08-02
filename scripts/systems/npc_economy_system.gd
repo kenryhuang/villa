@@ -122,6 +122,53 @@ func get_npc_state(npc_id: String) -> NpcEconomyState:
 	return _states.get(npc_id) as NpcEconomyState
 
 
+func has_npc(npc_id: String) -> bool:
+	return _is_configured and _states.has(npc_id)
+
+
+func has_item(item_id: String) -> bool:
+	return _is_configured and _item_definitions.has(item_id)
+
+
+func get_shortages() -> Array[Dictionary]:
+	var shortages: Array[Dictionary] = []
+	if not _is_configured:
+		return shortages
+	var npc_ids := _states.keys()
+	npc_ids.sort()
+	for npc_id_value in npc_ids:
+		var npc_id := str(npc_id_value)
+		var state: NpcEconomyState = _states[npc_id]
+		var targets := _shortage_targets(state, _profiles[npc_id])
+		var item_ids := targets.keys()
+		item_ids.sort()
+		for item_id_value in item_ids:
+			var item_id := str(item_id_value)
+			var quantity := int(targets[item_id]) - int(state.inventory.get(item_id, 0))
+			if quantity > 0:
+				shortages.append({
+					"npc_id": npc_id,
+					"item_id": item_id,
+					"quantity": quantity,
+				})
+	return shortages
+
+
+func can_receive_item(npc_id: String, item_id: String, quantity: int) -> bool:
+	return quantity > 0 and has_npc(npc_id) and has_item(item_id)
+
+
+func receive_item(npc_id: String, item_id: String, quantity: int) -> bool:
+	if not can_receive_item(npc_id, item_id, quantity):
+		return false
+	var state: NpcEconomyState = _states[npc_id]
+	var current := int(state.inventory.get(item_id, 0))
+	if current > 9223372036854775807 - quantity:
+		return false
+	state.inventory[item_id] = current + quantity
+	return true
+
+
 func get_demand_tags() -> Dictionary:
 	return _demand_tags.duplicate(true)
 
@@ -239,6 +286,23 @@ func _simulate_npc(state: NpcEconomyState, profile: Dictionary) -> void:
 		return
 	_sell_excess(state)
 	state.investment_planned = state.gold >= int(profile.investment_gold_threshold)
+
+
+func _shortage_targets(state: NpcEconomyState, profile: Dictionary) -> Dictionary:
+	var targets: Dictionary = {}
+	for source_value in [profile.essential_targets, state.reserve_targets]:
+		for item_id_value in (source_value as Dictionary).keys():
+			var item_id := str(item_id_value)
+			targets[item_id] = maxi(int(targets.get(item_id, 0)), int(source_value[item_id]))
+	for recipe_id in state.production_recipes:
+		var recipe: Dictionary = RecipeDatabaseScript.get_recipe(str(recipe_id))
+		if recipe.is_empty():
+			continue
+		for item_id_value in (recipe.inputs as Dictionary).keys():
+			var item_id := str(item_id_value)
+			var production_target := _protected_quantity(state, item_id) + int(recipe.inputs[item_id])
+			targets[item_id] = maxi(int(targets.get(item_id, 0)), production_target)
+	return targets
 
 
 func _buy_targets(state: NpcEconomyState, targets: Dictionary) -> bool:

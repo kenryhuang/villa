@@ -273,16 +273,10 @@ func _test_single_authoritative_listener(assertions: TestAssert, tree: SceneTree
 
 func _test_order_processing_split(assertions: TestAssert) -> void:
 	var economy := EconomySystemScript.new()
-	economy.orders.assign([
-		{"days_remaining": 1},
-		{"days_remaining": 2},
-	])
 	economy.advance_order_deadlines(7)
-	assertions.equal(economy.orders.size(), 1, "deadline advancement removes expired orders")
-	assertions.equal(economy.orders[0].days_remaining, 1, "deadline advancement decrements survivors")
-	seed(20260801)
+	assertions.equal(economy.get_order_count(), 0, "deadline advancement is safe before dependency injection")
 	economy.generate_demand_orders(7)
-	assertions.truthy(economy.orders.size() >= 3, "demand generation delegates to legacy generator")
+	assertions.equal(economy.get_order_count(), 0, "demand generation creates nothing without real NPC shortages")
 	economy.free()
 
 

@@ -314,15 +314,9 @@ func _test_economy(assertions: TestAssert) -> void:
 	assertions.equal(inventory.get_item_count("wood"), 0, "resource spend removes first material")
 	assertions.equal(inventory.get_item_count("stone"), 0, "resource spend removes second material")
 
-	economy.generate_daily_orders()
-	assertions.truthy(economy.orders.size() >= 2 and economy.orders.size() <= 3, "daily generation creates two or three orders")
-	var order: Dictionary = economy.orders[0]
-	assertions.equal(order.days_remaining, 3, "new order lasts three days")
-	assertions.truthy(inventory.add_item(order.item_id, order.quantity), "order items can be prepared")
-	var old_gold: int = wallet.gold
-	assertions.truthy(economy.complete_order(0), "complete order consumes inventory")
-	assertions.equal(wallet.gold, old_gold + order.reward_gold, "order grants gold")
-	assertions.equal(economy.get_affinity(order.villager_id), 10, "order grants ten affinity")
+	economy.generate_demand_orders(1)
+	assertions.equal(economy.get_order_count(), 0, "orders require injected real NPC shortages")
+	assertions.truthy(not economy.complete_order("unknown"), "unknown stable order ID is rejected")
 
 
 func _test_inventory_ui(assertions: TestAssert) -> void:

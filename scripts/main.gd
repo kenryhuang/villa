@@ -186,7 +186,8 @@ func _connect_systems() -> bool:
 	if not economy_system.configure(
 		inventory_system,
 		get_node_or_null("/root/GameState"),
-		market_system
+		market_system,
+		npc_economy_system
 	):
 		return false
 
@@ -210,7 +211,8 @@ func _connect_systems() -> bool:
 		daily_simulation_system,
 		season_system,
 		world,
-		npc_economy_system
+		npc_economy_system,
+		economy_system
 	))
 	if not save_manager_configured:
 		return false
@@ -325,12 +327,12 @@ func _initial_game_state() -> void:
 		market_system.last_settled_day = season_system.total_days
 		daily_simulation_system.last_simulated_day = season_system.total_days
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
+		economy_system.reset_order_state(season_system.total_days)
 		_grant_new_game_items()
 	production_system.register_existing_buildings()
 	production_system.sync_daily_cursor(season_system.total_days)
 	production_system.sync_clock(season_system.hour, season_system.minute)
 	farming_system.rebuild_visuals()
-	economy_system.generate_daily_orders()
 	if hud:
 		hud.refresh_action_bar()
 

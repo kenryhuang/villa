@@ -17,6 +17,7 @@ var _daily_simulation_system: Variant
 var _season_system: Variant
 var _resource_world: Variant
 var _npc_economy_system: Variant
+var _economy_system: Variant
 
 
 func configure_economy(
@@ -24,7 +25,8 @@ func configure_economy(
 	daily_simulation_system: Variant,
 	season_system: Variant = null,
 	resource_world: Variant = null,
-	npc_economy_system: Variant = null
+	npc_economy_system: Variant = null,
+	economy_system: Variant = null
 ) -> bool:
 	if not _has_methods(market_system, ["configure", "to_dict", "from_dict"]):
 		return false
@@ -46,11 +48,16 @@ func configure_economy(
 		"to_dict", "from_dict", "validate_dict", "reset_to_profile_defaults",
 	]):
 		return false
+	if economy_system != null and not _has_methods(economy_system, [
+		"to_dict", "from_dict", "validate_dict", "reset_order_state",
+	]):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
 	_resource_world = resource_world
 	_npc_economy_system = npc_economy_system
+	_economy_system = economy_system
 	return true
 
 
@@ -152,6 +159,8 @@ func _gather_save_data() -> Dictionary:
 		data["last_simulated_day"] = int(_daily_simulation_system.get("last_simulated_day"))
 		if _has_valid_npc_configuration():
 			data["npc_economy"] = _npc_economy_system.call("to_dict")
+		if _has_valid_order_configuration():
+			data["economy_state"] = _economy_system.call("to_dict")
 		if _has_valid_resource_configuration():
 			data["resource_nodes"] = _resource_world.call("to_resource_dicts")
 
@@ -360,6 +369,7 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 			and not data.has("last_simulated_day")
 			and not data.has("resource_nodes")
 			and not data.has("npc_economy")
+			and not data.has("economy_state")
 		)
 	if not _is_integer_number(data.get("economy_version")) or int(data["economy_version"]) != 1:
 		return false
@@ -400,6 +410,15 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 				!= int(data["last_simulated_day"])
 		):
 			return false
+	if data.has("economy_state"):
+		if (
+			not _has_valid_order_configuration()
+			or not data["economy_state"] is Dictionary
+			or not bool(_economy_system.call("validate_dict", data["economy_state"]))
+			or int((data["economy_state"] as Dictionary).get("last_processed_day", -1))
+				!= int(data["last_simulated_day"])
+		):
+			return false
 	var validation_market := MarketSystemScript.new()
 	var valid := validation_market.from_dict(data["market"])
 	if valid:
@@ -416,6 +435,9 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 	var npc_before: Dictionary = {}
 	if _has_valid_npc_configuration():
 		npc_before = _npc_economy_system.call("to_dict")
+	var orders_before: Dictionary = {}
+	if _has_valid_order_configuration():
+		orders_before = _economy_system.call("to_dict")
 	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
 	var applied := true
 	if data.has("economy_version"):
@@ -426,6 +448,11 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 				applied = bool(_npc_economy_system.call("from_dict", data["npc_economy"]))
 			else:
 				applied = bool(_npc_economy_system.call("reset_to_profile_defaults", loaded_day))
+		if applied and _has_valid_order_configuration():
+			if data.has("economy_state"):
+				applied = bool(_economy_system.call("from_dict", data["economy_state"]))
+			else:
+				applied = bool(_economy_system.call("reset_order_state", loaded_day))
 	else:
 		applied = bool(_market_system.call("configure", GameDataScript.get_market_items()))
 		if applied:
@@ -433,11 +460,15 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			_daily_simulation_system.set("last_simulated_day", loaded_day)
 		if applied and _has_valid_npc_configuration():
 			applied = bool(_npc_economy_system.call("reset_to_profile_defaults", loaded_day))
+		if applied and _has_valid_order_configuration():
+			applied = bool(_economy_system.call("reset_order_state", loaded_day))
 	if not applied:
 		_market_system.call("from_dict", market_before)
 		_daily_simulation_system.set("last_simulated_day", daily_before)
 		if _has_valid_npc_configuration() and not npc_before.is_empty():
 			_npc_economy_system.call("from_dict", npc_before)
+		if _has_valid_order_configuration() and not orders_before.is_empty():
+			_economy_system.call("from_dict", orders_before)
 		return false
 	_apply_resource_save_data(data, loaded_day)
 	return true
@@ -482,6 +513,16 @@ func _has_valid_npc_configuration() -> bool:
 		and is_instance_valid(_npc_economy_system)
 		and _has_methods(_npc_economy_system, [
 			"to_dict", "from_dict", "validate_dict", "reset_to_profile_defaults",
+		])
+	)
+
+
+func _has_valid_order_configuration() -> bool:
+	return (
+		_economy_system != null
+		and is_instance_valid(_economy_system)
+		and _has_methods(_economy_system, [
+			"to_dict", "from_dict", "validate_dict", "reset_order_state",
 		])
 	)
 

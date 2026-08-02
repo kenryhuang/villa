@@ -228,6 +228,7 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	assertions.truthy(main.market_system.settle_day(11), "main save fixture settles its current day")
 	main.daily_simulation_system.last_simulated_day = 11
 	main.npc_economy_system.sync_daily_cursor(11)
+	main.economy_system.reset_order_state(11)
 	var main_save: Dictionary = manager._gather_save_data()
 	assertions.equal(main_save.get("total_days"), 11, "main save reads its child season system")
 	for missing_calendar_field in ["season", "day", "total_days", "hour", "minute"]:
@@ -301,6 +302,7 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	runtime_save["last_simulated_day"] = 4
 	runtime_save.market["last_settled_day"] = 4
 	_set_npc_snapshot_day(runtime_save.npc_economy, 4)
+	runtime_save.economy_state["last_processed_day"] = 4
 	runtime_save["buildings"] = [restored_record]
 	_write_json(manager._save_path(TEST_SLOT), runtime_save)
 	var observer := LoadObserver.new(manager)
