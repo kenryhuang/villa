@@ -367,6 +367,85 @@ static func get_all_villagers() -> Array:
 		result.append(v)
 	return result
 
+
+const NPC_ECONOMY_PROFILES := [
+	{
+		"id": "lao_li", "display_name": "老李", "gold": 800,
+		"inventory": {"salt": 8, "grain_seed": 6},
+		"essential_targets": {"grain": 4, "bread": 2},
+		"reserve_targets": {"salt": 8, "grain_seed": 6},
+		"production_recipes": [], "sale_targets": {"salt": 4, "grain_seed": 3},
+		"investment_gold_threshold": 1200, "import_buffer": true,
+	},
+	{
+		"id": "xiao_hua", "display_name": "小花", "gold": 420,
+		"inventory": {"rose": 5, "honey": 2, "fiber": 2},
+		"essential_targets": {"grain": 2},
+		"reserve_targets": {"rose": 3, "honey": 2, "fiber": 1},
+		"production_recipes": ["bouquet"], "sale_targets": {"bouquet": 1, "honey": 2},
+		"investment_gold_threshold": 800, "import_buffer": false,
+	},
+	{
+		"id": "tiejiang_zhang", "display_name": "铁匠张", "gold": 650,
+		"inventory": {"iron_ore": 6, "coal": 4, "iron_ingot": 2, "plank": 1},
+		"essential_targets": {"grain": 2},
+		"reserve_targets": {"iron_ore": 4, "coal": 3, "iron_ingot": 2},
+		"production_recipes": ["iron_ingot", "farm_tools"],
+		"sale_targets": {"iron_ingot": 2, "farm_tools": 1},
+		"investment_gold_threshold": 1100, "import_buffer": false,
+	},
+	{
+		"id": "a_shui", "display_name": "阿水", "gold": 360,
+		"inventory": {"grain": 6, "flour": 2, "egg": 2},
+		"essential_targets": {"grain": 3},
+		"reserve_targets": {"grain": 4, "flour": 2, "egg": 1},
+		"production_recipes": ["flour", "bread"],
+		"sale_targets": {"flour": 2, "bread": 2},
+		"investment_gold_threshold": 700, "import_buffer": false,
+	},
+	{
+		"id": "xuezhe_lin", "display_name": "学者林", "gold": 900,
+		"inventory": {"gold_ore": 2, "crystal": 1, "honey_cake": 1},
+		"essential_targets": {"bread": 2},
+		"reserve_targets": {"crystal": 1, "honey_cake": 1},
+		"production_recipes": ["jewelry"], "sale_targets": {"jewelry": 1},
+		"investment_gold_threshold": 1500, "import_buffer": false,
+	},
+]
+
+const POPULATION_DEMAND_PROFILES := [
+	{
+		"id": "residents", "display_name": "居民",
+		"demands": {"grain": 4, "bread": 2}, "demand_tag": "居民基础食品需求",
+	},
+	{
+		"id": "builders", "display_name": "建筑工人",
+		"demands": {"plank": 3, "brick": 2}, "demand_tag": "建设材料需求",
+	},
+	{
+		"id": "artisans", "display_name": "工匠",
+		"demands": {"iron_ingot": 2, "copper_ingot": 1}, "demand_tag": "工匠金属锭需求",
+	},
+	{
+		"id": "tourists", "display_name": "游客",
+		"demands": {"honey_cake": 1}, "demand_tag": "游客奢侈品需求",
+	},
+]
+
+
+static func get_npc_economy_profiles() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for profile in NPC_ECONOMY_PROFILES:
+		result.append(profile.duplicate(true))
+	return result
+
+
+static func get_population_demand_profiles() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for profile in POPULATION_DEMAND_PROFILES:
+		result.append(profile.duplicate(true))
+	return result
+
 # ============================================================
 # 收集品定义
 # ============================================================

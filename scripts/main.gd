@@ -10,6 +10,7 @@ const DailySimulationSystemScript := preload(
 	"res://scripts/systems/daily_simulation_system.gd"
 )
 const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
+const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -38,6 +39,7 @@ var season_system: SeasonSystem
 var economy_system: EconomySystem
 var market_system: MarketSystem
 var production_system: ProductionSystem
+var npc_economy_system: NpcEconomySystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var building_system: BuildingSystem
@@ -105,6 +107,10 @@ func _initialize_systems() -> void:
 	market_system.name = "MarketSystem"
 	add_child(market_system)
 
+	npc_economy_system = NpcEconomySystemScript.new() as NpcEconomySystem
+	npc_economy_system.name = "NpcEconomySystem"
+	add_child(npc_economy_system)
+
 	economy_system = EconomySystem.new()
 	economy_system.name = "EconomySystem"
 	add_child(economy_system)
@@ -169,6 +175,12 @@ func _connect_systems() -> bool:
 	var game_data = get_node_or_null("/root/GameData")
 	if game_data == null or not market_system.configure(game_data.get_market_items()):
 		return false
+	if not npc_economy_system.configure(
+		market_system,
+		game_data.get_npc_economy_profiles(),
+		game_data.get_population_demand_profiles()
+	):
+		return false
 
 	# EconomySystem 依赖 InventorySystem + GameState 钱包 + MarketSystem
 	if not economy_system.configure(
@@ -205,7 +217,7 @@ func _connect_systems() -> bool:
 	if not daily_simulation_system.configure(
 		production_system,
 		farming_system,
-		null,
+		npc_economy_system,
 		economy_system,
 		market_system,
 		save_manager,
@@ -235,6 +247,8 @@ func _on_save_load_completed(_slot: int) -> void:
 	production_system.register_existing_buildings()
 	production_system.sync_daily_cursor(season_system.total_days)
 	production_system.sync_clock(season_system.hour, season_system.minute)
+	if npc_economy_system != null:
+		npc_economy_system.sync_daily_cursor(season_system.total_days)
 
 
 func _setup_player() -> void:
@@ -309,6 +323,7 @@ func _initial_game_state() -> void:
 	else:
 		market_system.last_settled_day = season_system.total_days
 		daily_simulation_system.last_simulated_day = season_system.total_days
+		npc_economy_system.sync_daily_cursor(season_system.total_days)
 		_grant_new_game_items()
 	production_system.register_existing_buildings()
 	production_system.sync_daily_cursor(season_system.total_days)
