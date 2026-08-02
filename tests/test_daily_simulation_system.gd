@@ -108,6 +108,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_unconfigured_coordinator_rejects_days(assertions)
 	_test_empty_real_market_is_rejected(assertions)
 	_test_exact_order_and_idempotence(assertions)
+	_test_skipped_day_is_rejected_without_mutation(assertions)
 	_test_incoherent_real_market_rejects_before_mutation(assertions)
 	_test_rejected_settlement_preflight_is_retry_safe(assertions)
 	_test_failed_autosave_does_not_replay_partial_day(assertions)
@@ -152,6 +153,7 @@ func _test_exact_order_and_idempotence(assertions: TestAssert) -> void:
 		daily.configure(production, farming, npc, economy, market, save),
 		"daily coordinator accepts compatible dependencies"
 	)
+	daily.last_simulated_day = 1
 	assertions.truthy(daily.run_day(2), "new day is simulated")
 	assertions.equal(calls, [
 		"production.begin:2",
@@ -168,6 +170,27 @@ func _test_exact_order_and_idempotence(assertions: TestAssert) -> void:
 	assertions.truthy(not daily.run_day(2), "same day is rejected")
 	assertions.equal(calls, calls_after_first_day, "rejected day performs no work")
 	assertions.equal(daily.last_simulated_day, 2, "coordinator records the consumed day")
+	for dependency in [production, farming, npc, economy, market, save, daily]:
+		dependency.free()
+
+
+func _test_skipped_day_is_rejected_without_mutation(assertions: TestAssert) -> void:
+	var calls: Array = []
+	var production := ProductionDouble.new(calls)
+	var farming := FarmingDouble.new(calls)
+	var npc := NpcDouble.new(calls)
+	var economy := EconomyDouble.new(calls)
+	var market := MarketDouble.new(calls)
+	var save := SaveDouble.new(calls)
+	var daily := DailySimulationSystem.new()
+	assertions.truthy(daily.configure(production, farming, npc, economy, market, save), "strict day fixture configures")
+	daily.last_simulated_day = 1
+	assertions.truthy(not daily.run_day(4), "coordinator rejects a skipped day")
+	assertions.equal(calls, [], "skipped day mutates no subsystem")
+	assertions.equal(daily.last_simulated_day, 1, "skipped day preserves cursor")
+	for day in [2, 3, 4]:
+		assertions.truthy(daily.run_day(day), "sequential day %d succeeds after skipped-day rejection" % day)
+	assertions.equal(daily.last_simulated_day, 4, "sequential catch-up reaches requested day without gaps")
 	for dependency in [production, farming, npc, economy, market, save, daily]:
 		dependency.free()
 
@@ -227,6 +250,7 @@ func _test_failed_autosave_does_not_replay_partial_day(assertions: TestAssert) -
 		daily.configure(null, farming, null, economy, market, save),
 		"production and NPC economy are optional during this phase"
 	)
+	daily.last_simulated_day = 5
 	assertions.truthy(daily.run_day(6), "completed mutations consume the day when autosave fails")
 	var calls_after_failed_save := calls.duplicate()
 	assertions.truthy(not daily.run_day(6), "failed autosave cannot replay a consumed day")

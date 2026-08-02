@@ -62,7 +62,7 @@ func configure(
 
 
 func run_day(day: int) -> bool:
-	if not _is_configured or day <= last_simulated_day:
+	if not _is_configured or day != last_simulated_day + 1:
 		return false
 	if not _market_cursor_is_coherent():
 		return false
