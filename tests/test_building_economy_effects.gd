@@ -364,10 +364,16 @@ func _test_authoritative_greenhouse_crop_and_wheel_scope(assertions: TestAssert)
 	grid.get_cell(5, 10).state = GridCell.State.WASTELAND
 	var disconnected: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
 	assertions.equal(disconnected[0].get("remaining_days"), 3, "water-disconnected wheel falls back to one growth point per day")
+	instance.is_watered_today = true
+	var hand_watered: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
+	assertions.equal(hand_watered[0].get("remaining_days"), 2, "hand-watered crop uses 1.5 growth on its known next advance without a wheel")
 	grid.get_cell(5, 10).state = GridCell.State.WATER
+	var hand_watered_with_wheel: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
+	assertions.equal(hand_watered_with_wheel[0].get("remaining_days"), 2, "hand watering and wheel coverage do not double the next growth advance")
+	crop.growth_days = 6
 	production.set_maintenance_due_day(wheel_a, production.get_current_day())
 	var maintenance_paused: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
-	assertions.equal(maintenance_paused[0].get("remaining_days"), 3, "maintenance-paused wheel does not accelerate crop maturity")
+	assertions.equal(maintenance_paused[0].get("remaining_days"), 4, "maintenance-paused wheel preserves the known hand-watered first day but does not accelerate later days")
 
 
 func _test_barn_collection_is_atomic(assertions: TestAssert) -> void:

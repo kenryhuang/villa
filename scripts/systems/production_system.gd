@@ -718,8 +718,15 @@ func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Diction
 			total_half_steps
 		)
 		var remaining_half_steps := total_half_steps - completed_half_steps
-		var daily_half_steps := 3 if _is_crop_cell_currently_irrigated(position) else 2
-		var remaining_days := ceili(float(remaining_half_steps) / float(daily_half_steps))
+		var sustained_irrigation := _is_crop_cell_currently_irrigated(position)
+		var first_day_half_steps := 3 if bool(cell.crop_instance.is_watered_today) or sustained_irrigation else 2
+		var future_daily_half_steps := 3 if sustained_irrigation else 2
+		var remaining_days := 0
+		if remaining_half_steps > 0:
+			remaining_days = 1 + ceili(
+				float(maxi(0, remaining_half_steps - first_day_half_steps))
+				/ float(future_daily_half_steps)
+			)
 		result.append({
 			"cell": position,
 			"crop_id": crop_id,
