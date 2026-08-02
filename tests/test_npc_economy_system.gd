@@ -10,10 +10,12 @@ func run(assertions: TestAssert) -> void:
 	_test_state_contract_is_strict_and_atomic(assertions)
 	_test_woodworker_uses_finite_market_and_protects_reserves(assertions)
 	_test_failed_trades_have_no_partial_mutations(assertions)
+	_test_unmet_essential_blocks_later_production_spending(assertions)
 	_test_population_groups_add_tagged_factor_demand(assertions)
 	_test_third_zero_stock_day_imports_essentials_only(assertions)
 	_test_day_cursor_and_snapshot_are_atomic(assertions)
 	_test_registered_profiles_and_determinism(assertions)
+	_test_default_crafted_sale_targets_trade_on_finite_market(assertions)
 
 
 func _test_state_contract_is_strict_and_atomic(assertions: TestAssert) -> void:
@@ -154,6 +156,37 @@ func _test_failed_trades_have_no_partial_mutations(assertions: TestAssert) -> vo
 	recipe_market.free()
 
 
+func _test_unmet_essential_blocks_later_production_spending(assertions: TestAssert) -> void:
+	var market := MarketSystemScript.new()
+	market.configure([
+		_definition("bread", 30, 0, 10, 5, "essential", "product"),
+		_definition("iron_ingot", 20, 5, 10, 10, "industrial", "processed_material"),
+		_definition("plank", 10, 5, 10, 10, "industrial", "processed_material"),
+		_definition("farm_tools", 90, 1, 5, 4, "crafted", "crafted_good"),
+	])
+	var system := NpcEconomySystemScript.new()
+	assertions.truthy(system.configure(market, [{
+		"id": "essential_first", "display_name": "优先级测试", "gold": 500,
+		"inventory": {}, "essential_targets": {"bread": 1}, "reserve_targets": {},
+		"production_recipes": ["farm_tools"], "sale_targets": {"farm_tools": 0},
+		"investment_gold_threshold": 900, "import_buffer": false,
+	}], []), "essential priority fixture configures")
+	var production_market_before := {
+		"iron_ingot": market.get_item_state("iron_ingot"),
+		"plank": market.get_item_state("plank"),
+		"farm_tools": market.get_item_state("farm_tools"),
+	}
+	assertions.truthy(system.simulate_day(1), "essential shortage day is consumed")
+	var state = system.get_npc_state("essential_first")
+	assertions.equal(state.gold, 500, "failed essential purchase prevents later spending")
+	assertions.equal(state.inventory, {}, "failed essential purchase prevents inputs and production")
+	assertions.equal(market.get_item_state("iron_ingot"), production_market_before.iron_ingot, "essential shortage leaves ingot market untouched")
+	assertions.equal(market.get_item_state("plank"), production_market_before.plank, "essential shortage leaves plank market untouched")
+	assertions.equal(market.get_item_state("farm_tools"), production_market_before.farm_tools, "essential shortage leaves output market untouched")
+	system.free()
+	market.free()
+
+
 func _test_population_groups_add_tagged_factor_demand(assertions: TestAssert) -> void:
 	var market := MarketSystemScript.new()
 	market.configure(GameDataScript.get_market_items())
@@ -243,7 +276,7 @@ func _test_registered_profiles_and_determinism(assertions: TestAssert) -> void:
 		"lao_li": "老李",
 		"xiao_hua": "小花",
 		"tiejiang_zhang": "铁匠张",
-		"a_shui": "阿水",
+		"afu_shui": "阿水",
 		"xuezhe_lin": "学者林",
 	}
 	assertions.equal(profiles.size(), expected.size(), "five important economy profiles are registered")
@@ -267,6 +300,42 @@ func _test_registered_profiles_and_determinism(assertions: TestAssert) -> void:
 	market_b.free()
 	system_a.free()
 	system_b.free()
+
+
+func _test_default_crafted_sale_targets_trade_on_finite_market(assertions: TestAssert) -> void:
+	var market := MarketSystemScript.new()
+	assertions.truthy(market.configure(GameDataScript.get_market_items()), "default crafted-sale market configures")
+	var system := NpcEconomySystemScript.new()
+	assertions.truthy(system.configure(
+		market,
+		GameDataScript.get_npc_economy_profiles(),
+		[]
+	), "default crafted-sale NPCs configure")
+	var sales := {
+		"xiao_hua": "bouquet",
+		"tiejiang_zhang": "farm_tools",
+		"xuezhe_lin": "jewelry",
+	}
+	var stocks_before: Dictionary = {}
+	for npc_id in sales:
+		var item_id: String = sales[npc_id]
+		var state = system.get_npc_state(npc_id)
+		state.production_recipes.clear()
+		state.inventory[item_id] = int(state.sale_targets[item_id]) + 1
+		stocks_before[item_id] = market.get_stock(item_id)
+		assertions.truthy(market.quote_sell(item_id, 1) > 0, "%s has a valid shared market quote" % item_id)
+	assertions.truthy(system.simulate_day(1), "default crafted excess sales simulate")
+	for npc_id in sales:
+		var item_id: String = sales[npc_id]
+		assertions.equal(market.get_stock(item_id), int(stocks_before[item_id]) + 1, "%s sale adds finite stock" % item_id)
+		assertions.equal(market.get_item_state(item_id).supply, 1, "%s sale records shared market supply" % item_id)
+		assertions.equal(
+			system.get_npc_state(npc_id).inventory[item_id],
+			system.get_npc_state(npc_id).sale_targets[item_id],
+			"%s sale retains its target" % item_id
+		)
+	system.free()
+	market.free()
 
 
 func _woodworker_profile() -> Dictionary:

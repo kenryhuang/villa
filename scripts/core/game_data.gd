@@ -117,19 +117,19 @@ const ITEMS := {
 	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "base_price": 95, "target_stock": 6, "initial_stock": 4, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
 }
 
-# Section 7.2 names these craft outputs but does not assign market balance.
-# Keep them collectible without silently inventing prices, stock, or liquidity.
+# Section 7.2 names these craft outputs. Items with explicit balance fields also
+# participate in the finite market; the remainder stay inventory-only.
 const INVENTORY_ONLY_ITEMS := {
 	"wooden_crate": {"id": "wooden_crate", "name": "木箱", "category": "crafted_good", "max_stack": 99},
 	"furniture": {"id": "furniture", "name": "家具", "category": "crafted_good", "max_stack": 99},
-	"farm_tools": {"id": "farm_tools", "name": "农具", "category": "crafted_good", "max_stack": 99},
+	"farm_tools": {"id": "farm_tools", "name": "农具", "category": "crafted_good", "sell_price": 80, "buy_price": 100, "base_price": 90, "target_stock": 12, "initial_stock": 6, "daily_liquidity": 5, "volatility": "crafted", "max_stack": 99},
 	"machine_parts": {"id": "machine_parts", "name": "机械零件", "category": "crafted_good", "max_stack": 99},
 	"lamp": {"id": "lamp", "name": "灯具", "category": "crafted_good", "max_stack": 99},
 	"sachet": {"id": "sachet", "name": "香包", "category": "crafted_good", "max_stack": 99},
 	"candle": {"id": "candle", "name": "蜡烛", "category": "crafted_good", "max_stack": 99},
 	"perfume": {"id": "perfume", "name": "香水", "category": "crafted_good", "max_stack": 99},
-	"bouquet": {"id": "bouquet", "name": "花束", "category": "crafted_good", "max_stack": 99},
-	"jewelry": {"id": "jewelry", "name": "珠宝", "category": "crafted_good", "max_stack": 99},
+	"bouquet": {"id": "bouquet", "name": "花束", "category": "crafted_good", "sell_price": 70, "buy_price": 90, "base_price": 80, "target_stock": 12, "initial_stock": 6, "daily_liquidity": 5, "volatility": "luxury", "max_stack": 99},
+	"jewelry": {"id": "jewelry", "name": "珠宝", "category": "crafted_good", "sell_price": 160, "buy_price": 210, "base_price": 180, "target_stock": 5, "initial_stock": 2, "daily_liquidity": 2, "volatility": "luxury", "max_stack": 99},
 }
 
 static func get_item(item_id: String):
@@ -147,6 +147,9 @@ static func get_market_items() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for item in ITEMS.values():
 		if item.get("base_price", 0) > 0 and item.get("category", "") != "legacy":
+			result.append(item.duplicate(true))
+	for item in INVENTORY_ONLY_ITEMS.values():
+		if item.get("base_price", 0) > 0:
 			result.append(item.duplicate(true))
 	return result
 
@@ -395,7 +398,7 @@ const NPC_ECONOMY_PROFILES := [
 		"investment_gold_threshold": 1100, "import_buffer": false,
 	},
 	{
-		"id": "a_shui", "display_name": "阿水", "gold": 360,
+		"id": "afu_shui", "display_name": "阿水", "gold": 360,
 		"inventory": {"grain": 6, "flour": 2, "egg": 2},
 		"essential_targets": {"grain": 3},
 		"reserve_targets": {"grain": 4, "flour": 2, "egg": 1},

@@ -184,7 +184,9 @@ func from_dict(data: Dictionary) -> bool:
 
 
 func _simulate_npc(state: NpcEconomyState, profile: Dictionary) -> void:
-	_buy_targets(state, profile.essential_targets)
+	if not _buy_targets(state, profile.essential_targets):
+		state.investment_planned = false
+		return
 	_buy_production_inputs(state)
 	_produce(state)
 	_buy_targets(state, state.reserve_targets)
@@ -192,14 +194,20 @@ func _simulate_npc(state: NpcEconomyState, profile: Dictionary) -> void:
 	state.investment_planned = state.gold >= int(profile.investment_gold_threshold)
 
 
-func _buy_targets(state: NpcEconomyState, targets: Dictionary) -> void:
+func _buy_targets(state: NpcEconomyState, targets: Dictionary) -> bool:
 	var purchases: Dictionary = {}
 	for item_id_value in targets.keys():
 		var item_id := str(item_id_value)
 		var needed := int(targets[item_id]) - int(state.inventory.get(item_id, 0))
 		if needed > 0:
 			purchases[item_id] = needed
-	_buy_bundle(state, purchases)
+	if not _buy_bundle(state, purchases):
+		return false
+	for item_id_value in targets.keys():
+		var item_id := str(item_id_value)
+		if int(state.inventory.get(item_id, 0)) < int(targets[item_id]):
+			return false
+	return true
 
 
 func _buy_production_inputs(state: NpcEconomyState) -> void:
