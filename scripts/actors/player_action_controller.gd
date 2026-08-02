@@ -572,16 +572,64 @@ func _plant(cell: GridCell) -> bool:
 func _harvest(cell: GridCell) -> bool:
 	if farming_system == null or inventory_system == null:
 		return false
-	if not inventory_system.can_add_item(CROP_ID, 1):
+	var preview := _preview_harvest(cell)
+	var items := _normalized_harvest_items(preview.get("items", {}))
+	if preview.is_empty() or items.is_empty():
 		return false
-	var result: Dictionary = farming_system.harvest(cell)
-	if result.is_empty():
-		return false
-	for item_id in result.get("items", []):
-		if not inventory_system.add_item(str(item_id), 1):
+	var original_counts := {}
+	for item_id in items:
+		var quantity := int(items[item_id])
+		if not inventory_system.can_add_item(str(item_id), quantity):
 			return false
+		original_counts[str(item_id)] = inventory_system.get_item_count(str(item_id))
+	for item_id in items:
+		if not inventory_system.add_item(str(item_id), int(items[item_id])):
+			_restore_inventory_counts(original_counts)
+			return false
+	var result: Dictionary = farming_system.harvest(cell)
+	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
+		_restore_inventory_counts(original_counts)
+		return false
 	inventory_changed.emit()
 	return true
+
+
+func _preview_harvest(cell: GridCell) -> Dictionary:
+	if grid_system != null and grid_system.has_method("preview_harvest"):
+		return grid_system.preview_harvest(cell.gx, cell.gz)
+	if cell == null or cell.crop_instance == null or not cell.crop_instance.is_mature():
+		return {}
+	var data = cell.crop_instance.crop_data
+	if data == null:
+		return {}
+	return {
+		"items": {str(data.crop_id): cell.crop_instance.calculate_yield(cell.gx, cell.gz, 42)},
+		"exp": int(data.exp_reward),
+		"regrowing": int(data.regrow_days) > 0 or str(data.growth_form) != "annual",
+	}
+
+
+func _normalized_harvest_items(value: Variant) -> Dictionary:
+	var normalized := {}
+	if value is Dictionary:
+		for item_id in value:
+			var quantity := int(value[item_id])
+			if not str(item_id).is_empty() and quantity > 0:
+				normalized[str(item_id)] = quantity
+	elif value is Array:
+		for item_id in value:
+			var id := str(item_id)
+			if not id.is_empty():
+				normalized[id] = int(normalized.get(id, 0)) + 1
+	return normalized
+
+
+func _restore_inventory_counts(original_counts: Dictionary) -> void:
+	for item_id in original_counts:
+		var target := int(original_counts[item_id])
+		var current: int = inventory_system.get_item_count(str(item_id))
+		if current > target:
+			inventory_system.remove_item(str(item_id), current - target)
 
 
 func _is_mature(cell: GridCell) -> bool:

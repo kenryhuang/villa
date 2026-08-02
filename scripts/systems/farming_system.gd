@@ -43,7 +43,11 @@ func can_plant(cell: GridCell, crop_data: CropData) -> bool:
 		return false
 	if cell.crop_instance != null:
 		return false
-	if is_greenhouse_cell(cell) or season_system == null:
+	if is_greenhouse_cell(cell):
+		return true
+	if _is_greenhouse_only(crop_data):
+		return false
+	if season_system == null:
 		return true
 	return crop_data.seasons.is_empty() or season_system.current_season in crop_data.seasons
 
@@ -64,7 +68,10 @@ func harvest(grid_cell) -> Dictionary:
 	if not result.is_empty():
 		if game_state:
 			game_state.add_exp(result.exp)
-		_remove_visual(grid_cell)
+		if bool(result.get("regrowing", false)) and grid_cell.crop_instance != null:
+			_update_visual(grid_cell, grid_cell.crop_instance)
+		else:
+			_remove_visual(grid_cell)
 	return result
 
 
@@ -106,9 +113,17 @@ func on_day_changed(_day: int) -> void:
 
 
 func _can_grow(cell: GridCell, data) -> bool:
-	if is_greenhouse_cell(cell) or season_system == null:
+	if is_greenhouse_cell(cell):
+		return true
+	if _is_greenhouse_only(data):
+		return false
+	if season_system == null:
 		return true
 	return data.seasons.is_empty() or season_system.current_season in data.seasons
+
+
+func _is_greenhouse_only(data: CropData) -> bool:
+	return data != null and "greenhouse_only" in data.tags
 
 
 func _clear_water(cell: GridCell) -> void:

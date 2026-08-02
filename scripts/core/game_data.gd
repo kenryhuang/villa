@@ -12,7 +12,12 @@ var _crops = {}
 # ============================================================
 
 func register_crop(data) -> bool:
-	if data == null or data.crop_id.is_empty() or _crops.has(data.crop_id):
+	if (
+		data == null
+		or not data.has_method("is_valid")
+		or not data.is_valid()
+		or _crops.has(data.crop_id)
+	):
 		push_error("Invalid or duplicate crop ID")
 		return false
 	_crops[data.crop_id] = data
@@ -42,7 +47,12 @@ const ITEMS := {
 	"sunflower_seed": {"id": "sunflower_seed", "name": "向日葵种子", "category": "seed", "sell_price": 0, "buy_price": 8, "base_price": 8, "target_stock": 35, "initial_stock": 30, "daily_liquidity": 12, "volatility": "seasonal", "max_stack": 99},
 	"rose_seed": {"id": "rose_seed", "name": "玫瑰种子", "category": "seed", "sell_price": 0, "buy_price": 10, "base_price": 10, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
 	"lavender_seed": {"id": "lavender_seed", "name": "薰衣草种子", "category": "seed", "sell_price": 0, "buy_price": 8, "base_price": 8, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"pumpkin_seed": {"id": "pumpkin_seed", "name": "南瓜种子", "category": "seed", "sell_price": 0, "buy_price": 12, "base_price": 12, "target_stock": 30, "initial_stock": 25, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
 	"grain_seed": {"id": "grain_seed", "name": "谷物种子", "category": "seed", "sell_price": 0, "buy_price": 4, "base_price": 4, "target_stock": 60, "initial_stock": 50, "daily_liquidity": 25, "volatility": "essential", "max_stack": 99},
+	"apple_sapling": {"id": "apple_sapling", "name": "苹果树苗", "category": "seed", "sell_price": 0, "buy_price": 35, "base_price": 35, "target_stock": 15, "initial_stock": 12, "daily_liquidity": 5, "volatility": "seasonal", "max_stack": 99},
+	"peach_sapling": {"id": "peach_sapling", "name": "桃树苗", "category": "seed", "sell_price": 0, "buy_price": 35, "base_price": 35, "target_stock": 15, "initial_stock": 12, "daily_liquidity": 5, "volatility": "seasonal", "max_stack": 99},
+	"grape_seed": {"id": "grape_seed", "name": "葡萄种苗", "category": "seed", "sell_price": 0, "buy_price": 18, "base_price": 18, "target_stock": 20, "initial_stock": 16, "daily_liquidity": 7, "volatility": "seasonal", "max_stack": 99},
+	"lemon_sapling": {"id": "lemon_sapling", "name": "柠檬树苗", "category": "seed", "sell_price": 0, "buy_price": 40, "base_price": 40, "target_stock": 12, "initial_stock": 9, "daily_liquidity": 4, "volatility": "seasonal", "max_stack": 99},
 	# 作物
 	"tomato": {"id": "tomato", "name": "番茄", "category": "crop", "sell_price": 8, "buy_price": 0, "base_price": 9, "target_stock": 50, "initial_stock": 45, "daily_liquidity": 22, "volatility": "perishable", "max_stack": 99},
 	"carrot": {"id": "carrot", "name": "胡萝卜", "category": "crop", "sell_price": 7, "buy_price": 0, "base_price": 8, "target_stock": 55, "initial_stock": 50, "daily_liquidity": 24, "volatility": "perishable", "max_stack": 99},
@@ -53,7 +63,12 @@ const ITEMS := {
 	"sunflower": {"id": "sunflower", "name": "向日葵", "category": "crop", "sell_price": 12, "buy_price": 0, "base_price": 14, "target_stock": 35, "initial_stock": 30, "daily_liquidity": 14, "volatility": "seasonal", "max_stack": 99},
 	"rose": {"id": "rose", "name": "玫瑰", "category": "crop", "sell_price": 16, "buy_price": 0, "base_price": 19, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
 	"lavender": {"id": "lavender", "name": "薰衣草", "category": "crop", "sell_price": 14, "buy_price": 0, "base_price": 17, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"pumpkin": {"id": "pumpkin", "name": "南瓜", "category": "crop", "sell_price": 20, "buy_price": 0, "base_price": 23, "target_stock": 22, "initial_stock": 18, "daily_liquidity": 8, "volatility": "seasonal", "max_stack": 99},
 	"grain": {"id": "grain", "name": "谷物", "category": "crop", "sell_price": 7, "buy_price": 0, "base_price": 8, "target_stock": 70, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
+	"apple": {"id": "apple", "name": "苹果", "category": "crop", "sell_price": 15, "buy_price": 0, "base_price": 18, "target_stock": 30, "initial_stock": 24, "daily_liquidity": 12, "volatility": "seasonal", "max_stack": 99},
+	"peach": {"id": "peach", "name": "桃子", "category": "crop", "sell_price": 18, "buy_price": 0, "base_price": 21, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"grape": {"id": "grape", "name": "葡萄", "category": "crop", "sell_price": 17, "buy_price": 0, "base_price": 20, "target_stock": 28, "initial_stock": 22, "daily_liquidity": 11, "volatility": "seasonal", "max_stack": 99},
+	"lemon": {"id": "lemon", "name": "柠檬", "category": "crop", "sell_price": 20, "buy_price": 0, "base_price": 24, "target_stock": 20, "initial_stock": 14, "daily_liquidity": 8, "volatility": "seasonal", "max_stack": 99},
 	# 材料
 	"wood": {"id": "wood", "name": "木材", "category": "material", "sell_price": 1, "buy_price": 2, "base_price": 3, "target_stock": 80, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
 	"stone": {"id": "stone", "name": "石头", "category": "material", "sell_price": 1, "buy_price": 3, "base_price": 3, "target_stock": 80, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},

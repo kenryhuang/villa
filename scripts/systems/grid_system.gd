@@ -231,21 +231,46 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 
 
 func harvest_crop(gx: int, gz: int) -> Dictionary:
+	var result := preview_harvest(gx, gz)
+	if result.is_empty():
+		return {}
+	var cell := get_cell(gx, gz)
+	var crop_id: String = cell.crop_instance.crop_data.crop_id
+	if _event_bus:
+		_event_bus.crop_harvested.emit(gx, gz, crop_id)
+	var regrowing := bool(result.regrowing)
+	cell.crop_instance.harvest_count += 1
+	if regrowing:
+		var regrow_days: int = maxi(1, int(cell.crop_instance.crop_data.regrow_days))
+		cell.crop_instance.growth_progress = maxf(
+			0.0,
+			float(cell.crop_instance.crop_data.growth_days - regrow_days)
+		)
+		cell.crop_instance.is_watered_today = false
+	else:
+		cell.crop_instance = null
+		cell.state = GridCell.State.FARMLAND
+	cell.watered = false
+	_sync_farmland_visual(cell)
+	_emit_cell_state_changed(cell)
+	return result
+
+
+func preview_harvest(gx: int, gz: int) -> Dictionary:
 	var cell := get_cell(gx, gz)
 	if cell == null or cell.state != GridCell.State.PLANTED or cell.crop_instance == null:
 		return {}
-	if cell.crop_instance.growth_progress < cell.crop_instance.crop_data.growth_days:
+	if not cell.crop_instance.is_mature():
 		return {}
-	var crop_id: String = cell.crop_instance.crop_data.crop_id
-	var exp_reward: int = cell.crop_instance.crop_data.exp_reward
-	if _event_bus:
-		_event_bus.crop_harvested.emit(gx, gz, crop_id)
-	cell.crop_instance = null
-	cell.watered = false
-	cell.state = GridCell.State.FARMLAND
-	_sync_farmland_visual(cell)
-	_emit_cell_state_changed(cell)
-	return {"items": [crop_id], "exp": exp_reward}
+	var data = cell.crop_instance.crop_data
+	if data == null:
+		return {}
+	var regrowing: bool = int(data.regrow_days) > 0 or str(data.growth_form) != "annual"
+	return {
+		"items": {str(data.crop_id): cell.crop_instance.calculate_yield(gx, gz, 42)},
+		"exp": int(data.exp_reward),
+		"regrowing": regrowing,
+	}
 
 
 func water_cell(gx: int, gz: int) -> bool:
@@ -409,11 +434,7 @@ func to_dict() -> Dictionary:
 			"watered": cell.watered,
 		}
 		if cell.crop_instance and cell.crop_instance.crop_data:
-			entry["crop"] = {
-				"crop_id": cell.crop_instance.crop_data.crop_id,
-				"growth_progress": cell.crop_instance.growth_progress,
-				"is_watered_today": cell.crop_instance.is_watered_today,
-			}
+			entry["crop"] = cell.crop_instance.to_dict()
 		changed_cells.append(entry)
 	return {"version": 1, "cells": changed_cells}
 
@@ -442,8 +463,7 @@ func from_dict(data: Dictionary) -> bool:
 			if crop_data:
 				var instance := CropInstance.new()
 				instance.crop_data = crop_data
-				instance.growth_progress = float(crop_entry.get("growth_progress", 0.0))
-				instance.is_watered_today = bool(crop_entry.get("is_watered_today", false))
-				cell.crop_instance = instance
+				if instance.from_dict(crop_entry):
+					cell.crop_instance = instance
 	rebuild_farmland_visuals()
 	return true
