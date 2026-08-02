@@ -6,6 +6,7 @@ extends CanvasLayer
 signal quick_slot_selected(index: int)
 signal debug_reset_requested
 signal market_requested
+signal notifications_requested
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const ActionPaletteButtonScene = preload(
@@ -50,6 +51,7 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var debug_reset_button: Button = $DebugResetButton
 @onready var market_button: Button = $EconomyActions/MarketButton
 @onready var notification_button: Button = $EconomyActions/NotificationButton
+@onready var urgent_summaries: VBoxContainer = $UrgentSummaries
 @onready var mode_menu: PopupPanel = $BottomBar/ModeMenu
 @onready var mode_menu_content: VBoxContainer = $BottomBar/ModeMenu/VBox
 @onready var farming_mode_button: Button = $BottomBar/ModeMenu/VBox/FarmingModeButton
@@ -77,6 +79,7 @@ var economy_ref: Variant
 var season_system_ref: Variant
 var _mode_menu_hover_token := 0
 var _economy_ui_unread_count := 0
+var notification_ref: EconomyNotificationSystem
 
 
 func _ready() -> void:
@@ -97,6 +100,8 @@ func _ready() -> void:
 		debug_reset_button.pressed.connect(_on_debug_reset_pressed)
 	if not market_button.pressed.is_connected(_on_market_pressed):
 		market_button.pressed.connect(_on_market_pressed)
+	if not notification_button.pressed.is_connected(_on_notification_pressed):
+		notification_button.pressed.connect(_on_notification_pressed)
 
 	# 初始化显示
 	_init_display()
@@ -119,6 +124,10 @@ func _on_market_pressed() -> void:
 	market_requested.emit()
 
 
+func _on_notification_pressed() -> void:
+	notifications_requested.emit()
+
+
 func set_notification_count(unread_count: int) -> void:
 	_economy_ui_unread_count = maxi(0, unread_count)
 	if notification_button == null:
@@ -128,7 +137,59 @@ func set_notification_count(unread_count: int) -> void:
 
 
 func _on_economy_ui_notification_added(_target_type: String, _target_id: String) -> void:
+	if notification_ref != null:
+		return
 	set_notification_count(_economy_ui_unread_count + 1)
+
+
+func configure_notifications(system: EconomyNotificationSystem) -> bool:
+	if system == null or not is_instance_valid(system):
+		return false
+	if notification_ref != null and is_instance_valid(notification_ref):
+		var old_callback := Callable(self, "_refresh_notification_display")
+		if notification_ref.notifications_changed.is_connected(old_callback):
+			notification_ref.notifications_changed.disconnect(old_callback)
+	notification_ref = system
+	var callback := Callable(self, "_refresh_notification_display")
+	if not notification_ref.notifications_changed.is_connected(callback):
+		notification_ref.notifications_changed.connect(callback)
+	_refresh_notification_display()
+	return true
+
+
+func _refresh_notification_display() -> void:
+	if notification_ref == null:
+		return
+	_economy_ui_unread_count = notification_ref.get_unread_count()
+	var count_text := "9+" if _economy_ui_unread_count > 9 else str(_economy_ui_unread_count)
+	notification_button.text = "[通知 %s]" % count_text
+	for child in urgent_summaries.get_children():
+		child.free()
+	var urgent: Array[Dictionary] = []
+	for record in notification_ref.get_recent():
+		if bool(record.get("unread", false)) and EconomyNotificationSystem.is_urgent_kind(str(record.get("kind", ""))):
+			urgent.append(record)
+	for index in range(mini(2, urgent.size())):
+		var label := Label.new()
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.text = str(urgent[index].get("body", ""))
+		urgent_summaries.add_child(label)
+	if urgent.size() > 2:
+		var overflow := Label.new()
+		overflow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overflow.text = "还有 %d 条经营提醒" % (urgent.size() - 2)
+		urgent_summaries.add_child(overflow)
+
+
+func get_urgent_summary_count() -> int:
+	return urgent_summaries.get_child_count() if urgent_summaries != null else 0
+
+
+func get_urgent_summary_text(index: int) -> String:
+	if urgent_summaries == null or index < 0 or index >= urgent_summaries.get_child_count():
+		return ""
+	var label := urgent_summaries.get_child(index) as Label
+	return label.text if label != null else ""
 
 
 func _init_display() -> void:

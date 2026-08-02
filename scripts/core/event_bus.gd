@@ -23,9 +23,11 @@ signal gold_changed(new_gold: int)
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
 signal market_settled(total_day: int)
+signal market_caravan_changed(caravan_id: String, arrived: bool)
 signal production_job_started(building: BuildingInstance, recipe_id: String, batches: int)
 signal production_job_completed(building: BuildingInstance, recipe_id: String, outputs: Dictionary)
 signal production_output_blocked(building: BuildingInstance, recipe_id: String)
+signal production_feed_shortage(building: BuildingInstance, item_id: String)
 signal production_output_changed(building: BuildingInstance, item_id: String, new_quantity: int)
 signal production_input_changed(building: BuildingInstance, item_id: String, new_quantity: int)
 signal production_maintenance_changed(building: BuildingInstance, due_day: int)
@@ -53,8 +55,9 @@ signal item_removed(item_id: String, quantity: int)
 # Order signals
 signal order_updated(order_id: String)
 signal contract_updated(contract_id: String)
-# Presentation-only bridge for immediate unread feedback. Persisted notification
-# ownership remains separate from transaction panels.
+signal economy_notification_changed(notification_id: String, merged: bool)
+# Deprecated Task15 compatibility bridge. The configured notification owner and
+# HUD never consume this signal; it remains only for isolated legacy panel tests.
 signal economy_ui_notification_added(target_type: String, target_id: String)
 
 # Villager signals

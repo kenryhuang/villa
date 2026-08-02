@@ -24,6 +24,7 @@ var _economy_system: Variant
 var _progression_system: Variant
 var _tool_system: Variant
 var _production_system: Variant
+var _notification_system: Variant
 
 
 func configure_economy(
@@ -35,7 +36,8 @@ func configure_economy(
 	economy_system: Variant = null,
 	progression_system: Variant = null,
 	tool_system: Variant = null,
-	production_system: Variant = null
+	production_system: Variant = null,
+	notification_system: Variant = null
 ) -> bool:
 	var upkeep_dependency_count := 0
 	for dependency in [progression_system, tool_system, production_system]:
@@ -80,6 +82,10 @@ func configure_economy(
 		"sync_daily_cursor", "get_current_day",
 	]):
 		return false
+	if notification_system != null and not _has_methods(notification_system, [
+		"to_dict", "from_dict", "validate_dict", "reset_notifications",
+	]):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
@@ -89,6 +95,7 @@ func configure_economy(
 	_progression_system = progression_system
 	_tool_system = tool_system
 	_production_system = production_system
+	_notification_system = notification_system
 	return true
 
 
@@ -200,6 +207,8 @@ func _gather_save_data() -> Dictionary:
 			data["tool_durability"] = _tool_system.call("to_dict")
 		if _has_valid_production_configuration():
 			data["production_upkeep"] = _production_system.call("to_dict")
+		if _has_valid_notification_configuration():
+			data["notifications"] = _notification_system.call("to_dict")
 
 	# 存档元数据
 	data["meta"] = {
@@ -438,6 +447,7 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 			and not data.has("progression")
 			and not data.has("tool_durability")
 			and not data.has("production_upkeep")
+			and not data.has("notifications")
 		)
 	if not _is_integer_number(data.get("economy_version")) or int(data["economy_version"]) != 1:
 		return false
@@ -505,6 +515,12 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 		not _has_valid_production_configuration()
 		or not data["production_upkeep"] is Dictionary
 		or not bool(_production_system.call("validate_dict", data["production_upkeep"]))
+	):
+		return false
+	if data.has("notifications") and (
+		not _has_valid_notification_configuration()
+		or not data["notifications"] is Dictionary
+		or not bool(_notification_system.call("validate_dict", data["notifications"]))
 	):
 		return false
 	var validation_market := MarketSystemScript.new()
@@ -676,6 +692,9 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 	if _has_valid_production_configuration():
 		production_before = _production_system.call("to_dict")
 		production_day_before = int(_production_system.call("get_current_day"))
+	var notifications_before: Dictionary = {}
+	if _has_valid_notification_configuration():
+		notifications_before = _notification_system.call("to_dict")
 	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
 	var applied := true
 	if data.has("economy_version"):
@@ -708,6 +727,11 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 				applied = bool(_production_system.call("reset_maintenance", loaded_day))
 			if applied:
 				applied = bool(_production_system.call("sync_daily_cursor", loaded_day))
+		if applied and _has_valid_notification_configuration():
+			if data.has("notifications"):
+				applied = bool(_notification_system.call("from_dict", data["notifications"]))
+			else:
+				_notification_system.call("reset_notifications")
 	else:
 		applied = bool(_market_system.call("configure", GameDataScript.get_market_items()))
 		if applied:
@@ -725,6 +749,8 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			applied = bool(_production_system.call("reset_maintenance", loaded_day))
 			if applied:
 				applied = bool(_production_system.call("sync_daily_cursor", loaded_day))
+		if applied and _has_valid_notification_configuration():
+			_notification_system.call("reset_notifications")
 	if applied:
 		applied = _apply_resource_save_data(data, loaded_day)
 	if not applied:
@@ -743,6 +769,8 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 		if _has_valid_production_configuration() and not production_before.is_empty():
 			_production_system.call("from_dict", production_before)
 			_production_system.call("sync_daily_cursor", production_day_before)
+		if _has_valid_notification_configuration() and not notifications_before.is_empty():
+			_notification_system.call("from_dict", notifications_before)
 		return false
 	return true
 
@@ -852,6 +880,16 @@ func _has_valid_production_configuration() -> bool:
 		and _has_methods(_production_system, [
 			"to_dict", "from_dict", "validate_dict", "reset_maintenance",
 			"sync_daily_cursor", "get_current_day",
+		])
+	)
+
+
+func _has_valid_notification_configuration() -> bool:
+	return (
+		_notification_system != null
+		and is_instance_valid(_notification_system)
+		and _has_methods(_notification_system, [
+			"to_dict", "from_dict", "validate_dict", "reset_notifications",
 		])
 	)
 

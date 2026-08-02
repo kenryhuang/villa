@@ -4,6 +4,7 @@ extends Node3D
 ## 编排所有系统初始化、连接和运行
 
 const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
+const GameDataScript := preload("res://scripts/core/game_data.gd")
 const FARMING_SYSTEM_SCENE := preload("res://scenes/systems/farming_system.tscn")
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
 const DailySimulationSystemScript := preload(
@@ -13,6 +14,9 @@ const ProductionSystemScript := preload("res://scripts/systems/production_system
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 const EconomyProgressionSystemScript := preload(
 	"res://scripts/systems/economy_progression_system.gd"
+)
+const EconomyNotificationSystemScript := preload(
+	"res://scripts/systems/economy_notification_system.gd"
 )
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
 
@@ -35,7 +39,8 @@ static var _pending_debug_reload_save_slot := -1
 @onready var build_ui = $BuildUI
 @onready var map_ui = $MapUI
 @onready var shop_ui = $ShopUI
-@onready var building_economy_ui: BuildingEconomyUI = $BuildingEconomyUI
+@onready var building_economy_ui = $BuildingEconomyUI
+@onready var economy_notification_ui: EconomyNotificationUI = $EconomyNotificationUI
 
 # 系统引用
 var grid_system: GridSystem
@@ -46,6 +51,7 @@ var market_system: MarketSystem
 var production_system: ProductionSystem
 var economy_progression_system: EconomyProgressionSystem
 var npc_economy_system: NpcEconomySystem
+var economy_notification_system: EconomyNotificationSystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var building_system: BuildingSystem
@@ -141,6 +147,10 @@ func _initialize_systems() -> void:
 	economy_progression_system.name = "EconomyProgressionSystem"
 	add_child(economy_progression_system)
 
+	economy_notification_system = EconomyNotificationSystemScript.new() as EconomyNotificationSystem
+	economy_notification_system.name = "EconomyNotificationSystem"
+	add_child(economy_notification_system)
+
 	tool_system = ToolSystem.new()
 	tool_system.name = "ToolSystem"
 	add_child(tool_system)
@@ -229,6 +239,13 @@ func _connect_systems() -> bool:
 		get_node_or_null("/root/GameState")
 	):
 		return false
+	if not economy_notification_system.configure(
+		get_node_or_null("/root/EventBus"),
+		market_system,
+		economy_system,
+		season_system
+	):
+		return false
 
 	# SaveManager 与每日协调器共享同一份市场状态
 	if not save_manager.has_method("configure_economy"):
@@ -243,7 +260,8 @@ func _connect_systems() -> bool:
 		economy_system,
 		economy_progression_system,
 		tool_system,
-		production_system
+		production_system,
+		economy_notification_system
 	))
 	if not save_manager_configured:
 		return false
@@ -324,12 +342,16 @@ func _setup_ui() -> void:
 		hud.configure_season_system(season_system)
 		hud.configure_action_bar(action_controller, inventory_system, economy_system)
 		hud.configure_debug_reset(OS.is_debug_build())
+		hud.configure_notifications(economy_notification_system)
 		var reset_callback := Callable(self, "_on_debug_reset_requested")
 		if not hud.debug_reset_requested.is_connected(reset_callback):
 			hud.debug_reset_requested.connect(reset_callback)
 		var market_callback := Callable(self, "_on_market_requested")
 		if not hud.market_requested.is_connected(market_callback):
 			hud.market_requested.connect(market_callback)
+		var notification_callback := Callable(self, "_on_notifications_requested")
+		if not hud.notifications_requested.is_connected(notification_callback):
+			hud.notifications_requested.connect(notification_callback)
 
 	# 背包 UI
 	if inventory_ui:
@@ -364,6 +386,11 @@ func _setup_ui() -> void:
 		building_economy_modal
 	):
 		push_error("Unable to configure building economy UI.")
+	if economy_notification_ui and not economy_notification_ui.configure(
+		economy_notification_system,
+		self
+	):
+		push_error("Unable to configure economy notification UI.")
 	for building in building_system.get_all_buildings():
 		_on_building_instance_placed(building)
 
@@ -373,11 +400,127 @@ func _setup_ui() -> void:
 
 
 func _on_market_requested() -> void:
+	open_economy_tab("market")
+
+
+func _on_notifications_requested() -> void:
+	if economy_notification_ui != null:
+		economy_notification_ui.toggle_center()
+
+
+func open_economy_tab(tab_id: String, target_id: String = "") -> bool:
+	if shop_ui == null or tab_id not in ["market", "orders", "contracts", "services"]:
+		return false
+	var panel: Variant = null
+	var select_method := ""
+	if not target_id.is_empty():
+		match tab_id:
+			"market":
+				if market_system == null or not market_system.has_method("get_item_state") or (market_system.call("get_item_state", target_id) as Dictionary).is_empty():
+					return false
+				panel = shop_ui.get("market_panel")
+				select_method = "select_item"
+			"orders":
+				if not _economy_record_exists("get_orders", "order_id", target_id):
+					return false
+				panel = shop_ui.get("order_panel")
+				select_method = "select_order"
+			"contracts":
+				if not _economy_record_exists("get_contracts", "contract_id", target_id):
+					return false
+				panel = shop_ui.get("contract_panel")
+				select_method = "select_contract"
+			_:
+				return false
+		if panel == null or not panel.has_method(select_method):
+			return false
 	for modal in [inventory_ui, map_ui, build_ui]:
 		if modal != null and modal.has_method("close"):
 			modal.close()
-	if shop_ui:
-		shop_ui.open()
+	shop_ui.call("open", tab_id)
+	if panel != null:
+		panel.call(select_method, target_id)
+	return true
+
+
+func navigate_notification_target(target_type: String, target_id: String) -> bool:
+	match notification_route_kind(target_type, target_id):
+		"market_item":
+			return open_economy_tab("market", target_id)
+		"order":
+			return open_economy_tab("orders", target_id)
+		"contract":
+			return open_economy_tab("contracts", target_id)
+		"building":
+			var building := _find_notification_building(target_id)
+			if building == null or building_economy_ui == null or not building_economy_ui.has_method("open_for"):
+				return false
+			for modal in [inventory_ui, map_ui, build_ui, shop_ui]:
+				if modal != null and modal.has_method("close"):
+					modal.close()
+			return bool(building_economy_ui.call("open_for", building))
+	return false
+
+
+func notification_route_kind(target_type: String, target_id: String) -> String:
+	if target_id.is_empty():
+		return ""
+	if target_type in ["market_item", "order", "contract"]:
+		return target_type
+	if target_type == "building" and is_valid_building_notification_target(target_id):
+		return "building"
+	return ""
+
+
+func is_valid_building_notification_target(target_id: String) -> bool:
+	return not _canonical_building_target(target_id).is_empty()
+
+
+func _canonical_building_target(target_id: String) -> String:
+	var building_id := ""
+	var gx_text := ""
+	var gz_text := ""
+	if target_id.contains("@"):
+		var halves := target_id.split("@", false)
+		if halves.size() != 2:
+			return ""
+		var coordinates := halves[1].split(",", false)
+		if coordinates.size() != 2:
+			return ""
+		building_id = halves[0]
+		gx_text = coordinates[0]
+		gz_text = coordinates[1]
+	else:
+		var parts := target_id.split(":", false)
+		if parts.size() != 3:
+			return ""
+		building_id = parts[0]
+		gx_text = parts[1]
+		gz_text = parts[2]
+	if building_id.is_empty() or not gx_text.is_valid_int() or not gz_text.is_valid_int():
+		return ""
+	if GameDataScript.get_building(building_id).is_empty():
+		return ""
+	return "%s:%d:%d" % [building_id, int(gx_text), int(gz_text)]
+
+
+func _find_notification_building(target_id: String) -> BuildingInstance:
+	var canonical := _canonical_building_target(target_id)
+	if canonical.is_empty() or building_system == null:
+		return null
+	for building in building_system.get_all_buildings():
+		if building != null and "%s:%d:%d" % [building.building_id, building.grid_x, building.grid_z] == canonical:
+			return building
+	return null
+
+
+func _economy_record_exists(method_name: String, id_field: String, target_id: String) -> bool:
+	if economy_system == null or not economy_system.has_method(method_name):
+		return false
+	for record in economy_system.call(method_name):
+		if record is Dictionary and str(record.get(id_field, "")) == target_id:
+			return true
+	return false
 
 
 func _initial_game_state() -> void:
@@ -498,6 +641,7 @@ func reset_debug_state() -> bool:
 	economy_progression_system.reset_to_new_game()
 	tool_system.reset_durability()
 	production_system.reset_maintenance(season_system.total_days)
+	economy_notification_system.reset_notifications()
 	_grant_new_game_items()
 	if hud:
 		hud.refresh_action_bar()

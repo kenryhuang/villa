@@ -69,7 +69,7 @@ theme_override_constants/separation = 8
 custom_minimum_size = Vector2(138, 50)
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "市场"
+text = "[市场]"
 tooltip_text = "打开区域市场"
 
 [node name="NotificationButton" type="Button" parent="EconomyActions"]
@@ -78,6 +78,18 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 20
 text = "通知 0"
 tooltip_text = "查看经营通知"
+
+[node name="UrgentSummaries" type="VBoxContainer" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -462.0
+offset_top = 164.0
+offset_right = -108.0
+offset_bottom = 276.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_constants/separation = 4
 
 [node name="TopBar" type="PanelContainer" parent="."]
 offset_left = 20.0

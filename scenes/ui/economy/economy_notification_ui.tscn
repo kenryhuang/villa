@@ -1,0 +1,94 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/economy_notification_ui.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="CenterStyle"]
+bg_color = Color(0.12, 0.16, 0.13, 0.97)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.82, 0.65, 0.34, 0.92)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="EconomyNotificationUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="ToastStack" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -366.0
+offset_top = 170.0
+offset_right = -24.0
+offset_bottom = 560.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="NotificationCenter" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -510.0
+offset_top = 166.0
+offset_right = -24.0
+offset_bottom = 690.0
+grow_horizontal = 0
+mouse_filter = 0
+theme_override_styles/panel = SubResource("CenterStyle")
+
+[node name="Margin" type="MarginContainer" parent="NotificationCenter"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="VBox" type="VBoxContainer" parent="NotificationCenter/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="NotificationCenter/Margin/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="NotificationCenter/Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
+text = "经营通知"
+
+[node name="UnreadLabel" type="Label" parent="NotificationCenter/Margin/VBox/Header"]
+layout_mode = 2
+text = "未读 0"
+
+[node name="CloseButton" type="Button" parent="NotificationCenter/Margin/VBox/Header"]
+layout_mode = 2
+text = "关闭"
+
+[node name="Scroll" type="ScrollContainer" parent="NotificationCenter/Margin/VBox"]
+custom_minimum_size = Vector2(450, 390)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RecordList" type="VBoxContainer" parent="NotificationCenter/Margin/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="MarkAllReadButton" type="Button" parent="NotificationCenter/Margin/VBox"]
+layout_mode = 2
+text = "全部标为已读"
