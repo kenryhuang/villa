@@ -7,6 +7,7 @@ const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const DailySimulationSystemScript = preload("res://scripts/systems/daily_simulation_system.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
+const EventBusScript = preload("res://scripts/core/event_bus.gd")
 
 const TEST_SAVE_DIR := "user://task11_economy_orders/"
 const TEST_SLOT := 11
@@ -37,6 +38,7 @@ class WalletDouble extends Node:
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_required_api(assertions)
+	_test_stable_event_bus_signal_shape(assertions)
 	_test_shortage_premiums_cap_and_dedup(assertions)
 	_test_order_completion_is_atomic_and_once_only(assertions)
 	_test_expired_and_failed_orders_preserve_assets(assertions)
@@ -55,6 +57,15 @@ func _test_required_api(assertions: TestAssert) -> void:
 	economy.free()
 
 
+func _test_stable_event_bus_signal_shape(assertions: TestAssert) -> void:
+	var event_bus := EventBusScript.new()
+	assertions.truthy(not event_bus.has_signal("order_generated"), "EventBus exposes no index-based generated-order signal")
+	assertions.truthy(not event_bus.has_signal("order_completed"), "EventBus exposes no index-based completed-order signal")
+	_assert_string_id_signal(assertions, event_bus, "order_updated", "order_id")
+	_assert_string_id_signal(assertions, event_bus, "contract_updated", "contract_id")
+	event_bus.free()
+
+
 func _test_shortage_premiums_cap_and_dedup(assertions: TestAssert) -> void:
 	var fixture := _fixture([
 		_profile("daily_npc", {"iron_ore": 5}),
@@ -66,6 +77,7 @@ func _test_shortage_premiums_cap_and_dedup(assertions: TestAssert) -> void:
 		_free_fixture(fixture)
 		return
 
+	economy.call("advance_order_deadlines", 12)
 	economy.call("generate_demand_orders", 12)
 	var orders: Array = economy.call("get_orders")
 	assertions.equal(orders.size(), 2, "one real order is generated per NPC and item shortage")
@@ -73,17 +85,13 @@ func _test_shortage_premiums_cap_and_dedup(assertions: TestAssert) -> void:
 	var urgent := _record_for(orders, "urgent_npc:iron_ore:12")
 	assertions.equal(daily.get("quantity"), 5, "daily order uses the real five-unit shortage")
 	assertions.equal(daily.get("kind"), "daily", "small shortage creates a daily order")
-	assertions.truthy(
-		int(daily.get("unit_price", 0)) >= 115 and int(daily.get("unit_price", 0)) <= 130,
-		"daily premium stays within fifteen to thirty percent"
-	)
+	var daily_quote: int = fixture.market.quote_sell("iron_ore", int(daily.quantity))
+	_assert_reward_premium(assertions, daily, daily_quote, 15, 30, "daily")
 	assertions.equal(daily.get("expires_day"), 14, "daily order lasts two days")
 	assertions.equal(urgent.get("quantity"), 10, "large shortage is capped at ten units")
 	assertions.equal(urgent.get("kind"), "urgent", "ten-unit shortage creates an urgent order")
-	assertions.truthy(
-		int(urgent.get("unit_price", 0)) >= 140 and int(urgent.get("unit_price", 0)) <= 160,
-		"urgent premium stays within forty to sixty percent"
-	)
+	var urgent_quote: int = fixture.market.quote_sell("iron_ore", int(urgent.quantity))
+	_assert_reward_premium(assertions, urgent, urgent_quote, 40, 60, "urgent")
 	assertions.equal(
 		urgent.get("reward_gold"),
 		int(urgent.get("quantity", 0)) * int(urgent.get("unit_price", 0)),
@@ -94,6 +102,13 @@ func _test_shortage_premiums_cap_and_dedup(assertions: TestAssert) -> void:
 	assertions.equal((economy.call("get_orders") as Array).size(), 2, "open NPC item demand is deduplicated across calls")
 	_free_fixture(fixture)
 
+	fixture = _fixture([_profile("tiny_npc", {"grain": 10})], 100, 1)
+	economy = fixture.economy
+	economy.call("advance_order_deadlines", 12)
+	economy.call("generate_demand_orders", 12)
+	assertions.equal((economy.call("get_orders") as Array).size(), 0, "no discrete in-range reward deterministically skips the unsafe order")
+	_free_fixture(fixture)
+
 
 func _test_order_completion_is_atomic_and_once_only(assertions: TestAssert) -> void:
 	var fixture := _fixture([_profile("urgent_npc", {"iron_ore": 10})])
@@ -102,6 +117,7 @@ func _test_order_completion_is_atomic_and_once_only(assertions: TestAssert) -> v
 		assertions.truthy(false, "completion tests require stable order API")
 		_free_fixture(fixture)
 		return
+	economy.call("advance_order_deadlines", 12)
 	economy.call("generate_demand_orders", 12)
 	var order: Dictionary = (economy.call("get_orders") as Array)[0]
 	var quantity := int(order.quantity)
@@ -137,6 +153,7 @@ func _test_expired_and_failed_orders_preserve_assets(assertions: TestAssert) -> 
 		assertions.truthy(false, "rollback tests require stable order API")
 		_free_fixture(fixture)
 		return
+	economy.call("advance_order_deadlines", 12)
 	economy.call("generate_demand_orders", 12)
 	var order: Dictionary = (economy.call("get_orders") as Array)[0]
 	var quantity := int(order.quantity)
@@ -150,6 +167,7 @@ func _test_expired_and_failed_orders_preserve_assets(assertions: TestAssert) -> 
 
 	fixture = _fixture([_profile("urgent_npc", {"iron_ore": 10})])
 	economy = fixture.economy
+	economy.call("advance_order_deadlines", 12)
 	economy.call("generate_demand_orders", 12)
 	order = (economy.call("get_orders") as Array)[0]
 	assertions.truthy(fixture.inventory.add_item("iron_ore", int(order.quantity)), "payment rollback fixture owns items")
@@ -163,6 +181,19 @@ func _test_expired_and_failed_orders_preserve_assets(assertions: TestAssert) -> 
 
 	fixture = _fixture([_profile("urgent_npc", {"iron_ore": 10})])
 	economy = fixture.economy
+	economy.call("advance_order_deadlines", 12)
+	economy.call("generate_demand_orders", 12)
+	order = (economy.call("get_orders") as Array)[0]
+	assertions.truthy(fixture.inventory.add_item("iron_ore", int(order.quantity)), "cursor defense fixture owns items")
+	before = _asset_snapshot(fixture, "urgent_npc", "iron_ore")
+	economy.set("_last_processed_day", int(order.expires_day) + 1)
+	assertions.truthy(not bool(economy.call("complete_order", str(order.order_id))), "completion rejects an overdue cursor even when the flag is stale")
+	_assert_assets(assertions, fixture, before, "urgent_npc", "iron_ore", "overdue cursor defense")
+	_free_fixture(fixture)
+
+	fixture = _fixture([_profile("urgent_npc", {"iron_ore": 10})])
+	economy = fixture.economy
+	economy.call("advance_order_deadlines", 12)
 	economy.call("generate_demand_orders", 12)
 	order = (economy.call("get_orders") as Array)[0]
 	assertions.truthy(fixture.inventory.add_item("iron_ore", int(order.quantity)), "overflow fixture owns items")
@@ -229,6 +260,11 @@ func _test_contract_delivery_reload_and_breach_idempotence(assertions: TestAsser
 	var restored_available := bool(economy.call("from_dict", available))
 	assertions.truthy(restored_available, "unsigned available contract accrues no breach before signing")
 	if restored_available:
+		var available_before: Dictionary = economy.call("to_dict")
+		var stale_available := available_before.duplicate(true)
+		stale_available["last_processed_day"] = 4
+		assertions.truthy(not bool(economy.call("from_dict", stale_available)), "cursor past contract end rejects an unexpired incomplete contract")
+		assertions.equal(economy.call("to_dict"), available_before, "stale contract rejection is atomic")
 		economy.call("advance_order_deadlines", 4)
 		assertions.truthy(bool((economy.call("get_contracts") as Array)[0].expired), "unsigned contract expires after its offer window")
 		assertions.equal((economy.call("get_contracts") as Array)[0].breaches, 0, "unsigned expired contract never records breach")
@@ -242,6 +278,7 @@ func _test_snapshots_and_strict_atomic_restore(assertions: TestAssert) -> void:
 		assertions.truthy(false, "snapshot tests require stable order API")
 		_free_fixture(fixture)
 		return
+	economy.call("advance_order_deadlines", 12)
 	economy.call("generate_demand_orders", 12)
 	var snapshot: Array = economy.call("get_orders")
 	var original_quantity := int(snapshot[0].quantity)
@@ -250,6 +287,7 @@ func _test_snapshots_and_strict_atomic_restore(assertions: TestAssert) -> void:
 
 	var valid_state: Dictionary = economy.call("to_dict")
 	valid_state.contracts.append(_contract_record())
+	valid_state.contracts[0]["expired"] = true
 	assertions.truthy(bool(economy.call("from_dict", valid_state)), "valid order and contract state restores")
 	var contracts: Array = economy.call("get_contracts")
 	contracts[0].delivered_days.append(99)
@@ -272,6 +310,15 @@ func _test_snapshots_and_strict_atomic_restore(assertions: TestAssert) -> void:
 	malformed.orders[0].reward_gold += 1
 	assertions.truthy(not bool(economy.call("from_dict", malformed)), "reward cross-field mismatch is rejected")
 	assertions.equal(economy.call("to_dict"), before, "cross-field rejection is atomic")
+	malformed = before.duplicate(true)
+	malformed["last_processed_day"] = int(malformed.orders[0].expires_day) + 1
+	malformed.orders[0]["expired"] = false
+	assertions.truthy(not bool(economy.call("from_dict", malformed)), "cursor past order expiry rejects stale unexpired order state")
+	assertions.equal(economy.call("to_dict"), before, "stale order rejection is atomic")
+	malformed = before.duplicate(true)
+	malformed.orders[0]["expired"] = true
+	assertions.truthy(not bool(economy.call("from_dict", malformed)), "order cannot be expired before its deadline")
+	assertions.equal(economy.call("to_dict"), before, "early-expiry rejection is atomic")
 	malformed = before.duplicate(true)
 	malformed.contracts[0].breaches = -1
 	assertions.truthy(not bool(economy.call("from_dict", malformed)), "negative contract values are rejected")
@@ -319,11 +366,11 @@ func _test_save_manager_round_trip(assertions: TestAssert, tree: SceneTree) -> v
 	_cleanup_save()
 
 
-func _fixture(profiles: Array) -> Dictionary:
+func _fixture(profiles: Array, iron_price: int = 100, grain_price: int = 10) -> Dictionary:
 	var market := MarketSystemScript.new()
 	market.configure([
-		_definition("iron_ore", 100),
-		_definition("grain", 10),
+		_definition("iron_ore", iron_price),
+		_definition("grain", grain_price),
 	])
 	var npc := NpcEconomySystemScript.new()
 	npc.configure(market, profiles, [])
@@ -433,3 +480,42 @@ func _cleanup_save() -> void:
 	var directory := TEST_SAVE_DIR.trim_suffix("/")
 	if DirAccess.dir_exists_absolute(directory):
 		DirAccess.remove_absolute(directory)
+
+
+func _assert_reward_premium(
+	assertions: TestAssert,
+	order: Dictionary,
+	market_sell_quote: int,
+	minimum_percent: int,
+	maximum_percent: int,
+	message: String
+) -> void:
+	var reward := int(order.get("reward_gold", 0))
+	assertions.truthy(market_sell_quote > 0, message + " market sell quote is positive")
+	assertions.truthy(
+		reward * 100 >= market_sell_quote * (100 + minimum_percent),
+		message + " reward reaches the minimum premium over the real sell quote"
+	)
+	assertions.truthy(
+		reward * 100 <= market_sell_quote * (100 + maximum_percent),
+		message + " reward stays under the maximum premium over the real sell quote"
+	)
+	assertions.equal(reward, int(order.quantity) * int(order.unit_price), message + " reward remains quantity times integer unit price")
+
+
+func _assert_string_id_signal(
+	assertions: TestAssert,
+	event_bus: Node,
+	signal_name: String,
+	argument_name: String
+) -> void:
+	assertions.truthy(event_bus.has_signal(signal_name), "EventBus exposes %s" % signal_name)
+	for signal_data in event_bus.get_signal_list():
+		if str(signal_data.get("name", "")) != signal_name:
+			continue
+		var arguments: Array = signal_data.get("args", [])
+		assertions.equal(arguments.size(), 1, "%s exposes exactly one stable ID argument" % signal_name)
+		if arguments.size() == 1:
+			assertions.equal(str(arguments[0].get("name", "")), argument_name, "%s names its stable ID argument" % signal_name)
+			assertions.equal(int(arguments[0].get("type", -1)), TYPE_STRING, "%s stable ID argument is String" % signal_name)
+		return

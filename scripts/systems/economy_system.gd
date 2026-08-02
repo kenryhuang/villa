@@ -312,7 +312,11 @@ func complete_order(order_id: String) -> bool:
 	if index < 0:
 		return false
 	var order: Dictionary = _orders[index]
-	if bool(order.completed) or bool(order.expired):
+	if (
+		bool(order.completed)
+		or bool(order.expired)
+		or _last_processed_day > int(order.expires_day)
+	):
 		return false
 	if not _transfer_player_delivery(
 		str(order.npc_id), str(order.item_id), int(order.quantity), int(order.reward_gold)
@@ -543,14 +547,9 @@ func generate_demand_orders(day: int) -> void:
 		var quantity := mini(shortage_quantity, MAX_ORDER_QUANTITY)
 		var kind := "urgent" if shortage_quantity >= URGENT_SHORTAGE_THRESHOLD else "daily"
 		var premium := _deterministic_premium(day, npc_id, item_id, kind)
-		var base_price := _order_base_price(item_id)
-		if (
-			base_price <= 0
-			or base_price > (9223372036854775807 - 99) / (100 + premium)
-		):
-			continue
-		var unit_price := (base_price * (100 + premium) + 99) / 100
-		if unit_price <= 0 or quantity > 9223372036854775807 / unit_price:
+		var market_sell_quote := int(_market_ref.call("quote_sell", item_id, quantity))
+		var price := _order_price_for_quote(market_sell_quote, quantity, premium, kind)
+		if price.is_empty():
 			continue
 		var order_id := "%s:%s:%d" % [npc_id, item_id, day]
 		if _find_record(_orders, "order_id", order_id) >= 0:
@@ -560,8 +559,8 @@ func generate_demand_orders(day: int) -> void:
 			"npc_id": npc_id,
 			"item_id": item_id,
 			"quantity": quantity,
-			"unit_price": unit_price,
-			"reward_gold": quantity * unit_price,
+			"unit_price": int(price.unit_price),
+			"reward_gold": int(price.reward_gold),
 			"expires_day": day + (1 if kind == "urgent" else 2),
 			"kind": kind,
 			"completed": false,
@@ -582,11 +581,67 @@ func _has_open_order(npc_id: String, item_id: String) -> bool:
 	return false
 
 
-func _order_base_price(item_id: String) -> int:
-	if _market_ref != null and _market_ref.has_method("get_mid_price"):
-		return int(_market_ref.call("get_mid_price", item_id))
-	var item = GameDataScript.get_item(item_id)
-	return int(item.get("base_price", 0)) if item != null else 0
+func _order_price_for_quote(
+	market_sell_quote: int,
+	quantity: int,
+	target_premium: int,
+	kind: String
+) -> Dictionary:
+	if market_sell_quote <= 0 or quantity <= 0:
+		return {}
+	var minimum := URGENT_PREMIUM_MIN if kind == "urgent" else DAILY_PREMIUM_MIN
+	var maximum := URGENT_PREMIUM_MAX if kind == "urgent" else DAILY_PREMIUM_MAX
+	var minimum_reward := _scaled_ceil(market_sell_quote, 100 + minimum, 100)
+	var maximum_reward := _scaled_floor(market_sell_quote, 100 + maximum, 100)
+	if minimum_reward <= 0 or maximum_reward < minimum_reward:
+		return {}
+	var minimum_unit := _ceil_div_positive(minimum_reward, quantity)
+	var maximum_unit := maximum_reward / quantity
+	if minimum_unit <= 0 or minimum_unit > maximum_unit:
+		return {}
+	var target_reward := _scaled_ceil(market_sell_quote, 100 + target_premium, 100)
+	var target_unit := maximum_unit if target_reward <= 0 else _ceil_div_positive(target_reward, quantity)
+	var unit_price := clampi(target_unit, minimum_unit, maximum_unit)
+	if unit_price <= 0 or unit_price > 9223372036854775807 / quantity:
+		return {}
+	return {
+		"unit_price": unit_price,
+		"reward_gold": unit_price * quantity,
+	}
+
+
+func _scaled_ceil(value: int, factor: int, divisor: int) -> int:
+	if value <= 0 or factor <= 0 or divisor <= 0:
+		return -1
+	var whole := value / divisor
+	var remainder := value % divisor
+	if whole > 9223372036854775807 / factor:
+		return -1
+	var scaled := whole * factor
+	var extra := (remainder * factor + divisor - 1) / divisor
+	if scaled > 9223372036854775807 - extra:
+		return -1
+	return scaled + extra
+
+
+func _scaled_floor(value: int, factor: int, divisor: int) -> int:
+	if value <= 0 or factor <= 0 or divisor <= 0:
+		return -1
+	var whole := value / divisor
+	var remainder := value % divisor
+	if whole > 9223372036854775807 / factor:
+		return 9223372036854775807
+	var scaled := whole * factor
+	var extra := remainder * factor / divisor
+	if scaled > 9223372036854775807 - extra:
+		return 9223372036854775807
+	return scaled + extra
+
+
+func _ceil_div_positive(value: int, divisor: int) -> int:
+	if value <= 0 or divisor <= 0:
+		return -1
+	return (value - 1) / divisor + 1
 
 
 func _deterministic_premium(day: int, npc_id: String, item_id: String, kind: String) -> int:
@@ -642,7 +697,7 @@ func _normalize_state(data: Dictionary) -> Variant:
 	var order_ids: Dictionary = {}
 	var open_pairs: Dictionary = {}
 	for value in data.orders as Array:
-		var normalized_order: Variant = _normalize_order(value)
+		var normalized_order: Variant = _normalize_order(value, cursor)
 		if normalized_order == null:
 			return null
 		var order: Dictionary = normalized_order
@@ -673,7 +728,7 @@ func _normalize_state(data: Dictionary) -> Variant:
 	}
 
 
-func _normalize_order(value: Variant) -> Variant:
+func _normalize_order(value: Variant, cursor: int) -> Variant:
 	if not value is Dictionary:
 		return null
 	var order: Dictionary = value
@@ -702,8 +757,18 @@ func _normalize_order(value: Variant) -> Variant:
 	if not parts[2].is_valid_int() or int(parts[2]) <= 0:
 		return null
 	var created_day := int(parts[2])
+	if created_day > 9223372036854775805 or created_day > cursor:
+		return null
 	var expected_expiry := created_day + (1 if str(order.kind) == "urgent" else 2)
-	if int(order.expires_day) != expected_expiry:
+	if (
+		int(order.expires_day) != expected_expiry
+		or (bool(order.expired) and cursor <= int(order.expires_day))
+		or (
+			not bool(order.completed)
+			and not bool(order.expired)
+			and cursor > int(order.expires_day)
+		)
+	):
 		return null
 	var normalized := order.duplicate(true)
 	for field in ["quantity", "unit_price", "reward_gold", "expires_day"]:
@@ -763,6 +828,11 @@ func _normalize_contract(value: Variant, cursor: int) -> Variant:
 		or (not bool(contract.signed) and (not delivered_days.is_empty() or int(contract.breaches) > 0))
 		or bool(contract.completed) != (delivered_days.size() == duration)
 		or (bool(contract.expired) and cursor <= int(contract.end_day))
+		or (
+			not bool(contract.completed)
+			and not bool(contract.expired)
+			and cursor > int(contract.end_day)
+		)
 	):
 		return null
 	var normalized := contract.duplicate(true)

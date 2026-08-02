@@ -44,8 +44,6 @@ signal item_added(item_id: String, quantity: int)
 signal item_removed(item_id: String, quantity: int)
 
 # Order signals
-signal order_generated(order_index: int)
-signal order_completed(order_index: int)
 signal order_updated(order_id: String)
 signal contract_updated(contract_id: String)
 
