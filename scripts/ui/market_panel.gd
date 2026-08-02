@@ -24,6 +24,7 @@ const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名�
 }
 @onready var sort_option: OptionButton = $Columns/CatalogColumn/SortMode
 @onready var item_list: ItemList = $Columns/CatalogColumn/ItemList
+@onready var item_scroll: ScrollContainer = $Columns/CatalogColumn/ItemScroll
 @onready var item_rows: VBoxContainer = $Columns/CatalogColumn/ItemScroll/ItemRows
 @onready var empty_label: Label = $Columns/CatalogColumn/EmptyLabel
 @onready var item_name_label: Label = $Columns/DetailColumn/ItemNameLabel
@@ -69,8 +70,8 @@ func configure(
 	if inventory_ref == null or economy_ref == null or market_ref == null:
 		return false
 	trade_panel.configure(inventory_ref, economy_ref, market_ref)
-	if not trade_panel.is_connected("snapshot_changed", refresh_snapshot):
-		trade_panel.connect("snapshot_changed", refresh_snapshot)
+	if not trade_panel.is_connected("snapshot_changed", _on_trade_snapshot_changed):
+		trade_panel.connect("snapshot_changed", _on_trade_snapshot_changed)
 	_rebuild_item_list()
 	return true
 
@@ -227,6 +228,8 @@ func _create_item_row(
 	var row := PanelContainer.new()
 	row.name = "ItemRow_%s" % item_id
 	row.set_meta("item_id", item_id)
+	row.set_meta("stock", int(state.get("stock", 0)))
+	row.set_meta("owned", inventory_ref.get_item_count(item_id) if inventory_ref != null else 0)
 	row.tooltip_text = "%s；%s" % [_stock_status(state), "紧急需求" if _is_urgent(state) else "供需平稳"]
 	var row_style := StyleBoxFlat.new()
 	row_style.bg_color = Color("#FFF7E6")
@@ -433,3 +436,15 @@ func _on_sort_selected(index: int) -> void:
 func _on_item_selected(index: int) -> void:
 	if index >= 0 and index < _item_ids.size():
 		select_item(_item_ids[index])
+
+
+func _on_trade_snapshot_changed() -> void:
+	var preserved_category := selected_category
+	var preserved_item := selected_item_id
+	var preserved_sort := sort_mode
+	var preserved_scroll := item_scroll.scroll_vertical
+	selected_category = preserved_category
+	selected_item_id = preserved_item
+	sort_mode = preserved_sort
+	_rebuild_item_list()
+	item_scroll.scroll_vertical = preserved_scroll

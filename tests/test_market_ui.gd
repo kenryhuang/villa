@@ -122,6 +122,11 @@ func _test_trade_thresholds(assertions: TestAssert) -> void:
 	assertions.truthy(trade_script.call("needs_sell_confirmation", 20, 20, 10, 10), "sell liquidity threshold still confirms")
 	assertions.truthy(trade_script.call("needs_sell_confirmation", 1, 20, 10, 9), "sell tail drop still confirms")
 	assertions.truthy(not trade_script.call("needs_sell_confirmation", 1, 20, 10, 10), "ordinary sell ignores wallet-only threshold")
+	assertions.truthy(trade_script.has_method("safe_quantity"), "trade exposes bounded quantity normalization")
+	if trade_script.has_method("safe_quantity"):
+		assertions.equal(trade_script.call("safe_quantity", NAN, 60, 2), 0, "NaN quantity is rejected")
+		assertions.equal(trade_script.call("safe_quantity", 1.0e30, 60, 2), 60, "huge quantity clamps to authoritative availability")
+		assertions.equal(trade_script.call("safe_quantity", 1.0e30, 1000000000, 1000000000), 999, "huge authoritative counts remain hard capped")
 
 
 func _test_modal_coordinator(assertions: TestAssert, tree: SceneTree) -> void:
@@ -152,6 +157,32 @@ func _test_modal_coordinator(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.paused = false
 	owner.free()
 	stranger.free()
+
+	var removed_owner := Control.new()
+	removed_owner.process_mode = Node.PROCESS_MODE_ALWAYS
+	tree.root.add_child(removed_owner)
+	assertions.truthy(coordinator.acquire(removed_owner), "removal fixture acquires unpaused tree")
+	tree.root.remove_child(removed_owner)
+	assertions.truthy(not tree.paused, "owner removal restores prior unpaused state")
+	assertions.equal(removed_owner.process_mode, Node.PROCESS_MODE_ALWAYS, "owner removal restores process mode")
+	tree.paused = true
+	removed_owner.free()
+	assertions.truthy(tree.paused, "free after removal does not restore pause twice")
+	tree.paused = false
+
+	var freed_owner := Control.new()
+	tree.root.add_child(freed_owner)
+	tree.paused = true
+	assertions.truthy(coordinator.acquire(freed_owner), "free fixture acquires previously paused tree")
+	freed_owner.free()
+	assertions.truthy(tree.paused, "owner free restores prior paused state")
+	tree.paused = false
+	var next_owner := Control.new()
+	tree.root.add_child(next_owner)
+	assertions.truthy(coordinator.acquire(next_owner), "owner free clears coordinator ownership")
+	assertions.truthy(coordinator.release(next_owner), "new owner releases after prior owner free")
+	assertions.truthy(not tree.paused, "new owner release restores its own pause snapshot")
+	next_owner.free()
 
 
 func _test_hud_market_request(assertions: TestAssert, tree: SceneTree) -> void:
@@ -249,12 +280,15 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 
 	var trade = market_panel.get_node("Columns/TradePanel")
 	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
+	assertions.truthy(not quantity_spin.allow_greater, "quantity spin rejects values above authoritative maximum")
 	quantity_spin.value = 2
 	trade.call("refresh_quote")
 	assertions.truthy(trade.get_node("PlayerQuantityLabel").text.contains("2"), "trade shows player quantity")
 	assertions.truthy(trade.get_node("MarketQuantityLabel").text.contains(str(market.get_stock("wood"))), "trade shows market quantity")
 	assertions.truthy(trade.get_node("BuyTotalLabel").text.contains(str(market.quote_buy("wood", 2))), "trade shows slippage-adjusted buy total")
 	assertions.truthy(trade.get_node("SellTotalLabel").text.contains(str(market.quote_sell("wood", 2))), "trade shows slippage-adjusted sell total")
+	_test_stale_confirmation_and_quantity_safety(assertions, market_panel, trade, inventory, market, wallet)
+	_test_market_rows_refresh_after_trade(assertions, market_panel, trade, inventory, market, wallet)
 
 	quantity_spin.value = 1
 	wallet.gold = 5
@@ -375,3 +409,149 @@ func _find_item_row(rows: Node, item_id: String) -> Node:
 		if str(row.get_meta("item_id", "")) == item_id:
 			return row
 	return null
+
+
+func _test_stale_confirmation_and_quantity_safety(
+	assertions: TestAssert,
+	market_panel: Node,
+	trade: Node,
+	inventory: InventorySystem,
+	market: MarketSystem,
+	wallet: Node
+) -> void:
+	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
+	if trade.get_script().has_method("safe_quantity"):
+		var safe_snapshot := _asset_snapshot(inventory, market, wallet)
+		quantity_spin.value = 1.0e30
+		trade.call("request_buy")
+		assertions.truthy(quantity_spin.value <= 999.0, "huge spin input is bounded before quoting")
+		_assert_assets_equal(assertions, safe_snapshot, inventory, market, wallet, "huge spin input")
+		trade.call("dismiss_confirmation")
+		quantity_spin.value = NAN
+		trade.call("request_buy")
+		_assert_assets_equal(assertions, safe_snapshot, inventory, market, wallet, "NaN spin input")
+
+	var normal_snapshot := _full_trade_snapshot(inventory, market, wallet)
+	quantity_spin.value = int(market.get_item_state("wood").daily_liquidity)
+	trade.call("refresh_quote")
+	trade.call("request_buy")
+	assertions.truthy(trade.get_node("ConfirmationLayer").visible, "stale quantity fixture opens confirmation")
+	var before_quantity_change := _asset_snapshot(inventory, market, wallet)
+	quantity_spin.value = 1
+	assertions.truthy(not trade.get_node("ConfirmationLayer").visible, "quantity change cancels pending confirmation")
+	trade.call("_confirm_pending_trade")
+	_assert_assets_equal(assertions, before_quantity_change, inventory, market, wallet, "quantity-changed confirmation")
+	_restore_trade_snapshot(normal_snapshot, inventory, market, wallet)
+	market_panel.call("select_category", "raw_materials")
+	market_panel.call("select_item", "wood")
+
+	quantity_spin.value = int(market.get_item_state("wood").daily_liquidity)
+	trade.call("request_buy")
+	wallet.gold = int(wallet.gold) - 1
+	var before_wallet_confirm := _asset_snapshot(inventory, market, wallet)
+	trade.call("_confirm_pending_trade")
+	_assert_assets_equal(assertions, before_wallet_confirm, inventory, market, wallet, "wallet-changed confirmation")
+	assertions.truthy(trade.get_node("FeedbackLabel").text.contains("状态已变化"), "wallet change requires a fresh confirmation")
+	_restore_trade_snapshot(normal_snapshot, inventory, market, wallet)
+	market_panel.call("select_category", "raw_materials")
+	market_panel.call("select_item", "wood")
+
+	quantity_spin.value = int(market.get_item_state("wood").daily_liquidity)
+	trade.call("request_buy")
+	assertions.truthy(market.commit_buy("wood", 1), "external stock change fixture commits")
+	var before_stock_confirm := _asset_snapshot(inventory, market, wallet)
+	assertions.truthy(not trade.get_node("ConfirmationLayer").visible, "authoritative stock signal cancels pending confirmation")
+	trade.call("_confirm_pending_trade")
+	_assert_assets_equal(assertions, before_stock_confirm, inventory, market, wallet, "stock-changed confirmation")
+	_restore_trade_snapshot(normal_snapshot, inventory, market, wallet)
+	market_panel.call("select_category", "raw_materials")
+	market_panel.call("select_item", "wood")
+
+
+func _test_market_rows_refresh_after_trade(
+	assertions: TestAssert,
+	market_panel: Node,
+	trade: Node,
+	inventory: InventorySystem,
+	market: MarketSystem,
+	wallet: Node
+) -> void:
+	var normal_snapshot := _full_trade_snapshot(inventory, market, wallet)
+	var crossing_snapshot: Dictionary = normal_snapshot.market.duplicate(true)
+	var wood_state: Dictionary = crossing_snapshot["items"]["wood"]
+	wood_state["stock"] = 28
+	wood_state["demand"] = 0
+	wood_state["supply"] = 0
+	crossing_snapshot["items"]["wood"] = wood_state
+	assertions.truthy(market.from_dict(crossing_snapshot), "row refresh fixture sets stock boundary")
+	wallet.gold = 1000
+	market_panel.call("set_sort_mode", "name")
+	market_panel.call("select_category", "raw_materials")
+	market_panel.call("select_item", "wood")
+	var scroll := market_panel.get_node("Columns/CatalogColumn/ItemScroll") as ScrollContainer
+	scroll.scroll_vertical = mini(12, roundi(scroll.get_v_scroll_bar().max_value))
+	var scroll_before := scroll.scroll_vertical
+	var category_before: String = market_panel.get("selected_category")
+	var sort_before: String = market_panel.get("sort_mode")
+	var rows := market_panel.get_node("Columns/CatalogColumn/ItemScroll/ItemRows")
+	var old_row := _find_item_row(rows, "wood")
+	assertions.truthy(old_row != null, "row refresh fixture finds selected row")
+	if old_row != null:
+		assertions.equal(int(old_row.get_meta("stock", -1)), 28, "row snapshot stores finite stock")
+		assertions.equal(old_row.get_node("Content/StockColorBar").color, Color("#C58B35"), "boundary row begins warning-colored")
+		assertions.truthy(not old_row.get_node("Content/UrgentBadge").visible, "boundary row begins without urgent badge")
+	var owned_before := inventory.get_item_count("wood")
+	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
+	quantity_spin.value = 1
+	trade.call("request_buy")
+	var new_row := _find_item_row(rows, "wood")
+	assertions.truthy(new_row != null and new_row != old_row, "trade rebuilds item row in same frame")
+	if new_row != null:
+		assertions.equal(int(new_row.get_meta("stock", -1)), 27, "rebuilt row shows committed stock")
+		assertions.equal(int(new_row.get_meta("owned", -1)), owned_before + 1, "rebuilt row shows committed player quantity")
+		assertions.equal(new_row.get_node("Content/StockColorBar").color, Color("#B65C4B"), "rebuilt row updates stock color bar")
+		assertions.truthy(new_row.get_node("Content/UrgentBadge").visible, "rebuilt row updates urgent badge")
+		assertions.truthy(new_row.get_node("Content/SelectButton").button_pressed, "rebuilt row preserves selection")
+	assertions.equal(market_panel.get("selected_category"), category_before, "row refresh preserves category")
+	assertions.equal(market_panel.get("sort_mode"), sort_before, "row refresh preserves sort mode")
+	assertions.equal(scroll.scroll_vertical, scroll_before, "row refresh preserves scroll position")
+	_restore_trade_snapshot(normal_snapshot, inventory, market, wallet)
+	market_panel.call("set_sort_mode", "recommended")
+	market_panel.call("select_category", "raw_materials")
+	market_panel.call("select_item", "wood")
+
+
+func _asset_snapshot(inventory: InventorySystem, market: MarketSystem, wallet: Node) -> Dictionary:
+	return {
+		"gold": int(wallet.gold),
+		"owned": inventory.get_item_count("wood"),
+		"stock": market.get_stock("wood"),
+	}
+
+
+func _full_trade_snapshot(inventory: InventorySystem, market: MarketSystem, wallet: Node) -> Dictionary:
+	return {
+		"gold": int(wallet.gold),
+		"slots": inventory.slots.duplicate(true),
+		"mappings": inventory.quick_slot_mappings.duplicate(),
+		"market": market.to_dict(),
+	}
+
+
+func _restore_trade_snapshot(snapshot: Dictionary, inventory: InventorySystem, market: MarketSystem, wallet: Node) -> void:
+	wallet.gold = int(snapshot.gold)
+	inventory.restore_state(snapshot.slots, snapshot.mappings)
+	market.from_dict(snapshot.market)
+
+
+func _assert_assets_equal(
+	assertions: TestAssert,
+	expected: Dictionary,
+	inventory: InventorySystem,
+	market: MarketSystem,
+	wallet: Node,
+	message: String
+) -> void:
+	assertions.equal(int(wallet.gold), int(expected.gold), message + " preserves gold")
+	assertions.equal(inventory.get_item_count("wood"), int(expected.owned), message + " preserves inventory")
+	assertions.equal(market.get_stock("wood"), int(expected.stock), message + " preserves stock")

@@ -2,6 +2,7 @@ class_name TradePanel
 extends VBoxContainer
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const MAX_UI_QUANTITY := 999
 
 signal snapshot_changed
 
@@ -29,6 +30,9 @@ var economy_ref: EconomySystem
 var market_ref: MarketSystem
 var item_id := ""
 var _pending_action := ""
+var _confirmation_snapshot: Dictionary = {}
+var _event_bus: Node
+var _refreshing_quote := false
 
 
 func _ready() -> void:
@@ -51,6 +55,8 @@ func configure(
 	economy_ref = economy
 	market_ref = market
 	var configured := inventory_ref != null and economy_ref != null and market_ref != null
+	if configured:
+		_connect_authoritative_signals()
 	refresh_quote()
 	return configured
 
@@ -63,12 +69,21 @@ func set_item(next_item_id: String) -> void:
 
 
 func refresh_quote() -> void:
-	if not is_node_ready():
+	if not is_node_ready() or _refreshing_quote:
 		return
+	_refreshing_quote = true
 	var state := market_ref.get_item_state(item_id) if market_ref != null else {}
-	var quantity := maxi(1, int(quantity_spin.value))
 	var stock := int(state.get("stock", 0))
 	var owned := inventory_ref.get_item_count(item_id) if inventory_ref != null else 0
+	var safe_limit := maxi(1, mini(MAX_UI_QUANTITY, maxi(stock, owned)))
+	quantity_spin.max_value = float(safe_limit)
+	var quantity := safe_quantity(quantity_spin.value, stock, owned)
+	if quantity <= 0:
+		_set_invalid_quantity_state(stock, owned)
+		_refreshing_quote = false
+		return
+	if not is_equal_approx(quantity_spin.value, float(quantity)):
+		quantity_spin.value = float(quantity)
 	var mid := int(state.get("mid_price", 0))
 	var liquidity := int(state.get("daily_liquidity", 0))
 	var buy_total := market_ref.quote_buy(item_id, quantity) if market_ref != null else 0
@@ -87,6 +102,7 @@ func refresh_quote() -> void:
 	sell_button.disabled = not sell_reason.is_empty()
 	sell_button.tooltip_text = sell_reason
 	disabled_reason_label.text = buy_reason if not buy_reason.is_empty() else sell_reason
+	_refreshing_quote = false
 
 
 static func needs_confirmation(
@@ -129,12 +145,25 @@ static func needs_sell_confirmation(
 	)
 
 
+static func safe_quantity(raw_quantity: float, stock: int, owned: int) -> int:
+	if not is_finite(raw_quantity):
+		return 0
+	var available := mini(MAX_UI_QUANTITY, maxi(0, maxi(stock, owned)))
+	if available <= 0:
+		return 0
+	return clampi(floori(clampf(raw_quantity, 1.0, float(available))), 1, available)
+
+
 func request_buy() -> void:
 	refresh_quote()
+	var state := market_ref.get_item_state(item_id) if market_ref != null else {}
+	var quantity := _safe_current_quantity(state)
+	if quantity <= 0:
+		_show_feedback("数量无效")
+		return
 	if buy_button.disabled:
 		_show_feedback(buy_button.tooltip_text)
 		return
-	var quantity := maxi(1, int(quantity_spin.value))
 	var total := market_ref.quote_buy(item_id, quantity)
 	var first := market_ref.quote_buy(item_id, 1)
 	var last := total - market_ref.quote_buy(item_id, quantity - 1) if quantity > 1 else first
@@ -146,10 +175,14 @@ func request_buy() -> void:
 
 func request_sell() -> void:
 	refresh_quote()
+	var state := market_ref.get_item_state(item_id) if market_ref != null else {}
+	var quantity := _safe_current_quantity(state)
+	if quantity <= 0:
+		_show_feedback("数量无效")
+		return
 	if sell_button.disabled:
 		_show_feedback(sell_button.tooltip_text)
 		return
-	var quantity := maxi(1, int(quantity_spin.value))
 	var total := market_ref.quote_sell(item_id, quantity)
 	var first := market_ref.quote_sell(item_id, 1)
 	var last := total - market_ref.quote_sell(item_id, quantity - 1) if quantity > 1 else first
@@ -161,6 +194,7 @@ func request_sell() -> void:
 
 func dismiss_confirmation() -> void:
 	_pending_action = ""
+	_confirmation_snapshot.clear()
 	if confirmation_layer != null:
 		confirmation_layer.visible = false
 
@@ -194,7 +228,20 @@ func _open_confirmation(
 	total: int
 ) -> void:
 	_pending_action = action
-	confirmation_layer.set_meta("quantity", quantity)
+	var state := market_ref.get_item_state(item_id)
+	_confirmation_snapshot = {
+		"action": action,
+		"item_id": item_id,
+		"quantity": quantity,
+		"total": total,
+		"first_unit": first,
+		"last_unit": last,
+		"wallet_gold": _gold(),
+		"market_stock": int(state.get("stock", 0)),
+		"mid_price": int(state.get("mid_price", 0)),
+		"daily_liquidity": int(state.get("daily_liquidity", 0)),
+		"player_owned": inventory_ref.get_item_count(item_id),
+	}
 	first_unit_label.text = "首件价格：%d" % first
 	last_unit_label.text = "末件价格：%d" % last
 	confirmation_total_label.text = "实际总价：%d" % total
@@ -207,15 +254,23 @@ func _open_confirmation(
 
 
 func _confirm_pending_trade() -> void:
-	if _pending_action.is_empty():
+	if _pending_action.is_empty() or _confirmation_snapshot.is_empty():
 		return
-	var action := _pending_action
-	var quantity := int(confirmation_layer.get_meta("quantity", 1))
+	var snapshot := _confirmation_snapshot.duplicate(true)
+	if not _confirmation_is_current(snapshot):
+		dismiss_confirmation()
+		_show_feedback("状态已变化，请重新确认")
+		refresh_quote()
+		return
+	var action := str(snapshot.get("action", ""))
+	var quantity := int(snapshot.get("quantity", 0))
 	dismiss_confirmation()
 	_execute_trade(action, quantity)
 
 
 func _on_quantity_changed(_value: float) -> void:
+	if confirmation_layer != null and confirmation_layer.visible:
+		_invalidate_confirmation("数量已变化，请重新确认")
 	refresh_quote()
 
 
@@ -223,16 +278,129 @@ func _on_max_pressed() -> void:
 	if market_ref == null or inventory_ref == null:
 		return
 	var state := market_ref.get_item_state(item_id)
-	var stock := int(state.get("stock", 0))
+	var stock := mini(MAX_UI_QUANTITY, int(state.get("stock", 0)))
 	var gold := _gold()
 	var maximum := 0
-	for quantity in range(1, stock + 1):
-		if market_ref.quote_buy(item_id, quantity) > gold:
-			break
-		if not inventory_ref.can_add_item(item_id, quantity):
-			break
-		maximum = quantity
+	var low := 1
+	var high := stock
+	while low <= high:
+		var quantity := floori(float(low + high) / 2.0)
+		if (
+			market_ref.quote_buy(item_id, quantity) <= gold
+			and inventory_ref.can_add_item(item_id, quantity)
+		):
+			maximum = quantity
+			low = quantity + 1
+		else:
+			high = quantity - 1
 	quantity_spin.value = maxi(1, maximum)
+
+
+func _safe_current_quantity(state: Dictionary) -> int:
+	var stock := int(state.get("stock", 0))
+	var owned := inventory_ref.get_item_count(item_id) if inventory_ref != null else 0
+	return safe_quantity(quantity_spin.value, stock, owned)
+
+
+func _set_invalid_quantity_state(stock: int, owned: int) -> void:
+	player_quantity_label.text = "玩家持有：%d" % owned
+	market_quantity_label.text = "市集可买：%d" % stock
+	reference_price_label.text = "参考单价：—"
+	buy_total_label.text = "买入实际总价：0"
+	sell_total_label.text = "卖出实际总价：0"
+	impact_label.text = "成交影响：none"
+	disabled_reason_label.text = "数量无效"
+	buy_button.disabled = true
+	buy_button.tooltip_text = "数量无效"
+	sell_button.disabled = true
+	sell_button.tooltip_text = "数量无效"
+
+
+func _confirmation_is_current(snapshot: Dictionary) -> bool:
+	if str(snapshot.get("item_id", "")) != item_id:
+		return false
+	var action := str(snapshot.get("action", ""))
+	if action != "buy" and action != "sell":
+		return false
+	var state := market_ref.get_item_state(item_id) if market_ref != null else {}
+	if state.is_empty():
+		return false
+	var quantity := _safe_current_quantity(state)
+	if quantity <= 0 or quantity != int(snapshot.get("quantity", 0)):
+		return false
+	var total := (
+		market_ref.quote_buy(item_id, quantity)
+		if action == "buy"
+		else market_ref.quote_sell(item_id, quantity)
+	)
+	var first := market_ref.quote_buy(item_id, 1) if action == "buy" else market_ref.quote_sell(item_id, 1)
+	var prior_total := (
+		market_ref.quote_buy(item_id, quantity - 1)
+		if action == "buy" and quantity > 1
+		else market_ref.quote_sell(item_id, quantity - 1)
+		if quantity > 1
+		else 0
+	)
+	var last := total - prior_total if quantity > 1 else first
+	return (
+		total == int(snapshot.get("total", -1))
+		and first == int(snapshot.get("first_unit", -1))
+		and last == int(snapshot.get("last_unit", -1))
+		and _gold() == int(snapshot.get("wallet_gold", -1))
+		and int(state.get("stock", -1)) == int(snapshot.get("market_stock", -2))
+		and int(state.get("mid_price", -1)) == int(snapshot.get("mid_price", -2))
+		and int(state.get("daily_liquidity", -1)) == int(snapshot.get("daily_liquidity", -2))
+		and inventory_ref.get_item_count(item_id) == int(snapshot.get("player_owned", -1))
+	)
+
+
+func _connect_authoritative_signals() -> void:
+	var stock_callable := Callable(self, "_on_market_stock_changed")
+	if not market_ref.market_stock_changed.is_connected(stock_callable):
+		market_ref.market_stock_changed.connect(stock_callable)
+	var price_callable := Callable(self, "_on_market_price_changed")
+	if not market_ref.market_price_changed.is_connected(price_callable):
+		market_ref.market_price_changed.connect(price_callable)
+	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if _event_bus != null:
+		for signal_name in [&"gold_changed", &"item_added", &"item_removed"]:
+			var callback := (
+				Callable(self, "_on_gold_changed")
+				if signal_name == &"gold_changed"
+				else Callable(self, "_on_inventory_changed")
+			)
+			if not _event_bus.is_connected(signal_name, callback):
+				_event_bus.connect(signal_name, callback)
+
+
+func _on_market_stock_changed(changed_item_id: String, _stock: int) -> void:
+	if changed_item_id == item_id:
+		_on_authoritative_snapshot_changed()
+
+
+func _on_market_price_changed(changed_item_id: String, _price: int) -> void:
+	if changed_item_id == item_id:
+		_on_authoritative_snapshot_changed()
+
+
+func _on_gold_changed(_gold_value: int) -> void:
+	_on_authoritative_snapshot_changed()
+
+
+func _on_inventory_changed(changed_item_id: String, _quantity: int) -> void:
+	if changed_item_id == item_id:
+		_on_authoritative_snapshot_changed()
+
+
+func _on_authoritative_snapshot_changed() -> void:
+	if confirmation_layer != null and confirmation_layer.visible:
+		_invalidate_confirmation("状态已变化，请重新确认")
+	refresh_quote()
+
+
+func _invalidate_confirmation(message: String) -> void:
+	dismiss_confirmation()
+	_show_feedback(message)
 
 
 func _buy_disabled_reason(state: Dictionary, quantity: int, total: int) -> String:

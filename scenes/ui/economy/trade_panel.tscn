@@ -54,7 +54,7 @@ layout_mode = 2
 min_value = 1.0
 max_value = 99.0
 value = 1.0
-allow_greater = true
+allow_greater = false
 
 [node name="MaxButton" type="Button" parent="QuantityRow"]
 custom_minimum_size = Vector2(72, 44)
