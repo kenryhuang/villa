@@ -6,6 +6,8 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
+signal quick_slot_mapping_changed(quick_index: int, item_id: String)
+
 var slots: Array[Dictionary] = []  # [{item_id, quantity}, ...]
 var max_slots: int = 20
 var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, -1]  # 快捷栏 → 背包槽位映射
@@ -132,11 +134,12 @@ func swap_slots(from_index: int, to_index: int) -> void:
 func set_quick_slot(slot_index: int, quick_index: int) -> bool:
 	if quick_index < 0 or quick_index >= 6:
 		return false
-	if slot_index < 0 or slot_index >= slots.size():
-		quick_slot_mappings[quick_index] = -1
-		return false
-	quick_slot_mappings[quick_index] = slot_index
-	return true
+	var valid_slot := slot_index >= 0 and slot_index < slots.size()
+	var next_mapping := slot_index if valid_slot else -1
+	if quick_slot_mappings[quick_index] != next_mapping:
+		quick_slot_mappings[quick_index] = next_mapping
+		quick_slot_mapping_changed.emit(quick_index, get_quick_item(quick_index))
+	return valid_slot
 
 
 func get_quick_item(quick_index: int) -> String:
@@ -188,6 +191,11 @@ func clear() -> void:
 
 
 func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
+	var previous_mappings := quick_slot_mappings.duplicate()
+	var previous_items: Array[String] = []
+	for quick_index in range(6):
+		previous_items.append(get_quick_item(quick_index))
+
 	var normalized_slots: Array[Dictionary] = []
 	if saved_slots is Array:
 		for saved_slot in saved_slots:
@@ -210,11 +218,40 @@ func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
 			slot_index = -1
 		normalized_mappings.append(slot_index)
 	quick_slot_mappings.assign(normalized_mappings)
+	_emit_changed_quick_mappings(previous_mappings, previous_items)
 
 
 func reset_slots() -> void:
+	var previous_mappings := quick_slot_mappings.duplicate()
+	var previous_items: Array[String] = []
+	for quick_index in range(6):
+		previous_items.append(get_quick_item(quick_index))
 	slots.clear()
 	slots.resize(max_slots)
 	for i in range(max_slots):
 		slots[i] = {}
 	quick_slot_mappings = [-1, -1, -1, -1, -1, -1]
+	_emit_changed_quick_mappings(previous_mappings, previous_items)
+
+
+func _emit_changed_quick_mappings(
+	previous_mappings: Array,
+	previous_items: Array[String]
+) -> void:
+	for quick_index in range(6):
+		var previous_mapping := (
+			int(previous_mappings[quick_index])
+			if quick_index < previous_mappings.size()
+			else -1
+		)
+		var previous_item := (
+			previous_items[quick_index]
+			if quick_index < previous_items.size()
+			else ""
+		)
+		var current_item := get_quick_item(quick_index)
+		if (
+			previous_mapping != quick_slot_mappings[quick_index]
+			or previous_item != current_item
+		):
+			quick_slot_mapping_changed.emit(quick_index, current_item)

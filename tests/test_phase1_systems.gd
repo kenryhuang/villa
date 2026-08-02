@@ -25,6 +25,13 @@ class WalletDouble:
 		return true
 
 
+class QuickMappingRecorder:
+	var events: Array[Dictionary] = []
+
+	func on_mapping_changed(quick_index: int, item_id: String) -> void:
+		events.append({"quick_index": quick_index, "item_id": item_id})
+
+
 func run(assertions: TestAssert) -> void:
 	_test_game_data(assertions)
 	_test_inventory(assertions)
@@ -65,6 +72,77 @@ func _test_inventory(assertions: TestAssert) -> void:
 	inventory.swap_slots(0, 1)
 	assertions.equal(inventory.get_quick_item(0), "", "quick mapping follows physical slot")
 	assertions.truthy(not inventory.add_item("missing", 1), "unknown item is rejected")
+
+	var mapping_inventory = InventorySystemScript.new()
+	mapping_inventory.add_item("grain_seed", 2)
+	mapping_inventory.add_item("carrot_seed", 1)
+	mapping_inventory.add_item("rose_seed", 3)
+	var mapping_recorder := QuickMappingRecorder.new()
+	assertions.truthy(
+		mapping_inventory.has_signal("quick_slot_mapping_changed"),
+		"inventory exposes a quick-slot mapping signal"
+	)
+	if mapping_inventory.has_signal("quick_slot_mapping_changed"):
+		mapping_inventory.quick_slot_mapping_changed.connect(
+			mapping_recorder.on_mapping_changed
+		)
+		assertions.truthy(
+			mapping_inventory.set_quick_slot(0, 5),
+			"mapping signal fixture selects grain seed"
+		)
+		mapping_inventory.set_quick_slot(0, 5)
+		assertions.equal(
+			mapping_recorder.events,
+			[{"quick_index": 5, "item_id": "grain_seed"}],
+			"identical quick-slot assignments emit only once"
+		)
+		mapping_inventory.set_quick_slot(1, 5)
+		assertions.equal(
+			mapping_recorder.events.back(),
+			{"quick_index": 5, "item_id": "carrot_seed"},
+			"changed quick-slot assignments emit the active item"
+		)
+		assertions.truthy(
+			not mapping_inventory.set_quick_slot(99, 5),
+			"invalid inventory assignment clears the quick slot"
+		)
+		mapping_inventory.set_quick_slot(99, 5)
+		assertions.equal(
+			mapping_recorder.events.size(),
+			3,
+			"clearing an already empty mapping does not emit twice"
+		)
+		assertions.equal(
+			mapping_recorder.events.back(),
+			{"quick_index": 5, "item_id": ""},
+			"clearing a mapping emits an empty item id"
+		)
+		var restored_mappings: Array[int] = [-1, -1, -1, -1, -1, 2]
+		mapping_inventory.restore_state(
+			mapping_inventory.slots.duplicate(true),
+			restored_mappings
+		)
+		assertions.equal(
+			mapping_recorder.events.back(),
+			{"quick_index": 5, "item_id": "rose_seed"},
+			"restoring a changed mapping emits the restored item"
+		)
+		var restore_event_count := mapping_recorder.events.size()
+		mapping_inventory.restore_state(
+			mapping_inventory.slots.duplicate(true),
+			restored_mappings
+		)
+		assertions.equal(
+			mapping_recorder.events.size(),
+			restore_event_count,
+			"restoring identical state does not duplicate mapping events"
+		)
+		mapping_inventory.reset_slots()
+		assertions.equal(
+			mapping_recorder.events.back(),
+			{"quick_index": 5, "item_id": ""},
+			"resetting inventory emits a cleared mapping"
+		)
 
 	var tiny_inventory = InventorySystemScript.new()
 	tiny_inventory.max_slots = 1

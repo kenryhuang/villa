@@ -222,7 +222,21 @@ func configure_action_bar(
 	economy: Variant = null
 ) -> void:
 	action_controller = controller
+	var mapping_handler := Callable(self, "_on_quick_slot_mapping_changed")
+	if (
+		inventory_ref != null
+		and inventory_ref != inventory
+		and inventory_ref.has_signal("quick_slot_mapping_changed")
+		and inventory_ref.is_connected("quick_slot_mapping_changed", mapping_handler)
+	):
+		inventory_ref.disconnect("quick_slot_mapping_changed", mapping_handler)
 	inventory_ref = inventory
+	if (
+		inventory_ref != null
+		and inventory_ref.has_signal("quick_slot_mapping_changed")
+		and not inventory_ref.is_connected("quick_slot_mapping_changed", mapping_handler)
+	):
+		inventory_ref.connect("quick_slot_mapping_changed", mapping_handler)
 	economy_ref = economy
 	if (
 		action_controller
@@ -355,6 +369,17 @@ func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
 		refresh_action_bar()
 
 
+func _on_quick_slot_mapping_changed(quick_index: int, _item_id: String) -> void:
+	refresh_action_bar()
+	if (
+		quick_index == PlayerActionController.SEED_SLOT
+		and action_controller
+		and not _is_building_mode()
+		and action_controller.get_selected_slot() == PlayerActionController.SEED_SLOT
+	):
+		set_tool_name(_active_plant_item_name())
+
+
 func _active_plant_item_display() -> String:
 	if inventory_ref == null:
 		return "种苗 ×0"
@@ -366,6 +391,14 @@ func _active_plant_item_display() -> String:
 		str(item_data.get("name", "种苗")),
 		inventory_ref.get_item_count(item_id),
 	]
+
+
+func _active_plant_item_name() -> String:
+	if inventory_ref == null:
+		return "种苗"
+	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
+	var item_data = GameDataScript.get_item(item_id)
+	return str(item_data.get("name", "种苗")) if item_data else "种苗"
 
 
 func _on_mode_requested(mode: int) -> void:
