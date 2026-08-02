@@ -99,7 +99,7 @@ func set_filter(filter_id: String) -> void:
 
 
 func select_order(order_id: String) -> void:
-	if _order_for_id(order_id).is_empty():
+	if _visible_order_for_id(order_id).is_empty():
 		return
 	selected_order_id = order_id
 	_update_rows_selection()
@@ -110,10 +110,10 @@ func request_delivery(order_id: String) -> void:
 	if _economy == null or _inventory == null:
 		_set_error("订单系统未连接")
 		return
-	var order := _order_for_id(order_id)
+	var order := _visible_order_for_id(order_id)
 	if order.is_empty():
 		refresh_orders()
-		_set_error("订单状态已变化")
+		_set_error("订单不在当前筛选")
 		return
 	selected_order_id = order_id
 	var reason := _delivery_disabled_reason(order)
@@ -123,7 +123,7 @@ func request_delivery(order_id: String) -> void:
 		return
 	if not _economy.complete_order(order_id):
 		refresh_orders()
-		_set_error(_delivery_disabled_reason(_order_for_id(order_id), true))
+		_set_error(_delivery_disabled_reason(_visible_order_for_id(order_id), true))
 		return
 	refresh_orders()
 	_set_error("")
@@ -152,7 +152,7 @@ func refresh_orders() -> void:
 		empty_state.text = "暂时没有居民发布需求"
 	elif _visible_orders.is_empty():
 		empty_state.text = "当前筛选没有订单"
-	if not selected_order_id.is_empty() and _order_for_id(selected_order_id).is_empty():
+	if not selected_order_id.is_empty() and _visible_order_for_id(selected_order_id).is_empty():
 		selected_order_id = ""
 	if selected_order_id.is_empty() and not _visible_orders.is_empty():
 		selected_order_id = str(_visible_orders[0].get("order_id", ""))
@@ -168,7 +168,7 @@ func get_visible_orders() -> Array[Dictionary]:
 
 
 func get_selected_order() -> Dictionary:
-	return _order_for_id(selected_order_id).duplicate(true)
+	return _visible_order_for_id(selected_order_id).duplicate(true)
 
 
 func _matches_filter(order: Dictionary) -> bool:
@@ -220,7 +220,7 @@ func _update_rows_selection() -> void:
 
 
 func _update_detail() -> void:
-	var order := _order_for_id(selected_order_id)
+	var order := _visible_order_for_id(selected_order_id)
 	if order.is_empty():
 		npc_label.text = "NPC：—"
 		title_label.text = "选择订单查看详情"
@@ -296,8 +296,8 @@ func _premium_text(order: Dictionary) -> String:
 	return "溢价 %+d%%" % percent
 
 
-func _order_for_id(order_id: String) -> Dictionary:
-	for order in _orders:
+func _visible_order_for_id(order_id: String) -> Dictionary:
+	for order in _visible_orders:
 		if str(order.get("order_id", "")) == order_id:
 			return order
 	return {}

@@ -81,7 +81,7 @@ func configure(economy: EconomySystem, inventory: InventorySystem) -> bool:
 
 
 func select_contract(contract_id: String) -> void:
-	if _contract_for_id(contract_id).is_empty():
+	if _visible_contract_for_id(contract_id).is_empty():
 		return
 	selected_contract_id = contract_id
 	_update_row_selection()
@@ -92,7 +92,7 @@ func request_sign(contract_id: String) -> void:
 	if _economy == null:
 		_set_error("合同系统未连接")
 		return
-	var contract := _contract_for_id(contract_id)
+	var contract := _visible_contract_for_id(contract_id)
 	var reason := _sign_disabled_reason(contract)
 	if not reason.is_empty():
 		refresh_contracts()
@@ -117,7 +117,7 @@ func commit_confirmed_sign(contract_id: String, expected_snapshot: Dictionary) -
 	var succeeded := _economy.sign_contract(contract_id)
 	_sign_in_progress = false
 	refresh_contracts()
-	_set_error("" if succeeded else _sign_disabled_reason(_contract_for_id(contract_id), true))
+	_set_error("" if succeeded else _sign_disabled_reason(_visible_contract_for_id(contract_id), true))
 	return succeeded
 
 
@@ -125,7 +125,7 @@ func request_delivery(contract_id: String, quantity: int) -> void:
 	if _economy == null or _inventory == null:
 		_set_error("合同系统未连接")
 		return
-	var contract := _contract_for_id(contract_id)
+	var contract := _visible_contract_for_id(contract_id)
 	var reason := _delivery_disabled_reason(contract, quantity)
 	if not reason.is_empty():
 		refresh_contracts()
@@ -133,7 +133,7 @@ func request_delivery(contract_id: String, quantity: int) -> void:
 		return
 	if not _economy.deliver_contract(contract_id, quantity):
 		refresh_contracts()
-		_set_error(_delivery_disabled_reason(_contract_for_id(contract_id), quantity, true))
+		_set_error(_delivery_disabled_reason(_visible_contract_for_id(contract_id), quantity, true))
 		return
 	refresh_contracts()
 	_set_error("")
@@ -153,25 +153,26 @@ func refresh_contracts() -> void:
 	_clear_list(available_list)
 	var active_count := 0
 	var available_count := 0
+	var first_active_id := ""
+	var first_available_id := ""
 	for contract in _contracts:
 		var section := list_section_for(contract, _total_day())
 		if section == "active":
 			active_list.add_child(_build_contract_row(contract, true))
 			active_count += 1
+			if first_active_id.is_empty():
+				first_active_id = str(contract.get("contract_id", ""))
 		elif section == "available":
 			available_list.add_child(_build_contract_row(contract, false))
 			available_count += 1
+			if first_available_id.is_empty():
+				first_available_id = str(contract.get("contract_id", ""))
 	active_empty.visible = active_count == 0
 	available_empty.visible = available_count == 0
-	if not selected_contract_id.is_empty() and _contract_for_id(selected_contract_id).is_empty():
+	if not selected_contract_id.is_empty() and _visible_contract_for_id(selected_contract_id).is_empty():
 		selected_contract_id = ""
-	if selected_contract_id.is_empty() and not _contracts.is_empty():
-		for contract in _contracts:
-			if bool(contract.get("signed", false)):
-				selected_contract_id = str(contract.get("contract_id", ""))
-				break
-		if selected_contract_id.is_empty():
-			selected_contract_id = str(_contracts[0].get("contract_id", ""))
+	if selected_contract_id.is_empty():
+		selected_contract_id = first_active_id if not first_active_id.is_empty() else first_available_id
 	_update_row_selection()
 	_update_detail()
 	active_scroll.scroll_vertical = active_scroll_position
@@ -183,7 +184,7 @@ func get_contracts_snapshot() -> Array[Dictionary]:
 
 
 func get_selected_contract() -> Dictionary:
-	return _contract_for_id(selected_contract_id).duplicate(true)
+	return _visible_contract_for_id(selected_contract_id).duplicate(true)
 
 
 func _build_contract_row(contract: Dictionary, active: bool) -> Button:
@@ -226,7 +227,7 @@ func _update_row_selection() -> void:
 
 
 func _update_detail() -> void:
-	var contract := _contract_for_id(selected_contract_id)
+	var contract := _visible_contract_for_id(selected_contract_id)
 	if contract.is_empty():
 		title_label.text = "选择合同查看详情"
 		daily_progress_label.text = "今日交付：0/0"
@@ -315,9 +316,13 @@ func _authoritative_contract(contract_id: String) -> Dictionary:
 	return {}
 
 
-func _contract_for_id(contract_id: String) -> Dictionary:
+func _visible_contract_for_id(contract_id: String) -> Dictionary:
+	var total_day := _total_day()
 	for contract in _contracts:
-		if str(contract.get("contract_id", "")) == contract_id:
+		if (
+			str(contract.get("contract_id", "")) == contract_id
+			and not list_section_for(contract, total_day).is_empty()
+		):
 			return contract
 	return {}
 
@@ -358,7 +363,7 @@ func _on_sign_pressed() -> void:
 
 
 func _on_deliver_pressed() -> void:
-	var contract := _contract_for_id(selected_contract_id)
+	var contract := _visible_contract_for_id(selected_contract_id)
 	var required := int(contract.get("quantity_per_day", 0))
 	request_delivery(selected_contract_id, safe_delivery_quantity(delivery_quantity.value, required))
 

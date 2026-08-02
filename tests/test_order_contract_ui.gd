@@ -17,31 +17,13 @@ const TEST_SAVE_DIR := "user://task15_order_contract_ui/"
 const TEST_SAVE_SLOT := 15
 
 
-class WalletDouble extends Node:
-	var gold := 100
-
-	func get_gold() -> int:
-		return gold
-
-	func add_gold(amount: int) -> bool:
-		if amount <= 0:
-			return false
-		gold += amount
-		return true
-
-	func spend_gold(amount: int) -> bool:
-		if amount <= 0 or amount > gold:
-			return false
-		gold -= amount
-		return true
-
-
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_required_scripts_and_static_status(assertions)
 	_test_contract_list_and_deadline_helpers(assertions)
 	_test_scene_contracts(assertions)
 	if not _resources_exist():
 		return
+	await _test_visible_selection_guards(assertions, tree)
 	await _test_order_delivery_and_state(assertions, tree)
 	await _test_contract_confirmation_and_delivery(assertions, tree)
 	await _test_same_day_real_save_load(assertions, tree)
@@ -164,12 +146,95 @@ func _check_scene(assertions: TestAssert, path: String, nodes: Array[String]) ->
 	instance.free()
 
 
-func _test_order_delivery_and_state(assertions: TestAssert, tree: SceneTree) -> void:
-	var fixture := _fixture()
+func _test_visible_selection_guards(assertions: TestAssert, tree: SceneTree) -> void:
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "selection guard integration uses the real GameState autoload")
+	if game_state == null:
+		return
+	var game_state_snapshot := _snapshot_game_state(game_state)
+	game_state.gold = 100
+	var fixture := _fixture(game_state)
 	var economy: EconomySystem = fixture.economy
 	var inventory: InventorySystem = fixture.inventory
 	var npc: NpcEconomySystem = fixture.npc
-	for node in [fixture.market, npc, inventory, fixture.wallet, economy]:
+	for node in [fixture.market, npc, inventory, economy]:
+		tree.root.add_child(node)
+	var order_panel := (load(ORDER_SCENE_PATH) as PackedScene).instantiate()
+	tree.root.add_child(order_panel)
+	var contract_panel := (load(CONTRACT_SCENE_PATH) as PackedScene).instantiate()
+	tree.root.add_child(contract_panel)
+	await tree.process_frame
+	assertions.truthy(order_panel.call("configure", economy, npc, inventory), "selection guard configures order panel")
+	order_panel.call("set_filter", "urgent")
+	order_panel.call("select_order", "tiejiang_zhang:iron_ore:1")
+	order_panel.call("set_filter", "daily")
+	var daily_orders: Array = order_panel.call("get_visible_orders")
+	assertions.truthy(not daily_orders.is_empty(), "daily filter provides a visible replacement selection")
+	assertions.truthy(order_panel.get("selected_order_id") != "tiejiang_zhang:iron_ore:1", "filter change drops a hidden urgent selection")
+	if not daily_orders.is_empty():
+		assertions.equal(order_panel.get("selected_order_id"), daily_orders[0].get("order_id", ""), "filter change selects the first visible row")
+	var hidden_order_assets := {
+		"gold": game_state.gold,
+		"owned": inventory.get_item_count("iron_ore"),
+		"npc": npc.get_npc_state("tiejiang_zhang").inventory.get("iron_ore", 0),
+		"completed": _record_for(economy.get_orders(), "order_id", "tiejiang_zhang:iron_ore:1").completed,
+	}
+	order_panel.call("request_delivery", "tiejiang_zhang:iron_ore:1")
+	assertions.equal({
+		"gold": game_state.gold,
+		"owned": inventory.get_item_count("iron_ore"),
+		"npc": npc.get_npc_state("tiejiang_zhang").inventory.get("iron_ore", 0),
+		"completed": _record_for(economy.get_orders(), "order_id", "tiejiang_zhang:iron_ore:1").completed,
+	}, hidden_order_assets, "a hidden urgent order cannot be delivered from the daily section")
+	order_panel.call("set_filter", "event")
+	assertions.equal(order_panel.get("selected_order_id"), "", "empty order filter clears selection")
+	assertions.equal(order_panel.get_node("Columns/Details/TitleLabel").text, "选择订单查看详情", "empty order filter clears detail")
+	assertions.truthy(order_panel.get_node("Columns/Details/DeliverButton").disabled, "empty order filter disables delivery")
+
+	assertions.truthy(contract_panel.call("configure", economy, inventory), "selection guard configures contract panel")
+	contract_panel.call("select_contract", "lao_li:grain:1:3")
+	var state := economy.to_dict()
+	state.last_processed_day = 4
+	for order in state.orders:
+		if not bool(order.completed):
+			order.expired = true
+	var completed_contract: Dictionary = state.contracts[0]
+	completed_contract.signed = true
+	completed_contract.delivered_days = [1, 2, 3]
+	completed_contract.breaches = 0
+	completed_contract.completed = true
+	completed_contract.expired = false
+	var expired_contract := _second_contract()
+	expired_contract.signed = true
+	expired_contract.breaches = 3
+	expired_contract.expired = true
+	state.contracts.append(expired_contract)
+	assertions.truthy(economy.from_dict(state), "completed and expired selection fixture restores")
+	contract_panel.call("refresh_contracts")
+	assertions.equal(contract_panel.get_node("Content/ActiveScroll/ActiveList").get_child_count(), 0, "completed and expired contracts leave the active section")
+	assertions.equal(contract_panel.get_node("Content/AvailableScroll/AvailableList").get_child_count(), 0, "completed and expired contracts leave the available section")
+	assertions.equal(contract_panel.get("selected_contract_id"), "", "refresh clears a contract that no longer belongs to a visible section")
+	assertions.equal(contract_panel.get_node("Content/Details/TitleLabel").text, "选择合同查看详情", "hidden contract refresh clears detail")
+	assertions.truthy(contract_panel.get_node("Content/Details/SignButton").disabled, "hidden contract refresh disables signing")
+	assertions.truthy(contract_panel.get_node("Content/Details/DeliverButton").disabled, "hidden contract refresh disables delivery")
+	contract_panel.free()
+	order_panel.free()
+	_free_fixture_from_tree(fixture, tree)
+	_restore_game_state(game_state, game_state_snapshot)
+
+
+func _test_order_delivery_and_state(assertions: TestAssert, tree: SceneTree) -> void:
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "order acceptance uses the real GameState autoload")
+	if game_state == null:
+		return
+	var game_state_snapshot := _snapshot_game_state(game_state)
+	game_state.gold = 100
+	var fixture := _fixture(game_state)
+	var economy: EconomySystem = fixture.economy
+	var inventory: InventorySystem = fixture.inventory
+	var npc: NpcEconomySystem = fixture.npc
+	for node in [fixture.market, npc, inventory, economy]:
 		tree.root.add_child(node)
 	var hud := (load(HUD_SCENE_PATH) as PackedScene).instantiate()
 	tree.root.add_child(hud)
@@ -213,6 +278,7 @@ func _test_order_delivery_and_state(assertions: TestAssert, tree: SceneTree) -> 
 	assertions.equal(inventory.get_item_count("iron_ore"), 0, "order delivery removes player inventory in the same frame")
 	assertions.equal(int(npc.get_npc_state("tiejiang_zhang").inventory.get("iron_ore", 0)), npc_before + order_quantity, "order delivery updates real NPC inventory")
 	assertions.equal(fixture.wallet.gold, gold_before + order_reward, "order delivery updates wallet once")
+	assertions.equal(hud.get_node("TopBar/StatusRow/GoldLabel").text, "💰 %d" % (gold_before + order_reward), "real gold_changed updates HUD in the delivery frame")
 	assertions.equal(_record_for(economy.get_orders(), "order_id", "tiejiang_zhang:iron_ore:1").completed, true, "order row follows authoritative completed state")
 	assertions.truthy(_combined_text(panel.get_node("Columns/Orders/OrderScroll/OrderRows")).contains("已完成"), "order row refreshes completed state")
 	assertions.equal(hud.get_node("EconomyActions/NotificationButton").text, "通知 1", "successful order adds one unread HUD notification")
@@ -225,15 +291,24 @@ func _test_order_delivery_and_state(assertions: TestAssert, tree: SceneTree) -> 
 	panel.free()
 	hud.free()
 	_free_fixture_from_tree(fixture, tree)
+	_restore_game_state(game_state, game_state_snapshot)
 
 
 func _test_contract_confirmation_and_delivery(assertions: TestAssert, tree: SceneTree) -> void:
-	var fixture := _fixture()
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "contract acceptance uses the real GameState autoload")
+	if game_state == null:
+		return
+	var game_state_snapshot := _snapshot_game_state(game_state)
+	game_state.gold = 100
+	var fixture := _fixture(game_state)
 	var economy: EconomySystem = fixture.economy
 	var inventory: InventorySystem = fixture.inventory
 	var npc: NpcEconomySystem = fixture.npc
-	for node in [fixture.market, npc, inventory, fixture.wallet, economy]:
+	for node in [fixture.market, npc, inventory, economy]:
 		tree.root.add_child(node)
+	var hud := (load(HUD_SCENE_PATH) as PackedScene).instantiate()
+	tree.root.add_child(hud)
 	var shop := (load(SHOP_SCENE_PATH) as PackedScene).instantiate()
 	tree.root.add_child(shop)
 	await tree.process_frame
@@ -270,11 +345,14 @@ func _test_contract_confirmation_and_delivery(assertions: TestAssert, tree: Scen
 	assertions.equal(inventory.get_item_count("grain"), 0, "contract delivery removes one authoritative daily quantity")
 	assertions.equal(int(npc.get_npc_state("lao_li").inventory.get("grain", 0)), npc_before + 5, "contract delivery updates real NPC inventory")
 	assertions.equal(fixture.wallet.gold, gold_before + 50, "contract daily delivery pays once")
+	assertions.equal(hud.get_node("TopBar/StatusRow/GoldLabel").text, "💰 %d" % (gold_before + 50), "real contract gold_changed updates HUD in the delivery frame")
+	assertions.equal(hud.get_node("EconomyActions/NotificationButton").text, "通知 1", "successful contract delivery adds one unread HUD notification")
 	assertions.truthy(panel.get_node("Content/Details/DailyProgressLabel").text.contains("5/5"), "contract row refreshes today's progress")
 	var assets_after := _assets(fixture)
 	panel.call("request_delivery", "lao_li:grain:1:3", 9223372036854775807)
 	assertions.equal(_assets(fixture), assets_after, "extreme contract quantity changes no assets")
 	assertions.truthy(panel.get_node("Content/Details/ErrorLabel").text.contains("今日已交付"), "same-day repeat has an exact reason")
+	assertions.equal(hud.get_node("EconomyActions/NotificationButton").text, "通知 1", "repeat contract delivery adds no unread notification")
 
 	# A stale confirmation must not sign a changed authoritative snapshot.
 	var state := economy.to_dict()
@@ -289,19 +367,27 @@ func _test_contract_confirmation_and_delivery(assertions: TestAssert, tree: Scen
 	shop.call("close")
 	assertions.truthy(not tree.paused, "contract hub restores pause state")
 	shop.free()
+	hud.free()
 	_free_fixture_from_tree(fixture, tree)
+	_restore_game_state(game_state, game_state_snapshot)
 
 
 func _test_same_day_real_save_load(assertions: TestAssert, tree: SceneTree) -> void:
 	_cleanup_test_save()
-	var fixture := _fixture()
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "SaveManager acceptance uses the real GameState autoload")
+	if game_state == null:
+		return
+	var game_state_snapshot := _snapshot_game_state(game_state)
+	game_state.gold = 100
+	var fixture := _fixture(game_state)
 	var economy: EconomySystem = fixture.economy
 	var inventory: InventorySystem = fixture.inventory
 	var manager := SaveManagerScript.new()
 	manager.save_directory = TEST_SAVE_DIR
 	var daily := DailySimulationSystemScript.new()
 	daily.last_simulated_day = 1
-	for node in [fixture.market, fixture.npc, inventory, fixture.wallet, economy, daily, manager]:
+	for node in [fixture.market, fixture.npc, inventory, economy, daily, manager]:
 		tree.root.add_child(node)
 	assertions.truthy(
 		manager.configure_economy(fixture.market, daily, null, null, fixture.npc, economy),
@@ -333,9 +419,10 @@ func _test_same_day_real_save_load(assertions: TestAssert, tree: SceneTree) -> v
 		node.free()
 	_free_fixture_from_tree(fixture, tree)
 	_cleanup_test_save()
+	_restore_game_state(game_state, game_state_snapshot)
 
 
-func _fixture() -> Dictionary:
+func _fixture(wallet: Node) -> Dictionary:
 	var market := MarketSystemScript.new()
 	market.configure([
 		_definition("iron_ore", 10),
@@ -351,7 +438,6 @@ func _fixture() -> Dictionary:
 	var inventory := InventorySystemScript.new()
 	inventory.add_item("iron_ore", 10)
 	inventory.add_item("grain", 5)
-	var wallet := WalletDouble.new()
 	var economy := EconomySystemScript.new()
 	economy.configure(inventory, wallet, market, npc)
 	market.settle_day(1)
@@ -472,8 +558,28 @@ func _combined_text(node: Node) -> String:
 
 
 func _free_fixture_from_tree(fixture: Dictionary, tree: SceneTree) -> void:
-	for key in ["economy", "wallet", "inventory", "npc", "market"]:
+	for key in ["economy", "inventory", "npc", "market"]:
 		var node: Node = fixture[key]
 		if node.get_parent() != null:
 			node.get_parent().remove_child(node)
 		node.free()
+
+
+func _snapshot_game_state(game_state: Node) -> Dictionary:
+	return {
+		"gold": game_state.gold,
+		"play_time": game_state.play_time,
+		"stamina": game_state.player_state.stamina,
+		"max_stamina": game_state.player_state.max_stamina,
+		"level": game_state.player_state.level,
+		"exp": game_state.player_state.exp,
+	}
+
+
+func _restore_game_state(game_state: Node, snapshot: Dictionary) -> void:
+	game_state.gold = snapshot.gold
+	game_state.play_time = snapshot.play_time
+	game_state.player_state.stamina = snapshot.stamina
+	game_state.player_state.max_stamina = snapshot.max_stamina
+	game_state.player_state.level = snapshot.level
+	game_state.player_state.exp = snapshot.exp
