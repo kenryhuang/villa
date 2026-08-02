@@ -5,6 +5,7 @@ extends CanvasLayer
 
 signal quick_slot_selected(index: int)
 signal debug_reset_requested
+signal market_requested
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const ActionPaletteButtonScene = preload(
@@ -47,6 +48,8 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var season_label: Label = $TopBar/StatusRow/SeasonLabel
 @onready var time_label: Label = $TopBar/StatusRow/TimeLabel
 @onready var debug_reset_button: Button = $DebugResetButton
+@onready var market_button: Button = $EconomyActions/MarketButton
+@onready var notification_button: Button = $EconomyActions/NotificationButton
 @onready var mode_menu: PopupPanel = $BottomBar/ModeMenu
 @onready var mode_menu_content: VBoxContainer = $BottomBar/ModeMenu/VBox
 @onready var farming_mode_button: Button = $BottomBar/ModeMenu/VBox/FarmingModeButton
@@ -89,6 +92,8 @@ func _ready() -> void:
 		_event_bus.item_removed.connect(_on_inventory_item_changed)
 	if not debug_reset_button.pressed.is_connected(_on_debug_reset_pressed):
 		debug_reset_button.pressed.connect(_on_debug_reset_pressed)
+	if not market_button.pressed.is_connected(_on_market_pressed):
+		market_button.pressed.connect(_on_market_pressed)
 
 	# 初始化显示
 	_init_display()
@@ -104,6 +109,18 @@ func _ready() -> void:
 	mode_menu_content.mouse_entered.connect(_on_mode_menu_mouse_entered)
 	mode_menu_content.mouse_exited.connect(_on_mode_menu_mouse_exited)
 	build_feedback_timer.timeout.connect(_on_build_feedback_timeout)
+	set_notification_count(0)
+
+
+func _on_market_pressed() -> void:
+	market_requested.emit()
+
+
+func set_notification_count(unread_count: int) -> void:
+	if notification_button == null:
+		return
+	var count_text := "9+" if unread_count > 9 else str(maxi(0, unread_count))
+	notification_button.text = "通知 %s" % count_text
 
 
 func _init_display() -> void:

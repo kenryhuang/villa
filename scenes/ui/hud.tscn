@@ -54,6 +54,31 @@ offset_bottom = 56.0
 grow_horizontal = 0
 text = "重置存档"
 
+[node name="EconomyActions" type="HBoxContainer" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -392.0
+offset_top = 104.0
+offset_right = -108.0
+offset_bottom = 154.0
+grow_horizontal = 0
+theme_override_constants/separation = 8
+
+[node name="MarketButton" type="Button" parent="EconomyActions"]
+custom_minimum_size = Vector2(138, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "市场"
+tooltip_text = "打开区域市场"
+
+[node name="NotificationButton" type="Button" parent="EconomyActions"]
+custom_minimum_size = Vector2(138, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "通知 0"
+tooltip_text = "查看经营通知"
+
 [node name="TopBar" type="PanelContainer" parent="."]
 offset_left = 20.0
 offset_top = 20.0

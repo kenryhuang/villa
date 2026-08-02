@@ -1,0 +1,170 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource path="res://scripts/ui/trade_panel.gd" type="Script" id="1_trade"]
+
+[sub_resource type="StyleBoxFlat" id="CardStyle"]
+content_margin_left = 14.0
+content_margin_top = 14.0
+content_margin_right = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 0.968627, 0.901961, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.494118, 0.615686, 0.439216, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="TradePanel" type="VBoxContainer"]
+custom_minimum_size = Vector2(280, 0)
+theme_override_constants/separation = 10
+script = ExtResource("1_trade")
+
+[node name="TitleLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.317647, 0.231373, 0.184314, 1)
+theme_override_font_sizes/font_size = 24
+text = "交易操作"
+
+[node name="PlayerQuantityLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "玩家持有：0"
+
+[node name="MarketQuantityLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "市集可买：0"
+
+[node name="QuantityRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QuantityLabel" type="Label" parent="QuantityRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "数量"
+
+[node name="QuantitySpin" type="SpinBox" parent="QuantityRow"]
+custom_minimum_size = Vector2(130, 44)
+layout_mode = 2
+min_value = 1.0
+max_value = 99.0
+value = 1.0
+allow_greater = true
+
+[node name="MaxButton" type="Button" parent="QuantityRow"]
+custom_minimum_size = Vector2(72, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "最大"
+
+[node name="ReferencePriceLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "参考单价：0"
+
+[node name="BuyTotalLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "买入实际总价：0"
+
+[node name="SellTotalLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "卖出实际总价：0"
+
+[node name="ImpactLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "成交影响：none"
+
+[node name="DisabledReasonLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.713726, 0.360784, 0.294118, 1)
+theme_override_font_sizes/font_size = 18
+
+[node name="Actions" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="BuyButton" type="Button" parent="Actions"]
+custom_minimum_size = Vector2(120, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "买入"
+
+[node name="SellButton" type="Button" parent="Actions"]
+custom_minimum_size = Vector2(120, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "卖出"
+
+[node name="FeedbackLabel" type="Label" parent="."]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.372549, 0.529412, 0.333333, 1)
+theme_override_font_sizes/font_size = 18
+text = "交易成功"
+
+[node name="ConfirmationLayer" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("CardStyle")
+
+[node name="Content" type="VBoxContainer" parent="ConfirmationLayer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="ConfirmationLayer/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "确认大额交易"
+
+[node name="FirstUnitLabel" type="Label" parent="ConfirmationLayer/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "首件价格：0"
+
+[node name="LastUnitLabel" type="Label" parent="ConfirmationLayer/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "末件价格：0"
+
+[node name="TotalLabel" type="Label" parent="ConfirmationLayer/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "实际总价：0"
+
+[node name="PressureLabel" type="Label" parent="ConfirmationLayer/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "预计次日供给压力：—"
+
+[node name="Buttons" type="HBoxContainer" parent="ConfirmationLayer/Content"]
+layout_mode = 2
+
+[node name="ConfirmButton" type="Button" parent="ConfirmationLayer/Content/Buttons"]
+custom_minimum_size = Vector2(110, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "确认"
+
+[node name="CancelButton" type="Button" parent="ConfirmationLayer/Content/Buttons"]
+custom_minimum_size = Vector2(110, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "取消"
+
+[node name="FeedbackTimer" type="Timer" parent="."]
+wait_time = 1.5
+one_shot = true

@@ -298,6 +298,9 @@ func _setup_ui() -> void:
 		var reset_callback := Callable(self, "_on_debug_reset_requested")
 		if not hud.debug_reset_requested.is_connected(reset_callback):
 			hud.debug_reset_requested.connect(reset_callback)
+		var market_callback := Callable(self, "_on_market_requested")
+		if not hud.market_requested.is_connected(market_callback):
+			hud.market_requested.connect(market_callback)
 
 	# 背包 UI
 	if inventory_ui:
@@ -312,9 +315,21 @@ func _setup_ui() -> void:
 	if map_ui:
 		map_ui.configure(player)
 
+	# 经济中心兼容沿用 ShopUI 场景，由 Main 注入权威系统引用。
+	if shop_ui and not shop_ui.configure(inventory_system, economy_system, market_system):
+		push_error("Unable to configure economy hub UI.")
+
 	# 连接建造系统信号
 	building_system.build_mode_entered.connect(_on_build_mode_entered)
 	building_system.build_mode_exited.connect(_on_build_mode_exited)
+
+
+func _on_market_requested() -> void:
+	for modal in [inventory_ui, map_ui, build_ui]:
+		if modal != null and modal.has_method("close"):
+			modal.close()
+	if shop_ui:
+		shop_ui.open()
 
 
 func _initial_game_state() -> void:

@@ -2,6 +2,9 @@ extends SceneTree
 
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const MarketPriceChartTest = preload("res://tests/test_market_price_chart.gd")
+const MarketUITest = preload("res://tests/test_market_ui.gd")
+const TestAssertScript = preload("res://tests/test_assert.gd")
 
 var failures: Array[String] = []
 
@@ -30,6 +33,11 @@ func _check_scene(path: String, required_nodes: Array[String]) -> void:
 
 
 func _run() -> void:
+	var market_assertions = TestAssertScript.new()
+	MarketPriceChartTest.new().run(market_assertions)
+	await MarketUITest.new().run(market_assertions, self)
+	for failure in market_assertions.failures:
+		failures.append(failure)
 	_check_scene("res://scenes/ui/hud.tscn", [
 		"TopBar/StatusRow/StaminaBar",
 		"TopBar/StatusRow/GoldLabel",
