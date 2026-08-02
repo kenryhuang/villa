@@ -3,6 +3,7 @@ extends RefCounted
 const DailySimulationSystem = preload("res://scripts/systems/daily_simulation_system.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
+const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const TEST_SAVE_DIR := "user://villa_test_saves/economy_task_5/"
@@ -34,6 +35,7 @@ class LoadObserver:
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_save_round_trip_and_legacy_load(assertions, tree)
+	_test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
 
 
@@ -185,6 +187,7 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	main.save_manager = manager
 	tree.root.add_child(main)
 	assertions.truthy(main.market_system != null, "main creates market system")
+	assertions.truthy(main.npc_economy_system != null, "main creates NPC economy system")
 	assertions.truthy(main.daily_simulation_system != null, "main creates daily coordinator")
 	assertions.truthy(main.market_system.get_stock("wood") > 0, "main initializes market catalog")
 	assertions.equal(
@@ -212,6 +215,11 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 		main.daily_simulation_system,
 		"main injects coordinator into save manager"
 	)
+	assertions.equal(
+		manager._npc_economy_system,
+		main.npc_economy_system,
+		"main injects NPC economy into save manager"
+	)
 	main.season_system.current_season = SeasonSystem.Season.SUMMER
 	main.season_system.current_day = 4
 	main.season_system.total_days = 11
@@ -219,6 +227,7 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	main.season_system.minute = 20
 	assertions.truthy(main.market_system.settle_day(11), "main save fixture settles its current day")
 	main.daily_simulation_system.last_simulated_day = 11
+	main.npc_economy_system.sync_daily_cursor(11)
 	var main_save: Dictionary = manager._gather_save_data()
 	assertions.equal(main_save.get("total_days"), 11, "main save reads its child season system")
 	for missing_calendar_field in ["season", "day", "total_days", "hour", "minute"]:
@@ -291,6 +300,7 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	runtime_save["minute"] = 15
 	runtime_save["last_simulated_day"] = 4
 	runtime_save.market["last_settled_day"] = 4
+	_set_npc_snapshot_day(runtime_save.npc_economy, 4)
 	runtime_save["buildings"] = [restored_record]
 	_write_json(manager._save_path(TEST_SLOT), runtime_save)
 	var observer := LoadObserver.new(manager)
@@ -372,6 +382,7 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	tree.root.add_child(startup_main)
 	assertions.equal(observer.calls, 2, "startup public load emits one additional completion notification")
 	assertions.equal(startup_main.season_system.total_days, 4, "startup load restores the saved day")
+	assertions.equal(startup_main.npc_economy_system.last_simulated_day, 4, "startup load restores NPC cursor")
 	assertions.equal(startup_main.production_system._last_daily_effects_day, 4, "startup handler and setup leave the exact effect cursor")
 	assertions.equal(startup_main.production_system._last_finished_outputs_day, 4, "startup handler and setup leave the exact output cursor")
 	assertions.equal(startup_main.production_system._last_clock_minutes, 9 * 60 + 15, "startup handler and setup leave the exact clock")
@@ -390,6 +401,86 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	assertions.equal(startup_load_connections, 1, "startup Main owns one load-completed connection")
 	startup_main.free()
 	manager.free()
+	_cleanup()
+
+
+func _test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var market := MarketSystemScript.new()
+	var daily := DailySimulationSystem.new()
+	var npc := NpcEconomySystemScript.new()
+	var manager := SaveManagerScript.new()
+	manager.save_directory = TEST_SAVE_DIR
+	for dependency in [market, daily, npc, manager]:
+		tree.root.add_child(dependency)
+	assertions.truthy(market.configure(GameDataScript.get_market_items()), "NPC save market configures")
+	assertions.truthy(npc.configure(
+		market,
+		GameDataScript.get_npc_economy_profiles(),
+		GameDataScript.get_population_demand_profiles()
+	), "NPC save system configures")
+	assertions.truthy(
+		manager.configure_economy(market, daily, null, null, npc),
+		"save manager accepts NPC economy dependency"
+	)
+	assertions.truthy(market.settle_day(4), "NPC save market advances to persisted day")
+	daily.last_simulated_day = 4
+	npc.sync_daily_cursor(4)
+	var legacy_expected := npc.to_dict()
+	var persisted := npc.to_dict()
+	var lao_li: Dictionary = _npc_state_record(persisted, "lao_li")
+	lao_li.gold = 321
+	lao_li.inventory.salt = 11
+	lao_li.investment_planned = true
+	persisted.essential_zero_streaks.wood = 2
+	persisted.demand_tags = {"residents": "持久化居民需求"}
+	assertions.truthy(npc.from_dict(persisted), "NPC save fixture adopts changed runtime state")
+	var expected_npc := npc.to_dict()
+	assertions.truthy(manager.save_game(TEST_SLOT), "NPC economy writes through real SaveManager")
+	var gathered := manager._gather_save_data()
+	assertions.equal(gathered.get("npc_economy"), expected_npc, "save payload includes full NPC system state")
+
+	var divergent := npc.to_dict()
+	_npc_state_record(divergent, "lao_li").gold = 999
+	_set_npc_snapshot_day(divergent, 5)
+	assertions.truthy(npc.from_dict(divergent), "NPC runtime diverges after save")
+	assertions.truthy(market.settle_day(5), "NPC save market diverges after save")
+	daily.last_simulated_day = 5
+	assertions.truthy(manager.load_game(TEST_SLOT), "real SaveManager restores NPC economy")
+	assertions.equal(npc.to_dict(), expected_npc, "NPC wallet inventory plan streaks tags and cursor round trip")
+
+	var malformed_save := gathered.duplicate(true)
+	var malformed_state: Dictionary = malformed_save.npc_economy.npc_states[0]
+	malformed_state.inventory["unknown_item"] = 1
+	_write_json(manager._save_path(BAD_SLOT), malformed_save)
+	var market_before_bad := market.to_dict()
+	var daily_before_bad := daily.last_simulated_day
+	var npc_before_bad := npc.to_dict()
+	var game_state := tree.root.get_node_or_null("GameState")
+	var gold_before_bad: Variant = game_state.gold if game_state != null else null
+	assertions.truthy(not manager.load_game(BAD_SLOT), "malformed NPC payload rejects the whole save")
+	assertions.equal(market.to_dict(), market_before_bad, "malformed NPC payload preserves market")
+	assertions.equal(daily.last_simulated_day, daily_before_bad, "malformed NPC payload preserves daily cursor")
+	assertions.equal(npc.to_dict(), npc_before_bad, "malformed NPC payload preserves all NPC state")
+	if game_state != null:
+		assertions.equal(game_state.gold, gold_before_bad, "malformed NPC payload applies no earlier player fields")
+
+	var legacy_save := gathered.duplicate(true)
+	legacy_save.erase("npc_economy")
+	_write_json(manager._save_path(TEST_SLOT), legacy_save)
+	var legacy_divergent := npc.to_dict()
+	_npc_state_record(legacy_divergent, "lao_li").gold = 1
+	_set_npc_snapshot_day(legacy_divergent, 7)
+	assertions.truthy(npc.from_dict(legacy_divergent), "legacy fixture dirties current NPC state")
+	assertions.truthy(manager.load_game(TEST_SLOT), "legacy economy save without NPC payload loads")
+	assertions.equal(npc.to_dict(), legacy_expected, "legacy load restores profile defaults at loaded day")
+	assertions.truthy(not npc.simulate_day(4), "legacy loaded NPC day cannot replay")
+
+	for dependency in [manager, npc, daily, market]:
+		dependency.free()
 	_cleanup()
 
 
@@ -441,6 +532,20 @@ func _wood_definition() -> Dictionary:
 		"target_stock": 10,
 		"daily_liquidity": 10,
 	}
+
+
+func _npc_state_record(snapshot: Dictionary, npc_id: String) -> Dictionary:
+	for state_value in snapshot.get("npc_states", []):
+		if state_value is Dictionary and str(state_value.get("npc_id", "")) == npc_id:
+			return state_value
+	return {}
+
+
+func _set_npc_snapshot_day(snapshot: Dictionary, total_day: int) -> void:
+	snapshot["last_simulated_day"] = total_day
+	for state_value in snapshot.get("npc_states", []):
+		if state_value is Dictionary:
+			state_value["last_simulated_day"] = total_day
 
 
 func _write_json(path: String, data: Dictionary) -> void:

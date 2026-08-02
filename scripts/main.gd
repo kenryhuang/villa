@@ -209,7 +209,8 @@ func _connect_systems() -> bool:
 		market_system,
 		daily_simulation_system,
 		season_system,
-		world
+		world,
+		npc_economy_system
 	))
 	if not save_manager_configured:
 		return false

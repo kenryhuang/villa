@@ -12,6 +12,7 @@ func run(assertions: TestAssert) -> void:
 	_test_failed_trades_have_no_partial_mutations(assertions)
 	_test_unmet_essential_blocks_later_production_spending(assertions)
 	_test_unmet_reserve_blocks_excess_sale_and_investment(assertions)
+	_test_sale_floor_protects_overlapping_reserve(assertions)
 	_test_population_groups_add_tagged_factor_demand(assertions)
 	_test_third_zero_stock_day_imports_essentials_only(assertions)
 	_test_day_cursor_and_snapshot_are_atomic(assertions)
@@ -210,6 +211,29 @@ func _test_unmet_reserve_blocks_excess_sale_and_investment(assertions: TestAsser
 	assertions.equal(state.inventory.jewelry, 1, "unmet reserve retains excess luxury item")
 	assertions.equal(market.get_item_state("jewelry"), jewelry_before, "unmet reserve leaves luxury market untouched")
 	assertions.truthy(not state.investment_planned, "unmet reserve blocks investment planning")
+	system.free()
+	market.free()
+
+
+func _test_sale_floor_protects_overlapping_reserve(assertions: TestAssert) -> void:
+	var market := MarketSystemScript.new()
+	market.configure([
+		_definition("salt", 5, 10, 20, 10, "essential", "container"),
+	])
+	var system := NpcEconomySystemScript.new()
+	assertions.truthy(system.configure(market, [{
+		"id": "salt_keeper", "display_name": "储备出售测试", "gold": 100,
+		"inventory": {"salt": 8}, "essential_targets": {},
+		"reserve_targets": {"salt": 8}, "production_recipes": [],
+		"sale_targets": {"salt": 4}, "investment_gold_threshold": 500,
+		"import_buffer": false,
+	}], []), "overlapping reserve and sale fixture configures")
+	var market_before := market.get_item_state("salt")
+	assertions.truthy(system.simulate_day(1), "overlapping reserve day simulates")
+	var state = system.get_npc_state("salt_keeper")
+	assertions.equal(state.inventory.salt, 8, "sale floor never drops inventory below reserve")
+	assertions.equal(state.gold, 100, "protected reserve generates no sale income")
+	assertions.equal(market.get_item_state("salt"), market_before, "protected reserve does not enter market supply")
 	system.free()
 	market.free()
 

@@ -145,42 +145,87 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(data: Dictionary) -> bool:
-	if not _is_configured or data.size() != SYSTEM_FIELDS.size():
+	var normalized: Variant = _normalize_system_data(data)
+	if normalized == null:
 		return false
+	_states = normalized.states
+	_essential_zero_streaks = normalized.streaks
+	_demand_tags = normalized.tags
+	last_simulated_day = int(normalized.cursor)
+	return true
+
+
+func validate_dict(data: Dictionary) -> bool:
+	return _normalize_system_data(data) != null
+
+
+func reset_to_profile_defaults(total_day: int) -> bool:
+	if not _is_configured or total_day < 0:
+		return false
+	var candidate_states: Dictionary = {}
+	for npc_id_value in _profiles.keys():
+		var npc_id := str(npc_id_value)
+		var profile: Dictionary = _profiles[npc_id]
+		var state := NpcEconomyStateScript.new()
+		if not state.from_dict({
+			"npc_id": npc_id,
+			"gold": profile.gold,
+			"inventory": profile.inventory,
+			"reserve_targets": profile.reserve_targets,
+			"production_recipes": profile.production_recipes,
+			"sale_targets": profile.sale_targets,
+			"last_simulated_day": total_day,
+			"investment_planned": false,
+		}):
+			return false
+		candidate_states[npc_id] = state
+	var candidate_streaks: Dictionary = {}
+	for item_id in _essential_zero_streaks:
+		candidate_streaks[item_id] = 0
+	_states = candidate_states
+	_essential_zero_streaks = candidate_streaks
+	_demand_tags.clear()
+	last_simulated_day = total_day
+	return true
+
+
+func _normalize_system_data(data: Dictionary) -> Variant:
+	if not _is_configured or data.size() != SYSTEM_FIELDS.size():
+		return null
 	for field in SYSTEM_FIELDS:
 		if not data.has(field):
-			return false
+			return null
 	if not _is_nonnegative_integer(data.last_simulated_day):
-		return false
+		return null
 	if not data.npc_states is Array or (data.npc_states as Array).size() != _states.size():
-		return false
+		return null
 	var cursor := int(data.last_simulated_day)
 	var candidate_states: Dictionary = {}
 	for state_value in data.npc_states as Array:
 		if not state_value is Dictionary:
-			return false
+			return null
 		var state := NpcEconomyStateScript.new()
 		if not state.from_dict(state_value):
-			return false
+			return null
 		if (
 			not _states.has(state.npc_id)
 			or candidate_states.has(state.npc_id)
 			or state.last_simulated_day != cursor
 		):
-			return false
+			return null
 		candidate_states[state.npc_id] = state
 	var candidate_streaks: Variant = _normalize_streaks(data.essential_zero_streaks)
 	if candidate_streaks == null:
-		return false
+		return null
 	var candidate_tags: Variant = _normalize_tags(data.demand_tags)
 	if candidate_tags == null:
-		return false
-
-	_states = candidate_states
-	_essential_zero_streaks = candidate_streaks
-	_demand_tags = candidate_tags
-	last_simulated_day = cursor
-	return true
+		return null
+	return {
+		"states": candidate_states,
+		"streaks": candidate_streaks,
+		"tags": candidate_tags,
+		"cursor": cursor,
+	}
 
 
 func _simulate_npc(state: NpcEconomyState, profile: Dictionary) -> void:
@@ -253,7 +298,11 @@ func _sell_excess(state: NpcEconomyState) -> void:
 	var sales: Dictionary = {}
 	for item_id_value in state.sale_targets.keys():
 		var item_id := str(item_id_value)
-		var quantity := int(state.inventory.get(item_id, 0)) - int(state.sale_targets[item_id])
+		var sale_floor := maxi(
+			int(state.sale_targets[item_id]),
+			_protected_quantity(state, item_id)
+		)
+		var quantity := int(state.inventory.get(item_id, 0)) - sale_floor
 		if quantity <= 0:
 			continue
 		var total := int(_market_system.call("quote_sell", item_id, quantity))

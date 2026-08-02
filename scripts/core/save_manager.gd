@@ -16,13 +16,15 @@ var _market_system: Variant
 var _daily_simulation_system: Variant
 var _season_system: Variant
 var _resource_world: Variant
+var _npc_economy_system: Variant
 
 
 func configure_economy(
 	market_system: Variant,
 	daily_simulation_system: Variant,
 	season_system: Variant = null,
-	resource_world: Variant = null
+	resource_world: Variant = null,
+	npc_economy_system: Variant = null
 ) -> bool:
 	if not _has_methods(market_system, ["configure", "to_dict", "from_dict"]):
 		return false
@@ -40,10 +42,15 @@ func configure_economy(
 		"initialize_resources_at_day",
 	]):
 		return false
+	if npc_economy_system != null and not _has_methods(npc_economy_system, [
+		"to_dict", "from_dict", "validate_dict", "reset_to_profile_defaults",
+	]):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
 	_resource_world = resource_world
+	_npc_economy_system = npc_economy_system
 	return true
 
 
@@ -143,6 +150,8 @@ func _gather_save_data() -> Dictionary:
 		data["economy_version"] = 1
 		data["market"] = _market_system.call("to_dict")
 		data["last_simulated_day"] = int(_daily_simulation_system.get("last_simulated_day"))
+		if _has_valid_npc_configuration():
+			data["npc_economy"] = _npc_economy_system.call("to_dict")
 		if _has_valid_resource_configuration():
 			data["resource_nodes"] = _resource_world.call("to_resource_dicts")
 
@@ -195,6 +204,8 @@ func load_game(slot: int = 0) -> bool:
 
 func _apply_save_data(data: Dictionary) -> bool:
 	if not _validate_economy_save_data(data):
+		return false
+	if not _apply_economy_save_data(data):
 		return false
 
 	# 游戏状态
@@ -261,7 +272,6 @@ func _apply_save_data(data: Dictionary) -> bool:
 			exploration.fog_image = loaded_image
 			exploration.fog_texture = ImageTexture.create_from_image(loaded_image)
 
-	_apply_economy_save_data(data)
 	return true
 
 
@@ -349,6 +359,7 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 			not data.has("market")
 			and not data.has("last_simulated_day")
 			and not data.has("resource_nodes")
+			and not data.has("npc_economy")
 		)
 	if not _is_integer_number(data.get("economy_version")) or int(data["economy_version"]) != 1:
 		return false
@@ -380,6 +391,15 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 			))
 		):
 			return false
+	if data.has("npc_economy"):
+		if (
+			not _has_valid_npc_configuration()
+			or not data["npc_economy"] is Dictionary
+			or not bool(_npc_economy_system.call("validate_dict", data["npc_economy"]))
+			or int((data["npc_economy"] as Dictionary).get("last_simulated_day", -1))
+				!= int(data["last_simulated_day"])
+		):
+			return false
 	var validation_market := MarketSystemScript.new()
 	var valid := validation_market.from_dict(data["market"])
 	if valid:
@@ -388,19 +408,39 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 	return valid
 
 
-func _apply_economy_save_data(data: Dictionary) -> void:
+func _apply_economy_save_data(data: Dictionary) -> bool:
 	if not _has_valid_economy_configuration():
-		return
+		return true
+	var market_before: Dictionary = _market_system.call("to_dict")
+	var daily_before := int(_daily_simulation_system.get("last_simulated_day"))
+	var npc_before: Dictionary = {}
+	if _has_valid_npc_configuration():
+		npc_before = _npc_economy_system.call("to_dict")
+	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
+	var applied := true
 	if data.has("economy_version"):
-		_market_system.call("from_dict", data["market"])
+		applied = bool(_market_system.call("from_dict", data["market"]))
 		_daily_simulation_system.set("last_simulated_day", int(data["last_simulated_day"]))
-		_apply_resource_save_data(data, int(data.get("total_days", data["last_simulated_day"])))
-		return
-	var loaded_day := maxi(int(data.get("total_days", 1)), 0)
-	_market_system.call("configure", GameDataScript.get_market_items())
-	_market_system.set("last_settled_day", loaded_day)
-	_daily_simulation_system.set("last_simulated_day", loaded_day)
+		if applied and _has_valid_npc_configuration():
+			if data.has("npc_economy"):
+				applied = bool(_npc_economy_system.call("from_dict", data["npc_economy"]))
+			else:
+				applied = bool(_npc_economy_system.call("reset_to_profile_defaults", loaded_day))
+	else:
+		applied = bool(_market_system.call("configure", GameDataScript.get_market_items()))
+		if applied:
+			_market_system.set("last_settled_day", loaded_day)
+			_daily_simulation_system.set("last_simulated_day", loaded_day)
+		if applied and _has_valid_npc_configuration():
+			applied = bool(_npc_economy_system.call("reset_to_profile_defaults", loaded_day))
+	if not applied:
+		_market_system.call("from_dict", market_before)
+		_daily_simulation_system.set("last_simulated_day", daily_before)
+		if _has_valid_npc_configuration() and not npc_before.is_empty():
+			_npc_economy_system.call("from_dict", npc_before)
+		return false
 	_apply_resource_save_data(data, loaded_day)
+	return true
 
 
 func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> void:
@@ -432,6 +472,16 @@ func _has_valid_resource_configuration() -> bool:
 			"validate_resource_dicts",
 			"restore_resource_dicts",
 			"initialize_resources_at_day",
+		])
+	)
+
+
+func _has_valid_npc_configuration() -> bool:
+	return (
+		_npc_economy_system != null
+		and is_instance_valid(_npc_economy_system)
+		and _has_methods(_npc_economy_system, [
+			"to_dict", "from_dict", "validate_dict", "reset_to_profile_defaults",
 		])
 	)
 
