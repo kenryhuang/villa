@@ -189,7 +189,9 @@ func _simulate_npc(state: NpcEconomyState, profile: Dictionary) -> void:
 		return
 	_buy_production_inputs(state)
 	_produce(state)
-	_buy_targets(state, state.reserve_targets)
+	if not _buy_targets(state, state.reserve_targets):
+		state.investment_planned = false
+		return
 	_sell_excess(state)
 	state.investment_planned = state.gold >= int(profile.investment_gold_threshold)
 

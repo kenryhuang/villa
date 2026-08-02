@@ -11,6 +11,7 @@ func run(assertions: TestAssert) -> void:
 	_test_woodworker_uses_finite_market_and_protects_reserves(assertions)
 	_test_failed_trades_have_no_partial_mutations(assertions)
 	_test_unmet_essential_blocks_later_production_spending(assertions)
+	_test_unmet_reserve_blocks_excess_sale_and_investment(assertions)
 	_test_population_groups_add_tagged_factor_demand(assertions)
 	_test_third_zero_stock_day_imports_essentials_only(assertions)
 	_test_day_cursor_and_snapshot_are_atomic(assertions)
@@ -183,6 +184,32 @@ func _test_unmet_essential_blocks_later_production_spending(assertions: TestAsse
 	assertions.equal(market.get_item_state("iron_ingot"), production_market_before.iron_ingot, "essential shortage leaves ingot market untouched")
 	assertions.equal(market.get_item_state("plank"), production_market_before.plank, "essential shortage leaves plank market untouched")
 	assertions.equal(market.get_item_state("farm_tools"), production_market_before.farm_tools, "essential shortage leaves output market untouched")
+	system.free()
+	market.free()
+
+
+func _test_unmet_reserve_blocks_excess_sale_and_investment(assertions: TestAssert) -> void:
+	var market := MarketSystemScript.new()
+	market.configure([
+		_definition("bread", 30, 0, 10, 5, "essential", "product"),
+		_definition("jewelry", 180, 2, 5, 2, "luxury", "crafted_good"),
+	])
+	var system := NpcEconomySystemScript.new()
+	assertions.truthy(system.configure(market, [{
+		"id": "reserve_first", "display_name": "储备优先测试", "gold": 850,
+		"inventory": {"jewelry": 1}, "essential_targets": {},
+		"reserve_targets": {"bread": 1}, "production_recipes": [],
+		"sale_targets": {"jewelry": 0}, "investment_gold_threshold": 900,
+		"import_buffer": false,
+	}], []), "reserve priority fixture configures")
+	var jewelry_before := market.get_item_state("jewelry")
+	assertions.truthy(market.quote_sell("jewelry", 1) > 50, "luxury sale would cross investment threshold")
+	assertions.truthy(system.simulate_day(1), "reserve shortage day is consumed")
+	var state = system.get_npc_state("reserve_first")
+	assertions.equal(state.gold, 850, "unmet reserve blocks later sale income")
+	assertions.equal(state.inventory.jewelry, 1, "unmet reserve retains excess luxury item")
+	assertions.equal(market.get_item_state("jewelry"), jewelry_before, "unmet reserve leaves luxury market untouched")
+	assertions.truthy(not state.investment_planned, "unmet reserve blocks investment planning")
 	system.free()
 	market.free()
 
