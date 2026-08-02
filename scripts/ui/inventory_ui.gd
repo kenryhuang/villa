@@ -4,6 +4,7 @@ extends Control
 ## 背包界面 - 网格布局显示背包物品和快捷栏
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const PLANTING_QUICK_SLOT := 5
 
 @export var grid_container_path: NodePath
 @export var quick_bar_path: NodePath
@@ -97,39 +98,73 @@ func _refresh() -> void:
 	if grid_container:
 		# 清除旧格子
 		for child in grid_container.get_children():
-			child.queue_free()
+			child.free()
 
 		# 创建格子
 		for i in range(inventory_ref.max_slots):
 			var slot_ui = _create_slot_ui(i)
 			grid_container.add_child(slot_ui)
 
-	# 刷新快捷栏
+	_refresh_quick_bar()
+
+
+func _refresh_quick_bar() -> void:
 	if quick_bar:
 		for child in quick_bar.get_children():
-			child.queue_free()
+			child.free()
 
 		for i in range(6):
 			var slot_ui = _create_quick_slot_ui(i)
 			quick_bar.add_child(slot_ui)
 
 
+func assign_planting_slot(slot_index: int) -> bool:
+	if inventory_ref == null or slot_index < 0 or slot_index >= inventory_ref.slots.size():
+		return false
+	var slot: Dictionary = inventory_ref.slots[slot_index]
+	if slot.is_empty() or int(slot.get("quantity", 0)) <= 0:
+		return false
+	var item_id := str(slot.get("item_id", ""))
+	if not _is_planting_item(item_id):
+		return false
+	if not inventory_ref.set_quick_slot(slot_index, PLANTING_QUICK_SLOT):
+		return false
+	_refresh_quick_bar()
+	return true
+
+
+func _is_planting_item(item_id: String) -> bool:
+	var item_data = GameDataScript.get_item(item_id)
+	return (
+		item_data != null
+		and str(item_data.get("id", "")) == item_id
+		and str(item_data.get("category", "")) == "seed"
+		and (item_id.ends_with("_seed") or item_id.ends_with("_sapling"))
+	)
+
+
 func _create_slot_ui(index: int) -> PanelContainer:
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(64, 64)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	if index < inventory_ref.slots.size() and not inventory_ref.slots[index].is_empty():
 		var slot = inventory_ref.slots[index]
 		var item_data = GameDataScript.get_item(slot.item_id)
+		if _is_planting_item(str(slot.item_id)):
+			panel.tooltip_text = "左键：设为种植栏（快捷栏 6）"
 		var name_label = Label.new()
+		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_label.text = item_data.name if item_data else slot.item_id
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.add_theme_font_size_override("font_size", 10)
 
 		var qty_label = Label.new()
+		qty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		qty_label.text = "x%d" % slot.quantity
 		qty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		qty_label.add_theme_font_size_override("font_size", 12)
@@ -138,11 +173,23 @@ func _create_slot_ui(index: int) -> PanelContainer:
 		vbox.add_child(qty_label)
 	else:
 		var empty_label = Label.new()
+		empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		empty_label.text = ""
 		vbox.add_child(empty_label)
 
 	panel.add_child(vbox)
+	panel.gui_input.connect(_on_inventory_slot_gui_input.bind(index))
 	return panel
+
+
+func _on_inventory_slot_gui_input(event: InputEvent, slot_index: int) -> void:
+	if (
+		event is InputEventMouseButton
+		and event.button_index == MOUSE_BUTTON_LEFT
+		and event.pressed
+		and assign_planting_slot(slot_index)
+	):
+		accept_event()
 
 
 func _create_quick_slot_ui(index: int) -> PanelContainer:
