@@ -10,6 +10,7 @@ const EconomySaveIntegrationTest = preload("res://tests/test_economy_save_integr
 const RecipeDatabaseTest = preload("res://tests/test_recipe_database.gd")
 const ProductionSystemTest = preload("res://tests/test_production_system.gd")
 const BuildingEconomyEffectsTest = preload("res://tests/test_building_economy_effects.gd")
+const ResourceGatheringTest = preload("res://tests/test_resource_gathering.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -29,6 +30,7 @@ func _run() -> void:
 	RecipeDatabaseTest.new().run(assertions)
 	ProductionSystemTest.new().run(assertions, self)
 	BuildingEconomyEffectsTest.new().run(assertions, self)
+	ResourceGatheringTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d economy checks" % assertions.checks)
 		quit(0)

@@ -16,3 +16,5 @@ script = ExtResource("3")
 
 [node name="Vegetation" type="Node3D" parent="."]
 script = ExtResource("4")
+
+[node name="ResourceNodes" type="Node3D" parent="."]

@@ -15,12 +15,14 @@ var current_slot := 0
 var _market_system: Variant
 var _daily_simulation_system: Variant
 var _season_system: Variant
+var _resource_world: Variant
 
 
 func configure_economy(
 	market_system: Variant,
 	daily_simulation_system: Variant,
-	season_system: Variant = null
+	season_system: Variant = null,
+	resource_world: Variant = null
 ) -> bool:
 	if not _has_methods(market_system, ["configure", "to_dict", "from_dict"]):
 		return false
@@ -31,9 +33,17 @@ func configure_economy(
 		["current_season", "current_day", "total_days", "hour", "minute"]
 	):
 		return false
+	if resource_world != null and not _has_methods(resource_world, [
+		"to_resource_dicts",
+		"validate_resource_dicts",
+		"restore_resource_dicts",
+		"initialize_resources_at_day",
+	]):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
+	_resource_world = resource_world
 	return true
 
 
@@ -133,6 +143,8 @@ func _gather_save_data() -> Dictionary:
 		data["economy_version"] = 1
 		data["market"] = _market_system.call("to_dict")
 		data["last_simulated_day"] = int(_daily_simulation_system.get("last_simulated_day"))
+		if _has_valid_resource_configuration():
+			data["resource_nodes"] = _resource_world.call("to_resource_dicts")
 
 	# 存档元数据
 	data["meta"] = {
@@ -333,7 +345,11 @@ func _serialize_buildings(building_system: Node) -> Array[Dictionary]:
 
 func _validate_economy_save_data(data: Dictionary) -> bool:
 	if not data.has("economy_version"):
-		return not data.has("market") and not data.has("last_simulated_day")
+		return (
+			not data.has("market")
+			and not data.has("last_simulated_day")
+			and not data.has("resource_nodes")
+		)
 	if not _is_integer_number(data.get("economy_version")) or int(data["economy_version"]) != 1:
 		return false
 	if not _has_valid_economy_configuration():
@@ -353,6 +369,15 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 		or int(data["total_days"]) != int(data["last_simulated_day"])
 	):
 		return false
+	if data.has("resource_nodes"):
+		if (
+			not _has_valid_resource_configuration()
+			or not bool(_resource_world.call(
+				"validate_resource_dicts",
+				data["resource_nodes"]
+			))
+		):
+			return false
 	var validation_market := MarketSystemScript.new()
 	var valid := validation_market.from_dict(data["market"])
 	if valid:
@@ -367,11 +392,22 @@ func _apply_economy_save_data(data: Dictionary) -> void:
 	if data.has("economy_version"):
 		_market_system.call("from_dict", data["market"])
 		_daily_simulation_system.set("last_simulated_day", int(data["last_simulated_day"]))
+		_apply_resource_save_data(data, int(data.get("total_days", data["last_simulated_day"])))
 		return
 	var loaded_day := maxi(int(data.get("total_days", 1)), 0)
 	_market_system.call("configure", GameDataScript.get_market_items())
 	_market_system.set("last_settled_day", loaded_day)
 	_daily_simulation_system.set("last_simulated_day", loaded_day)
+	_apply_resource_save_data(data, loaded_day)
+
+
+func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> void:
+	if not _has_valid_resource_configuration():
+		return
+	if data.has("resource_nodes"):
+		_resource_world.call("restore_resource_dicts", data["resource_nodes"], loaded_day)
+	else:
+		_resource_world.call("initialize_resources_at_day", loaded_day)
 
 
 func _has_valid_economy_configuration() -> bool:
@@ -382,6 +418,19 @@ func _has_valid_economy_configuration() -> bool:
 		and is_instance_valid(_daily_simulation_system)
 		and _has_methods(_market_system, ["configure", "to_dict", "from_dict"])
 		and _has_property(_daily_simulation_system, "last_simulated_day")
+	)
+
+
+func _has_valid_resource_configuration() -> bool:
+	return (
+		_resource_world != null
+		and is_instance_valid(_resource_world)
+		and _has_methods(_resource_world, [
+			"to_resource_dicts",
+			"validate_resource_dicts",
+			"restore_resource_dicts",
+			"initialize_resources_at_day",
+		])
 	)
 
 

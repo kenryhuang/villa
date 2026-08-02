@@ -308,8 +308,12 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 
 
 func perform_target_interaction(target: Node) -> bool:
-	if target == null:
+	if target == null or _action_mode != ActionMode.FARMING:
 		return false
+	if target.has_method("can_gather"):
+		if _selected_slot not in [2, 3] or tool_system == null:
+			return false
+		return bool(tool_system.use_tool_on(target))
 	if target.has_method("start_dialogue"):
 		target.start_dialogue()
 		return true
@@ -487,6 +491,7 @@ func _find_interaction_target(node: Node) -> Node:
 			current.has_method("interact")
 			or current.has_method("start_dialogue")
 			or current.has_method("collect")
+			or current.has_method("can_gather")
 		):
 			return current
 		current = current.get_parent()

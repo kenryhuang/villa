@@ -9,6 +9,7 @@ var _npc_economy_system: Variant
 var _economy_system: Variant
 var _market_system: Variant
 var _save_manager: Variant
+var _resource_system: Variant
 var _event_bus: Node
 var _is_configured := false
 
@@ -24,7 +25,8 @@ func configure(
 	npc_economy_system: Variant,
 	economy_system: Variant,
 	market_system: Variant,
-	save_manager: Variant
+	save_manager: Variant,
+	resource_system: Variant = null
 ) -> bool:
 	if not _has_methods(farming_system, ["on_day_changed"]):
 		return false
@@ -43,12 +45,15 @@ func configure(
 		return false
 	if npc_economy_system != null and not _has_methods(npc_economy_system, ["simulate_day"]):
 		return false
+	if resource_system != null and not _has_methods(resource_system, ["advance_resource_day"]):
+		return false
 	_production_system = production_system
 	_farming_system = farming_system
 	_npc_economy_system = npc_economy_system
 	_economy_system = economy_system
 	_market_system = market_system
 	_save_manager = save_manager
+	_resource_system = resource_system
 	_is_configured = true
 	if is_inside_tree():
 		_event_bus = get_node_or_null("/root/EventBus")
@@ -75,6 +80,8 @@ func run_day(day: int) -> bool:
 	if settlement_result is bool and not settlement_result:
 		return false
 	_economy_system.call("generate_demand_orders", day)
+	if _resource_system != null:
+		_resource_system.call("advance_resource_day", day)
 	last_simulated_day = day
 	_save_manager.call("save_game", int(_save_manager.get("current_slot")))
 	return true
