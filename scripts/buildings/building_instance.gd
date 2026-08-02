@@ -275,6 +275,18 @@ func interact(player: Node) -> void:
 	interacted.emit(self, player)
 
 
+func economy_effect_type() -> String:
+	if data != null:
+		return data.effect_type
+	return str(GameDataScript.get_building(building_id).get("effect", ""))
+
+
+func can_open_economy_panel() -> bool:
+	return is_construction_complete() and economy_effect_type() in [
+		"crafting", "honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output",
+	]
+
+
 func to_dict() -> Dictionary:
 	var result := {
 		"building_id": data.building_id if data else authored_building_id,

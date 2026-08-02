@@ -14,6 +14,7 @@ const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_syste
 const EconomyProgressionSystemScript := preload(
 	"res://scripts/systems/economy_progression_system.gd"
 )
+const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -34,6 +35,7 @@ static var _pending_debug_reload_save_slot := -1
 @onready var build_ui = $BuildUI
 @onready var map_ui = $MapUI
 @onready var shop_ui = $ShopUI
+@onready var building_economy_ui: BuildingEconomyUI = $BuildingEconomyUI
 
 # 系统引用
 var grid_system: GridSystem
@@ -54,6 +56,7 @@ var collectible_system: CollectibleSystem
 var story_system: StorySystem
 var puzzle_system: PuzzleSystem
 var save_manager: Node
+var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModalCoordinator
 
 # 建筑容器
 var buildings_container: Node3D
@@ -206,6 +209,8 @@ func _connect_systems() -> bool:
 		return false
 	if not building_system.building_instance_removed.is_connected(_on_economy_building_removed):
 		building_system.building_instance_removed.connect(_on_economy_building_removed)
+	if not building_system.building_instance_placed.is_connected(_on_building_instance_placed):
+		building_system.building_instance_placed.connect(_on_building_instance_placed)
 	if not production_system.configure(
 		grid_system,
 		farming_system,
@@ -351,6 +356,16 @@ func _setup_ui() -> void:
 	):
 		push_error("Unable to configure economy hub UI.")
 
+	if building_economy_ui and not building_economy_ui.configure(
+		production_system,
+		inventory_system,
+		economy_progression_system,
+		building_economy_modal
+	):
+		push_error("Unable to configure building economy UI.")
+	for building in building_system.get_all_buildings():
+		_on_building_instance_placed(building)
+
 	# 连接建造系统信号
 	building_system.build_mode_entered.connect(_on_build_mode_entered)
 	building_system.build_mode_exited.connect(_on_build_mode_exited)
@@ -489,8 +504,28 @@ func reset_debug_state() -> bool:
 
 
 func _on_economy_building_removed(building: BuildingInstance) -> void:
+	if building_economy_ui != null and building_economy_ui.current_building() == building:
+		building_economy_ui.close()
+	if building != null and building.interacted.is_connected(_on_building_interacted):
+		building.interacted.disconnect(_on_building_interacted)
 	if economy_progression_system != null:
 		economy_progression_system.clear_building_upgrades(building)
+
+
+func _on_building_instance_placed(building: BuildingInstance) -> void:
+	if building == null or not is_instance_valid(building):
+		return
+	if not building.interacted.is_connected(_on_building_interacted):
+		building.interacted.connect(_on_building_interacted)
+
+
+func _on_building_interacted(building: BuildingInstance, _player: Node) -> void:
+	if building == null or not building.can_open_economy_panel():
+		return
+	for modal in [inventory_ui, map_ui, build_ui, shop_ui]:
+		if modal != null and modal.has_method("close"):
+			modal.close()
+	building_economy_ui.open_for(building)
 
 
 func _prepare_debug_reload() -> void:
@@ -530,7 +565,8 @@ func _on_dialogue_started(villager_id: String) -> void:
 
 
 func _on_build_mode_entered() -> void:
-	pass
+	if building_economy_ui != null:
+		building_economy_ui.on_build_mode_entered()
 
 
 func _on_build_mode_exited() -> void:

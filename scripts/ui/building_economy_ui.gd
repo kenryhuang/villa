@@ -1,0 +1,167 @@
+class_name BuildingEconomyUI
+extends Control
+
+const PRODUCTION_BUILDINGS := [
+	"windmill", "workbench", "stone_kiln", "furnace", "food_workshop", "textile_machine",
+]
+const STATUS_BUILDINGS := [
+	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine",
+]
+
+@onready var modal_layer: ColorRect = $ModalLayer
+@onready var title_label: Label = $ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel
+@onready var state_label: Label = $ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel
+@onready var close_button: Button = $ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton
+@onready var production_panel: BuildingProductionPanel = $ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel
+@onready var status_panel: BuildingStatusPanel = $ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel
+@onready var range_overlay: WorldRangeOverlay = $WorldRangeOverlay
+
+var _production: ProductionSystem
+var _inventory: InventorySystem
+var _progression: EconomyProgressionSystem
+var _modal: EconomyModalCoordinator
+var _building_ref: WeakRef
+var _is_open := false
+
+
+func _ready() -> void:
+	visible = false
+	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	if not close_button.pressed.is_connected(close):
+		close_button.pressed.connect(close)
+	if is_configured():
+		production_panel.configure(_production, _inventory, _progression)
+		status_panel.configure(_production, _inventory, range_overlay)
+
+
+static func panel_kind_for(building_id: String, effect_type: String) -> String:
+	if building_id in PRODUCTION_BUILDINGS and effect_type == "crafting":
+		return "production"
+	if building_id in STATUS_BUILDINGS and effect_type in ["honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output"]:
+		return "status"
+	return ""
+
+
+func configure(
+	production: ProductionSystem,
+	inventory: InventorySystem,
+	progression: EconomyProgressionSystem,
+	modal: EconomyModalCoordinator
+) -> bool:
+	if production == null or inventory == null or progression == null or modal == null:
+		return false
+	_production = production
+	_inventory = inventory
+	_progression = progression
+	_modal = modal
+	if not is_node_ready():
+		return true
+	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, range_overlay)
+
+
+func open_for(building: BuildingInstance) -> bool:
+	if not is_configured() or building == null or not is_instance_valid(building) or not building.is_construction_complete():
+		return false
+	var kind := panel_kind_for(building.building_id, building.economy_effect_type())
+	if kind.is_empty():
+		return false
+	var previous := current_building()
+	if previous != building:
+		_disconnect_current_building()
+		status_panel.set_range_preview(false)
+		_building_ref = weakref(building)
+		if not building.tree_exiting.is_connected(_on_current_building_tree_exiting):
+			building.tree_exiting.connect(_on_current_building_tree_exiting)
+	if not _is_open:
+		if not _modal.acquire(self):
+			return false
+		_is_open = true
+		visible = true
+	title_label.text = building.data.display_name if building.data != null else building.building_id
+	production_panel.visible = kind == "production"
+	status_panel.visible = kind == "status"
+	if kind == "production":
+		production_panel.show_building(building)
+		state_label.text = _production_state_text()
+	else:
+		status_panel.show_building(building)
+		state_label.text = status_panel.view_data.state
+	_emit_event("building_economy_opened", [building, kind])
+	return true
+
+
+func close() -> void:
+	status_panel.set_range_preview(false)
+	if not _is_open:
+		return
+	var building := current_building()
+	_is_open = false
+	visible = false
+	_disconnect_current_building()
+	if _modal != null:
+		_modal.release(self)
+	_emit_event("building_economy_closed", [building])
+
+
+func on_build_mode_entered() -> void:
+	close()
+	range_overlay.clear()
+
+
+func is_open() -> bool:
+	return _is_open
+
+
+func is_configured() -> bool:
+	return _production != null and _inventory != null and _progression != null and _modal != null
+
+
+func current_building() -> BuildingInstance:
+	if _building_ref == null:
+		return null
+	var value = _building_ref.get_ref()
+	return value as BuildingInstance if value != null and is_instance_valid(value) else null
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _is_open or not event is InputEventKey or not event.pressed or event.echo or event.keycode != KEY_ESCAPE:
+		return
+	close()
+	get_viewport().set_input_as_handled()
+
+
+func _exit_tree() -> void:
+	range_overlay.clear()
+	if _modal != null and _modal.is_owned_by(self):
+		_modal.release(self)
+	_is_open = false
+	_disconnect_current_building()
+
+
+func _on_current_building_tree_exiting() -> void:
+	close()
+
+
+func _disconnect_current_building() -> void:
+	var building := current_building()
+	if building != null and building.tree_exiting.is_connected(_on_current_building_tree_exiting):
+		building.tree_exiting.disconnect(_on_current_building_tree_exiting)
+	_building_ref = null
+
+
+func _production_state_text() -> String:
+	if production_panel.queue_slots.is_empty():
+		return "空闲"
+	match str(production_panel.queue_slots[0].get("state", "idle")):
+		"running": return "运行中"
+		"waiting": return "等待中"
+		"output-full": return "仓满暂停"
+		"maintenance-paused": return "维护暂停"
+		"completed-awaiting-storage": return "完成待入库"
+	return "空闲"
+
+
+func _emit_event(signal_name: StringName, arguments: Array) -> void:
+	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if event_bus != null and event_bus.has_signal(signal_name):
+		event_bus.emit_signal(signal_name, arguments[0], arguments[1]) if arguments.size() == 2 else event_bus.emit_signal(signal_name, arguments[0])
