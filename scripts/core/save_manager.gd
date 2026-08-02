@@ -10,6 +10,7 @@ const SAVE_EXT = ".json"
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
+const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
 
 var save_directory := SAVE_DIR
 var current_slot := 0
@@ -581,6 +582,7 @@ func _validate_economy_building_keys(data: Dictionary) -> bool:
 	if not data.has("progression"):
 		return true
 	var valid_keys := {}
+	var building_records := {}
 	for value in data.buildings:
 		if not value is Dictionary:
 			return false
@@ -589,8 +591,31 @@ func _validate_economy_building_keys(data: Dictionary) -> bool:
 		if not EconomyProgressionScript.is_valid_building_key(key):
 			return false
 		valid_keys[key] = true
+		building_records[key] = record
+	var upgrade_levels_by_key := {}
 	for value in (data.progression as Dictionary).get("upgrade_levels", []):
-		if not valid_keys.has(str((value as Dictionary).get("building_key", ""))):
+		var upgrade_record := value as Dictionary
+		var upgrade_key := str(upgrade_record.get("building_key", ""))
+		if not valid_keys.has(upgrade_key):
+			return false
+		var levels := {}
+		for level_value in upgrade_record.get("levels", []):
+			var level_record := level_value as Dictionary
+			levels[str(level_record.get("upgrade_id", ""))] = int(level_record.get("level", 0))
+		upgrade_levels_by_key[upgrade_key] = levels
+	for key in building_records:
+		var building_record := building_records[key] as Dictionary
+		if not building_record.has("producer_state"):
+			continue
+		var producer := building_record.producer_state as Dictionary
+		var levels: Dictionary = upgrade_levels_by_key.get(key, {})
+		var expected_queue := ProductionSystemScript.expected_max_queue_slots(int(levels.get("queue_slots", 0)))
+		var expected_output := ProductionSystemScript.expected_output_capacity(str(building_record.building_id), int(levels.get("storage", 0)))
+		if int(producer.get("max_queue_slots", -1)) != expected_queue:
+			return false
+		if int(producer.get("output_capacity", -1)) != expected_output:
+			return false
+		if producer.has("storage_quantity_capacity") and int(producer.storage_quantity_capacity) != ProductionSystemScript.expected_storage_quantity_capacity(str(building_record.building_id), int(levels.get("storage", 0))):
 			return false
 	var upkeep := data.production_upkeep as Dictionary
 	for field in ["maintenance", "speed_accumulators"]:

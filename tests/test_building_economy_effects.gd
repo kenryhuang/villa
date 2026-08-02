@@ -144,15 +144,14 @@ func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
 	assertions.equal(hive.producer_state.outputs, {"honey": 2, "beeswax": 1}, "same-day hive settlement is idempotent")
 
 	var blocked := _building("beehive", 20, 20, true)
-	blocked.producer_state.output_capacity = 1
-	blocked.producer_state.outputs = {"honey": 1}
+	blocked.producer_state.outputs = {"honey": 1, "wood": 1, "stone": 1}
 	_add_mature_flower(grid, Vector2i(20, 16))
 	_add_mature_flower(grid, Vector2i(20, 17))
 	_add_mature_flower(grid, Vector2i(20, 18))
 	_add_mature_flower(grid, Vector2i(20, 19))
 	production.register_building(blocked)
 	production.finish_daily_outputs(4)
-	assertions.equal(blocked.producer_state.outputs, {"honey": 1}, "full hive storage pauses the complete output without loss")
+	assertions.equal(blocked.producer_state.outputs, {"honey": 1, "wood": 1, "stone": 1}, "full hive storage pauses the complete output without loss")
 
 
 func _test_coop_feed_is_atomic(assertions: TestAssert) -> void:
@@ -169,13 +168,12 @@ func _test_coop_feed_is_atomic(assertions: TestAssert) -> void:
 	assertions.equal(hungry.producer_state.outputs, {}, "hungry coop produces nothing")
 
 	var blocked := _building("chicken_coop", 12, 4, true)
-	blocked.producer_state.output_capacity = 1
 	blocked.producer_state.inputs = {"animal_feed": 1}
-	blocked.producer_state.outputs = {"honey": 1}
+	blocked.producer_state.outputs = {"honey": 1, "wood": 1, "stone": 1}
 	production.register_building(blocked)
 	production.finish_daily_outputs(4)
 	assertions.equal(blocked.producer_state.inputs, {"animal_feed": 1}, "full coop storage pauses before feeding")
-	assertions.equal(blocked.producer_state.outputs, {"honey": 1}, "full coop storage preserves existing output")
+	assertions.equal(blocked.producer_state.outputs, {"honey": 1, "wood": 1, "stone": 1}, "full coop storage preserves existing output")
 	production.finish_daily_outputs(4)
 	assertions.equal(blocked.producer_state.inputs, {"animal_feed": 1}, "repeat settlement cannot consume paused feed")
 

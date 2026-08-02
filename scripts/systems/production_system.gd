@@ -476,9 +476,9 @@ func apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -
 	var state := _get_state(building)
 	match upgrade_id:
 		"queue_slots":
-			state.max_queue_slots = 2 + level
+			state.max_queue_slots = expected_max_queue_slots(level)
 		"storage":
-			state.output_capacity = _base_output_capacity(building) + level
+			state.output_capacity = expected_output_capacity(building.building_id, level)
 		"speed":
 			pass
 	return true
@@ -1162,27 +1162,44 @@ func _effective_minutes(building: BuildingInstance, minutes: int) -> int:
 
 
 func _apply_saved_upgrades(building: BuildingInstance) -> void:
-	if _progression_system == null or not is_instance_valid(_progression_system):
+	var state := _get_state(building)
+	if state == null:
 		return
-	for upgrade_id in ["queue_slots", "storage"]:
-		var level := int(_progression_system.call("get_upgrade_level", building, upgrade_id))
-		if level > 0:
-			apply_upgrade(building, upgrade_id, level)
+	var queue_level := 0
+	var storage_level := 0
+	if _progression_system != null and is_instance_valid(_progression_system):
+		queue_level = int(_progression_system.call("get_upgrade_level", building, "queue_slots"))
+		storage_level = int(_progression_system.call("get_upgrade_level", building, "storage"))
+	state.max_queue_slots = expected_max_queue_slots(queue_level)
+	state.output_capacity = expected_output_capacity(building.building_id, storage_level)
 
 
 func _base_output_capacity(building: BuildingInstance) -> int:
-	var configured := int(_effect_config(building).get("output_capacity", 3))
-	return maxi(configured, 1)
+	return expected_output_capacity(building.building_id if building != null else "", 0)
 
 
 func _storage_quantity_capacity(building: BuildingInstance) -> int:
-	var base := int(_effect_config(building).get("storage_quantity_capacity", 0))
-	if base <= 0:
-		return 0
 	var level := 0
 	if _progression_system != null and is_instance_valid(_progression_system):
 		level = int(_progression_system.call("get_upgrade_level", building, "storage"))
-	return base + maxi(level, 0)
+	return expected_storage_quantity_capacity(building.building_id if building != null else "", level)
+
+
+static func expected_max_queue_slots(queue_level: int) -> int:
+	return 2 + maxi(queue_level, 0)
+
+
+static func expected_output_capacity(building_id: String, storage_level: int) -> int:
+	var source := GameDataScript.get_building(building_id)
+	var config: Dictionary = source.get("effect_config", {})
+	return maxi(int(config.get("output_capacity", 3)), 1) + maxi(storage_level, 0)
+
+
+static func expected_storage_quantity_capacity(building_id: String, storage_level: int) -> int:
+	var source := GameDataScript.get_building(building_id)
+	var config: Dictionary = source.get("effect_config", {})
+	var base := int(config.get("storage_quantity_capacity", 0))
+	return base + maxi(storage_level, 0) if base > 0 else 0
 
 
 func _multiplied_counts(counts: Dictionary, multiplier: int) -> Dictionary:

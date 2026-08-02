@@ -601,6 +601,28 @@ func _test_save_json_round_trip_atomic_rejection_and_legacy(
 		"building_key": "windmill:9:9", "levels": [{"upgrade_id": "speed", "level": 1}],
 	}]
 	assertions.truthy(not manager._validate_economy_building_keys(orphan_bundle), "orphan upgrade key rejects")
+	var forged_capacity_bundle := {
+		"buildings": [{
+			"building_id": "windmill", "gx": 1, "gz": 1,
+			"producer_state": {"max_queue_slots": 99, "output_capacity": 99},
+		}],
+		"progression": gathered.progression.duplicate(true),
+		"production_upkeep": {"maintenance": [], "speed_accumulators": []},
+	}
+	forged_capacity_bundle.progression.upgrade_levels = [{
+		"building_key": "windmill:1:1",
+		"levels": [
+			{"upgrade_id": "queue_slots", "level": 1},
+			{"upgrade_id": "storage", "level": 1},
+		],
+	}]
+	assertions.truthy(not manager._validate_economy_building_keys(forged_capacity_bundle), "forged high producer capacities reject")
+	forged_capacity_bundle.buildings[0].producer_state.max_queue_slots = 2
+	forged_capacity_bundle.buildings[0].producer_state.output_capacity = 3
+	assertions.truthy(not manager._validate_economy_building_keys(forged_capacity_bundle), "forged low producer capacities reject")
+	forged_capacity_bundle.buildings[0].producer_state.max_queue_slots = 3
+	forged_capacity_bundle.buildings[0].producer_state.output_capacity = 4
+	assertions.truthy(manager._validate_economy_building_keys(forged_capacity_bundle), "authoritative upgraded producer capacities validate")
 
 	var legacy := gathered.duplicate(true)
 	legacy.erase("progression")
