@@ -6,11 +6,12 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const QUICK_SLOT_COUNT := 6
+const DEFAULT_MAX_SLOTS := 20
 
 signal quick_slot_mapping_changed(quick_index: int, item_id: String)
 
 var slots: Array[Dictionary] = []  # [{item_id, quantity}, ...]
-var max_slots: int = 20
+var max_slots: int = DEFAULT_MAX_SLOTS
 var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, -1]  # 快捷栏 → 背包槽位映射
 
 var _event_bus
@@ -33,7 +34,7 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 	var item_data = GameDataScript.get_item(item_id)
 	if item_data == null:
 		return false
-	var max_stack := int(item_data.get("max_stack", 99))
+	var max_stack := int(item_data.get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
 	var capacity := 0
 	for slot in slots:
 		if slot.is_empty():
@@ -118,7 +119,7 @@ func can_add_item(item_id: String, quantity: int = 1) -> bool:
 	var item_data = GameDataScript.get_item(item_id)
 	if item_data == null:
 		return false
-	var max_stack := int(item_data.get("max_stack", 99))
+	var max_stack := int(item_data.get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
 	var capacity := 0
 	for slot in slots:
 		if slot.is_empty():

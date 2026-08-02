@@ -2,6 +2,8 @@ class_name EconomyOrdersTest
 extends RefCounted
 
 const EconomySystemScript = preload("res://scripts/systems/economy_system.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+const GameDataScript = preload("res://scripts/core/game_data.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
@@ -65,6 +67,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_reentrant_delivery_signals_settle_once(assertions, tree)
 	_test_expired_and_failed_orders_preserve_assets(assertions)
 	_test_contract_delivery_reload_and_breach_idempotence(assertions)
+	_test_contract_delivery_quantity_limit(assertions)
 	_test_snapshots_and_strict_atomic_restore(assertions)
 	_test_save_manager_round_trip(assertions, tree)
 	_test_generation_requires_current_safe_day(assertions)
@@ -370,6 +373,50 @@ func _test_contract_delivery_reload_and_breach_idempotence(assertions: TestAsser
 		economy.call("advance_order_deadlines", 4)
 		assertions.truthy(bool((economy.call("get_contracts") as Array)[0].expired), "unsigned contract expires after its offer window")
 		assertions.equal((economy.call("get_contracts") as Array)[0].breaches, 0, "unsigned expired contract never records breach")
+	_free_fixture(fixture)
+
+
+func _test_contract_delivery_quantity_limit(assertions: TestAssert) -> void:
+	var inventory_defaults := InventorySystemScript.new()
+	var grain_definition: Dictionary = GameDataScript.get_item("grain")
+	var default_capacity := inventory_defaults.max_slots * int(grain_definition.get("max_stack", 0))
+	var economy_limit := EconomyLimitsScript.MAX_DELIVERY_QUANTITY
+	var default_slots := InventorySystemScript.DEFAULT_MAX_SLOTS
+	var default_stack := GameDataScript.DEFAULT_MAX_STACK
+	inventory_defaults.free()
+	assertions.equal(default_slots, 20, "inventory exposes its unchanged default slot count")
+	assertions.equal(default_stack, int(grain_definition.get("max_stack", 0)), "game data exposes its unchanged default stack size")
+	assertions.equal(economy_limit, default_capacity, "contract delivery limit matches default same-item inventory capacity")
+	assertions.equal(economy_limit, default_slots * default_stack, "contract delivery limit derives from shared inventory constants")
+
+	var fixture := _fixture([_profile("grain_npc", {"grain": 5})])
+	var economy: Node = fixture.economy
+	var over_limit := default_capacity + 1
+	var oversized_contract := _contract_record()
+	oversized_contract.quantity_per_day = over_limit
+	oversized_contract.unit_price = 1
+	oversized_contract.reward_gold = over_limit
+	var oversized_state := {
+		"last_processed_day": 0,
+		"orders": [],
+		"contracts": [oversized_contract],
+	}
+	var before: Dictionary = economy.call("to_dict")
+	assertions.truthy(not bool(economy.call("validate_dict", oversized_state)), "shared max plus one contract fails validation")
+	assertions.truthy(not bool(economy.call("from_dict", oversized_state)), "shared max plus one contract fails atomic restore")
+	assertions.equal(economy.call("to_dict"), before, "oversized contract restore preserves authoritative state")
+
+	economy.set("_contracts", [oversized_contract.duplicate(true)])
+	assertions.truthy(not bool(economy.call("sign_contract", "grain_npc:grain:1:3")), "runtime signing rejects an oversized authoritative contract")
+	oversized_contract.signed = true
+	economy.set("_contracts", [oversized_contract.duplicate(true)])
+	economy.set("_last_processed_day", 1)
+	fixture.inventory.max_slots = 21
+	fixture.inventory.reset_slots()
+	assertions.truthy(fixture.inventory.add_item("grain", over_limit), "runtime defense fixture can physically hold max plus one")
+	before = _asset_snapshot(fixture, "grain_npc", "grain")
+	assertions.truthy(not bool(economy.call("deliver_contract", "grain_npc:grain:1:3", over_limit)), "runtime delivery rejects an oversized authoritative contract")
+	_assert_assets(assertions, fixture, before, "grain_npc", "grain", "oversized runtime delivery")
 	_free_fixture(fixture)
 
 

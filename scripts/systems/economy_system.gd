@@ -344,6 +344,7 @@ func sign_contract(contract_id: String) -> bool:
 		bool(contract.signed)
 		or bool(contract.completed)
 		or bool(contract.expired)
+		or not _is_valid_delivery_quantity(contract.quantity_per_day)
 		or _last_processed_day > int(contract.start_day)
 	):
 		return false
@@ -361,6 +362,8 @@ func deliver_contract(contract_id: String, quantity: int) -> bool:
 		not bool(contract.signed)
 		or bool(contract.completed)
 		or bool(contract.expired)
+		or not _is_valid_delivery_quantity(contract.quantity_per_day)
+		or not _is_valid_delivery_quantity(quantity)
 		or quantity != int(contract.quantity_per_day)
 		or _last_processed_day < int(contract.start_day)
 		or _last_processed_day > int(contract.end_day)
@@ -406,7 +409,7 @@ func _transfer_player_delivery(
 		or _inventory_ref == null
 		or _wallet_ref == null
 		or _npc_ref == null
-		or quantity <= 0
+		or not _is_valid_delivery_quantity(quantity)
 		or reward_gold <= 0
 		or not _inventory_ref.has_item(item_id, quantity)
 		or not bool(_npc_ref.call("can_receive_item", npc_id, item_id, quantity))
@@ -835,6 +838,7 @@ func _normalize_contract(value: Variant, cursor: int) -> Variant:
 		or typeof(contract.expired) != TYPE_BOOL
 		or not contract.delivered_days is Array
 		or int(contract.end_day) < int(contract.start_day)
+		or not _is_valid_delivery_quantity(contract.quantity_per_day)
 		or int(contract.quantity_per_day) > 9223372036854775807 / int(contract.unit_price)
 		or int(contract.reward_gold) != int(contract.quantity_per_day) * int(contract.unit_price)
 		or (bool(contract.completed) and bool(contract.expired))
@@ -882,6 +886,13 @@ func _normalize_contract(value: Variant, cursor: int) -> Variant:
 		normalized[field] = int(contract[field])
 	normalized["delivered_days"] = delivered_days
 	return normalized
+
+
+func _is_valid_delivery_quantity(value: Variant) -> bool:
+	return (
+		_is_positive_integer(value)
+		and int(value) <= EconomyLimitsScript.MAX_DELIVERY_QUANTITY
+	)
 
 
 func _valid_record_identity(npc_id_value: Variant, item_id_value: Variant) -> bool:

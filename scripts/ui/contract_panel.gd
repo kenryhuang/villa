@@ -2,7 +2,7 @@ class_name ContractPanel
 extends Control
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
-const MAX_UI_DELIVERY_QUANTITY := 999
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 signal sign_confirmation_requested(contract_id: String, snapshot: Dictionary)
 signal delivery_succeeded(contract_id: String)
@@ -32,7 +32,10 @@ var _sign_in_progress := false
 
 
 static func safe_delivery_quantity(value: Variant, authoritative_quantity: int) -> int:
-	if authoritative_quantity <= 0 or authoritative_quantity > MAX_UI_DELIVERY_QUANTITY:
+	if (
+		authoritative_quantity <= 0
+		or authoritative_quantity > EconomyLimitsScript.MAX_DELIVERY_QUANTITY
+	):
 		return 0
 	if (typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT) or not is_finite(float(value)):
 		return 0
@@ -261,7 +264,7 @@ func _update_detail() -> void:
 	breaches_label.text = "违约次数：%d" % int(contract.get("breaches", 0))
 	total_income_label.text = "预计总收入：%d｜固定单价 %d" % [int(contract.get("reward_gold", 0)) * duration, int(contract.get("unit_price", 0))]
 	relationship_label.text = "关系影响：每日履约提升信任；违约会降低关系"
-	delivery_quantity.max_value = mini(quantity, MAX_UI_DELIVERY_QUANTITY)
+	delivery_quantity.max_value = mini(quantity, EconomyLimitsScript.MAX_DELIVERY_QUANTITY)
 	delivery_quantity.value = safe_delivery_quantity(quantity, quantity)
 	var sign_reason := _sign_disabled_reason(contract)
 	var delivery_reason := _delivery_disabled_reason(contract, quantity)

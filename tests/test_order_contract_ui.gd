@@ -26,6 +26,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_visible_selection_guards(assertions, tree)
 	await _test_order_delivery_and_state(assertions, tree)
 	await _test_contract_confirmation_and_delivery(assertions, tree)
+	await _test_large_contract_ui_delivery(assertions, tree)
 	await _test_same_day_real_save_load(assertions, tree)
 
 
@@ -422,6 +423,50 @@ func _test_same_day_real_save_load(assertions: TestAssert, tree: SceneTree) -> v
 	_restore_game_state(game_state, game_state_snapshot)
 
 
+func _test_large_contract_ui_delivery(assertions: TestAssert, tree: SceneTree) -> void:
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "large contract acceptance uses the real GameState autoload")
+	if game_state == null:
+		return
+	var game_state_snapshot := _snapshot_game_state(game_state)
+	game_state.gold = 100
+	var fixture := _fixture(game_state)
+	var economy: EconomySystem = fixture.economy
+	var inventory: InventorySystem = fixture.inventory
+	var npc: NpcEconomySystem = fixture.npc
+	assertions.truthy(inventory.remove_item("grain", 5), "large contract fixture clears the small grain stack")
+	assertions.truthy(inventory.add_item("grain", 1000), "large contract fixture owns 1,000 grain across slots")
+	var state := economy.to_dict()
+	state.contracts = [_large_contract_record()]
+	assertions.truthy(economy.from_dict(state), "legacy 1,000-unit contract restores")
+	for node in [fixture.market, npc, inventory, economy]:
+		tree.root.add_child(node)
+	var hud := (load(HUD_SCENE_PATH) as PackedScene).instantiate()
+	tree.root.add_child(hud)
+	var panel := (load(CONTRACT_SCENE_PATH) as PackedScene).instantiate()
+	tree.root.add_child(panel)
+	await tree.process_frame
+	assertions.truthy(panel.call("configure", economy, inventory), "large contract configures the real panel")
+	panel.call("select_contract", "lao_li:grain:1:3")
+	assertions.equal(panel.get_node("Content/Details/DeliveryQuantity").value, 1000.0, "1,000-unit authoritative quantity remains selectable")
+	assertions.truthy(not panel.get_node("Content/Details/DeliverButton").disabled, "owned 1,000-unit contract is visibly deliverable")
+	var gold_before := int(game_state.gold)
+	var npc_before := int(npc.get_npc_state("lao_li").inventory.get("grain", 0))
+	panel.call("request_delivery", "lao_li:grain:1:3", 1000)
+	assertions.equal(inventory.get_item_count("grain"), 0, "large contract removes all 1,000 items once")
+	assertions.equal(int(npc.get_npc_state("lao_li").inventory.get("grain", 0)), npc_before + 1000, "large contract transfers all 1,000 items once")
+	assertions.equal(game_state.gold, gold_before + 1000, "large contract pays the real wallet once")
+	assertions.equal(hud.get_node("TopBar/StatusRow/GoldLabel").text, "💰 %d" % (gold_before + 1000), "large contract updates HUD gold in the delivery frame")
+	assertions.equal(hud.get_node("EconomyActions/NotificationButton").text, "通知 1", "large contract adds one unread notification")
+	panel.call("request_delivery", "lao_li:grain:1:3", 1000)
+	assertions.equal(game_state.gold, gold_before + 1000, "large contract repeat cannot pay twice")
+	assertions.equal(hud.get_node("EconomyActions/NotificationButton").text, "通知 1", "large contract repeat adds no unread notification")
+	panel.free()
+	hud.free()
+	_free_fixture_from_tree(fixture, tree)
+	_restore_game_state(game_state, game_state_snapshot)
+
+
 func _fixture(wallet: Node) -> Dictionary:
 	var market := MarketSystemScript.new()
 	market.configure([
@@ -512,6 +557,24 @@ func _second_contract() -> Dictionary:
 		"delivered_days": [],
 		"breaches": 0,
 		"signed": false,
+		"completed": false,
+		"expired": false,
+	}
+
+
+func _large_contract_record() -> Dictionary:
+	return {
+		"contract_id": "lao_li:grain:1:3",
+		"npc_id": "lao_li",
+		"item_id": "grain",
+		"quantity_per_day": 1000,
+		"unit_price": 1,
+		"reward_gold": 1000,
+		"start_day": 1,
+		"end_day": 3,
+		"delivered_days": [],
+		"breaches": 0,
+		"signed": true,
 		"completed": false,
 		"expired": false,
 	}

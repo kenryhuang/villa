@@ -4,6 +4,7 @@ extends Node
 ## 包括：作物、物品、建筑、村民、收集品定义
 
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
+const DEFAULT_MAX_STACK := 99
 
 var _crops = {}
 

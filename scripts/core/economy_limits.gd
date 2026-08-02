@@ -1,9 +1,15 @@
 class_name EconomyLimits
 extends RefCounted
 
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+
 const MAX_SAFE_INTEGER := 9007199254740991
 const MAINTENANCE_HORIZON_DAYS := 7
 const MAX_SAFE_DATE := MAX_SAFE_INTEGER - MAINTENANCE_HORIZON_DAYS
+const MAX_DELIVERY_QUANTITY := (
+	InventorySystemScript.DEFAULT_MAX_SLOTS * GameDataScript.DEFAULT_MAX_STACK
+)
 
 
 static func is_safe_date(value: Variant, allow_zero: bool = true) -> bool:
