@@ -201,6 +201,61 @@ func _test_inventory(assertions: TestAssert) -> void:
 		"using the last mapped item emits empty after final depletion"
 	)
 
+	var transaction_inventory = InventorySystemScript.new()
+	transaction_inventory.set_quick_slot(0, 5)
+	var transaction_recorder := QuickMappingRecorder.new()
+	transaction_inventory.quick_slot_mapping_changed.connect(
+		transaction_recorder.on_mapping_changed
+	)
+	assertions.truthy(
+		transaction_inventory.has_method("begin_mapping_transaction")
+		and transaction_inventory.has_method("end_mapping_transaction"),
+		"inventory exposes an owned quick-mapping transaction boundary"
+	)
+	if (
+		transaction_inventory.has_method("begin_mapping_transaction")
+		and transaction_inventory.has_method("end_mapping_transaction")
+	):
+		var empty_slots: Array[Dictionary] = transaction_inventory.slots.duplicate(true)
+		var empty_mappings: Array[int] = transaction_inventory.quick_slot_mappings.duplicate()
+		assertions.truthy(
+			transaction_inventory.begin_mapping_transaction(),
+			"first caller owns the mapping transaction"
+		)
+		assertions.truthy(
+			not transaction_inventory.begin_mapping_transaction(),
+			"nested mapping transaction ownership is rejected"
+		)
+		transaction_inventory.add_item("grain_seed", 1)
+		assertions.equal(
+			transaction_recorder.events,
+			[],
+			"mapping notifications stay suppressed during a transaction"
+		)
+		transaction_inventory.restore_state(empty_slots, empty_mappings)
+		assertions.truthy(
+			transaction_inventory.end_mapping_transaction(false),
+			"transaction owner can finish a rollback"
+		)
+		assertions.equal(
+			transaction_recorder.events,
+			[],
+			"rolled-back mapping transaction emits no notifications"
+		)
+		assertions.truthy(
+			not transaction_inventory.end_mapping_transaction(true),
+			"non-owner cannot finish an inactive mapping transaction"
+		)
+		assertions.truthy(transaction_inventory.begin_mapping_transaction(), "new owner begins after rollback")
+		transaction_inventory.add_item("grain_seed", 1)
+		assertions.equal(transaction_recorder.events, [], "successful transaction waits for commit")
+		assertions.truthy(transaction_inventory.end_mapping_transaction(true), "owner commits mapping transaction")
+		assertions.equal(
+			transaction_recorder.events,
+			[{"quick_index": 5, "item_id": "grain_seed"}],
+			"successful transaction emits one net effective-item change"
+		)
+
 	var tiny_inventory = InventorySystemScript.new()
 	tiny_inventory.max_slots = 1
 	tiny_inventory.reset_slots()

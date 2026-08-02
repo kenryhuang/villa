@@ -14,14 +14,29 @@ const PLANTED := 2
 class FailingAfterMutationInventory:
 	extends InventorySystem
 	var restore_calls := 0
+	var fail_next_add := true
 
 	func add_item(item_id: String, quantity: int = 1) -> bool:
-		super.add_item(item_id, quantity)
-		return false
+		var result := super.add_item(item_id, quantity)
+		if fail_next_add:
+			fail_next_add = false
+			return false
+		return result
 
 	func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
 		restore_calls += 1
 		super.restore_state(saved_slots, saved_quick_mappings)
+
+
+class FailingPlantFarming:
+	extends FarmingSystem
+	var fail_next_plant := true
+
+	func plant(cell: GridCell, crop_data: CropData) -> CropInstance:
+		if fail_next_plant:
+			fail_next_plant = false
+			return null
+		return super.plant(cell, crop_data)
 
 
 class InventorySignalRecorder:
@@ -35,12 +50,21 @@ class InventorySignalRecorder:
 		events.append("removed:%s:%d" % [item_id, quantity])
 
 
+class QuickMappingRecorder:
+	extends RefCounted
+	var events: Array[Dictionary] = []
+
+	func on_mapping_changed(quick_index: int, item_id: String) -> void:
+		events.append({"quick_index": quick_index, "item_id": item_id})
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_harvest_returns_item_quantities(assertions)
 	_test_deterministic_tomato_yield_and_regrowth(assertions)
 	_test_carrot_yield_and_removal(assertions)
 	_test_harvest_count_save_round_trip(assertions, tree)
 	_test_controller_harvest_is_atomic(assertions, tree)
+	_test_controller_plant_mapping_signal_is_atomic(assertions, tree)
 	_test_crop_data_validation(assertions)
 	_test_default_roster_and_item_catalog(assertions)
 	_test_perennial_harvest_and_greenhouse_rules(assertions)
@@ -197,7 +221,7 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	failing_inventory.reset_slots()
 	failing_inventory.slots[0] = {"item_id": "tomato", "quantity": 99}
 	failing_inventory.slots[1] = {}
-	failing_inventory.set_quick_slot(0, 5)
+	failing_inventory.set_quick_slot(1, 5)
 	var slots_before: Array[Dictionary] = failing_inventory.slots.duplicate(true)
 	var mappings_before: Array[int] = failing_inventory.quick_slot_mappings.duplicate()
 	tree.root.add_child(failing_inventory)
@@ -207,21 +231,71 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	var event_bus = tree.root.get_node("EventBus")
 	event_bus.set_block_signals(false)
 	var recorder := InventorySignalRecorder.new()
+	var mapping_recorder := QuickMappingRecorder.new()
 	event_bus.item_added.connect(recorder.on_added)
 	event_bus.item_removed.connect(recorder.on_removed)
+	failing_inventory.quick_slot_mapping_changed.connect(mapping_recorder.on_mapping_changed)
 	assertions.truthy(not failing_controller._harvest(grid.get_cell(1, 1)), "injected add failure rejects harvest")
 	assertions.equal(failing_inventory.slots, slots_before, "injected failure restores exact slot layout")
 	assertions.equal(failing_inventory.quick_slot_mappings, mappings_before, "injected failure restores exact quick mappings")
 	assertions.equal(failing_inventory.restore_calls, 1, "rollback uses InventorySystem restore_state")
 	assertions.equal(recorder.events, [], "rolled-back harvest emits no partial inventory events")
+	assertions.equal(
+		mapping_recorder.events,
+		[],
+		"rolled-back harvest emits no transient quick-mapping notifications"
+	)
 	assertions.truthy(grid.get_cell(1, 1).crop_instance == instance, "injected add failure preserves crop")
 	assertions.equal(instance.harvest_count, 0, "injected add failure preserves harvest counter")
+	assertions.truthy(failing_controller._harvest(grid.get_cell(1, 1)), "successful harvest follows rollback")
+	assertions.equal(
+		mapping_recorder.events,
+		[{"quick_index": 5, "item_id": "tomato"}],
+		"successful harvest emits one committed quick-mapping notification"
+	)
 	event_bus.item_added.disconnect(recorder.on_added)
 	event_bus.item_removed.disconnect(recorder.on_removed)
 	controller.free()
 	failing_controller.free()
 	inventory.free()
 	failing_inventory.free()
+	farming.free()
+	grid.free()
+
+
+func _test_controller_plant_mapping_signal_is_atomic(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var crop = CropDataScript.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 3
+	var grid = GridSystemScript.new()
+	grid.set_cell_state(2, 2, FARMLAND)
+	var farming := FailingPlantFarming.new()
+	farming.configure(grid, null, null)
+	var inventory = InventorySystemScript.new()
+	inventory.add_item("grain_seed", 1)
+	inventory.set_quick_slot(0, 5)
+	var recorder := QuickMappingRecorder.new()
+	inventory.quick_slot_mapping_changed.connect(recorder.on_mapping_changed)
+	var controller = PlayerActionControllerScript.new()
+	controller.crop_data_override = crop
+	controller.configure(null, grid, farming, null, null, inventory)
+	assertions.truthy(
+		not controller._plant(grid.get_cell(2, 2)),
+		"injected plant failure rolls inventory back"
+	)
+	assertions.equal(recorder.events, [], "failed plant emits no transient mapping signals")
+	assertions.equal(inventory.get_item_count("grain_seed"), 1, "failed plant restores seed")
+	assertions.truthy(controller._plant(grid.get_cell(2, 2)), "successful plant follows rollback")
+	assertions.equal(
+		recorder.events,
+		[{"quick_index": 5, "item_id": ""}],
+		"successful plant emits one committed mapping signal"
+	)
+	controller.free()
+	inventory.free()
 	farming.free()
 	grid.free()
 

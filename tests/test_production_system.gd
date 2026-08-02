@@ -82,6 +82,15 @@ class InventorySignalRecorder:
 		removed.append({"item_id": item_id, "quantity": quantity})
 
 
+class QuickMappingRecorder:
+	extends RefCounted
+
+	var events: Array[Dictionary] = []
+
+	func on_mapping_changed(quick_index: int, item_id: String) -> void:
+		events.append({"quick_index": quick_index, "item_id": item_id})
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
@@ -461,25 +470,45 @@ func _test_rollback_signals_are_atomic(assertions: TestAssert, tree: SceneTree) 
 	_owned_nodes.append(failing_remove)
 	failing_remove.add_item("iron_ore", 2)
 	failing_remove.add_item("coal", 1)
+	failing_remove.set_quick_slot(0, 5)
+	var remove_mapping_recorder := QuickMappingRecorder.new()
+	failing_remove.quick_slot_mapping_changed.connect(
+		remove_mapping_recorder.on_mapping_changed
+	)
 	tree.root.add_child(failing_remove)
 	assertions.truthy(not production.start_recipe(_building("furnace"), "iron_ingot", 1, failing_remove), "signal rollback fixture fails start")
 	assertions.equal(recorder.removed, [], "failed start emits no partial removal signals")
+	assertions.equal(remove_mapping_recorder.events, [], "failed start emits no mapping signals")
 	failing_remove.remove_calls = 0
 	failing_remove.fail_on_call = 99
 	assertions.truthy(production.start_recipe(_building("furnace"), "iron_ingot", 1, failing_remove), "successful start follows rollback")
 	assertions.equal(recorder.removed.size(), 2, "successful start emits committed input removals")
+	assertions.equal(
+		remove_mapping_recorder.events,
+		[{"quick_index": 5, "item_id": ""}],
+		"successful start emits one net mapping change"
+	)
 
 	var failing_add := FailingAddInventory.new()
 	_owned_nodes.append(failing_add)
+	failing_add.set_quick_slot(0, 5)
+	var add_mapping_recorder := QuickMappingRecorder.new()
+	failing_add.quick_slot_mapping_changed.connect(add_mapping_recorder.on_mapping_changed)
 	tree.root.add_child(failing_add)
 	var output_building := _building("workbench")
 	output_building.producer_state.outputs = {"plank": 1, "rope": 1}
 	assertions.truthy(not production.collect_all(output_building, failing_add), "signal rollback fixture fails collection")
 	assertions.equal(recorder.added, [], "failed collection emits no partial add signals")
+	assertions.equal(add_mapping_recorder.events, [], "failed collection emits no mapping signals")
 	failing_add.add_calls = 0
 	failing_add.fail_on_call = 99
 	assertions.truthy(production.collect_all(output_building, failing_add), "successful collection follows rollback")
 	assertions.equal(recorder.added.size(), 2, "successful collection emits committed output additions")
+	assertions.equal(
+		add_mapping_recorder.events,
+		[{"quick_index": 5, "item_id": "plank"}],
+		"successful collection emits one net mapping change"
+	)
 
 	event_bus.item_added.disconnect(recorder.on_added)
 	event_bus.item_removed.disconnect(recorder.on_removed)

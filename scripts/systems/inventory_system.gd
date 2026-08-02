@@ -13,6 +13,8 @@ var max_slots: int = 20
 var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, -1]  # 快捷栏 → 背包槽位映射
 
 var _event_bus
+var _mapping_transaction_active := false
+var _mapping_transaction_items: Array[String] = []
 
 
 func _init() -> void:
@@ -160,6 +162,25 @@ func get_quick_item(quick_index: int) -> String:
 	return slots[slot_idx].get("item_id", "")
 
 
+func begin_mapping_transaction() -> bool:
+	if _mapping_transaction_active:
+		return false
+	_mapping_transaction_items = _snapshot_quick_items()
+	_mapping_transaction_active = true
+	return true
+
+
+func end_mapping_transaction(commit_changes: bool) -> bool:
+	if not _mapping_transaction_active:
+		return false
+	var previous_items := _mapping_transaction_items.duplicate()
+	_mapping_transaction_items.clear()
+	_mapping_transaction_active = false
+	if commit_changes:
+		_emit_changed_quick_items(previous_items)
+	return true
+
+
 func use_item(slot_index: int) -> bool:
 	if slot_index < 0 or slot_index >= slots.size():
 		return false
@@ -247,6 +268,8 @@ func _snapshot_quick_items() -> Array[String]:
 
 
 func _emit_changed_quick_items(previous_items: Array[String]) -> void:
+	if _mapping_transaction_active:
+		return
 	for quick_index in range(6):
 		var previous_item := (
 			previous_items[quick_index]

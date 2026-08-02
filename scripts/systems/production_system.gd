@@ -114,9 +114,11 @@ func start_recipe(
 	var jobs_snapshot: Array[Dictionary] = state.jobs.duplicate(true)
 	var inputs: Dictionary = preflight.inputs
 	var owns_event_transaction := _begin_event_bus_transaction()
+	var owns_mapping_transaction: bool = inventory.begin_mapping_transaction()
 	for item_id in inputs:
 		if not inventory.remove_item(str(item_id), int(inputs[item_id])):
 			_restore_inventory(inventory, inventory_snapshot)
+			_end_mapping_transaction(inventory, owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction, false, "item_removed", inputs)
 			return false
 	var job := {
@@ -128,8 +130,10 @@ func start_recipe(
 	if not state.enqueue_job(job):
 		_restore_inventory(inventory, inventory_snapshot)
 		state.jobs.assign(jobs_snapshot)
+		_end_mapping_transaction(inventory, owns_mapping_transaction, false)
 		_end_inventory_event_transaction(owns_event_transaction, false, "item_removed", inputs)
 		return false
+	_end_mapping_transaction(inventory, owns_mapping_transaction, true)
 	_end_inventory_event_transaction(owns_event_transaction, true, "item_removed", inputs)
 	register_building(building)
 	_emit_event("production_job_started", [building, recipe_id, batches])
@@ -150,9 +154,11 @@ func add_input(
 	var inventory_snapshot := _snapshot_inventory(inventory)
 	var inputs_snapshot: Dictionary = state.inputs.duplicate(true)
 	var owns_event_transaction := _begin_event_bus_transaction()
+	var owns_mapping_transaction: bool = inventory.begin_mapping_transaction()
 	if not inventory.remove_item(item_id, quantity) or not state.add_input(item_id, quantity):
 		_restore_inventory(inventory, inventory_snapshot)
 		state.inputs = inputs_snapshot
+		_end_mapping_transaction(inventory, owns_mapping_transaction, false)
 		_end_inventory_event_transaction(
 			owns_event_transaction,
 			false,
@@ -160,6 +166,7 @@ func add_input(
 			{item_id: quantity}
 		)
 		return false
+	_end_mapping_transaction(inventory, owns_mapping_transaction, true)
 	_end_inventory_event_transaction(
 		owns_event_transaction,
 		true,
@@ -401,9 +408,11 @@ func collect_nearby_outputs(
 		return false
 	var inventory_snapshot := _snapshot_inventory(destination)
 	var owns_event_transaction := _begin_event_bus_transaction()
+	var owns_mapping_transaction: bool = destination.begin_mapping_transaction()
 	for item_id in combined:
 		if not destination.add_item(str(item_id), int(combined[item_id])):
 			_restore_inventory(destination, inventory_snapshot)
+			_end_mapping_transaction(destination, owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction, false, "item_added", combined)
 			return false
 	for source in sources:
@@ -412,8 +421,10 @@ func collect_nearby_outputs(
 			_restore_inventory(destination, inventory_snapshot)
 			for rollback_source in sources:
 				(rollback_source.state as ProducerState).outputs = rollback_source.outputs.duplicate(true)
+			_end_mapping_transaction(destination, owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction, false, "item_added", combined)
 			return false
+	_end_mapping_transaction(destination, owns_mapping_transaction, true)
 	_end_inventory_event_transaction(owns_event_transaction, true, "item_added", combined)
 	for source in sources:
 		var state := source.state as ProducerState
@@ -756,16 +767,20 @@ func _collect(
 	var inventory_snapshot := _snapshot_inventory(inventory)
 	var output_snapshot := state.outputs.duplicate(true)
 	var owns_event_transaction := _begin_event_bus_transaction()
+	var owns_mapping_transaction: bool = inventory.begin_mapping_transaction()
 	for item_id in requested:
 		if not inventory.add_item(str(item_id), int(requested[item_id])):
 			_restore_inventory(inventory, inventory_snapshot)
+			_end_mapping_transaction(inventory, owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction, false, "item_added", requested)
 			return false
 	if not state.remove_outputs(requested):
 		_restore_inventory(inventory, inventory_snapshot)
 		state.outputs = output_snapshot
+		_end_mapping_transaction(inventory, owns_mapping_transaction, false)
 		_end_inventory_event_transaction(owns_event_transaction, false, "item_added", requested)
 		return false
+	_end_mapping_transaction(inventory, owns_mapping_transaction, true)
 	_end_inventory_event_transaction(owns_event_transaction, true, "item_added", requested)
 	for item_id in requested:
 		_emit_event("production_output_changed", [building, str(item_id), state.get_output_count(str(item_id))])
@@ -827,6 +842,15 @@ func _snapshot_inventory(inventory: InventorySystem) -> Dictionary:
 
 func _restore_inventory(inventory: InventorySystem, snapshot: Dictionary) -> void:
 	inventory.restore_state(snapshot.slots, snapshot.quick_slot_mappings)
+
+
+func _end_mapping_transaction(
+	inventory: InventorySystem,
+	owns_transaction: bool,
+	commit_changes: bool
+) -> void:
+	if owns_transaction:
+		inventory.end_mapping_transaction(commit_changes)
 
 
 func _begin_event_bus_transaction() -> bool:

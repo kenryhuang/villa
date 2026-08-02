@@ -68,6 +68,14 @@ class InventoryDouble:
 		return super.remove_item(item_id, quantity)
 
 
+class QuickMappingRecorder:
+	extends RefCounted
+	var events: Array[Dictionary] = []
+
+	func on_mapping_changed(quick_index: int, item_id: String) -> void:
+		events.append({"quick_index": quick_index, "item_id": item_id})
+
+
 class MarketDouble:
 	extends MarketSystem
 
@@ -135,6 +143,7 @@ func run(assertions: TestAssert) -> void:
 	_test_buy_rolls_back_each_mutation_boundary(assertions)
 	_test_sell_rolls_back_each_mutation_boundary(assertions)
 	_test_event_bus_only_observes_committed_trade(assertions)
+	_test_mapping_signals_only_observe_committed_trade(assertions)
 	_test_nested_market_transaction_is_preflight_failure(assertions)
 	_test_market_without_optional_transaction_api_still_trades(assertions)
 
@@ -366,6 +375,43 @@ func _test_event_bus_only_observes_committed_trade(assertions: TestAssert) -> vo
 	event_bus.gold_changed.disconnect(on_gold)
 	event_bus.item_added.disconnect(on_item)
 	event_bus.market_stock_changed.disconnect(on_market)
+	economy.free()
+	market.free()
+	inventory.free()
+	wallet.free()
+
+
+func _test_mapping_signals_only_observe_committed_trade(assertions: TestAssert) -> void:
+	var inventory := InventoryDouble.new()
+	var wallet := WalletDouble.new()
+	var market := _new_market()
+	var economy := EconomySystem.new()
+	inventory.set_quick_slot(0, 5)
+	var recorder := QuickMappingRecorder.new()
+	inventory.quick_slot_mapping_changed.connect(recorder.on_mapping_changed)
+	assertions.truthy(economy.configure(inventory, wallet, market), "mapping trade fixture configures")
+
+	inventory.fail_next_add = true
+	assertions.truthy(not economy.buy_item("wood", 1), "failed mapped buy rolls back")
+	assertions.equal(recorder.events, [], "failed buy emits no transient mapping signals")
+	assertions.truthy(economy.buy_item("wood", 1), "successful mapped buy commits")
+	assertions.equal(
+		recorder.events,
+		[{"quick_index": 5, "item_id": "wood"}],
+		"successful buy emits one net mapping signal"
+	)
+
+	recorder.events.clear()
+	wallet.fail_next_add = true
+	assertions.truthy(not economy.sell_item("wood", 1), "failed mapped sell rolls back")
+	assertions.equal(recorder.events, [], "failed sell emits no transient mapping signals")
+	assertions.truthy(economy.sell_item("wood", 1), "successful mapped sell commits")
+	assertions.equal(
+		recorder.events,
+		[{"quick_index": 5, "item_id": ""}],
+		"successful sell emits one net mapping signal"
+	)
+
 	economy.free()
 	market.free()
 	inventory.free()

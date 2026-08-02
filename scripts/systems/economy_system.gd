@@ -72,15 +72,18 @@ func buy_item(item_id: String, quantity: int) -> bool:
 	if _market_supports_atomic_transactions() and not owns_market_transaction:
 		return false
 	var owns_event_bus_transaction := _begin_event_bus_transaction()
+	var owns_mapping_transaction: bool = _inventory_ref.begin_mapping_transaction()
 	if not spend_gold(total):
 		_restore_wallet(wallet_before)
 		_end_market_transaction(owns_market_transaction, false)
+		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, true)
 		return false
 	if not bool(_market_ref.call("commit_buy", item_id, quantity)):
 		_restore_market(market_before)
 		_restore_wallet(wallet_before)
 		_end_market_transaction(owns_market_transaction, false)
+		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, true)
 		return false
 	if not _inventory_ref.add_item(item_id, quantity):
@@ -88,9 +91,11 @@ func buy_item(item_id: String, quantity: int) -> bool:
 		_restore_market(market_before)
 		_restore_wallet(wallet_before)
 		_end_market_transaction(owns_market_transaction, false)
+		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, true)
 		return false
 	_end_market_transaction(owns_market_transaction, true)
+	_end_mapping_transaction(owns_mapping_transaction, true)
 	_end_event_bus_transaction(owns_event_bus_transaction, true, item_id, quantity, true)
 	return true
 
@@ -110,15 +115,18 @@ func sell_item(item_id: String, quantity: int) -> bool:
 	if _market_supports_atomic_transactions() and not owns_market_transaction:
 		return false
 	var owns_event_bus_transaction := _begin_event_bus_transaction()
+	var owns_mapping_transaction: bool = _inventory_ref.begin_mapping_transaction()
 	if not _inventory_ref.remove_item(item_id, quantity):
 		_restore_inventory(inventory_before)
 		_end_market_transaction(owns_market_transaction, false)
+		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, false)
 		return false
 	if not bool(_market_ref.call("commit_sell", item_id, quantity)):
 		_restore_market(market_before)
 		_restore_inventory(inventory_before)
 		_end_market_transaction(owns_market_transaction, false)
+		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, false)
 		return false
 	if not add_gold(total):
@@ -126,9 +134,11 @@ func sell_item(item_id: String, quantity: int) -> bool:
 		_restore_inventory(inventory_before)
 		_restore_wallet(wallet_before)
 		_end_market_transaction(owns_market_transaction, false)
+		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, false)
 		return false
 	_end_market_transaction(owns_market_transaction, true)
+	_end_mapping_transaction(owns_mapping_transaction, true)
 	_end_event_bus_transaction(owns_event_bus_transaction, true, item_id, quantity, false)
 	return true
 
@@ -237,6 +247,11 @@ func _snapshot_inventory() -> Dictionary:
 
 func _restore_inventory(snapshot: Dictionary) -> void:
 	_inventory_ref.restore_state(snapshot.get("slots", []), snapshot.get("quick_slot_mappings", []))
+
+
+func _end_mapping_transaction(owns_transaction: bool, commit_changes: bool) -> void:
+	if owns_transaction:
+		_inventory_ref.end_mapping_transaction(commit_changes)
 
 
 # ============================================================

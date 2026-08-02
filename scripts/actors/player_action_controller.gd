@@ -571,12 +571,22 @@ func _plant(cell: GridCell) -> bool:
 	var crop_data := _get_crop_data(plant_item_id)
 	if crop_data == null or not farming_system.can_plant(cell, crop_data):
 		return false
+	var inventory_snapshot := {
+		"slots": inventory_system.slots.duplicate(true),
+		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
+	}
+	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
 	if not inventory_system.remove_item(plant_item_id, 1):
+		_restore_inventory_snapshot(inventory_snapshot)
+		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		return false
 	var planted = farming_system.plant(cell, crop_data)
 	if planted == null:
 		inventory_system.add_item(plant_item_id, 1)
+		_restore_inventory_snapshot(inventory_snapshot)
+		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		return false
+	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
 	inventory_changed.emit()
 	return true
 
@@ -597,16 +607,20 @@ func _harvest(cell: GridCell) -> bool:
 		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
 	}
 	var owns_event_transaction := _begin_inventory_event_transaction()
+	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
 	for item_id in items:
 		if not inventory_system.add_item(str(item_id), int(items[item_id])):
 			_restore_inventory_snapshot(inventory_snapshot)
+			_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction)
 			return false
 	_end_inventory_event_transaction(owns_event_transaction)
 	var result: Dictionary = farming_system.harvest(cell)
 	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
 		_restore_inventory_snapshot(inventory_snapshot)
+		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		return false
+	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
 	_emit_committed_inventory_adds(items, owns_event_transaction)
 	inventory_changed.emit()
 	return true
@@ -658,6 +672,22 @@ func _begin_inventory_event_transaction() -> bool:
 func _end_inventory_event_transaction(owns_transaction: bool) -> void:
 	if owns_transaction and _event_bus != null:
 		_event_bus.set_block_signals(false)
+
+
+func _end_inventory_mapping_transaction(
+	owns_transaction: bool,
+	commit_changes: bool
+) -> void:
+	if owns_transaction and inventory_system.has_method("end_mapping_transaction"):
+		inventory_system.call("end_mapping_transaction", commit_changes)
+
+
+func _begin_inventory_mapping_transaction() -> bool:
+	return (
+		inventory_system != null
+		and inventory_system.has_method("begin_mapping_transaction")
+		and bool(inventory_system.call("begin_mapping_transaction"))
+	)
 
 
 func _emit_committed_inventory_adds(items: Dictionary, owns_transaction: bool) -> void:
