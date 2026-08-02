@@ -1,0 +1,70 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/ui/service_panel.gd" type="Script" id="1_service"]
+
+[node name="ServicePanel" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+script = ExtResource("1_service")
+
+[node name="CategoryBar" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Blueprints" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "蓝图"
+
+[node name="Recipes" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "配方"
+
+[node name="Repairs" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "维修"
+
+[node name="Upgrades" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "升级"
+
+[node name="Maintenance" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "维护"
+
+[node name="TransportStorage" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "运输/仓储"
+
+[node name="LandExpansion" type="Button" parent="CategoryBar"]
+layout_mode = 2
+toggle_mode = true
+text = "土地扩张"
+
+[node name="ServiceScroll" type="ScrollContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ServiceCards" type="VBoxContainer" parent="ServiceScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="EmptyLabel" type="Label" parent="."]
+layout_mode = 2
+text = "当前分类暂无服务"
+horizontal_alignment = 1
+
+[node name="FeedbackLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "选择服务查看真实费用"

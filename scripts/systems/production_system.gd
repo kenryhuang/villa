@@ -4,9 +4,12 @@ extends Node
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
+const ProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 
 const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
+const MAINTENANCE_INTERVAL_DAYS := 7
+const MAX_SAFE_INTEGER := 9007199254740991
 
 var _registered_buildings: Array[BuildingInstance] = []
 var _clock_synced := false
@@ -18,6 +21,10 @@ var _grid_system: GridSystem
 var _farming_system: FarmingSystem
 var _building_system: BuildingSystem
 var _inventory_system: InventorySystem
+var _progression_system: Variant
+var _current_day := 0
+var maintenance_due_days: Dictionary = {}
+var speed_accumulators: Dictionary = {}
 
 
 func _ready() -> void:
@@ -52,6 +59,10 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 		return {}
 	var snapshot: Dictionary = state.to_dict()
 	snapshot["building_id"] = building.building_id
+	snapshot["maintenance_due_day"] = get_maintenance_due_day(building)
+	snapshot["maintenance_paused"] = is_maintenance_overdue(building)
+	if bool(snapshot.maintenance_paused) and not snapshot.jobs.is_empty():
+		snapshot.jobs[0].status = "maintenance_paused"
 	return snapshot
 
 
@@ -68,12 +79,23 @@ func preflight_recipe(
 	if state == null:
 		failure.reason = "not_a_producer"
 		return failure
+	if is_maintenance_overdue(building):
+		failure.reason = "maintenance_overdue"
+		return failure
 	var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
 	if recipe.is_empty():
 		failure.reason = "unknown_recipe"
 		return failure
 	if str(recipe.station) != state.station_id:
 		failure.reason = "station_mismatch"
+		return failure
+	if (
+		_progression_system != null
+		and is_instance_valid(_progression_system)
+		and _progression_system.has_method("is_recipe_unlocked")
+		and not bool(_progression_system.call("is_recipe_unlocked", recipe_id))
+	):
+		failure.reason = "recipe_locked"
 		return failure
 	if not _building_is_active(building):
 		failure.reason = "building_incomplete"
@@ -233,6 +255,7 @@ func finish_daily_outputs(total_day: int) -> void:
 	if total_day <= _last_finished_outputs_day:
 		return
 	_last_finished_outputs_day = total_day
+	_current_day = total_day
 	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
 			continue
@@ -248,10 +271,11 @@ func sync_clock(hour: int, minute: int) -> bool:
 
 
 func sync_daily_cursor(total_day: int) -> bool:
-	if total_day < 0:
+	if total_day < 0 or total_day > MAX_SAFE_INTEGER - MAINTENANCE_INTERVAL_DAYS:
 		return false
 	_last_daily_effects_day = total_day
 	_last_finished_outputs_day = total_day
+	_current_day = total_day
 	return true
 
 
@@ -263,12 +287,20 @@ func register_building(building: BuildingInstance) -> bool:
 		return false
 	if not _registered_buildings.has(building):
 		_registered_buildings.append(building)
+	var key := building_key(building)
+	if not maintenance_due_days.has(key):
+		maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
+	_apply_saved_upgrades(building)
 	_refresh_greenhouse_cells()
 	return true
 
 
 func unregister_building(building: BuildingInstance) -> void:
 	_registered_buildings.erase(building)
+	if building != null:
+		var key := building_key(building)
+		maintenance_due_days.erase(key)
+		speed_accumulators.erase(key)
 	_refresh_greenhouse_cells()
 
 
@@ -289,6 +321,206 @@ func rebuild_registered_buildings() -> int:
 
 func get_registered_buildings() -> Array[BuildingInstance]:
 	return _valid_registered_buildings().duplicate()
+
+
+func set_progression_system(progression_system: Variant) -> bool:
+	if progression_system == null or not progression_system.has_method("get_upgrade_level"):
+		return false
+	_progression_system = progression_system
+	for building in _valid_registered_buildings():
+		_apply_saved_upgrades(building)
+	return true
+
+
+func get_maintenance_due_day(building: BuildingInstance) -> int:
+	if building == null:
+		return -1
+	return int(maintenance_due_days.get(building_key(building), -1))
+
+
+func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
+	if building == null or due_day < 0 or due_day > MAX_SAFE_INTEGER:
+		return false
+	if not _registered_buildings.has(building):
+		return false
+	maintenance_due_days[building_key(building)] = due_day
+	return true
+
+
+func is_maintenance_overdue(building: BuildingInstance) -> bool:
+	var due_day := get_maintenance_due_day(building)
+	return due_day >= 0 and _current_day >= due_day
+
+
+func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
+	if building == null or not _registered_buildings.has(building):
+		return {}
+	return {"gold_cost": 25, "materials": {"wood": 1, "stone": 1}}
+
+
+func maintain(
+	building: BuildingInstance,
+	wallet: Variant,
+	inventory: InventorySystem
+) -> bool:
+	if building == null or wallet == null or inventory == null or not is_maintenance_overdue(building):
+		return false
+	var quote := get_maintenance_quote(building)
+	if quote.is_empty() or int(wallet.gold) < int(quote.gold_cost):
+		return false
+	for item_id in quote.materials:
+		if not inventory.has_item(str(item_id), int(quote.materials[item_id])):
+			return false
+	var snapshot := {
+		"slots": inventory.slots.duplicate(true),
+		"mappings": inventory.quick_slot_mappings.duplicate(),
+	}
+	var owns_event := _begin_event_bus_transaction()
+	var owns_mapping := inventory.begin_mapping_transaction()
+	for item_id in quote.materials:
+		if not inventory.remove_item(str(item_id), int(quote.materials[item_id])):
+			inventory.restore_state(snapshot.slots, snapshot.mappings)
+			if owns_mapping:
+				inventory.end_mapping_transaction(false)
+			_end_inventory_event_transaction(owns_event, false, "item_removed", quote.materials)
+			return false
+	if not wallet.spend_gold(int(quote.gold_cost)):
+		inventory.restore_state(snapshot.slots, snapshot.mappings)
+		if owns_mapping:
+			inventory.end_mapping_transaction(false)
+		_end_inventory_event_transaction(owns_event, false, "item_removed", quote.materials)
+		return false
+	if owns_mapping:
+		inventory.end_mapping_transaction(true)
+	_end_inventory_event_transaction(owns_event, true, "item_removed", quote.materials)
+	if owns_event and _event_bus != null:
+		_event_bus.gold_changed.emit(int(wallet.gold))
+	maintenance_due_days[building_key(building)] = _current_day + MAINTENANCE_INTERVAL_DAYS
+	_emit_event("production_maintenance_changed", [building, get_maintenance_due_day(building)])
+	return true
+
+
+func can_apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -> bool:
+	return (
+		building != null and _registered_buildings.has(building)
+		and _get_state(building) != null
+		and _building_is_active(building)
+		and upgrade_id in get_supported_upgrades(building)
+		and level >= 1 and level <= 3
+	)
+
+
+func get_supported_upgrades(building: BuildingInstance) -> Array[String]:
+	if building == null or not _registered_buildings.has(building) or _get_state(building) == null:
+		return []
+	if _effect_type(building) == "crafting":
+		return ["queue_slots", "speed", "storage"]
+	if _effect_type(building) in ["honey", "animal", "resource_output"]:
+		return ["storage"]
+	return []
+
+
+func apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -> bool:
+	if not can_apply_upgrade(building, upgrade_id, level):
+		return false
+	var state := _get_state(building)
+	match upgrade_id:
+		"queue_slots":
+			state.max_queue_slots = 2 + level
+		"storage":
+			state.output_capacity = _base_output_capacity(building) + level
+		"speed":
+			pass
+	return true
+
+
+func to_dict() -> Dictionary:
+	var records: Array[Dictionary] = []
+	var keys: Array[String] = []
+	keys.assign(maintenance_due_days.keys())
+	keys.sort()
+	for key in keys:
+		records.append({"building_key": key, "due_day": int(maintenance_due_days[key])})
+	var speed_records: Array[Dictionary] = []
+	var speed_keys: Array[String] = []
+	speed_keys.assign(speed_accumulators.keys())
+	speed_keys.sort()
+	for key in speed_keys:
+		speed_records.append({"building_key": key, "remainder": int(speed_accumulators[key])})
+	return {"version": 1, "maintenance": records, "speed_accumulators": speed_records}
+
+
+func validate_dict(data: Dictionary) -> bool:
+	return _parse_maintenance(data) != null
+
+
+func from_dict(data: Dictionary) -> bool:
+	var parsed: Variant = _parse_maintenance(data)
+	if not parsed is Dictionary:
+		return false
+	maintenance_due_days = parsed.maintenance
+	speed_accumulators = parsed.speed
+	return true
+
+
+func reset_maintenance(total_day: int = 0) -> bool:
+	if total_day < 0 or total_day > MAX_SAFE_INTEGER - MAINTENANCE_INTERVAL_DAYS:
+		return false
+	_current_day = total_day
+	maintenance_due_days.clear()
+	speed_accumulators.clear()
+	return true
+
+
+static func building_key(building: BuildingInstance) -> String:
+	return ProgressionScript.building_key(building)
+
+
+func _parse_maintenance(data: Dictionary) -> Variant:
+	if data.size() != 3 or not _integer_number_in_range(data.get("version"), 1, 1):
+		return null
+	if not data.get("maintenance") is Array or not data.get("speed_accumulators") is Array:
+		return null
+	var maintenance := {}
+	for value in data.maintenance:
+		if not value is Dictionary:
+			return null
+		var record := value as Dictionary
+		if record.size() != 2 or not record.get("building_key") is String:
+			return null
+		var key := str(record.building_key)
+		if not _valid_building_key(key) or maintenance.has(key):
+			return null
+		if not _integer_number_in_range(record.get("due_day"), 0, MAX_SAFE_INTEGER):
+			return null
+		maintenance[key] = int(record.due_day)
+	var speed := {}
+	for value in data.speed_accumulators:
+		if not value is Dictionary:
+			return null
+		var record := value as Dictionary
+		if record.size() != 2 or not record.get("building_key") is String:
+			return null
+		var key := str(record.building_key)
+		if not _valid_building_key(key) or speed.has(key):
+			return null
+		if not _integer_number_in_range(record.get("remainder"), 0, 99):
+			return null
+		speed[key] = int(record.remainder)
+	return {"maintenance": maintenance, "speed": speed}
+
+
+func _valid_building_key(key: String) -> bool:
+	return ProgressionScript.is_valid_building_key(key)
+
+
+static func _integer_number_in_range(value: Variant, minimum: int, maximum: int) -> bool:
+	if typeof(value) == TYPE_INT:
+		return int(value) >= minimum and int(value) <= maximum
+	return (
+		typeof(value) == TYPE_FLOAT and is_finite(value)
+		and floorf(value) == value and value >= float(minimum) and value <= float(maximum)
+	)
 
 
 func passive_output_for(id: String, day: int, flowers: int) -> Dictionary:
@@ -482,6 +714,8 @@ func _on_building_completed(building: BuildingInstance) -> void:
 
 
 func _finish_passive_building(building: BuildingInstance, total_day: int) -> void:
+	if is_maintenance_overdue(building):
+		return
 	var id := building.building_id
 	var state := _get_state(building)
 	if state == null:
@@ -716,7 +950,9 @@ func _advance_building(building: BuildingInstance, minutes: int) -> void:
 	var state := _get_state(building)
 	if state == null:
 		return
-	var remaining := minutes
+	if is_maintenance_overdue(building):
+		return
+	var remaining := _effective_minutes(building, minutes)
 	while not state.jobs.is_empty():
 		var job: Dictionary = state.jobs[0]
 		if int(job.remaining_minutes) <= 0:
@@ -832,6 +1068,39 @@ func _get_state(building: BuildingInstance) -> ProducerState:
 	return building.producer_state as ProducerState
 
 
+func _effective_minutes(building: BuildingInstance, minutes: int) -> int:
+	if minutes <= 0:
+		return 0
+	var speed_level := 0
+	if _progression_system != null and is_instance_valid(_progression_system):
+		speed_level = int(_progression_system.call("get_upgrade_level", building, "speed"))
+	var key := building_key(building)
+	if speed_level <= 0:
+		speed_accumulators.erase(key)
+		return minutes
+	var percent := speed_level * 25
+	var prior := int(speed_accumulators.get(key, 0))
+	var whole_bonus := (minutes / 100) * percent
+	var partial := (minutes % 100) * percent + prior
+	whole_bonus += partial / 100
+	speed_accumulators[key] = partial % 100
+	return minutes + whole_bonus
+
+
+func _apply_saved_upgrades(building: BuildingInstance) -> void:
+	if _progression_system == null or not is_instance_valid(_progression_system):
+		return
+	for upgrade_id in ["queue_slots", "storage"]:
+		var level := int(_progression_system.call("get_upgrade_level", building, upgrade_id))
+		if level > 0:
+			apply_upgrade(building, upgrade_id, level)
+
+
+func _base_output_capacity(building: BuildingInstance) -> int:
+	var configured := int(_effect_config(building).get("output_capacity", 3))
+	return maxi(configured, 1)
+
+
 func _multiplied_counts(counts: Dictionary, multiplier: int) -> Dictionary:
 	var result := {}
 	for item_id in counts:
@@ -861,7 +1130,11 @@ func _end_mapping_transaction(
 
 func _begin_event_bus_transaction() -> bool:
 	if _event_bus == null:
-		_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+		if is_inside_tree():
+			_event_bus = get_node_or_null("/root/EventBus")
+		else:
+			var loop := Engine.get_main_loop()
+			_event_bus = loop.root.get_node_or_null("EventBus") if loop is SceneTree else null
 	if _event_bus == null or _event_bus.is_blocking_signals():
 		return false
 	_event_bus.set_block_signals(true)

@@ -9,6 +9,7 @@ const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
+const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 
 var save_directory := SAVE_DIR
 var current_slot := 0
@@ -18,6 +19,9 @@ var _season_system: Variant
 var _resource_world: Variant
 var _npc_economy_system: Variant
 var _economy_system: Variant
+var _progression_system: Variant
+var _tool_system: Variant
+var _production_system: Variant
 
 
 func configure_economy(
@@ -26,8 +30,17 @@ func configure_economy(
 	season_system: Variant = null,
 	resource_world: Variant = null,
 	npc_economy_system: Variant = null,
-	economy_system: Variant = null
+	economy_system: Variant = null,
+	progression_system: Variant = null,
+	tool_system: Variant = null,
+	production_system: Variant = null
 ) -> bool:
+	var upkeep_dependency_count := 0
+	for dependency in [progression_system, tool_system, production_system]:
+		if dependency != null:
+			upkeep_dependency_count += 1
+	if upkeep_dependency_count != 0 and upkeep_dependency_count != 3:
+		return false
 	if not _has_methods(market_system, ["configure", "to_dict", "from_dict"]):
 		return false
 	if not _has_property(daily_simulation_system, "last_simulated_day"):
@@ -52,12 +65,27 @@ func configure_economy(
 		"to_dict", "from_dict", "validate_dict", "reset_order_state",
 	]):
 		return false
+	if progression_system != null and not _has_methods(progression_system, [
+		"to_dict", "from_dict", "validate_dict", "reset_to_new_game",
+	]):
+		return false
+	if tool_system != null and not _has_methods(tool_system, [
+		"to_dict", "from_dict", "validate_dict", "reset_durability",
+	]):
+		return false
+	if production_system != null and not _has_methods(production_system, [
+		"to_dict", "from_dict", "validate_dict", "reset_maintenance",
+	]):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
 	_resource_world = resource_world
 	_npc_economy_system = npc_economy_system
 	_economy_system = economy_system
+	_progression_system = progression_system
+	_tool_system = tool_system
+	_production_system = production_system
 	return true
 
 
@@ -163,6 +191,12 @@ func _gather_save_data() -> Dictionary:
 			data["economy_state"] = _economy_system.call("to_dict")
 		if _has_valid_resource_configuration():
 			data["resource_nodes"] = _resource_world.call("to_resource_dicts")
+		if _has_valid_progression_configuration():
+			data["progression"] = _progression_system.call("to_dict")
+		if _has_valid_tool_configuration():
+			data["tool_durability"] = _tool_system.call("to_dict")
+		if _has_valid_production_configuration():
+			data["production_upkeep"] = _production_system.call("to_dict")
 
 	# 存档元数据
 	data["meta"] = {
@@ -398,6 +432,9 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 			and not data.has("resource_nodes")
 			and not data.has("npc_economy")
 			and not data.has("economy_state")
+			and not data.has("progression")
+			and not data.has("tool_durability")
+			and not data.has("production_upkeep")
 		)
 	if not _is_integer_number(data.get("economy_version")) or int(data["economy_version"]) != 1:
 		return false
@@ -447,6 +484,30 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 				!= int(data["last_simulated_day"])
 		):
 			return false
+	var upkeep_field_count := 0
+	for field in ["progression", "tool_durability", "production_upkeep"]:
+		if data.has(field):
+			upkeep_field_count += 1
+	if upkeep_field_count != 0 and upkeep_field_count != 3:
+		return false
+	if data.has("progression") and (
+		not _has_valid_progression_configuration()
+		or not data["progression"] is Dictionary
+		or not bool(_progression_system.call("validate_dict", data["progression"]))
+	):
+		return false
+	if data.has("tool_durability") and (
+		not _has_valid_tool_configuration()
+		or not data["tool_durability"] is Dictionary
+		or not bool(_tool_system.call("validate_dict", data["tool_durability"]))
+	):
+		return false
+	if data.has("production_upkeep") and (
+		not _has_valid_production_configuration()
+		or not data["production_upkeep"] is Dictionary
+		or not bool(_production_system.call("validate_dict", data["production_upkeep"]))
+	):
+		return false
 	var validation_market := MarketSystemScript.new()
 	var valid := validation_market.from_dict(data["market"])
 	if valid:
@@ -511,6 +572,31 @@ func _validate_save_data(data: Dictionary) -> bool:
 			or not bool(building_system.validate_restore_buildings(data.buildings, data.grid))
 		):
 			return false
+		if not _validate_economy_building_keys(data):
+			return false
+	return true
+
+
+func _validate_economy_building_keys(data: Dictionary) -> bool:
+	if not data.has("progression"):
+		return true
+	var valid_keys := {}
+	for value in data.buildings:
+		if not value is Dictionary:
+			return false
+		var record := value as Dictionary
+		var key := "%s:%d:%d" % [str(record.get("building_id", "")), int(record.get("gx", 0)), int(record.get("gz", 0))]
+		if not EconomyProgressionScript.is_valid_building_key(key):
+			return false
+		valid_keys[key] = true
+	for value in (data.progression as Dictionary).get("upgrade_levels", []):
+		if not valid_keys.has(str((value as Dictionary).get("building_key", ""))):
+			return false
+	var upkeep := data.production_upkeep as Dictionary
+	for field in ["maintenance", "speed_accumulators"]:
+		for value in upkeep.get(field, []):
+			if not valid_keys.has(str((value as Dictionary).get("building_key", ""))):
+				return false
 	return true
 
 
@@ -556,6 +642,15 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 	var resources_before: Array = []
 	if _has_valid_resource_configuration():
 		resources_before = _resource_world.call("to_resource_dicts")
+	var progression_before: Dictionary = {}
+	if _has_valid_progression_configuration():
+		progression_before = _progression_system.call("to_dict")
+	var tools_before: Dictionary = {}
+	if _has_valid_tool_configuration():
+		tools_before = _tool_system.call("to_dict")
+	var production_before: Dictionary = {}
+	if _has_valid_production_configuration():
+		production_before = _production_system.call("to_dict")
 	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
 	var applied := true
 	if data.has("economy_version"):
@@ -571,6 +666,21 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 				applied = bool(_economy_system.call("from_dict", data["economy_state"]))
 			else:
 				applied = bool(_economy_system.call("reset_order_state", loaded_day))
+		if applied and _has_valid_progression_configuration():
+			if data.has("progression"):
+				applied = bool(_progression_system.call("from_dict", data["progression"]))
+			else:
+				applied = bool(_progression_system.call("reset_to_new_game"))
+		if applied and _has_valid_tool_configuration():
+			if data.has("tool_durability"):
+				applied = bool(_tool_system.call("from_dict", data["tool_durability"]))
+			else:
+				applied = bool(_tool_system.call("reset_durability"))
+		if applied and _has_valid_production_configuration():
+			if data.has("production_upkeep"):
+				applied = bool(_production_system.call("from_dict", data["production_upkeep"]))
+			else:
+				applied = bool(_production_system.call("reset_maintenance", loaded_day))
 	else:
 		applied = bool(_market_system.call("configure", GameDataScript.get_market_items()))
 		if applied:
@@ -580,6 +690,12 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			applied = bool(_npc_economy_system.call("reset_to_profile_defaults", loaded_day))
 		if applied and _has_valid_order_configuration():
 			applied = bool(_economy_system.call("reset_order_state", loaded_day))
+		if applied and _has_valid_progression_configuration():
+			applied = bool(_progression_system.call("reset_to_new_game"))
+		if applied and _has_valid_tool_configuration():
+			applied = bool(_tool_system.call("reset_durability"))
+		if applied and _has_valid_production_configuration():
+			applied = bool(_production_system.call("reset_maintenance", loaded_day))
 	if applied:
 		applied = _apply_resource_save_data(data, loaded_day)
 	if not applied:
@@ -591,6 +707,12 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			_economy_system.call("from_dict", orders_before)
 		if _has_valid_resource_configuration() and not resources_before.is_empty():
 			_resource_world.call("restore_resource_dicts", resources_before, daily_before)
+		if _has_valid_progression_configuration() and not progression_before.is_empty():
+			_progression_system.call("from_dict", progression_before)
+		if _has_valid_tool_configuration() and not tools_before.is_empty():
+			_tool_system.call("from_dict", tools_before)
+		if _has_valid_production_configuration() and not production_before.is_empty():
+			_production_system.call("from_dict", production_before)
 		return false
 	return true
 
@@ -672,6 +794,33 @@ func _has_valid_order_configuration() -> bool:
 		and is_instance_valid(_economy_system)
 		and _has_methods(_economy_system, [
 			"to_dict", "from_dict", "validate_dict", "reset_order_state",
+		])
+	)
+
+
+func _has_valid_progression_configuration() -> bool:
+	return (
+		_progression_system != null and is_instance_valid(_progression_system)
+		and _has_methods(_progression_system, [
+			"to_dict", "from_dict", "validate_dict", "reset_to_new_game",
+		])
+	)
+
+
+func _has_valid_tool_configuration() -> bool:
+	return (
+		_tool_system != null and is_instance_valid(_tool_system)
+		and _has_methods(_tool_system, [
+			"to_dict", "from_dict", "validate_dict", "reset_durability",
+		])
+	)
+
+
+func _has_valid_production_configuration() -> bool:
+	return (
+		_production_system != null and is_instance_valid(_production_system)
+		and _has_methods(_production_system, [
+			"to_dict", "from_dict", "validate_dict", "reset_maintenance",
 		])
 	)
 

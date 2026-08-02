@@ -11,6 +11,9 @@ const DailySimulationSystemScript := preload(
 )
 const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
+const EconomyProgressionSystemScript := preload(
+	"res://scripts/systems/economy_progression_system.gd"
+)
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -39,6 +42,7 @@ var season_system: SeasonSystem
 var economy_system: EconomySystem
 var market_system: MarketSystem
 var production_system: ProductionSystem
+var economy_progression_system: EconomyProgressionSystem
 var npc_economy_system: NpcEconomySystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
@@ -130,6 +134,10 @@ func _initialize_systems() -> void:
 	production_system.name = "ProductionSystem"
 	add_child(production_system)
 
+	economy_progression_system = EconomyProgressionSystemScript.new() as EconomyProgressionSystem
+	economy_progression_system.name = "EconomyProgressionSystem"
+	add_child(economy_progression_system)
+
 	tool_system = ToolSystem.new()
 	tool_system.name = "ToolSystem"
 	add_child(tool_system)
@@ -192,13 +200,28 @@ func _connect_systems() -> bool:
 		return false
 
 	# Building and production share one authoritative registry and player inventory.
-	if not building_system.configure(grid_system, economy_system, buildings_container):
+	if not building_system.configure(
+		grid_system, economy_system, buildings_container, economy_progression_system
+	):
 		return false
+	if not building_system.building_instance_removed.is_connected(_on_economy_building_removed):
+		building_system.building_instance_removed.connect(_on_economy_building_removed)
 	if not production_system.configure(
 		grid_system,
 		farming_system,
 		building_system,
 		inventory_system
+	):
+		return false
+
+	# Tool and progression share the same authoritative wallet and inventory.
+	tool_system.configure(grid_system, inventory_system, player)
+	if not economy_progression_system.configure(
+		tool_system,
+		production_system,
+		inventory_system,
+		season_system,
+		get_node_or_null("/root/GameState")
 	):
 		return false
 
@@ -212,7 +235,10 @@ func _connect_systems() -> bool:
 		season_system,
 		world,
 		npc_economy_system,
-		economy_system
+		economy_system,
+		economy_progression_system,
+		tool_system,
+		production_system
 	))
 	if not save_manager_configured:
 		return false
@@ -227,9 +253,6 @@ func _connect_systems() -> bool:
 		world
 	):
 		return false
-
-	# ToolSystem 依赖 GridSystem + InventorySystem + Player
-	tool_system.configure(grid_system, inventory_system, player)
 
 	# ExplorationSystem 依赖 Player
 	exploration_system.configure(player)
@@ -315,7 +338,14 @@ func _setup_ui() -> void:
 		map_ui.configure(player)
 
 	# 经济中心兼容沿用 ShopUI 场景，由 Main 注入权威系统引用。
-	if shop_ui and not shop_ui.configure(inventory_system, economy_system, market_system):
+	if shop_ui and not shop_ui.configure(
+		inventory_system,
+		economy_system,
+		market_system,
+		economy_progression_system,
+		tool_system,
+		production_system
+	):
 		push_error("Unable to configure economy hub UI.")
 
 	# 连接建造系统信号
@@ -444,10 +474,18 @@ func reset_debug_state() -> bool:
 	if building_system.is_in_build_mode():
 		building_system.exit_preview_mode()
 	building_system.clear_buildings(true)
+	economy_progression_system.reset_to_new_game()
+	tool_system.reset_durability()
+	production_system.reset_maintenance(season_system.total_days)
 	_grant_new_game_items()
 	if hud:
 		hud.refresh_action_bar()
 	return true
+
+
+func _on_economy_building_removed(building: BuildingInstance) -> void:
+	if economy_progression_system != null:
+		economy_progression_system.clear_building_upgrades(building)
 
 
 func _prepare_debug_reload() -> void:

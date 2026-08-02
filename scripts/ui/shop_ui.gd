@@ -25,6 +25,7 @@ const MarketPanelScript = preload("res://scripts/ui/market_panel.gd")
 	"services": $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage,
 }
 @onready var market_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel
+@onready var service_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage
 
 var selected_tab := "market"
 var _is_open := false
@@ -52,7 +53,10 @@ func _ready() -> void:
 func configure(
 	inventory: InventorySystem,
 	economy: EconomySystem,
-	market: MarketSystem
+	market: MarketSystem,
+	progression: EconomyProgressionSystem = null,
+	tool_system: ToolSystem = null,
+	production: ProductionSystem = null
 ) -> bool:
 	_inventory_ref = inventory
 	_economy_ref = economy
@@ -60,6 +64,12 @@ func configure(
 	if _inventory_ref == null or _economy_ref == null or _market_ref == null:
 		return false
 	var configured: bool = market_panel.configure(_inventory_ref, _economy_ref, _market_ref)
+	var service_dependencies := [progression, tool_system, production]
+	var has_any_service_dependency := service_dependencies.any(func(value: Variant) -> bool: return value != null)
+	if has_any_service_dependency:
+		if service_dependencies.any(func(value: Variant) -> bool: return value == null):
+			return false
+		configured = service_panel.configure(progression, tool_system, production) and configured
 	_refresh_header()
 	return configured
 
@@ -95,6 +105,8 @@ func select_tab(tab_id: String) -> bool:
 		tab_buttons[button_id].button_pressed = button_id == selected_tab
 	if selected_tab == "market" and _market_ref != null:
 		market_panel.refresh_snapshot()
+	elif selected_tab == "services" and service_panel != null:
+		service_panel.refresh_services()
 	return true
 
 

@@ -28,6 +28,10 @@ signal production_job_completed(building: BuildingInstance, recipe_id: String, o
 signal production_output_blocked(building: BuildingInstance, recipe_id: String)
 signal production_output_changed(building: BuildingInstance, item_id: String, new_quantity: int)
 signal production_input_changed(building: BuildingInstance, item_id: String, new_quantity: int)
+signal production_maintenance_changed(building: BuildingInstance, due_day: int)
+signal service_unlocked(kind: String, target_id: String)
+signal building_upgrade_changed(building: BuildingInstance, upgrade_id: String, level: int)
+signal tool_durability_changed(tool_id: String, current: int, maximum: int)
 
 # Time signals
 signal season_changed(new_season: int)

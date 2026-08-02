@@ -17,6 +17,7 @@ const BUILDABLE_STATES := [GridCell.State.WASTELAND, GridCell.State.FARMLAND]
 
 var grid_system_ref: GridSystem
 var economy_ref: Variant
+var progression_ref: Variant
 var buildings_container: Node3D
 var _event_bus: Node
 var _in_build_mode := false
@@ -40,12 +41,21 @@ func _ready() -> void:
 		buildings_container = _default_buildings_container
 
 
-func configure(grid_sys: GridSystem, economy: Variant, container: Node3D = null) -> bool:
+func configure(
+	grid_sys: GridSystem,
+	economy: Variant,
+	container: Node3D = null,
+	progression: Variant = null
+) -> bool:
 	grid_system_ref = grid_sys
 	economy_ref = economy
+	progression_ref = progression
 	_ensure_scene_nodes()
 	buildings_container = container if container != null else _default_buildings_container
-	return grid_system_ref != null and economy_ref != null and buildings_container != null
+	return (
+		grid_system_ref != null and economy_ref != null and buildings_container != null
+		and (progression_ref == null or progression_ref.has_method("is_blueprint_unlocked"))
+	)
 
 
 func enter_preview_mode(building: Variant) -> bool:
@@ -174,6 +184,18 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 		unavailable.building_id = resolved.building_id
 		unavailable.grid = Vector2i(gx, gz)
 		return unavailable
+	var managed_blueprint: bool = (
+		progression_ref != null
+		and (
+			not progression_ref.has_method("is_blueprint_managed")
+			or bool(progression_ref.call("is_blueprint_managed", resolved.building_id))
+		)
+	)
+	if managed_blueprint and not bool(progression_ref.call("is_blueprint_unlocked", resolved.building_id)):
+		var locked := _diagnostic(false, "blueprint_locked", "尚未解锁%s蓝图" % resolved.display_name)
+		locked.building_id = resolved.building_id
+		locked.grid = Vector2i(gx, gz)
+		return locked
 	for cell_data in _footprint_cells(resolved, gx, gz):
 		var cell := grid_system_ref.get_cell(cell_data.x, cell_data.y)
 		if cell == null:
