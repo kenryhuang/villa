@@ -408,11 +408,16 @@ static func default_crop_definitions() -> Array[CropData]:
 
 func _grant_new_game_items() -> void:
 	inventory_system.clear()
-	inventory_system.add_item("grain_seed", 20)
-	inventory_system.add_item("wood", 250)
-	inventory_system.add_item("stone", 150)
-	inventory_system.add_item("iron", 50)
-	inventory_system.add_item("glass", 50)
+	inventory_system.add_item("grain_seed", 12)
+	inventory_system.add_item("wood", 30)
+	inventory_system.add_item("stone", 20)
+	inventory_system.add_item("fiber", 10)
+	var game_state = get_node_or_null("/root/GameState")
+	if game_state != null:
+		game_state.gold = 150
+		var event_bus = get_node_or_null("/root/EventBus")
+		if event_bus != null:
+			event_bus.gold_changed.emit(game_state.gold)
 	_map_grain_seed_to_quick_slot()
 
 

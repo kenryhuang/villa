@@ -4,8 +4,7 @@ extends Resource
 const SCENE_PATHS := {
 	"barn": "res://scenes/buildings/barn.tscn",
 	"greenhouse": "res://scenes/buildings/greenhouse.tscn",
-	# Task 13 replaces this generic BuildingInstance scene with dedicated art.
-	"waterwheel": "res://scenes/buildings/workbench.tscn",
+	"waterwheel": "res://scenes/buildings/waterwheel.tscn",
 	"windmill": "res://scenes/buildings/windmill.tscn",
 	"chicken_coop": "res://scenes/buildings/chicken_coop.tscn",
 	"beehive": "res://scenes/buildings/beehive.tscn",

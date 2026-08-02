@@ -212,10 +212,12 @@ func load_game(slot: int = 0) -> bool:
 
 
 func _apply_save_data(data: Dictionary) -> bool:
-	if not _validate_economy_save_data(data):
+	var migrated_data := _migrate_save_data(data)
+	if not _validate_economy_save_data(migrated_data):
 		return false
-	if not _apply_economy_save_data(data):
+	if not _apply_economy_save_data(migrated_data):
 		return false
+	data = migrated_data
 
 	# 游戏状态
 	var game_state = get_node_or_null("/root/GameState")
@@ -438,6 +440,9 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 	var orders_before: Dictionary = {}
 	if _has_valid_order_configuration():
 		orders_before = _economy_system.call("to_dict")
+	var resources_before: Array = []
+	if _has_valid_resource_configuration():
+		resources_before = _resource_world.call("to_resource_dicts")
 	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
 	var applied := true
 	if data.has("economy_version"):
@@ -462,6 +467,8 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			applied = bool(_npc_economy_system.call("reset_to_profile_defaults", loaded_day))
 		if applied and _has_valid_order_configuration():
 			applied = bool(_economy_system.call("reset_order_state", loaded_day))
+	if applied:
+		applied = _apply_resource_save_data(data, loaded_day)
 	if not applied:
 		_market_system.call("from_dict", market_before)
 		_daily_simulation_system.set("last_simulated_day", daily_before)
@@ -469,18 +476,50 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 			_npc_economy_system.call("from_dict", npc_before)
 		if _has_valid_order_configuration() and not orders_before.is_empty():
 			_economy_system.call("from_dict", orders_before)
+		if _has_valid_resource_configuration() and not resources_before.is_empty():
+			_resource_world.call("restore_resource_dicts", resources_before, daily_before)
 		return false
-	_apply_resource_save_data(data, loaded_day)
 	return true
 
 
-func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> void:
+func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> bool:
 	if not _has_valid_resource_configuration():
-		return
+		return true
 	if data.has("resource_nodes"):
-		_resource_world.call("restore_resource_dicts", data["resource_nodes"], loaded_day)
+		return bool(_resource_world.call(
+			"restore_resource_dicts",
+			data["resource_nodes"],
+			loaded_day
+		))
 	else:
 		_resource_world.call("initialize_resources_at_day", loaded_day)
+	return true
+
+
+func _migrate_save_data(data: Dictionary) -> Dictionary:
+	var migrated := data.duplicate(true)
+	var inventory_value: Variant = migrated.get("inventory")
+	if not inventory_value is Dictionary:
+		return migrated
+	var slots_value: Variant = (inventory_value as Dictionary).get("slots")
+	if not slots_value is Array:
+		return migrated
+	for index in range((slots_value as Array).size()):
+		var slot_value: Variant = (slots_value as Array)[index]
+		if not slot_value is Dictionary:
+			continue
+		var item_id := str((slot_value as Dictionary).get("item_id", ""))
+		var definition: Variant = GameDataScript.get_item(item_id)
+		if not definition is Dictionary:
+			continue
+		var replacement := str((definition as Dictionary).get("migrate_to", ""))
+		if replacement.is_empty() or GameDataScript.get_item(replacement) == null:
+			continue
+		(slot_value as Dictionary)["item_id"] = replacement
+		(slots_value as Array)[index] = slot_value
+	(inventory_value as Dictionary)["slots"] = slots_value
+	migrated["inventory"] = inventory_value
+	return migrated
 
 
 func _has_valid_economy_configuration() -> bool:
