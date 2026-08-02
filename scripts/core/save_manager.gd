@@ -370,11 +370,13 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 	):
 		return false
 	if data.has("resource_nodes"):
+		var loaded_day := int(data.get("total_days", data["last_simulated_day"]))
 		if (
 			not _has_valid_resource_configuration()
 			or not bool(_resource_world.call(
 				"validate_resource_dicts",
-				data["resource_nodes"]
+				data["resource_nodes"],
+				loaded_day
 			))
 		):
 			return false

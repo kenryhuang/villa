@@ -80,7 +80,7 @@ class ResourceWorldDouble:
 		"resource_id": "rock-00",
 		"position": [1.0, 0.0, 2.0],
 		"hits_remaining": 2,
-		"respawn_day": -1,
+		"respawn_day": 0,
 	}]
 	var restored: Array = []
 	var initialized_days: Array[int] = []
@@ -88,7 +88,7 @@ class ResourceWorldDouble:
 	func to_resource_dicts() -> Array[Dictionary]:
 		return records.duplicate(true)
 
-	func validate_resource_dicts(value: Variant) -> bool:
+	func validate_resource_dicts(value: Variant, _loaded_day: int = -1) -> bool:
 		return value is Array
 
 	func restore_resource_dicts(value: Variant, _loaded_day: int) -> bool:
@@ -174,8 +174,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_atomic_capacity_and_bonus(assertions, tree, resource_script)
 	_test_json_state_contract(assertions, resource_script)
 	_test_stable_world_generation_and_restore(assertions)
+	_test_real_water_and_riverbank_adjacency(assertions, tree)
 	_test_player_target_routing(assertions, tree)
 	_test_save_and_legacy_initialization(assertions, tree)
+	_test_calendar_coherent_resource_snapshots(assertions, tree)
 	_test_daily_coordinator_owns_resource_advance(assertions)
 
 
@@ -381,6 +383,58 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	world.free()
 
 
+func _test_real_water_and_riverbank_adjacency(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var main_scene := load("res://scenes/main.tscn") as PackedScene
+	assertions.truthy(main_scene != null, "fresh Main loads for resource-water integration")
+	if main_scene == null:
+		return
+	var main: Variant = main_scene.instantiate()
+	main.set("load_save_on_start", false)
+	tree.root.add_child(main)
+	var water_cells: Array[GridCell] = []
+	for gz in range(GridSystem.GRID_DEPTH):
+		for gx in range(GridSystem.GRID_WIDTH):
+			var cell: GridCell = main.grid_system.get_cell(gx, gz)
+			if cell.state == GridCell.State.WATER:
+				water_cells.append(cell)
+	assertions.truthy(not water_cells.is_empty(), "fresh Main initializes positive WATER cells")
+	var water_container: Node = main.world.get_node_or_null("Water")
+	assertions.truthy(water_container != null, "world scene exposes deterministic Water container")
+	var blocked_regions: Variant = (
+		main.world.call("get_blocked_regions")
+		if main.world.has_method("get_blocked_regions")
+		else []
+	)
+	assertions.truthy(
+		blocked_regions is Array and not blocked_regions.is_empty(),
+		"world exposes fixed blocked water regions"
+	)
+	if water_container != null and blocked_regions is Array:
+		assertions.equal(
+			water_container.get_child_count(),
+			blocked_regions.size(),
+			"water mesh fallback covers every fixed region"
+		)
+	for definition in GameWorldScript.generated_resource_definitions():
+		if str(definition.zone) != "riverbank":
+			continue
+		var point3: Vector3 = definition.position
+		var point := Vector2(point3.x, point3.z)
+		var nearest := INF
+		for water_cell in water_cells:
+			var center: Vector2 = water_cell.world_position()
+			var water_rect := Rect2(center - Vector2(0.5, 0.5), Vector2.ONE)
+			nearest = minf(nearest, _distance_to_rect(point, water_rect))
+		assertions.truthy(
+			nearest <= 0.75,
+			"riverbank node %s is geometrically adjacent to WATER" % definition.resource_id
+		)
+	main.free()
+
+
 func _test_player_target_routing(assertions: TestAssert, tree: SceneTree) -> void:
 	var tools := ToolDouble.new()
 	var building := BuildingDouble.new()
@@ -428,6 +482,66 @@ func _test_save_and_legacy_initialization(assertions: TestAssert, tree: SceneTre
 	assertions.equal(world.initialized_days, [6], "old save initializes resources at loaded day without replay")
 	manager.free()
 	market.free()
+
+
+func _test_calendar_coherent_resource_snapshots(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var world: Variant = GameWorldScript.new()
+	var container := Node3D.new()
+	container.name = "ResourceNodes"
+	world.add_child(container)
+	world.call("generate_resource_nodes")
+	var market := MarketSystemScript.new()
+	var daily := DailyDouble.new()
+	var manager := SaveManagerScript.new()
+	tree.root.add_child(manager)
+	assertions.truthy(market.configure([_wood_definition()]), "calendar save market configures")
+	assertions.truthy(
+		bool(manager.call("configure_economy", market, daily, null, world)),
+		"calendar save manager accepts real resource world"
+	)
+	var before_resources: Array[Dictionary] = world.call("to_resource_dicts")
+	var stale_resources := before_resources.duplicate(true)
+	var stale_record: Dictionary = stale_resources[0]
+	stale_record["hits_remaining"] = 0
+	stale_record["respawn_day"] = 3
+	stale_resources[0] = stale_record
+	var saved_market: Dictionary = market.to_dict()
+	saved_market["last_settled_day"] = 10
+	var stale_save := {
+		"economy_version": 1,
+		"market": saved_market,
+		"last_simulated_day": 10,
+		"total_days": 10,
+		"resource_nodes": stale_resources,
+	}
+	assertions.truthy(
+		not manager._apply_save_data(stale_save),
+		"depleted resource with elapsed respawn day rejects save"
+	)
+	assertions.equal(world.call("to_resource_dicts"), before_resources, "stale resource save applies no world mutation")
+	assertions.equal(market.last_settled_day, 0, "stale resource save applies no market mutation")
+	assertions.equal(daily.last_simulated_day, 0, "stale resource save applies no day mutation")
+
+	var future_resources := before_resources.duplicate(true)
+	var future_record: Dictionary = future_resources[0]
+	future_record["hits_remaining"] = 0
+	future_record["respawn_day"] = 12
+	future_resources[0] = future_record
+	var future_save := stale_save.duplicate(true)
+	future_save["resource_nodes"] = future_resources
+	assertions.truthy(manager._apply_save_data(future_save), "future coherent respawn state loads")
+	assertions.equal(daily.last_simulated_day, 10, "valid resource save restores loaded day")
+	assertions.equal(
+		int((world.call("to_resource_dicts") as Array)[0].respawn_day),
+		12,
+		"valid future respawn boundary is preserved"
+	)
+	manager.free()
+	market.free()
+	world.free()
 
 
 func _test_daily_coordinator_owns_resource_advance(assertions: TestAssert) -> void:
@@ -494,3 +608,9 @@ func _wood_definition() -> Dictionary:
 		"daily_liquidity": 30,
 		"volatility": "essential",
 	}
+
+
+func _distance_to_rect(point: Vector2, rect: Rect2) -> float:
+	var dx := maxf(maxf(rect.position.x - point.x, point.x - rect.end.x), 0.0)
+	var dz := maxf(maxf(rect.position.y - point.y, point.y - rect.end.y), 0.0)
+	return Vector2(dx, dz).length()

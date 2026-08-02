@@ -13,7 +13,7 @@ const OBSTACLE_LAYER := 16
 
 var visual_kind := "rock"
 var _max_hits := 3
-var _respawn_day := -1
+var _respawn_day := 0
 var _last_advanced_day := 0
 
 
@@ -50,7 +50,7 @@ func configure_resource(definition: Dictionary) -> bool:
 	bonus_table = _normalized_bonus_table(next_bonus)
 	position = next_position
 	visual_kind = str(definition.get("visual_kind", "rock"))
-	_respawn_day = -1
+	_respawn_day = 0
 	_last_advanced_day = 0
 	_set_gather_active(true)
 	return true
@@ -97,17 +97,17 @@ func advance_day(total_day: int) -> bool:
 	if total_day < 0 or total_day <= _last_advanced_day:
 		return false
 	_last_advanced_day = total_day
-	if hits_remaining > 0 or _respawn_day < 0 or total_day < _respawn_day:
+	if hits_remaining > 0 or _respawn_day <= 0 or total_day < _respawn_day:
 		return false
 	hits_remaining = _max_hits
-	_respawn_day = -1
+	_respawn_day = 0
 	_set_gather_active(true)
 	return true
 
 
 func initialize_at_day(total_day: int) -> void:
 	hits_remaining = _max_hits
-	_respawn_day = -1
+	_respawn_day = 0
 	_last_advanced_day = maxi(total_day, 0)
 	_set_gather_active(true)
 
@@ -132,7 +132,7 @@ func to_dict() -> Dictionary:
 	}
 
 
-func validate_state_dict(data: Variant) -> bool:
+func validate_state_dict(data: Variant, loaded_day: int = -1) -> bool:
 	if not data is Dictionary:
 		return false
 	for field in ["resource_id", "position", "hits_remaining", "respawn_day"]:
@@ -152,11 +152,16 @@ func validate_state_dict(data: Variant) -> bool:
 		return false
 	var saved_hits := int(data.hits_remaining)
 	var saved_respawn := int(data.respawn_day)
-	if saved_hits < 0 or saved_hits > _max_hits or saved_respawn < -1:
+	if saved_hits < 0 or saved_hits > _max_hits or saved_respawn < 0:
 		return false
-	if saved_hits == 0 and saved_respawn < 0:
+	if saved_hits == 0 and saved_respawn <= 0:
 		return false
-	if saved_hits > 0 and saved_respawn != -1:
+	if saved_hits > 0 and saved_respawn != 0:
+		return false
+	if loaded_day >= 0 and saved_hits == 0 and (
+		saved_respawn <= loaded_day
+		or saved_respawn > loaded_day + respawn_days
+	):
 		return false
 	return true
 

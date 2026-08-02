@@ -160,7 +160,7 @@ func _connect_systems() -> bool:
 		var route: Array[Dictionary] = []
 		for point in RoadBuilder.MAIN_ROUTE:
 			route.append(point.duplicate())
-		grid_system.configure(terrain, route)
+		grid_system.configure(terrain, route, world.get_blocked_regions())
 
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))

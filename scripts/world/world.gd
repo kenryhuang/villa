@@ -3,17 +3,24 @@ extends Node3D
 
 const ResourceNodeScript = preload("res://scripts/world/resource_node.gd")
 const WORLD_GENERATION_SEED := 0x56494c4c41
+const WATER_REGIONS: Array[Rect2] = [
+	Rect2(-16.0, -5.0, 1.0, 10.0),
+	Rect2(15.0, -5.0, 1.0, 10.0),
+]
+const WATER_SURFACE_LIFT := 0.035
 
 @onready var terrain: TerrainBuilder = $Terrain
 @onready var road: RoadBuilder = $Road
 @onready var vegetation: VegetationBuilder = $Vegetation
 @onready var resource_nodes: Node3D = $ResourceNodes
+@onready var water: Node3D = $Water
 
 
 func _ready() -> void:
 	if not terrain.build():
 		push_error("World initialization stopped because terrain failed")
 		return
+	_build_water_fallback()
 	road.build(terrain)
 	var route: Array[Dictionary] = []
 	for point in RoadBuilder.MAIN_ROUTE:
@@ -30,6 +37,16 @@ func get_bounds() -> Rect2:
 	return Rect2(-17.2, -13.2, 34.4, 26.4)
 
 
+func get_blocked_regions() -> Array[Dictionary]:
+	var regions: Array[Dictionary] = []
+	for rect in WATER_REGIONS:
+		regions.append({
+			"state": GridCell.State.WATER,
+			"rect": rect,
+		})
+	return regions
+
+
 static func generated_resource_definitions(
 	seed: int = WORLD_GENERATION_SEED
 ) -> Array[Dictionary]:
@@ -40,10 +57,10 @@ static func generated_resource_definitions(
 		{"id": "rock-copper-01", "zone": "wasteland", "kind": "rock", "x": 12.3, "z": -7.5, "yield": {"stone": 2}, "bonus": [{"item_id": "copper_ore", "quantity": 1, "every_hits": 2, "offset": 1}]},
 		{"id": "rock-iron-00", "zone": "wasteland", "kind": "rock", "x": -14.0, "z": 2.6, "yield": {"stone": 2}, "bonus": [{"item_id": "iron_ore", "quantity": 1, "every_hits": 3, "offset": 2}]},
 		{"id": "rock-iron-01", "zone": "wasteland", "kind": "rock", "x": 14.2, "z": 3.3, "yield": {"stone": 2}, "bonus": [{"item_id": "iron_ore", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "river-clay-00", "zone": "riverbank", "kind": "clay", "x": -15.1, "z": -1.8, "yield": {"clay": 2}, "bonus": []},
-		{"id": "river-clay-01", "zone": "riverbank", "kind": "clay", "x": -15.0, "z": 2.0, "yield": {"clay": 2}, "bonus": []},
-		{"id": "river-sand-00", "zone": "riverbank", "kind": "sand", "x": 15.0, "z": -2.2, "yield": {"sand": 2}, "bonus": []},
-		{"id": "river-sand-01", "zone": "riverbank", "kind": "sand", "x": 15.1, "z": 1.7, "yield": {"sand": 2}, "bonus": []},
+		{"id": "river-clay-00", "zone": "riverbank", "kind": "clay", "x": -14.65, "z": -1.8, "yield": {"clay": 2}, "bonus": []},
+		{"id": "river-clay-01", "zone": "riverbank", "kind": "clay", "x": -14.65, "z": 2.0, "yield": {"clay": 2}, "bonus": []},
+		{"id": "river-sand-00", "zone": "riverbank", "kind": "sand", "x": 14.65, "z": -2.2, "yield": {"sand": 2}, "bonus": []},
+		{"id": "river-sand-01", "zone": "riverbank", "kind": "sand", "x": 14.65, "z": 1.7, "yield": {"sand": 2}, "bonus": []},
 	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -98,7 +115,7 @@ func to_resource_dicts() -> Array[Dictionary]:
 	return records
 
 
-func validate_resource_dicts(value: Variant) -> bool:
+func validate_resource_dicts(value: Variant, loaded_day: int = -1) -> bool:
 	if not value is Array:
 		return false
 	var known := {}
@@ -119,7 +136,7 @@ func validate_resource_dicts(value: Variant) -> bool:
 		var gatherable: Variant = known[id]
 		if (
 			not gatherable.has_method("validate_state_dict")
-			or not bool(gatherable.call("validate_state_dict", record))
+			or not bool(gatherable.call("validate_state_dict", record, loaded_day))
 		):
 			return false
 		seen[id] = true
@@ -127,7 +144,7 @@ func validate_resource_dicts(value: Variant) -> bool:
 
 
 func restore_resource_dicts(value: Variant, loaded_day: int = 0) -> bool:
-	if not validate_resource_dicts(value):
+	if not validate_resource_dicts(value, loaded_day):
 		return false
 	var by_id := {}
 	for gatherable in _gatherable_nodes():
@@ -179,3 +196,29 @@ func _collect_gatherables(parent: Node, result: Array[Node]) -> void:
 		):
 			result.append(child)
 		_collect_gatherables(child, result)
+
+
+func _build_water_fallback() -> void:
+	if water == null or water.get_child_count() > 0:
+		return
+	for index in range(WATER_REGIONS.size()):
+		var rect := WATER_REGIONS[index]
+		var mesh_instance := MeshInstance3D.new()
+		mesh_instance.name = "WaterRegion%02d" % index
+		var plane := PlaneMesh.new()
+		plane.size = rect.size
+		mesh_instance.mesh = plane
+		var center := rect.get_center()
+		mesh_instance.position = Vector3(
+			center.x,
+			terrain.get_height_at(center.x, center.y) + WATER_SURFACE_LIFT,
+			center.y
+		)
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(0.24, 0.56, 0.68, 0.72)
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.roughness = 0.35
+		material.metallic = 0.05
+		mesh_instance.material_override = material
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		water.add_child(mesh_instance)
