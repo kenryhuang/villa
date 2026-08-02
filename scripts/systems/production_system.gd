@@ -61,6 +61,7 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 	snapshot["building_id"] = building.building_id
 	snapshot["maintenance_due_day"] = get_maintenance_due_day(building)
 	snapshot["maintenance_paused"] = is_maintenance_overdue(building)
+	snapshot["storage_quantity_capacity"] = _storage_quantity_capacity(building)
 	if bool(snapshot.maintenance_paused) and not snapshot.jobs.is_empty():
 		snapshot.jobs[0].status = "maintenance_paused"
 	return snapshot
@@ -238,12 +239,17 @@ func collect_item(
 
 
 func apply_daily_effects(total_day: int) -> void:
+	if not begin_day(total_day):
+		return
 	if total_day <= _last_daily_effects_day:
 		return
 	_last_daily_effects_day = total_day
-	_refresh_greenhouse_cells()
 	for building in _valid_registered_buildings():
-		if not _building_is_active(building) or not _has_effect(building, "irrigation"):
+		if (
+			not _building_is_active(building)
+			or not _has_effect(building, "irrigation")
+			or is_maintenance_overdue(building)
+		):
 			continue
 		if not is_water_connected(building):
 			continue
@@ -252,10 +258,11 @@ func apply_daily_effects(total_day: int) -> void:
 
 
 func finish_daily_outputs(total_day: int) -> void:
+	if not begin_day(total_day):
+		return
 	if total_day <= _last_finished_outputs_day:
 		return
 	_last_finished_outputs_day = total_day
-	_current_day = total_day
 	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
 			continue
@@ -267,6 +274,16 @@ func sync_clock(hour: int, minute: int) -> bool:
 		return false
 	_last_clock_minutes = hour * 60 + minute
 	_clock_synced = true
+	return true
+
+
+func begin_day(total_day: int) -> bool:
+	if total_day < _current_day or total_day > MAX_SAFE_INTEGER - MAINTENANCE_INTERVAL_DAYS:
+		return false
+	if total_day == _current_day:
+		return true
+	_current_day = total_day
+	_refresh_greenhouse_cells()
 	return true
 
 
@@ -396,6 +413,7 @@ func maintain(
 	if owns_event and _event_bus != null:
 		_event_bus.gold_changed.emit(int(wallet.gold))
 	maintenance_due_days[building_key(building)] = _current_day + MAINTENANCE_INTERVAL_DAYS
+	_refresh_greenhouse_cells()
 	_emit_event("production_maintenance_changed", [building, get_maintenance_due_day(building)])
 	return true
 
@@ -755,9 +773,7 @@ func _can_store_passive_outputs(
 ) -> bool:
 	if not state.can_store_outputs(output):
 		return false
-	var quantity_capacity := int(
-		_effect_config(building).get("storage_quantity_capacity", 0)
-	)
+	var quantity_capacity := _storage_quantity_capacity(building)
 	if quantity_capacity <= 0:
 		return true
 	var stored_quantity := 0
@@ -880,7 +896,11 @@ func _refresh_greenhouse_cells() -> void:
 	var cells: Array = []
 	var seen := {}
 	for building in _valid_registered_buildings():
-		if not _building_is_active(building) or not _has_effect(building, "ignore_season"):
+		if (
+			not _building_is_active(building)
+			or not _has_effect(building, "ignore_season")
+			or is_maintenance_overdue(building)
+		):
 			continue
 		for position in get_greenhouse_cells(building):
 			if not seen.has(position):
@@ -952,15 +972,37 @@ func _advance_building(building: BuildingInstance, minutes: int) -> void:
 		return
 	if is_maintenance_overdue(building):
 		return
-	var remaining := _effective_minutes(building, minutes)
+	for _minute in range(minutes):
+		if not _prepare_running_job(building, state):
+			return
+		_advance_effective_minutes(building, state, _effective_minutes(building, 1))
+
+
+func _prepare_running_job(building: BuildingInstance, state: ProducerState) -> bool:
 	while not state.jobs.is_empty():
 		var job: Dictionary = state.jobs[0]
 		if int(job.remaining_minutes) <= 0:
 			if not _store_completed_job(building, state, job):
-				return
+				return false
 			continue
+		return true
+	return false
+
+
+func _advance_effective_minutes(
+	building: BuildingInstance,
+	state: ProducerState,
+	effective_minutes: int
+) -> void:
+	var remaining := effective_minutes
+	while not state.jobs.is_empty():
+		var job: Dictionary = state.jobs[0]
 		if remaining <= 0:
 			return
+		if int(job.remaining_minutes) <= 0:
+			if not _store_completed_job(building, state, job):
+				return
+			continue
 		job.status = "running"
 		var consumed := mini(remaining, int(job.remaining_minutes))
 		job.remaining_minutes = int(job.remaining_minutes) - consumed
@@ -1099,6 +1141,16 @@ func _apply_saved_upgrades(building: BuildingInstance) -> void:
 func _base_output_capacity(building: BuildingInstance) -> int:
 	var configured := int(_effect_config(building).get("output_capacity", 3))
 	return maxi(configured, 1)
+
+
+func _storage_quantity_capacity(building: BuildingInstance) -> int:
+	var base := int(_effect_config(building).get("storage_quantity_capacity", 0))
+	if base <= 0:
+		return 0
+	var level := 0
+	if _progression_system != null and is_instance_valid(_progression_system):
+		level = int(_progression_system.call("get_upgrade_level", building, "storage"))
+	return base + maxi(level, 0)
 
 
 func _multiplied_counts(counts: Dictionary, multiplier: int) -> Dictionary:

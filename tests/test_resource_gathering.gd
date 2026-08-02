@@ -108,6 +108,9 @@ class ProductionDouble:
 	extends RefCounted
 	var recorder: Recorder
 	func _init(value: Recorder) -> void: recorder = value
+	func begin_day(_day: int) -> bool:
+		recorder.calls.append("production_begin")
+		return true
 	func apply_daily_effects(_day: int) -> void: recorder.calls.append("production_pre")
 	func finish_daily_outputs(_day: int) -> void: recorder.calls.append("production_post")
 
@@ -559,6 +562,7 @@ func _test_daily_coordinator_owns_resource_advance(assertions: TestAssert) -> vo
 	)), "daily coordinator accepts resource advancement dependency")
 	assertions.truthy(daily.run_day(1), "daily coordinator advances resource day")
 	assertions.equal(recorder.calls, [
+		"production_begin",
 		"production_pre",
 		"farming",
 		"production_post",

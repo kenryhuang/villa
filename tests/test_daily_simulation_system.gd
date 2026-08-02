@@ -12,6 +12,10 @@ class ProductionDouble:
 	func _init(recorded_calls: Array) -> void:
 		calls = recorded_calls
 
+	func begin_day(day: int) -> bool:
+		calls.append("production.begin:%d" % day)
+		return true
+
 	func apply_daily_effects(day: int) -> void:
 		calls.append("production.apply:%d" % day)
 
@@ -150,6 +154,7 @@ func _test_exact_order_and_idempotence(assertions: TestAssert) -> void:
 	)
 	assertions.truthy(daily.run_day(2), "new day is simulated")
 	assertions.equal(calls, [
+		"production.begin:2",
 		"production.apply:2",
 		"farming.grow:2",
 		"production.finish:2",

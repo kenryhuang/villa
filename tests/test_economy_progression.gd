@@ -178,6 +178,10 @@ func _test_unlock_gates_and_strict_state(assertions: TestAssert, wallet: Node) -
 	var recipe_without_station := saved.duplicate(true)
 	recipe_without_station.unlocked_recipes.append("flour")
 	assertions.truthy(not restored.from_dict(recipe_without_station), "recipe without unlocked station blueprint rejects")
+	var unobtainable_high_tier := saved.duplicate(true)
+	unobtainable_high_tier.unlocked_recipes.append("jewelry")
+	assertions.truthy(not restored.from_dict(unobtainable_high_tier), "unobtainable high-tier recipe injection rejects")
+	assertions.equal(restored.to_dict(), before_bad, "unobtainable recipe rejection is atomic")
 
 
 func _test_tool_durability_and_atomic_repair(assertions: TestAssert, wallet: Node) -> void:
@@ -273,7 +277,8 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.truthy(progression.configure(tool, production, inventory, day, wallet), "upkeep fixture configures")
 	var unlocked_fixture: Dictionary = progression.to_dict()
 	unlocked_fixture.unlocked_blueprints.append("windmill")
-	unlocked_fixture.unlocked_recipes.append("flour")
+	for recipe_id in ["flour", "animal_feed", "sunflower_oil"]:
+		unlocked_fixture.unlocked_recipes.append(recipe_id)
 	assertions.truthy(progression.from_dict(unlocked_fixture), "upkeep fixture unlocks its windmill recipe")
 	production.set_progression_system(progression)
 	var windmill := _building("windmill", 3, 4)
@@ -314,6 +319,32 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.equal(windmill.producer_state.max_queue_slots, queue_before + 1, "queue upgrade adds one slot")
 	assertions.equal(windmill.producer_state.output_capacity, capacity_before + 1, "storage upgrade adds one slot")
 	assertions.equal(progression.get_upgrade_level(windmill, "speed"), 1, "speed level is owned by progression")
+	var hive := _building("beehive", 13, 14)
+	hive.producer_state.outputs = {"honey": 6}
+	assertions.truthy(production.register_building(hive), "passive storage fixture registers hive")
+	var hive_storage_quote: Dictionary = progression.get_upgrade_quote(hive, "storage")
+	wallet.gold = 1000
+	_give_cost(inventory, hive_storage_quote.materials)
+	assertions.truthy(progression.upgrade(hive, "storage"), "passive producer storage upgrade succeeds")
+	assertions.equal(int(production.get_building_snapshot(hive).get("storage_quantity_capacity", 0)), 7, "passive storage snapshot exposes upgraded quantity capacity")
+	production.finish_daily_outputs(4)
+	assertions.equal(hive.producer_state.outputs, {"honey": 7}, "storage upgrade stores more of an existing passive output item")
+	var speed_fixture := _building("windmill", 23, 24)
+	assertions.truthy(production.register_building(speed_fixture), "idle speed-credit fixture registers")
+	var speed_quote: Dictionary = progression.get_upgrade_quote(speed_fixture, "speed")
+	wallet.gold = 1000
+	_give_cost(inventory, speed_quote.materials)
+	assertions.truthy(progression.upgrade(speed_fixture, "speed"), "idle speed-credit fixture upgrades")
+	speed_fixture.producer_state.jobs = [{
+		"recipe_id": "flour", "batches": 1, "remaining_minutes": 1, "status": "running",
+	}]
+	production.advance_minutes(3)
+	assertions.truthy(speed_fixture.producer_state.jobs.is_empty(), "one-minute job completes during longer advance")
+	assertions.truthy(speed_fixture.producer_state.enqueue_job({
+		"recipe_id": "flour", "batches": 1, "remaining_minutes": 10, "status": "queued",
+	}), "next speed-credit job queues")
+	production.advance_minutes(1)
+	assertions.equal(int(speed_fixture.producer_state.jobs[0].remaining_minutes), 9, "idle minutes grant no speed credit to the next job")
 	var before_tick_speed := int(windmill.producer_state.jobs[0].remaining_minutes)
 	for _tick in range(4):
 		production.advance_minutes(1)
@@ -331,6 +362,7 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	var restored = _track(ProgressionScript.new())
 	assertions.truthy(restored.from_dict(saved_progression), "per-building stable upgrades persist")
 	assertions.equal(restored.get_upgrade_level(windmill, "queue_slots"), 1, "queue level restores by stable building key")
+	assertions.equal(restored.get_upgrade_level(hive, "storage"), 1, "passive quantity storage level persists by building key")
 	_assert_assets(assertions, after_upgrade, wallet, inventory, "progression serialization")
 
 	var maintenance_saved: Dictionary = production.to_dict()
@@ -415,7 +447,8 @@ func _test_save_json_round_trip_atomic_rejection_and_legacy(
 	tool.from_dict(damaged)
 	var progress_saved: Dictionary = progression.to_dict()
 	progress_saved.unlocked_blueprints.append("windmill")
-	progress_saved.unlocked_recipes.append("flour")
+	for recipe_id in ["flour", "animal_feed", "sunflower_oil"]:
+		progress_saved.unlocked_recipes.append(recipe_id)
 	assertions.truthy(progression.from_dict(progress_saved), "save fixture owns valid progression")
 	var gathered: Dictionary = manager._gather_save_data()
 	assertions.equal(gathered.get("economy_version"), 1, "new upkeep remains in economy version one")

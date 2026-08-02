@@ -40,7 +40,7 @@ func configure(
 		return false
 	if production_system != null and not _has_methods(
 		production_system,
-		["apply_daily_effects", "finish_daily_outputs"]
+		["begin_day", "apply_daily_effects", "finish_daily_outputs"]
 	):
 		return false
 	if npc_economy_system != null and not _has_methods(npc_economy_system, ["simulate_day"]):
@@ -69,6 +69,8 @@ func run_day(day: int) -> bool:
 	if not bool(_market_system.call("can_settle_day", day)):
 		return false
 	if _production_system != null:
+		if not bool(_production_system.call("begin_day", day)):
+			return false
 		_production_system.call("apply_daily_effects", day)
 	_farming_system.call("on_day_changed", day)
 	if _production_system != null:

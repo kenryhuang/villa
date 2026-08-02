@@ -33,6 +33,17 @@ class EconomyDouble:
 		return true
 
 
+class WalletDouble:
+	extends RefCounted
+	var gold := 100
+
+	func spend_gold(amount: int) -> bool:
+		if amount <= 0 or gold < amount:
+			return false
+		gold -= amount
+		return true
+
+
 class FailingAddInventory:
 	extends InventorySystem
 	var add_calls := 0
@@ -51,6 +62,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_beehive_flowers_and_storage_pause(assertions)
 	_test_coop_feed_is_atomic(assertions)
 	_test_waterwheel_geometry_and_daily_order(assertions)
+	_test_maintenance_disables_and_restores_daily_coverage(assertions)
 	_test_waterwheel_placement_rule(assertions, tree)
 	_test_greenhouse_mapping_and_season_protection(assertions)
 	_test_barn_collection_is_atomic(assertions)
@@ -187,6 +199,39 @@ func _test_waterwheel_geometry_and_daily_order(assertions: TestAssert) -> void:
 	var well := _building("well", 3, 3, false)
 	production.register_building(well)
 	assertions.equal(production.get_irrigated_cells(well), [], "well remains a manual water source")
+
+
+func _test_maintenance_disables_and_restores_daily_coverage(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var farming := _farming(grid)
+	var production := _production(grid, farming)
+	var wheel := _building("waterwheel", 10, 10, false)
+	var greenhouse := _building("greenhouse", 20, 20, false)
+	grid.get_cell(9, 10).state = GridCell.State.WATER
+	var irrigated := grid.get_cell(14, 10)
+	irrigated.state = GridCell.State.FARMLAND
+	production.register_building(wheel)
+	production.register_building(greenhouse)
+	assertions.truthy(production.set_maintenance_due_day(wheel, 2), "wheel maintenance fixture sets due day")
+	assertions.truthy(production.set_maintenance_due_day(greenhouse, 2), "greenhouse maintenance fixture sets due day")
+	production.apply_daily_effects(1)
+	assertions.truthy(irrigated.watered, "waterwheel coverage remains active before due day")
+	var greenhouse_cell := production.get_greenhouse_cells(greenhouse)[0]
+	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "greenhouse coverage remains active before due day")
+	farming.on_day_changed(1)
+	irrigated.watered = false
+	production.apply_daily_effects(2)
+	assertions.truthy(not irrigated.watered, "waterwheel coverage stops on maintenance due day")
+	assertions.truthy(not farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "greenhouse season coverage stops on maintenance due day")
+	var inventory := _inventory()
+	inventory.add_item("wood", 2)
+	inventory.add_item("stone", 2)
+	var wallet := WalletDouble.new()
+	assertions.truthy(production.maintain(wheel, wallet, inventory), "overdue waterwheel maintenance succeeds")
+	assertions.truthy(production.maintain(greenhouse, wallet, inventory), "overdue greenhouse maintenance succeeds")
+	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "maintenance immediately restores greenhouse coverage")
+	production.apply_daily_effects(3)
+	assertions.truthy(irrigated.watered, "maintenance restores waterwheel coverage next day")
 
 
 func _test_waterwheel_placement_rule(assertions: TestAssert, tree: SceneTree) -> void:

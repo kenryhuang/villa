@@ -489,13 +489,23 @@ func _parse_dict(data: Dictionary) -> Variant:
 		if not value is String or RecipeDatabaseScript.get_recipe(value).is_empty() or recipes.has(value):
 			return null
 		recipes[value] = true
+	var required_recipes := {}
+	var obtainable_recipes := {}
 	for recipe in RecipeDatabaseScript.get_all_recipes():
-		if int(recipe.get("unlock_tier", -1)) == 0 and str(recipe.get("station", "")) in TIER_ZERO_BLUEPRINTS:
-			if not recipes.has(str(recipe.id)):
-				return null
+		var station := str(recipe.get("station", ""))
+		if blueprints.has(station) and int(recipe.get("unlock_tier", -1)) <= int(BLUEPRINT_TIERS[station]):
+			required_recipes[str(recipe.id)] = true
+			obtainable_recipes[str(recipe.id)] = true
+	for definition in RECIPE_SERVICES.values():
+		var recipe_id := str((definition as Dictionary).target_id)
+		var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
+		if blueprints.has(str(recipe.get("station", ""))):
+			obtainable_recipes[recipe_id] = true
+	for recipe_id in required_recipes:
+		if not recipes.has(recipe_id):
+			return null
 	for recipe_id in recipes:
-		var recipe := RecipeDatabaseScript.get_recipe(str(recipe_id))
-		if not blueprints.has(str(recipe.get("station", ""))):
+		if not obtainable_recipes.has(recipe_id):
 			return null
 	var upgrades := {}
 	for record_value in data.upgrade_levels:
