@@ -1,0 +1,422 @@
+extends RefCounted
+
+const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
+const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
+const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
+const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
+const BuildingDataScript = preload("res://scripts/data/building_data.gd")
+const GameDataScript = preload("res://scripts/core/game_data.gd")
+const BUILDING_SYSTEM_SCENE = preload("res://scenes/systems/building_system.tscn")
+const BUILD_UI_SCENE = preload("res://scenes/ui/build_ui.tscn")
+
+const ADVANCED_SCENE_IDS := [
+	"stone_kiln",
+	"furnace",
+	"food_workshop",
+	"textile_machine",
+	"lumberyard",
+	"quarry",
+	"mine",
+]
+
+var _owned_nodes: Array[Node] = []
+
+
+class EconomyDouble:
+	extends RefCounted
+
+	func has_resources(_cost: Dictionary) -> bool:
+		return true
+
+	func spend_resources(_cost: Dictionary) -> bool:
+		return true
+
+
+class FailingAddInventory:
+	extends InventorySystem
+	var add_calls := 0
+	var fail_on_call := 2
+
+	func add_item(item_id: String, quantity: int = 1) -> bool:
+		add_calls += 1
+		var result := super.add_item(item_id, quantity)
+		return false if add_calls == fail_on_call else result
+
+
+func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_owned_nodes.clear()
+	_test_passive_output_helper(assertions)
+	_test_beehive_flowers_and_storage_pause(assertions)
+	_test_coop_feed_is_atomic(assertions)
+	_test_waterwheel_geometry_and_daily_order(assertions)
+	_test_waterwheel_placement_rule(assertions, tree)
+	_test_greenhouse_mapping_and_season_protection(assertions)
+	_test_barn_collection_is_atomic(assertions)
+	_test_deterministic_resource_outputs(assertions)
+	_test_building_definitions_scenes_and_build_ui(assertions, tree)
+	_test_main_production_integration(assertions, tree)
+	_cleanup_nodes()
+
+
+func _test_passive_output_helper(assertions: TestAssert) -> void:
+	var production := _production()
+	assertions.equal(production.passive_output_for("beehive", 1, 4), {}, "beehive rests on odd days")
+	assertions.equal(production.passive_output_for("beehive", 2, 0), {"honey": 1}, "beehive makes base honey every even day")
+	assertions.equal(production.passive_output_for("beehive", 2, 3), {"honey": 1}, "three flowers do not reach hive bonus")
+	assertions.equal(production.passive_output_for("beehive", 2, 4), {"honey": 2, "beeswax": 1}, "four flowers reach capped hive bonus")
+	assertions.equal(production.passive_output_for("beehive", 2, 99), {"honey": 2, "beeswax": 1}, "hive bonus remains capped")
+	assertions.equal(production.passive_output_for("chicken_coop", 3, 0), {"egg": 2}, "coop helper returns approved daily egg output")
+	assertions.equal(production.passive_output_for("well", 2, 0), {}, "manual well has no passive output")
+
+
+func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var farming := _farming(grid)
+	var production := _production(grid, farming)
+	var hive := _building("beehive", 10, 10, true)
+	for position in [Vector2i(14, 10), Vector2i(13, 12), Vector2i(10, 6), Vector2i(7, 8), Vector2i(13, 13)]:
+		_add_mature_flower(grid, position)
+	production.register_building(hive)
+	assertions.equal(production.count_nearby_mature_flowers(hive), 4, "hive counts Euclidean-radius mature flowers and caps at four")
+	production.finish_daily_outputs(2)
+	assertions.equal(hive.producer_state.outputs, {"honey": 2, "beeswax": 1}, "boosted hive output is stored")
+	production.finish_daily_outputs(2)
+	assertions.equal(hive.producer_state.outputs, {"honey": 2, "beeswax": 1}, "same-day hive settlement is idempotent")
+
+	var blocked := _building("beehive", 20, 20, true)
+	blocked.producer_state.output_capacity = 1
+	blocked.producer_state.outputs = {"honey": 1}
+	_add_mature_flower(grid, Vector2i(20, 16))
+	_add_mature_flower(grid, Vector2i(20, 17))
+	_add_mature_flower(grid, Vector2i(20, 18))
+	_add_mature_flower(grid, Vector2i(20, 19))
+	production.register_building(blocked)
+	production.finish_daily_outputs(4)
+	assertions.equal(blocked.producer_state.outputs, {"honey": 1}, "full hive storage pauses the complete output without loss")
+
+
+func _test_coop_feed_is_atomic(assertions: TestAssert) -> void:
+	var production := _production()
+	var fed := _building("chicken_coop", 4, 4, true)
+	fed.producer_state.inputs = {"animal_feed": 2}
+	var hungry := _building("chicken_coop", 8, 4, true)
+	production.register_building(fed)
+	production.register_building(hungry)
+	production.finish_daily_outputs(3)
+	assertions.equal(fed.producer_state.get_input_count("animal_feed"), 1, "fed coop consumes exactly one feed")
+	assertions.equal(fed.producer_state.outputs, {"egg": 2}, "fed coop stores two eggs")
+	assertions.equal(hungry.producer_state.inputs, {}, "hungry coop does not mutate inputs")
+	assertions.equal(hungry.producer_state.outputs, {}, "hungry coop produces nothing")
+
+	var blocked := _building("chicken_coop", 12, 4, true)
+	blocked.producer_state.output_capacity = 1
+	blocked.producer_state.inputs = {"animal_feed": 1}
+	blocked.producer_state.outputs = {"honey": 1}
+	production.register_building(blocked)
+	production.finish_daily_outputs(4)
+	assertions.equal(blocked.producer_state.inputs, {"animal_feed": 1}, "full coop storage pauses before feeding")
+	assertions.equal(blocked.producer_state.outputs, {"honey": 1}, "full coop storage preserves existing output")
+	production.finish_daily_outputs(4)
+	assertions.equal(blocked.producer_state.inputs, {"animal_feed": 1}, "repeat settlement cannot consume paused feed")
+
+	var natural_full_production := _production()
+	var naturally_full := _building("chicken_coop", 16, 4, true)
+	naturally_full.producer_state.inputs = {"animal_feed": 4}
+	natural_full_production.register_building(naturally_full)
+	for day in [1, 2, 3]:
+		natural_full_production.finish_daily_outputs(day)
+	assertions.equal(naturally_full.producer_state.outputs, {"egg": 6}, "coop stores its configured three-day output buffer")
+	assertions.equal(naturally_full.producer_state.inputs, {"animal_feed": 1}, "three stored coop days consume three feed")
+	natural_full_production.finish_daily_outputs(4)
+	assertions.equal(naturally_full.producer_state.outputs, {"egg": 6}, "naturally full coop pauses output")
+	assertions.equal(naturally_full.producer_state.inputs, {"animal_feed": 1}, "naturally full coop pauses before feeding")
+
+
+func _test_waterwheel_geometry_and_daily_order(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var farming := _farming(grid)
+	var production := _production(grid, farming)
+	var wheel := _building("waterwheel", 10, 10, false)
+	grid.get_cell(9, 10).state = GridCell.State.WATER
+	var near := grid.get_cell(14, 10)
+	near.state = GridCell.State.FARMLAND
+	var crop_data := CropData.new()
+	crop_data.crop_id = "test_crop"
+	crop_data.growth_days = 3
+	crop_data.seasons.assign([SeasonSystem.Season.SPRING])
+	crop_data.stage_textures.assign(["seed", "mature"])
+	near.crop_instance = CropInstance.new()
+	near.crop_instance.crop_data = crop_data
+	near.state = GridCell.State.PLANTED
+	var distant := grid.get_cell(15, 10)
+	distant.state = GridCell.State.FARMLAND
+	production.register_building(wheel)
+	assertions.truthy(production.is_water_connected(wheel), "waterwheel detects an orthogonally bordering water cell")
+	var irrigated: Array = production.get_irrigated_cells(wheel)
+	assertions.truthy(irrigated.has(Vector2i(14, 10)), "Euclidean radius four includes near valid farm cell")
+	assertions.truthy(not irrigated.has(Vector2i(15, 10)), "Euclidean radius four excludes distant farm cell")
+	production.apply_daily_effects(2)
+	assertions.truthy(near.watered and near.crop_instance.is_watered_today, "waterwheel waters planted cells before growth")
+	assertions.truthy(not distant.watered, "waterwheel leaves distant cells dry")
+	farming.on_day_changed(2)
+	assertions.near(near.crop_instance.growth_progress, 1.5, 0.001, "waterwheel irrigation affects same-day crop growth")
+	production.apply_daily_effects(2)
+	assertions.truthy(not near.watered, "same-day effect replay is idempotent after farming clears water")
+	var well := _building("well", 3, 3, false)
+	production.register_building(well)
+	assertions.equal(production.get_irrigated_cells(well), [], "well remains a manual water source")
+
+
+func _test_waterwheel_placement_rule(assertions: TestAssert, tree: SceneTree) -> void:
+	var grid := _grid()
+	var building_system := _track(BUILDING_SYSTEM_SCENE.instantiate()) as BuildingSystem
+	tree.root.add_child(building_system)
+	assertions.truthy(building_system.configure(grid, EconomyDouble.new()), "waterwheel placement fixture configures")
+	assertions.truthy(not building_system.can_place("waterwheel", 10, 10), "waterwheel placement rejects land without bordering water")
+	grid.get_cell(9, 10).state = GridCell.State.WATER
+	assertions.truthy(building_system.can_place("waterwheel", 10, 10), "waterwheel placement accepts orthogonally bordering water")
+	var placed := building_system.place_building_by_id("waterwheel", 10, 10)
+	assertions.truthy(placed != null, "waterwheel procedural fallback can be instantiated")
+	if placed != null:
+		var saved := placed.to_dict()
+		building_system.remove_building(placed)
+		grid.get_cell(9, 10).state = GridCell.State.WASTELAND
+		assertions.equal(building_system.restore_buildings([saved]), 0, "waterwheel restore rejects a location that no longer borders water")
+	assertions.truthy(not building_system.can_place("waterwheel", 0, 0), "waterwheel footprint at map edge still needs a valid border")
+
+
+func _test_greenhouse_mapping_and_season_protection(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var season := _track(SeasonSystem.new()) as SeasonSystem
+	season.current_season = SeasonSystem.Season.WINTER
+	var farming := _track(FarmingSystemScript.new()) as FarmingSystem
+	farming.configure(grid, season, null)
+	var production := _production(grid, farming)
+	var greenhouse := _building("greenhouse", 10, 10, false)
+	var wheel := _building("waterwheel", 6, 10, false)
+	grid.get_cell(5, 10).state = GridCell.State.WATER
+	production.register_building(greenhouse)
+	production.register_building(wheel)
+	var mapped: Array = production.get_greenhouse_cells(greenhouse)
+	assertions.equal(mapped.size(), 8, "greenhouse exposes exactly eight deterministic planting cells")
+	var unique := {}
+	for position in mapped:
+		unique[position] = true
+	assertions.equal(unique.size(), 8, "greenhouse planting cell mapping has no duplicates")
+	assertions.equal(mapped, production.get_greenhouse_cells(greenhouse), "greenhouse mapping derives deterministically from coordinates")
+	var protected_cell := grid.get_cell(mapped[0].x, mapped[0].y)
+	protected_cell.state = GridCell.State.FARMLAND
+	var summer_crop := CropData.new()
+	summer_crop.crop_id = "summer_only"
+	summer_crop.growth_days = 2
+	summer_crop.seasons.assign([SeasonSystem.Season.SUMMER])
+	assertions.truthy(farming.can_plant(protected_cell, summer_crop), "greenhouse mapped cells ignore crop seasons")
+	var outdoor := grid.get_cell(20, 20)
+	outdoor.state = GridCell.State.FARMLAND
+	assertions.truthy(not farming.can_plant(outdoor, summer_crop), "outdoor cells still enforce crop seasons")
+	assertions.truthy(production.is_greenhouse_water_connected(greenhouse), "greenhouse reports connection when a waterwheel covers a mapped cell")
+
+	var building_system := _track(BUILDING_SYSTEM_SCENE.instantiate()) as BuildingSystem
+	building_system.configure(grid, EconomyDouble.new())
+	var construction_production := _production()
+	construction_production.configure(grid, farming, building_system, null)
+	var constructing := building_system.place_building_by_id("greenhouse", 20, 10)
+	assertions.truthy(constructing != null, "greenhouse construction fixture is placed")
+	if constructing != null:
+		var construction_cell := grid.get_cell(20, 9)
+		construction_cell.state = GridCell.State.FARMLAND
+		assertions.truthy(not farming.can_plant(construction_cell, summer_crop), "unfinished greenhouse does not grant season protection")
+		constructing.complete_construction()
+		assertions.truthy(farming.can_plant(construction_cell, summer_crop), "greenhouse grants season protection immediately on completion")
+
+
+func _test_barn_collection_is_atomic(assertions: TestAssert) -> void:
+	var production := _production()
+	var barn := _building("barn", 10, 10, false)
+	var hive := _building("beehive", 14, 10, true)
+	var coop := _building("chicken_coop", 10, 15, true)
+	var far := _building("lumberyard", 25, 25, true)
+	hive.producer_state.outputs = {"honey": 2}
+	coop.producer_state.outputs = {"egg": 2}
+	far.producer_state.outputs = {"wood": 3}
+	for building in [barn, hive, coop, far]:
+		production.register_building(building)
+	var one_slot := _inventory(1)
+	assertions.truthy(not production.collect_nearby_outputs(barn, one_slot), "barn preflights the combined player destination")
+	assertions.equal(one_slot.get_slot_count(), 0, "failed barn preflight moves no output")
+	assertions.equal(hive.producer_state.outputs, {"honey": 2}, "failed barn preflight preserves first producer")
+	assertions.equal(coop.producer_state.outputs, {"egg": 2}, "failed barn preflight preserves second producer")
+	var inventory := _inventory(2)
+	assertions.truthy(production.collect_nearby_outputs(barn, inventory), "barn collects all nearby producer output")
+	assertions.equal(inventory.get_item_count("honey"), 2, "barn transfers honey")
+	assertions.equal(inventory.get_item_count("egg"), 2, "barn transfers eggs")
+	assertions.equal(hive.producer_state.outputs, {}, "successful barn collection clears hive")
+	assertions.equal(coop.producer_state.outputs, {}, "successful barn collection clears coop")
+	assertions.equal(far.producer_state.outputs, {"wood": 3}, "barn does not collect distant output")
+
+	var rollback_hive := _building("beehive", 11, 8, true)
+	rollback_hive.producer_state.outputs = {"honey": 1, "beeswax": 1}
+	production.register_building(rollback_hive)
+	var failing := _track(FailingAddInventory.new()) as FailingAddInventory
+	assertions.truthy(not production.collect_nearby_outputs(barn, failing), "barn reports destination mutation failure")
+	assertions.equal(failing.get_slot_count(), 0, "barn rolls back partially added inventory")
+	assertions.equal(rollback_hive.producer_state.outputs, {"honey": 1, "beeswax": 1}, "barn rollback preserves producer outputs")
+
+
+func _test_deterministic_resource_outputs(assertions: TestAssert) -> void:
+	var production := _production()
+	var lumberyard := _building("lumberyard", 2, 2, true)
+	var quarry := _building("quarry", 6, 2, true)
+	var mine := _building("mine", 10, 2, true)
+	mine.data.effect_config.depth_tier = "deep"
+	for building in [lumberyard, quarry, mine]:
+		production.register_building(building)
+	production.finish_daily_outputs(3)
+	var lumber_config: Dictionary = lumberyard.data.effect_config
+	var quarry_config: Dictionary = quarry.data.effect_config
+	var mine_config: Dictionary = mine.data.effect_config
+	assertions.equal(lumberyard.producer_state.outputs, lumber_config.daily_output, "lumberyard daily output comes from its data table")
+	var expected_quarry: Dictionary = quarry_config.daily_output.duplicate(true)
+	if 3 % int(quarry_config.bonus_every_days) == 0:
+		_merge_counts(expected_quarry, quarry_config.bonus_output)
+	assertions.equal(quarry.producer_state.outputs, expected_quarry, "quarry occasional coal is deterministic from day and config")
+	var expected_mine: Dictionary = mine_config.depth_outputs.deep.duplicate(true)
+	if 3 % int(mine_config.deep_bonus_every_days) == 0:
+		_merge_counts(expected_mine, mine_config.deep_bonus_output)
+	assertions.equal(mine.producer_state.outputs, expected_mine, "mine depth-tier ore is deterministic from day and config")
+	var first_result := mine.producer_state.outputs.duplicate(true)
+	production.finish_daily_outputs(3)
+	assertions.equal(mine.producer_state.outputs, first_result, "resource outputs cannot settle twice on one day")
+
+
+func _test_building_definitions_scenes_and_build_ui(assertions: TestAssert, tree: SceneTree) -> void:
+	var game_data := _track(GameDataScript.new())
+	var required_ids := ADVANCED_SCENE_IDS + ["waterwheel"]
+	for id in required_ids:
+		var source: Dictionary = game_data.get_building(id)
+		var data := BuildingDataScript.from_dictionary(source)
+		assertions.truthy(not source.is_empty(), "%s has a GameData definition" % id)
+		assertions.truthy(data.is_valid(), "%s resolves to valid BuildingData" % id)
+		assertions.equal(data.effect_type, str(source.effect), "%s effect agrees across data layers" % id)
+		assertions.equal(data.station_id, str(source.get("station", "")), "%s station agrees across data layers" % id)
+		assertions.equal(data.effect_config, source.get("effect_config", {}), "%s effect config agrees across data layers" % id)
+	assertions.equal(game_data.get_building("waterwheel").footprint_x, 2, "waterwheel width is two cells")
+	assertions.equal(game_data.get_building("waterwheel").footprint_z, 2, "waterwheel depth is two cells")
+	assertions.equal(game_data.get_building("waterwheel").effect, "irrigation", "waterwheel has irrigation effect")
+	for id in ADVANCED_SCENE_IDS:
+		var path: String = BuildingDataScript.SCENE_PATHS[id]
+		var packed := load(path) as PackedScene
+		assertions.truthy(packed != null, "%s scene loads" % id)
+		if packed != null:
+			var instance := packed.instantiate() as BuildingInstance
+			assertions.truthy(instance != null, "%s scene root uses BuildingInstance" % id)
+			if instance != null:
+				assertions.equal(instance.authored_building_id, id, "%s scene authors the matching building id" % id)
+				tree.root.add_child(instance)
+				assertions.equal(instance.building_id, id, "%s scene resolves its authored definition" % id)
+				assertions.truthy(instance.get_node("VisualRoot/FallbackBody").visible, "%s scene has a functional procedural fallback" % id)
+				instance.free()
+	var build_ui := _track(BUILD_UI_SCENE.instantiate()) as BuildUI
+	tree.root.add_child(build_ui)
+	build_ui.open()
+	assertions.equal(build_ui.grid_container.get_child_count(), game_data.get_all_buildings().size(), "scrollable BuildUI enumerates every GameData building")
+	var visible_names := []
+	for card in build_ui.grid_container.get_children():
+		var box := card.get_child(0)
+		if box != null and box.get_child_count() > 0:
+			visible_names.append((box.get_child(0) as Label).text)
+	for id in required_ids:
+		assertions.truthy(visible_names.has(game_data.get_building(id).name), "BuildUI exposes advanced building %s" % id)
+	assertions.equal(VillaHud.BUILDING_NAMES.size(), 9, "nine-slot action palette remains unchanged")
+
+
+func _test_main_production_integration(assertions: TestAssert, tree: SceneTree) -> void:
+	var main_scene := load("res://scenes/main.tscn") as PackedScene
+	var main := _track(main_scene.instantiate())
+	main.load_save_on_start = false
+	tree.root.add_child(main)
+	assertions.truthy(main.production_system is ProductionSystem, "Main instantiates ProductionSystem")
+	assertions.equal(main.daily_simulation_system._production_system, main.production_system, "Main injects production into DailySimulationSystem")
+	assertions.equal(main.production_system._grid_system, main.grid_system, "Main injects grid into production")
+	assertions.equal(main.production_system._farming_system, main.farming_system, "Main injects farming into production")
+	assertions.equal(main.production_system._building_system, main.building_system, "Main injects building registry into production")
+	assertions.equal(main.production_system._inventory_system, main.inventory_system, "Main injects player inventory into production")
+	assertions.truthy(main.production_system._clock_synced, "Main synchronizes the production clock after new/load state")
+	assertions.equal(main.production_system._last_clock_minutes, main.season_system.hour * 60 + main.season_system.minute, "production clock matches restored season time")
+	assertions.equal(main.production_system._last_daily_effects_day, main.season_system.total_days, "Main anchors loaded daily effects against replay")
+	assertions.equal(main.production_system._last_finished_outputs_day, main.season_system.total_days, "Main anchors loaded passive outputs against replay")
+	var event_bus := tree.root.get_node("EventBus")
+	var time_connections := 0
+	for connection in event_bus.time_changed.get_connections():
+		var callback: Callable = connection.get("callable", Callable())
+		if callback.is_valid() and callback.get_object() == main.production_system:
+			time_connections += 1
+	assertions.equal(time_connections, 1, "ProductionSystem owns exactly one time listener")
+
+
+func _production(grid: GridSystem = null, farming: FarmingSystem = null) -> ProductionSystem:
+	var production := _track(ProductionSystemScript.new()) as ProductionSystem
+	if grid != null:
+		production.configure(grid, farming, null, null)
+	return production
+
+
+func _grid() -> GridSystem:
+	return _track(GridSystemScript.new()) as GridSystem
+
+
+func _farming(grid: GridSystem) -> FarmingSystem:
+	var farming := _track(FarmingSystemScript.new()) as FarmingSystem
+	farming.configure(grid, null, null)
+	return farming
+
+
+func _inventory(max_slots: int = 20) -> InventorySystem:
+	var inventory := _track(InventorySystemScript.new()) as InventorySystem
+	inventory.max_slots = max_slots
+	inventory.reset_slots()
+	return inventory
+
+
+func _building(id: String, gx: int, gz: int, with_state: bool) -> BuildingInstance:
+	var building := _track(BuildingInstance.new()) as BuildingInstance
+	building.authored_building_id = id
+	building.data = BuildingDataScript.from_dictionary(GameDataScript.get_building(id))
+	building.grid_x = gx
+	building.grid_z = gz
+	if with_state:
+		building.producer_state = ProducerStateScript.new(id)
+		building.producer_state.output_capacity = int(building.data.effect_config.get("output_capacity", 3))
+	return building
+
+
+func _add_mature_flower(grid: GridSystem, position: Vector2i) -> void:
+	var flower := CropData.new()
+	flower.crop_id = "flower_%d_%d" % [position.x, position.y]
+	flower.category = "flower"
+	flower.growth_days = 1
+	var instance := CropInstance.new()
+	instance.crop_data = flower
+	instance.growth_progress = 1.0
+	var cell := grid.get_cell(position.x, position.y)
+	cell.state = GridCell.State.PLANTED
+	cell.crop_instance = instance
+
+
+func _merge_counts(target: Dictionary, additions: Dictionary) -> void:
+	for item_id in additions:
+		target[item_id] = int(target.get(item_id, 0)) + int(additions[item_id])
+
+
+func _track(node: Node) -> Node:
+	_owned_nodes.append(node)
+	return node
+
+
+func _cleanup_nodes() -> void:
+	for index in range(_owned_nodes.size() - 1, -1, -1):
+		var node := _owned_nodes[index]
+		if is_instance_valid(node):
+			node.free()
+	_owned_nodes.clear()

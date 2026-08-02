@@ -38,7 +38,7 @@ func _test_game_data(assertions: TestAssert) -> void:
 		assertions.truthy(not data.get_item(item_id).is_empty(), item_id + " is registered")
 	assertions.equal(data.get_item("tomato_seed").buy_price, 5, "seed buy price is available")
 	assertions.equal(data.get_item("moonflower").max_stack, 1, "rare item stack limit is one")
-	assertions.equal(data.get_all_buildings().size(), 9, "all buildings are registered")
+	assertions.equal(data.get_all_buildings().size(), 17, "all buildings are registered")
 	assertions.equal(data.get_building("barn").cost.wood, 100, "building resource cost is available")
 	assertions.equal(data.get_all_villagers().size(), 5, "all villagers are registered")
 	assertions.equal(data.get_villager("lao_li").schedule["8-12"], "shop", "villager schedule is available")

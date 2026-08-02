@@ -198,6 +198,16 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 			)
 		if cell.state not in BUILDABLE_STATES:
 			return _cell_state_diagnostic(resolved, gx, gz, cell_data, cell.state)
+	if resolved.effect_type == "irrigation" and not _footprint_borders_water(resolved, gx, gz):
+		return _blocked_diagnostic(
+			resolved,
+			gx,
+			gz,
+			Vector2i(gx, gz),
+			-1,
+			"water_required",
+			"无法建造%s：水车必须紧邻水域" % resolved.display_name
+		)
 	var resources := diagnose_resources(resolved)
 	resources.building_id = resolved.building_id
 	resources.grid = Vector2i(gx, gz)
@@ -374,6 +384,8 @@ func restore_buildings(records: Array) -> int:
 				overlaps_claimed = true
 				break
 		if overlaps_claimed:
+			continue
+		if resolved.effect_type == "irrigation" and not _footprint_borders_water(resolved, gx, gz):
 			continue
 		var packed := load(resolved.scene_path) as PackedScene
 		if packed == null:
@@ -627,6 +639,22 @@ func _footprint_cells(data: BuildingData, gx: int, gz: int) -> Array[Vector2i]:
 		for dx in range(data.footprint.x):
 			result.append(Vector2i(gx + dx, gz + dz))
 	return result
+
+
+func _footprint_borders_water(data: BuildingData, gx: int, gz: int) -> bool:
+	if grid_system_ref == null:
+		return false
+	for x in range(gx, gx + data.footprint.x):
+		for z in [gz - 1, gz + data.footprint.y]:
+			var cell := grid_system_ref.get_cell(x, z)
+			if cell != null and cell.state == GridCell.State.WATER:
+				return true
+	for z in range(gz, gz + data.footprint.y):
+		for x in [gx - 1, gx + data.footprint.x]:
+			var cell := grid_system_ref.get_cell(x, z)
+			if cell != null and cell.state == GridCell.State.WATER:
+				return true
+	return false
 
 
 func _world_position_for(data: BuildingData, gx: int, gz: int) -> Vector3:

@@ -9,6 +9,7 @@ const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tsc
 const DailySimulationSystemScript := preload(
 	"res://scripts/systems/daily_simulation_system.gd"
 )
+const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -36,6 +37,7 @@ var farming_system: FarmingSystem
 var season_system: SeasonSystem
 var economy_system: EconomySystem
 var market_system: MarketSystem
+var production_system: ProductionSystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var building_system: BuildingSystem
@@ -118,6 +120,10 @@ func _initialize_systems() -> void:
 	building_system = BUILDING_SYSTEM_SCENE.instantiate() as BuildingSystem
 	add_child(building_system)
 
+	production_system = ProductionSystemScript.new() as ProductionSystem
+	production_system.name = "ProductionSystem"
+	add_child(production_system)
+
 	tool_system = ToolSystem.new()
 	tool_system.name = "ToolSystem"
 	add_child(tool_system)
@@ -172,6 +178,17 @@ func _connect_systems() -> bool:
 	):
 		return false
 
+	# Building and production share one authoritative registry and player inventory.
+	if not building_system.configure(grid_system, economy_system, buildings_container):
+		return false
+	if not production_system.configure(
+		grid_system,
+		farming_system,
+		building_system,
+		inventory_system
+	):
+		return false
+
 	# SaveManager 与每日协调器共享同一份市场状态
 	if not save_manager.has_method("configure_economy"):
 		return false
@@ -184,7 +201,7 @@ func _connect_systems() -> bool:
 	if not save_manager_configured:
 		return false
 	if not daily_simulation_system.configure(
-		null,
+		production_system,
 		farming_system,
 		null,
 		economy_system,
@@ -192,9 +209,6 @@ func _connect_systems() -> bool:
 		save_manager
 	):
 		return false
-
-	# BuildingSystem 依赖 GridSystem + EconomySystem
-	building_system.configure(grid_system, economy_system, buildings_container)
 
 	# ToolSystem 依赖 GridSystem + InventorySystem + Player
 	tool_system.configure(grid_system, inventory_system, player)
@@ -277,6 +291,9 @@ func _initial_game_state() -> void:
 		market_system.last_settled_day = season_system.total_days
 		daily_simulation_system.last_simulated_day = season_system.total_days
 		_grant_new_game_items()
+	production_system.register_existing_buildings()
+	production_system.sync_daily_cursor(season_system.total_days)
+	production_system.sync_clock(season_system.hour, season_system.minute)
 	farming_system.rebuild_visuals()
 	economy_system.generate_daily_orders()
 	if hud:
