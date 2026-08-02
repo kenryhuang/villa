@@ -74,6 +74,9 @@ func preflight_recipe(
 	if str(recipe.station) != state.station_id:
 		failure.reason = "station_mismatch"
 		return failure
+	if not _building_is_active(building):
+		failure.reason = "building_incomplete"
+		return failure
 	if state.jobs.size() >= state.max_queue_slots:
 		failure.reason = "queue_full"
 		return failure
@@ -175,6 +178,8 @@ func advance_minutes(minutes: int) -> void:
 	for building in _registered_buildings:
 		if not is_instance_valid(building):
 			stale.append(building)
+			continue
+		if not _building_is_active(building):
 			continue
 		_advance_building(building, minutes)
 	for building in stale:

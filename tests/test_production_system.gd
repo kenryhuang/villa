@@ -86,6 +86,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
 	_test_queue_lifecycle(assertions)
+	_test_unfinished_building_lifecycle(assertions)
 	_test_start_failures_are_atomic(assertions)
 	_test_queue_limit_and_output_pause(assertions)
 	_test_collection_is_atomic(assertions)
@@ -187,6 +188,61 @@ func _test_queue_lifecycle(assertions: TestAssert) -> void:
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 0, "multi-batch waits full duration")
 	production.advance_minutes(1)
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 2, "multi-batch stores multiplied output")
+
+
+func _test_unfinished_building_lifecycle(assertions: TestAssert) -> void:
+	var production := _production()
+	var kiln := _building("stone_kiln")
+	kiln.construction_stage = BuildingInstance.ConstructionStage.FOUNDATION
+	var inventory := _inventory()
+	inventory.add_item("wood", 3)
+	var preflight := production.preflight_recipe(kiln, "charcoal", 1, inventory)
+	assertions.truthy(not bool(preflight.ok), "unfinished kiln rejects recipe preflight")
+	assertions.equal(preflight.reason, "building_incomplete", "unfinished recipe rejection identifies construction lifecycle")
+	assertions.truthy(not production.start_recipe(kiln, "charcoal", 1, inventory), "unfinished kiln cannot start charcoal")
+	assertions.equal(inventory.get_item_count("wood"), 3, "unfinished recipe admission consumes no inputs")
+	assertions.equal(kiln.producer_state.jobs.size(), 0, "unfinished recipe admission queues no job")
+	assertions.truthy(not production.get_building_snapshot(kiln).is_empty(), "unfinished producer state remains snapshot-accessible")
+
+	var storage_inventory := _inventory()
+	storage_inventory.add_item("wood", 1)
+	var jobs_before_storage := kiln.producer_state.jobs.duplicate(true)
+	assertions.truthy(production.add_input(kiln, "wood", 1, storage_inventory), "unfinished producer accepts inert input storage")
+	assertions.equal(kiln.producer_state.jobs, jobs_before_storage, "input storage cannot change unfinished producer jobs")
+	kiln.producer_state.outputs = {"charcoal": 1}
+	assertions.truthy(production.collect_all(kiln, storage_inventory), "unfinished producer keeps persisted output recoverable")
+	assertions.equal(storage_inventory.get_item_count("charcoal"), 1, "unfinished output collection reaches player inventory")
+
+	kiln.producer_state.jobs.clear()
+	kiln.construction_stage = BuildingInstance.ConstructionStage.COMPLETE
+	var completed_inventory := _inventory()
+	completed_inventory.add_item("wood", 3)
+	assertions.truthy(production.start_recipe(kiln, "charcoal", 1, completed_inventory), "completed kiln starts the previously blocked recipe")
+	production.advance_minutes(180)
+	assertions.equal(kiln.producer_state.get_output_count("charcoal"), 1, "completed kiln stores charcoal exactly once")
+	assertions.equal(kiln.producer_state.jobs.size(), 0, "completed kiln removes its finished job")
+	production.advance_minutes(180)
+	assertions.equal(kiln.producer_state.get_output_count("charcoal"), 1, "completed kiln cannot duplicate a finished job")
+
+	var paused_state := ProducerStateScript.new("stone_kiln")
+	paused_state.jobs = [{
+		"recipe_id": "charcoal",
+		"batches": 1,
+		"remaining_minutes": 180,
+		"status": "running",
+	}]
+	var paused_kiln := _building("stone_kiln", paused_state)
+	paused_kiln.construction_stage = BuildingInstance.ConstructionStage.FOUNDATION
+	production.register_building(paused_kiln)
+	production.advance_minutes(180)
+	assertions.equal(paused_state.jobs.size(), 1, "unfinished persisted job remains queued")
+	if not paused_state.jobs.is_empty():
+		assertions.equal(paused_state.jobs[0].remaining_minutes, 180, "unfinished persisted job does not advance")
+	assertions.equal(paused_state.outputs, {}, "unfinished persisted job stores no output")
+	paused_kiln.construction_stage = BuildingInstance.ConstructionStage.COMPLETE
+	production.advance_minutes(180)
+	assertions.equal(paused_state.outputs, {"charcoal": 1}, "persisted job resumes after construction completes")
+	assertions.equal(paused_state.jobs.size(), 0, "resumed persisted job completes exactly once")
 
 
 func _test_start_failures_are_atomic(assertions: TestAssert) -> void:
@@ -452,8 +508,27 @@ func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> v
 	assertions.equal(restored.producer_state.jobs.size(), 1, "building system restores queued job")
 	if not restored.producer_state.jobs.is_empty():
 		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, 40, "building system restores remaining job time")
+	var restore_production := _production()
+	restore_production.register_building(restored)
+	restore_production.advance_minutes(40)
+	assertions.equal(restored.producer_state.jobs.size(), 1, "unfinished restored producer keeps its queued job")
+	if not restored.producer_state.jobs.is_empty():
+		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, 40, "unfinished restored producer keeps queued work paused")
+	assertions.equal(restored.producer_state.get_output_count("plank"), 2, "unfinished restored producer stores no new output")
 	assertions.truthy(system.remove_building(restored), "valid restored producer can be removed")
 	assertions.truthy(grid.get_cell(10, 10).state != GridCell.State.BUILDING, "removal clears authoritative producer footprint")
+
+	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
+	var completed_record: Dictionary = records[0].duplicate(true)
+	completed_record.construction_stage = BuildingInstance.ConstructionStage.COMPLETE
+	completed_record.construction_elapsed = completed_record.construction_duration
+	assertions.equal(system.restore_buildings([completed_record]), 1, "building system restores completed producer record")
+	var restored_complete := system.get_building_at(10, 10)
+	restore_production.register_building(restored_complete)
+	restore_production.advance_minutes(40)
+	assertions.equal(restored_complete.producer_state.get_output_count("plank"), 3, "completed restored producer resumes queued work")
+	assertions.equal(restored_complete.producer_state.jobs.size(), 0, "completed restored producer finishes queued work once")
+	assertions.truthy(system.remove_building(restored_complete), "completed restored producer can be removed")
 
 	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
 	var outside_state := grid.get_cell(11, 10).state
