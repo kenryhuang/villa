@@ -69,6 +69,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
 	_test_task13_legacy_iron_migration_and_missing_economy_idempotence(assertions, tree)
 	_test_task13_resource_apply_failure_rolls_back_economy(assertions, tree)
+	_test_task13_corrupt_producer_load_is_atomic(assertions, tree)
+	_test_task13_short_building_restore_is_atomic(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
 
 
@@ -408,6 +410,82 @@ func _test_task13_resource_apply_failure_rolls_back_economy(
 	market.free()
 
 
+func _test_task13_corrupt_producer_load_is_atomic(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_test_task13_failed_building_load_is_atomic(assertions, tree, false)
+
+
+func _test_task13_short_building_restore_is_atomic(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_test_task13_failed_building_load_is_atomic(assertions, tree, true)
+
+
+func _test_task13_failed_building_load_is_atomic(
+	assertions: TestAssert,
+	tree: SceneTree,
+	duplicate_record: bool
+) -> void:
+	_cleanup()
+	var scenario := "restore count shortage" if duplicate_record else "corrupt producer state"
+	var manager := SaveManagerScript.new()
+	manager.name = "Task13AtomicBuildingSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var game_state := tree.root.get_node_or_null("GameState")
+
+	var location := _find_restore_location(main, "workbench")
+	var existing_record := _producer_building_record(main, location)
+	assertions.equal(
+		main.building_system.restore_buildings([existing_record]),
+		1,
+		"%s fixture restores existing queued producer" % scenario
+	)
+	main.production_system.register_existing_buildings()
+	main.inventory_system.restore_state(
+		[{
+			"item_id": "grain_seed",
+			"quantity": 7,
+		}, {
+			"item_id": "wood",
+			"quantity": 9,
+		}],
+		[1, 0, -1, -1, -1, -1]
+	)
+	game_state.gold = 211
+	game_state.player_state.stamina = 73
+	manager.current_slot = TEST_SLOT
+	var before := _capture_atomic_load_state(main, manager, game_state)
+	var incoming: Dictionary = manager._gather_save_data().duplicate(true)
+	_prepare_divergent_atomic_payload(assertions, main, incoming, scenario)
+	if duplicate_record:
+		incoming.buildings.append((incoming.buildings[0] as Dictionary).duplicate(true))
+	else:
+		incoming.buildings[0].producer_state.jobs[0].recipe_id = "missing_recipe"
+	_write_json(manager._save_path(BAD_SLOT), incoming)
+
+	assertions.truthy(
+		not manager.load_game(BAD_SLOT),
+		"%s rejects the complete v1 save" % scenario
+	)
+	assertions.equal(
+		manager.current_slot,
+		TEST_SLOT,
+		"%s preserves the adopted save slot" % scenario
+	)
+	_assert_atomic_load_state(assertions, main, manager, game_state, before, scenario)
+	main.free()
+	manager.free()
+	_cleanup()
+
+
 func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -> void:
 	_cleanup()
 	var manager := SaveManagerScript.new()
@@ -726,6 +804,161 @@ func _test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(
 	for dependency in [manager, npc, daily, market]:
 		dependency.free()
 	_cleanup()
+
+
+func _prepare_divergent_atomic_payload(
+	assertions: TestAssert,
+	main: Node,
+	incoming: Dictionary,
+	scenario: String
+) -> void:
+	incoming["gold"] = int(incoming.get("gold", 0)) + 701
+	incoming.player.stamina = 12
+	incoming.player.level = 4
+	var slots: Array[Dictionary] = [{"item_id": "stone", "quantity": 3}]
+	while slots.size() < main.inventory_system.max_slots:
+		slots.append({})
+	incoming["inventory"] = {
+		"slots": slots,
+		"quick_mappings": [0, -1, -1, -1, -1, -1],
+	}
+
+	var incoming_market := MarketSystemScript.new()
+	assertions.truthy(
+		incoming_market.from_dict(incoming.market),
+		"%s divergent market fixture restores" % scenario
+	)
+	assertions.truthy(
+		incoming_market.commit_buy("wood", 1),
+		"%s divergent market fixture changes stock" % scenario
+	)
+	incoming["market"] = incoming_market.to_dict()
+	incoming_market.free()
+
+	var incoming_npc: Dictionary = incoming.npc_economy
+	var lao_li := _npc_state_record(incoming_npc, "lao_li")
+	lao_li.gold = int(lao_li.gold) + 37
+	assertions.truthy(
+		main.npc_economy_system.validate_dict(incoming_npc),
+		"%s divergent NPC fixture remains valid" % scenario
+	)
+	incoming["npc_economy"] = incoming_npc
+	var total_day := int(incoming.last_simulated_day)
+	var contract := {
+		"contract_id": "lao_li:wood:%d:%d" % [total_day, total_day + 2],
+		"npc_id": "lao_li",
+		"item_id": "wood",
+		"quantity_per_day": 2,
+		"unit_price": 10,
+		"reward_gold": 20,
+		"start_day": total_day,
+		"end_day": total_day + 2,
+		"delivered_days": [],
+		"breaches": 0,
+		"signed": true,
+		"completed": false,
+		"expired": false,
+	}
+	incoming["economy_state"] = {
+		"last_processed_day": total_day,
+		"orders": [],
+		"contracts": [contract],
+	}
+	assertions.truthy(
+		main.economy_system.validate_dict(incoming.economy_state),
+		"%s divergent order fixture remains valid" % scenario
+	)
+
+	if not incoming.resource_nodes.is_empty():
+		var resource: Dictionary = incoming.resource_nodes[0]
+		if int(resource.hits_remaining) > 1:
+			resource.hits_remaining = int(resource.hits_remaining) - 1
+		incoming.resource_nodes[0] = resource
+
+	var added_grid_divergence := false
+	for gz in range(GridSystem.GRID_DEPTH):
+		if added_grid_divergence:
+			break
+		for gx in range(GridSystem.GRID_WIDTH):
+			var cell: GridCell = main.grid_system.get_cell(gx, gz)
+			if cell != null and cell.state == GridCell.State.WASTELAND:
+				incoming.grid.cells.append({
+					"gx": gx,
+					"gz": gz,
+					"state": GridCell.State.FARMLAND,
+					"watered": true,
+				})
+				added_grid_divergence = true
+				break
+	assertions.truthy(added_grid_divergence, "%s fixture changes an unrelated grid cell" % scenario)
+
+
+func _capture_atomic_load_state(main: Node, manager: Node, game_state: Node) -> Dictionary:
+	return {
+		"gold": game_state.gold,
+		"player": {
+			"stamina": game_state.player_state.stamina,
+			"max_stamina": game_state.player_state.max_stamina,
+			"level": game_state.player_state.level,
+			"exp": game_state.player_state.exp,
+		},
+		"calendar": {
+			"season": main.season_system.current_season,
+			"day": main.season_system.current_day,
+			"total_days": main.season_system.total_days,
+			"hour": main.season_system.hour,
+			"minute": main.season_system.minute,
+		},
+		"inventory_slots": main.inventory_system.slots.duplicate(true),
+		"quick_mappings": main.inventory_system.quick_slot_mappings.duplicate(),
+		"grid": main.grid_system.to_dict(),
+		"buildings": manager._serialize_buildings(main.building_system),
+		"registered_producers": _serialize_registered_producers(main),
+		"market": main.market_system.to_dict(),
+		"last_simulated_day": main.daily_simulation_system.last_simulated_day,
+		"npc_economy": main.npc_economy_system.to_dict(),
+		"economy_state": main.economy_system.to_dict(),
+		"resource_nodes": main.world.to_resource_dicts(),
+	}
+
+
+func _assert_atomic_load_state(
+	assertions: TestAssert,
+	main: Node,
+	manager: Node,
+	game_state: Node,
+	expected: Dictionary,
+	scenario: String
+) -> void:
+	var actual := _capture_atomic_load_state(main, manager, game_state)
+	for field in [
+		"gold",
+		"player",
+		"calendar",
+		"inventory_slots",
+		"quick_mappings",
+		"grid",
+		"buildings",
+		"registered_producers",
+		"market",
+		"last_simulated_day",
+		"npc_economy",
+		"economy_state",
+		"resource_nodes",
+	]:
+		assertions.equal(
+			actual[field],
+			expected[field],
+			"%s leaves prior %s state untouched" % [scenario, field]
+		)
+
+
+func _serialize_registered_producers(main: Node) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	for building in main.production_system.get_registered_buildings():
+		if building != null and building.has_method("to_dict"):
+			records.append(building.to_dict())
+	return records
 
 
 func _find_restore_location(main: Node, building_id: String) -> Vector2i:

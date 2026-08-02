@@ -215,9 +215,17 @@ func _apply_save_data(data: Dictionary) -> bool:
 	var migrated_data := _migrate_save_data(data)
 	if not _validate_economy_save_data(migrated_data):
 		return false
-	if not _apply_economy_save_data(migrated_data):
+	var previous_state := _gather_save_data().duplicate(true)
+	if _apply_migrated_save_data(migrated_data):
+		return true
+	if not _apply_migrated_save_data(previous_state):
+		push_error("Failed to roll back rejected save data")
+	return false
+
+
+func _apply_migrated_save_data(data: Dictionary) -> bool:
+	if not _apply_economy_save_data(data):
 		return false
-	data = migrated_data
 
 	# 游戏状态
 	var game_state = get_node_or_null("/root/GameState")
@@ -250,12 +258,26 @@ func _apply_save_data(data: Dictionary) -> bool:
 	# 网格状态
 	var grid_system = _get_grid_system()
 	var building_system = _get_building_system()
+	if data.has("grid") and not data["grid"] is Dictionary:
+		return false
+	if data.has("buildings") and not data["buildings"] is Array:
+		return false
 	if building_system:
 		building_system.clear_buildings(true)
 	if grid_system and data.has("grid"):
-		grid_system.from_dict(data.grid)
-	if building_system and data.has("buildings"):
-		building_system.restore_buildings(data.buildings)
+		if grid_system.has_method("reset_state"):
+			grid_system.reset_state()
+		if not bool(grid_system.from_dict(data.grid)):
+			return false
+	elif data.has("grid"):
+		return false
+	if data.has("buildings"):
+		if building_system == null:
+			return false
+		var building_records := data["buildings"] as Array
+		var restored_count := int(building_system.restore_buildings(building_records))
+		if restored_count != building_records.size():
+			return false
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")

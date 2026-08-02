@@ -467,6 +467,7 @@ func restore_buildings(records: Array) -> int:
 		_connect_construction_signals(instance)
 		for location in footprint:
 			claimed_cells[location] = true
+		building_instance_placed.emit(instance)
 		restored += 1
 	return restored
 

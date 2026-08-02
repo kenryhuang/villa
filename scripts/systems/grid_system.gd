@@ -439,6 +439,15 @@ func to_dict() -> Dictionary:
 	return {"version": 1, "cells": changed_cells}
 
 
+func reset_state() -> void:
+	for key in _cells:
+		var cell: GridCell = _cells[key]
+		cell.state = int(_base_states.get(key, GridCell.State.WASTELAND)) as GridCell.State
+		cell.watered = false
+		cell.crop_instance = null
+	rebuild_farmland_visuals()
+
+
 func from_dict(data: Dictionary) -> bool:
 	if not data.has("cells") or not data.cells is Array:
 		return false
