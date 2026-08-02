@@ -13,10 +13,26 @@ const PLANTED := 2
 
 class FailingAfterMutationInventory:
 	extends InventorySystem
+	var restore_calls := 0
 
 	func add_item(item_id: String, quantity: int = 1) -> bool:
 		super.add_item(item_id, quantity)
 		return false
+
+	func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
+		restore_calls += 1
+		super.restore_state(saved_slots, saved_quick_mappings)
+
+
+class InventorySignalRecorder:
+	extends RefCounted
+	var events: Array[String] = []
+
+	func on_added(item_id: String, quantity: int) -> void:
+		events.append("added:%s:%d" % [item_id, quantity])
+
+	func on_removed(item_id: String, quantity: int) -> void:
+		events.append("removed:%s:%d" % [item_id, quantity])
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -24,11 +40,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_deterministic_tomato_yield_and_regrowth(assertions)
 	_test_carrot_yield_and_removal(assertions)
 	_test_harvest_count_save_round_trip(assertions, tree)
-	_test_controller_harvest_is_atomic(assertions)
+	_test_controller_harvest_is_atomic(assertions, tree)
 	_test_crop_data_validation(assertions)
 	_test_default_roster_and_item_catalog(assertions)
 	_test_perennial_harvest_and_greenhouse_rules(assertions)
 	_test_regrowing_crop_visual_remains(assertions)
+	_test_roster_planting_uses_active_quick_item(assertions, tree)
 
 
 func _test_harvest_returns_item_quantities(assertions: TestAssert) -> void:
@@ -149,7 +166,7 @@ func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree
 	legacy_restored.free()
 
 
-func _test_controller_harvest_is_atomic(assertions: TestAssert) -> void:
+func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree) -> void:
 	var crop = CropDataScript.new()
 	crop.crop_id = "tomato"
 	crop.growth_days = 4
@@ -176,18 +193,106 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert) -> void:
 	assertions.equal(instance.harvest_count, 0, "capacity rejection does not advance harvest counter")
 
 	var failing_inventory = FailingAfterMutationInventory.new()
+	failing_inventory.max_slots = 2
+	failing_inventory.reset_slots()
+	failing_inventory.slots[0] = {"item_id": "tomato", "quantity": 99}
+	failing_inventory.slots[1] = {}
+	failing_inventory.set_quick_slot(0, 5)
+	var slots_before: Array[Dictionary] = failing_inventory.slots.duplicate(true)
+	var mappings_before: Array[int] = failing_inventory.quick_slot_mappings.duplicate()
+	tree.root.add_child(failing_inventory)
 	var failing_controller = PlayerActionControllerScript.new()
+	tree.root.add_child(failing_controller)
 	failing_controller.configure(null, grid, farming, null, null, failing_inventory)
+	var event_bus = tree.root.get_node("EventBus")
+	event_bus.set_block_signals(false)
+	var recorder := InventorySignalRecorder.new()
+	event_bus.item_added.connect(recorder.on_added)
+	event_bus.item_removed.connect(recorder.on_removed)
 	assertions.truthy(not failing_controller._harvest(grid.get_cell(1, 1)), "injected add failure rejects harvest")
-	assertions.equal(failing_inventory.get_item_count("tomato"), 0, "injected partial add is rolled back")
+	assertions.equal(failing_inventory.slots, slots_before, "injected failure restores exact slot layout")
+	assertions.equal(failing_inventory.quick_slot_mappings, mappings_before, "injected failure restores exact quick mappings")
+	assertions.equal(failing_inventory.restore_calls, 1, "rollback uses InventorySystem restore_state")
+	assertions.equal(recorder.events, [], "rolled-back harvest emits no partial inventory events")
 	assertions.truthy(grid.get_cell(1, 1).crop_instance == instance, "injected add failure preserves crop")
 	assertions.equal(instance.harvest_count, 0, "injected add failure preserves harvest counter")
+	event_bus.item_added.disconnect(recorder.on_added)
+	event_bus.item_removed.disconnect(recorder.on_removed)
 	controller.free()
 	failing_controller.free()
 	inventory.free()
 	failing_inventory.free()
 	farming.free()
 	grid.free()
+
+
+func _test_roster_planting_uses_active_quick_item(assertions: TestAssert, tree: SceneTree) -> void:
+	var game_data = tree.root.get_node("GameData")
+	for crop in MainScript.default_crop_definitions():
+		if game_data.get_crop(crop.crop_id) == null:
+			game_data.register_crop(crop)
+	var fixtures := [
+		{"item": "grain_seed", "crop": "grain", "season": SeasonSystem.Season.SPRING},
+		{"item": "carrot_seed", "crop": "carrot", "season": SeasonSystem.Season.SPRING},
+		{"item": "tomato_seed", "crop": "tomato", "season": SeasonSystem.Season.SPRING},
+		{"item": "rose_seed", "crop": "rose", "season": SeasonSystem.Season.SPRING},
+		{"item": "apple_sapling", "crop": "apple", "season": SeasonSystem.Season.AUTUMN},
+	]
+	for fixture in fixtures:
+		var grid = GridSystemScript.new()
+		grid.set_cell_state(10, 10, FARMLAND)
+		grid.set_cell_state(11, 10, FARMLAND)
+		var season = SeasonSystem.new()
+		season.current_season = int(fixture.season) as SeasonSystem.Season
+		var farming = FarmingSystemScript.new()
+		farming.configure(grid, season, null)
+		var inventory = InventorySystemScript.new()
+		inventory.add_item(str(fixture.item), 1)
+		inventory.set_quick_slot(0, PlayerActionControllerScript.SEED_SLOT)
+		var controller = PlayerActionControllerScript.new()
+		tree.root.add_child(controller)
+		controller.configure(null, grid, farming, null, null, inventory)
+		controller.select_slot(PlayerActionControllerScript.SEED_SLOT)
+		var planted := controller.perform_cell_action(grid.get_cell(10, 10))
+		assertions.truthy(planted, "%s plants from active quick slot" % fixture.item)
+		assertions.equal(inventory.get_item_count(str(fixture.item)), 0, "%s consumes exact active item" % fixture.item)
+		if planted:
+			assertions.equal(grid.get_cell(10, 10).crop_instance.crop_data.crop_id, fixture.crop, "%s plants mapped crop" % fixture.item)
+		assertions.truthy(not controller.perform_cell_action(grid.get_cell(11, 10)), "missing selected %s rejects planting" % fixture.item)
+		assertions.equal(grid.get_cell(11, 10).state, FARMLAND, "missing %s preserves farmland" % fixture.item)
+		controller.free()
+		inventory.free()
+		farming.free()
+		season.free()
+		grid.free()
+
+	var lemon_grid = GridSystemScript.new()
+	lemon_grid.set_cell_state(12, 10, FARMLAND)
+	lemon_grid.set_cell_state(13, 10, FARMLAND)
+	var lemon_season = SeasonSystem.new()
+	lemon_season.current_season = SeasonSystem.Season.SUMMER
+	var lemon_farming = FarmingSystemScript.new()
+	lemon_farming.configure(lemon_grid, lemon_season, null)
+	lemon_farming.set_greenhouse_cells([Vector2i(13, 10)])
+	var lemon_inventory = InventorySystemScript.new()
+	lemon_inventory.add_item("lemon_sapling", 2)
+	lemon_inventory.set_quick_slot(0, PlayerActionControllerScript.SEED_SLOT)
+	var lemon_controller = PlayerActionControllerScript.new()
+	tree.root.add_child(lemon_controller)
+	lemon_controller.configure(null, lemon_grid, lemon_farming, null, null, lemon_inventory)
+	lemon_controller.select_slot(PlayerActionControllerScript.SEED_SLOT)
+	assertions.truthy(not lemon_controller.perform_cell_action(lemon_grid.get_cell(12, 10)), "selected lemon sapling rejects outdoor planting")
+	assertions.equal(lemon_inventory.get_item_count("lemon_sapling"), 2, "outdoor rejection preserves lemon sapling")
+	var lemon_planted := lemon_controller.perform_cell_action(lemon_grid.get_cell(13, 10))
+	assertions.truthy(lemon_planted, "selected lemon sapling plants in greenhouse")
+	assertions.equal(lemon_inventory.get_item_count("lemon_sapling"), 1, "greenhouse planting consumes lemon sapling")
+	if lemon_planted:
+		assertions.equal(lemon_grid.get_cell(13, 10).crop_instance.crop_data.crop_id, "lemon", "greenhouse sapling plants lemon crop")
+	lemon_controller.free()
+	lemon_inventory.free()
+	lemon_farming.free()
+	lemon_season.free()
+	lemon_grid.free()
 
 
 func _test_crop_data_validation(assertions: TestAssert) -> void:

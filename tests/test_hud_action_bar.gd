@@ -205,6 +205,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	inventory.add_item("stone", 150)
 	inventory.add_item("iron", 50)
 	inventory.add_item("glass", 50)
+	inventory.set_quick_slot(0, PlayerActionController.SEED_SLOT)
 	var building := BuildingDouble.new()
 	building.inventory = inventory
 	var controller = controller_script.new()
@@ -259,8 +260,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if seed_tile is ActionPaletteButtonScript:
 		assertions.equal(
 			seed_tile.name_label.text,
-			"种子 ×2",
-			"seed tile keeps quantity concise and readable"
+			"谷物种子 ×2",
+			"seed tile names the active default seed"
 		)
 
 	var emitted_indices: Array[int] = []
@@ -276,6 +277,22 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		(quick_bar.get_child(5) as Button).button_pressed,
 		"selected seed slot is highlighted"
 	)
+	inventory.add_item("carrot_seed", 1)
+	var carrot_slot := -1
+	for slot_index in range(inventory.slots.size()):
+		if inventory.slots[slot_index].get("item_id", "") == "carrot_seed":
+			carrot_slot = slot_index
+			break
+	assertions.truthy(carrot_slot >= 0, "HUD fixture finds carrot seed inventory slot")
+	inventory.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
+	hud.refresh_action_bar()
+	controller.select_slot(PlayerActionController.SEED_SLOT)
+	assertions.equal(
+		(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
+		"胡萝卜种子 ×1",
+		"planting tile shows active mapped seed and quantity"
+	)
+	assertions.equal(hud.tool_label.text, "胡萝卜种子", "HUD selection names active mapped seed")
 	assertions.truthy(controller.deselect_slot(), "selected HUD action can be cancelled")
 	assertions.equal(hud.tool_label.text, "未选择工具", "HUD shows cancelled tool state")
 	for child in quick_bar.get_children():
@@ -284,14 +301,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"cancelled tool leaves every action button unpressed"
 		)
 
-	inventory.remove_item("grain_seed", 1)
+	inventory.add_item("carrot_seed", 1)
+	inventory.remove_item("carrot_seed", 1)
 	hud.refresh_action_bar()
 	seed_tile = quick_bar.get_child(5)
 	if seed_tile is ActionPaletteButtonScript:
 		assertions.equal(
 			seed_tile.name_label.text,
-			"种子 ×1",
-			"seed count refreshes after inventory change"
+			"胡萝卜种子 ×1",
+			"active seed count refreshes after inventory change"
 		)
 
 	var has_mode_palette_api := (

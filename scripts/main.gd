@@ -382,7 +382,7 @@ func _grant_new_game_items() -> void:
 
 
 func _backfill_legacy_grain_slot() -> void:
-	if inventory_system.get_quick_item(5) == "grain_seed":
+	if not inventory_system.get_quick_item(PlayerActionController.SEED_SLOT).is_empty():
 		return
 	_map_grain_seed_to_quick_slot()
 
@@ -390,7 +390,7 @@ func _backfill_legacy_grain_slot() -> void:
 func _map_grain_seed_to_quick_slot() -> bool:
 	for index in range(inventory_system.slots.size()):
 		if inventory_system.slots[index].get("item_id", "") == "grain_seed":
-			return inventory_system.set_quick_slot(index, 5)
+			return inventory_system.set_quick_slot(index, PlayerActionController.SEED_SLOT)
 	return false
 
 

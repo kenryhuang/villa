@@ -302,6 +302,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			main.inventory_system.quick_slot_mappings[5],
 			"save manager preserves seed quick mapping"
 		)
+	main.inventory_system.add_item("carrot_seed", 1)
+	var carrot_slot := -1
+	for slot_index in range(main.inventory_system.slots.size()):
+		if main.inventory_system.slots[slot_index].get("item_id", "") == "carrot_seed":
+			carrot_slot = slot_index
+			break
+	assertions.truthy(carrot_slot >= 0, "quick mapping fixture finds carrot seed")
+	main.inventory_system.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
+	main.call("_backfill_legacy_grain_slot")
+	assertions.equal(
+		main.inventory_system.get_quick_item(PlayerActionController.SEED_SLOT),
+		"carrot_seed",
+		"legacy grain backfill preserves an active roster seed"
+	)
 
 	main.inventory_system.reset_slots()
 	main.inventory_system.slots[1] = {"item_id": "grain_seed", "quantity": 3}

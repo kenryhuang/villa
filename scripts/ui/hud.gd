@@ -13,7 +13,7 @@ const ActionPaletteButtonScene = preload(
 const ActionPaletteButtonScript = preload(
 	"res://scripts/ui/action_palette_button.gd"
 )
-const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
+const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "种苗"]
 const BUILDING_NAMES := ["谷仓", "温室", "风车", "鸡舍", "蜂箱", "水井", "工作台", "路灯", "围栏"]
 const FARMING_ICON_PATHS: Array[String] = [
 	"res://assets/ui/action_icons/hoe.png",
@@ -290,12 +290,7 @@ func rebuild_action_palette() -> void:
 		quick_bar.add_child(button)
 		var display_name := str(labels[index])
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
-			var quantity: int = (
-				inventory_ref.get_item_count(PlayerActionController.SEED_ITEM_ID)
-				if inventory_ref
-				else 0
-			)
-			display_name = "种子 ×%d" % quantity
+			display_name = _active_plant_item_display()
 		button.configure(
 			index + 1,
 			display_name,
@@ -318,14 +313,9 @@ func refresh_action_bar() -> void:
 		if not button is ActionPaletteButtonScript:
 			continue
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
-			var quantity: int = (
-				inventory_ref.get_item_count(PlayerActionController.SEED_ITEM_ID)
-				if inventory_ref
-				else 0
-			)
 			button.configure(
 				index + 1,
-				"种子 ×%d" % quantity,
+				_active_plant_item_display(),
 				_palette_texture(index, false)
 			)
 		elif building_mode:
@@ -360,8 +350,22 @@ func _on_action_palette_changed(_mode: int, _selected_index: int) -> void:
 
 
 func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
-	if item_id in MATERIAL_IDS or item_id == PlayerActionController.SEED_ITEM_ID:
+	var item_data = GameDataScript.get_item(item_id)
+	if item_id in MATERIAL_IDS or (item_data and item_data.get("category", "") == "seed"):
 		refresh_action_bar()
+
+
+func _active_plant_item_display() -> String:
+	if inventory_ref == null:
+		return "种苗 ×0"
+	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
+	var item_data = GameDataScript.get_item(item_id)
+	if item_data == null:
+		return "种苗 ×0"
+	return "%s ×%d" % [
+		str(item_data.get("name", "种苗")),
+		inventory_ref.get_item_count(item_id),
+	]
 
 
 func _on_mode_requested(mode: int) -> void:
