@@ -67,6 +67,48 @@ class ItemSignalCounter:
 		count += 1
 
 
+class PurchaseReentryObserver:
+	extends RefCounted
+	var progression: Variant
+	var attempted := false
+	var nested_result := true
+
+	func on_gold(_value: int) -> void:
+		if attempted:
+			return
+		attempted = true
+		nested_result = bool(progression.purchase("blueprint_windmill"))
+
+
+class UpgradeRemovalObserver:
+	extends RefCounted
+	var production: Variant
+	var building: BuildingInstance
+	var attempted := false
+
+	func on_gold(_value: int) -> void:
+		if attempted:
+			return
+		attempted = true
+		production.unregister_building(building)
+
+
+class MaintenanceReentryObserver:
+	extends RefCounted
+	var production: Variant
+	var building: BuildingInstance
+	var wallet: Variant
+	var inventory: InventorySystem
+	var attempted := false
+	var nested_result := true
+
+	func on_gold(_value: int) -> void:
+		if attempted:
+			return
+		attempted = true
+		nested_result = bool(production.maintain(building, wallet, inventory))
+
+
 var _owned_nodes: Array[Node] = []
 
 
@@ -81,6 +123,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_unlock_gates_and_strict_state(assertions, wallet)
 	_test_tool_durability_and_atomic_repair(assertions, wallet)
 	_test_failed_service_transactions_are_signal_atomic(assertions)
+	_test_service_transactions_reject_signal_reentry(assertions, wallet)
 	_test_maintenance_and_upgrades(assertions, wallet)
 	_test_save_json_round_trip_atomic_rejection_and_legacy(assertions, wallet)
 	wallet.gold = original_gold
@@ -411,6 +454,72 @@ func _test_failed_service_transactions_are_signal_atomic(assertions: TestAssert)
 	if event_bus != null:
 		assertions.equal(counter.count, 0, "failed maintenance emits no rolled-back item signal")
 		event_bus.item_removed.disconnect(counter.record)
+
+
+func _test_service_transactions_reject_signal_reentry(assertions: TestAssert, wallet: Node) -> void:
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("EventBus")
+	if event_bus == null:
+		return
+	var inventory := _inventory()
+	(Engine.get_main_loop() as SceneTree).root.add_child(inventory)
+	var tool := _tool(inventory)
+	var production := _production()
+	var day := DaySource.new()
+	day.total_days = 8
+	var progression = _track(ProgressionScript.new())
+	assertions.truthy(progression.configure(tool, production, inventory, day, wallet), "reentry fixture configures")
+	wallet.player_state.level = 2
+	wallet.gold = 5000
+	var purchase_service := _service(progression, "blueprint_windmill")
+	for item_id in purchase_service.materials:
+		inventory.add_item(str(item_id), int(purchase_service.materials[item_id]) * 2)
+	var purchase_before := _asset_snapshot(wallet, inventory)
+	var purchase_observer := PurchaseReentryObserver.new()
+	purchase_observer.progression = progression
+	event_bus.gold_changed.connect(purchase_observer.on_gold)
+	assertions.truthy(progression.purchase("blueprint_windmill"), "outer purchase commits")
+	event_bus.gold_changed.disconnect(purchase_observer.on_gold)
+	assertions.truthy(not purchase_observer.nested_result, "purchase signal reentry is rejected")
+	assertions.equal(int(wallet.gold), int(purchase_before.gold) - int(purchase_service.gold_cost), "reentrant purchase charges once")
+	_assert_material_delta(assertions, purchase_before, inventory, purchase_service.materials, "reentrant purchase")
+
+	var building := _building("windmill", 27, 28)
+	assertions.truthy(production.register_building(building), "upgrade removal fixture registers")
+	var upgrade_quote: Dictionary = progression.get_upgrade_quote(building, "speed")
+	_give_cost(inventory, upgrade_quote.materials)
+	wallet.gold = 5000
+	var upgrade_before := _asset_snapshot(wallet, inventory)
+	var removal_observer := UpgradeRemovalObserver.new()
+	removal_observer.production = production
+	removal_observer.building = building
+	event_bus.gold_changed.connect(removal_observer.on_gold)
+	assertions.truthy(progression.upgrade(building, "speed"), "upgrade domain commits before removal listener runs")
+	event_bus.gold_changed.disconnect(removal_observer.on_gold)
+	assertions.equal(progression.get_upgrade_level(building, "speed"), 1, "listener removal cannot roll back committed upgrade")
+	assertions.equal(int(wallet.gold), int(upgrade_before.gold) - int(upgrade_quote.gold_cost), "upgrade removal listener charges once")
+	_assert_material_delta(assertions, upgrade_before, inventory, upgrade_quote.materials, "upgrade removal listener")
+
+	assertions.truthy(production.register_building(building), "maintenance reentry fixture re-registers")
+	production.sync_daily_cursor(1)
+	production.set_maintenance_due_day(building, 1)
+	var maintenance_quote: Dictionary = production.get_maintenance_quote(building)
+	for item_id in maintenance_quote.materials:
+		var needed := int(maintenance_quote.materials[item_id]) * 2 - inventory.get_item_count(str(item_id))
+		if needed > 0:
+			inventory.add_item(str(item_id), needed)
+	wallet.gold = 5000
+	var maintenance_before := _asset_snapshot(wallet, inventory)
+	var maintenance_observer := MaintenanceReentryObserver.new()
+	maintenance_observer.production = production
+	maintenance_observer.building = building
+	maintenance_observer.wallet = wallet
+	maintenance_observer.inventory = inventory
+	event_bus.gold_changed.connect(maintenance_observer.on_gold)
+	assertions.truthy(production.maintain(building, wallet, inventory), "outer maintenance commits")
+	event_bus.gold_changed.disconnect(maintenance_observer.on_gold)
+	assertions.truthy(not maintenance_observer.nested_result, "maintenance signal reentry is rejected")
+	assertions.equal(int(wallet.gold), int(maintenance_before.gold) - int(maintenance_quote.gold_cost), "reentrant maintenance charges once")
+	_assert_material_delta(assertions, maintenance_before, inventory, maintenance_quote.materials, "reentrant maintenance")
 
 
 func _test_save_json_round_trip_atomic_rejection_and_legacy(

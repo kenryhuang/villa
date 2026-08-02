@@ -60,6 +60,7 @@ var _production_system: ProductionSystem
 var _inventory_system: InventorySystem
 var _day_source: Variant
 var _wallet: Variant
+var _active_service_transactions: Dictionary = {}
 
 
 func _init() -> void:
@@ -150,18 +151,34 @@ func purchase(service_id: String) -> bool:
 		var recipe := RecipeDatabaseScript.get_recipe(target_id)
 		if recipe.is_empty() or not is_blueprint_unlocked(str(recipe.get("station", ""))):
 			return false
-	if not _commit_cost(int(definition.gold_cost), definition.materials):
+	var transaction_key := "purchase:%s" % service_id
+	if _active_service_transactions.has(transaction_key):
 		return false
-	if kind == "blueprint":
-		unlocked_blueprints[target_id] = true
-		var tier := int(BLUEPRINT_TIERS.get(target_id, -1))
-		for recipe in RecipeDatabaseScript.get_recipes_for_station(target_id):
-			if int(recipe.get("unlock_tier", -1)) <= tier:
-				unlocked_recipes[str(recipe.id)] = true
-	else:
-		unlocked_recipes[target_id] = true
-	_emit_event("service_unlocked", [kind, target_id])
-	return true
+	_active_service_transactions[transaction_key] = true
+	var blueprints_before := unlocked_blueprints.duplicate(true)
+	var recipes_before := unlocked_recipes.duplicate(true)
+	var committed := _commit_cost(
+		int(definition.gold_cost),
+		definition.materials,
+		func() -> bool:
+			if kind == "blueprint":
+				unlocked_blueprints[target_id] = true
+				var tier := int(BLUEPRINT_TIERS.get(target_id, -1))
+				for recipe in RecipeDatabaseScript.get_recipes_for_station(target_id):
+					if int(recipe.get("unlock_tier", -1)) <= tier:
+						unlocked_recipes[str(recipe.id)] = true
+			else:
+				unlocked_recipes[target_id] = true
+			return true,
+		func() -> bool:
+			unlocked_blueprints = blueprints_before.duplicate(true)
+			unlocked_recipes = recipes_before.duplicate(true)
+			return true
+	)
+	if committed:
+		_emit_event("service_unlocked", [kind, target_id])
+	_active_service_transactions.erase(transaction_key)
+	return committed
 
 
 func repair(tool_id: String) -> bool:
@@ -178,17 +195,37 @@ func upgrade(building: BuildingInstance, upgrade_id: String) -> bool:
 	if not _production_system.can_apply_upgrade(building, upgrade_id, next_level):
 		return false
 	var quote := get_upgrade_quote(building, upgrade_id)
-	if quote.is_empty() or not _commit_cost(int(quote.gold_cost), quote.materials):
+	if quote.is_empty():
 		return false
-	if not _production_system.apply_upgrade(building, upgrade_id, next_level):
-		_refund_cost(int(quote.gold_cost), quote.materials)
+	var transaction_key := "upgrade:%s:%s" % [building_key(building), upgrade_id]
+	if _active_service_transactions.has(transaction_key):
 		return false
 	var key := building_key(building)
-	var levels: Dictionary = upgrade_levels.get(key, {}).duplicate()
-	levels[upgrade_id] = next_level
-	upgrade_levels[key] = levels
-	_emit_event("building_upgrade_changed", [building, upgrade_id, next_level])
-	return true
+	_active_service_transactions[transaction_key] = true
+	var upgrades_before := upgrade_levels.duplicate(true)
+	var state := building.producer_state as ProducerState
+	var queue_before := state.max_queue_slots
+	var capacity_before := state.output_capacity
+	var committed := _commit_cost(
+		int(quote.gold_cost),
+		quote.materials,
+		func() -> bool:
+			if not _production_system.apply_upgrade(building, upgrade_id, next_level):
+				return false
+			var levels: Dictionary = upgrade_levels.get(key, {}).duplicate()
+			levels[upgrade_id] = next_level
+			upgrade_levels[key] = levels
+			return true,
+		func() -> bool:
+			state.max_queue_slots = queue_before
+			state.output_capacity = capacity_before
+			upgrade_levels = upgrades_before.duplicate(true)
+			return true
+	)
+	if committed:
+		_emit_event("building_upgrade_changed", [building, upgrade_id, next_level])
+	_active_service_transactions.erase(transaction_key)
+	return committed
 
 
 func maintain(building: BuildingInstance) -> bool:
@@ -415,7 +452,12 @@ func _current_level() -> int:
 	return int(_wallet.player_state.level)
 
 
-func _commit_cost(gold_cost: int, materials: Dictionary) -> bool:
+func _commit_cost(
+	gold_cost: int,
+	materials: Dictionary,
+	domain_commit: Callable = Callable(),
+	domain_rollback: Callable = Callable()
+) -> bool:
 	if not _valid_cost(gold_cost, materials) or not _valid_wallet(_wallet) or _inventory_system == null:
 		return false
 	if int(_wallet.gold) < gold_cost:
@@ -424,6 +466,7 @@ func _commit_cost(gold_cost: int, materials: Dictionary) -> bool:
 		if not _inventory_system.has_item(str(item_id), int(materials[item_id])):
 			return false
 	var snapshot := {"slots": _inventory_system.slots.duplicate(true), "mappings": _inventory_system.quick_slot_mappings.duplicate()}
+	var gold_before := int(_wallet.gold)
 	var event_bus := _event_bus()
 	var owns_event := event_bus != null and not event_bus.is_blocking_signals()
 	if owns_event:
@@ -431,19 +474,12 @@ func _commit_cost(gold_cost: int, materials: Dictionary) -> bool:
 	var owns_mapping := _inventory_system.begin_mapping_transaction()
 	for item_id in materials:
 		if not _inventory_system.remove_item(str(item_id), int(materials[item_id])):
-			_inventory_system.restore_state(snapshot.slots, snapshot.mappings)
-			if owns_mapping:
-				_inventory_system.end_mapping_transaction(false)
-			if owns_event:
-				event_bus.set_block_signals(false)
-			return false
+			return _rollback_cost_transaction(snapshot, gold_before, owns_mapping, owns_event, event_bus, false, domain_rollback)
 	if not bool(_wallet.spend_gold(gold_cost)):
-		_inventory_system.restore_state(snapshot.slots, snapshot.mappings)
-		if owns_mapping:
-			_inventory_system.end_mapping_transaction(false)
-		if owns_event:
-			event_bus.set_block_signals(false)
-		return false
+		return _rollback_cost_transaction(snapshot, gold_before, owns_mapping, owns_event, event_bus, false, domain_rollback)
+	var domain_started := domain_commit.is_valid()
+	if domain_started and not bool(domain_commit.call()):
+		return _rollback_cost_transaction(snapshot, gold_before, owns_mapping, owns_event, event_bus, true, domain_rollback)
 	if owns_mapping:
 		_inventory_system.end_mapping_transaction(true)
 	if owns_event:
@@ -452,6 +488,35 @@ func _commit_cost(gold_cost: int, materials: Dictionary) -> bool:
 		for item_id in materials:
 			event_bus.item_removed.emit(str(item_id), int(materials[item_id]))
 	return true
+
+
+func _rollback_cost_transaction(
+	snapshot: Dictionary,
+	gold_before: int,
+	owns_mapping: bool,
+	owns_event: bool,
+	event_bus: Node,
+	domain_started: bool,
+	domain_rollback: Callable
+) -> bool:
+	var rollback_ok := true
+	if domain_started:
+		rollback_ok = domain_rollback.is_valid() and bool(domain_rollback.call())
+	_inventory_system.restore_state(snapshot.slots, snapshot.mappings)
+	_wallet.set("gold", gold_before)
+	if owns_mapping:
+		_inventory_system.end_mapping_transaction(false)
+	rollback_ok = (
+		rollback_ok
+		and int(_wallet.gold) == gold_before
+		and _inventory_system.slots == snapshot.slots
+		and _inventory_system.quick_slot_mappings == snapshot.mappings
+	)
+	if owns_event:
+		event_bus.set_block_signals(false)
+	if not rollback_ok:
+		push_error("Economy service transaction rollback failed")
+	return false
 
 
 func _refund_cost(gold_cost: int, materials: Dictionary) -> void:

@@ -39,6 +39,7 @@ var grid_system_ref
 var inventory_ref
 var player_ref
 var _event_bus
+var _active_repair_transactions: Dictionary = {}
 
 
 func _init() -> void:
@@ -364,6 +365,8 @@ func get_repair_quote(tool_id: String) -> Dictionary:
 
 
 func repair_tool(tool_id: String) -> bool:
+	if _active_repair_transactions.has(tool_id):
+		return false
 	var quote := get_repair_quote(tool_id)
 	if quote.is_empty() or inventory_ref == null:
 		return false
@@ -373,6 +376,7 @@ func repair_tool(tool_id: String) -> bool:
 	for item_id in quote.materials:
 		if not inventory_ref.has_item(str(item_id), int(quote.materials[item_id])):
 			return false
+	_active_repair_transactions[tool_id] = true
 	var inventory_snapshot := _inventory_snapshot()
 	var owns_event_transaction := _begin_inventory_event_transaction()
 	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
@@ -381,11 +385,13 @@ func repair_tool(tool_id: String) -> bool:
 			_restore_inventory(inventory_snapshot)
 			_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction)
+			_active_repair_transactions.erase(tool_id)
 			return false
 	if not game_state.spend_gold(int(quote.gold_cost)):
 		_restore_inventory(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		_end_inventory_event_transaction(owns_event_transaction)
+		_active_repair_transactions.erase(tool_id)
 		return false
 	tool_durability[tool_id]["current"] = int(tool_durability[tool_id].max)
 	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
@@ -395,6 +401,7 @@ func repair_tool(tool_id: String) -> bool:
 		for item_id in quote.materials:
 			_event_bus.item_removed.emit(str(item_id), int(quote.materials[item_id]))
 	_emit_durability_changed(tool_id)
+	_active_repair_transactions.erase(tool_id)
 	return true
 
 

@@ -25,6 +25,7 @@ var _progression_system: Variant
 var _current_day := 0
 var maintenance_due_days: Dictionary = {}
 var speed_accumulators: Dictionary = {}
+var _active_maintenance_transactions: Dictionary = {}
 
 
 func _ready() -> void:
@@ -383,40 +384,70 @@ func maintain(
 ) -> bool:
 	if building == null or wallet == null or inventory == null or not is_maintenance_overdue(building):
 		return false
+	var key := building_key(building)
+	if _active_maintenance_transactions.has(key):
+		return false
 	var quote := get_maintenance_quote(building)
 	if quote.is_empty() or int(wallet.gold) < int(quote.gold_cost):
 		return false
 	for item_id in quote.materials:
 		if not inventory.has_item(str(item_id), int(quote.materials[item_id])):
 			return false
+	_active_maintenance_transactions[key] = true
 	var snapshot := {
 		"slots": inventory.slots.duplicate(true),
 		"mappings": inventory.quick_slot_mappings.duplicate(),
 	}
+	var gold_before := int(wallet.gold)
+	var due_before := get_maintenance_due_day(building)
 	var owns_event := _begin_event_bus_transaction()
 	var owns_mapping := inventory.begin_mapping_transaction()
 	for item_id in quote.materials:
 		if not inventory.remove_item(str(item_id), int(quote.materials[item_id])):
-			inventory.restore_state(snapshot.slots, snapshot.mappings)
-			if owns_mapping:
-				inventory.end_mapping_transaction(false)
-			_end_inventory_event_transaction(owns_event, false, "item_removed", quote.materials)
+			_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, key, owns_mapping, owns_event)
+			_active_maintenance_transactions.erase(key)
 			return false
 	if not wallet.spend_gold(int(quote.gold_cost)):
-		inventory.restore_state(snapshot.slots, snapshot.mappings)
-		if owns_mapping:
-			inventory.end_mapping_transaction(false)
-		_end_inventory_event_transaction(owns_event, false, "item_removed", quote.materials)
+		_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, key, owns_mapping, owns_event)
+		_active_maintenance_transactions.erase(key)
 		return false
+	maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
+	_refresh_greenhouse_cells()
 	if owns_mapping:
 		inventory.end_mapping_transaction(true)
 	_end_inventory_event_transaction(owns_event, true, "item_removed", quote.materials)
 	if owns_event and _event_bus != null:
 		_event_bus.gold_changed.emit(int(wallet.gold))
-	maintenance_due_days[building_key(building)] = _current_day + MAINTENANCE_INTERVAL_DAYS
-	_refresh_greenhouse_cells()
 	_emit_event("production_maintenance_changed", [building, get_maintenance_due_day(building)])
+	_active_maintenance_transactions.erase(key)
 	return true
+
+
+func _rollback_maintenance_transaction(
+	inventory: InventorySystem,
+	wallet: Variant,
+	snapshot: Dictionary,
+	gold_before: int,
+	due_before: int,
+	key: String,
+	owns_mapping: bool,
+	owns_event: bool
+) -> bool:
+	inventory.restore_state(snapshot.slots, snapshot.mappings)
+	wallet.set("gold", gold_before)
+	maintenance_due_days[key] = due_before
+	if owns_mapping:
+		inventory.end_mapping_transaction(false)
+	_end_inventory_event_transaction(owns_event, false, "item_removed", {})
+	var rollback_ok: bool = (
+		int(wallet.gold) == gold_before
+		and inventory.slots == snapshot.slots
+		and inventory.quick_slot_mappings == snapshot.mappings
+		and int(maintenance_due_days.get(key, -1)) == due_before
+	)
+	if not rollback_ok:
+		push_error("Maintenance transaction rollback failed")
+	return rollback_ok
 
 
 func can_apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -> bool:
