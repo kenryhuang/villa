@@ -131,6 +131,72 @@ func can_add_item(item_id: String, quantity: int = 1) -> bool:
 	return false
 
 
+func preflight_add_items(requested: Dictionary) -> Dictionary:
+	var result := {
+		"ok": false,
+		"reason": "invalid_request",
+		"requested_quantity": 0,
+		"available_quantity": 0,
+		"missing_quantity": 0,
+		"required_slots": 0,
+		"available_slots": 0,
+		"missing_slots": 0,
+		"missing": {},
+	}
+	if requested.is_empty():
+		return result
+	var simulated: Array = slots.duplicate(true)
+	for slot in simulated:
+		if (slot as Dictionary).is_empty():
+			result.available_slots += 1
+	var item_ids: Array[String] = []
+	for item_id_value in requested:
+		item_ids.append(str(item_id_value))
+	item_ids.sort()
+	for item_id in item_ids:
+		var quantity := int(requested.get(item_id, 0))
+		var item_data = GameDataScript.get_item(item_id)
+		if item_data == null or quantity <= 0:
+			return result
+		var max_stack := int(item_data.get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
+		if max_stack <= 0:
+			return result
+		result.requested_quantity += quantity
+		var remaining_for_slots := quantity
+		for slot_value in slots:
+			var slot := slot_value as Dictionary
+			if slot.get("item_id", "") == item_id:
+				remaining_for_slots -= mini(remaining_for_slots, maxi(0, max_stack - int(slot.get("quantity", 0))))
+		result.required_slots += ceili(float(maxi(0, remaining_for_slots)) / float(max_stack))
+
+		var remaining := quantity
+		for index in range(simulated.size()):
+			var slot := simulated[index] as Dictionary
+			if slot.get("item_id", "") != item_id:
+				continue
+			var added := mini(remaining, maxi(0, max_stack - int(slot.get("quantity", 0))))
+			if added > 0:
+				slot["quantity"] = int(slot.get("quantity", 0)) + added
+				remaining -= added
+			if remaining <= 0:
+				break
+		for index in range(simulated.size()):
+			if remaining <= 0:
+				break
+			if (simulated[index] as Dictionary).is_empty():
+				var added := mini(remaining, max_stack)
+				simulated[index] = {"item_id": item_id, "quantity": added}
+				remaining -= added
+		if remaining > 0:
+			result.missing[item_id] = remaining
+			result.missing_quantity += remaining
+	result.available_quantity = result.requested_quantity - result.missing_quantity
+	result.missing_slots = maxi(0, int(result.required_slots) - int(result.available_slots))
+	result.ok = int(result.missing_quantity) == 0
+	result.reason = "" if bool(result.ok) else "inventory_capacity"
+	return result
+
+
 func swap_slots(from_index: int, to_index: int) -> void:
 	if from_index < 0 or from_index >= slots.size():
 		return

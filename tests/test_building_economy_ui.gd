@@ -59,6 +59,7 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"RecipeDetails/DurationLabel",
 		"RecipeDetails/PricingLabel",
 		"RecipeDetails/MissingLabel",
+		"FeedbackLabel",
 		"RecipeDetails/BatchControls/BatchSpinBox",
 		"RecipeDetails/BatchControls/MaxButton",
 		"RecipeDetails/BatchControls/StartButton",
@@ -105,11 +106,15 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	panel.start_button.pressed.emit()
 	assertions.equal(inventory.get_item_count("grain"), grain_before - 2, "one press deducts one batch exactly once after repeated configure")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "one press creates one authoritative job")
+	assertions.equal(ui.state_label.text, "运行中", "shell title state updates in the same frame when production starts")
 	ui.close()
 	assertions.truthy(ui.open_for(windmill), "windmill reopens")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "closing and reopening preserves authoritative job")
 	assertions.equal(ui.production_panel.selected_recipe_id, "flour", "closing preserves selected recipe")
 	assertions.equal(ui.production_panel.batches, 1, "temporary batch resets on reopen")
+	production.advance_minutes(360)
+	panel.refresh_snapshot()
+	assertions.equal(ui.state_label.text, "空闲", "shell title state updates in the same frame when production finishes")
 
 	var missing_windmill := _scene_building("windmill", tree)
 	production.register_building(missing_windmill)
@@ -131,12 +136,29 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	blocked_production.register_building(blocked)
 	assertions.truthy(blocked_production.start_recipe(blocked, "flour", 1, blocked_inventory), "output-full fixture starts through ProductionSystem")
 	blocked_production.advance_minutes(360)
-	panel.configure(blocked_production, blocked_inventory, progression)
-	panel.show_building(blocked)
+	ui.configure(blocked_production, blocked_inventory, progression, modal)
+	ui.open_for(blocked)
+	panel = ui.production_panel
 	assertions.equal(panel.queue_slots[0].state, "output-full", "UI output-full state comes from production snapshot")
+	assertions.equal(ui.state_label.text, "仓满暂停", "shell title state reflects output-full immediately")
 	blocked_production.set_maintenance_due_day(blocked, blocked_production.get_current_day())
 	panel.refresh_snapshot()
 	assertions.equal(panel.queue_slots[0].state, "maintenance-paused", "UI maintenance pause comes from production snapshot")
+	assertions.equal(ui.state_label.text, "维护暂停", "shell title state reflects maintenance immediately")
+	var connections: int = panel.get_signal_connection_list("snapshot_changed").size() if panel.has_signal("snapshot_changed") else 0
+	assertions.equal(connections, 1, "repeated configure keeps exactly one shell snapshot listener")
+	blocked.producer_state.outputs = {"honey": 2}
+	blocked_inventory.max_slots = 1
+	blocked_inventory.reset_slots()
+	blocked_inventory.add_item("honey", 98)
+	panel.refresh_snapshot()
+	panel.request_collect_item("honey")
+	assertions.equal(panel.failure_reason, "inventory_capacity", "production item collect exposes structured capacity reason")
+	assertions.truthy(panel.failure_message.contains("×1"), "production item collect shows exact missing quantity")
+	panel.request_collect_all()
+	assertions.equal(panel.failure_reason, "inventory_capacity", "production collect-all exposes structured capacity reason")
+	panel.refresh_snapshot()
+	assertions.truthy(panel.feedback_label.text.contains("×1"), "production collection failure survives refresh")
 	ui.close()
 
 
@@ -165,6 +187,22 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 		assertions.equal(panel.view_data.building_id, building_id, "%s uses typed status ViewData" % building_id)
 		for field in required[building_id]:
 			assertions.truthy(panel.view_data.fields.has(field), "%s exposes %s" % [building_id, field])
+	var seeded_greenhouse := _scene_building("greenhouse", tree)
+	seeded_greenhouse.grid_x = 10
+	seeded_greenhouse.grid_z = 10
+	production.register_building(seeded_greenhouse)
+	var crop_data := CropData.new()
+	crop_data.crop_id = "tomato"
+	crop_data.growth_days = 4
+	var crop_instance := CropInstance.new()
+	crop_instance.crop_data = crop_data
+	crop_instance.growth_progress = 1.5
+	var crop_cell: Vector2i = production.get_greenhouse_cells(seeded_greenhouse)[0]
+	fixture.grid.get_cell(crop_cell.x, crop_cell.y).state = GridCell.State.PLANTED
+	fixture.grid.get_cell(crop_cell.x, crop_cell.y).crop_instance = crop_instance
+	panel.show_building(seeded_greenhouse)
+	var maturity: Array = panel.view_data.fields.crop_maturity_days
+	assertions.equal(maturity[0].get("remaining_days"), 3, "greenhouse UI renders authoritative crop maturity instead of a placeholder")
 
 	var coop := _scene_building("chicken_coop", tree)
 	production.register_building(coop)
@@ -193,6 +231,45 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	panel.request_collect_all()
 	assertions.equal(inventory.get_item_count("egg"), 1, "successful collection refreshes inventory in same frame")
 	assertions.equal(coop.producer_state.outputs, {}, "successful collection refreshes storage in same frame")
+
+	var partial_coop := _scene_building("chicken_coop", tree)
+	partial_coop.grid_x = 20
+	production.register_building(partial_coop)
+	partial_coop.producer_state.outputs = {"honey": 2}
+	inventory.max_slots = 1
+	inventory.reset_slots()
+	inventory.add_item("honey", 98)
+	panel.show_building(partial_coop)
+	panel.request_collect_all()
+	assertions.equal(panel.failure_reason, "inventory_capacity", "partial-capacity status collect exposes capacity reason")
+	assertions.truthy(panel.failure_message.contains("×1"), "status feedback shows the exact missing quantity")
+	panel.refresh_snapshot()
+	assertions.truthy(panel.feedback_label.text.contains("×1"), "status failure feedback survives refresh")
+
+	var barn := _scene_building("barn", tree)
+	var hive := _scene_building("beehive", tree)
+	barn.grid_x = 30
+	barn.grid_z = 30
+	hive.grid_x = 31
+	hive.grid_z = 30
+	production.register_building(barn)
+	production.register_building(hive)
+	hive.producer_state.outputs = {"honey": 2, "beeswax": 1}
+	inventory.max_slots = 20
+	inventory.reset_slots()
+	panel.show_building(barn)
+	var source_key := ProductionSystemScript.building_key(hive)
+	assertions.truthy(panel.has_method("request_collect_group_item"), "barn panel exposes per-source per-item collection action")
+	if panel.has_method("request_collect_group_item"):
+		panel.call("request_collect_group_item", source_key, "honey")
+		assertions.equal(inventory.get_item_count("honey"), 2, "barn group button action collects selected item")
+		assertions.equal(hive.producer_state.outputs, {"beeswax": 1}, "barn group action preserves unselected output")
+		inventory.max_slots = 1
+		inventory.reset_slots()
+		inventory.add_item("grain", 99)
+		panel.call("request_collect_group_item", source_key, "beeswax")
+		assertions.equal(panel.failure_reason, "inventory_capacity", "barn group failure exposes structured capacity reason")
+		assertions.truthy(panel.feedback_label.text.contains("×1"), "barn group failure remains visibly precise after refresh")
 
 
 func _test_range_and_modal_lifecycle(assertions: TestAssert, tree: SceneTree) -> void:

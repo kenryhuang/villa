@@ -47,5 +47,16 @@ func run(assertions: TestAssert) -> void:
 		not inventory.call("can_add_item", "grain", 1),
 		"full inventory rejects a different item"
 	)
+	var has_structured_preflight: bool = inventory.has_method("preflight_add_items")
+	assertions.truthy(has_structured_preflight, "inventory exposes structured multi-item capacity preflight")
+	if has_structured_preflight:
+		var full_result: Dictionary = inventory.call("preflight_add_items", {"grain": 1})
+		assertions.equal(full_result.get("reason"), "inventory_capacity", "full inventory reports a stable capacity reason")
+		assertions.equal(full_result.get("missing_slots"), 1, "full inventory reports the exact missing slot count")
+		assertions.equal(full_result.get("missing_quantity"), 1, "full inventory reports the exact missing quantity")
+		var partial_result: Dictionary = inventory.call("preflight_add_items", {"grain_seed": 2})
+		assertions.equal(partial_result.get("available_quantity"), 1, "preflight counts usable partial-stack space")
+		assertions.equal(partial_result.get("missing_quantity"), 1, "partial capacity reports only the unplaceable quantity")
+		assertions.equal(partial_result.get("missing_slots"), 1, "partial capacity reports the one additional slot required")
 	inventory.free()
 	game_data.free()

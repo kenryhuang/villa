@@ -221,10 +221,7 @@ func advance_minutes(minutes: int) -> void:
 
 
 func collect_all(building: BuildingInstance, inventory: InventorySystem) -> bool:
-	var state := _get_state(building)
-	if state == null or inventory == null or state.outputs.is_empty():
-		return false
-	return _collect(building, inventory, state.outputs.duplicate(true))
+	return bool(collect_outputs(building, inventory).get("ok", false))
 
 
 func collect_item(
@@ -232,13 +229,45 @@ func collect_item(
 	item_id: String,
 	inventory: InventorySystem
 ) -> bool:
+	return bool(collect_outputs(building, inventory, item_id).get("ok", false))
+
+
+func preflight_output_collection(
+	building: BuildingInstance,
+	inventory: InventorySystem,
+	item_id: String = ""
+) -> Dictionary:
+	var failure := {"ok": false, "reason": "invalid_request", "requested": {}}
 	var state := _get_state(building)
 	if state == null or inventory == null:
-		return false
-	var quantity := state.get_output_count(item_id)
-	if quantity <= 0:
-		return false
-	return _collect(building, inventory, {item_id: quantity})
+		return failure
+	var requested: Dictionary = state.outputs.duplicate(true)
+	if not item_id.is_empty():
+		var quantity := state.get_output_count(item_id)
+		if quantity <= 0:
+			failure.reason = "nothing_to_collect"
+			return failure
+		requested = {item_id: quantity}
+	if requested.is_empty():
+		failure.reason = "nothing_to_collect"
+		return failure
+	var result: Dictionary = inventory.preflight_add_items(requested)
+	result["requested"] = requested.duplicate(true)
+	return result
+
+
+func collect_outputs(
+	building: BuildingInstance,
+	inventory: InventorySystem,
+	item_id: String = ""
+) -> Dictionary:
+	var result := preflight_output_collection(building, inventory, item_id)
+	if not bool(result.get("ok", false)):
+		return result
+	if not _collect(building, inventory, result.requested):
+		result.ok = false
+		result.reason = "transaction_failed"
+	return result
 
 
 func apply_daily_effects(total_day: int) -> void:
@@ -369,6 +398,8 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 	if not _registered_buildings.has(building):
 		return false
 	maintenance_due_days[building_key(building)] = due_day
+	_refresh_greenhouse_cells()
+	_emit_event("production_maintenance_changed", [building, due_day])
 	return true
 
 
@@ -629,16 +660,24 @@ func is_water_connected(building: BuildingInstance) -> bool:
 
 func get_irrigated_cells(building: BuildingInstance) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
-	if building == null or _grid_system == null or not _has_effect(building, "irrigation"):
+	for position in get_waterwheel_covered_cells(building):
+		var cell := _grid_system.get_cell(position.x, position.y)
+		if cell.state in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
+			result.append(position)
+	return result
+
+
+func get_waterwheel_covered_cells(waterwheel: BuildingInstance) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if waterwheel == null or _grid_system == null or not _has_effect(waterwheel, "irrigation"):
 		return result
-	var radius := float(_effect_config(building).get("radius", 4))
-	var center := _building_center(building)
+	var radius := float(_effect_config(waterwheel).get("radius", 4))
+	var center := _building_center(waterwheel)
 	for gz in range(floori(center.y - radius), ceili(center.y + radius) + 1):
 		for gx in range(floori(center.x - radius), ceili(center.x + radius) + 1):
 			if Vector2(gx, gz).distance_to(center) > radius + 0.0001:
 				continue
-			var cell := _grid_system.get_cell(gx, gz)
-			if cell != null and cell.state in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
+			if _grid_system.get_cell(gx, gz) != null:
 				result.append(Vector2i(gx, gz))
 	return result
 
@@ -659,20 +698,68 @@ func get_greenhouse_cells(building: BuildingInstance) -> Array[Vector2i]:
 	return result
 
 
+func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if _grid_system == null or not _building_is_active(greenhouse):
+		return result
+	for position in get_greenhouse_cells(greenhouse):
+		var cell := _grid_system.get_cell(position.x, position.y)
+		if cell == null or cell.crop_instance == null or cell.crop_instance.crop_data == null:
+			continue
+		var crop_data = cell.crop_instance.crop_data
+		var crop_id := str(_property_value(crop_data, "crop_id", ""))
+		var growth_days := maxi(0, int(_property_value(crop_data, "growth_days", 0)))
+		if crop_id.is_empty() or growth_days <= 0:
+			continue
+		var remaining_days := maxi(0, ceili(float(growth_days) - float(cell.crop_instance.growth_progress)))
+		result.append({
+			"cell": position,
+			"crop_id": crop_id,
+			"remaining_days": remaining_days,
+			"maturity_day": _current_day + remaining_days,
+		})
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_cell := a.cell as Vector2i
+		var b_cell := b.cell as Vector2i
+		return a_cell.y < b_cell.y or (a_cell.y == b_cell.y and a_cell.x < b_cell.x)
+	)
+	return result
+
+
+func get_covered_greenhouses(waterwheel: BuildingInstance) -> Array[String]:
+	var result: Array[String] = []
+	if (
+		not _building_is_active(waterwheel)
+		or not _has_effect(waterwheel, "irrigation")
+		or is_maintenance_overdue(waterwheel)
+		or not is_water_connected(waterwheel)
+	):
+		return result
+	var covered := {}
+	for position in get_waterwheel_covered_cells(waterwheel):
+		covered[position] = true
+	for greenhouse in _valid_registered_buildings():
+		if (
+			not _building_is_active(greenhouse)
+			or not _has_effect(greenhouse, "ignore_season")
+			or is_maintenance_overdue(greenhouse)
+		):
+			continue
+		for position in get_greenhouse_cells(greenhouse):
+			if covered.has(position):
+				result.append(building_key(greenhouse))
+				break
+	result.sort()
+	return result
+
+
 func is_greenhouse_water_connected(greenhouse: BuildingInstance) -> bool:
-	var greenhouse_cells := get_greenhouse_cells(greenhouse)
-	if greenhouse_cells.is_empty():
+	if not _building_is_active(greenhouse) or get_greenhouse_cells(greenhouse).is_empty():
 		return false
+	var greenhouse_key := building_key(greenhouse)
 	for building in _valid_registered_buildings():
-		if not _building_is_active(building) or not _has_effect(building, "irrigation"):
-			continue
-		if not is_water_connected(building):
-			continue
-		var radius := float(_effect_config(building).get("radius", 4))
-		var center := _building_center(building)
-		for position in greenhouse_cells:
-			if Vector2(position.x, position.y).distance_to(center) <= radius + 0.0001:
-				return true
+		if greenhouse_key in get_covered_greenhouses(building):
+			return true
 	return false
 
 
@@ -680,35 +767,73 @@ func collect_nearby_outputs(
 	barn: BuildingInstance,
 	inventory: InventorySystem = null
 ) -> bool:
+	return bool(collect_barn_outputs(barn, inventory).get("ok", false))
+
+
+func get_nearby_output_groups(barn: BuildingInstance) -> Dictionary:
+	var result := {}
+	for source in _nearby_output_sources(barn):
+		var source_key := str(source.source_key)
+		var building := source.building as BuildingInstance
+		result[source_key] = {
+			"source_key": source_key,
+			"building_id": building.building_id,
+			"display_name": building.data.display_name if building.data != null else building.building_id,
+			"outputs": (source.outputs as Dictionary).duplicate(true),
+		}
+	return result.duplicate(true)
+
+
+func preflight_barn_collection(
+	barn: BuildingInstance,
+	inventory: InventorySystem = null,
+	source_key: String = "",
+	item_id: String = ""
+) -> Dictionary:
 	var destination := inventory if inventory != null else _inventory_system
+	var failure := {"ok": false, "reason": "invalid_request", "requested": {}, "groups": {}}
 	if barn == null or destination == null or not _has_effect(barn, "inventory_expand"):
-		return false
-	var radius := float(_effect_config(barn).get("collection_radius", 6))
-	var center := _building_center(barn)
-	var sources: Array[Dictionary] = []
+		return failure
+	var all_groups := get_nearby_output_groups(barn)
+	if not source_key.is_empty() and not all_groups.has(source_key):
+		failure.reason = "source_not_found"
+		return failure
+	var sources := _nearby_output_sources(barn, source_key, item_id)
+	if sources.is_empty():
+		failure.reason = "nothing_to_collect"
+		return failure
 	var combined := {}
-	for building in _valid_registered_buildings():
-		if building == barn or not _building_is_active(building):
-			continue
-		var state := _get_state(building)
-		if state == null or state.outputs.is_empty():
-			continue
-		if _building_center(building).distance_to(center) > radius + 0.0001:
-			continue
-		var outputs: Dictionary = state.outputs.duplicate(true)
-		sources.append({"state": state, "outputs": outputs})
-		_merge_counts(combined, outputs)
-	if sources.is_empty() or not _can_add_all(destination, combined):
-		return false
+	for source in sources:
+		_merge_counts(combined, source.outputs)
+	var result: Dictionary = destination.preflight_add_items(combined)
+	result["requested"] = combined.duplicate(true)
+	result["groups"] = all_groups.duplicate(true)
+	return result
+
+
+func collect_barn_outputs(
+	barn: BuildingInstance,
+	inventory: InventorySystem = null,
+	source_key: String = "",
+	item_id: String = ""
+) -> Dictionary:
+	var destination := inventory if inventory != null else _inventory_system
+	var result := preflight_barn_collection(barn, destination, source_key, item_id)
+	if not bool(result.get("ok", false)):
+		return result
+	var sources := _nearby_output_sources(barn, source_key, item_id)
+	var combined: Dictionary = result.requested
 	var inventory_snapshot := _snapshot_inventory(destination)
 	var owns_event_transaction := _begin_event_bus_transaction()
 	var owns_mapping_transaction: bool = destination.begin_mapping_transaction()
-	for item_id in combined:
-		if not destination.add_item(str(item_id), int(combined[item_id])):
+	for collected_item_id in combined:
+		if not destination.add_item(str(collected_item_id), int(combined[collected_item_id])):
 			_restore_inventory(destination, inventory_snapshot)
 			_end_mapping_transaction(destination, owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction, false, "item_added", combined)
-			return false
+			result.ok = false
+			result.reason = "transaction_failed"
+			return result
 	for source in sources:
 		var state := source.state as ProducerState
 		if not state.remove_outputs(source.outputs):
@@ -717,16 +842,50 @@ func collect_nearby_outputs(
 				(rollback_source.state as ProducerState).outputs = rollback_source.outputs.duplicate(true)
 			_end_mapping_transaction(destination, owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction, false, "item_added", combined)
-			return false
+			result.ok = false
+			result.reason = "transaction_failed"
+			return result
 	_end_mapping_transaction(destination, owns_mapping_transaction, true)
 	_end_inventory_event_transaction(owns_event_transaction, true, "item_added", combined)
 	for source in sources:
 		var state := source.state as ProducerState
-		for item_id in source.outputs:
+		for changed_item_id in source.outputs:
 			var owner := _building_for_state(state)
 			if owner != null:
-				_emit_event("production_output_changed", [owner, str(item_id), state.get_output_count(str(item_id))])
-	return true
+				_emit_event("production_output_changed", [owner, str(changed_item_id), state.get_output_count(str(changed_item_id))])
+	return result
+
+
+func _nearby_output_sources(
+	barn: BuildingInstance,
+	source_key: String = "",
+	item_id: String = ""
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if barn == null or not _has_effect(barn, "inventory_expand"):
+		return result
+	var radius := float(_effect_config(barn).get("collection_radius", 6))
+	var center := _building_center(barn)
+	for building in _valid_registered_buildings():
+		if building == barn or not _building_is_active(building):
+			continue
+		if _building_center(building).distance_to(center) > radius + 0.0001:
+			continue
+		var key := building_key(building)
+		if not source_key.is_empty() and key != source_key:
+			continue
+		var state := _get_state(building)
+		if state == null or state.outputs.is_empty():
+			continue
+		var outputs: Dictionary = state.outputs.duplicate(true)
+		if not item_id.is_empty():
+			var quantity := int(outputs.get(item_id, 0))
+			if quantity <= 0:
+				continue
+			outputs = {item_id: quantity}
+		result.append({"building": building, "source_key": key, "state": state, "outputs": outputs})
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.source_key) < str(b.source_key))
+	return result
 
 
 func _connect_building_system() -> void:
@@ -1110,36 +1269,7 @@ func _collect(
 
 
 func _can_add_all(inventory: InventorySystem, requested: Dictionary) -> bool:
-	if inventory == null or requested.is_empty():
-		return false
-	var simulated: Array = inventory.slots.duplicate(true)
-	for item_id_value in requested:
-		var item_id := str(item_id_value)
-		var quantity := int(requested[item_id_value])
-		var item_data = GameDataScript.get_item(item_id)
-		if item_data == null or quantity <= 0:
-			return false
-		var max_stack := int(item_data.get("max_stack", 99))
-		for index in range(simulated.size()):
-			var slot: Dictionary = simulated[index]
-			if slot.get("item_id", "") != item_id:
-				continue
-			var added := mini(quantity, max_stack - int(slot.get("quantity", 0)))
-			if added > 0:
-				slot.quantity = int(slot.get("quantity", 0)) + added
-				quantity -= added
-			if quantity <= 0:
-				break
-		for index in range(simulated.size()):
-			if quantity <= 0:
-				break
-			if (simulated[index] as Dictionary).is_empty():
-				var added := mini(quantity, max_stack)
-				simulated[index] = {"item_id": item_id, "quantity": added}
-				quantity -= added
-		if quantity > 0:
-			return false
-	return true
+	return inventory != null and bool(inventory.preflight_add_items(requested).get("ok", false))
 
 
 func _get_state(building: BuildingInstance) -> ProducerState:

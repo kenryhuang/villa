@@ -6,6 +6,8 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MAX_UI_BATCHES := 9999
 const DEFAULT_INPUT_CAPACITY := 99
 
+signal snapshot_changed(state: String)
+
 @onready var recipe_list: VBoxContainer = $ThreeColumns/RecipeColumn/RecipeList
 @onready var queue_slot_nodes := [
 	$ThreeColumns/QueueColumn/QueueSlots/Slot1,
@@ -24,6 +26,7 @@ const DEFAULT_INPUT_CAPACITY := 99
 @onready var batch_spin_box: SpinBox = $RecipeDetails/BatchControls/BatchSpinBox
 @onready var max_button: Button = $RecipeDetails/BatchControls/MaxButton
 @onready var start_button: Button = $RecipeDetails/BatchControls/StartButton
+@onready var feedback_label: Label = $FeedbackLabel
 
 var recipe_rows: Array[Dictionary] = []
 var recipe_detail: Dictionary = {}
@@ -36,6 +39,7 @@ var batches := 1
 var max_batches := 0
 var disabled_reason := ""
 var failure_reason := ""
+var failure_message := ""
 
 var _production: ProductionSystem
 var _inventory: InventorySystem
@@ -76,6 +80,8 @@ func show_building(building: BuildingInstance) -> void:
 		_clear_view()
 		return
 	_building_ref = weakref(building)
+	failure_reason = ""
+	failure_message = ""
 	batches = 1
 	var recipes := RecipeDatabaseScript.get_recipes_for_station(building.building_id)
 	var remembered := str(_selected_by_building.get(_building_key(building), ""))
@@ -119,6 +125,7 @@ func request_start() -> void:
 		refresh_snapshot()
 		return
 	failure_reason = ""
+	failure_message = ""
 	refresh_snapshot()
 
 
@@ -131,11 +138,13 @@ func request_collect_all() -> void:
 		_set_failure("nothing_to_collect", "collect_all")
 		refresh_snapshot()
 		return
-	if not _production.collect_all(building, _inventory):
-		_set_failure("inventory_capacity", "collect_all")
+	var result := _production.collect_outputs(building, _inventory)
+	if not bool(result.get("ok", false)):
+		_set_collection_failure(result, "collect_all")
 		refresh_snapshot()
 		return
 	failure_reason = ""
+	failure_message = ""
 	refresh_snapshot()
 
 
@@ -148,11 +157,13 @@ func request_collect_item(item_id: String) -> void:
 		_set_failure("nothing_to_collect", "collect_item")
 		refresh_snapshot()
 		return
-	if not _production.collect_item(building, item_id, _inventory):
-		_set_failure("inventory_capacity", "collect_item")
+	var result := _production.collect_outputs(building, _inventory, item_id)
+	if not bool(result.get("ok", false)):
+		_set_collection_failure(result, "collect_item")
 		refresh_snapshot()
 		return
 	failure_reason = ""
+	failure_message = ""
 	refresh_snapshot()
 
 
@@ -167,6 +178,7 @@ func refresh_snapshot() -> void:
 	_build_recipe_detail(building)
 	_build_queue_slots()
 	_render()
+	snapshot_changed.emit(str(queue_slots[0].get("state", "idle")) if not queue_slots.is_empty() else "idle")
 
 
 func _build_recipe_rows(building: BuildingInstance) -> void:
@@ -367,6 +379,7 @@ func _render() -> void:
 	max_button.disabled = max_batches <= 0
 	start_button.disabled = not bool(preflight.get("ok", false))
 	start_button.tooltip_text = disabled_reason
+	feedback_label.text = failure_message
 
 
 func _clear_view() -> void:
@@ -381,6 +394,7 @@ func _clear_view() -> void:
 	max_batches = 0
 	disabled_reason = "选择左侧配方开始生产"
 	_render()
+	snapshot_changed.emit("idle")
 
 
 func _building() -> BuildingInstance:
@@ -434,17 +448,34 @@ func _clear_container(container: Node) -> void:
 
 func _set_failure(code: String, action: String) -> void:
 	failure_reason = code
+	failure_message = _reason_text(preflight) if action == "start" and not preflight.is_empty() else "操作失败：%s" % code
 	var building := _building()
 	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	if building != null and event_bus != null and event_bus.has_signal("building_economy_action_failed"):
 		event_bus.building_economy_action_failed.emit(building, action, code)
 
 
+func _set_collection_failure(result: Dictionary, action: String) -> void:
+	var code := str(result.get("reason", "transaction_failed"))
+	_set_failure(code, action)
+	if code != "inventory_capacity":
+		failure_message = "暂无可收取产物" if code == "nothing_to_collect" else "收取条件已变化，未移动任何物品"
+		return
+	var missing: Dictionary = result.get("missing", {})
+	var ids: Array[String] = []
+	ids.assign(missing.keys())
+	ids.sort()
+	var parts: Array[String] = []
+	for item_id in ids:
+		parts.append("%s ×%d" % [_item_name(item_id), int(missing[item_id])])
+	failure_message = "背包还需%d格空间，无法容纳%s" % [int(result.get("missing_slots", 0)), "、".join(parts)]
+
+
 func _connect_event_bus() -> void:
 	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	if event_bus == null:
 		return
-	for signal_name in ["production_job_started", "production_job_completed", "production_output_blocked", "production_output_changed", "production_input_changed", "production_maintenance_changed", "item_added", "item_removed"]:
+	for signal_name in ["production_job_started", "production_job_completed", "production_output_blocked", "production_output_changed", "production_input_changed", "production_maintenance_changed", "item_added", "item_removed", "day_changed"]:
 		var callback := Callable(self, "_on_economy_state_changed")
 		if event_bus.has_signal(signal_name) and not event_bus.is_connected(signal_name, callback):
 			event_bus.connect(signal_name, callback)

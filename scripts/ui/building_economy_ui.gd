@@ -29,6 +29,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	if not close_button.pressed.is_connected(close):
 		close_button.pressed.connect(close)
+	_connect_panel_signals()
 	if is_configured():
 		production_panel.configure(_production, _inventory, _progression)
 		status_panel.configure(_production, _inventory, range_overlay)
@@ -56,6 +57,7 @@ func configure(
 	_modal = modal
 	if not is_node_ready():
 		return true
+	_connect_panel_signals()
 	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, range_overlay)
 
 
@@ -85,7 +87,7 @@ func open_for(building: BuildingInstance) -> bool:
 		state_label.text = _production_state_text()
 	else:
 		status_panel.show_building(building)
-		state_label.text = status_panel.view_data.state
+		state_label.text = _status_state_text(status_panel.view_data.state)
 	_emit_event("building_economy_opened", [building, kind])
 	return true
 
@@ -149,16 +151,40 @@ func _disconnect_current_building() -> void:
 	_building_ref = null
 
 
-func _production_state_text() -> String:
-	if production_panel.queue_slots.is_empty():
-		return "空闲"
-	match str(production_panel.queue_slots[0].get("state", "idle")):
+func _production_state_text(state: String = "") -> String:
+	var current_state := state
+	if current_state.is_empty():
+		current_state = str(production_panel.queue_slots[0].get("state", "idle")) if not production_panel.queue_slots.is_empty() else "idle"
+	match current_state:
 		"running": return "运行中"
 		"waiting": return "等待中"
 		"output-full": return "仓满暂停"
 		"maintenance-paused": return "维护暂停"
 		"completed-awaiting-storage": return "完成待入库"
 	return "空闲"
+
+
+func _status_state_text(state: String) -> String:
+	return "维护暂停" if state == "maintenance-paused" else "运行中"
+
+
+func _connect_panel_signals() -> void:
+	var production_callback := Callable(self, "_on_production_snapshot_changed")
+	if not production_panel.snapshot_changed.is_connected(production_callback):
+		production_panel.snapshot_changed.connect(production_callback)
+	var status_callback := Callable(self, "_on_status_snapshot_changed")
+	if not status_panel.snapshot_changed.is_connected(status_callback):
+		status_panel.snapshot_changed.connect(status_callback)
+
+
+func _on_production_snapshot_changed(state: String) -> void:
+	if _is_open and production_panel.visible:
+		state_label.text = _production_state_text(state)
+
+
+func _on_status_snapshot_changed(state: String) -> void:
+	if _is_open and status_panel.visible:
+		state_label.text = _status_state_text(state)
 
 
 func _emit_event(signal_name: StringName, arguments: Array) -> void:

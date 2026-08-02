@@ -16,6 +16,9 @@ class ViewData:
 	var actions: Array[String] = []
 
 
+signal snapshot_changed(state: String)
+
+
 @onready var summary_fields: VBoxContainer = $SummaryFields
 @onready var input_actions: VBoxContainer = $InputActions
 @onready var storage_list: VBoxContainer = $StorageList
@@ -106,13 +109,27 @@ func request_collect_all() -> void:
 		_set_failure("nothing_to_collect", "暂无可收取产物")
 		refresh_snapshot()
 		return
-	var succeeded := (
-		_production.collect_nearby_outputs(building, _inventory)
+	var result: Dictionary = (
+		_production.collect_barn_outputs(building, _inventory)
 		if building.building_id == "barn"
-		else _production.collect_all(building, _inventory)
+		else _production.collect_outputs(building, _inventory)
 	)
-	if not succeeded:
-		_set_failure("inventory_capacity", "背包空间不足，未移动任何物品")
+	if not bool(result.get("ok", false)):
+		_set_failure(str(result.get("reason", "transaction_failed")), _collection_failure_text(result))
+		refresh_snapshot()
+		return
+	_clear_failure()
+	refresh_snapshot()
+
+
+func request_collect_group_item(source_key: String, item_id: String) -> void:
+	var building := _building()
+	if building == null or building.building_id != "barn" or _production == null or _inventory == null:
+		_set_failure("not_configured", "谷仓状态未连接")
+		return
+	var result := _production.collect_barn_outputs(building, _inventory, source_key, item_id)
+	if not bool(result.get("ok", false)):
+		_set_failure(str(result.get("reason", "transaction_failed")), _collection_failure_text(result))
 		refresh_snapshot()
 		return
 	_clear_failure()
@@ -143,6 +160,7 @@ func refresh_snapshot() -> void:
 	if _range_preview_enabled:
 		set_range_preview(true)
 	_render()
+	snapshot_changed.emit(view_data.state)
 
 
 func _view_data_for(building: BuildingInstance) -> ViewData:
@@ -185,7 +203,7 @@ func _view_data_for(building: BuildingInstance) -> ViewData:
 				"water_connected": _production.is_water_connected(building),
 				"irrigation_radius": float(config.get("radius", 4)),
 				"covered_farmland": irrigated.size(),
-				"covered_greenhouses": _covered_greenhouses(),
+				"covered_greenhouses": _production.get_covered_greenhouses(building).size(),
 				"range_cells": irrigated.duplicate(),
 			}
 			result.actions = ["range_preview"]
@@ -248,18 +266,65 @@ func _render() -> void:
 			button.pressed.connect(request_add_input.bind(feed_item, quantity))
 			input_actions.add_child(button)
 	_clear_container(storage_list)
-	var ids: Array[String] = []
-	ids.assign(view_data.storage.keys())
-	ids.sort()
-	for item_id in ids:
-		var label := Label.new()
-		label.text = "%s ×%d" % [_item_name(item_id), int(view_data.storage[item_id])]
-		storage_list.add_child(label)
+	if view_data.kind == "barn":
+		_render_barn_groups()
+	else:
+		var ids: Array[String] = []
+		ids.assign(view_data.storage.keys())
+		ids.sort()
+		for item_id in ids:
+			var label := Label.new()
+			label.text = "%s ×%d" % [_item_name(item_id), int(view_data.storage[item_id])]
+			storage_list.add_child(label)
 	collect_all_button.visible = "collect" in view_data.actions
-	collect_all_button.disabled = view_data.storage.is_empty() and view_data.kind != "barn"
+	collect_all_button.disabled = int(view_data.fields.get("pending_outputs", 0)) <= 0 if view_data.kind == "barn" else view_data.storage.is_empty()
 	range_preview_button.visible = "range_preview" in view_data.actions
 	range_preview_button.set_pressed_no_signal(_range_preview_enabled)
 	feedback_label.text = failure_message
+
+
+func _render_barn_groups() -> void:
+	var groups: Dictionary = view_data.fields.get("grouped_outputs", {})
+	var source_keys: Array[String] = []
+	source_keys.assign(groups.keys())
+	source_keys.sort()
+	for source_key in source_keys:
+		var group: Dictionary = groups[source_key]
+		var heading := Label.new()
+		heading.text = str(group.get("display_name", group.get("building_id", source_key)))
+		storage_list.add_child(heading)
+		var outputs: Dictionary = group.get("outputs", {})
+		var item_ids: Array[String] = []
+		item_ids.assign(outputs.keys())
+		item_ids.sort()
+		for item_id in item_ids:
+			var row := HBoxContainer.new()
+			var label := Label.new()
+			label.text = "%s ×%d" % [_item_name(item_id), int(outputs[item_id])]
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var button := Button.new()
+			button.name = "Collect_%s_%s" % [source_key.replace(":", "_"), item_id]
+			button.text = "收取"
+			button.pressed.connect(request_collect_group_item.bind(source_key, item_id))
+			row.add_child(label)
+			row.add_child(button)
+			storage_list.add_child(row)
+
+
+func _collection_failure_text(result: Dictionary) -> String:
+	match str(result.get("reason", "transaction_failed")):
+		"nothing_to_collect": return "暂无可收取产物"
+		"source_not_found": return "产物来源已变化，请刷新后重试"
+		"inventory_capacity":
+			var missing: Dictionary = result.get("missing", {})
+			var item_ids: Array[String] = []
+			item_ids.assign(missing.keys())
+			item_ids.sort()
+			var parts: Array[String] = []
+			for item_id in item_ids:
+				parts.append("%s ×%d" % [_item_name(item_id), int(missing[item_id])])
+			return "背包还需%d格空间，无法容纳%s" % [int(result.get("missing_slots", 0)), "、".join(parts)]
+	return "收取条件已变化，未移动任何物品"
 
 
 func _next_even_day() -> int:
@@ -267,42 +332,17 @@ func _next_even_day() -> int:
 	return day + 2 if day % 2 == 0 else day + 1
 
 
-func _covered_greenhouses() -> int:
-	var count := 0
-	for candidate in _production.get_registered_buildings():
-		if candidate != null and candidate.building_id == "greenhouse" and _production.is_greenhouse_water_connected(candidate):
-			count += 1
-	return count
-
-
-func _greenhouse_crop_maturity(_building: BuildingInstance) -> Dictionary:
-	# Production owns crop timing; this field remains empty until a crop snapshot is available.
-	return {}
+func _greenhouse_crop_maturity(building: BuildingInstance) -> Array[Dictionary]:
+	return _production.get_greenhouse_crop_maturity(building).duplicate(true)
 
 
 func _nearby_output_groups(barn: BuildingInstance) -> Dictionary:
-	var groups := {}
+	var groups: Dictionary = _production.get_nearby_output_groups(barn)
 	var quantity := 0
-	var count := 0
-	var radius := float(barn.data.effect_config.get("collection_radius", 6)) if barn.data != null else 6.0
-	var center := _building_center(barn)
-	for candidate in _production.get_registered_buildings():
-		if candidate == barn or candidate == null or _building_center(candidate).distance_to(center) > radius + 0.0001:
-			continue
-		var candidate_snapshot := _production.get_building_snapshot(candidate)
-		var outputs: Dictionary = candidate_snapshot.get("outputs", {})
-		if outputs.is_empty():
-			continue
-		count += 1
-		groups[ProductionSystem.building_key(candidate)] = outputs.duplicate(true)
-		for value in outputs.values():
+	for group in groups.values():
+		for value in (group.get("outputs", {}) as Dictionary).values():
 			quantity += int(value)
-	return {"buildings": count, "quantity": quantity, "groups": groups}
-
-
-func _building_center(building: BuildingInstance) -> Vector2:
-	var footprint := building.data.footprint if building != null and building.data != null else Vector2i.ONE
-	return Vector2(float(building.grid_x) + float(footprint.x - 1) * 0.5, float(building.grid_z) + float(footprint.y - 1) * 0.5)
+	return {"buildings": groups.size(), "quantity": quantity, "groups": groups.duplicate(true)}
 
 
 func _resource_output_table(config: Dictionary) -> Dictionary:
@@ -367,6 +407,6 @@ func _on_economy_state_changed(a: Variant = null, _b: Variant = null, _c: Varian
 	var building := _building()
 	if building == null:
 		return
-	if a is BuildingInstance and a != building:
+	if a is BuildingInstance and a != building and building.building_id != "barn":
 		return
 	refresh_snapshot()

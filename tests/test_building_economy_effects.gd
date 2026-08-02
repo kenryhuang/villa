@@ -66,7 +66,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_maintenance_disables_and_restores_daily_coverage(assertions)
 	_test_waterwheel_placement_rule(assertions, tree)
 	_test_greenhouse_mapping_and_season_protection(assertions)
+	_test_authoritative_greenhouse_crop_and_wheel_scope(assertions)
 	_test_barn_collection_is_atomic(assertions)
+	_test_barn_grouped_selective_collection(assertions)
 	_test_deterministic_resource_outputs(assertions)
 	_test_building_definitions_scenes_and_build_ui(assertions, tree)
 	_test_main_production_integration(assertions, tree)
@@ -321,6 +323,46 @@ func _test_greenhouse_mapping_and_season_protection(assertions: TestAssert) -> v
 		assertions.truthy(farming.can_plant(construction_cell, summer_crop), "greenhouse grants season protection immediately on completion")
 
 
+func _test_authoritative_greenhouse_crop_and_wheel_scope(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var farming := _farming(grid)
+	var production := _production(grid, farming)
+	var greenhouse_a := _building("greenhouse", 10, 10, false)
+	var greenhouse_b := _building("greenhouse", 26, 20, false)
+	var wheel_a := _building("waterwheel", 6, 10, false)
+	var wheel_b := _building("waterwheel", 22, 20, false)
+	grid.get_cell(5, 10).state = GridCell.State.WATER
+	grid.get_cell(21, 20).state = GridCell.State.WATER
+	for building in [greenhouse_a, greenhouse_b, wheel_a, wheel_b]:
+		production.register_building(building)
+	var crop := CropData.new()
+	crop.crop_id = "tomato"
+	crop.growth_days = 4
+	var instance := CropInstance.new()
+	instance.crop_data = crop
+	instance.growth_progress = 1.5
+	var planted := production.get_greenhouse_cells(greenhouse_a)[0]
+	grid.get_cell(planted.x, planted.y).state = GridCell.State.PLANTED
+	grid.get_cell(planted.x, planted.y).crop_instance = instance
+
+	var has_crop_query := production.has_method("get_greenhouse_crop_maturity")
+	assertions.truthy(has_crop_query, "ProductionSystem owns the greenhouse crop maturity query")
+	if has_crop_query:
+		var crops: Array = production.call("get_greenhouse_crop_maturity", greenhouse_a)
+		assertions.equal(crops.size(), 1, "greenhouse query returns only seeded crops in that greenhouse")
+		if not crops.is_empty():
+			assertions.equal(crops[0].get("crop_id"), "tomato", "crop maturity snapshot exposes crop id")
+			assertions.equal(crops[0].get("remaining_days"), 3, "crop maturity rounds the remaining growth time up")
+			assertions.equal(crops[0].get("maturity_day"), production.get_current_day() + 3, "crop maturity exposes the authoritative calendar day")
+	var has_wheel_query := production.has_method("get_covered_greenhouses")
+	var has_covered_cells := production.has_method("get_waterwheel_covered_cells")
+	assertions.truthy(has_wheel_query and has_covered_cells, "ProductionSystem owns per-waterwheel covered cells and greenhouse intersection")
+	if has_wheel_query:
+		assertions.truthy(planted in production.call("get_waterwheel_covered_cells", wheel_a), "waterwheel authoritative cells include the intersected greenhouse cell")
+		assertions.equal(production.call("get_covered_greenhouses", wheel_a), [ProductionSystemScript.building_key(greenhouse_a)], "first wheel reports only its nearby greenhouse")
+		assertions.equal(production.call("get_covered_greenhouses", wheel_b), [ProductionSystemScript.building_key(greenhouse_b)], "far second wheel cannot leak into first wheel coverage")
+
+
 func _test_barn_collection_is_atomic(assertions: TestAssert) -> void:
 	var production := _production()
 	var barn := _building("barn", 10, 10, false)
@@ -352,6 +394,44 @@ func _test_barn_collection_is_atomic(assertions: TestAssert) -> void:
 	assertions.truthy(not production.collect_nearby_outputs(barn, failing), "barn reports destination mutation failure")
 	assertions.equal(failing.get_slot_count(), 0, "barn rolls back partially added inventory")
 	assertions.equal(rollback_hive.producer_state.outputs, {"honey": 1, "beeswax": 1}, "barn rollback preserves producer outputs")
+
+
+func _test_barn_grouped_selective_collection(assertions: TestAssert) -> void:
+	var production := _production()
+	var barn := _building("barn", 10, 10, false)
+	var hive := _building("beehive", 11, 10, true)
+	var coop := _building("chicken_coop", 12, 10, true)
+	hive.producer_state.outputs = {"honey": 2, "beeswax": 1}
+	coop.producer_state.outputs = {"egg": 2}
+	for building in [barn, hive, coop]:
+		production.register_building(building)
+	var has_group_query := production.has_method("get_nearby_output_groups")
+	var has_preflight := production.has_method("preflight_barn_collection")
+	var has_collect := production.has_method("collect_barn_outputs")
+	assertions.truthy(has_group_query and has_preflight and has_collect, "barn exposes authoritative grouped preflight and collection APIs")
+	if not has_group_query or not has_preflight or not has_collect:
+		return
+	var hive_key := ProductionSystemScript.building_key(hive)
+	var groups: Dictionary = production.call("get_nearby_output_groups", barn)
+	assertions.equal((groups[hive_key] as Dictionary).get("outputs"), {"honey": 2, "beeswax": 1}, "group snapshot is keyed by stable source key")
+	(groups[hive_key].outputs as Dictionary).honey = 99
+	assertions.equal(hive.producer_state.outputs.honey, 2, "mutating grouped snapshot cannot mutate producer state")
+	var inventory := _inventory(3)
+	var result: Dictionary = production.call("collect_barn_outputs", barn, inventory, hive_key, "honey")
+	assertions.truthy(result.get("ok", false), "barn selectively collects one item from one source")
+	assertions.equal(inventory.get_item_count("honey"), 2, "selected barn item reaches inventory")
+	assertions.equal(hive.producer_state.outputs, {"beeswax": 1}, "selected source keeps its other output")
+	assertions.equal(coop.producer_state.outputs, {"egg": 2}, "unselected source remains unchanged")
+
+	var full := _inventory(1)
+	full.add_item("grain", 99)
+	var before_slots := full.slots.duplicate(true)
+	var before_outputs := coop.producer_state.outputs.duplicate(true)
+	var failed: Dictionary = production.call("collect_barn_outputs", barn, full, ProductionSystemScript.building_key(coop), "egg")
+	assertions.equal(failed.get("reason"), "inventory_capacity", "selective barn failure returns structured capacity reason")
+	assertions.equal(failed.get("missing_quantity"), 2, "selective barn failure returns exact missing quantity")
+	assertions.equal(full.slots, before_slots, "failed selective barn collection leaves inventory unchanged")
+	assertions.equal(coop.producer_state.outputs, before_outputs, "failed selective barn collection leaves source unchanged")
 
 
 func _test_deterministic_resource_outputs(assertions: TestAssert) -> void:
