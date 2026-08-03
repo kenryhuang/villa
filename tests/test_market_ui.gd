@@ -62,21 +62,21 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Columns/TradePanel",
 	])
 	_check_scene(assertions, TRADE_SCENE_PATH, [
-		"PlayerQuantityLabel",
-		"MarketQuantityLabel",
-		"QuantityRow/QuantitySpin",
-		"QuantityRow/MaxButton",
-		"ReferencePriceLabel",
-		"BuyTotalLabel",
-		"SellTotalLabel",
-		"ImpactLabel",
-		"DisabledReasonLabel",
-		"Actions/BuyButton",
-		"Actions/SellButton",
-		"ConfirmationLayer/Content/FirstUnitLabel",
-		"ConfirmationLayer/Content/LastUnitLabel",
-		"ConfirmationLayer/Content/TotalLabel",
-		"ConfirmationLayer/Content/PressureLabel",
+		"Content/PlayerQuantityLabel",
+		"Content/MarketQuantityLabel",
+		"Content/QuantityRow/QuantitySpin",
+		"Content/QuantityRow/MaxButton",
+		"Content/ReferencePriceLabel",
+		"Content/BuyTotalLabel",
+		"Content/SellTotalLabel",
+		"Content/ImpactLabel",
+		"Content/DisabledReasonLabel",
+		"Content/Actions/BuyButton",
+		"Content/Actions/SellButton",
+		"ConfirmationLayer/Content/VBox/FirstUnitLabel",
+		"ConfirmationLayer/Content/VBox/LastUnitLabel",
+		"ConfirmationLayer/Content/VBox/TotalLabel",
+		"ConfirmationLayer/Content/VBox/PressureLabel",
 	])
 
 
@@ -279,14 +279,14 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	_test_market_row_affordances(assertions, market_panel, market)
 
 	var trade = market_panel.get_node("Columns/TradePanel")
-	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
+	var quantity_spin := trade.get_node("Content/QuantityRow/QuantitySpin") as SpinBox
 	assertions.truthy(not quantity_spin.allow_greater, "quantity spin rejects values above authoritative maximum")
 	quantity_spin.value = 2
 	trade.call("refresh_quote")
-	assertions.truthy(trade.get_node("PlayerQuantityLabel").text.contains("2"), "trade shows player quantity")
-	assertions.truthy(trade.get_node("MarketQuantityLabel").text.contains(str(market.get_stock("wood"))), "trade shows market quantity")
-	assertions.truthy(trade.get_node("BuyTotalLabel").text.contains(str(market.quote_buy("wood", 2))), "trade shows slippage-adjusted buy total")
-	assertions.truthy(trade.get_node("SellTotalLabel").text.contains(str(market.quote_sell("wood", 2))), "trade shows slippage-adjusted sell total")
+	assertions.truthy(trade.get_node("Content/PlayerQuantityLabel").text.contains("2"), "trade shows player quantity")
+	assertions.truthy(trade.get_node("Content/MarketQuantityLabel").text.contains(str(market.get_stock("wood"))), "trade shows market quantity")
+	assertions.truthy(trade.get_node("Content/BuyTotalLabel").text.contains(str(market.quote_buy("wood", 2))), "trade shows slippage-adjusted buy total")
+	assertions.truthy(trade.get_node("Content/SellTotalLabel").text.contains(str(market.quote_sell("wood", 2))), "trade shows slippage-adjusted sell total")
 	_test_stale_confirmation_and_quantity_safety(assertions, market_panel, trade, inventory, market, wallet)
 	_test_market_rows_refresh_after_trade(assertions, market_panel, trade, inventory, market, wallet)
 
@@ -318,8 +318,8 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.equal(int(wallet.gold), gold_before - buy_total_before, "successful buy refreshes gold in same frame")
 	assertions.equal(inventory.get_item_count("wood"), owned_before + 1, "successful buy refreshes inventory in same frame")
 	assertions.equal(market.get_stock("wood"), stock_before - 1, "successful buy refreshes stock in same frame")
-	assertions.truthy(trade.get_node("PlayerQuantityLabel").text.contains(str(owned_before + 1)), "successful buy redraws player quantity in same frame")
-	assertions.truthy(trade.get_node("MarketQuantityLabel").text.contains(str(stock_before - 1)), "successful buy redraws stock in same frame")
+	assertions.truthy(trade.get_node("Content/PlayerQuantityLabel").text.contains(str(owned_before + 1)), "successful buy redraws player quantity in same frame")
+	assertions.truthy(trade.get_node("Content/MarketQuantityLabel").text.contains(str(stock_before - 1)), "successful buy redraws stock in same frame")
 	assertions.truthy(
 		market_panel.get_node("Columns/DetailColumn/StockLabel").text.contains(str(stock_before - 1)),
 		"successful buy redraws market detail stock in same frame"
@@ -336,7 +336,7 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.equal(inventory.get_item_count("wood"), owned_before, "failed buy preserves inventory")
 	assertions.equal(market.get_stock("wood"), stock_before, "failed buy preserves market stock")
 	assertions.equal(
-		trade.get_node("Actions/BuyButton").tooltip_text,
+		trade.get_node("Content/Actions/BuyButton").tooltip_text,
 		"金币不足 %d" % rejected_total,
 		"failed buy shows exact disabled reason"
 	)
@@ -422,7 +422,7 @@ func _test_stale_confirmation_and_quantity_safety(
 	market: MarketSystem,
 	wallet: Node
 ) -> void:
-	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
+	var quantity_spin := trade.get_node("Content/QuantityRow/QuantitySpin") as SpinBox
 	if trade.get_script().has_method("safe_quantity"):
 		var safe_snapshot := _asset_snapshot(inventory, market, wallet)
 		quantity_spin.value = 1.0e30
@@ -454,7 +454,7 @@ func _test_stale_confirmation_and_quantity_safety(
 	var before_wallet_confirm := _asset_snapshot(inventory, market, wallet)
 	trade.call("_confirm_pending_trade")
 	_assert_assets_equal(assertions, before_wallet_confirm, inventory, market, wallet, "wallet-changed confirmation")
-	assertions.truthy(trade.get_node("FeedbackLabel").text.contains("状态已变化"), "wallet change requires a fresh confirmation")
+	assertions.truthy(trade.get_node("Content/FeedbackLabel").text.contains("状态已变化"), "wallet change requires a fresh confirmation")
 	_restore_trade_snapshot(normal_snapshot, inventory, market, wallet)
 	market_panel.call("select_category", "raw_materials")
 	market_panel.call("select_item", "wood")
@@ -504,7 +504,7 @@ func _test_market_rows_refresh_after_trade(
 		assertions.equal(old_row.get_node("Content/StockColorBar").color, Color("#C58B35"), "boundary row begins warning-colored")
 		assertions.truthy(not old_row.get_node("Content/UrgentBadge").visible, "boundary row begins without urgent badge")
 	var owned_before := inventory.get_item_count("wood")
-	var quantity_spin := trade.get_node("QuantityRow/QuantitySpin") as SpinBox
+	var quantity_spin := trade.get_node("Content/QuantityRow/QuantitySpin") as SpinBox
 	quantity_spin.value = 1
 	trade.call("request_buy")
 	var new_row := _find_item_row(rows, "wood")

@@ -31,33 +31,33 @@ layout_mode = 2
 
 [node name="RawMaterials" type="Button" parent="Columns/CatalogColumn/CategoryList"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 text = "原材料"
 
 [node name="Crops" type="Button" parent="Columns/CatalogColumn/CategoryList"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 text = "农产品"
 
 [node name="ProcessedMaterials" type="Button" parent="Columns/CatalogColumn/CategoryList"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 text = "加工材料"
 
 [node name="FoodHandicrafts" type="Button" parent="Columns/CatalogColumn/CategoryList"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 text = "食品与手工品"
 
 [node name="RareGoods" type="Button" parent="Columns/CatalogColumn/CategoryList"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 text = "稀有品"
 
 [node name="SortMode" type="OptionButton" parent="Columns/CatalogColumn"]
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 
 [node name="ItemList" type="ItemList" parent="Columns/CatalogColumn"]
 visible = false

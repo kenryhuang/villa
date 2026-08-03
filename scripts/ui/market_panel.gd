@@ -53,6 +53,7 @@ var _drawer_open := false
 
 
 func _ready() -> void:
+	add_to_group(EconomyLayoutScript.RESPONSIVE_GROUP)
 	for category_id in category_buttons:
 		category_buttons[category_id].pressed.connect(select_category.bind(category_id))
 	sort_option.clear()
@@ -60,11 +61,12 @@ func _ready() -> void:
 		sort_option.add_item(SORT_LABELS[index], index)
 	sort_option.item_selected.connect(_on_sort_selected)
 	item_list.item_selected.connect(_on_item_selected)
+	item_list.gui_input.connect(_on_item_list_gui_input)
 	if not resized.is_connected(_on_control_resized):
 		resized.connect(_on_control_resized)
 	if not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
 		get_viewport().size_changed.connect(_on_viewport_size_changed)
-	apply_responsive_layout(size if size.x > 0.0 else get_viewport_rect().size)
+	apply_economy_ui_scale(EconomyLayoutScript.get_ui_scale())
 
 
 func configure(
@@ -180,6 +182,11 @@ func apply_responsive_layout(logical_size: Vector2) -> void:
 	_apply_drawer_visibility()
 
 
+func apply_economy_ui_scale(ui_scale: float) -> void:
+	var physical_size := size if size.x > 0.0 else get_viewport_rect().size
+	apply_responsive_layout(EconomyLayoutScript.logical_size_for(physical_size, ui_scale))
+
+
 func get_layout_mode() -> String:
 	return _layout_mode
 
@@ -189,6 +196,9 @@ func open_details_drawer() -> void:
 		return
 	_drawer_open = true
 	_apply_drawer_visibility()
+	var first_trade_control := $Columns/TradePanel/Content/QuantityRow/QuantitySpin as Control
+	if first_trade_control != null and first_trade_control.is_visible_in_tree():
+		first_trade_control.grab_focus()
 
 
 func _apply_drawer_visibility() -> void:
@@ -205,11 +215,11 @@ func _apply_drawer_visibility() -> void:
 
 
 func _on_viewport_size_changed() -> void:
-	apply_responsive_layout(size if size.x > 0.0 else get_viewport_rect().size)
+	apply_economy_ui_scale(EconomyLayoutScript.get_ui_scale())
 
 
 func _on_control_resized() -> void:
-	apply_responsive_layout(size)
+	apply_economy_ui_scale(EconomyLayoutScript.get_ui_scale())
 
 
 func _rebuild_item_list() -> void:
@@ -495,6 +505,21 @@ func _on_sort_selected(index: int) -> void:
 func _on_item_selected(index: int) -> void:
 	if index >= 0 and index < _item_ids.size():
 		select_item(_item_ids[index])
+
+
+func _on_item_list_gui_input(event: InputEvent) -> void:
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	if event.keycode != KEY_UP and event.keycode != KEY_DOWN:
+		return
+	var selected := item_list.get_selected_items()
+	var current := selected[0] if not selected.is_empty() else 0
+	var direction := -1 if event.keycode == KEY_UP else 1
+	var next_index := clampi(current + direction, 0, item_list.item_count - 1)
+	if item_list.item_count > 0:
+		item_list.select(next_index)
+		item_list.ensure_current_is_visible()
+	item_list.accept_event()
 
 
 func _on_trade_snapshot_changed() -> void:

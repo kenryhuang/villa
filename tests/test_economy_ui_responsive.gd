@@ -2,6 +2,7 @@ class_name EconomyUIResponsiveTest
 extends RefCounted
 
 const EconomyLayout = preload("res://scripts/ui/economy_layout.gd")
+const EconomyLayoutScript: Script = preload("res://scripts/ui/economy_layout.gd")
 const THEME_PATH := "res://assets/ui/economy/economy_theme.tres"
 const VIEWPORT_SIZES := [
 	Vector2(3000.0, 2000.0),
@@ -20,15 +21,34 @@ const PANEL_SCENES := [
 	"res://scenes/ui/economy/building_status_panel.tscn",
 	"res://scenes/ui/economy/economy_notification_ui.tscn",
 ]
+const MAIN_TITLE_CONTRACTS := {
+	"res://scenes/ui/shop_ui.tscn": "ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
+	"res://scenes/ui/economy/market_panel.tscn": "Columns/DetailColumn/ItemNameLabel",
+	"res://scenes/ui/economy/building_economy_ui.tscn": "ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
+	"res://scenes/ui/economy/building_status_panel.tscn": "SummaryTitle",
+	"res://scenes/ui/economy/economy_notification_ui.tscn": "NotificationCenter/Margin/VBox/Header/Title",
+}
+
+
+class InputCounter:
+	extends RefCounted
+	var count := 0
+
+	func record() -> void:
+		count += 1
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
+	_test_scene_font_overrides(assertions)
 	await _test_panel_contracts(assertions, tree)
+	await _test_runtime_scale_and_resize_state(assertions, tree)
 	await _test_market_drawer_state(assertions, tree)
+	await _test_real_keyboard_navigation(assertions, tree)
 	await _test_trade_keyboard_and_wheel(assertions, tree)
+	await _test_trade_confirmation_modal(assertions, tree)
 
 
 func _test_layout_contract(assertions: TestAssert) -> void:
@@ -40,6 +60,7 @@ func _test_layout_contract(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.clamp_scale(0.5), 0.8, "scale has lower bound")
 	assertions.equal(EconomyLayout.clamp_scale(1.2), 1.2, "scale preserves supported value")
 	assertions.equal(EconomyLayout.clamp_scale(2.0), 1.4, "scale has upper bound")
+	assertions.equal(EconomyLayout.clamp_scale(NAN), 1.0, "non-finite scale falls back safely")
 
 
 func _test_theme_contract(assertions: TestAssert) -> void:
@@ -82,7 +103,7 @@ func _test_shared_scene_tokens(assertions: TestAssert) -> void:
 			"ModalLayer/SignConfirmationLayer/Content": "EconomyCard",
 		},
 		"res://scenes/ui/economy/market_panel.tscn": {".": "EconomyCard"},
-		"res://scenes/ui/economy/trade_panel.tscn": {"ConfirmationLayer": "EconomyCard"},
+		"res://scenes/ui/economy/trade_panel.tscn": {"ConfirmationLayer/Content": "EconomyCard"},
 		"res://scenes/ui/economy/building_economy_ui.tscn": {"ModalLayer/BuildingPanel": "EconomyPaper"},
 		"res://scenes/ui/economy/economy_notification_ui.tscn": {"NotificationCenter": "EconomyPaper"},
 	}
@@ -95,6 +116,27 @@ func _test_shared_scene_tokens(assertions: TestAssert) -> void:
 				StringName(variation_contracts[scene_path][node_path]),
 				"%s %s uses shared theme token" % [scene_path, node_path]
 			)
+		panel.free()
+
+
+func _test_scene_font_overrides(assertions: TestAssert) -> void:
+	for scene_path in PANEL_SCENES:
+		var panel := (load(scene_path) as PackedScene).instantiate() as Control
+		for control in _all_controls(panel):
+			if not control.has_theme_font_size_override("font_size"):
+				continue
+			var font_size := control.get_theme_font_size("font_size")
+			var control_path := panel.get_path_to(control)
+			if control is BaseButton:
+				assertions.truthy(font_size >= 20, "%s %s button override is at least 20" % [scene_path, control_path])
+			elif control is Label or control is LineEdit or control is RichTextLabel:
+				assertions.truthy(font_size >= 18, "%s %s text override is at least 18" % [scene_path, control_path])
+		panel.free()
+	for scene_path in MAIN_TITLE_CONTRACTS:
+		var panel := (load(scene_path) as PackedScene).instantiate() as Control
+		var title := panel.get_node(MAIN_TITLE_CONTRACTS[scene_path]) as Control
+		var title_size := title.get_theme_font_size("font_size")
+		assertions.truthy(title_size >= 28 and title_size <= 36, "%s main title is 28-36" % scene_path)
 		panel.free()
 
 
@@ -126,6 +168,77 @@ func _test_panel_contracts(assertions: TestAssert, tree: SceneTree) -> void:
 	notifications.free()
 
 
+func _test_runtime_scale_and_resize_state(assertions: TestAssert, tree: SceneTree) -> void:
+	var method_names: Array[String] = []
+	for method in EconomyLayoutScript.get_script_method_list():
+		method_names.append(str(method.get("name", "")))
+	assertions.truthy("set_ui_scale" in method_names, "layout exposes one runtime scale entry")
+	assertions.truthy("get_ui_scale" in method_names, "layout exposes current runtime scale")
+	if "set_ui_scale" not in method_names or "get_ui_scale" not in method_names:
+		return
+	var host := Control.new()
+	host.size = Vector2(1920.0, 1080.0)
+	tree.root.add_child(host)
+	var panels: Array[Control] = []
+	var shop: Control
+	var market: Control
+	for scene_path in PANEL_SCENES:
+		var panel := (load(scene_path) as PackedScene).instantiate() as Control
+		panels.append(panel)
+		host.add_child(panel)
+		panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		if scene_path == "res://scenes/ui/shop_ui.tscn":
+			shop = panel
+		elif scene_path == "res://scenes/ui/economy/market_panel.tscn":
+			market = panel
+	shop.visible = true
+	market.visible = true
+	await tree.process_frame
+
+	shop.call("select_tab", "contracts")
+	market.set("selected_category", "crops")
+	market.set("selected_item_id", "grain")
+	var filler := Control.new()
+	filler.custom_minimum_size = Vector2(1.0, 1800.0)
+	market.get_node("Columns/CatalogColumn/ItemScroll/ItemRows").add_child(filler)
+	await tree.process_frame
+	var scroll := market.get_node("Columns/CatalogColumn/ItemScroll") as ScrollContainer
+	scroll.scroll_vertical = 120
+
+	EconomyLayoutScript.call("set_ui_scale", 1.2, tree)
+	await tree.process_frame
+	assertions.equal(EconomyLayoutScript.call("get_ui_scale"), 1.2, "runtime entry supports 120 percent")
+	for panel in panels:
+		assertions.truthy(is_equal_approx(panel.theme.default_base_scale, 1.2), "%s receives 120 percent theme scale" % panel.name)
+	EconomyLayoutScript.call("set_ui_scale", 1.4, tree)
+	await tree.process_frame
+	assertions.equal(EconomyLayoutScript.call("get_ui_scale"), 1.4, "runtime entry stores supported scale")
+	for panel in panels:
+		assertions.truthy(is_equal_approx(panel.theme.default_base_scale, 1.4), "%s receives runtime theme scale" % panel.name)
+	assertions.equal(market.call("get_layout_mode"), "drawer", "layout uses physical size divided by UI scale")
+	assertions.equal(shop.get("selected_tab"), "contracts", "scale keeps selected economy tab")
+	assertions.equal(market.get("selected_category"), "crops", "scale keeps selected category")
+	assertions.equal(market.get("selected_item_id"), "grain", "scale keeps selected item")
+	assertions.equal(scroll.scroll_vertical, 120, "scale keeps market scroll")
+
+	host.size = Vector2(1280.0, 720.0)
+	await tree.process_frame
+	assertions.equal(shop.get("selected_tab"), "contracts", "resize keeps selected economy tab")
+	assertions.equal(market.get("selected_category"), "crops", "resize keeps selected category")
+	assertions.equal(market.get("selected_item_id"), "grain", "resize keeps selected item")
+	assertions.equal(scroll.scroll_vertical, 120, "resize keeps market scroll")
+	EconomyLayoutScript.call("set_ui_scale", 0.2, tree)
+	assertions.equal(EconomyLayoutScript.call("get_ui_scale"), 0.8, "runtime entry clamps low scale")
+	assertions.equal(market.call("get_layout_mode"), "three_column", "80 percent scale expands 1280 physical pixels to 1600 logical pixels")
+	EconomyLayoutScript.call("set_ui_scale", 9.0, tree)
+	assertions.equal(EconomyLayoutScript.call("get_ui_scale"), 1.4, "runtime entry clamps high scale")
+	EconomyLayoutScript.call("set_ui_scale", NAN, tree)
+	assertions.equal(EconomyLayoutScript.call("get_ui_scale"), 1.0, "runtime entry sanitizes non-finite scale")
+	EconomyLayoutScript.call("set_ui_scale", 1.0, tree)
+	host.free()
+	await tree.process_frame
+
+
 func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	var panel := (load("res://scenes/ui/economy/market_panel.tscn") as PackedScene).instantiate()
 	tree.root.add_child(panel)
@@ -136,8 +249,8 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	panel.call("open_details_drawer")
 	assertions.truthy(not (panel.get_node("Columns/CatalogColumn") as Control).visible, "drawer details cover the product list")
 	assertions.truthy((panel.get_node("Columns/DetailColumn") as Control).visible, "drawer keeps market details visible")
-	assertions.truthy((panel.get_node("Columns/TradePanel/BuyTotalLabel") as Control).visible, "drawer keeps trade total visible")
-	assertions.truthy((panel.get_node("Columns/TradePanel/DisabledReasonLabel") as Control).visible, "drawer keeps disabled reason visible")
+	assertions.truthy((panel.get_node("Columns/TradePanel/Content/BuyTotalLabel") as Control).visible, "drawer keeps trade total visible")
+	assertions.truthy((panel.get_node("Columns/TradePanel/Content/DisabledReasonLabel") as Control).visible, "drawer keeps disabled reason visible")
 	assertions.truthy(panel.call("handle_top_escape"), "escape closes the open details drawer")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "closing drawer restores product list")
 	panel.call("apply_responsive_layout", Vector2(1920, 1080))
@@ -145,11 +258,65 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	panel.free()
 
 
+func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> void:
+	var shop := (load("res://scenes/ui/shop_ui.tscn") as PackedScene).instantiate() as Control
+	tree.root.add_child(shop)
+	shop.visible = true
+	await tree.process_frame
+	var market_tab := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab") as Button
+	var orders_tab := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
+	market_tab.grab_focus()
+	await _send_key(tree, KEY_TAB)
+	assertions.equal(shop.get_viewport().gui_get_focus_owner(), orders_tab, "Tab advances through economy tabs")
+	await _send_key(tree, KEY_TAB, true)
+	assertions.equal(shop.get_viewport().gui_get_focus_owner(), market_tab, "Shift+Tab reverses economy tab focus")
+	var activation := InputCounter.new()
+	market_tab.pressed.connect(activation.record)
+	await _send_key(tree, KEY_ENTER)
+	assertions.equal(activation.count, 1, "Enter activates focused economy control")
+	shop.free()
+	await tree.process_frame
+
+	var market := (load("res://scenes/ui/economy/market_panel.tscn") as PackedScene).instantiate() as Control
+	tree.root.add_child(market)
+	market.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await tree.process_frame
+	var item_list := market.get_node("Columns/CatalogColumn/ItemList") as ItemList
+	item_list.visible = true
+	item_list.add_item("一")
+	item_list.add_item("二")
+	item_list.select(0)
+	item_list.grab_focus()
+	await _send_key(tree, KEY_DOWN)
+	assertions.equal(item_list.get_selected_items()[0], 1, "direction key moves actual market list selection")
+
+	market.call("apply_responsive_layout", Vector2(1280.0, 720.0))
+	var dynamic_button := Button.new()
+	dynamic_button.text = "动态商品"
+	market.get_node("Columns/CatalogColumn/ItemScroll/ItemRows").add_child(dynamic_button)
+	await tree.process_frame
+	dynamic_button.grab_focus()
+	await _send_key(tree, KEY_TAB)
+	var next_focus := market.get_viewport().gui_get_focus_owner()
+	assertions.truthy(next_focus != null and next_focus != dynamic_button and next_focus.is_visible_in_tree(), "Tab traverses a dynamic market row")
+	market.call("open_details_drawer")
+	await tree.process_frame
+	var drawer_focus := market.get_viewport().gui_get_focus_owner()
+	assertions.truthy(
+		drawer_focus != null
+		and drawer_focus.is_visible_in_tree()
+		and (market.get_node("Columns/TradePanel") as Node).is_ancestor_of(drawer_focus),
+		"opening drawer moves focus into visible trade controls"
+	)
+	market.free()
+	await tree.process_frame
+
+
 func _test_trade_keyboard_and_wheel(assertions: TestAssert, tree: SceneTree) -> void:
 	var panel := (load("res://scenes/ui/economy/trade_panel.tscn") as PackedScene).instantiate()
 	tree.root.add_child(panel)
 	await tree.process_frame
-	var quantity := panel.get_node("QuantityRow/QuantitySpin") as SpinBox
+	var quantity := panel.get_node("Content/QuantityRow/QuantitySpin") as SpinBox
 	quantity.max_value = 10
 	quantity.value = 3
 	var wheel_up := InputEventMouseButton.new()
@@ -164,6 +331,70 @@ func _test_trade_keyboard_and_wheel(assertions: TestAssert, tree: SceneTree) -> 
 	assertions.equal(int(quantity.value), 3, "mouse wheel decreases trade quantity")
 	assertions.truthy(quantity.get_line_edit().editable, "quantity supports numeric keyboard entry")
 	panel.free()
+
+
+func _test_trade_confirmation_modal(assertions: TestAssert, tree: SceneTree) -> void:
+	var host := Control.new()
+	host.size = Vector2(520.0, 680.0)
+	tree.root.add_child(host)
+	var panel := (load("res://scenes/ui/economy/trade_panel.tscn") as PackedScene).instantiate() as Control
+	host.add_child(panel)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await tree.process_frame
+	var confirmation := panel.get_node("ConfirmationLayer") as Control
+	var buy_button := panel.get_node("Content/Actions/BuyButton") as Button
+	buy_button.disabled = false
+	var click_counter := InputCounter.new()
+	buy_button.pressed.connect(click_counter.record)
+	confirmation.visible = true
+	await tree.process_frame
+	assertions.equal(confirmation.mouse_filter, Control.MOUSE_FILTER_STOP, "trade confirmation consumes pointer input")
+	assertions.truthy(
+		_rect_covers(confirmation.get_global_rect(), panel.get_global_rect()),
+		"trade confirmation covers complete panel (%s over %s)" % [confirmation.get_global_rect(), panel.get_global_rect()]
+	)
+	await _send_key(tree, KEY_TAB)
+	var modal_focus := panel.get_viewport().gui_get_focus_owner()
+	assertions.truthy(modal_focus != null and confirmation.is_ancestor_of(modal_focus), "visible confirmation traps keyboard focus above underlying trade controls")
+	await _send_mouse_click(tree, buy_button.get_global_rect().get_center())
+	assertions.equal(click_counter.count, 0, "visible confirmation blocks clicks on underlying trade controls")
+	confirmation.visible = false
+	await tree.process_frame
+	assertions.truthy(buy_button.focus_mode != Control.FOCUS_NONE, "closing confirmation restores underlying focusability")
+	host.free()
+	await tree.process_frame
+
+
+func _send_key(tree: SceneTree, keycode: Key, shift_pressed := false) -> void:
+	var press := InputEventKey.new()
+	press.keycode = keycode
+	press.pressed = true
+	press.shift_pressed = shift_pressed
+	tree.root.push_input(press, true)
+	var release := press.duplicate() as InputEventKey
+	release.pressed = false
+	tree.root.push_input(release, true)
+	await tree.process_frame
+
+
+func _send_mouse_click(tree: SceneTree, position: Vector2) -> void:
+	for pressed in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = pressed
+		event.position = position
+		event.global_position = position
+		tree.root.push_input(event, true)
+	await tree.process_frame
+
+
+func _rect_covers(outer: Rect2, inner: Rect2) -> bool:
+	return (
+		outer.position.x <= inner.position.x + 0.5
+		and outer.position.y <= inner.position.y + 0.5
+		and outer.end.x >= inner.end.x - 0.5
+		and outer.end.y >= inner.end.y - 0.5
+	)
 
 
 func _controls_within_viewport(root: Control, viewport_size: Vector2) -> bool:

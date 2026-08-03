@@ -4,6 +4,11 @@ extends RefCounted
 const DRAWER_BREAKPOINT := 1500.0
 const MINIMUM_SCALE := 0.8
 const MAXIMUM_SCALE := 1.4
+const DEFAULT_SCALE := 1.0
+const THEME_PATH := "res://assets/ui/economy/economy_theme.tres"
+const RESPONSIVE_GROUP := &"economy_responsive_ui"
+
+static var _ui_scale := DEFAULT_SCALE
 
 
 static func mode_for_size(logical_size: Vector2) -> String:
@@ -11,4 +16,26 @@ static func mode_for_size(logical_size: Vector2) -> String:
 
 
 static func clamp_scale(requested_scale: float) -> float:
+	if not is_finite(requested_scale):
+		return DEFAULT_SCALE
 	return clampf(requested_scale, MINIMUM_SCALE, MAXIMUM_SCALE)
+
+
+static func set_ui_scale(requested_scale: float, tree: SceneTree = null) -> float:
+	_ui_scale = clamp_scale(requested_scale)
+	var shared_theme := load(THEME_PATH) as Theme
+	if shared_theme != null:
+		shared_theme.default_base_scale = _ui_scale
+	if tree != null:
+		for node in tree.get_nodes_in_group(RESPONSIVE_GROUP):
+			if node.has_method("apply_economy_ui_scale"):
+				node.call("apply_economy_ui_scale", _ui_scale)
+	return _ui_scale
+
+
+static func get_ui_scale() -> float:
+	return _ui_scale
+
+
+static func logical_size_for(physical_size: Vector2, ui_scale: float) -> Vector2:
+	return physical_size / clamp_scale(ui_scale)

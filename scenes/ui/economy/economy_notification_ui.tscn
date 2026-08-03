@@ -58,7 +58,7 @@ layout_mode = 2
 [node name="Title" type="Label" parent="NotificationCenter/Margin/VBox/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 28
 text = "经营通知"
 
 [node name="UnreadLabel" type="Label" parent="NotificationCenter/Margin/VBox/Header"]

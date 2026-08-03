@@ -1,29 +1,30 @@
 class_name TradePanel
-extends VBoxContainer
+extends Control
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MAX_UI_QUANTITY := 999
 
 signal snapshot_changed
 
-@onready var player_quantity_label: Label = $PlayerQuantityLabel
-@onready var market_quantity_label: Label = $MarketQuantityLabel
-@onready var quantity_spin: SpinBox = $QuantityRow/QuantitySpin
-@onready var max_button: Button = $QuantityRow/MaxButton
-@onready var reference_price_label: Label = $ReferencePriceLabel
-@onready var buy_total_label: Label = $BuyTotalLabel
-@onready var sell_total_label: Label = $SellTotalLabel
-@onready var impact_label: Label = $ImpactLabel
-@onready var disabled_reason_label: Label = $DisabledReasonLabel
-@onready var buy_button: Button = $Actions/BuyButton
-@onready var sell_button: Button = $Actions/SellButton
-@onready var feedback_label: Label = $FeedbackLabel
+@onready var player_quantity_label: Label = $Content/PlayerQuantityLabel
+@onready var market_quantity_label: Label = $Content/MarketQuantityLabel
+@onready var quantity_spin: SpinBox = $Content/QuantityRow/QuantitySpin
+@onready var max_button: Button = $Content/QuantityRow/MaxButton
+@onready var reference_price_label: Label = $Content/ReferencePriceLabel
+@onready var buy_total_label: Label = $Content/BuyTotalLabel
+@onready var sell_total_label: Label = $Content/SellTotalLabel
+@onready var impact_label: Label = $Content/ImpactLabel
+@onready var disabled_reason_label: Label = $Content/DisabledReasonLabel
+@onready var buy_button: Button = $Content/Actions/BuyButton
+@onready var sell_button: Button = $Content/Actions/SellButton
+@onready var feedback_label: Label = $Content/FeedbackLabel
 @onready var feedback_timer: Timer = $FeedbackTimer
-@onready var confirmation_layer: PanelContainer = $ConfirmationLayer
-@onready var first_unit_label: Label = $ConfirmationLayer/Content/FirstUnitLabel
-@onready var last_unit_label: Label = $ConfirmationLayer/Content/LastUnitLabel
-@onready var confirmation_total_label: Label = $ConfirmationLayer/Content/TotalLabel
-@onready var pressure_label: Label = $ConfirmationLayer/Content/PressureLabel
+@onready var confirmation_layer: ColorRect = $ConfirmationLayer
+@onready var confirmation_confirm_button: Button = $ConfirmationLayer/Content/VBox/Buttons/ConfirmButton
+@onready var first_unit_label: Label = $ConfirmationLayer/Content/VBox/FirstUnitLabel
+@onready var last_unit_label: Label = $ConfirmationLayer/Content/VBox/LastUnitLabel
+@onready var confirmation_total_label: Label = $ConfirmationLayer/Content/VBox/TotalLabel
+@onready var pressure_label: Label = $ConfirmationLayer/Content/VBox/PressureLabel
 
 var inventory_ref: InventorySystem
 var economy_ref: EconomySystem
@@ -33,6 +34,8 @@ var _pending_action := ""
 var _confirmation_snapshot: Dictionary = {}
 var _event_bus: Node
 var _refreshing_quote := false
+var _underlying_focus_modes: Dictionary = {}
+var _focus_before_confirmation: Control
 
 
 func _ready() -> void:
@@ -41,8 +44,9 @@ func _ready() -> void:
 	max_button.pressed.connect(_on_max_pressed)
 	buy_button.pressed.connect(request_buy)
 	sell_button.pressed.connect(request_sell)
-	$ConfirmationLayer/Content/Buttons/ConfirmButton.pressed.connect(_confirm_pending_trade)
-	$ConfirmationLayer/Content/Buttons/CancelButton.pressed.connect(dismiss_confirmation)
+	confirmation_confirm_button.pressed.connect(_confirm_pending_trade)
+	$ConfirmationLayer/Content/VBox/Buttons/CancelButton.pressed.connect(dismiss_confirmation)
+	confirmation_layer.visibility_changed.connect(_on_confirmation_visibility_changed)
 	feedback_timer.timeout.connect(_clear_feedback)
 	confirmation_layer.visible = false
 
@@ -205,6 +209,48 @@ func handle_top_escape() -> bool:
 		dismiss_confirmation()
 		return true
 	return false
+
+
+func _on_confirmation_visibility_changed() -> void:
+	if confirmation_layer.visible:
+		_block_underlying_focus()
+		confirmation_confirm_button.grab_focus()
+	else:
+		_restore_underlying_focus()
+
+
+func _block_underlying_focus() -> void:
+	_underlying_focus_modes.clear()
+	_focus_before_confirmation = get_viewport().gui_get_focus_owner()
+	for control in _all_controls(self):
+		if control == self or confirmation_layer.is_ancestor_of(control):
+			continue
+		if control.focus_mode != Control.FOCUS_NONE:
+			_underlying_focus_modes[control] = control.focus_mode
+			control.focus_mode = Control.FOCUS_NONE
+
+
+func _restore_underlying_focus() -> void:
+	for control_value in _underlying_focus_modes:
+		var control := control_value as Control
+		if is_instance_valid(control):
+			control.focus_mode = int(_underlying_focus_modes[control_value])
+	_underlying_focus_modes.clear()
+	if is_instance_valid(_focus_before_confirmation) and _focus_before_confirmation.is_visible_in_tree():
+		_focus_before_confirmation.call_deferred("grab_focus")
+	_focus_before_confirmation = null
+
+
+func _all_controls(root: Control) -> Array[Control]:
+	var result: Array[Control] = []
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var current: Node = pending.pop_back()
+		for child in current.get_children():
+			pending.append(child)
+			if child is Control:
+				result.append(child)
+	return result
 
 
 func _execute_trade(action: String, quantity: int) -> void:

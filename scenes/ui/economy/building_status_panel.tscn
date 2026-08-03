@@ -16,7 +16,7 @@ script = ExtResource("1")
 
 [node name="SummaryTitle" type="Label" parent="."]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 28
 text = "建筑状态"
 
 [node name="SummaryFields" type="VBoxContainer" parent="."]
