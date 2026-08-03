@@ -52,6 +52,7 @@ func _test_game_data(assertions: TestAssert) -> void:
 	assertions.equal(data.get_all_collectibles().size(), 46, "all collectibles are registered")
 	assertions.truthy(data.get_collectible("specimen_20") != null, "last specimen is registered")
 	assertions.truthy(data.get_item("missing") == null, "unknown item returns null")
+	data.free()
 
 
 func _test_inventory(assertions: TestAssert) -> void:
@@ -292,6 +293,12 @@ func _test_inventory(assertions: TestAssert) -> void:
 			"grain_seed",
 			"legacy quick mappings restore into the typed integer array"
 		)
+	inventory.free()
+	mapping_inventory.free()
+	lifecycle_inventory.free()
+	transaction_inventory.free()
+	tiny_inventory.free()
+	legacy_inventory.free()
 
 
 func _test_economy(assertions: TestAssert) -> void:
@@ -317,6 +324,9 @@ func _test_economy(assertions: TestAssert) -> void:
 	economy.generate_demand_orders(1)
 	assertions.equal(economy.get_order_count(), 0, "orders require injected real NPC shortages")
 	assertions.truthy(not economy.complete_order("unknown"), "unknown stable order ID is rejected")
+	economy.free()
+	inventory.free()
+	wallet.free()
 
 
 func _test_inventory_ui(assertions: TestAssert) -> void:
@@ -332,3 +342,4 @@ func _test_inventory_ui(assertions: TestAssert) -> void:
 	ui.close()
 	assertions.truthy(not ui.visible, "close hides inventory UI")
 	ui.free()
+	inventory.free()

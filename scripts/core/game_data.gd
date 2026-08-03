@@ -19,7 +19,6 @@ func register_crop(data) -> bool:
 		or not data.is_valid()
 		or _crops.has(data.crop_id)
 	):
-		push_error("Invalid or duplicate crop ID")
 		return false
 	_crops[data.crop_id] = data
 	return true
@@ -118,17 +117,18 @@ const ITEMS := {
 	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "base_price": 95, "target_stock": 6, "initial_stock": 4, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
 }
 
-# Section 7.2 names these craft outputs. Items with explicit balance fields also
-# participate in the finite market; the remainder stay inventory-only.
+# Section 7.2 craft outputs all participate in the finite market. Their base
+# values follow the documented processing ladders, so every recipe can be
+# evaluated by the same market and arbitrage simulation.
 const INVENTORY_ONLY_ITEMS := {
-	"wooden_crate": {"id": "wooden_crate", "name": "木箱", "category": "crafted_good", "max_stack": 99},
-	"furniture": {"id": "furniture", "name": "家具", "category": "crafted_good", "max_stack": 99},
+	"wooden_crate": {"id": "wooden_crate", "name": "木箱", "category": "crafted_good", "sell_price": 136, "buy_price": 172, "base_price": 154, "target_stock": 16, "initial_stock": 9, "daily_liquidity": 7, "volatility": "crafted", "max_stack": 99},
+	"furniture": {"id": "furniture", "name": "家具", "category": "crafted_good", "sell_price": 407, "buy_price": 517, "base_price": 462, "target_stock": 7, "initial_stock": 3, "daily_liquidity": 3, "volatility": "crafted", "max_stack": 99},
 	"farm_tools": {"id": "farm_tools", "name": "农具", "category": "crafted_good", "sell_price": 192, "buy_price": 244, "base_price": 218, "target_stock": 12, "initial_stock": 6, "daily_liquidity": 5, "volatility": "crafted", "max_stack": 99},
-	"machine_parts": {"id": "machine_parts", "name": "机械零件", "category": "crafted_good", "max_stack": 99},
-	"lamp": {"id": "lamp", "name": "灯具", "category": "crafted_good", "max_stack": 99},
-	"sachet": {"id": "sachet", "name": "香包", "category": "crafted_good", "max_stack": 99},
-	"candle": {"id": "candle", "name": "蜡烛", "category": "crafted_good", "max_stack": 99},
-	"perfume": {"id": "perfume", "name": "香水", "category": "crafted_good", "max_stack": 99},
+	"machine_parts": {"id": "machine_parts", "name": "机械零件", "category": "crafted_good", "sell_price": 310, "buy_price": 394, "base_price": 352, "target_stock": 8, "initial_stock": 4, "daily_liquidity": 3, "volatility": "crafted", "max_stack": 99},
+	"lamp": {"id": "lamp", "name": "灯具", "category": "crafted_good", "sell_price": 153, "buy_price": 195, "base_price": 174, "target_stock": 10, "initial_stock": 5, "daily_liquidity": 4, "volatility": "crafted", "max_stack": 99},
+	"sachet": {"id": "sachet", "name": "香包", "category": "crafted_good", "sell_price": 153, "buy_price": 195, "base_price": 174, "target_stock": 10, "initial_stock": 5, "daily_liquidity": 4, "volatility": "crafted", "max_stack": 99},
+	"candle": {"id": "candle", "name": "蜡烛", "category": "crafted_good", "sell_price": 63, "buy_price": 81, "base_price": 72, "target_stock": 14, "initial_stock": 7, "daily_liquidity": 6, "volatility": "crafted", "max_stack": 99},
+	"perfume": {"id": "perfume", "name": "香水", "category": "crafted_good", "sell_price": 91, "buy_price": 117, "base_price": 104, "target_stock": 8, "initial_stock": 4, "daily_liquidity": 3, "volatility": "luxury", "max_stack": 99},
 	"bouquet": {"id": "bouquet", "name": "花束", "category": "crafted_good", "sell_price": 106, "buy_price": 134, "base_price": 120, "target_stock": 12, "initial_stock": 6, "daily_liquidity": 5, "volatility": "luxury", "max_stack": 99},
 	"jewelry": {"id": "jewelry", "name": "珠宝", "category": "crafted_good", "sell_price": 299, "buy_price": 381, "base_price": 340, "target_stock": 5, "initial_stock": 2, "daily_liquidity": 2, "volatility": "luxury", "max_stack": 99},
 }

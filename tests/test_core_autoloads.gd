@@ -42,3 +42,5 @@ func run(assertions: TestAssert) -> void:
 	# GameState exp
 	assertions.truthy(state.add_exp(50), "can add exp")
 	assertions.equal(state.player_state.exp, 50, "exp added to player")
+	state.free()
+	data.free()
