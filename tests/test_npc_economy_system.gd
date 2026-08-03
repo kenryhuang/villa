@@ -5,6 +5,7 @@ const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomyStateScript = preload("res://scripts/data/npc_economy_state.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const NotificationSystemScript = preload("res://scripts/systems/economy_notification_system.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -16,6 +17,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_sale_floor_protects_overlapping_reserve(assertions)
 	_test_population_groups_add_tagged_factor_demand(assertions)
 	_test_third_zero_stock_day_imports_essentials_only(assertions, tree)
+	_test_notification_day_limit_keeps_departure(assertions, tree)
+	_test_max_day_import_schedules_no_overflow_departure(assertions)
 	_test_day_cursor_and_snapshot_are_atomic(assertions)
 	_test_registered_profiles_and_determinism(assertions)
 	_test_default_crafted_sale_targets_trade_on_finite_market(assertions)
@@ -305,12 +308,125 @@ func _test_third_zero_stock_day_imports_essentials_only(
 		assertions.truthy(str(caravan_records[0].body).contains("wood"), "caravan notification keeps the item id")
 		assertions.truthy(str(caravan_records[0].body).contains("×4"), "caravan notification keeps the quantity")
 	var after := system.to_dict()
+	assertions.equal((after.get("pending_caravan_departures", []) as Array).size(), 1, "successful import persists one pending departure")
 	assertions.truthy(not system.simulate_day(3), "import cannot repeat on the same day")
 	assertions.equal(system.to_dict(), after, "same-day import retry changes nothing")
 	assertions.equal(notifications.get_recent().size(), 1, "same-day retry emits no duplicate caravan notification")
+	var saved_notifications := notifications.to_dict()
 	notifications.free()
-	market.free()
 	system.free()
+
+	var restored := NpcEconomySystemScript.new()
+	var restored_notifications := NotificationSystemScript.new()
+	tree.root.add_child(restored)
+	tree.root.add_child(restored_notifications)
+	assertions.truthy(restored.configure(market, [importer], []), "loaded caravan NPC fixture configures")
+	assertions.truthy(restored.from_dict(after), "day-three pending departure restores")
+	assertions.truthy(restored.sync_daily_cursor(3), "Main-style same-day cursor sync succeeds after load")
+	assertions.equal(restored.to_dict(), after, "Main-style same-day cursor sync preserves restored departure")
+	assertions.truthy(restored_notifications.configure(tree.root.get_node("EventBus"), market), "loaded caravan notifications configure")
+	assertions.truthy(restored_notifications.from_dict(saved_notifications), "arrival notification restores without replay")
+	var pending_before_invalid_day := restored.to_dict()
+	assertions.truthy(not restored.simulate_day(EconomyLimitsScript.MAX_SAFE_DATE + 1), "invalid future simulation is rejected before departure consumption")
+	assertions.equal(restored.to_dict(), pending_before_invalid_day, "invalid future simulation preserves pending departure")
+	var reentry_results: Array[bool] = []
+	var reentry_callback := func(
+		_caravan_id: String,
+		_item_id: String,
+		_quantity: int,
+		departure_day: int,
+		arrived: bool
+	) -> void:
+		if not arrived:
+			reentry_results.append(restored.simulate_day(departure_day))
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.market_caravan_changed.connect(reentry_callback)
+	assertions.truthy(restored.simulate_day(4), "day after arrival simulates")
+	event_bus.market_caravan_changed.disconnect(reentry_callback)
+	assertions.equal(reentry_results, [false], "departure state commits before listeners can reenter the same day")
+	var after_departure := restored_notifications.get_recent()
+	assertions.equal(after_departure.size(), 2, "loaded caravan departs exactly once on day four")
+	if after_departure.size() == 2:
+		assertions.equal(str(after_departure[0].kind), "caravan_departed", "day-four event is a departure")
+		assertions.equal(int(after_departure[0].total_day), 4, "departure keeps its authoritative scheduled day")
+		assertions.equal(int(after_departure[0].count), 1, "departure does not merge with arrival")
+		assertions.equal(str(after_departure[1].kind), "caravan_arrived", "restored arrival remains distinct")
+		assertions.equal(int(after_departure[1].count), 1, "arrival remains singular after departure")
+		assertions.truthy(str(after_departure[0].body).contains("wood"), "departure keeps the imported item")
+		assertions.truthy(str(after_departure[0].body).contains("×4"), "departure keeps the imported quantity")
+	assertions.equal((restored.to_dict().get("pending_caravan_departures", []) as Array).size(), 0, "departure commit clears pending state")
+	var departed_state := restored.to_dict()
+	assertions.truthy(not restored.simulate_day(4), "same departure day cannot simulate twice")
+	assertions.equal(restored.to_dict(), departed_state, "same-day retry cannot consume or recreate departure state")
+	assertions.equal(restored_notifications.get_recent().size(), 2, "same departure day emits no duplicate")
+	restored_notifications.free()
+	restored.free()
+	market.free()
+
+
+func _test_notification_day_limit_keeps_departure(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	const LEGACY_NOTIFICATION_LIMIT := 2147483647
+	var market := MarketSystemScript.new()
+	market.configure([_definition("wood", 10, 0, 12, 4, "essential", "material")])
+	var importer := {
+		"id": "lao_li", "display_name": "老李", "gold": 1000,
+		"inventory": {}, "essential_targets": {}, "reserve_targets": {},
+		"production_recipes": [], "sale_targets": {},
+		"investment_gold_threshold": 2000, "import_buffer": true,
+	}
+	var system := NpcEconomySystemScript.new()
+	var notifications := NotificationSystemScript.new()
+	tree.root.add_child(system)
+	tree.root.add_child(notifications)
+	assertions.truthy(system.configure(market, [importer], []), "wide-day caravan fixture configures")
+	assertions.truthy(notifications.configure(tree.root.get_node("EventBus"), market), "wide-day notification fixture configures")
+	var before_arrival := system.to_dict()
+	before_arrival["last_simulated_day"] = LEGACY_NOTIFICATION_LIMIT - 1
+	before_arrival["essential_zero_streaks"]["wood"] = 2
+	for state_value in before_arrival.npc_states:
+		state_value["last_simulated_day"] = LEGACY_NOTIFICATION_LIMIT - 1
+	assertions.truthy(system.from_dict(before_arrival), "wide-day caravan cursor restores")
+	assertions.truthy(system.simulate_day(LEGACY_NOTIFICATION_LIMIT), "last legacy notification day emits arrival")
+	assertions.truthy(system.simulate_day(LEGACY_NOTIFICATION_LIMIT + 1), "next safe day emits departure")
+	var records := notifications.get_recent()
+	assertions.equal(records.size(), 2, "notification date range retains arrival and next-day departure")
+	if records.size() == 2:
+		assertions.equal(str(records[0].kind), "caravan_departed", "wide-day second record is departure")
+		assertions.equal(int(records[0].total_day), LEGACY_NOTIFICATION_LIMIT + 1, "wide-day departure keeps D plus one")
+		assertions.equal(str(records[1].kind), "caravan_arrived", "wide-day first record is arrival")
+	notifications.free()
+	system.free()
+	market.free()
+
+
+func _test_max_day_import_schedules_no_overflow_departure(assertions: TestAssert) -> void:
+	var market := MarketSystemScript.new()
+	market.configure([_definition("wood", 10, 0, 12, 4, "essential", "material")])
+	var importer := {
+		"id": "lao_li", "display_name": "老李", "gold": 1000,
+		"inventory": {}, "essential_targets": {}, "reserve_targets": {},
+		"production_recipes": [], "sale_targets": {},
+		"investment_gold_threshold": 2000, "import_buffer": true,
+	}
+	var system := NpcEconomySystemScript.new()
+	assertions.truthy(system.configure(market, [importer], []), "max-day caravan fixture configures")
+	var near_limit := system.to_dict()
+	near_limit["last_simulated_day"] = EconomyLimitsScript.MAX_SAFE_DATE - 1
+	near_limit["essential_zero_streaks"]["wood"] = 2
+	for state_value in near_limit.npc_states:
+		state_value["last_simulated_day"] = EconomyLimitsScript.MAX_SAFE_DATE - 1
+	assertions.truthy(system.from_dict(near_limit), "near-limit caravan state restores")
+	assertions.truthy(system.simulate_day(EconomyLimitsScript.MAX_SAFE_DATE), "maximum safe day import simulates")
+	assertions.equal(market.get_stock("wood"), 4, "maximum safe day can still import")
+	assertions.equal((system.to_dict().get("pending_caravan_departures", []) as Array).size(), 0, "maximum day creates no overflowing departure")
+	var at_limit := system.to_dict()
+	assertions.truthy(not system.simulate_day(EconomyLimitsScript.MAX_SAFE_DATE + 1), "unsafe future day is rejected")
+	assertions.equal(system.to_dict(), at_limit, "unsafe future day cannot consume departure state")
+	system.free()
+	market.free()
 
 
 func _test_day_cursor_and_snapshot_are_atomic(assertions: TestAssert) -> void:
@@ -327,6 +443,11 @@ func _test_day_cursor_and_snapshot_are_atomic(assertions: TestAssert) -> void:
 	restored.configure(market, GameDataScript.get_npc_economy_profiles(), GameDataScript.get_population_demand_profiles())
 	assertions.truthy(restored.from_dict(snapshot), "valid NPC system snapshot restores")
 	assertions.equal(restored.to_dict(), snapshot, "NPC system snapshot round trips exactly")
+	var legacy := snapshot.duplicate(true)
+	legacy.erase("pending_caravan_departures")
+	assertions.truthy(restored.from_dict(legacy), "legacy NPC snapshot without caravan departure state restores")
+	assertions.equal(restored.to_dict().get("pending_caravan_departures", null), [], "legacy NPC snapshot defaults pending departures empty")
+	assertions.truthy(restored.from_dict(snapshot), "strict snapshot restores after legacy compatibility check")
 	var malformed := snapshot.duplicate(true)
 	malformed.npc_states[0].last_simulated_day = 4.5
 	var before := restored.to_dict()
@@ -336,6 +457,24 @@ func _test_day_cursor_and_snapshot_are_atomic(assertions: TestAssert) -> void:
 	incoherent.npc_states[0].last_simulated_day = 4
 	assertions.truthy(not restored.from_dict(incoherent), "NPC cursor must match system cursor")
 	assertions.equal(restored.to_dict(), before, "incoherent cursor restore is atomic")
+	var invalid_pending := snapshot.duplicate(true)
+	invalid_pending["pending_caravan_departures"] = [{
+		"caravan_id": "lao_li_emergency_import",
+		"item_id": "wood",
+		"quantity": 1,
+		"departure_day": int(snapshot.last_simulated_day),
+	}]
+	assertions.truthy(not restored.from_dict(invalid_pending), "pending departure must be after the saved cursor")
+	assertions.equal(restored.to_dict(), before, "invalid pending departure restore is atomic")
+	invalid_pending.pending_caravan_departures[0].departure_day = int(snapshot.last_simulated_day) + 1
+	invalid_pending.pending_caravan_departures[0].item_id = "unknown_item"
+	assertions.truthy(not restored.from_dict(invalid_pending), "pending departure rejects unknown items")
+	invalid_pending.pending_caravan_departures[0].item_id = "wood"
+	invalid_pending.pending_caravan_departures[0].quantity = 0
+	assertions.truthy(not restored.from_dict(invalid_pending), "pending departure rejects zero quantity")
+	invalid_pending.pending_caravan_departures[0].quantity = 1
+	invalid_pending.pending_caravan_departures.append(invalid_pending.pending_caravan_departures[0].duplicate(true))
+	assertions.truthy(not restored.from_dict(invalid_pending), "pending departure rejects duplicate occurrence keys")
 	market.free()
 	system.free()
 	restored.free()

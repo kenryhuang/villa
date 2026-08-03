@@ -1099,6 +1099,12 @@ func _test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(
 	lao_li.investment_planned = true
 	persisted.essential_zero_streaks.wood = 2
 	persisted.demand_tags = {"residents": "持久化居民需求"}
+	persisted.pending_caravan_departures = [{
+		"caravan_id": "lao_li_emergency_import",
+		"item_id": "wood",
+		"quantity": 4,
+		"departure_day": 5,
+	}]
 	assertions.truthy(npc.from_dict(persisted), "NPC save fixture adopts changed runtime state")
 	var expected_npc := npc.to_dict()
 	assertions.truthy(manager.save_game(TEST_SLOT), "NPC economy writes through real SaveManager")
@@ -1386,6 +1392,8 @@ func _npc_state_record(snapshot: Dictionary, npc_id: String) -> Dictionary:
 
 func _set_npc_snapshot_day(snapshot: Dictionary, total_day: int) -> void:
 	snapshot["last_simulated_day"] = total_day
+	if snapshot.has("pending_caravan_departures"):
+		snapshot["pending_caravan_departures"] = []
 	for state_value in snapshot.get("npc_states", []):
 		if state_value is Dictionary:
 			state_value["last_simulated_day"] = total_day

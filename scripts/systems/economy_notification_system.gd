@@ -6,11 +6,12 @@ signal notifications_changed
 signal unread_count_changed(count: int)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 const VERSION := 1
 const MAX_RECORDS := 20
 const MERGE_WINDOW_SECONDS := 3.0
-const MAX_SAFE_DAY := 2147483647
+const MAX_SAFE_DAY := EconomyLimitsScript.MAX_SAFE_DATE
 const MAX_COUNT := 1000000
 const MAX_TITLE_LENGTH := 128
 const MAX_BODY_LENGTH := 512

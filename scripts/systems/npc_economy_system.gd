@@ -10,9 +10,17 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const IMPORT_DAY_THRESHOLD := 3
 const IMPORT_QUANTITY_CAP := 5
 const IMPORT_COST_MULTIPLIER := 1.25
+const EMERGENCY_CARAVAN_ID := "lao_li_emergency_import"
 const FACTOR_MIN := 0.0
 const FACTOR_MAX := 3.0
 const SYSTEM_FIELDS := [
+	"last_simulated_day",
+	"npc_states",
+	"essential_zero_streaks",
+	"demand_tags",
+	"pending_caravan_departures",
+]
+const LEGACY_SYSTEM_FIELDS := [
 	"last_simulated_day",
 	"npc_states",
 	"essential_zero_streaks",
@@ -28,6 +36,7 @@ var _population_profiles: Array[Dictionary] = []
 var _item_definitions: Dictionary = {}
 var _essential_zero_streaks: Dictionary = {}
 var _demand_tags: Dictionary = {}
+var _pending_caravan_departures: Array[Dictionary] = []
 var _is_configured := false
 var _event_bus: Node
 
@@ -88,6 +97,7 @@ func configure(
 	for item_id in _essential_item_ids():
 		_essential_zero_streaks[item_id] = 0
 	_demand_tags.clear()
+	_pending_caravan_departures.clear()
 	last_simulated_day = 0
 	_is_configured = true
 	return true
@@ -104,21 +114,40 @@ func simulate_day(
 		var state: NpcEconomyState = state_value
 		if state.last_simulated_day >= total_day:
 			return false
+	for state_value in _states.values():
+		(state_value as NpcEconomyState).last_simulated_day = total_day
+	last_simulated_day = total_day
+	var due_departures: Array[Dictionary] = []
+	var future_departures: Array[Dictionary] = []
+	for departure in _pending_caravan_departures:
+		if int(departure.departure_day) <= total_day:
+			due_departures.append(departure)
+		else:
+			future_departures.append(departure)
+	_pending_caravan_departures = future_departures
+	for departure in due_departures:
+		_emit_event("market_caravan_changed", [
+			str(departure.caravan_id),
+			str(departure.item_id),
+			int(departure.quantity),
+			int(departure.departure_day),
+			false,
+		])
 
 	_demand_tags.clear()
 	for npc_id_value in _profiles.keys():
 		var npc_id := str(npc_id_value)
 		_simulate_npc(_states[npc_id], _profiles[npc_id])
-		(_states[npc_id] as NpcEconomyState).last_simulated_day = total_day
 	_apply_population_demand(season_factors, event_factors)
 	_update_shortages_and_imports(total_day)
-	last_simulated_day = total_day
 	return true
 
 
 func sync_daily_cursor(total_day: int) -> bool:
 	if not _is_configured or not EconomyLimitsScript.is_safe_date(total_day):
 		return false
+	if total_day != last_simulated_day:
+		_pending_caravan_departures.clear()
 	last_simulated_day = total_day
 	for state_value in _states.values():
 		(state_value as NpcEconomyState).last_simulated_day = total_day
@@ -195,6 +224,7 @@ func to_dict() -> Dictionary:
 		"npc_states": serialized_states,
 		"essential_zero_streaks": _essential_zero_streaks.duplicate(true),
 		"demand_tags": _demand_tags.duplicate(true),
+		"pending_caravan_departures": _pending_caravan_departures.duplicate(true),
 	}
 
 
@@ -205,6 +235,7 @@ func from_dict(data: Dictionary) -> bool:
 	_states = normalized.states
 	_essential_zero_streaks = normalized.streaks
 	_demand_tags = normalized.tags
+	_pending_caravan_departures.assign(normalized.departures)
 	last_simulated_day = int(normalized.cursor)
 	return true
 
@@ -239,14 +270,18 @@ func reset_to_profile_defaults(total_day: int) -> bool:
 	_states = candidate_states
 	_essential_zero_streaks = candidate_streaks
 	_demand_tags.clear()
+	_pending_caravan_departures.clear()
 	last_simulated_day = total_day
 	return true
 
 
 func _normalize_system_data(data: Dictionary) -> Variant:
-	if not _is_configured or data.size() != SYSTEM_FIELDS.size():
+	if not _is_configured:
 		return null
-	for field in SYSTEM_FIELDS:
+	var fields := SYSTEM_FIELDS if data.has("pending_caravan_departures") else LEGACY_SYSTEM_FIELDS
+	if data.size() != fields.size():
+		return null
+	for field in fields:
 		if not data.has(field):
 			return null
 	if not _is_nonnegative_integer(data.last_simulated_day):
@@ -276,10 +311,17 @@ func _normalize_system_data(data: Dictionary) -> Variant:
 	var candidate_tags: Variant = _normalize_tags(data.demand_tags)
 	if candidate_tags == null:
 		return null
+	var candidate_departures: Variant = _normalize_pending_caravan_departures(
+		data.get("pending_caravan_departures", []),
+		cursor
+	)
+	if candidate_departures == null:
+		return null
 	return {
 		"states": candidate_states,
 		"streaks": candidate_streaks,
 		"tags": candidate_tags,
+		"departures": candidate_departures,
 		"cursor": cursor,
 	}
 
@@ -518,8 +560,15 @@ func _import_essential(item_id: String, total_day: int) -> bool:
 	_demand_tags["import:%s" % item_id] = "老李商队高价补货 %s ×%d（成本 %d）" % [
 		str(definition.get("name", item_id)), quantity, import_cost,
 	]
+	if total_day < EconomyLimitsScript.MAX_SAFE_DATE:
+		_pending_caravan_departures.append({
+			"caravan_id": EMERGENCY_CARAVAN_ID,
+			"item_id": item_id,
+			"quantity": quantity,
+			"departure_day": total_day + 1,
+		})
 	_emit_event("market_caravan_changed", [
-		"lao_li_emergency_import", item_id, quantity, total_day, true,
+		EMERGENCY_CARAVAN_ID, item_id, quantity, total_day, true,
 	])
 	return true
 
@@ -678,6 +727,62 @@ func _normalize_tags(value: Variant) -> Variant:
 		if str(tag_key).is_empty() or str((value as Dictionary)[tag_key]).is_empty():
 			return null
 		normalized[str(tag_key)] = str((value as Dictionary)[tag_key])
+	return normalized
+
+
+func _normalize_pending_caravan_departures(value: Variant, cursor: int) -> Variant:
+	if not value is Array:
+		return null
+	var normalized: Array[Dictionary] = []
+	var occurrence_keys: Dictionary = {}
+	for departure_value in value as Array:
+		if not departure_value is Dictionary:
+			return null
+		var departure := departure_value as Dictionary
+		if departure.size() != 4:
+			return null
+		for field in ["caravan_id", "item_id", "quantity", "departure_day"]:
+			if not departure.has(field):
+				return null
+		if (
+			typeof(departure.caravan_id) != TYPE_STRING
+			or str(departure.caravan_id) != EMERGENCY_CARAVAN_ID
+			or typeof(departure.item_id) != TYPE_STRING
+			or not _item_definitions.has(str(departure.item_id))
+			or not _is_nonnegative_integer(departure.quantity)
+			or int(departure.quantity) <= 0
+			or int(departure.quantity) > IMPORT_QUANTITY_CAP
+			or not EconomyLimitsScript.is_safe_date(departure.departure_day, false)
+			or cursor >= EconomyLimitsScript.MAX_SAFE_DATE
+			or int(departure.departure_day) != cursor + 1
+		):
+			return null
+		var definition: Dictionary = _item_definitions[str(departure.item_id)]
+		if str(definition.get("volatility", "")) != "essential" or _is_rare_definition(definition):
+			return null
+		var occurrence_key := "%s\n%s\n%d" % [
+			str(departure.caravan_id),
+			str(departure.item_id),
+			int(departure.departure_day),
+		]
+		if occurrence_keys.has(occurrence_key):
+			return null
+		occurrence_keys[occurrence_key] = true
+		normalized.append({
+			"caravan_id": str(departure.caravan_id),
+			"item_id": str(departure.item_id),
+			"quantity": int(departure.quantity),
+			"departure_day": int(departure.departure_day),
+		})
+	normalized.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (
+			str(a.caravan_id) < str(b.caravan_id)
+			or (
+				str(a.caravan_id) == str(b.caravan_id)
+				and str(a.item_id) < str(b.item_id)
+			)
+		)
+	)
 	return normalized
 
 
