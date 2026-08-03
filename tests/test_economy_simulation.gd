@@ -95,6 +95,20 @@ func run(assertions: TestAssert) -> void:
 		first,
 		"route=all day=28 deterministic replay actual=second expected=first seed=%d" % SIMULATION_SEED
 	)
+	var alternate_seed_route := _simulate_route(
+		assertions,
+		"raw_gathering",
+		SIMULATION_SEED + 1,
+		false
+	)
+	assertions.truthy(
+		alternate_seed_route.daily_income != first.routes.raw_gathering.daily_income,
+		"route=raw_gathering day=28 changing the simulation seed changes actual route outcomes"
+	)
+	assertions.truthy(
+		alternate_seed_route.seeded_factors != first.routes.raw_gathering.seeded_factors,
+		"route=raw_gathering day=28 changing the seed changes the injected yield sequence"
+	)
 	_assert_route_balance(assertions, first)
 	_test_essential_shortage_recovers(assertions)
 	_test_dumping_depresses_then_recovers(assertions)
@@ -107,9 +121,24 @@ func _test_authoritative_acceptance_contract(assertions: TestAssert, suite: Dict
 	for route_id_value in suite.routes.keys():
 		var route_id := str(route_id_value)
 		var result: Dictionary = suite.routes[route_id]
+		assertions.equal(
+			int(result.get("successful_production_days", -1)),
+			SIMULATION_DAYS,
+			"route=%s day=28 ProductionSystem accepted every simulated day" % route_id
+		)
+		assertions.equal(
+			int(result.get("successful_daily_runs", -1)),
+			SIMULATION_DAYS,
+			"route=%s day=28 DailySimulationSystem completed every simulated day" % route_id
+		)
+		assertions.equal(
+			(result.market.items as Dictionary).size(),
+			GameDataScript.get_market_items().size(),
+			"route=%s day=28 real MarketSystem retains the complete catalog" % route_id
+		)
 		assertions.truthy(
-			result.has("authoritative") and bool(result.get("authoritative", false)),
-			"route=%s day=28 uses authoritative inventory/production/economy systems" % route_id
+			int(result.wallet_gold) >= 0,
+			"route=%s day=28 real wallet remains nonnegative" % route_id
 		)
 		assertions.equal(
 			int(result.get("daily_cursor", -1)),
@@ -287,15 +316,25 @@ func _simulate_route(
 	var passive_outputs := {}
 	var passive_output_days := {}
 	var passive_inputs_consumed := {}
+	var route_rng := RandomNumberGenerator.new()
+	var derived_seed := _derive_route_seed(seed, route_id)
+	route_rng.seed = derived_seed
+	var seeded_factors: Array[float] = []
+	var successful_production_days := 0
+	var successful_daily_runs := 0
 	for definition in GameDataScript.get_market_items():
 		previous_prices[str(definition.id)] = int(definition.base_price)
 	for day in range(1, SIMULATION_DAYS + 1):
 		var gold_before := int(wallet.gold)
-		assertions.truthy(production.begin_day(day), "route=%s day=%d production begins" % [route_id, day])
+		var production_day_ok := production.begin_day(day)
+		assertions.truthy(production_day_ok, "route=%s day=%d production begins" % [route_id, day])
+		if production_day_ok:
+			successful_production_days += 1
 		if route_id != "no_player":
 			var day_result := _run_authoritative_route_day(
-				assertions, context, route_id, _stage_for_day(day), day, verify
+				assertions, context, route_id, _stage_for_day(day), day, verify, route_rng
 			)
+			seeded_factors.append(float(day_result.seeded_factor))
 			maintenance_events += int(day_result.maintenance_events)
 			maintenance_pause_checks += int(day_result.maintenance_pause_checks)
 			for key in transactions:
@@ -309,6 +348,8 @@ func _simulate_route(
 				for output_day_value in day_result.passive_output_days[passive_id]:
 					(passive_output_days[passive_id] as Array).append(int(output_day_value))
 		var day_ok := daily.run_day(day)
+		if day_ok:
+			successful_daily_runs += 1
 		if route_id == "crop_farming":
 			_advance_farm_witness(assertions, context, day)
 		daily_income.append(int(wallet.gold) - gold_before)
@@ -317,7 +358,7 @@ func _simulate_route(
 				day_ok,
 				"route=%s day=%d authoritative daily simulation actual=%s expected=true" % [route_id, day, day_ok]
 			)
-			_assert_daily_invariants(assertions, market, npc, previous_prices, route_id, day)
+			_assert_daily_invariants(assertions, context, previous_prices, route_id, day)
 		_update_essential_streaks(market, zero_streaks, max_zero_streaks)
 		for definition in GameDataScript.get_market_items():
 			var item_id := str(definition.id)
@@ -335,8 +376,9 @@ func _simulate_route(
 			"maintenance_due_day": int(snapshot.get("maintenance_due_day", -1)),
 		})
 	var result := {
-		"authoritative": true,
 		"daily_cursor": daily.last_simulated_day,
+		"successful_production_days": successful_production_days,
+		"successful_daily_runs": successful_daily_runs,
 		"daily_income": daily_income,
 		"stage_income": _stage_averages(daily_income),
 		"market": market.to_dict(),
@@ -357,6 +399,8 @@ func _simulate_route(
 		"orders_created": (economy_state.orders as Array).size(),
 		"farming_harvests": int(context.farming_harvests),
 		"seed": seed,
+		"derived_seed": derived_seed,
+		"seeded_factors": seeded_factors,
 	}
 	_cleanup_route_context(context)
 	return result
@@ -433,7 +477,8 @@ func _run_authoritative_route_day(
 	route_id: String,
 	stage: String,
 	day: int,
-	verify: bool
+	verify: bool,
+	rng: RandomNumberGenerator
 ) -> Dictionary:
 	var inventory: InventorySystem = context.inventory
 	var wallet: Node = context.wallet
@@ -445,6 +490,7 @@ func _run_authoritative_route_day(
 		"transactions": {"buys": 0, "sells": 0, "recipes": 0, "collections": 0},
 		"passive_outputs": {}, "passive_output_days": {},
 		"passive_inputs_consumed": {},
+		"seeded_factor": _seeded_factor(rng),
 	}
 	var passive_inputs_before_finish := {}
 	var daily_cost := int(route.get("daily_gold_cost", 0))
@@ -501,8 +547,16 @@ func _run_authoritative_route_day(
 	var capacity := int(ROUTE_STAGE_CAPACITY[route_id][stage])
 	for item_id_value in (route.daily_output as Dictionary).keys():
 		var item_id := str(item_id_value)
+		var seeded_quantity := maxi(
+			1,
+			roundi(
+				int(route.daily_output[item_id])
+				* capacity
+				* float(result.seeded_factor)
+			)
+		)
 		assertions.truthy(
-			inventory.add_item(item_id, int(route.daily_output[item_id]) * capacity),
+			inventory.add_item(item_id, seeded_quantity),
 			"route=%s day=%d external output=%s enters real inventory" % [route_id, day, item_id]
 		)
 	for passive_id_value in route.get("passive_buildings", []):
@@ -639,12 +693,17 @@ func _cleanup_route_context(context: Dictionary) -> void:
 
 func _assert_daily_invariants(
 	assertions: TestAssert,
-	market: MarketSystem,
-	npc: NpcEconomySystem,
+	context: Dictionary,
 	previous_prices: Dictionary,
 	route_id: String,
 	day: int
 ) -> void:
+	var market: MarketSystem = context.market
+	var npc: NpcEconomySystem = context.npc
+	var inventory: InventorySystem = context.inventory
+	var wallet: Node = context.wallet
+	var production: ProductionSystem = context.production
+	var economy: EconomySystem = context.economy
 	for definition in GameDataScript.get_market_items():
 		var item_id := str(definition.id)
 		var state := market.get_item_state(item_id)
@@ -690,6 +749,61 @@ func _assert_daily_invariants(
 					route_id, day, str(state.npc_id), item_id, int(state.inventory[item_id]),
 				]
 			)
+	assertions.truthy(
+		int(wallet.gold) >= 0,
+		"route=%s day=%d player wallet actual=%d expected=>=0" % [route_id, day, int(wallet.gold)]
+	)
+	for slot_index in range(inventory.slots.size()):
+		var slot: Dictionary = inventory.slots[slot_index]
+		if slot.is_empty():
+			continue
+		assertions.truthy(
+			int(slot.get("quantity", -1)) >= 0,
+			"route=%s day=%d inventory_slot=%d quantity actual=%d expected=>=0" % [
+				route_id, day, slot_index, int(slot.get("quantity", -1)),
+			]
+		)
+	for building in context.buildings:
+		var snapshot := production.get_building_snapshot(building)
+		for field in ["inputs", "outputs"]:
+			for item_id_value in (snapshot.get(field, {}) as Dictionary).keys():
+				var item_id := str(item_id_value)
+				assertions.truthy(
+					int(snapshot[field][item_id]) >= 0,
+					"route=%s day=%d building=%s field=%s item=%s quantity actual=%d expected=>=0" % [
+						route_id, day, str(snapshot.get("building_id", "")), field, item_id,
+						int(snapshot[field][item_id]),
+					]
+				)
+		for job_value in snapshot.get("jobs", []):
+			var job: Dictionary = job_value
+			assertions.truthy(
+				int(job.get("batches", -1)) >= 0 and int(job.get("remaining_minutes", -1)) >= 0,
+				"route=%s day=%d building=%s job quantities actual=%s expected=>=0" % [
+					route_id, day, str(snapshot.get("building_id", "")), job,
+				]
+			)
+	var economy_snapshot := economy.to_dict()
+	assertions.truthy(
+		int(economy_snapshot.last_processed_day) >= 0,
+		"route=%s day=%d economy cursor actual=%d expected=>=0" % [
+			route_id, day, int(economy_snapshot.last_processed_day),
+		]
+	)
+	for order_value in economy_snapshot.orders:
+		var order: Dictionary = order_value
+		assertions.truthy(
+			int(order.get("quantity", -1)) >= 0 and int(order.get("reward_gold", -1)) >= 0,
+			"route=%s day=%d order quantities actual=%s expected=>=0" % [route_id, day, order]
+		)
+	for contract_value in economy_snapshot.contracts:
+		var contract: Dictionary = contract_value
+		assertions.truthy(
+			int(contract.get("quantity_per_day", -1)) >= 0
+			and int(contract.get("reward_gold", -1)) >= 0
+			and int(contract.get("breaches", -1)) >= 0,
+			"route=%s day=%d contract quantities actual=%s expected=>=0" % [route_id, day, contract]
+		)
 
 
 func _assert_route_balance(assertions: TestAssert, suite: Dictionary) -> void:
@@ -928,7 +1042,7 @@ func _test_no_instant_recipe_arbitrage(assertions: TestAssert) -> void:
 				str(recipe.id), int(recipe.duration_minutes),
 			]
 		)
-		var result := _simulate_arbitrage_recipe(recipe)
+		var result := _simulate_arbitrage_recipe(recipe, assertions)
 		if int(result.total_profit) > 0:
 			profitable += 1
 		else:
@@ -945,8 +1059,18 @@ func _test_no_instant_recipe_arbitrage(assertions: TestAssert) -> void:
 			"route=arbitrage_bot day=28 recipe=%s accounting total equals daily sum" % str(recipe.id)
 		)
 		assertions.truthy(
-			bool(result.authoritative) and int(result.recipes_started) > 0,
-			"route=arbitrage_bot day=28 recipe=%s uses real Economy/Production transactions" % str(recipe.id)
+			int(result.recipes_started) > 0 and int(result.output_sales) > 0,
+			"route=arbitrage_bot day=28 recipe=%s completes real Production jobs and Economy sales" % str(recipe.id)
+		)
+		assertions.equal(
+			int(result.transaction_failures),
+			0,
+			"route=arbitrage_bot day=28 recipe=%s has no partial purchase or failed start" % str(recipe.id)
+		)
+		assertions.equal(
+			int(result.purchase_attempts),
+			int(result.recipes_started),
+			"route=arbitrage_bot day=28 recipe=%s every purchased input bundle starts exactly once" % str(recipe.id)
 		)
 		if int(recipe.duration_minutes) > 1440:
 			assertions.truthy(
@@ -973,7 +1097,7 @@ func _test_no_instant_recipe_arbitrage(assertions: TestAssert) -> void:
 	print("ECONOMY_SIM arbitrage recipes=%d profitable=%d losing=%d" % [checked, profitable, losing])
 
 
-func _simulate_arbitrage_recipe(recipe: Dictionary) -> Dictionary:
+func _simulate_arbitrage_recipe(recipe: Dictionary, assertions: TestAssert) -> Dictionary:
 	var market := MarketSystemScript.new()
 	market.configure(GameDataScript.get_market_items())
 	var inventory := InventorySystemScript.new()
@@ -995,43 +1119,89 @@ func _simulate_arbitrage_recipe(recipe: Dictionary) -> Dictionary:
 	var late_profit := 0
 	var batches := 0
 	var recipes_started := 0
+	var purchase_attempts := 0
+	var transaction_failures := 0
+	var output_sales := 0
 	var daily_profits: Array[int] = []
 	for day in range(1, SIMULATION_DAYS + 1):
 		production.begin_day(day)
 		var gold_before := int(wallet.gold)
 		if production.is_maintenance_overdue(building):
 			var quote := production.get_maintenance_quote(building)
-			var maintenance_ready := true
+			var missing_materials := {}
 			for item_id_value in (quote.materials as Dictionary).keys():
 				var item_id := str(item_id_value)
-				var quantity := int(quote.materials[item_id])
-				if inventory.get_item_count(item_id) < quantity:
-					maintenance_ready = maintenance_ready and economy.buy_item(item_id, quantity)
-			if maintenance_ready:
-				production.maintain(building, wallet, inventory)
+				var missing := maxi(
+					0,
+					int(quote.materials[item_id]) - inventory.get_item_count(item_id)
+				)
+				if missing > 0:
+					missing_materials[item_id] = missing
+			if _can_buy_arbitrage_bundle(market, inventory, wallet, missing_materials):
+				var maintenance_bought := _buy_arbitrage_bundle(economy, missing_materials)
+				assertions.truthy(
+					maintenance_bought,
+					"route=arbitrage_bot day=%d recipe=%s maintenance bundle purchase succeeds after preflight" % [
+						day, str(recipe.id),
+					]
+				)
+				if not maintenance_bought:
+					transaction_failures += 1
+				else:
+					var maintained := production.maintain(building, wallet, inventory)
+					assertions.truthy(
+						maintained,
+						"route=arbitrage_bot day=%d recipe=%s maintenance succeeds after materials preflight" % [
+							day, str(recipe.id),
+						]
+					)
+					if not maintained:
+						transaction_failures += 1
 		if (production.get_building_snapshot(building).jobs as Array).is_empty():
-			var can_trade := true
-			var total_cost := 0
+			var missing_inputs := {}
 			for item_id_value in (recipe.inputs as Dictionary).keys():
 				var item_id := str(item_id_value)
-				var quantity := int(recipe.inputs[item_id])
-				can_trade = can_trade and market.can_buy(item_id, quantity)
-				total_cost += market.quote_buy(item_id, quantity)
-			can_trade = can_trade and int(wallet.gold) >= total_cost
-			if can_trade:
-				for item_id_value in (recipe.inputs as Dictionary).keys():
-					var item_id := str(item_id_value)
-					can_trade = can_trade and economy.buy_item(item_id, int(recipe.inputs[item_id]))
-				if can_trade and production.start_recipe(building, str(recipe.id), 1, inventory):
-					batches += 1
-					recipes_started += 1
+				var missing := maxi(0, int(recipe.inputs[item_id]) - inventory.get_item_count(item_id))
+				if missing > 0:
+					missing_inputs[item_id] = missing
+			var production_ready := _preflight_arbitrage_recipe(
+				production, building, recipe, inventory, missing_inputs
+			)
+			if (
+				production_ready
+				and _can_buy_arbitrage_bundle(market, inventory, wallet, missing_inputs)
+			):
+				purchase_attempts += 1
+				var inputs_bought := _buy_arbitrage_bundle(economy, missing_inputs)
+				assertions.truthy(
+					inputs_bought,
+					"route=arbitrage_bot day=%d recipe=%s complete input bundle purchase succeeds after preflight" % [
+						day, str(recipe.id),
+					]
+				)
+				if not inputs_bought:
+					transaction_failures += 1
+				else:
+					var started := production.start_recipe(building, str(recipe.id), 1, inventory)
+					assertions.truthy(
+						started,
+						"route=arbitrage_bot day=%d recipe=%s starts after atomic bundle purchase" % [
+							day, str(recipe.id),
+						]
+					)
+					if started:
+						batches += 1
+						recipes_started += 1
+					else:
+						transaction_failures += 1
 		production.advance_minutes(1440)
 		production.collect_all(building, inventory)
 		for output_id_value in (recipe.outputs as Dictionary).keys():
 			var output_id := str(output_id_value)
 			var quantity := inventory.get_item_count(output_id)
 			if quantity > 0:
-				economy.sell_item(output_id, quantity)
+				if economy.sell_item(output_id, quantity):
+					output_sales += 1
 		var day_profit := int(wallet.gold) - gold_before
 		total_profit += day_profit
 		daily_profits.append(day_profit)
@@ -1049,15 +1219,82 @@ func _simulate_arbitrage_recipe(recipe: Dictionary) -> Dictionary:
 	wallet.free()
 	market.free()
 	return {
-		"authoritative": true,
 		"total_profit": total_profit,
 		"early_profit": early_profit,
 		"late_profit": late_profit,
 		"batches": batches,
 		"capacity": SIMULATION_DAYS,
 		"recipes_started": recipes_started,
+		"purchase_attempts": purchase_attempts,
+		"transaction_failures": transaction_failures,
+		"output_sales": output_sales,
 		"daily_profits": daily_profits,
 	}
+
+
+func _can_buy_arbitrage_bundle(
+	market: MarketSystem,
+	inventory: InventorySystem,
+	wallet: Node,
+	items: Dictionary
+) -> bool:
+	if items.is_empty():
+		return true
+	var inventory_preflight := inventory.preflight_add_items(items)
+	if not bool(inventory_preflight.get("ok", false)):
+		return false
+	var total_cost := 0
+	for item_id_value in items.keys():
+		var item_id := str(item_id_value)
+		var quantity := int(items[item_id])
+		if quantity <= 0 or not market.can_buy(item_id, quantity):
+			return false
+		total_cost += market.quote_buy(item_id, quantity)
+	return int(wallet.gold) >= total_cost
+
+
+func _buy_arbitrage_bundle(economy: EconomySystem, items: Dictionary) -> bool:
+	var item_ids: Array[String] = []
+	for item_id_value in items.keys():
+		item_ids.append(str(item_id_value))
+	item_ids.sort()
+	for item_id in item_ids:
+		if not economy.buy_item(item_id, int(items[item_id])):
+			return false
+	return true
+
+
+func _preflight_arbitrage_recipe(
+	production: ProductionSystem,
+	building: BuildingInstance,
+	recipe: Dictionary,
+	inventory: InventorySystem,
+	missing_inputs: Dictionary
+) -> bool:
+	var simulated_inventory := InventorySystemScript.new()
+	simulated_inventory.max_slots = inventory.max_slots
+	simulated_inventory.slots.assign(inventory.slots.duplicate(true))
+	var prepared := bool(
+		missing_inputs.is_empty()
+		or simulated_inventory.preflight_add_items(missing_inputs).get("ok", false)
+	)
+	if prepared:
+		var item_ids: Array[String] = []
+		for item_id_value in missing_inputs.keys():
+			item_ids.append(str(item_id_value))
+		item_ids.sort()
+		for item_id in item_ids:
+			prepared = (
+				simulated_inventory.add_item(item_id, int(missing_inputs[item_id]))
+				and prepared
+			)
+	var preflight := (
+		production.preflight_recipe(building, str(recipe.id), 1, simulated_inventory)
+		if prepared
+		else {}
+	)
+	simulated_inventory.free()
+	return prepared and bool(preflight.get("ok", false))
 
 
 func _sum_ints(values: Array) -> int:
@@ -1150,7 +1387,14 @@ func _stage_averages(daily_income: Array[int]) -> Dictionary:
 
 
 func _seeded_factor(rng: RandomNumberGenerator) -> float:
-	return float(rng.randi_range(90, 110)) / 100.0
+	return float(rng.randi_range(97, 103)) / 100.0
+
+
+func _derive_route_seed(seed: int, route_id: String) -> int:
+	var derived := absi(seed) % 2147483647
+	for index in range(route_id.length()):
+		derived = (derived * 131 + route_id.unicode_at(index)) % 2147483647
+	return maxi(derived, 1)
 
 
 func _definition(

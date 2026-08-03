@@ -698,7 +698,13 @@ func _apply_economy_save_data(data: Dictionary) -> bool:
 	var loaded_day := maxi(int(data.get("total_days", data.get("last_simulated_day", 1))), 0)
 	var applied := true
 	if data.has("economy_version"):
-		applied = bool(_market_system.call("from_dict", data["market"]))
+		if _market_system.has_method("restore_from_dict_with_current_catalog"):
+			applied = bool(_market_system.call(
+				"restore_from_dict_with_current_catalog",
+				data["market"]
+			))
+		else:
+			applied = bool(_market_system.call("from_dict", data["market"]))
 		_daily_simulation_system.set("last_simulated_day", int(data["last_simulated_day"]))
 		if applied and _has_valid_npc_configuration():
 			if data.has("npc_economy"):

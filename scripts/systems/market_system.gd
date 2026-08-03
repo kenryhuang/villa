@@ -263,6 +263,54 @@ func from_dict(data: Dictionary) -> bool:
 	return true
 
 
+func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
+	if _items.is_empty():
+		return false
+	if not data.has("last_settled_day") or not data.has("items"):
+		return false
+	if not EconomyLimitsScript.is_safe_date(data["last_settled_day"]):
+		return false
+	if not data["items"] is Dictionary or (data["items"] as Dictionary).is_empty():
+		return false
+	var saved_items: Dictionary = {}
+	for item_key in (data["items"] as Dictionary).keys():
+		if not (data["items"] as Dictionary)[item_key] is Dictionary:
+			return false
+		var normalized := _normalize_runtime_state(
+			str(item_key),
+			(data["items"] as Dictionary)[item_key]
+		)
+		if normalized.is_empty():
+			return false
+		saved_items[str(item_key)] = normalized
+
+	var migrated_items := _items.duplicate(true)
+	for item_key in migrated_items.keys():
+		var item_id := str(item_key)
+		if not saved_items.has(item_id):
+			continue
+		var catalog_state: Dictionary = migrated_items[item_id]
+		var saved_state: Dictionary = saved_items[item_id]
+		var base_price := int(catalog_state["base_price"])
+		var global_min := ceili(base_price * 0.5)
+		var global_max := floori(base_price * 2.5)
+		var mid_price := clampi(int(saved_state["mid_price"]), global_min, global_max)
+		var history: Array[int] = []
+		for value in saved_state["history"]:
+			history.append(clampi(int(value), global_min, global_max))
+		history[-1] = mid_price
+		catalog_state["mid_price"] = mid_price
+		catalog_state["stock"] = int(saved_state["stock"])
+		catalog_state["demand"] = int(saved_state["demand"])
+		catalog_state["supply"] = int(saved_state["supply"])
+		catalog_state["history"] = history
+		migrated_items[item_id] = catalog_state
+
+	_items = migrated_items
+	last_settled_day = int(data["last_settled_day"])
+	return true
+
+
 func _normalize_runtime_state(item_key: String, state: Dictionary) -> Dictionary:
 	var required_numeric := [
 		"base_price", "mid_price", "stock", "target_stock", "daily_liquidity", "demand", "supply"

@@ -236,6 +236,56 @@ func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTr
 	assertions.equal(daily.last_simulated_day, 8, "legacy coordinator starts at loaded day")
 	assertions.truthy(not daily.run_day(8), "loaded legacy day cannot replay")
 
+	var old_catalog_market := MarketSystemScript.new()
+	assertions.truthy(
+		old_catalog_market.configure([_legacy_wood_definition()]),
+		"versioned old-catalog fixture configures"
+	)
+	assertions.truthy(
+		old_catalog_market.commit_sell("wood", 4),
+		"versioned old-catalog fixture preserves player supply"
+	)
+	assertions.truthy(
+		old_catalog_market.settle_day(9),
+		"versioned old-catalog fixture records price history"
+	)
+	var old_catalog_snapshot := old_catalog_market.to_dict()
+	old_catalog_market.free()
+	assertions.truthy(
+		market.configure([_wood_definition(), _crate_definition()]),
+		"runtime adopts current market catalog before loading old versioned save"
+	)
+	_write_json(manager._save_path(TEST_SLOT), {
+		"economy_version": 1,
+		"market": old_catalog_snapshot,
+		"last_simulated_day": 9,
+	})
+	assertions.truthy(
+		manager.load_game(TEST_SLOT),
+		"versioned save from an older market catalog migrates"
+	)
+	var migrated_wood := market.get_item_state("wood")
+	assertions.equal(migrated_wood.get("base_price"), 100, "migration adopts current base price")
+	assertions.equal(migrated_wood.get("target_stock"), 10, "migration adopts current stock target")
+	assertions.equal(migrated_wood.get("daily_liquidity"), 10, "migration adopts current liquidity")
+	assertions.equal(
+		migrated_wood.get("stock"),
+		old_catalog_snapshot.items.wood.stock,
+		"migration preserves saved market stock"
+	)
+	assertions.equal(
+		migrated_wood.get("history"),
+		old_catalog_snapshot.items.wood.history,
+		"migration preserves saved price history"
+	)
+	assertions.equal(
+		market.get_item_state("crate").get("base_price"),
+		50,
+		"migration backfills products added to the current catalog"
+	)
+	assertions.equal(market.last_settled_day, 9, "migration preserves market day cursor")
+	assertions.equal(daily.last_simulated_day, 9, "migration preserves simulation day cursor")
+
 	manager.free()
 	daily.free()
 	market.free()
@@ -1380,6 +1430,26 @@ func _wood_definition() -> Dictionary:
 		"initial_stock": 10,
 		"target_stock": 10,
 		"daily_liquidity": 10,
+	}
+
+
+func _legacy_wood_definition() -> Dictionary:
+	return {
+		"id": "wood",
+		"base_price": 80,
+		"initial_stock": 10,
+		"target_stock": 6,
+		"daily_liquidity": 4,
+	}
+
+
+func _crate_definition() -> Dictionary:
+	return {
+		"id": "crate",
+		"base_price": 50,
+		"initial_stock": 3,
+		"target_stock": 8,
+		"daily_liquidity": 5,
 	}
 
 
