@@ -25,7 +25,7 @@ theme_override_constants/separation = 7
 
 [node name="ActiveTitle" type="Label" parent="Content"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 28
 text = "活跃合同"
 
 [node name="ActiveScroll" type="ScrollContainer" parent="Content"]
@@ -44,7 +44,7 @@ horizontal_alignment = 1
 
 [node name="AvailableTitle" type="Label" parent="Content"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 28
 text = "可签合同"
 
 [node name="AvailableScroll" type="ScrollContainer" parent="Content"]
@@ -67,7 +67,7 @@ theme_override_constants/separation = 5
 
 [node name="TitleLabel" type="Label" parent="Content/Details"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 28
 text = "选择合同查看详情"
 autowrap_mode = 2
 

@@ -61,7 +61,6 @@ func _ready() -> void:
 		sort_option.add_item(SORT_LABELS[index], index)
 	sort_option.item_selected.connect(_on_sort_selected)
 	item_list.item_selected.connect(_on_item_selected)
-	item_list.gui_input.connect(_on_item_list_gui_input)
 	if not resized.is_connected(_on_control_resized):
 		resized.connect(_on_control_resized)
 	if not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
@@ -332,6 +331,7 @@ func _create_item_row(
 	select_button.text = row_text
 	select_button.tooltip_text = "选择%s" % str(definition.get("name", item_id))
 	select_button.pressed.connect(select_item.bind(item_id))
+	select_button.gui_input.connect(_on_product_button_gui_input.bind(select_button, item_id))
 	content.add_child(select_button)
 
 	var stock_bar := ColorRect.new()
@@ -507,19 +507,29 @@ func _on_item_selected(index: int) -> void:
 		select_item(_item_ids[index])
 
 
-func _on_item_list_gui_input(event: InputEvent) -> void:
+func _on_product_button_gui_input(event: InputEvent, source: Button, source_item_id: String) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	if event.keycode != KEY_UP and event.keycode != KEY_DOWN:
 		return
-	var selected := item_list.get_selected_items()
-	var current := selected[0] if not selected.is_empty() else 0
+	var current_index := _item_ids.find(source_item_id)
+	if current_index < 0 or _item_ids.is_empty():
+		return
 	var direction := -1 if event.keycode == KEY_UP else 1
-	var next_index := clampi(current + direction, 0, item_list.item_count - 1)
-	if item_list.item_count > 0:
-		item_list.select(next_index)
-		item_list.ensure_current_is_visible()
-	item_list.accept_event()
+	var next_index := clampi(current_index + direction, 0, _item_ids.size() - 1)
+	var next_item_id := _item_ids[next_index]
+	select_item(next_item_id)
+	var next_button := _product_button_for(next_item_id)
+	if next_button != null and next_button.is_visible_in_tree():
+		next_button.grab_focus()
+	source.accept_event()
+
+
+func _product_button_for(target_item_id: String) -> Button:
+	for item_row in item_rows.get_children():
+		if str(item_row.get_meta("item_id", "")) == target_item_id:
+			return item_row.get_node_or_null("Content/SelectButton") as Button
+	return null
 
 
 func _on_trade_snapshot_changed() -> void:

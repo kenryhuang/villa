@@ -65,7 +65,7 @@ size_flags_horizontal = 3
 
 [node name="SectionTitle" type="Label" parent="Columns/Orders"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 28
 text = "居民订单"
 
 [node name="OrderScroll" type="ScrollContainer" parent="Columns/Orders"]
@@ -96,7 +96,7 @@ text = "NPC：—"
 
 [node name="TitleLabel" type="Label" parent="Columns/Details"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 26
+theme_override_font_sizes/font_size = 28
 text = "选择订单查看详情"
 autowrap_mode = 2
 

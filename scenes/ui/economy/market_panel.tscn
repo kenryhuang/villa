@@ -23,7 +23,7 @@ theme_override_constants/separation = 8
 
 [node name="CategoryTitle" type="Label" parent="Columns/CatalogColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 28
 text = "分类与商品"
 
 [node name="CategoryList" type="VBoxContainer" parent="Columns/CatalogColumn"]
@@ -126,7 +126,7 @@ text = "今日供给 —　今日需求 —　流动量 —"
 
 [node name="ChartTitle" type="Label" parent="Columns/DetailColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 28
 text = "最近 7 日价格"
 
 [node name="PriceChart" type="Control" parent="Columns/DetailColumn"]

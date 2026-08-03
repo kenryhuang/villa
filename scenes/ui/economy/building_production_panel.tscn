@@ -27,7 +27,7 @@ size_flags_stretch_ratio = 0.32
 
 [node name="TitleLabel" type="Label" parent="ThreeColumns/RecipeColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 28
 text = "配方"
 
 [node name="RecipeList" type="VBoxContainer" parent="ThreeColumns/RecipeColumn"]
@@ -42,7 +42,7 @@ size_flags_stretch_ratio = 0.38
 
 [node name="TitleLabel" type="Label" parent="ThreeColumns/QueueColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 28
 text = "生产队列"
 
 [node name="QueueSlots" type="VBoxContainer" parent="ThreeColumns/QueueColumn"]
@@ -58,7 +58,7 @@ size_flags_stretch_ratio = 0.3
 
 [node name="TitleLabel" type="Label" parent="ThreeColumns/StorageColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 28
 text = "成品仓"
 
 [node name="StorageList" type="VBoxContainer" parent="ThreeColumns/StorageColumn"]

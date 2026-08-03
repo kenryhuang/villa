@@ -20,7 +20,7 @@ theme_override_constants/separation = 10
 [node name="TitleLabel" type="Label" parent="Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.317647, 0.231373, 0.184314, 1)
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 28
 text = "交易操作"
 
 [node name="PlayerQuantityLabel" type="Label" parent="Content"]
@@ -138,7 +138,7 @@ theme_override_constants/separation = 6
 
 [node name="TitleLabel" type="Label" parent="ConfirmationLayer/Content/VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 28
 text = "确认大额交易"
 
 [node name="FirstUnitLabel" type="Label" parent="ConfirmationLayer/Content/VBox"]

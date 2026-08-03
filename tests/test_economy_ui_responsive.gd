@@ -3,6 +3,7 @@ extends RefCounted
 
 const EconomyLayout = preload("res://scripts/ui/economy_layout.gd")
 const EconomyLayoutScript: Script = preload("res://scripts/ui/economy_layout.gd")
+const GameDataScript = preload("res://scripts/core/game_data.gd")
 const THEME_PATH := "res://assets/ui/economy/economy_theme.tres"
 const VIEWPORT_SIZES := [
 	Vector2(3000.0, 2000.0),
@@ -131,6 +132,11 @@ func _test_scene_font_overrides(assertions: TestAssert) -> void:
 				assertions.truthy(font_size >= 20, "%s %s button override is at least 20" % [scene_path, control_path])
 			elif control is Label or control is LineEdit or control is RichTextLabel:
 				assertions.truthy(font_size >= 18, "%s %s text override is at least 18" % [scene_path, control_path])
+			if "title" in str(control.name).to_lower():
+				assertions.truthy(
+					font_size >= 28 and font_size <= 36,
+					"%s %s semantic title is 28-36" % [scene_path, control_path]
+				)
 		panel.free()
 	for scene_path in MAIN_TITLE_CONTRACTS:
 		var panel := (load(scene_path) as PackedScene).instantiate() as Control
@@ -277,28 +283,48 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	shop.free()
 	await tree.process_frame
 
+	var inventory := InventorySystem.new()
+	var market_system := MarketSystem.new()
+	var economy := EconomySystem.new()
+	tree.root.add_child(inventory)
+	tree.root.add_child(market_system)
+	tree.root.add_child(economy)
+	assertions.truthy(market_system.configure(GameDataScript.get_market_items()), "keyboard fixture configures real market")
+	var wallet := tree.root.get_node_or_null("GameState")
+	assertions.truthy(wallet != null and economy.configure(inventory, wallet, market_system), "keyboard fixture configures real economy")
 	var market := (load("res://scenes/ui/economy/market_panel.tscn") as PackedScene).instantiate() as Control
 	tree.root.add_child(market)
 	market.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	await tree.process_frame
-	var item_list := market.get_node("Columns/CatalogColumn/ItemList") as ItemList
-	item_list.visible = true
-	item_list.add_item("一")
-	item_list.add_item("二")
-	item_list.select(0)
-	item_list.grab_focus()
+	assertions.truthy(market.call("configure", inventory, economy, market_system), "keyboard fixture builds real market rows")
+	var item_rows := market.get_node("Columns/CatalogColumn/ItemScroll/ItemRows") as VBoxContainer
+	var product_buttons: Array[Button] = []
+	var product_ids: Array[String] = []
+	for row in item_rows.get_children():
+		var select_button := row.get_node_or_null("Content/SelectButton") as Button
+		if select_button != null:
+			product_buttons.append(select_button)
+			product_ids.append(str(row.get_meta("item_id", "")))
+	assertions.truthy(product_buttons.size() >= 3, "keyboard fixture uses several visible dynamic product buttons")
+	if product_buttons.size() < 3:
+		market.free()
+		economy.free()
+		market_system.free()
+		inventory.free()
+		return
+	product_buttons[0].grab_focus()
 	await _send_key(tree, KEY_DOWN)
-	assertions.equal(item_list.get_selected_items()[0], 1, "direction key moves actual market list selection")
+	assertions.equal(market.get_viewport().gui_get_focus_owner(), product_buttons[1], "Down moves focus to the next visible dynamic product")
+	assertions.equal(market.get("selected_item_id"), product_ids[1], "Down selects the next visible dynamic product")
+	await _send_key(tree, KEY_UP)
+	assertions.equal(market.get_viewport().gui_get_focus_owner(), product_buttons[0], "Up moves focus to the previous visible dynamic product")
+	assertions.equal(market.get("selected_item_id"), product_ids[0], "Up selects the previous visible dynamic product")
+	product_buttons[2].grab_focus()
+	await _send_key(tree, KEY_ENTER)
+	assertions.equal(market.get("selected_item_id"), product_ids[2], "Enter activates the focused dynamic product button")
 
 	market.call("apply_responsive_layout", Vector2(1280.0, 720.0))
-	var dynamic_button := Button.new()
-	dynamic_button.text = "动态商品"
-	market.get_node("Columns/CatalogColumn/ItemScroll/ItemRows").add_child(dynamic_button)
-	await tree.process_frame
-	dynamic_button.grab_focus()
-	await _send_key(tree, KEY_TAB)
-	var next_focus := market.get_viewport().gui_get_focus_owner()
-	assertions.truthy(next_focus != null and next_focus != dynamic_button and next_focus.is_visible_in_tree(), "Tab traverses a dynamic market row")
+	product_buttons[0].grab_focus()
 	market.call("open_details_drawer")
 	await tree.process_frame
 	var drawer_focus := market.get_viewport().gui_get_focus_owner()
@@ -309,6 +335,9 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 		"opening drawer moves focus into visible trade controls"
 	)
 	market.free()
+	economy.free()
+	market_system.free()
+	inventory.free()
 	await tree.process_frame
 
 

@@ -28,7 +28,7 @@ layout_mode = 2
 
 [node name="StorageTitle" type="Label" parent="."]
 layout_mode = 2
-theme_override_font_sizes/font_size = 21
+theme_override_font_sizes/font_size = 28
 text = "暂存产物"
 
 [node name="StorageList" type="VBoxContainer" parent="."]
