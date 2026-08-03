@@ -144,6 +144,7 @@ func _new_stage(viewport_size: Vector2i, title: String) -> Control:
 	stage.theme = EconomyTheme
 	stage.size = Vector2(viewport_size)
 	var background := ColorRect.new()
+	background.name = "CaptureBackground"
 	background.color = Color("#6F8B67")
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -230,54 +231,120 @@ func _build_orders_contracts(stage: Control, wallet: Node) -> void:
 
 func _build_waterwheel(stage: Control) -> void:
 	stage.get_node("CaptureTitle").visible = false
+	stage.get_node("CaptureBackground").visible = false
 	var fixture := _production_fixture(stage)
-	var wheel := _building("waterwheel", 10, 10)
+	var wheel := (load("res://scenes/buildings/waterwheel.tscn") as PackedScene).instantiate() as BuildingInstance
+	var definition: Dictionary = GameDataScript.get_building("waterwheel")
+	wheel.configure(BuildingData.from_dictionary(definition), 10, 10, [])
 	stage.add_child(wheel)
+	var wheel_point: Vector2 = fixture.grid.grid_to_world(10, 10)
+	wheel.position = Vector3(wheel_point.x, 0.08, wheel_point.y)
 	fixture.grid.get_cell(9, 10).state = GridCell.State.WATER
 	for position in [Vector2i(10, 12), Vector2i(12, 10), Vector2i(13, 10), Vector2i(10, 14)]:
 		fixture.grid.get_cell(position.x, position.y).state = GridCell.State.FARMLAND
 	fixture.production.register_building(wheel)
+	var world := _build_waterwheel_world(stage, fixture.grid, fixture.production.get_irrigated_cells(wheel), wheel.position)
 	var ui := BuildingEconomyScene.instantiate() as BuildingEconomyUI
 	stage.add_child(ui)
 	await process_frame
 	ui.configure(fixture.production, fixture.inventory, fixture.progression, fixture.grid, ModalCoordinatorScript.new())
-	var page_host := ui.status_panel.get_parent()
-	page_host.remove_child(ui.status_panel)
-	var split := HBoxContainer.new()
-	split.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	split.add_theme_constant_override("separation", 24)
-	page_host.add_child(split)
-	var board := _waterwheel_board(fixture.production.get_irrigated_cells(wheel))
-	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(board)
-	ui.status_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(ui.status_panel)
 	ui.open_for(wheel)
-	ui.status_panel.set_range_preview(true)
+	ui.status_panel.range_preview_button.button_pressed = true
+	ui.status_panel.range_preview_button.toggled.emit(true)
+	# Keep the actual status shell visible while exposing enough of the world to
+	# inspect projection, depth occlusion, and click-through around it.
+	ui.modal_layer.color = Color(0.13, 0.10, 0.09, 0.32)
+	var building_panel := ui.get_node("ModalLayer/BuildingPanel") as Control
+	building_panel.anchor_left = 0.56
+	building_panel.anchor_top = 0.05
+	building_panel.anchor_right = 0.97
+	building_panel.anchor_bottom = 0.95
+	building_panel.offset_left = 0.0
+	building_panel.offset_top = 0.0
+	building_panel.offset_right = 0.0
+	building_panel.offset_bottom = 0.0
+	for range_cell in ui.range_overlay.get_children():
+		if range_cell is CollisionObject3D:
+			_fail("WorldRangeOverlay must stay click-through")
+			return
+		var mesh_instance := range_cell as MeshInstance3D
+		var material := mesh_instance.mesh.material as StandardMaterial3D if mesh_instance != null else null
+		if material == null or material.no_depth_test:
+			_fail("WorldRangeOverlay must participate in camera depth occlusion")
+			return
+	if world == null or ui.range_overlay.get_child_count() == 0:
+		_fail("waterwheel capture requires a live camera and WorldRangeOverlay geometry")
 
 
-func _waterwheel_board(cells: Array) -> VBoxContainer:
-	var box := VBoxContainer.new()
-	var label := Label.new()
-	label.text = "灌溉范围预览（蓝绿色扇区）"
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(label)
-	var grid := GridContainer.new()
-	grid.columns = 9
-	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(grid)
-	for z in range(6, 15):
-		for x in range(6, 15):
-			var tile := ColorRect.new()
-			tile.custom_minimum_size = Vector2(36, 36)
-			if Vector2i(x, z) == Vector2i(10, 10):
-				tile.color = Color("#513B2F")
-			elif cells.has(Vector2i(x, z)):
-				tile.color = Color(0.25, 0.68, 0.72, 0.62)
-			else:
-				tile.color = Color(0.95, 0.90, 0.76, 0.42)
-			grid.add_child(tile)
-	return box
+func _build_waterwheel_world(stage: Control, grid: GridSystem, cells: Array, target: Vector3) -> Node3D:
+	var world_root := Node3D.new()
+	world_root.name = "WaterwheelCaptureWorld"
+	stage.add_child(world_root)
+	var environment_node := WorldEnvironment.new()
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color("#87AFC2")
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color("#FFF2CF")
+	environment.ambient_light_energy = 0.72
+	environment_node.environment = environment
+	world_root.add_child(environment_node)
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-52.0, -34.0, 0.0)
+	sun.light_energy = 0.85
+	sun.shadow_enabled = true
+	world_root.add_child(sun)
+	var ground := MeshInstance3D.new()
+	var ground_mesh := PlaneMesh.new()
+	ground_mesh.size = Vector2(18.0, 18.0)
+	ground_mesh.material = _world_material(Color("#789767"))
+	ground.mesh = ground_mesh
+	ground.position = Vector3(target.x, 0.0, target.z)
+	world_root.add_child(ground)
+	var channel := MeshInstance3D.new()
+	var channel_mesh := BoxMesh.new()
+	channel_mesh.size = Vector3(1.35, 0.055, 15.0)
+	channel_mesh.material = _world_material(Color("#4F91A8"))
+	channel.mesh = channel_mesh
+	channel.position = Vector3(target.x - 1.5, 0.025, target.z)
+	world_root.add_child(channel)
+	for cell in cells:
+		var farmland := MeshInstance3D.new()
+		var farmland_mesh := BoxMesh.new()
+		farmland_mesh.size = Vector3(0.96, 0.025, 0.96)
+		farmland_mesh.material = _world_material(Color("#8D694B"))
+		farmland.mesh = farmland_mesh
+		var point := grid.grid_to_world(cell.x, cell.y)
+		farmland.position = Vector3(point.x, 0.012, point.y)
+		world_root.add_child(farmland)
+	# An opaque world obstacle crosses one real overlay cell. The range mesh
+	# remains behind it because its material keeps depth testing enabled.
+	if cells.size() > 1:
+		var obstacle := MeshInstance3D.new()
+		obstacle.name = "OcclusionProbe"
+		var obstacle_mesh := BoxMesh.new()
+		obstacle_mesh.size = Vector3(0.58, 0.48, 0.58)
+		obstacle_mesh.material = _world_material(Color("#665143"))
+		obstacle.mesh = obstacle_mesh
+		var blocked_cell: Vector2i = cells[1]
+		var blocked_point := grid.grid_to_world(blocked_cell.x, blocked_cell.y)
+		obstacle.position = Vector3(blocked_point.x, 0.24, blocked_point.y)
+		world_root.add_child(obstacle)
+	var rig := (load("res://scenes/camera/camera_rig.tscn") as PackedScene).instantiate() as CameraRig
+	world_root.add_child(rig)
+	var anchor := Node3D.new()
+	anchor.position = target + Vector3(3.0, 0.0, 3.0)
+	world_root.add_child(anchor)
+	rig.orthographic_size = 14.0
+	rig.set_target(anchor)
+	return world_root
+
+
+func _world_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.92
+	return material
 
 
 func _build_toasts(stage: Control) -> void:
@@ -295,16 +362,31 @@ func _build_toasts(stage: Control) -> void:
 
 
 func _build_empty_error(stage: Control) -> void:
+	var wallet := root.get_node("GameState")
+	var inventory := InventorySystemScript.new() as InventorySystem
+	var market := MarketSystemScript.new() as MarketSystem
+	var economy := EconomySystemScript.new() as EconomySystem
+	for node in [inventory, market, economy]:
+		stage.add_child(node)
+	var definition: Dictionary = GameDataScript.get_item("wood").duplicate(true)
+	definition.initial_stock = 2
+	definition.target_stock = 80
+	definition.daily_liquidity = 10
+	market.configure([definition])
+	economy.configure(inventory, wallet, market)
+	inventory.add_item("wood", 30)
 	var panel := preload("res://scenes/ui/economy/market_panel.tscn").instantiate()
 	_content_host(stage).add_child(panel)
 	await process_frame
-	panel.empty_label.visible = true
-	panel.empty_label.text = "该分类暂无可交易物品\n错误：市集状态已变化，请刷新"
-	panel.item_name_label.text = "未选择商品"
-	panel.trade_panel.disabled_reason_label.text = "无法交易：市集状态已变化，请刷新"
-	panel.trade_panel.feedback_label.text = "服务未完成，请检查条件与费用"
-	panel.trade_panel.buy_button.disabled = true
-	panel.trade_panel.sell_button.disabled = true
+	panel.configure(inventory, economy, market)
+	var wood_row := panel.item_rows.get_node("ItemRow_wood") as Control
+	(wood_row.get_node("Content/SelectButton") as Button).pressed.emit()
+	panel.trade_panel.quantity_spin.value = 10
+	panel.trade_panel.sell_button.pressed.emit()
+	# A real authority mutation invalidates the open confirmation and produces
+	# the failure feedback through the normal signal/refresh path.
+	inventory.add_item("wood", 1)
+	(panel.category_buttons["crops"] as Button).pressed.emit()
 
 
 func _production_fixture(parent: Node) -> Dictionary:
