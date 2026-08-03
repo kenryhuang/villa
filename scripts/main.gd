@@ -443,6 +443,32 @@ func open_economy_tab(tab_id: String, target_id: String = "") -> bool:
 	return true
 
 
+func open_building_economy(building: BuildingInstance) -> bool:
+	if (
+		building == null
+		or not is_instance_valid(building)
+		or not building.can_open_economy_panel()
+		or building_economy_ui == null
+		or not building_economy_ui.has_method("open_for")
+	):
+		return false
+	for modal in [inventory_ui, map_ui, build_ui, shop_ui]:
+		if modal != null and modal.has_method("close"):
+			modal.close()
+	return bool(building_economy_ui.call("open_for", building))
+
+
+func close_economy_modal() -> void:
+	if shop_ui != null and shop_ui.has_method("close"):
+		shop_ui.close()
+	if building_economy_ui != null and building_economy_ui.has_method("close"):
+		building_economy_ui.close()
+
+
+func navigate_economy_target(target_type: String, target_id: String) -> bool:
+	return navigate_notification_target(target_type, target_id)
+
+
 func navigate_notification_target(target_type: String, target_id: String) -> bool:
 	match notification_route_kind(target_type, target_id):
 		"market_item":
@@ -452,13 +478,7 @@ func navigate_notification_target(target_type: String, target_id: String) -> boo
 		"contract":
 			return open_economy_tab("contracts", target_id)
 		"building":
-			var building := _find_notification_building(target_id)
-			if building == null or building_economy_ui == null or not building_economy_ui.has_method("open_for"):
-				return false
-			for modal in [inventory_ui, map_ui, build_ui, shop_ui]:
-				if modal != null and modal.has_method("close"):
-					modal.close()
-			return bool(building_economy_ui.call("open_for", building))
+			return open_building_economy(_find_notification_building(target_id))
 	return false
 
 

@@ -94,8 +94,11 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.truthy(ui.open_for(windmill), "completed windmill opens")
 	var panel = ui.production_panel
 	assertions.equal(panel.recipe_rows.size(), 3, "windmill exposes all three recipes")
+	assertions.equal(panel.storage_capacity_label.text, "产物种类 0/3", "crafting storage shows authoritative output type slots")
 	panel.select_recipe("flour")
 	panel.set_batches(1)
+	assertions.truthy(panel.pricing_label.text.contains("盈利"), "recipe margin renders in Chinese")
+	assertions.truthy(not panel.pricing_label.text.contains("profit"), "recipe margin hides internal status keys")
 	assertions.equal(panel.recipe_detail.get("inputs"), {"grain": 2}, "recipe details expose exact inputs")
 	assertions.equal(panel.recipe_detail.get("outputs"), {"flour": 1}, "recipe details expose exact outputs")
 	assertions.equal(panel.queue_slots.size(), 2, "production view always exposes two queue slots")
@@ -105,6 +108,7 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	panel.start_button.pressed.emit()
 	assertions.equal(inventory.get_item_count("grain"), grain_before - 2, "one press deducts one batch exactly once after repeated configure")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "one press creates one authoritative job")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "生产中", "running queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "运行中", "shell title state updates in the same frame when production starts")
 	ui.close()
 	assertions.truthy(ui.open_for(windmill), "windmill reopens")
@@ -139,10 +143,12 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	ui.open_for(blocked)
 	panel = ui.production_panel
 	assertions.equal(panel.queue_slots[0].state, "output-full", "UI output-full state comes from production snapshot")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "产物已满", "output-full queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "仓满暂停", "shell title state reflects output-full immediately")
 	blocked_production.set_maintenance_due_day(blocked, blocked_production.get_current_day())
 	panel.refresh_snapshot()
 	assertions.equal(panel.queue_slots[0].state, "maintenance-paused", "UI maintenance pause comes from production snapshot")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "维护暂停", "maintenance queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "维护暂停", "shell title state reflects maintenance immediately")
 	var connections: int = panel.get_signal_connection_list("snapshot_changed").size() if panel.has_signal("snapshot_changed") else 0
 	assertions.equal(connections, 1, "repeated configure keeps exactly one shell snapshot listener")
@@ -175,7 +181,7 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.queue_slots.size(), 4, "level-two queue upgrade exposes all four authoritative slots")
 	assertions.equal(panel.queue_slot_nodes.size(), 4, "queue UI builds four visible slot nodes dynamically")
 	if panel.queue_slot_nodes.size() >= 4:
-		assertions.equal(panel.queue_slot_nodes[3].get_node("StateLabel").text, "waiting", "fourth queued job is visible")
+		assertions.equal(panel.queue_slot_nodes[3].get_node("StateLabel").text, "等待中", "fourth queued job is visible with a localized state")
 		var stale_slot: WeakRef = weakref(panel.queue_slot_nodes[3])
 		upgraded.producer_state.jobs.resize(1)
 		upgraded.producer_state.max_queue_slots = 2
@@ -212,6 +218,18 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 		assertions.equal(panel.view_data.building_id, building_id, "%s uses typed status ViewData" % building_id)
 		for field in required[building_id]:
 			assertions.truthy(panel.view_data.fields.has(field), "%s exposes %s" % [building_id, field])
+	var localized_wheel := _scene_building("waterwheel", tree)
+	localized_wheel.grid_x = 25
+	localized_wheel.grid_z = 20
+	fixture.grid.get_cell(24, 20).state = GridCell.State.WATER
+	for position in [Vector2i(25, 22), Vector2i(27, 20), Vector2i(28, 20), Vector2i(25, 24)]:
+		fixture.grid.get_cell(position.x, position.y).state = GridCell.State.FARMLAND
+	production.register_building(localized_wheel)
+	panel.show_building(localized_wheel)
+	assertions.equal(panel.summary_fields.get_node("WaterConnectedLabel").text, "连接水源：是", "waterwheel boolean uses a friendly Chinese value")
+	assertions.equal(panel.summary_fields.get_node("IrrigationRadiusLabel").text, "灌溉半径：4格", "waterwheel radius uses a friendly Chinese unit")
+	assertions.equal(panel.summary_fields.get_node("CoveredFarmlandLabel").text, "覆盖农田：4", "waterwheel farmland label is localized")
+	assertions.equal(panel.summary_fields.get_node("CoveredGreenhousesLabel").text, "覆盖温室：0", "waterwheel greenhouse label is localized")
 	var seeded_greenhouse := _scene_building("greenhouse", tree)
 	seeded_greenhouse.grid_x = 10
 	seeded_greenhouse.grid_z = 10

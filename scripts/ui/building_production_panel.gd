@@ -330,7 +330,7 @@ func _render() -> void:
 	for row in recipe_rows:
 		var button := Button.new()
 		button.name = "Recipe_%s" % str(row.recipe_id)
-		button.text = "%s  %s  %d分钟  %s" % [str(row.display_name), "可生产" if bool(row.materials_sufficient) else "缺材料", int(row.duration_minutes), str(row.margin_status)]
+		button.text = "%s  %s  %d分钟  %s" % [str(row.display_name), "可生产" if bool(row.materials_sufficient) else "缺材料", int(row.duration_minutes), _margin_status_text(str(row.margin_status))]
 		button.toggle_mode = true
 		button.button_pressed = str(row.recipe_id) == selected_recipe_id
 		button.disabled = not bool(row.unlocked)
@@ -341,7 +341,7 @@ func _render() -> void:
 	for index in range(queue_slot_nodes.size()):
 		var slot: Dictionary = queue_slots[index] if index < queue_slots.size() else {"state": "idle", "recipe_id": "", "batches": 0, "remaining_minutes": 0, "progress": 0.0}
 		queue_slot_nodes[index].get_node("RecipeLabel").text = "空闲" if str(slot.state) == "idle" else "%s ×%d" % [str(slot.get("display_name", slot.recipe_id)), int(slot.batches)]
-		queue_slot_nodes[index].get_node("StateLabel").text = str(slot.state)
+		queue_slot_nodes[index].get_node("StateLabel").text = _queue_state_text(str(slot.state))
 		queue_slot_nodes[index].get_node("RemainingLabel").text = "剩余 %d 分钟" % int(slot.remaining_minutes)
 		queue_slot_nodes[index].get_node("ProgressBar").value = float(slot.progress) * 100.0
 	_clear_container(storage_list)
@@ -363,13 +363,18 @@ func _render() -> void:
 	var stored_quantity := 0
 	for quantity in storage.values():
 		stored_quantity += int(quantity)
-	storage_capacity_label.text = "容量 %d/%d" % [stored_quantity, int(snapshot.get("storage_quantity_capacity", snapshot.get("output_capacity", 0)))]
+	var quantity_capacity := int(snapshot.get("storage_quantity_capacity", 0))
+	storage_capacity_label.text = (
+		"容量 %d/%d" % [stored_quantity, quantity_capacity]
+		if quantity_capacity > 0
+		else "产物种类 %d/%d" % [storage.size(), int(snapshot.get("output_capacity", 0))]
+	)
 	collect_all_button.disabled = storage.is_empty()
 	input_label.text = "投入：%s" % _count_text(recipe_detail.get("inputs", {}))
 	output_label.text = "产出：%s" % _count_text(recipe_detail.get("outputs", {}))
 	fuel_label.text = "燃料：无"
 	duration_label.text = "耗时：%d 分钟" % int(recipe_detail.get("duration_minutes", 0))
-	pricing_label.text = "投入现值 %d　产出参考价 %d　预计%s" % [int(recipe_detail.get("input_value", 0)), int(recipe_detail.get("output_value", 0)), str(recipe_detail.get("margin_status", "even"))]
+	pricing_label.text = "投入现值 %d　产出参考价 %d　预计%s" % [int(recipe_detail.get("input_value", 0)), int(recipe_detail.get("output_value", 0)), _margin_status_text(str(recipe_detail.get("margin_status", "even")))]
 	missing_label.text = disabled_reason
 	batch_spin_box.max_value = maxi(1, max_batches)
 	batch_spin_box.set_value_no_signal(batches)
@@ -377,6 +382,21 @@ func _render() -> void:
 	start_button.disabled = not bool(preflight.get("ok", false))
 	start_button.tooltip_text = disabled_reason
 	feedback_label.text = failure_message
+
+
+func _queue_state_text(state: String) -> String:
+	return {
+		"idle": "空闲",
+		"waiting": "等待中",
+		"running": "生产中",
+		"completed-awaiting-storage": "等待入库",
+		"output-full": "产物已满",
+		"maintenance-paused": "维护暂停",
+	}.get(state, "状态未知")
+
+
+func _margin_status_text(status: String) -> String:
+	return {"profit": "盈利", "even": "持平", "loss": "亏损"}.get(status, "持平")
 
 
 func _sync_queue_slot_nodes(target_count: int) -> void:

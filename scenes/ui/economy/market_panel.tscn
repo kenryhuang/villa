@@ -67,6 +67,7 @@ theme_override_font_sizes/font_size = 18
 [node name="ItemScroll" type="ScrollContainer" parent="Columns/CatalogColumn"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
 [node name="ItemRows" type="VBoxContainer" parent="Columns/CatalogColumn/ItemScroll"]
 layout_mode = 2

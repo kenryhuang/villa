@@ -3,6 +3,19 @@ extends VBoxContainer
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MAX_REQUEST_QUANTITY := 2147483647
+const FIELD_LABELS := {
+	"next_output": "下次产出", "mature_flowers": "成熟花朵", "bonus": "产量加成",
+	"animal_count": "鸡群数量", "feed_item": "饲料", "feed_stock": "饲料库存",
+	"feed_days": "可用天数", "daily_egg_output": "每日鸡蛋",
+	"water_connected": "连接水源", "irrigation_radius": "灌溉半径",
+	"covered_farmland": "覆盖农田", "covered_greenhouses": "覆盖温室",
+	"planting_cells": "种植格数", "season_protection": "季节保护",
+	"crop_maturity_days": "作物成熟", "waterwheel_connected": "连接水车",
+	"planting_hint": "种植提示", "nearby_buildings": "附近建筑",
+	"pending_outputs": "待收产物", "total_capacity": "总容量",
+	"output_table": "产出预览", "next_settlement": "下次结算",
+	"maintenance": "维护状态", "stored_capacity": "仓储容量", "depth_tier": "开采深度",
+}
 
 
 class ViewData:
@@ -256,7 +269,7 @@ func _render() -> void:
 			continue
 		var label := Label.new()
 		label.name = "%sLabel" % _pascal_case(str(field_name))
-		label.text = "%s：%s" % [str(field_name), str(view_data.fields[field_name])]
+		label.text = "%s：%s" % [_field_label(str(field_name)), _field_value(str(field_name), view_data.fields[field_name])]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		summary_fields.add_child(label)
 	_clear_container(input_actions)
@@ -381,6 +394,68 @@ func _building() -> BuildingInstance:
 func _item_name(item_id: String) -> String:
 	var item = GameDataScript.get_item(item_id)
 	return str(item.get("name", item_id)) if item != null else item_id
+
+
+func _field_label(field_name: String) -> String:
+	return str(FIELD_LABELS.get(field_name, "建筑状态"))
+
+
+func _field_value(field_name: String, value: Variant) -> String:
+	match field_name:
+		"water_connected", "waterwheel_connected":
+			return "是" if bool(value) else "否"
+		"season_protection":
+			return "全年有效" if bool(value) else "未启用"
+		"irrigation_radius":
+			var radius := float(value)
+			return "%d格" % roundi(radius) if is_equal_approx(radius, float(roundi(radius))) else "%.1f格" % radius
+		"next_output", "next_settlement":
+			return "第%d天" % int(value)
+		"feed_days":
+			return "%d天" % int(value)
+		"bonus":
+			return "%d%%" % roundi(float(value) * 100.0)
+		"feed_item":
+			return _item_name(str(value))
+		"crop_maturity_days":
+			var crops := value as Array if value is Array else []
+			if crops.is_empty():
+				return "暂无作物"
+			var soonest := 2147483647
+			for crop in crops:
+				if crop is Dictionary:
+					soonest = mini(soonest, int(crop.get("remaining_days", 0)))
+			return "%d块，最快%d天" % [crops.size(), maxi(soonest, 0)]
+		"output_table":
+			return _friendly_output_table(value as Dictionary if value is Dictionary else {})
+		"maintenance":
+			var maintenance := value as Dictionary if value is Dictionary else {}
+			return "第%d天到期（%s）" % [int(maintenance.get("due_day", 0)), "已暂停" if bool(maintenance.get("paused", false)) else "正常"]
+		"stored_capacity":
+			var capacity := value as Dictionary if value is Dictionary else {}
+			return "%d/%d" % [int(capacity.get("used", 0)), int(capacity.get("maximum", 0))]
+		"depth_tier":
+			return {"shallow": "浅层", "medium": "中层", "deep": "深层"}.get(str(value), "浅层")
+	if value is bool:
+		return "是" if bool(value) else "否"
+	return str(value)
+
+
+func _friendly_output_table(outputs: Dictionary) -> String:
+	var parts: Array[String] = []
+	var ids: Array[String] = []
+	ids.assign(outputs.keys())
+	ids.sort()
+	for item_id in ids:
+		var amount: Variant = outputs[item_id]
+		if amount is Dictionary:
+			var nested: Array[String] = []
+			for nested_id in (amount as Dictionary).keys():
+				nested.append("%s ×%d" % [_item_name(str(nested_id)), int(amount[nested_id])])
+			parts.append("额外%s" % "、".join(nested))
+		else:
+			parts.append("%s ×%d" % [_item_name(str(item_id)), int(amount)])
+	return "、".join(parts) if not parts.is_empty() else "暂无"
 
 
 func _pascal_case(value: String) -> String:

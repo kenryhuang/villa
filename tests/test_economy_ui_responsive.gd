@@ -44,7 +44,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
 	_test_scene_font_overrides(assertions)
+	_test_building_modal_minimum_height(assertions)
 	await _test_panel_contracts(assertions, tree)
+	await _test_building_modal_control_bounds(assertions, tree)
 	await _test_runtime_scale_and_resize_state(assertions, tree)
 	await _test_market_drawer_state(assertions, tree)
 	await _test_real_keyboard_navigation(assertions, tree)
@@ -64,6 +66,64 @@ func _test_layout_contract(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.clamp_scale(1.2), 1.2, "scale preserves supported value")
 	assertions.equal(EconomyLayout.clamp_scale(2.0), 1.4, "scale has upper bound")
 	assertions.equal(EconomyLayout.clamp_scale(NAN), 1.0, "non-finite scale falls back safely")
+
+
+func _test_building_modal_minimum_height(assertions: TestAssert) -> void:
+	var ui := (load("res://scenes/ui/economy/building_economy_ui.tscn") as PackedScene).instantiate()
+	var panel := ui.get_node("ModalLayer/BuildingPanel") as Control
+	assertions.truthy(
+		panel.anchor_bottom - panel.anchor_top >= 0.88,
+		"building modal reserves enough vertical room for production controls at 1280x720"
+	)
+	ui.free()
+
+
+func _test_building_modal_control_bounds(assertions: TestAssert, tree: SceneTree) -> void:
+	var previous_pause := tree.paused
+	for viewport_size in VIEWPORT_SIZES:
+		tree.paused = false
+		var host := Control.new()
+		host.size = viewport_size
+		tree.root.add_child(host)
+		var grid := GridSystem.new()
+		var farming := FarmingSystem.new()
+		var inventory := InventorySystem.new()
+		var production := ProductionSystem.new()
+		var progression := EconomyProgressionSystem.new()
+		for system in [grid, farming, inventory, production, progression]:
+			host.add_child(system)
+		farming.configure(grid, null, null)
+		production.configure(grid, farming, null, inventory)
+		var windmill := (load("res://scenes/buildings/windmill.tscn") as PackedScene).instantiate() as BuildingInstance
+		host.add_child(windmill)
+		production.register_building(windmill)
+		inventory.add_item("grain", 4)
+		var progression_state := progression.to_dict()
+		progression_state.unlocked_blueprints.append("windmill")
+		for recipe in preload("res://scripts/core/recipe_database.gd").get_recipes_for_station("windmill"):
+			progression_state.unlocked_recipes.append(str(recipe.id))
+		progression.from_dict(progression_state)
+		production.start_recipe(windmill, "flour", 1, inventory)
+		var ui := (load("res://scenes/ui/economy/building_economy_ui.tscn") as PackedScene).instantiate() as BuildingEconomyUI
+		host.add_child(ui)
+		ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		await tree.process_frame
+		ui.configure(production, inventory, progression, grid, EconomyModalCoordinator.new())
+		assertions.truthy(ui.open_for(windmill), "building modal opens at %s" % viewport_size)
+		await tree.process_frame
+		var paper := ui.get_node("ModalLayer/BuildingPanel") as Control
+		var header := ui.get_node("ModalLayer/BuildingPanel/Margin/Shell/Header") as Control
+		for content in [header, ui.production_panel]:
+			assertions.truthy(
+				_rect_covers_with_tolerance(paper.get_global_rect(), content.get_global_rect())
+				and _controls_within_rect(content, paper.get_global_rect()),
+				"real production modal controls stay inside paper at %s: %s"
+				% [viewport_size, _out_of_bounds_description(content, paper.get_global_rect())]
+			)
+		ui.close()
+		host.free()
+		await tree.process_frame
+	tree.paused = previous_pause
 
 
 func _test_theme_contract(assertions: TestAssert) -> void:
@@ -251,6 +311,12 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	var panel := (load("res://scenes/ui/economy/market_panel.tscn") as PackedScene).instantiate()
 	tree.root.add_child(panel)
 	await tree.process_frame
+	var item_scroll := panel.get_node("Columns/CatalogColumn/ItemScroll") as ScrollContainer
+	assertions.equal(
+		item_scroll.horizontal_scroll_mode,
+		ScrollContainer.SCROLL_MODE_DISABLED,
+		"market product list disables horizontal scrolling"
+	)
 	panel.call("apply_responsive_layout", Vector2(1280, 720))
 	assertions.equal(panel.call("get_layout_mode"), "drawer", "market uses drawer at minimum viewport")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "drawer starts with product list")
@@ -421,6 +487,14 @@ func _test_narrow_shop_pagehost_bounds(assertions: TestAssert, tree: SceneTree) 
 	var disabled_reason := market.get_node("Columns/TradePanel/Content/DisabledReasonLabel") as Control
 	assertions.truthy(buy_total.is_visible_in_tree() and page_host.get_global_rect().encloses(buy_total.get_global_rect()), "narrow drawer keeps buy total visible without scrolling")
 	assertions.truthy(disabled_reason.is_visible_in_tree() and page_host.get_global_rect().encloses(disabled_reason.get_global_rect()), "narrow drawer keeps disabled reason visible without scrolling")
+	shop.call("select_tab", "contracts")
+	await tree.process_frame
+	var contract_panel := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel") as Control
+	assertions.truthy(
+		_controls_within_rect(contract_panel, page_host.get_global_rect()),
+		"nested 1280 contract controls stay inside PageHost %s: %s"
+		% [page_host.get_global_rect(), _out_of_bounds_description(contract_panel, page_host.get_global_rect())]
+	)
 	shop.call("close")
 	host.free()
 	(fixture.economy as Node).free()
