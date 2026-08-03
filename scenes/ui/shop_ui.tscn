@@ -161,6 +161,33 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="TradeModalBlocker" type="Control" parent="ModalLayer"]
+visible = false
+z_index = 1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Top" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="Bottom" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="Left" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="Right" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
 [node name="SignConfirmationLayer" type="ColorRect" parent="ModalLayer"]
 visible = false
 layout_mode = 1

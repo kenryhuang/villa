@@ -207,10 +207,17 @@ func _apply_drawer_visibility() -> void:
 		$Columns/CatalogColumn.visible = true
 		$Columns/DetailColumn.visible = true
 		$Columns/TradePanel.visible = true
+		_set_compact_detail(false)
 		return
 	$Columns/CatalogColumn.visible = not _drawer_open
 	$Columns/DetailColumn.visible = _drawer_open
 	$Columns/TradePanel.visible = _drawer_open
+	_set_compact_detail(true)
+
+
+func _set_compact_detail(compact: bool) -> void:
+	for control: Control in [price_chart, tags_label, source_use_label, processing_label, $Columns/DetailColumn/ChartTitle]:
+		control.visible = not compact
 
 
 func _on_viewport_size_changed() -> void:
@@ -517,6 +524,9 @@ func _on_product_button_gui_input(event: InputEvent, source: Button, source_item
 		return
 	var direction := -1 if event.keycode == KEY_UP else 1
 	var next_index := clampi(current_index + direction, 0, _item_ids.size() - 1)
+	if next_index == current_index:
+		source.accept_event()
+		return
 	var next_item_id := _item_ids[next_index]
 	select_item(next_item_id)
 	var next_button := _product_button_for(next_item_id)

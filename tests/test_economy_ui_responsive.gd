@@ -48,6 +48,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_runtime_scale_and_resize_state(assertions, tree)
 	await _test_market_drawer_state(assertions, tree)
 	await _test_real_keyboard_navigation(assertions, tree)
+	await _test_shop_trade_modal_integration(assertions, tree)
+	await _test_narrow_shop_pagehost_bounds(assertions, tree)
 	await _test_trade_keyboard_and_wheel(assertions, tree)
 	await _test_trade_confirmation_modal(assertions, tree)
 
@@ -324,9 +326,146 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	assertions.equal(market.get("selected_item_id"), product_ids[2], "Enter activates the focused dynamic product button")
 
 	market.call("apply_responsive_layout", Vector2(1280.0, 720.0))
+	market.set("selected_item_id", product_ids[0])
+	product_buttons[0].grab_focus()
+	await _send_key(tree, KEY_UP)
+	assertions.equal(market.get("selected_item_id"), product_ids[0], "Up at first drawer product preserves selection")
+	assertions.equal(market.get_viewport().gui_get_focus_owner(), product_buttons[0], "Up at first drawer product preserves focus")
+	assertions.truthy((market.get_node("Columns/CatalogColumn") as Control).visible, "Up at first drawer product keeps catalog open")
+	market.set("selected_item_id", product_ids[-1])
+	product_buttons[-1].grab_focus()
+	await _send_key(tree, KEY_DOWN)
+	assertions.equal(market.get("selected_item_id"), product_ids[-1], "Down at last drawer product preserves selection")
+	assertions.equal(market.get_viewport().gui_get_focus_owner(), product_buttons[-1], "Down at last drawer product preserves focus")
+	assertions.truthy((market.get_node("Columns/CatalogColumn") as Control).visible, "Down at last drawer product keeps catalog open")
 	product_buttons[0].grab_focus()
 	market.call("open_details_drawer")
 	await tree.process_frame
+
+
+func _test_shop_trade_modal_integration(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := await _create_shop_fixture(assertions, tree, Vector2(1920.0, 1080.0))
+	if fixture.is_empty():
+		return
+	var host := fixture.host as Control
+	var shop := fixture.shop as Control
+	var market := fixture.market as Control
+	var trade := market.get_node("Columns/TradePanel") as Control
+	var confirmation := trade.get_node("ConfirmationLayer") as Control
+	var confirm_button := trade.get_node("ConfirmationLayer/Content/VBox/Buttons/ConfirmButton") as Button
+	var orders_tab := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
+	var crops_button := market.get_node("Columns/CatalogColumn/CategoryList/Crops") as Button
+	var close_button := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Header/CloseButton") as Button
+	var orders_clicks := InputCounter.new()
+	var crops_clicks := InputCounter.new()
+	var close_clicks := InputCounter.new()
+	var confirm_clicks := InputCounter.new()
+	orders_tab.pressed.connect(orders_clicks.record)
+	crops_button.pressed.connect(crops_clicks.record)
+	close_button.pressed.connect(close_clicks.record)
+	confirm_button.pressed.connect(confirm_clicks.record)
+	confirmation.visible = true
+	await tree.process_frame
+	assertions.truthy(shop.has_node("ModalLayer/TradeModalBlocker"), "ShopUI provides a full-screen trade modal blocker")
+	assertions.truthy((shop.get_node("ModalLayer/TradeModalBlocker") as Control).visible, "trade modal blocker follows confirmation visibility")
+	for _step in range(6):
+		await _send_key(tree, KEY_TAB)
+		var focus_owner := shop.get_viewport().gui_get_focus_owner()
+		assertions.truthy(focus_owner != null and confirmation.is_ancestor_of(focus_owner), "trade confirmation traps ShopUI Tab focus")
+	assertions.truthy(not confirm_button.disabled, "trade confirmation primary action remains enabled")
+	await _send_mouse_click(tree, confirm_button.get_global_rect().get_center())
+	assertions.equal(confirm_clicks.count, 1, "trade confirmation primary action receives pointer input above blocker")
+	await _send_mouse_click(tree, crops_button.get_global_rect().get_center())
+	await _send_mouse_click(tree, orders_tab.get_global_rect().get_center())
+	await _send_mouse_click(tree, close_button.get_global_rect().get_center())
+	assertions.equal(orders_clicks.count, 0, "trade confirmation blocks economy tab clicks")
+	assertions.equal(crops_clicks.count, 0, "trade confirmation blocks market category clicks")
+	assertions.equal(close_clicks.count, 0, "trade confirmation blocks ShopUI close clicks")
+	assertions.equal(shop.get("selected_tab"), "market", "blocked tab click does not switch economy page")
+	assertions.equal(market.get("selected_category"), "raw_materials", "blocked category click does not change market category")
+	assertions.truthy(shop.visible, "blocked close click keeps ShopUI open")
+	assertions.truthy(not shop.call("select_tab", "orders"), "trade confirmation rejects programmatic page switching")
+	confirmation.visible = false
+	await tree.process_frame
+	assertions.truthy(not (shop.get_node("ModalLayer/TradeModalBlocker") as Control).visible, "closing trade confirmation removes full-screen blocker")
+	orders_tab.grab_focus()
+	await _send_key(tree, KEY_ENTER)
+	assertions.equal(shop.get("selected_tab"), "orders", "closing trade confirmation restores tab activation")
+	shop.call("close")
+	host.free()
+	(fixture.economy as Node).free()
+	(fixture.market_system as Node).free()
+	(fixture.inventory as Node).free()
+	await tree.process_frame
+
+
+func _test_narrow_shop_pagehost_bounds(assertions: TestAssert, tree: SceneTree) -> void:
+	EconomyLayoutScript.call("set_ui_scale", 1.4, tree)
+	var fixture := await _create_shop_fixture(assertions, tree, Vector2(1280.0, 720.0))
+	if fixture.is_empty():
+		EconomyLayoutScript.call("set_ui_scale", 1.0, tree)
+		return
+	var host := fixture.host as Control
+	var shop := fixture.shop as Control
+	var market := fixture.market as Control
+	var page_host := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost") as Control
+	market.call("select_category", "raw_materials")
+	market.call("select_item", "wood")
+	await tree.process_frame
+	assertions.equal(market.call("get_layout_mode"), "drawer", "nested 1280 ShopUI opens market drawer mode")
+	assertions.truthy(
+		_controls_within_rect(market, page_host.get_global_rect()),
+		"nested 1280 market drawer controls stay inside PageHost %s: %s" % [page_host.get_global_rect(), _out_of_bounds_description(market, page_host.get_global_rect())]
+	)
+	var buy_total := market.get_node("Columns/TradePanel/Content/BuyTotalLabel") as Control
+	var disabled_reason := market.get_node("Columns/TradePanel/Content/DisabledReasonLabel") as Control
+	assertions.truthy(buy_total.is_visible_in_tree() and page_host.get_global_rect().encloses(buy_total.get_global_rect()), "narrow drawer keeps buy total visible without scrolling")
+	assertions.truthy(disabled_reason.is_visible_in_tree() and page_host.get_global_rect().encloses(disabled_reason.get_global_rect()), "narrow drawer keeps disabled reason visible without scrolling")
+	shop.call("close")
+	host.free()
+	(fixture.economy as Node).free()
+	(fixture.market_system as Node).free()
+	(fixture.inventory as Node).free()
+	EconomyLayoutScript.call("set_ui_scale", 1.0, tree)
+	await tree.process_frame
+
+
+func _create_shop_fixture(assertions: TestAssert, tree: SceneTree, viewport_size: Vector2) -> Dictionary:
+	var inventory := InventorySystem.new()
+	var market_system := MarketSystem.new()
+	var economy := EconomySystem.new()
+	tree.root.add_child(inventory)
+	tree.root.add_child(market_system)
+	tree.root.add_child(economy)
+	if not market_system.configure(GameDataScript.get_market_items()):
+		assertions.truthy(false, "ShopUI fixture configures real market")
+		return {}
+	var wallet := tree.root.get_node_or_null("GameState")
+	if wallet == null or not economy.configure(inventory, wallet, market_system):
+		assertions.truthy(false, "ShopUI fixture configures real economy")
+		return {}
+	var host := Control.new()
+	host.size = viewport_size
+	tree.root.add_child(host)
+	var shop := (load("res://scenes/ui/shop_ui.tscn") as PackedScene).instantiate() as Control
+	host.add_child(shop)
+	shop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await tree.process_frame
+	if not shop.call("configure", inventory, economy, market_system):
+		assertions.truthy(false, "ShopUI fixture configures real panels")
+		host.free()
+		return {}
+	shop.call("open", "market")
+	await tree.process_frame
+	var market := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel") as Control
+	return {
+		"host": host,
+		"shop": shop,
+		"market": market,
+		"inventory": inventory,
+		"market_system": market_system,
+		"economy": economy,
+	}
 	var drawer_focus := market.get_viewport().gui_get_focus_owner()
 	assertions.truthy(
 		drawer_focus != null
@@ -436,6 +575,32 @@ func _controls_within_viewport(root: Control, viewport_size: Vector2) -> bool:
 		if rect.end.x > viewport_size.x + 0.5 or rect.end.y > viewport_size.y + 0.5:
 			return false
 	return true
+
+
+func _controls_within_rect(root: Control, bounds: Rect2) -> bool:
+	for child in _all_controls(root):
+		if not child.is_visible_in_tree() or child == root:
+			continue
+		if not _rect_covers_with_tolerance(bounds, child.get_global_rect()):
+			return false
+	return true
+
+
+func _out_of_bounds_description(root: Control, bounds: Rect2) -> String:
+	var entries: Array[String] = []
+	for child in _all_controls(root):
+		if child.is_visible_in_tree() and child != root and not _rect_covers_with_tolerance(bounds, child.get_global_rect()):
+			entries.append("%s=%s" % [root.get_path_to(child), child.get_global_rect()])
+	return "; ".join(entries)
+
+
+func _rect_covers_with_tolerance(outer: Rect2, inner: Rect2) -> bool:
+	return (
+		inner.position.x >= outer.position.x - 0.5
+		and inner.position.y >= outer.position.y - 0.5
+		and inner.end.x <= outer.end.x + 0.5
+		and inner.end.y <= outer.end.y + 0.5
+	)
 
 
 func _visible_text_has_size(root: Control) -> bool:

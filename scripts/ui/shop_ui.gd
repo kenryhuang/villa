@@ -28,6 +28,9 @@ const MarketPanelScript = preload("res://scripts/ui/market_panel.gd")
 @onready var service_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage
 @onready var order_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel
 @onready var contract_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel
+@onready var trade_modal_blocker: Control = $ModalLayer/TradeModalBlocker
+@onready var trade_confirmation_layer: Control = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel/Columns/TradePanel/ConfirmationLayer
+@onready var trade_confirm_button: Button = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel/Columns/TradePanel/ConfirmationLayer/Content/VBox/Buttons/ConfirmButton
 @onready var sign_confirmation_layer: ColorRect = $ModalLayer/SignConfirmationLayer
 @onready var sign_summary_label: Label = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/SummaryLabel
 @onready var sign_error_label: Label = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/ErrorLabel
@@ -45,6 +48,7 @@ var _modal_coordinator = EconomyModalCoordinatorScript.new()
 var _pending_contract_id := ""
 var _pending_contract_snapshot: Dictionary = {}
 var _sign_confirmation_in_progress := false
+var _trade_modal_focus_modes: Dictionary = {}
 
 
 func _ready() -> void:
@@ -58,6 +62,11 @@ func _ready() -> void:
 		sign_cancel_button.pressed.connect(dismiss_contract_sign)
 	if not sign_confirm_button.pressed.is_connected(confirm_contract_sign):
 		sign_confirm_button.pressed.connect(confirm_contract_sign)
+	if not trade_confirmation_layer.visibility_changed.is_connected(_on_trade_confirmation_visibility_changed):
+		trade_confirmation_layer.visibility_changed.connect(_on_trade_confirmation_visibility_changed)
+	if not resized.is_connected(_layout_trade_modal_blocker):
+		resized.connect(_layout_trade_modal_blocker)
+	trade_modal_blocker.visible = trade_confirmation_layer.visible
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		if not event_bus.gold_changed.is_connected(_on_gold_changed):
@@ -122,6 +131,8 @@ func open(tab_id: String = "market") -> void:
 func select_tab(tab_id: String) -> bool:
 	if tab_id not in VALID_TABS:
 		return false
+	if trade_confirmation_layer != null and trade_confirmation_layer.visible and tab_id != selected_tab:
+		return false
 	selected_tab = tab_id
 	if not is_node_ready():
 		return true
@@ -144,9 +155,74 @@ func close() -> void:
 	if not _is_open:
 		return
 	_is_open = false
+	if trade_confirmation_layer.visible:
+		trade_confirmation_layer.get_parent().call("dismiss_confirmation")
 	dismiss_contract_sign()
 	visible = false
 	_modal_coordinator.release(self)
+
+
+func _on_trade_confirmation_visibility_changed() -> void:
+	trade_modal_blocker.visible = trade_confirmation_layer.visible
+	if trade_confirmation_layer.visible:
+		_layout_trade_modal_blocker()
+		_layout_trade_modal_blocker.call_deferred()
+		_block_trade_modal_focus()
+		trade_confirm_button.grab_focus()
+	else:
+		_restore_trade_modal_focus()
+
+
+func _layout_trade_modal_blocker() -> void:
+	if not is_node_ready() or not trade_modal_blocker.visible:
+		return
+	var blocker_size := trade_modal_blocker.size
+	var blocker_origin := trade_modal_blocker.get_global_rect().position
+	var trade_rect := trade_confirmation_layer.get_global_rect()
+	var hole := Rect2(trade_rect.position - blocker_origin, trade_rect.size)
+	_set_blocker_rect($ModalLayer/TradeModalBlocker/Top, Rect2(0.0, 0.0, blocker_size.x, maxf(0.0, hole.position.y)))
+	_set_blocker_rect($ModalLayer/TradeModalBlocker/Bottom, Rect2(0.0, hole.end.y, blocker_size.x, maxf(0.0, blocker_size.y - hole.end.y)))
+	_set_blocker_rect($ModalLayer/TradeModalBlocker/Left, Rect2(0.0, hole.position.y, maxf(0.0, hole.position.x), hole.size.y))
+	_set_blocker_rect($ModalLayer/TradeModalBlocker/Right, Rect2(hole.end.x, hole.position.y, maxf(0.0, blocker_size.x - hole.end.x), hole.size.y))
+
+
+func _set_blocker_rect(control: Control, rect: Rect2) -> void:
+	control.position = rect.position
+	control.size = rect.size
+
+
+func _block_trade_modal_focus() -> void:
+	_trade_modal_focus_modes.clear()
+	for control in _all_controls(self):
+		if (
+			control == self
+			or control == trade_modal_blocker
+			or trade_confirmation_layer.is_ancestor_of(control)
+		):
+			continue
+		if control.focus_mode != Control.FOCUS_NONE:
+			_trade_modal_focus_modes[control] = control.focus_mode
+			control.focus_mode = Control.FOCUS_NONE
+
+
+func _restore_trade_modal_focus() -> void:
+	for control_value in _trade_modal_focus_modes:
+		var control := control_value as Control
+		if is_instance_valid(control):
+			control.focus_mode = int(_trade_modal_focus_modes[control_value])
+	_trade_modal_focus_modes.clear()
+
+
+func _all_controls(root: Control) -> Array[Control]:
+	var result: Array[Control] = []
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var current: Node = pending.pop_back()
+		for child in current.get_children():
+			pending.append(child)
+			if child is Control:
+				result.append(child)
+	return result
 
 
 func confirm_contract_sign() -> bool:
