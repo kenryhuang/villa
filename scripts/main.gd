@@ -434,9 +434,11 @@ func open_economy_tab(tab_id: String, target_id: String = "") -> bool:
 				return false
 		if panel == null or not panel.has_method(select_method):
 			return false
-	for modal in [inventory_ui, map_ui, build_ui]:
+	for modal in [inventory_ui, map_ui, build_ui, building_economy_ui]:
 		if modal != null and modal.has_method("close"):
 			modal.close()
+	if economy_notification_ui != null:
+		economy_notification_ui.hide_center()
 	shop_ui.call("open", tab_id)
 	if panel != null:
 		panel.call(select_method, target_id)

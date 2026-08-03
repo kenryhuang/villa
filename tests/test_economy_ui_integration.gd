@@ -440,6 +440,24 @@ func _test_every_modal_restores_original_pause(assertions: TestAssert, tree: Sce
 		building_ui.close_button.pressed.emit()
 		assertions.equal(tree.paused, original_pause, "building economy modal restores original pause=%s" % original_pause)
 
+	var main: Variant = MainScript.new()
+	main.shop_ui = shop
+	main.building_economy_ui = building_ui
+	main.market_system = market
+	main.economy_system = economy
+	for original_pause in [false, true]:
+		tree.paused = original_pause
+		assertions.truthy(building_ui.open_for(windmill), "building modal opens before Main handoff")
+		assertions.truthy(main.open_economy_tab("market"), "Main hands building modal to market tab")
+		assertions.truthy(not building_ui.is_open(), "Main market handoff closes building economy UI")
+		assertions.truthy(shop.visible and str(shop.selected_tab) == "market", "Main handoff leaves ShopUI as the only economy modal")
+		assertions.truthy(tree.paused, "Main modal handoff remains paused without a running-frame gap")
+		windmill.get_parent().remove_child(windmill)
+		shop.close_button.pressed.emit()
+		assertions.equal(tree.paused, original_pause, "closing handed-off ShopUI restores original pause=%s" % original_pause)
+		tree.root.add_child(windmill)
+	main.free()
+
 	# Nested trade confirmation and notification center must not replace their owner's snapshot.
 	tree.paused = false
 	shop.open("market")

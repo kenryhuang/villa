@@ -28,6 +28,7 @@ const BuildingEconomyScene := preload("res://scenes/ui/economy/building_economy_
 const EconomyTheme := preload("res://assets/ui/economy/economy_theme.tres")
 
 var _wallet_snapshot: Dictionary
+var _failed := false
 
 
 func _init() -> void:
@@ -37,6 +38,10 @@ func _init() -> void:
 func _capture_all() -> void:
 	if DisplayServer.get_name() == "headless":
 		_fail("real UI capture requires --display-driver windows with the OpenGL3 renderer")
+		return
+	var user_arguments := OS.get_cmdline_user_args()
+	if "--self-test-failure" in user_arguments:
+		_fail("injected capture failure")
 		return
 	var output_path := ProjectSettings.globalize_path(OUTPUT_DIR)
 	var directory_error := DirAccess.make_dir_recursive_absolute(output_path)
@@ -50,7 +55,7 @@ func _capture_all() -> void:
 	_wallet_snapshot = {"gold": wallet.gold, "level": wallet.player_state.level}
 	var selected_states: Array = STATES.duplicate()
 	var selected_sizes: Array = SIZES.duplicate()
-	for argument in OS.get_cmdline_user_args():
+	for argument in user_arguments:
 		if argument.begins_with("--state="):
 			var requested_state := argument.trim_prefix("--state=")
 			if requested_state not in STATES:
@@ -75,12 +80,18 @@ func _capture_all() -> void:
 			wallet.gold = 5000
 			wallet.player_state.level = 5
 			var stage := await _build_state(state_id, viewport_size, wallet)
+			if _failed:
+				return
 			if stage == null:
 				_fail("cannot build state %s" % state_id)
 				return
 			for _frame in range(3):
 				await process_frame
+				if _failed:
+					return
 			await RenderingServer.frame_post_draw
+			if _failed:
+				return
 			var image := root.get_texture().get_image()
 			if image == null or image.is_empty():
 				_fail("empty capture for %s at %s" % [state_id, viewport_size])
@@ -98,12 +109,17 @@ func _capture_all() -> void:
 			stage.free()
 			paused = false
 			await process_frame
+			if _failed:
+				return
 	wallet.gold = _wallet_snapshot.gold
 	wallet.player_state.level = _wallet_snapshot.level
 	var expected_count := selected_states.size() * selected_sizes.size()
 	if captures.size() != expected_count:
 		_fail("expected %d captures, got %d" % [expected_count, captures.size()])
 		return
+	if _failed:
+		return
+	assert(not _failed, "failed capture run cannot reach the success exit")
 	captures.sort()
 	for file_name in captures:
 		print("CAPTURED: %s" % file_name)
@@ -115,23 +131,50 @@ func _build_state(state_id: String, viewport_size: Vector2i, wallet: Node) -> Co
 	var stage := _new_stage(viewport_size, _state_title(state_id))
 	root.add_child(stage)
 	await process_frame
+	if _failed:
+		stage.free()
+		return null
 	match state_id:
 		"market_normal":
 			await _build_market(stage, wallet, false)
+			if _failed:
+				stage.free()
+				return null
 		"shortage_large_confirmation":
 			await _build_market(stage, wallet, true)
+			if _failed:
+				stage.free()
+				return null
 		"running_producer":
 			await _build_producer(stage, false)
+			if _failed:
+				stage.free()
+				return null
 		"full_maintenance_paused":
 			await _build_producer(stage, true)
+			if _failed:
+				stage.free()
+				return null
 		"orders_contracts":
 			await _build_orders_contracts(stage, wallet)
+			if _failed:
+				stage.free()
+				return null
 		"waterwheel_overlay":
 			await _build_waterwheel(stage)
+			if _failed:
+				stage.free()
+				return null
 		"merged_toasts":
 			await _build_toasts(stage)
+			if _failed:
+				stage.free()
+				return null
 		"empty_error":
 			await _build_empty_error(stage)
+			if _failed:
+				stage.free()
+				return null
 		_:
 			stage.free()
 			return null
@@ -190,6 +233,8 @@ func _build_market(stage: Control, wallet: Node, shortage: bool) -> void:
 	var panel := preload("res://scenes/ui/economy/market_panel.tscn").instantiate()
 	_content_host(stage).add_child(panel)
 	await process_frame
+	if _failed:
+		return
 	panel.configure(inventory, economy, market)
 	panel.select_item("wood")
 	if shortage:
@@ -213,6 +258,8 @@ func _build_producer(stage: Control, paused_and_full: bool) -> void:
 	var ui := BuildingEconomyScene.instantiate() as BuildingEconomyUI
 	stage.add_child(ui)
 	await process_frame
+	if _failed:
+		return
 	ui.configure(fixture.production, fixture.inventory, fixture.progression, fixture.grid, ModalCoordinatorScript.new())
 	ui.open_for(windmill)
 	ui.production_panel.select_recipe("flour")
@@ -224,6 +271,8 @@ func _build_orders_contracts(stage: Control, wallet: Node) -> void:
 	var shop := preload("res://scenes/ui/shop_ui.tscn").instantiate()
 	stage.add_child(shop)
 	await process_frame
+	if _failed:
+		return
 	shop.configure(fixture.inventory, fixture.economy, fixture.market, null, null, null, fixture.npc)
 	shop.open("contracts")
 	shop.contract_panel.select_contract("lao_li:grain:1:3")
@@ -247,6 +296,8 @@ func _build_waterwheel(stage: Control) -> void:
 	var ui := BuildingEconomyScene.instantiate() as BuildingEconomyUI
 	stage.add_child(ui)
 	await process_frame
+	if _failed:
+		return
 	ui.configure(fixture.production, fixture.inventory, fixture.progression, fixture.grid, ModalCoordinatorScript.new())
 	ui.open_for(wheel)
 	ui.status_panel.range_preview_button.button_pressed = true
@@ -354,6 +405,8 @@ func _build_toasts(stage: Control) -> void:
 	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stage.add_child(ui)
 	await process_frame
+	if _failed:
+		return
 	ui.configure(system)
 	for index in range(3):
 		var target := "windmill:%d:%d" % [index + 1, index + 2]
@@ -378,6 +431,8 @@ func _build_empty_error(stage: Control) -> void:
 	var panel := preload("res://scenes/ui/economy/market_panel.tscn").instantiate()
 	_content_host(stage).add_child(panel)
 	await process_frame
+	if _failed:
+		return
 	panel.configure(inventory, economy, market)
 	var wood_row := panel.item_rows.get_node("ItemRow_wood") as Control
 	(wood_row.get_node("Content/SelectButton") as Button).pressed.emit()
@@ -482,6 +537,9 @@ func _state_title(state_id: String) -> String:
 
 
 func _fail(message: String) -> void:
+	if _failed:
+		return
+	_failed = true
 	var wallet := root.get_node_or_null("GameState")
 	if wallet != null and not _wallet_snapshot.is_empty():
 		wallet.gold = _wallet_snapshot.gold
