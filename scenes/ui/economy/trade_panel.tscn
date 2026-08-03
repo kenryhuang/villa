@@ -1,25 +1,11 @@
 [gd_scene load_steps=3 format=3]
 
 [ext_resource path="res://scripts/ui/trade_panel.gd" type="Script" id="1_trade"]
-
-[sub_resource type="StyleBoxFlat" id="CardStyle"]
-content_margin_left = 14.0
-content_margin_top = 14.0
-content_margin_right = 14.0
-content_margin_bottom = 14.0
-bg_color = Color(1, 0.968627, 0.901961, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.494118, 0.615686, 0.439216, 1)
-corner_radius_top_left = 10
-corner_radius_top_right = 10
-corner_radius_bottom_right = 10
-corner_radius_bottom_left = 10
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="2_theme"]
 
 [node name="TradePanel" type="VBoxContainer"]
 custom_minimum_size = Vector2(280, 0)
+theme = ExtResource("2_theme")
 theme_override_constants/separation = 10
 script = ExtResource("1_trade")
 
@@ -51,6 +37,7 @@ text = "数量"
 [node name="QuantitySpin" type="SpinBox" parent="QuantityRow"]
 custom_minimum_size = Vector2(130, 44)
 layout_mode = 2
+focus_mode = 2
 min_value = 1.0
 max_value = 99.0
 value = 1.0
@@ -117,7 +104,7 @@ text = "交易成功"
 [node name="ConfirmationLayer" type="PanelContainer" parent="."]
 visible = false
 layout_mode = 2
-theme_override_styles/panel = SubResource("CardStyle")
+theme_type_variation = &"EconomyCard"
 
 [node name="Content" type="VBoxContainer" parent="ConfirmationLayer"]
 layout_mode = 2

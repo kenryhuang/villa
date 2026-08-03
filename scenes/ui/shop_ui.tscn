@@ -1,37 +1,11 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource path="res://scripts/ui/shop_ui.gd" type="Script" id="1_shop"]
 [ext_resource path="res://scenes/ui/economy/market_panel.tscn" type="PackedScene" id="2_market"]
 [ext_resource path="res://scenes/ui/economy/service_panel.tscn" type="PackedScene" id="3_service"]
 [ext_resource path="res://scenes/ui/economy/order_panel.tscn" type="PackedScene" id="4_order"]
 [ext_resource path="res://scenes/ui/economy/contract_panel.tscn" type="PackedScene" id="5_contract"]
-
-[sub_resource type="StyleBoxFlat" id="PaperStyle"]
-content_margin_left = 22.0
-content_margin_top = 20.0
-content_margin_right = 22.0
-content_margin_bottom = 20.0
-bg_color = Color(0.945098, 0.898039, 0.784314, 1)
-border_width_left = 4
-border_width_top = 4
-border_width_right = 4
-border_width_bottom = 4
-border_color = Color(0.317647, 0.231373, 0.184314, 1)
-corner_radius_top_left = 12
-corner_radius_top_right = 12
-corner_radius_bottom_right = 12
-corner_radius_bottom_left = 12
-
-[sub_resource type="StyleBoxFlat" id="PlaceholderStyle"]
-content_margin_left = 20.0
-content_margin_top = 20.0
-content_margin_right = 20.0
-content_margin_bottom = 20.0
-bg_color = Color(1, 0.968627, 0.901961, 1)
-corner_radius_top_left = 10
-corner_radius_top_right = 10
-corner_radius_bottom_right = 10
-corner_radius_bottom_left = 10
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="6_theme"]
 
 [node name="ShopUI" type="Control"]
 layout_mode = 3
@@ -42,6 +16,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("1_shop")
+theme = ExtResource("6_theme")
 
 [node name="ModalLayer" type="ColorRect" parent="."]
 layout_mode = 1
@@ -61,7 +36,7 @@ anchor_right = 0.93
 anchor_bottom = 0.91
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("PaperStyle")
+theme_type_variation = &"EconomyPaper"
 
 [node name="Margin" type="MarginContainer" parent="ModalLayer/HubPanel"]
 layout_mode = 2
@@ -205,7 +180,7 @@ anchor_right = 0.7
 anchor_bottom = 0.75
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("PlaceholderStyle")
+theme_type_variation = &"EconomyCard"
 
 [node name="Margin" type="MarginContainer" parent="ModalLayer/SignConfirmationLayer/Content"]
 layout_mode = 2

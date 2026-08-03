@@ -1,0 +1,185 @@
+[gd_resource type="Theme" load_steps=12 format=3]
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+content_margin_left = 16.0
+content_margin_top = 16.0
+content_margin_right = 16.0
+content_margin_bottom = 16.0
+bg_color = Color(0.9450980392156862, 0.8980392156862745, 0.7843137254901961, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="Paper"]
+content_margin_left = 22.0
+content_margin_top = 20.0
+content_margin_right = 22.0
+content_margin_bottom = 20.0
+bg_color = Color(0.9450980392156862, 0.8980392156862745, 0.7843137254901961, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="Card"]
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+bg_color = Color(1, 0.9686274509803922, 0.9019607843137255, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 0.18)
+shadow_size = 4
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 0.9686274509803922, 0.9019607843137255, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4823529411764706, 0.403921568627451, 0.34509803921568627, 0.65)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="ButtonHover"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.9450980392156862, 0.8980392156862745, 0.7843137254901961, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 0.28)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="ButtonFocus"]
+draw_center = false
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="Selection"]
+bg_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 0.28)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="LineEdit"]
+content_margin_left = 10.0
+content_margin_top = 7.0
+content_margin_right = 10.0
+content_margin_bottom = 7.0
+bg_color = Color(1, 0.9686274509803922, 0.9019607843137255, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4823529411764706, 0.403921568627451, 0.34509803921568627, 0.65)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="Modal"]
+bg_color = Color(0.12941176470588237, 0.10196078431372549, 0.08627450980392157, 0.6509803921568628)
+
+[resource]
+default_font_size = 18
+Button/colors/font_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+Button/colors/font_disabled_color = Color(0.4823529411764706, 0.403921568627451, 0.34509803921568627, 1)
+Button/colors/font_hover_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+Button/colors/font_pressed_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+Button/font_sizes/font_size = 20
+Button/styles/normal = SubResource("ButtonNormal")
+Button/styles/hover = SubResource("ButtonHover")
+Button/styles/pressed = SubResource("ButtonPressed")
+Button/styles/focus = SubResource("ButtonFocus")
+CheckButton/colors/font_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+CheckButton/font_sizes/font_size = 20
+CheckButton/styles/focus = SubResource("ButtonFocus")
+EconomyCard/base_type = &"PanelContainer"
+EconomyCard/styles/panel = SubResource("Card")
+EconomyError/base_type = &"Label"
+EconomyError/colors/font_color = Color(0.7137254901960784, 0.3607843137254902, 0.29411764705882354, 1)
+EconomyModal/base_type = &"PanelContainer"
+EconomyModal/styles/panel = SubResource("Modal")
+EconomyPaper/base_type = &"PanelContainer"
+EconomyPaper/styles/panel = SubResource("Paper")
+EconomyPositive/base_type = &"Label"
+EconomyPositive/colors/font_color = Color(0.37254901960784315, 0.5294117647058824, 0.3333333333333333, 1)
+EconomySecondary/base_type = &"Label"
+EconomySecondary/colors/font_color = Color(0.4823529411764706, 0.403921568627451, 0.34509803921568627, 1)
+EconomySectionTitle/base_type = &"Label"
+EconomySectionTitle/font_sizes/font_size = 28
+EconomyTitle/base_type = &"Label"
+EconomyTitle/font_sizes/font_size = 32
+EconomyWarning/base_type = &"Label"
+EconomyWarning/colors/font_color = Color(0.7725490196078432, 0.5450980392156862, 0.20784313725490197, 1)
+ItemList/colors/font_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+ItemList/colors/font_selected_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+ItemList/font_sizes/font_size = 18
+ItemList/styles/focus = SubResource("ButtonFocus")
+ItemList/styles/selected = SubResource("Selection")
+ItemList/styles/selected_focus = SubResource("Selection")
+Label/colors/font_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+Label/colors/font_shadow_color = Color(1, 0.9686274509803922, 0.9019607843137255, 0.35)
+Label/font_sizes/font_size = 18
+LineEdit/colors/font_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+LineEdit/colors/font_placeholder_color = Color(0.4823529411764706, 0.403921568627451, 0.34509803921568627, 1)
+LineEdit/font_sizes/font_size = 18
+LineEdit/styles/normal = SubResource("LineEdit")
+LineEdit/styles/focus = SubResource("ButtonFocus")
+OptionButton/colors/font_color = Color(0.3176470588235294, 0.23137254901960785, 0.1843137254901961, 1)
+OptionButton/font_sizes/font_size = 20
+OptionButton/styles/focus = SubResource("ButtonFocus")
+PanelContainer/styles/panel = SubResource("Panel")
+SpinBox/font_sizes/font_size = 18

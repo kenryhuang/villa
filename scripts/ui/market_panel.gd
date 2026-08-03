@@ -4,6 +4,7 @@ extends PanelContainer
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketPriceChartScript = preload("res://scripts/ui/market_price_chart.gd")
 const TradePanelScript = preload("res://scripts/ui/trade_panel.gd")
+const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
 
 const CATEGORY_IDS := [
 	"raw_materials",
@@ -47,6 +48,8 @@ var selected_category := "raw_materials"
 var selected_item_id := ""
 var sort_mode := "recommended"
 var _item_ids: Array[String] = []
+var _layout_mode := "three_column"
+var _drawer_open := false
 
 
 func _ready() -> void:
@@ -57,6 +60,11 @@ func _ready() -> void:
 		sort_option.add_item(SORT_LABELS[index], index)
 	sort_option.item_selected.connect(_on_sort_selected)
 	item_list.item_selected.connect(_on_item_selected)
+	if not resized.is_connected(_on_control_resized):
+		resized.connect(_on_control_resized)
+	if not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
+		get_viewport().size_changed.connect(_on_viewport_size_changed)
+	apply_responsive_layout(size if size.x > 0.0 else get_viewport_rect().size)
 
 
 func configure(
@@ -104,6 +112,8 @@ func select_item(next_item_id: String) -> void:
 		var select_button := item_row.get_node_or_null("Content/SelectButton") as Button
 		if select_button != null:
 			select_button.button_pressed = str(item_row.get_meta("item_id", "")) == selected_item_id
+	if _layout_mode == "drawer":
+		open_details_drawer()
 	refresh_snapshot()
 
 
@@ -150,7 +160,56 @@ func refresh_snapshot() -> void:
 
 
 func handle_top_escape() -> bool:
-	return trade_panel.handle_top_escape()
+	if trade_panel.handle_top_escape():
+		return true
+	if _layout_mode == "drawer" and _drawer_open:
+		_drawer_open = false
+		_apply_drawer_visibility()
+		return true
+	return false
+
+
+func apply_responsive_layout(logical_size: Vector2) -> void:
+	var next_mode: String = EconomyLayoutScript.mode_for_size(logical_size)
+	if next_mode == _layout_mode:
+		_apply_drawer_visibility()
+		return
+	_layout_mode = next_mode
+	if _layout_mode == "three_column":
+		_drawer_open = false
+	_apply_drawer_visibility()
+
+
+func get_layout_mode() -> String:
+	return _layout_mode
+
+
+func open_details_drawer() -> void:
+	if _layout_mode != "drawer":
+		return
+	_drawer_open = true
+	_apply_drawer_visibility()
+
+
+func _apply_drawer_visibility() -> void:
+	if not is_node_ready():
+		return
+	if _layout_mode == "three_column":
+		$Columns/CatalogColumn.visible = true
+		$Columns/DetailColumn.visible = true
+		$Columns/TradePanel.visible = true
+		return
+	$Columns/CatalogColumn.visible = not _drawer_open
+	$Columns/DetailColumn.visible = _drawer_open
+	$Columns/TradePanel.visible = _drawer_open
+
+
+func _on_viewport_size_changed() -> void:
+	apply_responsive_layout(size if size.x > 0.0 else get_viewport_rect().size)
+
+
+func _on_control_resized() -> void:
+	apply_responsive_layout(size)
 
 
 func _rebuild_item_list() -> void:

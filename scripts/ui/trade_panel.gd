@@ -37,6 +37,7 @@ var _refreshing_quote := false
 
 func _ready() -> void:
 	quantity_spin.value_changed.connect(_on_quantity_changed)
+	quantity_spin.gui_input.connect(_on_quantity_gui_input)
 	max_button.pressed.connect(_on_max_pressed)
 	buy_button.pressed.connect(request_buy)
 	sell_button.pressed.connect(request_sell)
@@ -271,7 +272,19 @@ func _confirm_pending_trade() -> void:
 func _on_quantity_changed(_value: float) -> void:
 	if confirmation_layer != null and confirmation_layer.visible:
 		_invalidate_confirmation("数量已变化，请重新确认")
-	refresh_quote()
+	if market_ref != null and inventory_ref != null:
+		refresh_quote()
+
+
+func _on_quantity_gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton or not event.pressed:
+		return
+	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		quantity_spin.value = minf(quantity_spin.max_value, quantity_spin.value + quantity_spin.step)
+		accept_event()
+	elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		quantity_spin.value = maxf(quantity_spin.min_value, quantity_spin.value - quantity_spin.step)
+		accept_event()
 
 
 func _on_max_pressed() -> void:

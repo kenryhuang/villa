@@ -1,18 +1,7 @@
 [gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/economy_notification_ui.gd" id="1_script"]
-
-[sub_resource type="StyleBoxFlat" id="CenterStyle"]
-bg_color = Color(0.12, 0.16, 0.13, 0.97)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.82, 0.65, 0.34, 0.92)
-corner_radius_top_left = 10
-corner_radius_top_right = 10
-corner_radius_bottom_right = 10
-corner_radius_bottom_left = 10
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="2_theme"]
 
 [node name="EconomyNotificationUI" type="Control"]
 layout_mode = 3
@@ -22,6 +11,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
 [node name="ToastStack" type="VBoxContainer" parent="."]
@@ -49,7 +39,7 @@ offset_right = -24.0
 offset_bottom = 690.0
 grow_horizontal = 0
 mouse_filter = 0
-theme_override_styles/panel = SubResource("CenterStyle")
+theme_type_variation = &"EconomyPaper"
 
 [node name="Margin" type="MarginContainer" parent="NotificationCenter"]
 layout_mode = 2

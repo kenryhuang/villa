@@ -17,6 +17,7 @@ const EconomyProgressionTest = preload("res://tests/test_economy_progression.gd"
 const ServicePanelTest = preload("res://tests/test_service_panel.gd")
 const OrderContractUITest = preload("res://tests/test_order_contract_ui.gd")
 const EconomyNotificationsTest = preload("res://tests/test_economy_notifications.gd")
+const EconomyUIResponsiveTest = preload("res://tests/test_economy_ui_responsive.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -43,6 +44,7 @@ func _run() -> void:
 	ServicePanelTest.new().run(assertions, self)
 	await OrderContractUITest.new().run(assertions, self)
 	await EconomyNotificationsTest.new().run(assertions, self)
+	await EconomyUIResponsiveTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d economy checks" % assertions.checks)
 		quit(0)

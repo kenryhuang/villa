@@ -353,7 +353,10 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.truthy(not trade.get_node("ConfirmationLayer").visible, "first Escape closes only trade confirmation")
 	assertions.truthy(shop.visible and tree.paused, "closing top confirmation keeps economy hub open")
 	shop.call("_unhandled_input", escape)
-	assertions.truthy(not shop.visible, "second Escape closes economy hub")
+	assertions.truthy(shop.visible and tree.paused, "second Escape closes only the narrow-screen detail drawer")
+	assertions.truthy(market_panel.get_node("Columns/CatalogColumn").visible, "closing detail drawer restores product list")
+	shop.call("_unhandled_input", escape)
+	assertions.truthy(not shop.visible, "third Escape closes economy hub after drawer")
 	assertions.truthy(not tree.paused, "Escape close restores prior pause")
 
 	shop.call("open")

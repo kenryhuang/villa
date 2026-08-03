@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource path="res://scripts/ui/contract_panel.gd" type="Script" id="1_contract"]
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="2_theme"]
 
 [node name="ContractPanel" type="Control"]
 layout_mode = 3
@@ -10,6 +11,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 process_mode = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_contract")
 
 [node name="Content" type="VBoxContainer" parent="."]
@@ -27,7 +29,6 @@ theme_override_font_sizes/font_size = 24
 text = "活跃合同"
 
 [node name="ActiveScroll" type="ScrollContainer" parent="Content"]
-custom_minimum_size = Vector2(0, 145)
 layout_mode = 2
 size_flags_vertical = 3
 
@@ -47,7 +48,6 @@ theme_override_font_sizes/font_size = 24
 text = "可签合同"
 
 [node name="AvailableScroll" type="ScrollContainer" parent="Content"]
-custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 size_flags_vertical = 3
 
@@ -105,6 +105,7 @@ autowrap_mode = 2
 
 [node name="DeliveryQuantity" type="SpinBox" parent="Content/Details"]
 layout_mode = 2
+focus_mode = 2
 min_value = 0.0
 max_value = 999.0
 step = 1.0

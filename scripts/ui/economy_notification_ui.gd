@@ -189,6 +189,7 @@ func _add_toast(record: Dictionary) -> void:
 
 func _create_card(record: Dictionary, toast: bool) -> PanelContainer:
 	var card := PanelContainer.new()
+	card.theme_type_variation = &"EconomyCard"
 	card.custom_minimum_size = Vector2(330.0, 72.0)
 	card.mouse_filter = Control.MOUSE_FILTER_PASS if toast else Control.MOUSE_FILTER_STOP
 	card.set_meta("notification_id", str(record.notification_id))
