@@ -53,9 +53,19 @@ class FakeRouter:
 	extends Node
 	var calls: Array[Dictionary] = []
 	var route_success := true
+	var pause_tree_on_success := false
+	var reentry_ui: Variant
+	var reentry_notification_id := ""
+	var reentry_results: Array[bool] = []
+	var _did_reenter := false
 
 	func navigate_notification_target(target_type: String, target_id: String) -> bool:
 		calls.append({"target_type": target_type, "target_id": target_id})
+		if reentry_ui != null and not _did_reenter:
+			_did_reenter = true
+			reentry_results.append(bool(reentry_ui.activate_notification(reentry_notification_id)))
+		if route_success and pause_tree_on_success:
+			get_tree().paused = true
 		return route_success
 
 
@@ -361,11 +371,27 @@ func _test_scene_toasts_center_and_hud(assertions: TestAssert, tree: SceneTree) 
 
 	var target_id: String = system.push("order_due", "订单临期", "订单提醒", 2, "order", "npc:wood:2", 30.0)
 	var unread_before: int = system.get_unread_count()
+	ui.show_center()
+	router.pause_tree_on_success = true
+	router.reentry_ui = ui
+	router.reentry_notification_id = target_id
+	var center_visible_when_marked_read: Array[bool] = []
+	var changed_callback := func() -> void:
+		center_visible_when_marked_read.append(ui.get_node("NotificationCenter").visible)
+	system.notifications_changed.connect(changed_callback)
 	assertions.truthy(ui.activate_notification(target_id), "target notification activates")
+	system.notifications_changed.disconnect(changed_callback)
+	assertions.truthy(tree.paused, "successful notification route can open a pausing panel")
+	assertions.truthy(not ui.get_node("NotificationCenter").visible, "successful paused route hides notification center synchronously")
+	assertions.equal(center_visible_when_marked_read, [false], "successful route hides the center before marking read")
 	assertions.equal(router.calls.size(), 1, "target click routes exactly once")
+	assertions.equal(router.reentry_results, [false], "synchronous activation reentry is rejected")
 	assertions.equal(system.get_unread_count(), unread_before - 1, "target click marks read exactly once")
 	assertions.truthy(not ui.activate_notification(target_id), "already-read activation is idempotent")
 	assertions.equal(router.calls.size(), 1, "idempotent activation does not route twice")
+	tree.paused = false
+	router.pause_tree_on_success = false
+	router.reentry_ui = null
 	var no_target_id: String = system.push("unlock", "次日解锁", "次日记录", 3, "", "", 33.0)
 	var no_target_unread := system.get_unread_count()
 	assertions.truthy(ui.activate_notification(no_target_id), "targetless notification activates as a read action")
@@ -390,6 +416,7 @@ func _test_scene_toasts_center_and_hud(assertions: TestAssert, tree: SceneTree) 
 	var invalid_unread_before := system.get_unread_count()
 	assertions.truthy(not ui.activate_notification(invalid_target_id), "failed route rejects activation")
 	assertions.equal(system.get_unread_count(), invalid_unread_before, "failed route preserves unread state")
+	assertions.truthy(ui.get_node("NotificationCenter").visible, "failed route keeps notification center visible")
 	router.route_success = true
 	ui.mark_all_read()
 	assertions.equal(system.get_unread_count(), 0, "center mark-all delegates to system")

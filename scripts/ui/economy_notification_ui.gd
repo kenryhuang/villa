@@ -16,6 +16,7 @@ var _system: EconomyNotificationSystem
 var _router: Variant
 var _toasts: Dictionary = {}
 var _toast_order: Array[String] = []
+var _activating_notification_ids: Dictionary = {}
 
 
 func _ready() -> void:
@@ -35,6 +36,7 @@ func configure(system: EconomyNotificationSystem, router: Variant = null) -> boo
 		return false
 	_disconnect_system()
 	_clear_toasts()
+	_activating_notification_ids.clear()
 	_system = system
 	_router = router
 	var pushed_callback := Callable(self, "_on_notification_pushed")
@@ -69,7 +71,7 @@ func mark_all_read() -> void:
 
 
 func activate_notification(notification_id: String) -> bool:
-	if _system == null:
+	if _system == null or _activating_notification_ids.has(notification_id):
 		return false
 	var record := _record_for_id(notification_id)
 	if record.is_empty() or not bool(record.get("unread", false)):
@@ -79,9 +81,15 @@ func activate_notification(notification_id: String) -> bool:
 	if not target_type.is_empty():
 		if _router == null or not _router.has_method("navigate_notification_target"):
 			return false
-		if not bool(_router.call("navigate_notification_target", target_type, target_id)):
-			return false
-	return _system.mark_read(notification_id)
+	_activating_notification_ids[notification_id] = true
+	var activated := false
+	if target_type.is_empty():
+		activated = _system.mark_read(notification_id)
+	elif bool(_router.call("navigate_notification_target", target_type, target_id)):
+		hide_center()
+		activated = _system.mark_read(notification_id)
+	_activating_notification_ids.erase(notification_id)
+	return activated
 
 
 func advance_toasts(delta: float) -> void:

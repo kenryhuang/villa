@@ -38,6 +38,7 @@ var _essential_zero_streaks: Dictionary = {}
 var _demand_tags: Dictionary = {}
 var _pending_caravan_departures: Array[Dictionary] = []
 var _is_configured := false
+var _is_simulating := false
 var _event_bus: Node
 
 
@@ -108,12 +109,18 @@ func simulate_day(
 	season_factors: Dictionary = {},
 	event_factors: Dictionary = {}
 ) -> bool:
-	if not _is_configured or not EconomyLimitsScript.is_safe_date(total_day, false) or total_day <= last_simulated_day:
+	if (
+		_is_simulating
+		or not _is_configured
+		or not EconomyLimitsScript.is_safe_date(total_day, false)
+		or total_day <= last_simulated_day
+	):
 		return false
 	for state_value in _states.values():
 		var state: NpcEconomyState = state_value
 		if state.last_simulated_day >= total_day:
 			return false
+	_is_simulating = true
 	for state_value in _states.values():
 		(state_value as NpcEconomyState).last_simulated_day = total_day
 	last_simulated_day = total_day
@@ -140,6 +147,7 @@ func simulate_day(
 		_simulate_npc(_states[npc_id], _profiles[npc_id])
 	_apply_population_demand(season_factors, event_factors)
 	_update_shortages_and_imports(total_day)
+	_is_simulating = false
 	return true
 
 

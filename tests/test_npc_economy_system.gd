@@ -338,12 +338,12 @@ func _test_third_zero_stock_day_imports_essentials_only(
 		arrived: bool
 	) -> void:
 		if not arrived:
-			reentry_results.append(restored.simulate_day(departure_day))
+			reentry_results.append(restored.simulate_day(departure_day + 1))
 	var event_bus := tree.root.get_node("EventBus")
 	event_bus.market_caravan_changed.connect(reentry_callback)
 	assertions.truthy(restored.simulate_day(4), "day after arrival simulates")
 	event_bus.market_caravan_changed.disconnect(reentry_callback)
-	assertions.equal(reentry_results, [false], "departure state commits before listeners can reenter the same day")
+	assertions.equal(reentry_results, [false], "departure listener cannot reenter a future simulation day")
 	var after_departure := restored_notifications.get_recent()
 	assertions.equal(after_departure.size(), 2, "loaded caravan departs exactly once on day four")
 	if after_departure.size() == 2:
@@ -356,9 +356,13 @@ func _test_third_zero_stock_day_imports_essentials_only(
 		assertions.truthy(str(after_departure[0].body).contains("×4"), "departure keeps the imported quantity")
 	assertions.equal((restored.to_dict().get("pending_caravan_departures", []) as Array).size(), 0, "departure commit clears pending state")
 	var departed_state := restored.to_dict()
+	assertions.equal(int(departed_state.last_simulated_day), 4, "future-day reentry cannot advance the outer simulation cursor")
+	assertions.truthy(restored.validate_dict(departed_state), "outer departure snapshot remains strictly valid after rejected reentry")
 	assertions.truthy(not restored.simulate_day(4), "same departure day cannot simulate twice")
 	assertions.equal(restored.to_dict(), departed_state, "same-day retry cannot consume or recreate departure state")
 	assertions.equal(restored_notifications.get_recent().size(), 2, "same departure day emits no duplicate")
+	assertions.truthy(restored.simulate_day(5), "simulation guard releases after the outer day completes")
+	assertions.truthy(restored.validate_dict(restored.to_dict()), "post-guard next-day snapshot remains valid")
 	restored_notifications.free()
 	restored.free()
 	market.free()
