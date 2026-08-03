@@ -485,6 +485,9 @@ func _test_main_four_way_routing(assertions: TestAssert) -> void:
 	building_ui.free()
 	building.free()
 	building_system.free()
+	shop.market_panel.free()
+	shop.order_panel.free()
+	shop.contract_panel.free()
 	shop.free()
 	main.free()
 

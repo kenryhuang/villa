@@ -59,3 +59,9 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(not economy.add_gold(10), "malformed wallet blocks income delegation")
 	assertions.equal(malformed_wallet.gold, 100, "malformed wallet preserves balance after income")
 	assertions.truthy(not economy.spend_gold(10), "malformed wallet blocks spending delegation")
+
+	economy.free()
+	inventory.free()
+	wallet.free()
+	inventoryless_wallet.free()
+	malformed_wallet.free()
