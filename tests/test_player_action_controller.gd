@@ -29,6 +29,9 @@ class InventoryDouble:
 
 	var counts := {"grain_seed": 2, "grain": 0}
 	var accepts_harvest := true
+	var active_quick_item := "grain_seed"
+	var slots: Array[Dictionary] = [{"item_id": "grain_seed", "quantity": 2}]
+	var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, 0]
 
 	func has_item(item_id: String, quantity: int = 1) -> bool:
 		return get_item_count(item_id) >= quantity
@@ -48,6 +51,13 @@ class InventoryDouble:
 
 	func can_add_item(item_id: String, _quantity: int = 1) -> bool:
 		return accepts_harvest or item_id != "grain"
+
+	func get_quick_item(quick_index: int) -> String:
+		return active_quick_item if quick_index == PlayerActionController.SEED_SLOT else ""
+
+	func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
+		slots.assign(saved_slots)
+		quick_slot_mappings.assign(saved_quick_mappings)
 
 
 class FarmingDouble:

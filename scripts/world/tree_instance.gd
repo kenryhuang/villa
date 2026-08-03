@@ -1,5 +1,5 @@
 class_name TreeInstance
-extends Node3D
+extends ResourceNode
 
 const TREE_TRUNK_LAYER := 16
 const CAMERA_OCCLUDER_LAYER := 32
@@ -32,7 +32,19 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float) -> void:
 	var tree_width := float(tree_data.width)
 	var tree_height := float(tree_data.height)
-	position = Vector3(float(tree_data.x), terrain_height, float(tree_data.z))
+	configure_resource({
+		"resource_id": str(tree_data.get(
+			"id",
+			"tree@%.3f,%.3f" % [float(tree_data.x), float(tree_data.z)]
+		)),
+		"required_tool": "axe",
+		"hits": 3,
+		"yield_per_hit": {"wood": 2},
+		"bonus_table": [],
+		"respawn_days": 3,
+		"position": Vector3(float(tree_data.x), terrain_height, float(tree_data.z)),
+		"visual_kind": "tree",
+	})
 	add_to_group("tree_instance")
 
 	sprite = Sprite3D.new()
@@ -61,6 +73,17 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	trunk_body.add_child(trunk_collision)
 	add_child(trunk_body)
 
+	var gather_area := Area3D.new()
+	gather_area.name = "GatherArea"
+	gather_area.collision_layer = INTERACTION_LAYER
+	gather_area.collision_mask = 0
+	var gather_collision := CollisionShape3D.new()
+	gather_collision.name = "CollisionShape3D"
+	gather_collision.shape = trunk_shape
+	gather_collision.position.y = trunk_height * 0.5
+	gather_area.add_child(gather_collision)
+	add_child(gather_area)
+
 	var occluder_size := occluder_dimensions(Vector2(tree_width, tree_height))
 	var occluder_shape := CapsuleShape3D.new()
 	occluder_shape.radius = occluder_size.x
@@ -76,6 +99,19 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	occluder_collision.position.y = tree_height * 0.5
 	camera_occluder.add_child(occluder_collision)
 	add_child(camera_occluder)
+	_set_gather_active(true)
+
+
+func _set_gather_active(active: bool) -> void:
+	super(active)
+	if sprite != null:
+		sprite.visible = active
+	var trunk_body := get_node_or_null("TrunkBody") as CollisionObject3D
+	if trunk_body != null:
+		trunk_body.collision_layer = TREE_TRUNK_LAYER if active else 0
+	var gather_area := get_node_or_null("GatherArea") as CollisionObject3D
+	if gather_area != null:
+		gather_area.collision_layer = INTERACTION_LAYER if active else 0
 
 func set_camera_occluded(value: bool) -> void:
 	occlusion_target = OCCLUDED_OPACITY if value else CLEAR_OPACITY

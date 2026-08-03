@@ -1,0 +1,142 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource path="res://scripts/ui/order_panel.gd" type="Script" id="1_order"]
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="2_theme"]
+
+[node name="OrderPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+process_mode = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_order")
+
+[node name="Columns" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="Filters" type="VBoxContainer" parent="Columns"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="All" type="Button" parent="Columns/Filters"]
+layout_mode = 2
+toggle_mode = true
+text = "全部"
+
+[node name="Daily" type="Button" parent="Columns/Filters"]
+layout_mode = 2
+toggle_mode = true
+text = "日常"
+
+[node name="Urgent" type="Button" parent="Columns/Filters"]
+layout_mode = 2
+toggle_mode = true
+text = "紧急"
+
+[node name="Event" type="Button" parent="Columns/Filters"]
+layout_mode = 2
+toggle_mode = true
+text = "节日"
+
+[node name="Construction" type="Button" parent="Columns/Filters"]
+layout_mode = 2
+toggle_mode = true
+text = "建设"
+
+[node name="Completed" type="Button" parent="Columns/Filters"]
+layout_mode = 2
+toggle_mode = true
+text = "已完成／失效"
+
+[node name="Orders" type="VBoxContainer" parent="Columns"]
+custom_minimum_size = Vector2(430, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitle" type="Label" parent="Columns/Orders"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "居民订单"
+
+[node name="OrderScroll" type="ScrollContainer" parent="Columns/Orders"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="OrderRows" type="VBoxContainer" parent="Columns/Orders/OrderScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="EmptyState" type="Label" parent="Columns/Orders"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "暂时没有居民发布需求"
+horizontal_alignment = 1
+
+[node name="Details" type="VBoxContainer" parent="Columns"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 9
+
+[node name="NpcLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "NPC：—"
+
+[node name="TitleLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "选择订单查看详情"
+autowrap_mode = 2
+
+[node name="ItemLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "商品：—"
+
+[node name="OwnedLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "持有：0/0"
+
+[node name="DeadlineLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "期限：—"
+
+[node name="PremiumLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "溢价：—"
+autowrap_mode = 2
+
+[node name="DetailLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 18
+text = "居民的真实缺货原因会显示在这里"
+autowrap_mode = 2
+
+[node name="ErrorLabel" type="Label" parent="Columns/Details"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.714, 0.361, 0.294, 1)
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 2
+
+[node name="DeliverButton" type="Button" parent="Columns/Details"]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+disabled = true
+text = "交付"

@@ -5,6 +5,8 @@ extends CanvasLayer
 
 signal quick_slot_selected(index: int)
 signal debug_reset_requested
+signal market_requested
+signal notifications_requested
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const ActionPaletteButtonScene = preload(
@@ -13,7 +15,7 @@ const ActionPaletteButtonScene = preload(
 const ActionPaletteButtonScript = preload(
 	"res://scripts/ui/action_palette_button.gd"
 )
-const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
+const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "种苗"]
 const BUILDING_NAMES := ["谷仓", "温室", "风车", "鸡舍", "蜂箱", "水井", "工作台", "路灯", "围栏"]
 const FARMING_ICON_PATHS: Array[String] = [
 	"res://assets/ui/action_icons/hoe.png",
@@ -47,6 +49,9 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var season_label: Label = $TopBar/StatusRow/SeasonLabel
 @onready var time_label: Label = $TopBar/StatusRow/TimeLabel
 @onready var debug_reset_button: Button = $DebugResetButton
+@onready var market_button: Button = $EconomyActions/MarketButton
+@onready var notification_button: Button = $EconomyActions/NotificationButton
+@onready var urgent_summaries: VBoxContainer = $UrgentSummaries
 @onready var mode_menu: PopupPanel = $BottomBar/ModeMenu
 @onready var mode_menu_content: VBoxContainer = $BottomBar/ModeMenu/VBox
 @onready var farming_mode_button: Button = $BottomBar/ModeMenu/VBox/FarmingModeButton
@@ -73,6 +78,8 @@ var inventory_ref: Variant
 var economy_ref: Variant
 var season_system_ref: Variant
 var _mode_menu_hover_token := 0
+var _economy_ui_unread_count := 0
+var notification_ref: EconomyNotificationSystem
 
 
 func _ready() -> void:
@@ -80,6 +87,8 @@ func _ready() -> void:
 	if _event_bus:
 		_event_bus.stamina_changed.connect(_on_stamina_changed)
 		_event_bus.gold_changed.connect(_on_gold_changed)
+		if _event_bus.has_signal("economy_ui_notification_added"):
+			_event_bus.economy_ui_notification_added.connect(_on_economy_ui_notification_added)
 		_event_bus.level_changed.connect(_on_level_changed)
 		_event_bus.exp_gained.connect(_on_exp_gained)
 		_event_bus.season_changed.connect(_on_season_changed)
@@ -89,6 +98,10 @@ func _ready() -> void:
 		_event_bus.item_removed.connect(_on_inventory_item_changed)
 	if not debug_reset_button.pressed.is_connected(_on_debug_reset_pressed):
 		debug_reset_button.pressed.connect(_on_debug_reset_pressed)
+	if not market_button.pressed.is_connected(_on_market_pressed):
+		market_button.pressed.connect(_on_market_pressed)
+	if not notification_button.pressed.is_connected(_on_notification_pressed):
+		notification_button.pressed.connect(_on_notification_pressed)
 
 	# 初始化显示
 	_init_display()
@@ -104,6 +117,79 @@ func _ready() -> void:
 	mode_menu_content.mouse_entered.connect(_on_mode_menu_mouse_entered)
 	mode_menu_content.mouse_exited.connect(_on_mode_menu_mouse_exited)
 	build_feedback_timer.timeout.connect(_on_build_feedback_timeout)
+	set_notification_count(0)
+
+
+func _on_market_pressed() -> void:
+	market_requested.emit()
+
+
+func _on_notification_pressed() -> void:
+	notifications_requested.emit()
+
+
+func set_notification_count(unread_count: int) -> void:
+	_economy_ui_unread_count = maxi(0, unread_count)
+	if notification_button == null:
+		return
+	var count_text := "9+" if _economy_ui_unread_count > 9 else str(_economy_ui_unread_count)
+	notification_button.text = "通知 %s" % count_text
+
+
+func _on_economy_ui_notification_added(_target_type: String, _target_id: String) -> void:
+	if notification_ref != null:
+		return
+	set_notification_count(_economy_ui_unread_count + 1)
+
+
+func configure_notifications(system: EconomyNotificationSystem) -> bool:
+	if system == null or not is_instance_valid(system):
+		return false
+	if notification_ref != null and is_instance_valid(notification_ref):
+		var old_callback := Callable(self, "_refresh_notification_display")
+		if notification_ref.notifications_changed.is_connected(old_callback):
+			notification_ref.notifications_changed.disconnect(old_callback)
+	notification_ref = system
+	var callback := Callable(self, "_refresh_notification_display")
+	if not notification_ref.notifications_changed.is_connected(callback):
+		notification_ref.notifications_changed.connect(callback)
+	_refresh_notification_display()
+	return true
+
+
+func _refresh_notification_display() -> void:
+	if notification_ref == null:
+		return
+	_economy_ui_unread_count = notification_ref.get_unread_count()
+	var count_text := "9+" if _economy_ui_unread_count > 9 else str(_economy_ui_unread_count)
+	notification_button.text = "[通知 %s]" % count_text
+	for child in urgent_summaries.get_children():
+		child.free()
+	var urgent: Array[Dictionary] = []
+	for record in notification_ref.get_recent():
+		if bool(record.get("unread", false)) and EconomyNotificationSystem.is_urgent_kind(str(record.get("kind", ""))):
+			urgent.append(record)
+	for index in range(mini(2, urgent.size())):
+		var label := Label.new()
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.text = str(urgent[index].get("body", ""))
+		urgent_summaries.add_child(label)
+	if urgent.size() > 2:
+		var overflow := Label.new()
+		overflow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overflow.text = "还有 %d 条经营提醒" % (urgent.size() - 2)
+		urgent_summaries.add_child(overflow)
+
+
+func get_urgent_summary_count() -> int:
+	return urgent_summaries.get_child_count() if urgent_summaries != null else 0
+
+
+func get_urgent_summary_text(index: int) -> String:
+	if urgent_summaries == null or index < 0 or index >= urgent_summaries.get_child_count():
+		return ""
+	var label := urgent_summaries.get_child(index) as Label
+	return label.text if label != null else ""
 
 
 func _init_display() -> void:
@@ -221,46 +307,113 @@ func configure_action_bar(
 	inventory: Variant,
 	economy: Variant = null
 ) -> void:
+	if action_controller != controller:
+		_disconnect_action_controller(action_controller)
 	action_controller = controller
+	var mapping_handler := Callable(self, "_on_quick_slot_mapping_changed")
+	if (
+		inventory_ref != null
+		and inventory_ref != inventory
+		and inventory_ref.has_signal("quick_slot_mapping_changed")
+		and inventory_ref.is_connected("quick_slot_mapping_changed", mapping_handler)
+	):
+		inventory_ref.disconnect("quick_slot_mapping_changed", mapping_handler)
 	inventory_ref = inventory
+	if (
+		inventory_ref != null
+		and inventory_ref.has_signal("quick_slot_mapping_changed")
+		and not inventory_ref.is_connected("quick_slot_mapping_changed", mapping_handler)
+	):
+		inventory_ref.connect("quick_slot_mapping_changed", mapping_handler)
 	economy_ref = economy
-	if (
-		action_controller
-		and not action_controller.selection_changed.is_connected(
-			_on_action_selection_changed
-		)
-	):
-		action_controller.selection_changed.connect(_on_action_selection_changed)
-	if (
-		action_controller
-		and not action_controller.inventory_changed.is_connected(refresh_action_bar)
-	):
-		action_controller.inventory_changed.connect(refresh_action_bar)
-	if (
-		action_controller
-		and action_controller.has_signal("mode_changed")
-		and not action_controller.mode_changed.is_connected(_on_action_mode_changed)
-	):
-		action_controller.mode_changed.connect(_on_action_mode_changed)
-	if (
-		action_controller
-		and action_controller.has_signal("palette_changed")
-		and not action_controller.palette_changed.is_connected(_on_action_palette_changed)
-	):
-		action_controller.palette_changed.connect(_on_action_palette_changed)
-	if (
-		action_controller
-		and action_controller.has_signal("build_feedback_requested")
-		and not action_controller.build_feedback_requested.is_connected(
-			show_build_feedback
-		)
-	):
-		action_controller.build_feedback_requested.connect(show_build_feedback)
+	_connect_action_controller(action_controller)
 	rebuild_action_palette()
 	if action_controller:
 		var selected: int = action_controller.get_selected_slot()
 		var selected_label := _selection_label(selected)
 		_on_action_selection_changed(selected, selected_label)
+
+
+func _connect_action_controller(controller: Variant) -> void:
+	_connect_controller_signal(
+		controller,
+		"selection_changed",
+		Callable(self, "_on_action_selection_changed")
+	)
+	_connect_controller_signal(
+		controller,
+		"inventory_changed",
+		Callable(self, "refresh_action_bar")
+	)
+	_connect_controller_signal(
+		controller,
+		"mode_changed",
+		Callable(self, "_on_action_mode_changed")
+	)
+	_connect_controller_signal(
+		controller,
+		"palette_changed",
+		Callable(self, "_on_action_palette_changed")
+	)
+	_connect_controller_signal(
+		controller,
+		"build_feedback_requested",
+		Callable(self, "show_build_feedback")
+	)
+
+
+func _disconnect_action_controller(controller: Variant) -> void:
+	_disconnect_controller_signal(
+		controller,
+		"selection_changed",
+		Callable(self, "_on_action_selection_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"inventory_changed",
+		Callable(self, "refresh_action_bar")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"mode_changed",
+		Callable(self, "_on_action_mode_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"palette_changed",
+		Callable(self, "_on_action_palette_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"build_feedback_requested",
+		Callable(self, "show_build_feedback")
+	)
+
+
+func _connect_controller_signal(
+	controller: Variant,
+	signal_name: StringName,
+	callback: Callable
+) -> void:
+	if (
+		controller != null
+		and controller.has_signal(signal_name)
+		and not controller.is_connected(signal_name, callback)
+	):
+		controller.connect(signal_name, callback)
+
+
+func _disconnect_controller_signal(
+	controller: Variant,
+	signal_name: StringName,
+	callback: Callable
+) -> void:
+	if (
+		controller != null
+		and controller.has_signal(signal_name)
+		and controller.is_connected(signal_name, callback)
+	):
+		controller.disconnect(signal_name, callback)
 
 
 func rebuild_action_palette() -> void:
@@ -290,12 +443,7 @@ func rebuild_action_palette() -> void:
 		quick_bar.add_child(button)
 		var display_name := str(labels[index])
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
-			var quantity: int = (
-				inventory_ref.get_item_count(PlayerActionController.SEED_ITEM_ID)
-				if inventory_ref
-				else 0
-			)
-			display_name = "种子 ×%d" % quantity
+			display_name = _active_plant_item_display()
 		button.configure(
 			index + 1,
 			display_name,
@@ -318,14 +466,9 @@ func refresh_action_bar() -> void:
 		if not button is ActionPaletteButtonScript:
 			continue
 		if not building_mode and index == PlayerActionController.SEED_SLOT:
-			var quantity: int = (
-				inventory_ref.get_item_count(PlayerActionController.SEED_ITEM_ID)
-				if inventory_ref
-				else 0
-			)
 			button.configure(
 				index + 1,
-				"种子 ×%d" % quantity,
+				_active_plant_item_display(),
 				_palette_texture(index, false)
 			)
 		elif building_mode:
@@ -360,8 +503,41 @@ func _on_action_palette_changed(_mode: int, _selected_index: int) -> void:
 
 
 func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
-	if item_id in MATERIAL_IDS or item_id == PlayerActionController.SEED_ITEM_ID:
+	var item_data = GameDataScript.get_item(item_id)
+	if item_id in MATERIAL_IDS or (item_data and item_data.get("category", "") == "seed"):
 		refresh_action_bar()
+
+
+func _on_quick_slot_mapping_changed(quick_index: int, _item_id: String) -> void:
+	refresh_action_bar()
+	if (
+		quick_index == PlayerActionController.SEED_SLOT
+		and action_controller
+		and not _is_building_mode()
+		and action_controller.get_selected_slot() == PlayerActionController.SEED_SLOT
+	):
+		set_tool_name(_active_plant_item_name())
+
+
+func _active_plant_item_display() -> String:
+	if inventory_ref == null:
+		return "种苗 ×0"
+	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
+	var item_data = GameDataScript.get_item(item_id)
+	if item_data == null:
+		return "种苗 ×0"
+	return "%s ×%d" % [
+		str(item_data.get("name", "种苗")),
+		inventory_ref.get_item_count(item_id),
+	]
+
+
+func _active_plant_item_name() -> String:
+	if inventory_ref == null:
+		return "种苗"
+	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
+	var item_data = GameDataScript.get_item(item_id)
+	return str(item_data.get("name", "种苗")) if item_data else "种苗"
 
 
 func _on_mode_requested(mode: int) -> void:

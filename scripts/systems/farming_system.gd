@@ -20,14 +20,10 @@ static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
 func configure(gs, ss, gs_state) -> bool:
 	if gs == null:
 		return false
-	if _event_bus and _event_bus.day_changed.is_connected(on_day_changed):
-		_event_bus.day_changed.disconnect(on_day_changed)
 	grid_system = gs
 	season_system = ss
 	game_state = gs_state
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
-	if _event_bus and not _event_bus.day_changed.is_connected(on_day_changed):
-		_event_bus.day_changed.connect(on_day_changed)
 	return true
 
 
@@ -47,7 +43,11 @@ func can_plant(cell: GridCell, crop_data: CropData) -> bool:
 		return false
 	if cell.crop_instance != null:
 		return false
-	if is_greenhouse_cell(cell) or season_system == null:
+	if is_greenhouse_cell(cell):
+		return true
+	if _is_greenhouse_only(crop_data):
+		return false
+	if season_system == null:
 		return true
 	return crop_data.seasons.is_empty() or season_system.current_season in crop_data.seasons
 
@@ -68,7 +68,10 @@ func harvest(grid_cell) -> Dictionary:
 	if not result.is_empty():
 		if game_state:
 			game_state.add_exp(result.exp)
-		_remove_visual(grid_cell)
+		if bool(result.get("regrowing", false)) and grid_cell.crop_instance != null:
+			_update_visual(grid_cell, grid_cell.crop_instance)
+		else:
+			_remove_visual(grid_cell)
 	return result
 
 
@@ -110,9 +113,17 @@ func on_day_changed(_day: int) -> void:
 
 
 func _can_grow(cell: GridCell, data) -> bool:
-	if is_greenhouse_cell(cell) or season_system == null:
+	if is_greenhouse_cell(cell):
+		return true
+	if _is_greenhouse_only(data):
+		return false
+	if season_system == null:
 		return true
 	return data.seasons.is_empty() or season_system.current_season in data.seasons
+
+
+func _is_greenhouse_only(data: CropData) -> bool:
+	return data != null and "greenhouse_only" in data.tags
 
 
 func _clear_water(cell: GridCell) -> void:

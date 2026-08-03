@@ -205,6 +205,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	inventory.add_item("stone", 150)
 	inventory.add_item("iron", 50)
 	inventory.add_item("glass", 50)
+	inventory.set_quick_slot(0, PlayerActionController.SEED_SLOT)
 	var building := BuildingDouble.new()
 	building.inventory = inventory
 	var controller = controller_script.new()
@@ -218,6 +219,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		inventory
 	)
 	hud.configure_action_bar(controller, inventory, EconomyDouble.new())
+	var mapping_handler := Callable(hud, "_on_quick_slot_mapping_changed")
+	assertions.truthy(
+		inventory.quick_slot_mapping_changed.is_connected(mapping_handler),
+		"HUD subscribes to quick-slot mapping changes"
+	)
+	hud.configure_action_bar(controller, inventory, EconomyDouble.new())
+	var mapping_connection_count := 0
+	for connection in inventory.quick_slot_mapping_changed.get_connections():
+		if connection.get("callable") == mapping_handler:
+			mapping_connection_count += 1
+	assertions.equal(
+		mapping_connection_count,
+		1,
+		"reconfiguring HUD does not duplicate inventory signal connections"
+	)
 	assertions.truthy(
 		hud.has_method("get_material_count_text"),
 		"HUD exposes material count inspection"
@@ -259,8 +275,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if seed_tile is ActionPaletteButtonScript:
 		assertions.equal(
 			seed_tile.name_label.text,
-			"种子 ×2",
-			"seed tile keeps quantity concise and readable"
+			"谷物种子 ×2",
+			"seed tile names the active default seed"
 		)
 
 	var emitted_indices: Array[int] = []
@@ -276,6 +292,58 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		(quick_bar.get_child(5) as Button).button_pressed,
 		"selected seed slot is highlighted"
 	)
+	inventory.add_item("carrot_seed", 1)
+	var carrot_slot := -1
+	for slot_index in range(inventory.slots.size()):
+		if inventory.slots[slot_index].get("item_id", "") == "carrot_seed":
+			carrot_slot = slot_index
+			break
+	assertions.truthy(carrot_slot >= 0, "HUD fixture finds carrot seed inventory slot")
+	inventory.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
+	assertions.equal(
+		(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
+		"胡萝卜种子 ×1",
+		"selected planting tile immediately shows mapped carrot seed and quantity"
+	)
+	assertions.equal(
+		hud.tool_label.text,
+		"胡萝卜种子",
+		"selected planting label immediately names mapped carrot seed"
+	)
+	for planting_case in [
+		{"item_id": "rose_seed", "quantity": 3, "text": "玫瑰种子 ×3", "label": "玫瑰种子"},
+		{"item_id": "apple_sapling", "quantity": 2, "text": "苹果树苗 ×2", "label": "苹果树苗"},
+	]:
+		inventory.add_item(planting_case.item_id, planting_case.quantity)
+		var planting_slot := -1
+		for slot_index in range(inventory.slots.size()):
+			if inventory.slots[slot_index].get("item_id", "") == planting_case.item_id:
+				planting_slot = slot_index
+				break
+		assertions.truthy(planting_slot >= 0, "HUD fixture finds %s" % planting_case.item_id)
+		inventory.set_quick_slot(planting_slot, PlayerActionController.SEED_SLOT)
+		assertions.equal(
+			(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
+			planting_case.text,
+			"selected planting tile immediately shows %s and quantity" % planting_case.item_id
+		)
+		assertions.equal(
+			hud.tool_label.text,
+			planting_case.label,
+			"selected planting label immediately names %s" % planting_case.item_id
+		)
+	inventory.set_quick_slot(0, PlayerActionController.SEED_SLOT)
+	inventory.swap_slots(0, carrot_slot)
+	assertions.equal(
+		(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
+		"胡萝卜种子 ×1",
+		"swapping a selected mapped seed immediately refreshes the HUD tile"
+	)
+	assertions.equal(
+		hud.tool_label.text,
+		"胡萝卜种子",
+		"swapping a selected mapped seed immediately refreshes the HUD label"
+	)
 	assertions.truthy(controller.deselect_slot(), "selected HUD action can be cancelled")
 	assertions.equal(hud.tool_label.text, "未选择工具", "HUD shows cancelled tool state")
 	for child in quick_bar.get_children():
@@ -284,14 +352,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"cancelled tool leaves every action button unpressed"
 		)
 
-	inventory.remove_item("grain_seed", 1)
+	inventory.add_item("carrot_seed", 1)
+	inventory.remove_item("carrot_seed", 1)
 	hud.refresh_action_bar()
 	seed_tile = quick_bar.get_child(5)
 	if seed_tile is ActionPaletteButtonScript:
 		assertions.equal(
 			seed_tile.name_label.text,
-			"种子 ×1",
-			"seed count refreshes after inventory change"
+			"胡萝卜种子 ×1",
+			"active seed count refreshes after inventory change"
 		)
 
 	var has_mode_palette_api := (
@@ -343,6 +412,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(
 		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
 		"controller enters building mode for HUD"
+	)
+	assertions.truthy(controller.select_mode_slot(5), "affordable well can be selected")
+	assertions.equal(hud.tool_label.text, "水井", "building slot six shows the well label")
+	inventory.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
+	assertions.equal(
+		hud.tool_label.text,
+		"水井",
+		"planting remaps do not overwrite a selected building label"
 	)
 	assertions.equal(hud.get_palette_button_count(), 9, "building palette has nine buttons")
 	if hud.mode_button is ActionPaletteButtonScript:
@@ -423,7 +500,91 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	hud.set_mode_menu_open(true)
 	assertions.truthy(hud.mode_menu.visible, "mode menu can open above the palette")
 
+	var replacement_inventory = inventory_script.new()
+	tree.root.add_child(replacement_inventory)
+	replacement_inventory.add_item("grain_seed", 1)
+	replacement_inventory.set_quick_slot(0, PlayerActionController.SEED_SLOT)
+	var replacement_building := BuildingDouble.new()
+	replacement_building.inventory = replacement_inventory
+	var replacement_controller = controller_script.new()
+	tree.root.add_child(replacement_controller)
+	replacement_controller.configure(
+		null,
+		null,
+		null,
+		replacement_building,
+		ToolDouble.new(),
+		replacement_inventory
+	)
+	hud.configure_action_bar(
+		replacement_controller,
+		replacement_inventory,
+		EconomyDouble.new()
+	)
+	assertions.truthy(
+		not inventory.quick_slot_mapping_changed.is_connected(mapping_handler),
+		"HUD disconnects the previous inventory when reconfigured"
+	)
+	assertions.truthy(
+		replacement_inventory.quick_slot_mapping_changed.is_connected(mapping_handler),
+		"HUD subscribes to the replacement inventory"
+	)
+	var controller_connections := {
+		"selection_changed": Callable(hud, "_on_action_selection_changed"),
+		"inventory_changed": Callable(hud, "refresh_action_bar"),
+		"mode_changed": Callable(hud, "_on_action_mode_changed"),
+		"palette_changed": Callable(hud, "_on_action_palette_changed"),
+		"build_feedback_requested": Callable(hud, "show_build_feedback"),
+	}
+	for signal_name in controller_connections:
+		var callback: Callable = controller_connections[signal_name]
+		assertions.truthy(
+			not controller.is_connected(signal_name, callback),
+			"HUD disconnects old controller callback %s" % signal_name
+		)
+		assertions.truthy(
+			replacement_controller.is_connected(signal_name, callback),
+			"HUD connects replacement controller callback %s" % signal_name
+		)
+	hud.configure_action_bar(
+		replacement_controller,
+		replacement_inventory,
+		EconomyDouble.new()
+	)
+	for signal_name in controller_connections:
+		var callback: Callable = controller_connections[signal_name]
+		var callback_count := 0
+		for connection in replacement_controller.get_signal_connection_list(signal_name):
+			if connection.get("callable") == callback:
+				callback_count += 1
+		assertions.equal(
+			callback_count,
+			1,
+			"same-controller reconfiguration keeps one %s callback" % signal_name
+		)
+	replacement_controller.selection_changed.emit(0, "replacement selection")
+	assertions.equal(
+		hud.tool_label.text,
+		"replacement selection",
+		"replacement controller updates the HUD"
+	)
+	controller.selection_changed.emit(0, "stale selection")
+	assertions.equal(
+		hud.tool_label.text,
+		"replacement selection",
+		"old controller selection emissions do nothing"
+	)
+	var toast = hud.get_node("BottomBar/BuildFeedbackToast")
+	toast.visible = false
+	controller.inventory_changed.emit()
+	controller.mode_changed.emit(PlayerActionController.ActionMode.BUILDING)
+	controller.palette_changed.emit(PlayerActionController.ActionMode.BUILDING, 0)
+	controller.build_feedback_requested.emit("stale feedback", {})
+	assertions.truthy(not toast.visible, "old controller feedback emissions do nothing")
+
 	controller.free()
+	replacement_controller.free()
 	inventory.free()
+	replacement_inventory.free()
 	season.free()
 	hud.free()

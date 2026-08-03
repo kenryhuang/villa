@@ -1,0 +1,57 @@
+extends SceneTree
+
+const EconomyWalletTest = preload("res://tests/test_economy_wallet.gd")
+const MarketCatalogTest = preload("res://tests/test_market_catalog.gd")
+const MarketMathTest = preload("res://tests/test_market_math.gd")
+const MarketSystemTest = preload("res://tests/test_market_system.gd")
+const EconomyTransactionsTest = preload("res://tests/test_economy_transactions.gd")
+const DailySimulationSystemTest = preload("res://tests/test_daily_simulation_system.gd")
+const EconomySaveIntegrationTest = preload("res://tests/test_economy_save_integration.gd")
+const RecipeDatabaseTest = preload("res://tests/test_recipe_database.gd")
+const ProductionSystemTest = preload("res://tests/test_production_system.gd")
+const BuildingEconomyEffectsTest = preload("res://tests/test_building_economy_effects.gd")
+const ResourceGatheringTest = preload("res://tests/test_resource_gathering.gd")
+const NpcEconomySystemTest = preload("res://tests/test_npc_economy_system.gd")
+const EconomyOrdersTest = preload("res://tests/test_economy_orders.gd")
+const EconomyProgressionTest = preload("res://tests/test_economy_progression.gd")
+const ServicePanelTest = preload("res://tests/test_service_panel.gd")
+const OrderContractUITest = preload("res://tests/test_order_contract_ui.gd")
+const EconomyNotificationsTest = preload("res://tests/test_economy_notifications.gd")
+const EconomyUIResponsiveTest = preload("res://tests/test_economy_ui_responsive.gd")
+const EconomySimulationTest = preload("res://tests/test_economy_simulation.gd")
+const TestAssertScript = preload("res://tests/test_assert.gd")
+
+
+func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	var assertions = TestAssertScript.new()
+	EconomyWalletTest.new().run(assertions)
+	MarketCatalogTest.new().run(assertions)
+	MarketMathTest.new().run(assertions)
+	MarketSystemTest.new().run(assertions)
+	EconomyTransactionsTest.new().run(assertions)
+	DailySimulationSystemTest.new().run(assertions, self)
+	EconomySaveIntegrationTest.new().run(assertions, self)
+	RecipeDatabaseTest.new().run(assertions)
+	ProductionSystemTest.new().run(assertions, self)
+	BuildingEconomyEffectsTest.new().run(assertions, self)
+	ResourceGatheringTest.new().run(assertions, self)
+	NpcEconomySystemTest.new().run(assertions, self)
+	EconomyOrdersTest.new().run(assertions, self)
+	EconomyProgressionTest.new().run(assertions, self)
+	ServicePanelTest.new().run(assertions, self)
+	await OrderContractUITest.new().run(assertions, self)
+	await EconomyNotificationsTest.new().run(assertions, self)
+	await EconomyUIResponsiveTest.new().run(assertions, self)
+	EconomySimulationTest.new().run(assertions)
+	if assertions.failures.is_empty():
+		print("PASS: %d economy checks" % assertions.checks)
+		quit(0)
+		return
+	for failure in assertions.failures:
+		push_error(failure)
+	print("FAIL: %d of %d economy checks failed" % [assertions.failures.size(), assertions.checks])
+	quit(1)

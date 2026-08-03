@@ -61,7 +61,7 @@ func run(assertions: TestAssert) -> void:
 		result = grid.harvest_crop(2, 2)
 		assertions.truthy(not result.is_empty(), "harvest mature crop succeeds")
 		assertions.equal(result.exp, 10, "harvest returns exp")
-		assertions.equal(result.items[0], "turnip", "harvest returns crop id")
+		assertions.equal(result.items, {"turnip": 1}, "harvest returns crop quantity")
 		assertions.equal(grid.get_cell(2, 2).state, FARMLAND, "cell returns to farmland after harvest")
 		assertions.truthy(grid.get_cell(2, 2).crop_instance == null, "crop instance cleared")
 

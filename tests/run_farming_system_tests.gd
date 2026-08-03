@@ -2,6 +2,7 @@ extends SceneTree
 
 const CoreFoundationTest = preload("res://tests/test_core_foundation.gd")
 const FarmingSystemTest = preload("res://tests/test_farming_system.gd")
+const CropEconomyTest = preload("res://tests/test_crop_economy.gd")
 const CropVisualTest = preload("res://tests/test_crop_visual.gd")
 const FarmingSystemCompleteTest = preload("res://tests/test_farming_system_complete.gd")
 const GrainCropArtAssetsTest = preload("res://tests/test_grain_crop_art_assets.gd")
@@ -18,6 +19,7 @@ func _run() -> void:
 	var assertions = TestAssertScript.new()
 	CoreFoundationTest.new().run(assertions)
 	FarmingSystemTest.new().run(assertions)
+	CropEconomyTest.new().run(assertions, self)
 	CropVisualTest.new().run(assertions)
 	FarmingSystemCompleteTest.new().run(assertions, self)
 	GrainCropArtAssetsTest.new().run(assertions)

@@ -22,9 +22,7 @@ enum ActionMode {
 }
 
 const SEED_SLOT := 5
-const SEED_ITEM_ID := "grain_seed"
-const CROP_ID := "grain"
-const SLOT_LABELS := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "谷物种子"]
+const SLOT_LABELS := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "种苗"]
 const BUILDING_IDS: Array[String] = [
 	"barn",
 	"greenhouse",
@@ -68,6 +66,7 @@ var building_system: Variant
 var tool_system: Variant
 var inventory_system: Variant
 var crop_data_override: CropData
+var _event_bus: Node
 
 var _action_mode := ActionMode.FARMING
 var _selected_slot := 0
@@ -112,6 +111,7 @@ func configure(
 	building_system = building
 	tool_system = tools
 	inventory_system = inventory
+	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	select_mode_slot(_selected_slot)
 
 
@@ -229,8 +229,17 @@ func _activate_current_slot() -> bool:
 		building_system.exit_preview_mode()
 	if _selected_slot < TOOL_BY_SLOT.size() and tool_system != null:
 		tool_system.switch_tool(TOOL_BY_SLOT[_selected_slot])
-	selection_changed.emit(_selected_slot, SLOT_LABELS[_selected_slot])
+	selection_changed.emit(_selected_slot, _farming_slot_label(_selected_slot))
 	return true
+
+
+func _farming_slot_label(index: int) -> String:
+	if index != SEED_SLOT:
+		return SLOT_LABELS[index]
+	var item_id := _get_active_plant_item_id()
+	var game_data := get_node_or_null("/root/GameData") if is_inside_tree() else null
+	var item_data = game_data.get_item(item_id) if game_data and not item_id.is_empty() else null
+	return str(item_data.get("name", SLOT_LABELS[index])) if item_data else SLOT_LABELS[index]
 
 
 func deselect_slot() -> bool:
@@ -299,8 +308,12 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 
 
 func perform_target_interaction(target: Node) -> bool:
-	if target == null:
+	if target == null or _action_mode != ActionMode.FARMING:
 		return false
+	if target.has_method("can_gather"):
+		if _selected_slot not in [2, 3] or tool_system == null:
+			return false
+		return bool(tool_system.use_tool_on(target))
 	if target.has_method("start_dialogue"):
 		target.start_dialogue()
 		return true
@@ -478,6 +491,7 @@ func _find_interaction_target(node: Node) -> Node:
 			current.has_method("interact")
 			or current.has_method("start_dialogue")
 			or current.has_method("collect")
+			or current.has_method("can_gather")
 		):
 			return current
 		current = current.get_parent()
@@ -531,10 +545,12 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 			else INVALID_COLOR
 		)
 	if _selected_slot == SEED_SLOT:
-		var crop_data := _get_crop_data()
+		var plant_item_id := _get_active_plant_item_id()
+		var crop_data := _get_crop_data(plant_item_id)
 		var has_seed: bool = (
 			inventory_system != null
-			and inventory_system.has_item(SEED_ITEM_ID, 1)
+			and not plant_item_id.is_empty()
+			and inventory_system.has_item(plant_item_id, 1)
 		)
 		return (
 			VALID_COLOR
@@ -556,15 +572,26 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 func _plant(cell: GridCell) -> bool:
 	if farming_system == null or inventory_system == null:
 		return false
-	var crop_data := _get_crop_data()
+	var plant_item_id := _get_active_plant_item_id()
+	var crop_data := _get_crop_data(plant_item_id)
 	if crop_data == null or not farming_system.can_plant(cell, crop_data):
 		return false
-	if not inventory_system.remove_item(SEED_ITEM_ID, 1):
+	var inventory_snapshot := {
+		"slots": inventory_system.slots.duplicate(true),
+		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
+	}
+	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
+	if not inventory_system.remove_item(plant_item_id, 1):
+		_restore_inventory_snapshot(inventory_snapshot)
+		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		return false
 	var planted = farming_system.plant(cell, crop_data)
 	if planted == null:
-		inventory_system.add_item(SEED_ITEM_ID, 1)
+		inventory_system.add_item(plant_item_id, 1)
+		_restore_inventory_snapshot(inventory_snapshot)
+		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		return false
+	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
 	inventory_changed.emit()
 	return true
 
@@ -572,16 +599,107 @@ func _plant(cell: GridCell) -> bool:
 func _harvest(cell: GridCell) -> bool:
 	if farming_system == null or inventory_system == null:
 		return false
-	if not inventory_system.can_add_item(CROP_ID, 1):
+	var preview := _preview_harvest(cell)
+	var items := _normalized_harvest_items(preview.get("items", {}))
+	if preview.is_empty() or items.is_empty():
 		return false
-	var result: Dictionary = farming_system.harvest(cell)
-	if result.is_empty():
-		return false
-	for item_id in result.get("items", []):
-		if not inventory_system.add_item(str(item_id), 1):
+	for item_id in items:
+		var quantity := int(items[item_id])
+		if not inventory_system.can_add_item(str(item_id), quantity):
 			return false
+	var inventory_snapshot := {
+		"slots": inventory_system.slots.duplicate(true),
+		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
+	}
+	var owns_event_transaction := _begin_inventory_event_transaction()
+	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
+	for item_id in items:
+		if not inventory_system.add_item(str(item_id), int(items[item_id])):
+			_restore_inventory_snapshot(inventory_snapshot)
+			_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+			_end_inventory_event_transaction(owns_event_transaction)
+			return false
+	_end_inventory_event_transaction(owns_event_transaction)
+	var result: Dictionary = farming_system.harvest(cell)
+	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
+		_restore_inventory_snapshot(inventory_snapshot)
+		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+		return false
+	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
+	_emit_committed_inventory_adds(items, owns_event_transaction)
 	inventory_changed.emit()
 	return true
+
+
+func _preview_harvest(cell: GridCell) -> Dictionary:
+	if grid_system != null and grid_system.has_method("preview_harvest"):
+		return grid_system.preview_harvest(cell.gx, cell.gz)
+	if cell == null or cell.crop_instance == null or not cell.crop_instance.is_mature():
+		return {}
+	var data = cell.crop_instance.crop_data
+	if data == null:
+		return {}
+	return {
+		"items": {str(data.crop_id): cell.crop_instance.calculate_yield(cell.gx, cell.gz, 42)},
+		"exp": int(data.exp_reward),
+		"regrowing": int(data.regrow_days) > 0 or str(data.growth_form) != "annual",
+	}
+
+
+func _normalized_harvest_items(value: Variant) -> Dictionary:
+	var normalized := {}
+	if value is Dictionary:
+		for item_id in value:
+			var quantity := int(value[item_id])
+			if not str(item_id).is_empty() and quantity > 0:
+				normalized[str(item_id)] = quantity
+	elif value is Array:
+		for item_id in value:
+			var id := str(item_id)
+			if not id.is_empty():
+				normalized[id] = int(normalized.get(id, 0)) + 1
+	return normalized
+
+
+func _restore_inventory_snapshot(snapshot: Dictionary) -> void:
+	inventory_system.restore_state(snapshot.slots, snapshot.quick_slot_mappings)
+
+
+func _begin_inventory_event_transaction() -> bool:
+	if _event_bus == null:
+		_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if _event_bus == null or _event_bus.is_blocking_signals():
+		return false
+	_event_bus.set_block_signals(true)
+	return true
+
+
+func _end_inventory_event_transaction(owns_transaction: bool) -> void:
+	if owns_transaction and _event_bus != null:
+		_event_bus.set_block_signals(false)
+
+
+func _end_inventory_mapping_transaction(
+	owns_transaction: bool,
+	commit_changes: bool
+) -> void:
+	if owns_transaction and inventory_system.has_method("end_mapping_transaction"):
+		inventory_system.call("end_mapping_transaction", commit_changes)
+
+
+func _begin_inventory_mapping_transaction() -> bool:
+	return (
+		inventory_system != null
+		and inventory_system.has_method("begin_mapping_transaction")
+		and bool(inventory_system.call("begin_mapping_transaction"))
+	)
+
+
+func _emit_committed_inventory_adds(items: Dictionary, owns_transaction: bool) -> void:
+	if not owns_transaction or _event_bus == null:
+		return
+	for item_id in items:
+		_event_bus.item_added.emit(str(item_id), int(items[item_id]))
 
 
 func _is_mature(cell: GridCell) -> bool:
@@ -592,8 +710,26 @@ func _is_mature(cell: GridCell) -> bool:
 	)
 
 
-func _get_crop_data() -> CropData:
+func _get_active_plant_item_id() -> String:
+	if inventory_system == null or not inventory_system.has_method("get_quick_item"):
+		return ""
+	var item_id := str(inventory_system.get_quick_item(SEED_SLOT))
+	return item_id if not crop_id_for_plant_item(item_id).is_empty() else ""
+
+
+static func crop_id_for_plant_item(item_id: String) -> String:
+	if item_id.ends_with("_sapling"):
+		return item_id.trim_suffix("_sapling")
+	if item_id.ends_with("_seed"):
+		return item_id.trim_suffix("_seed")
+	return ""
+
+
+func _get_crop_data(plant_item_id: String = "") -> CropData:
+	var crop_id := crop_id_for_plant_item(plant_item_id)
+	if crop_id.is_empty():
+		return null
 	if crop_data_override != null:
-		return crop_data_override
+		return crop_data_override if crop_data_override.crop_id == crop_id else null
 	var game_data := get_node_or_null("/root/GameData")
-	return game_data.get_crop(CROP_ID) if game_data else null
+	return game_data.get_crop(crop_id) if game_data else null

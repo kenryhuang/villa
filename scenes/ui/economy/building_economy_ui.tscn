@@ -1,0 +1,89 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource path="res://scripts/ui/building_economy_ui.gd" type="Script" id="1"]
+[ext_resource path="res://scripts/ui/world_range_overlay.gd" type="Script" id="2"]
+[ext_resource path="res://scenes/ui/economy/building_production_panel.tscn" type="PackedScene" id="3"]
+[ext_resource path="res://scenes/ui/economy/building_status_panel.tscn" type="PackedScene" id="4"]
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="5_theme"]
+
+[node name="BuildingEconomyUI" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+theme = ExtResource("5_theme")
+script = ExtResource("1")
+
+[node name="WorldRangeOverlay" type="Node3D" parent="."]
+script = ExtResource("2")
+
+[node name="ModalLayer" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.129412, 0.101961, 0.0862745, 0.65098)
+
+[node name="BuildingPanel" type="PanelContainer" parent="ModalLayer"]
+layout_mode = 1
+anchor_left = 0.04
+anchor_top = 0.05
+anchor_right = 0.96
+anchor_bottom = 0.95
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"EconomyPaper"
+
+[node name="Margin" type="MarginContainer" parent="ModalLayer/BuildingPanel"]
+layout_mode = 2
+
+[node name="Shell" type="VBoxContainer" parent="ModalLayer/BuildingPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ModalLayer/BuildingPanel/Margin/Shell"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="ModalLayer/BuildingPanel/Margin/Shell/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 30
+text = "建筑"
+
+[node name="StateLabel" type="Label" parent="ModalLayer/BuildingPanel/Margin/Shell/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "空闲"
+
+[node name="CloseButton" type="Button" parent="ModalLayer/BuildingPanel/Margin/Shell/Header"]
+custom_minimum_size = Vector2(92, 46)
+layout_mode = 2
+text = "关闭"
+
+[node name="PageHost" type="Control" parent="ModalLayer/BuildingPanel/Margin/Shell"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ProductionPanel" parent="ModalLayer/BuildingPanel/Margin/Shell/PageHost" instance=ExtResource("3")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+[node name="StatusPanel" parent="ModalLayer/BuildingPanel/Margin/Shell/PageHost" instance=ExtResource("4")]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2

@@ -47,6 +47,14 @@ class EconomyDouble:
 		refund_calls += 1
 
 
+class ProgressionDouble:
+	extends RefCounted
+	var unlocked := {"workbench": true, "stone_kiln": true, "beehive": true}
+
+	func is_blueprint_unlocked(building_id: String) -> bool:
+		return bool(unlocked.get(building_id, false))
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(ResourceLoader.exists(SYSTEM_SCENE), "reusable building system scene exists")
 	if not ResourceLoader.exists(SYSTEM_SCENE):
@@ -62,6 +70,29 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(system)
 	var configure_result: Variant = system.configure(grid, economy, container)
 	assertions.equal(configure_result, true, "configure reports a usable system")
+	var locked_grid = GridSystemScript.new()
+	var locked_economy := EconomyDouble.new()
+	var locked_container := Node3D.new()
+	var locked_system = (load(SYSTEM_SCENE) as PackedScene).instantiate()
+	var progression := ProgressionDouble.new()
+	tree.root.add_child(locked_grid)
+	tree.root.add_child(locked_container)
+	tree.root.add_child(locked_system)
+	assertions.truthy(
+		locked_system.configure(locked_grid, locked_economy, locked_container, progression),
+		"building system accepts optional progression enforcement"
+	)
+	var locked_windmill = BuildingDataScript.from_dictionary(game_data.get_building("windmill"))
+	var locked_cell_state := locked_grid.get_cell(6, 6).state
+	var locked_result: Dictionary = locked_system.try_place_building(locked_windmill, 6, 6)
+	assertions.equal(locked_result.diagnostic.code, "blueprint_locked", "locked blueprint placement is rejected")
+	assertions.equal(locked_grid.get_cell(6, 6).state, locked_cell_state, "locked placement leaves grid untouched")
+	assertions.equal(locked_economy.spend_calls, 0, "locked placement spends no resources")
+	var tier_zero = BuildingDataScript.from_dictionary(game_data.get_building("workbench"))
+	assertions.truthy(locked_system.place_building(tier_zero, 8, 8) is BuildingInstance, "tier-zero blueprint remains placeable")
+	locked_system.free()
+	locked_container.free()
+	locked_grid.free()
 	assertions.truthy(system.has_method("get_preview_data"), "preview data API is available")
 	assertions.truthy(system.has_method("update_preview"), "grid preview API is available")
 	assertions.truthy(system.has_method("place_building_by_id"), "id placement API is available")

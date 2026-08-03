@@ -63,3 +63,8 @@ func run(assertions: TestAssert) -> void:
 		assertions.equal(clock5.hour, 6, "next-day advancement lands at 06")
 		assertions.equal(clock5.minute, 0, "next-day advancement clears minutes")
 		assertions.equal(clock5.current_day, 2, "next-day advancement increments the day once")
+	clock.free()
+	clock2.free()
+	clock3.free()
+	clock4.free()
+	clock5.free()

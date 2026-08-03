@@ -377,7 +377,7 @@ func run_day(day:int) -> bool:
 	return true
 ~~~
 
-Only `DailySimulationSystem` listens for authoritative gameplay day changes. Remove day subscriptions from Farming/Economy/SaveManager. Save `economy_version:1`, market state, and `last_simulated_day`. Old saves initialize a market at the loaded day without replay.
+Only `DailySimulationSystem` listens for authoritative gameplay day changes. Remove day subscriptions from Farming/Economy/SaveManager. Save `economy_version:1`, market state, and `last_simulated_day`. Old saves initialize a market at the loaded day without replay. Existing version-1 market saves migrate onto immutable current-catalog defaults: keep stock, supply/demand, history, and cursors; rescale prices/history by the new-base/old-base ratio; refresh static price/target/liquidity fields; backfill newly tradable products without cross-save state leakage.
 
 Split the current economy day handler into `advance_order_deadlines(day)`, which performs the existing expiry loop, and `generate_demand_orders(day)`, which temporarily calls the existing generator. Task 11 replaces only the generator body with shortage-backed behavior, so the coordinator compiles and runs at every intermediate commit.
 
@@ -1244,7 +1244,7 @@ git commit -m "test: verify complete economy ui flows"
 
 - [ ] **Step 1: Write fixed-seed acceptance simulation**
 
-With seed `20260801`, simulate no player plus raw gathering, crop, food-processing, and mining/manufacturing strategies. Assert: no negative values; prices stay 50–250%; daily movement ≤15%; essential shortage ≤3 days; dumping depresses then recovers; no instant recipe arbitrage; route income spread ≤20%; repeated run matches. Print exact item/day/route on failure.
+With seed `20260801`, derive an independent deterministic yield sequence for no player plus raw gathering, crop farming, flower/apiary, orchard processing, and mining/manufacturing strategies through real `InventorySystem`, `FarmingSystem`, `ProductionSystem`, `EconomySystem`, `MarketSystem`, `NpcEconomySystem`, and `DailySimulationSystem` fixtures. External gathering or harvest may enter the real inventory, but recipes must use real buildings and producer queues, collection must use `ProductionSystem`, and purchases/sales must use `EconomySystem` with wallet deltas as income. Assert: same-seed replay matches while a changed seed changes route outcomes; wallet, inventory slots, production inputs/outputs/jobs, market, NPC state, orders, and contracts never contain negative quantities; prices stay 50–250%; daily movement ≤15%; every essential item in every route has zero-stock streak ≤3 days; no-player market/NPC/order state genuinely changes and reaches day 28; two-day player dumping followed by no player supply recovers through NPC/population behavior only; maintenance pauses and resumes a real job while consuming the live quote; recipe arbitrage preflights the complete input bundle and every purchased bundle must start exactly once; route income spread ≤20%. Print exact item/day/route on failure.
 
 - [ ] **Step 2: Run and record actual failing metrics**
 
@@ -1256,7 +1256,7 @@ Structural assertions must pass; record every balance failure before changing da
 
 - [ ] **Step 3: Tune data, not invariants**
 
-Adjust base price, starting/target stock, liquidity, recipe ratios/time, group demand, NPC reserves, and premiums. Do not weaken global bounds, ±15%, three-day recovery, atomicity, or determinism. Preserve target net income: early 40–80, mid 150–300, late 500–1000.
+Adjust base price, starting/target stock, liquidity, recipe ratios/time, group demand, NPC reserves, premiums, and explainable route-stage capacity. Do not weaken global bounds, ±15%, three-day recovery, atomicity, or determinism. Preserve target net income: early 40–80, mid 150–300, late 500–1000. Map every `RecipeDatabase` recipe to exactly one documented value category (or an explicit exclusion), give every intended saleable output complete market data, and run the real arbitrage fixture across every tradable recipe; furniture and tools remain within the 1.6–2.0 value ladder.
 
 - [ ] **Step 4: Run the complete fresh matrix**
 

@@ -16,6 +16,8 @@ enum ConstructionStage {
 }
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
+const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ConstructionFeedbackScript = preload(
 	"res://scripts/buildings/construction_feedback.gd"
 )
@@ -28,6 +30,8 @@ const FADE_RATE := 10.0
 const STAGE_FADE_OUT_DURATION := 0.12
 const STAGE_FADE_IN_DURATION := 0.18
 const CONSTRUCTION_SECONDS_PER_STAGE := 10.0
+const MAX_SAFE_INTEGER := 9007199254740991
+const MAX_GRID_COORDINATE := 2147483647
 const CONSTRUCTION_TRANSITION_COUNT := (
 	int(ConstructionStage.COMPLETE) - int(ConstructionStage.FOUNDATION)
 )
@@ -41,6 +45,7 @@ var occupied_cells: Array[Dictionary] = []
 var construction_stage := ConstructionStage.COMPLETE
 var construction_elapsed := 0.0
 var construction_duration := 0.0
+var producer_state: ProducerState
 var _preview_mode := false
 var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
@@ -202,6 +207,8 @@ func configure(
 	for cell in cells:
 		if cell is Dictionary:
 			occupied_cells.append((cell as Dictionary).duplicate(true))
+	if producer_state == null and data != null and RecipeDatabaseScript.has_station(data.building_id):
+		producer_state = ProducerStateScript.new(data.building_id)
 	_ensure_nodes()
 	if data == null or not data.is_valid():
 		return
@@ -268,8 +275,20 @@ func interact(player: Node) -> void:
 	interacted.emit(self, player)
 
 
+func economy_effect_type() -> String:
+	if data != null:
+		return data.effect_type
+	return str(GameDataScript.get_building(building_id).get("effect", ""))
+
+
+func can_open_economy_panel() -> bool:
+	return is_construction_complete() and economy_effect_type() in [
+		"crafting", "honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output",
+	]
+
+
 func to_dict() -> Dictionary:
-	return {
+	var result := {
 		"building_id": data.building_id if data else authored_building_id,
 		"gx": grid_x,
 		"gz": grid_z,
@@ -278,6 +297,126 @@ func to_dict() -> Dictionary:
 		"construction_elapsed": construction_elapsed,
 		"construction_duration": construction_duration,
 	}
+	if producer_state != null:
+		result["producer_state"] = producer_state.to_dict()
+	return result
+
+
+func from_dict(source: Dictionary) -> bool:
+	if typeof(source.get("building_id")) != TYPE_STRING:
+		return false
+	var parsed_gx: Variant = _integer_number(source.get("gx"))
+	var parsed_gz: Variant = _integer_number(source.get("gz"))
+	if not _is_grid_coordinate(parsed_gx) or not _is_grid_coordinate(parsed_gz):
+		return false
+	var saved_cells: Variant = source.get("occupied_cells", [])
+	if not saved_cells is Array:
+		return false
+	var normalized_saved_cells: Array[Dictionary] = []
+	var saved_cell_states := {}
+	for value in saved_cells:
+		if not value is Dictionary:
+			return false
+		var cell := value as Dictionary
+		var cell_gx: Variant = _integer_number(cell.get("gx"))
+		var cell_gz: Variant = _integer_number(cell.get("gz"))
+		var previous_state: Variant = _integer_number(cell.get("previous_state"))
+		if not _is_grid_coordinate(cell_gx) or not _is_grid_coordinate(cell_gz):
+			return false
+		if previous_state == null or int(previous_state) not in [
+			GridCell.State.WASTELAND,
+			GridCell.State.FARMLAND,
+		]:
+			return false
+		var location := Vector2i(int(cell_gx), int(cell_gz))
+		if saved_cell_states.has(location):
+			return false
+		saved_cell_states[location] = int(previous_state)
+		normalized_saved_cells.append({
+			"gx": location.x,
+			"gz": location.y,
+			"previous_state": int(previous_state),
+		})
+	var next_cells: Array[Dictionary] = []
+	if occupied_cells.is_empty():
+		next_cells.assign(normalized_saved_cells)
+	else:
+		if occupied_cells.size() != saved_cell_states.size():
+			return false
+		var authoritative_locations := {}
+		for authoritative_cell in occupied_cells:
+			var location := Vector2i(
+				int(authoritative_cell.get("gx", -1)),
+				int(authoritative_cell.get("gz", -1))
+			)
+			if authoritative_locations.has(location) or not saved_cell_states.has(location):
+				return false
+			authoritative_locations[location] = true
+			next_cells.append({
+				"gx": location.x,
+				"gz": location.y,
+				"previous_state": int(saved_cell_states[location]),
+			})
+	var saved_stage: Variant = source.get("construction_stage", int(ConstructionStage.COMPLETE))
+	var saved_elapsed: Variant = source.get("construction_elapsed", 0.0)
+	var saved_duration: Variant = source.get("construction_duration", 0.0)
+	var parsed_stage: Variant = _integer_number(saved_stage)
+	if parsed_stage == null:
+		return false
+	if int(parsed_stage) < int(ConstructionStage.FOUNDATION) or int(parsed_stage) > int(ConstructionStage.COMPLETE):
+		return false
+	if not saved_elapsed is float and not saved_elapsed is int:
+		return false
+	if not saved_duration is float and not saved_duration is int:
+		return false
+	if not is_finite(float(saved_elapsed)) or float(saved_elapsed) < 0.0:
+		return false
+	if not is_finite(float(saved_duration)) or float(saved_duration) < 0.0:
+		return false
+	var next_producer: ProducerState
+	if source.has("producer_state"):
+		if not source.producer_state is Dictionary:
+			return false
+		next_producer = ProducerStateScript.new()
+		if not next_producer.from_dict(source.producer_state):
+			return false
+	elif RecipeDatabaseScript.has_station(str(source.building_id)):
+		next_producer = ProducerStateScript.new(str(source.building_id))
+	if next_producer != null and next_producer.station_id != str(source.building_id):
+		return false
+
+	if data != null and str(source.building_id) != data.building_id:
+		return false
+	if data == null:
+		authored_building_id = str(source.building_id)
+	grid_x = int(parsed_gx)
+	grid_z = int(parsed_gz)
+	occupied_cells.assign(next_cells)
+	construction_stage = int(parsed_stage) as ConstructionStage
+	construction_elapsed = float(saved_elapsed)
+	construction_duration = float(saved_duration)
+	_completion_emitted = construction_stage == ConstructionStage.COMPLETE
+	producer_state = next_producer
+	return true
+
+
+static func _integer_number(value: Variant) -> Variant:
+	if typeof(value) == TYPE_INT:
+		if int(value) < -MAX_SAFE_INTEGER or int(value) > MAX_SAFE_INTEGER:
+			return null
+		return value
+	if typeof(value) != TYPE_FLOAT:
+		return null
+	var number := float(value)
+	if not is_finite(number) or absf(number) > float(MAX_SAFE_INTEGER):
+		return null
+	if number != floorf(number):
+		return null
+	return int(number)
+
+
+static func _is_grid_coordinate(value: Variant) -> bool:
+	return value != null and int(value) >= 0 and int(value) <= MAX_GRID_COORDINATE
 
 
 func _process(delta: float) -> void:

@@ -14,3 +14,31 @@ extends Resource
 @export var stage_textures: Array[String] = []
 @export var stage_scenes: Array[String] = []
 @export var water_required := 1
+@export_range(1, 999, 1) var yield_min := 1
+@export_range(1, 999, 1) var yield_max := 1
+@export_range(0, 999, 1) var regrow_days := 0
+@export var tags: Array[String] = []
+@export_enum("annual", "bush", "tree", "vine") var growth_form := "annual"
+
+
+func is_valid() -> bool:
+	if crop_id.strip_edges().is_empty() or growth_days <= 0:
+		return false
+	if yield_min <= 0 or yield_max < yield_min or regrow_days < 0 or regrow_days > growth_days:
+		return false
+	if growth_form not in ["annual", "bush", "tree", "vine"]:
+		return false
+	if growth_form != "annual" and regrow_days <= 0:
+		return false
+	var seen_seasons := {}
+	for season in seasons:
+		if season < 0 or season > 3 or seen_seasons.has(season):
+			return false
+		seen_seasons[season] = true
+	var seen_tags := {}
+	for tag in tags:
+		var normalized := tag.strip_edges()
+		if normalized.is_empty() or normalized != tag or seen_tags.has(tag):
+			return false
+		seen_tags[tag] = true
+	return true

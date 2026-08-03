@@ -1,6 +1,11 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=7 format=3]
 
-[ext_resource path="res://scripts/ui/shop_ui.gd" type="Script" id="1"]
+[ext_resource path="res://scripts/ui/shop_ui.gd" type="Script" id="1_shop"]
+[ext_resource path="res://scenes/ui/economy/market_panel.tscn" type="PackedScene" id="2_market"]
+[ext_resource path="res://scenes/ui/economy/service_panel.tscn" type="PackedScene" id="3_service"]
+[ext_resource path="res://scenes/ui/economy/order_panel.tscn" type="PackedScene" id="4_order"]
+[ext_resource path="res://scenes/ui/economy/contract_panel.tscn" type="PackedScene" id="5_contract"]
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="6_theme"]
 
 [node name="ShopUI" type="Control"]
 layout_mode = 3
@@ -10,47 +15,257 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
-script = ExtResource("1")
+script = ExtResource("1_shop")
+theme = ExtResource("6_theme")
+
+[node name="ModalLayer" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.129412, 0.101961, 0.0862745, 0.65098)
+
+[node name="HubPanel" type="PanelContainer" parent="ModalLayer"]
+layout_mode = 1
+anchor_left = 0.04
+anchor_top = 0.01
+anchor_right = 0.96
+anchor_bottom = 0.99
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"EconomyPaper"
+
+[node name="Margin" type="MarginContainer" parent="ModalLayer/HubPanel"]
+layout_mode = 2
+
+[node name="Shell" type="VBoxContainer" parent="ModalLayer/HubPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ModalLayer/HubPanel/Margin/Shell"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TitleLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+custom_minimum_size = Vector2(190, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.317647, 0.231373, 0.184314, 1)
+theme_override_font_sizes/font_size = 32
+text = "区域市场"
+vertical_alignment = 1
+
+[node name="MarketStatusLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "市场总体：平稳"
+vertical_alignment = 1
+
+[node name="CaravanStatusLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "商队：未到访"
+vertical_alignment = 1
+
+[node name="GoldLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.772549, 0.545098, 0.207843, 1)
+theme_override_font_sizes/font_size = 20
+text = "金币 100"
+vertical_alignment = 1
+
+[node name="DateLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "春 1/7"
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+custom_minimum_size = Vector2(92, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "关闭"
+
+[node name="Tabs" type="HBoxContainer" parent="ModalLayer/HubPanel/Margin/Shell"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MarketTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(140, 46)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+toggle_mode = true
+text = "市集"
+
+[node name="OrdersTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(140, 46)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+toggle_mode = true
+text = "订单"
+
+[node name="ContractsTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(140, 46)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+toggle_mode = true
+text = "合同"
+
+[node name="ServicesTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(140, 46)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+toggle_mode = true
+text = "服务"
+
+[node name="PageHost" type="Control" parent="ModalLayer/HubPanel/Margin/Shell"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MarketPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("2_market")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="OrderPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("4_order")]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ContractPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("5_contract")]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ServicesPage" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("3_service")]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TradeModalBlocker" type="Control" parent="ModalLayer"]
+visible = false
+z_index = 1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Top" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="Bottom" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="Left" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="Right" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+mouse_filter = 0
+color = Color(0, 0, 0, 0)
+
+[node name="SignConfirmationLayer" type="ColorRect" parent="ModalLayer"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.129412, 0.101961, 0.0862745, 0.65098)
+
+[node name="Content" type="PanelContainer" parent="ModalLayer/SignConfirmationLayer"]
+layout_mode = 1
+anchor_left = 0.3
+anchor_top = 0.25
+anchor_right = 0.7
+anchor_bottom = 0.75
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"EconomyCard"
+
+[node name="Margin" type="MarginContainer" parent="ModalLayer/SignConfirmationLayer/Content"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="ModalLayer/SignConfirmationLayer/Content/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "确认签订长期合同"
+
+[node name="SummaryLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 19
+text = "合同会产生跨日交付义务。"
+autowrap_mode = 2
+
+[node name="ErrorLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.714, 0.361, 0.294, 1)
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CancelButton" type="Button" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
+custom_minimum_size = Vector2(140, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "取消"
+
+[node name="ConfirmButton" type="Button" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
+custom_minimum_size = Vector2(140, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "确认签订"
 
 [node name="TopBar" type="HBoxContainer" parent="."]
-layout_mode = 0
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -340.0
-offset_top = -280.0
-offset_right = 250.0
-offset_bottom = -240.0
+visible = false
 
 [node name="GoldLabel" type="Label" parent="TopBar"]
 layout_mode = 2
-text = "💰 100"
+text = "金币 100"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="."]
-layout_mode = 0
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -340.0
-offset_top = -230.0
-offset_right = 340.0
-offset_bottom = 250.0
+visible = false
 
 [node name="GridContainer" type="GridContainer" parent="ScrollContainer"]
 layout_mode = 2
-size_flags_horizontal = 3
 columns = 5
 
 [node name="CloseButton" type="Button" parent="."]
-layout_mode = 0
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = 260.0
-offset_top = -280.0
-offset_right = 340.0
-offset_bottom = -240.0
+visible = false
 text = "关闭"

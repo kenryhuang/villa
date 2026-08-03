@@ -1,0 +1,161 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource path="res://scripts/ui/market_panel.gd" type="Script" id="1_market"]
+[ext_resource path="res://scripts/ui/market_price_chart.gd" type="Script" id="2_chart"]
+[ext_resource path="res://scenes/ui/economy/trade_panel.tscn" type="PackedScene" id="3_trade"]
+[ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="4_theme"]
+
+[node name="MarketPanel" type="PanelContainer"]
+theme_type_variation = &"EconomyCard"
+theme = ExtResource("4_theme")
+script = ExtResource("1_market")
+
+[node name="Columns" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="CatalogColumn" type="VBoxContainer" parent="Columns"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 2
+stretch_ratio = 0.28
+theme_override_constants/separation = 8
+
+[node name="CategoryTitle" type="Label" parent="Columns/CatalogColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "分类与商品"
+
+[node name="CategoryList" type="VBoxContainer" parent="Columns/CatalogColumn"]
+layout_mode = 2
+
+[node name="RawMaterials" type="Button" parent="Columns/CatalogColumn/CategoryList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "原材料"
+
+[node name="Crops" type="Button" parent="Columns/CatalogColumn/CategoryList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "农产品"
+
+[node name="ProcessedMaterials" type="Button" parent="Columns/CatalogColumn/CategoryList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "加工材料"
+
+[node name="FoodHandicrafts" type="Button" parent="Columns/CatalogColumn/CategoryList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "食品与手工品"
+
+[node name="RareGoods" type="Button" parent="Columns/CatalogColumn/CategoryList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "稀有品"
+
+[node name="SortMode" type="OptionButton" parent="Columns/CatalogColumn"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+
+[node name="ItemList" type="ItemList" parent="Columns/CatalogColumn"]
+visible = false
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+
+[node name="ItemScroll" type="ScrollContainer" parent="Columns/CatalogColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ItemRows" type="VBoxContainer" parent="Columns/CatalogColumn/ItemScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="EmptyLabel" type="Label" parent="Columns/CatalogColumn"]
+visible = false
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "当前没有可交易商品"
+autowrap_mode = 2
+
+[node name="DetailColumn" type="VBoxContainer" parent="Columns"]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+stretch_ratio = 0.42
+theme_override_constants/separation = 7
+
+[node name="ItemNameLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.317647, 0.231373, 0.184314, 1)
+theme_override_font_sizes/font_size = 28
+text = "当前没有可交易商品"
+
+[node name="MidPriceLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "中间价：—"
+
+[node name="BuyPriceLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "买入价：—"
+
+[node name="SellPriceLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "卖出价：—"
+
+[node name="StockLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "库存：—"
+
+[node name="TrendLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.372549, 0.529412, 0.333333, 1)
+theme_override_font_sizes/font_size = 18
+text = "趋势：—"
+
+[node name="FlowLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "今日供给 —　今日需求 —　流动量 —"
+
+[node name="ChartTitle" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "最近 7 日价格"
+
+[node name="PriceChart" type="Control" parent="Columns/DetailColumn"]
+custom_minimum_size = Vector2(320, 170)
+layout_mode = 2
+mouse_filter = 0
+script = ExtResource("2_chart")
+
+[node name="TagsLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "标签：—"
+autowrap_mode = 2
+
+[node name="SourceUseLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "主要来源：—　主要用途：—"
+autowrap_mode = 2
+
+[node name="ProcessingLabel" type="Label" parent="Columns/DetailColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "加工参考：按当前行情估算"
+autowrap_mode = 2
+
+[node name="TradePanel" parent="Columns" instance=ExtResource("3_trade")]
+layout_mode = 2
+size_flags_horizontal = 2
+stretch_ratio = 0.3

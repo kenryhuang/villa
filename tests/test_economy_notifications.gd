@@ -1,0 +1,499 @@
+class_name EconomyNotificationsTest
+extends RefCounted
+
+const NotificationSystemScript = preload("res://scripts/systems/economy_notification_system.gd")
+const NOTIFICATION_UI_SCENE_PATH := "res://scenes/ui/economy/economy_notification_ui.tscn"
+const EventBusScript = preload("res://scripts/core/event_bus.gd")
+const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
+const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
+const EconomySystemScript = preload("res://scripts/systems/economy_system.gd")
+const MainScript = preload("res://scripts/main.gd")
+const HudScene = preload("res://scenes/ui/hud.tscn")
+
+const TEST_SAVE_DIR := "user://task17_economy_notifications/"
+const TEST_SAVE_SLOT := 17
+
+
+class FakeDailySimulation:
+	extends Node
+	var last_simulated_day := 1
+
+
+class FakeSeason:
+	extends Node
+	var total_days := 0
+
+
+class FakeRouteTarget:
+	extends Node
+	var selected_id := ""
+
+	func select_item(value: String) -> void:
+		selected_id = value
+
+	func select_order(value: String) -> void:
+		selected_id = value
+
+	func select_contract(value: String) -> void:
+		selected_id = value
+
+
+class FakeShop:
+	extends Node
+	var opened_tabs: Array[String] = []
+	var market_panel := FakeRouteTarget.new()
+	var order_panel := FakeRouteTarget.new()
+	var contract_panel := FakeRouteTarget.new()
+
+	func open(tab_id: String = "market") -> void:
+		opened_tabs.append(tab_id)
+
+
+class FakeRouter:
+	extends Node
+	var calls: Array[Dictionary] = []
+	var route_success := true
+	var pause_tree_on_success := false
+	var reentry_ui: Variant
+	var reentry_notification_id := ""
+	var reentry_results: Array[bool] = []
+	var _did_reenter := false
+
+	func navigate_notification_target(target_type: String, target_id: String) -> bool:
+		calls.append({"target_type": target_type, "target_id": target_id})
+		if reentry_ui != null and not _did_reenter:
+			_did_reenter = true
+			reentry_results.append(bool(reentry_ui.activate_notification(reentry_notification_id)))
+		if route_success and pause_tree_on_success:
+			get_tree().paused = true
+		return route_success
+
+
+class FakeBuildingUI:
+	extends Node
+	var opened: Array[BuildingInstance] = []
+
+	func open_for(building: BuildingInstance) -> bool:
+		opened.append(building)
+		return true
+
+
+func run(assertions: TestAssert, tree: SceneTree) -> void:
+	run_core(assertions)
+	await run_integration(assertions, tree)
+
+
+func run_core(assertions: TestAssert) -> void:
+	_test_record_merge_boundaries_and_retention(assertions)
+	_test_read_and_strict_atomic_persistence(assertions)
+
+
+func run_integration(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_real_clock_and_event_bus_connections(assertions, tree)
+	_test_contract_breach_occurrence_dedup(assertions, tree)
+	_test_save_manager_round_trip_without_replay(assertions, tree)
+	await _test_scene_toasts_center_and_hud(assertions, tree)
+	_test_main_four_way_routing(assertions)
+
+
+func _test_record_merge_boundaries_and_retention(assertions: TestAssert) -> void:
+	var system = NotificationSystemScript.new()
+	var first_id: String = system.push("completed", "生产完成", "风车完成面粉 ×1", 12, "building", "windmill:4:5", 10.0)
+	var merged_id: String = system.push("completed", "生产完成", "风车完成面粉 ×2", 13, "building", "windmill:4:5", 12.999)
+	assertions.equal(merged_id, first_id, "same kind and target merges at 2.999 seconds")
+	var recent: Array[Dictionary] = system.get_recent()
+	assertions.equal(recent.size(), 1, "merged messages share one authoritative record")
+	assertions.equal(int(recent[0].count), 2, "system merge increments count")
+	assertions.equal(str(recent[0].body), "风车完成面粉 ×2", "merge refreshes the latest body")
+	assertions.equal(int(recent[0].total_day), 13, "merge refreshes the latest game day")
+	assertions.equal(str(recent[0].notification_id), first_id, "merge keeps the stable notification id")
+	var cross_day_restored = NotificationSystemScript.new()
+	assertions.truthy(cross_day_restored.from_dict(system.to_dict()), "stable first-occurrence id remains valid after a cross-day merge")
+	cross_day_restored.free()
+
+	var boundary_system = NotificationSystemScript.new()
+	var boundary_first: String = boundary_system.push("completed", "生产完成", "风车完成面粉 ×1", 12, "building", "windmill:4:5", 10.0)
+	var boundary_id: String = boundary_system.push("completed", "生产完成", "风车完成面粉 ×3", 12, "building", "windmill:4:5", 13.0)
+	assertions.truthy(boundary_id != boundary_first, "exactly three seconds starts a separate record")
+	assertions.equal(boundary_system.get_recent().size(), 2, "three-second boundary remains separate")
+	boundary_system.free()
+	system.push("shortage", "库存紧缺", "木材紧缺", 12, "market_item", "wood", 13.1)
+	assertions.equal(system.get_recent().size(), 2, "unrelated kind and target remains separate")
+
+	for index in range(21):
+		system.push("unlock", "解锁", "解锁 %d" % index, index + 20, "service", "recipe_%d" % index, 20.0 + index * 3.0)
+	recent = system.get_recent(50)
+	assertions.equal(recent.size(), 20, "notification state retains only the newest twenty")
+	assertions.equal(str(recent[0].body), "解锁 20", "recent records are newest first")
+	assertions.equal(str(recent[-1].body), "解锁 1", "retention drops the oldest record")
+	var exposed: Array[Dictionary] = system.get_recent()
+	exposed[0]["body"] = "mutated"
+	assertions.equal(str(system.get_recent()[0].body), "解锁 20", "recent getter is deep copied")
+	var json_text := JSON.stringify(system.to_dict())
+	assertions.truthy(not json_text.is_empty(), "notification snapshot is JSON safe")
+	system.free()
+
+
+func _test_read_and_strict_atomic_persistence(assertions: TestAssert) -> void:
+	var system = NotificationSystemScript.new()
+	var first_id: String = system.push("order_due", "订单临期", "订单即将到期", 5, "order", "npc:wood:4", 1.0)
+	var second_id: String = system.push("contract_breached", "合同未完成", "今日尚未交付", 5, "contract", "npc:wood:4:6", 1.1)
+	assertions.equal(system.get_unread_count(), 2, "new records are unread")
+	assertions.truthy(system.mark_read(first_id), "mark read changes an unread record")
+	assertions.truthy(not system.mark_read(first_id), "mark read does nothing when already read")
+	assertions.equal(system.get_unread_count(), 1, "reading only changes unread state")
+	var after_read: Array[Dictionary] = system.get_recent()
+	assertions.equal(int(after_read[0].count), 1, "reading does not change notification count")
+	assertions.equal(str(after_read[0].body), "今日尚未交付", "reading does not change content")
+	system.mark_all_read()
+	assertions.equal(system.get_unread_count(), 0, "mark all clears every unread flag")
+
+	var valid: Dictionary = system.to_dict()
+	var restored = NotificationSystemScript.new()
+	assertions.truthy(restored.from_dict(valid), "strict notification snapshot restores")
+	assertions.equal(restored.to_dict(), valid, "notification snapshot round trips exactly")
+	var before: Dictionary = restored.to_dict()
+	var malformed_cases: Array[Dictionary] = []
+	var unknown_kind := valid.duplicate(true)
+	unknown_kind.records[0].kind = "mystery"
+	malformed_cases.append(unknown_kind)
+	var unknown_target := valid.duplicate(true)
+	unknown_target.records[0].target_type = "moon"
+	malformed_cases.append(unknown_target)
+	var bad_count := valid.duplicate(true)
+	bad_count.records[0].count = 0
+	malformed_cases.append(bad_count)
+	var duplicate_id := valid.duplicate(true)
+	duplicate_id.records.append(duplicate_id.records[0].duplicate(true))
+	malformed_cases.append(duplicate_id)
+	var bad_day := valid.duplicate(true)
+	bad_day.records[0].total_day = -1
+	malformed_cases.append(bad_day)
+	for malformed in malformed_cases:
+		assertions.truthy(not restored.from_dict(malformed), "malformed notification snapshot is rejected")
+		assertions.equal(restored.to_dict(), before, "rejected snapshot preserves prior state atomically")
+
+	var loaded = NotificationSystemScript.new()
+	assertions.truthy(loaded.from_dict(valid), "load fixture restores")
+	var post_load_id: String = loaded.push("contract_breached", "合同未完成", "新会话提醒", 5, "contract", "npc:wood:4:6", 1.2)
+	assertions.truthy(post_load_id != second_id, "load clears transient merge windows")
+	assertions.equal(loaded.get_recent().size(), 3, "load never merges against persisted monotonic time")
+	loaded.free()
+	restored.free()
+	var unlock_source = NotificationSystemScript.new()
+	unlock_source.call("_on_service_unlocked", "recipe", "honey_cake")
+	var unlock_records := unlock_source.get_recent()
+	assertions.equal(unlock_records.size(), 1, "service unlock source creates one record")
+	if not unlock_records.is_empty():
+		assertions.equal(str(unlock_records[0].target_type), "", "service unlock persists no unsupported route type")
+		assertions.equal(str(unlock_records[0].target_id), "", "service unlock persists no unsupported route id")
+	var unlock_restored = NotificationSystemScript.new()
+	assertions.truthy(unlock_restored.from_dict(unlock_source.to_dict()), "targetless unlock record restores")
+	assertions.equal(str(unlock_restored.get_recent()[0].target_id), "", "targetless unlock stays targetless after load")
+	var upgraded_building := BuildingInstance.new()
+	upgraded_building.authored_building_id = "windmill"
+	upgraded_building.grid_x = 7
+	upgraded_building.grid_z = 8
+	unlock_source.call("_on_building_upgrade_changed", upgraded_building, "storage", 2)
+	var upgrade_record: Dictionary = unlock_source.get_recent()[0]
+	assertions.equal(str(upgrade_record.target_type), "building", "building upgrade keeps its supported route type")
+	assertions.equal(str(upgrade_record.target_id), "windmill:7:8", "building upgrade keeps its stable building route")
+	upgraded_building.free()
+	unlock_restored.free()
+	unlock_source.free()
+	system.free()
+
+
+func _test_real_clock_and_event_bus_connections(assertions: TestAssert, tree: SceneTree) -> void:
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(event_bus != null and event_bus.get_script() == EventBusScript, "test uses the real EventBus autoload")
+	if event_bus == null:
+		return
+	assertions.truthy(event_bus.has_signal("market_caravan_changed"), "EventBus exposes caravan notification source")
+	assertions.truthy(event_bus.has_signal("production_feed_shortage"), "EventBus exposes feed shortage source")
+	assertions.truthy(event_bus.has_signal("economy_notification_changed"), "EventBus exposes system-owned notification changes")
+	assertions.equal(_signal_argument_count(event_bus, "market_caravan_changed"), 5, "caravan signal carries id, item, quantity, day, and arrival state")
+	assertions.equal(_signal_argument_count(event_bus, "production_feed_shortage"), 4, "feed signal carries building, item, state, and day")
+
+	var market = MarketSystemScript.new()
+	assertions.truthy(market.configure([{
+		"id": "wood", "base_price": 100, "initial_stock": 10,
+		"target_stock": 10, "daily_liquidity": 10,
+	}]), "event notification market fixture configures")
+	market.last_settled_day = 4
+	var system = NotificationSystemScript.new()
+	tree.root.add_child(system)
+	assertions.truthy(system.configure(event_bus, market), "notification system accepts real EventBus shapes")
+	assertions.truthy(system.configure(event_bus, market), "repeated configure remains idempotent")
+	event_bus.emit_signal("market_price_changed", "wood", 110)
+	assertions.equal(system.get_recent().size(), 1, "ten-percent price event creates exactly one notification")
+	assertions.equal(str(system.get_recent()[0].target_id), "wood", "price event uses stable market item target")
+	event_bus.emit_signal("market_stock_changed", "wood", 3)
+	event_bus.emit_signal("market_stock_changed", "wood", 8)
+	assertions.equal(system.get_recent().size(), 3, "shortage and recovery are distinct notifications")
+
+	var real_clock_system = NotificationSystemScript.new()
+	var real_id: String = real_clock_system.push("unlock", "解锁", "蓝图解锁", 4, "service", "barn")
+	var real_merge_id: String = real_clock_system.push("unlock", "解锁", "配方解锁", 4, "service", "barn")
+	assertions.equal(real_merge_id, real_id, "production default uses monotonic ticks for immediate merge")
+	real_clock_system.free()
+	system.free()
+	market.free()
+
+
+func _test_contract_breach_occurrence_dedup(assertions: TestAssert, tree: SceneTree) -> void:
+	var event_bus := tree.root.get_node("EventBus")
+	var economy = EconomySystemScript.new()
+	var season := FakeSeason.new()
+	var notifications = NotificationSystemScript.new()
+	tree.root.add_child(economy)
+	tree.root.add_child(season)
+	tree.root.add_child(notifications)
+	var contract_id := "lao_li:wood:1:6"
+	economy.set("_last_processed_day", 1)
+	var contracts: Array[Dictionary] = [{
+		"contract_id": contract_id,
+		"npc_id": "lao_li",
+		"item_id": "wood",
+		"quantity_per_day": 1,
+		"unit_price": 10,
+		"reward_gold": 10,
+		"start_day": 1,
+		"end_day": 6,
+		"delivered_days": [],
+		"breaches": 0,
+		"signed": true,
+		"completed": false,
+		"expired": false,
+	}]
+	economy.set("_contracts", contracts)
+	assertions.truthy(notifications.configure(event_bus, null, economy, season), "contract notification fixture configures")
+	season.total_days = 2
+	economy.advance_order_deadlines(2)
+	assertions.equal(notifications.get_recent().size(), 1, "first authoritative missed day creates one breach record")
+	notifications.call("_on_contract_updated", contract_id)
+	assertions.equal(notifications.get_recent().size(), 1, "repeated same-day breach callback creates no duplicate")
+	season.total_days = 3
+	economy.advance_order_deadlines(3)
+	var records := notifications.get_recent()
+	assertions.equal(records.size(), 2, "consecutive missed days create separate breach records")
+	if records.size() == 2:
+		assertions.equal(int(records[0].count), 1, "second breach record is not merged")
+		assertions.equal(int(records[1].count), 1, "first breach record remains singular")
+		assertions.truthy(str(records[0].body).contains("2"), "breach record persists its occurrence count")
+	var saved := notifications.to_dict()
+	notifications.free()
+	var loaded = NotificationSystemScript.new()
+	tree.root.add_child(loaded)
+	assertions.truthy(loaded.configure(event_bus, null, economy, season), "loaded contract notification fixture configures")
+	assertions.truthy(loaded.from_dict(saved), "breach records restore")
+	loaded.call("_on_contract_updated", contract_id)
+	assertions.equal(loaded.get_recent().size(), 2, "load followed by replayed breach callback creates no record")
+	loaded.free()
+	season.free()
+	economy.free()
+
+
+func _test_save_manager_round_trip_without_replay(assertions: TestAssert, tree: SceneTree) -> void:
+	var market = MarketSystemScript.new()
+	assertions.truthy(market.configure([{
+		"id": "wood", "base_price": 100, "initial_stock": 10,
+		"target_stock": 10, "daily_liquidity": 10,
+	}]), "save notification market fixture configures")
+	market.last_settled_day = 1
+	var daily := FakeDailySimulation.new()
+	var notifications = NotificationSystemScript.new()
+	notifications.push("shortage", "库存紧缺", "木材紧缺", 1, "market_item", "wood", 1.0)
+	var save_manager = SaveManagerScript.new()
+	tree.root.add_child(save_manager)
+	save_manager.save_directory = TEST_SAVE_DIR
+	assertions.truthy(bool(save_manager.call("configure_economy", market, daily, null, null, null, null, null, null, null, notifications)), "SaveManager accepts notification owner")
+	assertions.truthy(save_manager.save_game(TEST_SAVE_SLOT), "SaveManager persists notification bundle")
+	var pushed_after_load := [0]
+	notifications.notification_pushed.connect(func(_record: Dictionary, _merged: bool) -> void: pushed_after_load[0] += 1)
+	notifications.push("recovery", "库存恢复", "木材恢复", 1, "market_item", "wood", 4.0)
+	assertions.truthy(save_manager.load_game(TEST_SAVE_SLOT), "SaveManager restores notifications")
+	assertions.equal(notifications.get_recent().size(), 1, "load restores persisted records")
+	assertions.equal(pushed_after_load[0], 1, "load does not replay notification_pushed")
+
+	var gathered: Dictionary = save_manager.call("_gather_save_data")
+	assertions.truthy(gathered.has("notifications"), "economy v1 save includes notification field")
+	var legacy := gathered.duplicate(true)
+	legacy.erase("notifications")
+	assertions.truthy(save_manager.call("_apply_save_data", legacy), "legacy economy v1 save defaults notifications")
+	assertions.equal(notifications.get_recent().size(), 0, "legacy notification default is empty")
+	var partial := {"notifications": gathered.notifications}
+	assertions.truthy(not save_manager.call("_apply_save_data", partial), "notification field without economy bundle is rejected")
+	assertions.equal(notifications.get_recent().size(), 0, "rejected partial save rolls back notifications")
+
+	save_manager.clear_save(TEST_SAVE_SLOT)
+	save_manager.free()
+	notifications.free()
+	daily.free()
+	market.free()
+
+
+func _test_scene_toasts_center_and_hud(assertions: TestAssert, tree: SceneTree) -> void:
+	var system = NotificationSystemScript.new()
+	var router := FakeRouter.new()
+	assertions.truthy(ResourceLoader.exists(NOTIFICATION_UI_SCENE_PATH), "notification UI scene exists")
+	if not ResourceLoader.exists(NOTIFICATION_UI_SCENE_PATH):
+		system.free()
+		router.free()
+		return
+	var ui: Variant = (load(NOTIFICATION_UI_SCENE_PATH) as PackedScene).instantiate()
+	tree.root.add_child(router)
+	tree.root.add_child(ui)
+	await tree.process_frame
+	assertions.truthy(ui.configure(system, router), "notification UI configures from authoritative system")
+	for index in range(4):
+		system.push("unlock", "解锁", "普通 %d" % index, 2, "service", "service_%d" % index, float(index) * 3.0)
+	assertions.equal(ui.get_visible_toast_count(), 3, "toast stack shows at most three cards")
+	for card in ui.get_node("ToastStack").get_children():
+		assertions.equal(card.mouse_filter, Control.MOUSE_FILTER_PASS, "toast card passes mouse input")
+	assertions.equal(ui.mouse_filter, Control.MOUSE_FILTER_IGNORE, "notification root does not block world outside cards")
+
+	var ordinary_id: String = system.push("recovery", "恢复", "普通提醒", 2, "market_item", "wood", 20.0)
+	ui.advance_toasts(2.999)
+	assertions.truthy(ui.has_toast(ordinary_id), "ordinary toast remains before three seconds")
+	ui.set_toast_hovered(ordinary_id, true)
+	ui.advance_toasts(10.0)
+	assertions.truthy(ui.has_toast(ordinary_id), "hover pauses toast timeout")
+	ui.set_toast_hovered(ordinary_id, false)
+	ui.advance_toasts(0.001)
+	assertions.truthy(not ui.has_toast(ordinary_id), "ordinary toast expires at three seconds")
+
+	var urgent_id: String = system.push("full", "产物已满", "风车仓库已满", 2, "building", "windmill:4:5", 24.0)
+	ui.advance_toasts(5.999)
+	assertions.truthy(ui.has_toast(urgent_id), "urgent toast remains before six seconds")
+	ui.advance_toasts(0.001)
+	assertions.truthy(not ui.has_toast(urgent_id), "urgent toast expires at six seconds")
+
+	var target_id: String = system.push("order_due", "订单临期", "订单提醒", 2, "order", "npc:wood:2", 30.0)
+	var unread_before: int = system.get_unread_count()
+	ui.show_center()
+	router.pause_tree_on_success = true
+	router.reentry_ui = ui
+	router.reentry_notification_id = target_id
+	var center_visible_when_marked_read: Array[bool] = []
+	var changed_callback := func() -> void:
+		center_visible_when_marked_read.append(ui.get_node("NotificationCenter").visible)
+	system.notifications_changed.connect(changed_callback)
+	assertions.truthy(ui.activate_notification(target_id), "target notification activates")
+	system.notifications_changed.disconnect(changed_callback)
+	assertions.truthy(tree.paused, "successful notification route can open a pausing panel")
+	assertions.truthy(not ui.get_node("NotificationCenter").visible, "successful paused route hides notification center synchronously")
+	assertions.equal(center_visible_when_marked_read, [false], "successful route hides the center before marking read")
+	assertions.equal(router.calls.size(), 1, "target click routes exactly once")
+	assertions.equal(router.reentry_results, [false], "synchronous activation reentry is rejected")
+	assertions.equal(system.get_unread_count(), unread_before - 1, "target click marks read exactly once")
+	assertions.truthy(not ui.activate_notification(target_id), "already-read activation is idempotent")
+	assertions.equal(router.calls.size(), 1, "idempotent activation does not route twice")
+	tree.paused = false
+	router.pause_tree_on_success = false
+	router.reentry_ui = null
+	var no_target_id: String = system.push("unlock", "次日解锁", "次日记录", 3, "", "", 33.0)
+	var no_target_unread := system.get_unread_count()
+	assertions.truthy(ui.activate_notification(no_target_id), "targetless notification activates as a read action")
+	assertions.equal(router.calls.size(), 1, "targetless notification never invokes routing")
+	assertions.equal(system.get_unread_count(), no_target_unread - 1, "targetless click marks only its record read")
+	var upgrade_building := BuildingInstance.new()
+	upgrade_building.authored_building_id = "windmill"
+	upgrade_building.grid_x = 4
+	upgrade_building.grid_z = 5
+	system.call("_on_building_upgrade_changed", upgrade_building, "storage", 2)
+	var upgrade_notification_id := str(system.get_recent()[0].notification_id)
+	assertions.truthy(ui.activate_notification(upgrade_notification_id), "building upgrade notification activates its supported route")
+	assertions.equal(router.calls.size(), 2, "building upgrade invokes routing exactly once")
+	assertions.equal(router.calls[1], {"target_type": "building", "target_id": "windmill:4:5"}, "building upgrade routes to its stable building target")
+	upgrade_building.free()
+	ui.show_center()
+	assertions.truthy(ui.get_node("NotificationCenter").visible, "notification center can open")
+	assertions.equal(ui.get_center_record_count(), system.get_recent().size(), "center renders system snapshot without duplicate state")
+	assertions.truthy(ui.get_center_day_group_count() >= 2, "center groups records by game day")
+	var invalid_target_id: String = system.push("order_due", "订单临期", "失效目标", 4, "order", "missing-order", 34.0)
+	router.route_success = false
+	var invalid_unread_before := system.get_unread_count()
+	assertions.truthy(not ui.activate_notification(invalid_target_id), "failed route rejects activation")
+	assertions.equal(system.get_unread_count(), invalid_unread_before, "failed route preserves unread state")
+	assertions.truthy(ui.get_node("NotificationCenter").visible, "failed route keeps notification center visible")
+	router.route_success = true
+	ui.mark_all_read()
+	assertions.equal(system.get_unread_count(), 0, "center mark-all delegates to system")
+
+	var hud = HudScene.instantiate()
+	tree.root.add_child(hud)
+	await tree.process_frame
+	hud.configure_notifications(system)
+	for index in range(11):
+		system.push("full", "产物已满", "建筑 %d 已满" % index, 3, "building", "windmill:%d:0" % index, 40.0 + index * 3.0)
+	assertions.equal(hud.notification_button.text, "[通知 9+]", "HUD caps unread badge visually at 9+")
+	assertions.equal(hud.get_urgent_summary_count(), 3, "HUD shows two urgent summaries and one overflow")
+	assertions.truthy(hud.get_urgent_summary_text(2).contains("还有 9 条"), "HUD overflow summarizes remaining urgent records")
+	assertions.equal(hud.market_button.text, "[市场]", "HUD market action uses specified compact label")
+
+	hud.free()
+	ui.free()
+	router.free()
+	system.free()
+
+
+func _test_main_four_way_routing(assertions: TestAssert) -> void:
+	var main: Variant = MainScript.new()
+	var shop := FakeShop.new()
+	var economy = EconomySystemScript.new()
+	var route_orders: Array[Dictionary] = [{"order_id": "order-1"}]
+	var route_contracts: Array[Dictionary] = [{"contract_id": "contract-1"}]
+	economy.set("_orders", route_orders)
+	economy.set("_contracts", route_contracts)
+	var market = MarketSystemScript.new()
+	market.configure([{
+		"id": "wood", "base_price": 100, "initial_stock": 10,
+		"target_stock": 10, "daily_liquidity": 10,
+	}])
+	main.shop_ui = shop
+	main.economy_system = economy
+	main.market_system = market
+	assertions.truthy(main.navigate_notification_target("market_item", "wood"), "market item target routes")
+	assertions.truthy(main.navigate_notification_target("order", "order-1"), "order target routes")
+	assertions.truthy(main.navigate_notification_target("contract", "contract-1"), "contract target routes")
+	assertions.equal(shop.market_panel.selected_id, "wood", "market route selects target item")
+	assertions.equal(shop.order_panel.selected_id, "order-1", "order route selects target record")
+	assertions.equal(shop.contract_panel.selected_id, "contract-1", "contract route selects target record")
+
+	var building_target := "windmill:4:5"
+	var building_system := BuildingSystem.new()
+	var building := BuildingInstance.new()
+	building.authored_building_id = "windmill"
+	building.grid_x = 4
+	building.grid_z = 5
+	var route_buildings: Array[BuildingInstance] = [building]
+	building_system.set("_buildings", route_buildings)
+	var building_ui := FakeBuildingUI.new()
+	main.building_system = building_system
+	main.building_economy_ui = building_ui
+	var route_calls_before := shop.opened_tabs.size()
+	assertions.truthy(main.is_valid_building_notification_target(building_target), "building target syntax routes through Main")
+	assertions.truthy(main.navigate_notification_target("building", building_target), "building target routes")
+	assertions.equal(building_ui.opened.size(), 1, "building route selects the target exactly once")
+	assertions.truthy(not main.navigate_notification_target("market_item", "missing"), "invalid target is rejected")
+	assertions.equal(shop.opened_tabs.size(), route_calls_before, "invalid target causes no UI state change")
+	assertions.equal(main.notification_route_kind("building", building_target), "building", "building is the fourth route kind")
+
+	market.free()
+	economy.free()
+	building_ui.free()
+	building.free()
+	building_system.free()
+	shop.market_panel.free()
+	shop.order_panel.free()
+	shop.contract_panel.free()
+	shop.free()
+	main.free()
+
+
+func _signal_argument_count(event_bus: Node, signal_name: String) -> int:
+	for definition in event_bus.get_signal_list():
+		if str(definition.get("name", "")) == signal_name:
+			return (definition.get("args", []) as Array).size()
+	return -1

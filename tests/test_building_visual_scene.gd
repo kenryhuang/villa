@@ -1,11 +1,17 @@
 extends SceneTree
 
+const BuildingDataScript := preload("res://scripts/data/building_data.gd")
+const GameDataScript := preload("res://scripts/core/game_data.gd")
+
 
 func _init() -> void:
 	call_deferred("_run")
 
 
 func _run() -> void:
+	if not _waterwheel_scene_contract_passes():
+		quit(1)
+		return
 	var path := "res://tests/visual/building_system_verification.tscn"
 	if not ResourceLoader.exists(path):
 		push_error("missing building visual verification scene")
@@ -192,3 +198,49 @@ func _run() -> void:
 	instance.free()
 	print("PASS: building visual verification scene contract")
 	quit(0)
+
+
+func _waterwheel_scene_contract_passes() -> bool:
+	var path := "res://scenes/buildings/waterwheel.tscn"
+	if not ResourceLoader.exists(path):
+		push_error("dedicated waterwheel scene is missing")
+		return false
+	var game_data: Node = GameDataScript.new()
+	var data: BuildingData = BuildingDataScript.from_dictionary(game_data.get_building("waterwheel"))
+	game_data.free()
+	if data.scene_path != path:
+		push_error("waterwheel BuildingData must use its dedicated scene")
+		return false
+	var packed := load(path) as PackedScene
+	var instance := packed.instantiate() as BuildingInstance if packed != null else null
+	if instance == null:
+		push_error("waterwheel scene must instantiate as BuildingInstance")
+		return false
+	root.add_child(instance)
+	instance.configure(data, 0, 0, [])
+	for layer_path in ["VisualRoot/BackLayer", "VisualRoot/FrontLayer"]:
+		var layer := instance.get_node_or_null(layer_path) as Sprite3D
+		if layer == null or layer.texture == null or not layer.visible:
+			push_error("waterwheel scene missing visible painted layer: %s" % layer_path)
+			instance.free()
+			return false
+	if instance.has_node("AnimationPlayer"):
+		push_error("Task 13 waterwheel painted layers must remain static")
+		instance.free()
+		return false
+	var fallback_body := instance.get_node_or_null("VisualRoot/FallbackBody") as MeshInstance3D
+	var fallback_roof := instance.get_node_or_null("VisualRoot/FallbackRoof") as MeshInstance3D
+	if fallback_body == null or fallback_roof == null or fallback_body.visible or fallback_roof.visible:
+		push_error("waterwheel painted scene must not show procedural fallback")
+		instance.free()
+		return false
+	if (
+		instance.get_node("Collision").collision_layer != (16 | 64)
+		or instance.get_node("InteractionArea").collision_layer != (64 | 256)
+		or instance.get_node("CameraOccluder").collision_layer != 32
+	):
+		push_error("waterwheel scene must preserve BuildingInstance collision layers")
+		instance.free()
+		return false
+	instance.free()
+	return true

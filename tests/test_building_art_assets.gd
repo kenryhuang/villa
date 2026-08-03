@@ -11,6 +11,7 @@ const IDS := [
 	"lamp",
 	"fence",
 ]
+const PAINTED_ONLY_IDS := ["waterwheel"]
 const LAYERS := ["back", "front"]
 const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
 const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
@@ -32,6 +33,9 @@ func run(assertions: TestAssert) -> void:
 			_validate_texture(texture_path(id, layer), assertions)
 		for stage in CONSTRUCTION_STAGES:
 			_validate_texture(construction_texture_path(id, stage), assertions)
+	for id in PAINTED_ONLY_IDS:
+		for layer in LAYERS:
+			_validate_texture(texture_path(id, layer), assertions, Vector2(1254, 1254))
 	assertions.truthy(ResourceLoader.exists(HAMMER_ICON_PATH), "construction hammer icon exists")
 	if ResourceLoader.exists(HAMMER_ICON_PATH):
 		var hammer_texture := load(HAMMER_ICON_PATH) as Texture2D
@@ -90,7 +94,11 @@ func run(assertions: TestAssert) -> void:
 			)
 
 
-func _validate_texture(path: String, assertions: TestAssert) -> void:
+func _validate_texture(
+	path: String,
+	assertions: TestAssert,
+	expected_size := Vector2(1024, 1024)
+) -> void:
 	assertions.truthy(ResourceLoader.exists(path), "%s exists" % path)
 	if not ResourceLoader.exists(path):
 		return
@@ -98,7 +106,8 @@ func _validate_texture(path: String, assertions: TestAssert) -> void:
 	assertions.truthy(texture != null, "%s imports as Texture2D" % path)
 	if texture == null:
 		return
-	assertions.equal(texture.get_size(), Vector2(1024, 1024), "%s is 1024 square" % path)
+	assertions.equal(texture.get_size(), expected_size, "%s has the authored square dimensions" % path)
 	var image := texture.get_image()
 	assertions.truthy(image.detect_alpha(), "%s contains alpha" % path)
+	assertions.truthy(image.get_used_rect().has_area(), "%s contains visible painted pixels" % path)
 	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s has a transparent corner" % path)

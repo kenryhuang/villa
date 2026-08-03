@@ -87,6 +87,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"pointer planting consumes one grain seed"
 	)
 
+	# The formal starter economy cannot afford a barn; fund this pointer-only fixture explicitly.
+	main.inventory_system.add_item("wood", 170)
+	main.inventory_system.add_item("stone", 80)
 	var build_cell := _nearest_build_origin(main, "barn")
 	assertions.truthy(build_cell != null, "main has a pointer-visible barn origin")
 	if build_cell:
