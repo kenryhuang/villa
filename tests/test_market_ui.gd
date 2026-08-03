@@ -295,14 +295,14 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	_test_market_rows_refresh_after_trade(assertions, market_panel, trade, inventory, market, wallet)
 
 	quantity_spin.value = 1
-	wallet.gold = 5
+	wallet.gold = market.quote_buy("wood", 1)
 	trade.call("refresh_quote")
 	var owned_before_low_gold_sell := inventory.get_item_count("wood")
 	trade.call("request_sell")
 	assertions.truthy(not trade.get_node("ConfirmationLayer").visible, "low-wallet ordinary sell does not confirm for wallet ratio")
 	assertions.equal(inventory.get_item_count("wood"), owned_before_low_gold_sell - 1, "low-wallet ordinary sell executes immediately")
 	trade.call("dismiss_confirmation")
-	wallet.gold = 5
+	wallet.gold = market.quote_buy("wood", 1)
 	trade.call("refresh_quote")
 	var owned_before_low_gold_buy := inventory.get_item_count("wood")
 	trade.call("request_buy")
