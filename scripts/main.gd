@@ -468,10 +468,6 @@ func close_economy_modal() -> void:
 
 
 func navigate_economy_target(target_type: String, target_id: String) -> bool:
-	return navigate_notification_target(target_type, target_id)
-
-
-func navigate_notification_target(target_type: String, target_id: String) -> bool:
 	match notification_route_kind(target_type, target_id):
 		"market_item":
 			return open_economy_tab("market", target_id)
@@ -482,6 +478,10 @@ func navigate_notification_target(target_type: String, target_id: String) -> boo
 		"building":
 			return open_building_economy(_find_notification_building(target_id))
 	return false
+
+
+func navigate_notification_target(target_type: String, target_id: String) -> bool:
+	return navigate_economy_target(target_type, target_id)
 
 
 func notification_route_kind(target_type: String, target_id: String) -> String:

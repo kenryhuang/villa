@@ -78,14 +78,19 @@ func activate_notification(notification_id: String) -> bool:
 		return false
 	var target_type := str(record.get("target_type", ""))
 	var target_id := str(record.get("target_id", ""))
+	var route_method := ""
 	if not target_type.is_empty():
-		if _router == null or not _router.has_method("navigate_notification_target"):
+		if _router != null and _router.has_method("navigate_economy_target"):
+			route_method = "navigate_economy_target"
+		elif _router != null and _router.has_method("navigate_notification_target"):
+			route_method = "navigate_notification_target"
+		else:
 			return false
 	_activating_notification_ids[notification_id] = true
 	var activated := false
 	if target_type.is_empty():
 		activated = _system.mark_read(notification_id)
-	elif bool(_router.call("navigate_notification_target", target_type, target_id)):
+	elif bool(_router.call(route_method, target_type, target_id)):
 		hide_center()
 		activated = _system.mark_read(notification_id)
 	_activating_notification_ids.erase(notification_id)
