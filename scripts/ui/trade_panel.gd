@@ -99,7 +99,7 @@ func refresh_quote() -> void:
 	reference_price_label.text = "参考单价：%d" % mid
 	buy_total_label.text = "买入实际总价：%d" % buy_total
 	sell_total_label.text = "卖出实际总价：%d" % sell_total
-	impact_label.text = "成交影响：%s" % impact_for(quantity, liquidity)
+	impact_label.text = "成交影响：%s" % localized_impact(impact_for(quantity, liquidity))
 	var buy_reason := _buy_disabled_reason(state, quantity, buy_total)
 	var sell_reason := _sell_disabled_reason(state, quantity)
 	buy_button.disabled = not buy_reason.is_empty()
@@ -136,6 +136,20 @@ static func impact_for(quantity: int, liquidity: int) -> String:
 	if ratio < 1.0:
 		return "clear"
 	return "severe"
+
+
+static func localized_impact(level: String) -> String:
+	match level:
+		"none":
+			return "无明显影响"
+		"light":
+			return "轻微"
+		"clear":
+			return "明显"
+		"severe":
+			return "剧烈"
+		_:
+			return "未知"
 
 
 static func needs_sell_confirmation(
@@ -367,7 +381,7 @@ func _set_invalid_quantity_state(stock: int, owned: int) -> void:
 	reference_price_label.text = "参考单价：—"
 	buy_total_label.text = "买入实际总价：0"
 	sell_total_label.text = "卖出实际总价：0"
-	impact_label.text = "成交影响：none"
+	impact_label.text = "成交影响：无明显影响"
 	disabled_reason_label.text = "数量无效"
 	buy_button.disabled = true
 	buy_button.tooltip_text = "数量无效"
