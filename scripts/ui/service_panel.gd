@@ -91,13 +91,15 @@ func refresh_services() -> void:
 func request_service(service_id: String) -> void:
 	if _progression == null:
 		return
+	# Commands may arrive from a control rendered before a save/load or another
+	# authority mutation. Always replace the cached view before deciding.
+	refresh_services()
 	var service: Dictionary = _services_by_id.get(service_id, {})
 	if service.is_empty():
-		refresh_services()
+		feedback_label.text = "服务不可用"
 		return
 	if bool(service.get("owned", false)) or not str(service.get("disabled_reason", "")).is_empty():
 		feedback_label.text = str(service.get("disabled_reason", "服务不可用"))
-		refresh_services()
 		return
 	var succeeded := false
 	match str(service.get("kind", "")):
@@ -109,8 +111,10 @@ func request_service(service_id: String) -> void:
 			succeeded = _progression.upgrade(service.get("building"), str(service.get("target_id", "")))
 		"maintenance":
 			succeeded = _progression.maintain(service.get("building"))
-	feedback_label.text = "服务完成" if succeeded else "服务未完成，请检查条件与费用"
 	refresh_services()
+	var refreshed: Dictionary = _services_by_id.get(service_id, {})
+	var reason := str(refreshed.get("disabled_reason", ""))
+	feedback_label.text = "服务完成" if succeeded else (reason if not reason.is_empty() else "服务未完成，请检查条件与费用")
 
 
 func _build_card(service: Dictionary) -> VBoxContainer:

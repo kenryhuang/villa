@@ -468,7 +468,7 @@ func _pascal_case(value: String) -> String:
 func _clear_container(container: Node) -> void:
 	for child in container.get_children():
 		container.remove_child(child)
-		child.free()
+		child.queue_free()
 
 
 func _connect_event_bus() -> void:

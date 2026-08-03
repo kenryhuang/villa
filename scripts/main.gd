@@ -463,6 +463,8 @@ func close_economy_modal() -> void:
 		shop_ui.close()
 	if building_economy_ui != null and building_economy_ui.has_method("close"):
 		building_economy_ui.close()
+	if economy_notification_ui != null:
+		economy_notification_ui.hide_center()
 
 
 func navigate_economy_target(target_type: String, target_id: String) -> bool:

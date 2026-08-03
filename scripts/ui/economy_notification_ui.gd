@@ -257,7 +257,8 @@ func _refresh_center() -> void:
 	if record_list == null:
 		return
 	for child in record_list.get_children():
-		child.free()
+		record_list.remove_child(child)
+		child.queue_free()
 	var records: Array[Dictionary] = _system.get_recent() if _system != null else []
 	if unread_label != null:
 		unread_label.text = "未读 %d" % (_system.get_unread_count() if _system != null else 0)

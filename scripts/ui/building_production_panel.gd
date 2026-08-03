@@ -494,7 +494,7 @@ func _count_text(counts: Dictionary) -> String:
 func _clear_container(container: Node) -> void:
 	for child in container.get_children():
 		container.remove_child(child)
-		child.free()
+		child.queue_free()
 
 
 func _set_failure(code: String, action: String) -> void:
