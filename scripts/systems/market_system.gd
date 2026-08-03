@@ -12,6 +12,7 @@ signal market_settled(total_day: int)
 var last_settled_day: int = 0
 
 var _items: Dictionary = {}
+var _catalog_defaults: Dictionary = {}
 var _event_bus: Node
 var _transaction_active := false
 var _pending_stock_events: Dictionary = {}
@@ -62,6 +63,7 @@ func configure(item_definitions: Array) -> bool:
 			"history": [base_price],
 		}
 	_items = configured_items
+	_catalog_defaults = configured_items.duplicate(true)
 	last_settled_day = 0
 	return true
 
@@ -264,7 +266,7 @@ func from_dict(data: Dictionary) -> bool:
 
 
 func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
-	if _items.is_empty():
+	if _catalog_defaults.is_empty():
 		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
@@ -284,7 +286,7 @@ func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
 			return false
 		saved_items[str(item_key)] = normalized
 
-	var migrated_items := _items.duplicate(true)
+	var migrated_items := _catalog_defaults.duplicate(true)
 	for item_key in migrated_items.keys():
 		var item_id := str(item_key)
 		if not saved_items.has(item_id):
@@ -292,12 +294,21 @@ func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
 		var catalog_state: Dictionary = migrated_items[item_id]
 		var saved_state: Dictionary = saved_items[item_id]
 		var base_price := int(catalog_state["base_price"])
+		var saved_base_price := int(saved_state["base_price"])
 		var global_min := ceili(base_price * 0.5)
 		var global_max := floori(base_price * 2.5)
-		var mid_price := clampi(int(saved_state["mid_price"]), global_min, global_max)
+		var mid_price := clampi(
+			roundi(float(saved_state["mid_price"]) * float(base_price) / float(saved_base_price)),
+			global_min,
+			global_max
+		)
 		var history: Array[int] = []
 		for value in saved_state["history"]:
-			history.append(clampi(int(value), global_min, global_max))
+			history.append(clampi(
+				roundi(float(value) * float(base_price) / float(saved_base_price)),
+				global_min,
+				global_max
+			))
 		history[-1] = mid_price
 		catalog_state["mid_price"] = mid_price
 		catalog_state["stock"] = int(saved_state["stock"])

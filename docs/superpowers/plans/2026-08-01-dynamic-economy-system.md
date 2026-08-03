@@ -377,7 +377,7 @@ func run_day(day:int) -> bool:
 	return true
 ~~~
 
-Only `DailySimulationSystem` listens for authoritative gameplay day changes. Remove day subscriptions from Farming/Economy/SaveManager. Save `economy_version:1`, market state, and `last_simulated_day`. Old saves initialize a market at the loaded day without replay. Existing version-1 market saves migrate onto the current runtime catalog: keep stock, supply/demand, history, and cursors; refresh static price/target/liquidity fields; backfill newly tradable products.
+Only `DailySimulationSystem` listens for authoritative gameplay day changes. Remove day subscriptions from Farming/Economy/SaveManager. Save `economy_version:1`, market state, and `last_simulated_day`. Old saves initialize a market at the loaded day without replay. Existing version-1 market saves migrate onto immutable current-catalog defaults: keep stock, supply/demand, history, and cursors; rescale prices/history by the new-base/old-base ratio; refresh static price/target/liquidity fields; backfill newly tradable products without cross-save state leakage.
 
 Split the current economy day handler into `advance_order_deadlines(day)`, which performs the existing expiry loop, and `generate_demand_orders(day)`, which temporarily calls the existing generator. Task 11 replaces only the generator body with shortage-backed behavior, so the coordinator compiles and runs at every intermediate commit.
 

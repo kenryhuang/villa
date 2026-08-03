@@ -241,19 +241,22 @@ func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTr
 		old_catalog_market.configure([_legacy_wood_definition()]),
 		"versioned old-catalog fixture configures"
 	)
-	assertions.truthy(
-		old_catalog_market.commit_sell("wood", 4),
-		"versioned old-catalog fixture preserves player supply"
-	)
-	assertions.truthy(
-		old_catalog_market.settle_day(9),
-		"versioned old-catalog fixture records price history"
-	)
 	var old_catalog_snapshot := old_catalog_market.to_dict()
+	old_catalog_snapshot.last_settled_day = 9
+	old_catalog_snapshot.items.wood.mid_price = 4
+	old_catalog_snapshot.items.wood.stock = 14
+	old_catalog_snapshot.items.wood.supply = 4
+	old_catalog_snapshot.items.wood.history = [2, 3, 4]
 	old_catalog_market.free()
 	assertions.truthy(
-		market.configure([_wood_definition(), _crate_definition()]),
+		market.configure([_current_migrated_wood_definition(), _crate_definition()]),
 		"runtime adopts current market catalog before loading old versioned save"
+	)
+	assertions.truthy(market.commit_buy("crate", 2), "prior save mutates a newly added product")
+	assertions.truthy(market.settle_day(8), "prior save records a divergent new-product history")
+	assertions.truthy(
+		market.get_item_state("crate") != _expected_crate_default_state(),
+		"new-product fixture is polluted before loading the old save"
 	)
 	_write_json(manager._save_path(TEST_SLOT), {
 		"economy_version": 1,
@@ -265,8 +268,8 @@ func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTr
 		"versioned save from an older market catalog migrates"
 	)
 	var migrated_wood := market.get_item_state("wood")
-	assertions.equal(migrated_wood.get("base_price"), 100, "migration adopts current base price")
-	assertions.equal(migrated_wood.get("target_stock"), 10, "migration adopts current stock target")
+	assertions.equal(migrated_wood.get("base_price"), 14, "migration adopts current base price")
+	assertions.equal(migrated_wood.get("target_stock"), 80, "migration adopts current stock target")
 	assertions.equal(migrated_wood.get("daily_liquidity"), 10, "migration adopts current liquidity")
 	assertions.equal(
 		migrated_wood.get("stock"),
@@ -275,13 +278,18 @@ func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTr
 	)
 	assertions.equal(
 		migrated_wood.get("history"),
-		old_catalog_snapshot.items.wood.history,
-		"migration preserves saved price history"
+		[9, 14, 19],
+		"migration rescales saved price history relative to the new base price"
 	)
 	assertions.equal(
-		market.get_item_state("crate").get("base_price"),
-		50,
-		"migration backfills products added to the current catalog"
+		migrated_wood.get("mid_price"),
+		19,
+		"migration keeps the rescaled history tail and current price consistent"
+	)
+	assertions.equal(
+		market.get_item_state("crate"),
+		_expected_crate_default_state(),
+		"migration backfills added products from immutable catalog defaults"
 	)
 	assertions.equal(market.last_settled_day, 9, "migration preserves market day cursor")
 	assertions.equal(daily.last_simulated_day, 9, "migration preserves simulation day cursor")
@@ -1436,10 +1444,20 @@ func _wood_definition() -> Dictionary:
 func _legacy_wood_definition() -> Dictionary:
 	return {
 		"id": "wood",
-		"base_price": 80,
+		"base_price": 3,
 		"initial_stock": 10,
 		"target_stock": 6,
 		"daily_liquidity": 4,
+	}
+
+
+func _current_migrated_wood_definition() -> Dictionary:
+	return {
+		"id": "wood",
+		"base_price": 14,
+		"initial_stock": 60,
+		"target_stock": 80,
+		"daily_liquidity": 10,
 	}
 
 
@@ -1450,6 +1468,20 @@ func _crate_definition() -> Dictionary:
 		"initial_stock": 3,
 		"target_stock": 8,
 		"daily_liquidity": 5,
+	}
+
+
+func _expected_crate_default_state() -> Dictionary:
+	return {
+		"item_id": "crate",
+		"base_price": 50,
+		"mid_price": 50,
+		"stock": 3,
+		"target_stock": 8,
+		"daily_liquidity": 5,
+		"demand": 0,
+		"supply": 0,
+		"history": [50],
 	}
 
 
