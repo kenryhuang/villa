@@ -148,6 +148,47 @@ func _test_authoritative_acceptance_contract(assertions: TestAssert, suite: Dict
 				)
 		if route_id == "crop_farming":
 			assertions.truthy(int(result.farming_harvests) >= 9, "crop route advances and harvests real Farming plot")
+			var coop_outputs: Dictionary = result.get("passive_outputs", {}).get("chicken_coop", {})
+			var coop_inputs: Dictionary = result.get("passive_inputs_consumed", {}).get("chicken_coop", {})
+			var coop_days: Array = result.get("passive_output_days", {}).get("chicken_coop", [])
+			assertions.truthy(
+				int(coop_outputs.get("egg", 0)) > 0,
+				"crop route records real chicken-coop egg output"
+			)
+			assertions.truthy(
+				int(coop_inputs.get("animal_feed", 0)) > 0,
+				"crop route records chicken-coop feed consumption"
+			)
+			assertions.equal(
+				int(coop_outputs.get("egg", 0)),
+				int(coop_inputs.get("animal_feed", 0)) * 2,
+				"chicken-coop actual eggs match consumed feed cycles"
+			)
+			assertions.equal(
+				coop_days.size(),
+				int(coop_inputs.get("animal_feed", 0)),
+				"chicken-coop records one feed consumption per output day"
+			)
+			assertions.equal(coop_days.size(), SIMULATION_DAYS, "chicken-coop completes every fed daily cycle")
+		if route_id == "flower_apiary":
+			var beehive_outputs: Dictionary = result.get("passive_outputs", {}).get("beehive", {})
+			assertions.truthy(
+				int(beehive_outputs.get("honey", 0)) > 0,
+				"flower route records real beehive honey output"
+			)
+			var beehive_days: Array = result.get("passive_output_days", {}).get("beehive", [])
+			assertions.truthy(not beehive_days.is_empty(), "flower route records beehive output days")
+			assertions.equal(
+				int(beehive_outputs.get("honey", 0)),
+				beehive_days.size(),
+				"beehive actual honey matches recorded output cycles"
+			)
+			assertions.equal(beehive_days.size(), SIMULATION_DAYS / 2, "beehive completes every even-day cycle")
+			for output_day_value in beehive_days:
+				assertions.truthy(
+					int(output_day_value) % 2 == 0,
+					"beehive output day=%d follows even-day cycle" % int(output_day_value)
+				)
 	for recipe in RecipeDatabaseScript.get_all_recipes():
 		for output_id_value in (recipe.outputs as Dictionary).keys():
 			var output_id := str(output_id_value)
@@ -243,6 +284,9 @@ func _simulate_route(
 	var maintenance_events := 0
 	var maintenance_pause_checks := 0
 	var transactions := {"buys": 0, "sells": 0, "recipes": 0, "collections": 0}
+	var passive_outputs := {}
+	var passive_output_days := {}
+	var passive_inputs_consumed := {}
 	for definition in GameDataScript.get_market_items():
 		previous_prices[str(definition.id)] = int(definition.base_price)
 	for day in range(1, SIMULATION_DAYS + 1):
@@ -256,6 +300,14 @@ func _simulate_route(
 			maintenance_pause_checks += int(day_result.maintenance_pause_checks)
 			for key in transactions:
 				transactions[key] = int(transactions[key]) + int(day_result.transactions[key])
+			_merge_nested_count_maps(passive_outputs, day_result.passive_outputs)
+			_merge_nested_count_maps(passive_inputs_consumed, day_result.passive_inputs_consumed)
+			for passive_id_value in (day_result.passive_output_days as Dictionary).keys():
+				var passive_id := str(passive_id_value)
+				if not passive_output_days.has(passive_id):
+					passive_output_days[passive_id] = []
+				for output_day_value in day_result.passive_output_days[passive_id]:
+					(passive_output_days[passive_id] as Array).append(int(output_day_value))
 		var day_ok := daily.run_day(day)
 		if route_id == "crop_farming":
 			_advance_farm_witness(assertions, context, day)
@@ -296,6 +348,9 @@ func _simulate_route(
 		"maintenance_events": maintenance_events,
 		"maintenance_pause_checks": maintenance_pause_checks,
 		"transactions": transactions,
+		"passive_outputs": passive_outputs,
+		"passive_output_days": passive_output_days,
+		"passive_inputs_consumed": passive_inputs_consumed,
 		"economy_cursor": int(economy_state.last_processed_day),
 		"market_changed": market.to_dict() != initial_market,
 		"npc_changed": npc.to_dict() != initial_npc,
@@ -388,7 +443,10 @@ func _run_authoritative_route_day(
 	var result := {
 		"maintenance_events": 0, "maintenance_pause_checks": 0,
 		"transactions": {"buys": 0, "sells": 0, "recipes": 0, "collections": 0},
+		"passive_outputs": {}, "passive_output_days": {},
+		"passive_inputs_consumed": {},
 	}
+	var passive_inputs_before_finish := {}
 	var daily_cost := int(route.get("daily_gold_cost", 0))
 	if daily_cost > 0:
 		assertions.truthy(wallet.spend_gold(daily_cost), "route=%s day=%d route cost paid" % [route_id, day])
@@ -457,6 +515,7 @@ func _run_authoritative_route_day(
 					assertions.truthy(int(wallet.gold) < before, "chicken feed purchase changes real wallet")
 			if inventory.get_item_count("animal_feed") > 0:
 				assertions.truthy(production.add_input(passive, "animal_feed", 1, inventory), "chicken feed enters ProducerState")
+				passive_inputs_before_finish[passive.building_id] = passive.producer_state.get_input_count("animal_feed")
 	for recipe_id_value in route.recipes[stage]:
 		var recipe_id := str(recipe_id_value)
 		var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
@@ -478,6 +537,20 @@ func _run_authoritative_route_day(
 			result.transactions.recipes += 1
 	production.advance_minutes(1440)
 	production.finish_daily_outputs(day)
+	for passive_id_value in route.get("passive_buildings", []):
+		var passive_id := str(passive_id_value)
+		var passive: BuildingInstance = context.building_by_station[passive_id]
+		var passive_snapshot := production.get_building_snapshot(passive)
+		var actual_outputs: Dictionary = passive_snapshot.get("outputs", {})
+		if not actual_outputs.is_empty():
+			result.passive_outputs[passive_id] = actual_outputs.duplicate(true)
+			result.passive_output_days[passive_id] = [day]
+		if passive_id == "chicken_coop":
+			var feed_before := int(passive_inputs_before_finish.get(passive_id, 0))
+			var feed_after := int((passive_snapshot.get("inputs", {}) as Dictionary).get("animal_feed", 0))
+			var consumed := maxi(0, feed_before - feed_after)
+			if consumed > 0:
+				result.passive_inputs_consumed[passive_id] = {"animal_feed": consumed}
 	for building in context.buildings:
 		if production.collect_all(building, inventory):
 			result.transactions.collections += 1
@@ -496,6 +569,20 @@ func _run_authoritative_route_day(
 			if verify:
 				assertions.truthy(int(wallet.gold) > before, "route=%s day=%d sell=%s changes real wallet" % [route_id, day, item_id])
 	return result
+
+
+func _merge_count_maps(target: Dictionary, additions: Dictionary) -> void:
+	for item_id_value in additions.keys():
+		var item_id := str(item_id_value)
+		target[item_id] = int(target.get(item_id, 0)) + int(additions[item_id])
+
+
+func _merge_nested_count_maps(target: Dictionary, additions: Dictionary) -> void:
+	for owner_id_value in additions.keys():
+		var owner_id := str(owner_id_value)
+		if not target.has(owner_id):
+			target[owner_id] = {}
+		_merge_count_maps(target[owner_id], additions[owner_id])
 
 
 func _advance_farm_witness(assertions: TestAssert, context: Dictionary, day: int) -> void:
@@ -714,6 +801,12 @@ func _test_dumping_depresses_then_recovers(assertions: TestAssert) -> void:
 	var economy := EconomySystemScript.new()
 	assertions.truthy(economy.configure(inventory, wallet, market, npc), "dump fixture configures real EconomySystem")
 	var prices: Array[int] = [market.get_mid_price("wood")]
+	var initial_plank_stock := market.get_stock("plank")
+	var initial_dump_npc: Dictionary = npc.get_npc_state("wood_consumer").to_dict()
+	var previous_wood_stock := market.get_stock("wood")
+	var previous_plank_stock := initial_plank_stock
+	var npc_processing_trace: Array[Dictionary] = []
+	var npc_plank_sold_after_dump := false
 	var stock_after_dump := 0
 	for day in range(1, 11):
 		if day <= 2:
@@ -724,8 +817,36 @@ func _test_dumping_depresses_then_recovers(assertions: TestAssert) -> void:
 		market.settle_day(day)
 		economy.generate_demand_orders(day)
 		prices.append(market.get_mid_price("wood"))
+		var current_wood_stock := market.get_stock("wood")
+		var current_plank_stock := market.get_stock("plank")
+		var npc_state: Dictionary = npc.get_npc_state("wood_consumer").to_dict()
+		npc_processing_trace.append({
+			"day": day,
+			"market_wood": current_wood_stock,
+			"market_plank": current_plank_stock,
+			"npc_wood": int((npc_state.inventory as Dictionary).get("wood", 0)),
+			"npc_plank": int((npc_state.inventory as Dictionary).get("plank", 0)),
+			"npc_gold": int(npc_state.gold),
+		})
+		if (
+			day >= 3
+			and current_wood_stock < previous_wood_stock
+			and current_plank_stock > previous_plank_stock
+		):
+			npc_plank_sold_after_dump = true
+		previous_wood_stock = current_wood_stock
+		previous_plank_stock = current_plank_stock
 		if day == 2:
 			stock_after_dump = market.get_stock("wood")
+	var final_dump_npc: Dictionary = npc.get_npc_state("wood_consumer").to_dict()
+	var processing_evidence := {
+		"npc_plank_sold_after_dump": npc_plank_sold_after_dump,
+		"initial_plank_stock": initial_plank_stock,
+		"final_plank_stock": market.get_stock("plank"),
+		"initial_npc": initial_dump_npc,
+		"final_npc": final_dump_npc,
+		"trace": npc_processing_trace,
+	}
 	var dump_low := prices[2]
 	assertions.truthy(
 		dump_low < prices[0],
@@ -760,7 +881,23 @@ func _test_dumping_depresses_then_recovers(assertions: TestAssert) -> void:
 			market.get_stock("wood"), stock_after_dump,
 		]
 	)
+	assertions.truthy(
+		bool(processing_evidence.get("npc_plank_sold_after_dump", false)),
+		"route=dump day=3+ proves NPC wood consumption and plank sale on the real market"
+	)
+	assertions.truthy(
+		int(processing_evidence.get("final_plank_stock", 0))
+		> int(processing_evidence.get("initial_plank_stock", 0)),
+		"route=dump day=10 plank market stock rises through NPC production"
+	)
+	assertions.truthy(
+		int(final_dump_npc.gold) != int(initial_dump_npc.gold)
+		and int((final_dump_npc.inventory as Dictionary).get("wood", 0)) > 0
+		and int((final_dump_npc.inventory as Dictionary).get("plank", 0)) > 0,
+		"route=dump day=10 records NPC gold, wood reserve, and plank sale-floor inventory changes"
+	)
 	print("ECONOMY_SIM dumping item=wood prices=%s" % [prices])
+	print("ECONOMY_SIM dumping npc_processing=%s" % [npc_processing_trace])
 	npc.free()
 	economy.free()
 	inventory.free()
