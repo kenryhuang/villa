@@ -512,6 +512,20 @@ func _test_world_v1_to_v2_normalization_is_complete_and_atomic(
 		var new_resource := _record_by_id(normalized, "gold-00")
 		assertions.equal(new_resource.get("remaining_units"), 2, "missing rare ore starts full")
 		assertions.equal(new_resource.get("respawn_day"), 0, "backfilled resource has no respawn timer")
+	var with_retired_trees := legacy.duplicate(true)
+	with_retired_trees.append({"resource_id": "tree-resource-04", "obsolete": true})
+	with_retired_trees.append({"resource_id": "tree-resource-07", "obsolete": true})
+	assertions.truthy(
+		world.call("normalize_resource_dicts", with_retired_trees, 5) is Array,
+		"two explicitly retired decorative tree records are safely dropped"
+	)
+	var with_unknown := legacy.duplicate(true)
+	with_unknown.append({"resource_id": "unknown-tree", "obsolete": true})
+	assertions.equal(
+		world.call("normalize_resource_dicts", with_unknown, 5),
+		null,
+		"unrelated unknown resource IDs still reject atomically"
+	)
 
 	var before: Array[Dictionary] = world.to_resource_dicts()
 	var duplicate := legacy.duplicate(true)

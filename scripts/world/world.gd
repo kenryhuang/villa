@@ -20,6 +20,10 @@ const LEGACY_RESOURCE_ID_MAP := {
 	"river-sand-00": "stone-02",
 	"river-sand-01": "stone-03",
 }
+const RETIRED_GATHERABLE_TREE_IDS := {
+	"tree-resource-04": true,
+	"tree-resource-07": true,
+}
 
 @onready var terrain: TerrainBuilder = $Terrain
 @onready var road: RoadBuilder = $Road
@@ -153,6 +157,8 @@ func normalize_resource_dicts(value: Variant, loaded_day: int = -1) -> Variant:
 		if not record is Dictionary:
 			return null
 		var source_id := str(record.get("resource_id", ""))
+		if RETIRED_GATHERABLE_TREE_IDS.has(source_id):
+			continue
 		var id := str(LEGACY_RESOURCE_ID_MAP.get(source_id, source_id))
 		if id.is_empty() or normalized_by_id.has(id) or not known.has(id):
 			return null
