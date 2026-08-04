@@ -325,29 +325,29 @@ Commit: `feat: orchestrate single-unit gathering actions`
 - Create: `tests/test_gathering_visuals.gd`
 - Modify: `tests/run_main_gameplay_integration_tests.gd`
 
-- [ ] **Step 1: 写视觉结构失败测试**
+- [x] **Step 1: 写视觉结构失败测试**
 
 验证工具句柄末端为旋转圆心、1.2 秒分段时序、斧头/镐图标路径；目标环、路径、无刻度圆形进度、剩余量、自动装备提示、`+1` 飘字和错误文字节点齐全；树木/矿脉四个视觉阶段可切换。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 
 Expected: FAIL，视觉节点和脚本尚不存在。
 
-- [ ] **Step 3: 实现 ToolSwingVisual**
+- [x] **Step 3: 实现 ToolSwingVisual**
 
 复用现有手绘工具 PNG，在角色朝向目标的一侧创建 `Sprite3D`；工具柄末端作为父节点原点。按 0.25/0.30/0.15/0.50 秒执行预备、下挥、命中停顿和回收；取消时立即进入短回收且不发命中提交。
 
-- [ ] **Step 4: 实现资源阶段表现**
+- [x] **Step 4: 实现资源阶段表现**
 
 树木保留树冠/树干并叠加斧痕，0 单位替换为树桩；矿石根据比例缩放并叠加裂纹，0 单位显示碎石底座。采空时关闭交互/实体阻挡但保留可见残骸。
 
-- [ ] **Step 5: 实现 GatheringFeedback**
+- [x] **Step 5: 实现 GatheringFeedback**
 
 目标环和虚线路径使用世界空间轻量几何；进度圆通过 `Control._draw()` 画透明底圆和无刻度扇形；文字使用高对比描边并同时带图标和文案。所有表现只响应控制器信号。
 
-- [ ] **Step 6: 运行视觉结构测试并提交**
+- [x] **Step 6: 运行视觉结构测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 

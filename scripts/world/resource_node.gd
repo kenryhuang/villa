@@ -220,6 +220,20 @@ func build_fallback_visual() -> void:
 	mesh_instance.material_override = material
 	mesh_instance.position.y = 0.2
 	add_child(mesh_instance)
+	var crack_mark := MeshInstance3D.new()
+	crack_mark.name = "CrackMark"
+	var crack_quad := QuadMesh.new()
+	crack_quad.size = Vector2(0.42, 0.30)
+	crack_mark.mesh = crack_quad
+	var crack_material := StandardMaterial3D.new()
+	crack_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	crack_material.albedo_color = Color(0.12, 0.09, 0.07, 0.78)
+	crack_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	crack_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	crack_mark.material_override = crack_material
+	crack_mark.position = Vector3(0.0, 0.34, 0.46)
+	crack_mark.visible = false
+	add_child(crack_mark)
 
 	var body := StaticBody3D.new()
 	body.name = "Collision"
@@ -269,6 +283,9 @@ func _apply_visual_stage() -> void:
 			visual.scale = Vector3(0.62, 0.62, 0.62)
 		_:
 			visual.scale = Vector3(0.42, 0.18, 0.42)
+	var crack_mark := get_node_or_null("CrackMark") as MeshInstance3D
+	if crack_mark != null:
+		crack_mark.visible = visual_stage in [1, 2]
 
 
 func _fallback_color() -> Color:

@@ -9,6 +9,8 @@ const FADE_RATE := 10.0
 
 var occlusion_target := CLEAR_OPACITY
 var sprite: Sprite3D
+var stump_visual: MeshInstance3D
+var _full_sprite_scale := Vector3.ONE
 
 static func trunk_radius_for(clearance: float) -> float:
 	return clampf(clearance * 0.36, 0.24, 0.46)
@@ -51,9 +53,25 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
 	sprite.pixel_size = tree_width / float(texture.get_width())
 	sprite.scale = Vector3(1.0, vertical_scale_for(texture.get_size(), Vector2(tree_width, tree_height)), 1.0)
+	_full_sprite_scale = sprite.scale
 	sprite.position = Vector3(0.0, tree_height * 0.5, 0.0)
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(sprite)
+
+	stump_visual = MeshInstance3D.new()
+	stump_visual.name = "StumpVisual"
+	var stump_mesh := CylinderMesh.new()
+	stump_mesh.top_radius = trunk_radius_for(float(tree_data.clearance)) * 0.82
+	stump_mesh.bottom_radius = trunk_radius_for(float(tree_data.clearance))
+	stump_mesh.height = 0.24
+	stump_visual.mesh = stump_mesh
+	var stump_material := StandardMaterial3D.new()
+	stump_material.roughness = 0.95
+	stump_material.albedo_color = Color("765034")
+	stump_visual.material_override = stump_material
+	stump_visual.position.y = 0.12
+	stump_visual.visible = false
+	add_child(stump_visual)
 
 	var trunk_height := trunk_height_for(tree_height)
 	var trunk_shape := CylinderShape3D.new()
@@ -97,6 +115,7 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	camera_occluder.add_child(occluder_collision)
 	add_child(camera_occluder)
 	_set_gather_active(gathering_enabled and remaining_units > 0)
+	_apply_visual_stage()
 
 
 func _set_gather_active(active: bool) -> void:
@@ -109,6 +128,20 @@ func _set_gather_active(active: bool) -> void:
 	var gather_area := get_node_or_null("GatherArea") as CollisionObject3D
 	if gather_area != null:
 		gather_area.collision_layer = INTERACTION_LAYER if active else 0
+	_apply_visual_stage()
+
+
+func _apply_visual_stage() -> void:
+	if sprite != null:
+		sprite.visible = visual_stage < 3
+		var damage_scale: float = [1.0, 0.96, 0.90, 0.0][visual_stage]
+		sprite.scale = _full_sprite_scale * damage_scale
+		var color := sprite.modulate
+		color.r = 1.0 if visual_stage == 0 else 0.88
+		color.g = 1.0 if visual_stage == 0 else 0.82
+		sprite.modulate = color
+	if stump_visual != null:
+		stump_visual.visible = visual_stage == 3
 
 func set_camera_occluded(value: bool) -> void:
 	occlusion_target = OCCLUDED_OPACITY if value else CLEAR_OPACITY

@@ -7,6 +7,7 @@ signal gather_progress(target: Node, progress: float)
 signal gather_completed(target: Node, result: Dictionary)
 signal gather_failed(target: Node, reason: String)
 signal gather_cancelled(reason: String)
+signal path_ready(points: Array[Vector3])
 
 enum State {
 	IDLE,
@@ -128,6 +129,7 @@ func _start_path() -> bool:
 	if path.is_empty() or not bool(_player.call("start_auto_path", path)):
 		_fail("unreachable")
 		return false
+	path_ready.emit(path.duplicate())
 	_set_state(State.MOVING)
 	return true
 

@@ -12,6 +12,7 @@ const MainPointerFarmingTest = preload("res://tests/test_main_pointer_farming.gd
 const BuildingEconomyUITest = preload("res://tests/test_building_economy_ui.gd")
 const EconomyUIIntegrationTest = preload("res://tests/test_economy_ui_integration.gd")
 const GatheringControllerTest = preload("res://tests/test_gathering_controller.gd")
+const GatheringVisualsTest = preload("res://tests/test_gathering_visuals.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -27,6 +28,7 @@ func _run() -> void:
 	ActionPaletteButtonTest.new().run(assertions, self)
 	HudActionBarTest.new().run(assertions, self)
 	GatheringControllerTest.new().run(assertions, self)
+	GatheringVisualsTest.new().run(assertions)
 	MainFarmingBuildingIntegrationTest.new().run(assertions, self)
 	await BuildingEconomyUITest.new().run(assertions, self)
 	await EconomyUIIntegrationTest.new().run(assertions, self)
