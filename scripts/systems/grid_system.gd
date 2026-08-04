@@ -1,6 +1,8 @@
 class_name GridSystem
 extends Node3D
 
+signal navigation_changed(revision: int)
+
 const GRID_WIDTH := 36
 const GRID_DEPTH := 28
 const CELL_SIZE := 1.0
@@ -17,6 +19,8 @@ var _base_states := {}
 var _event_bus
 var _road_route: Array[Dictionary] = []
 var _blocked_regions: Array[Dictionary] = []
+var _navigation_blockers: Dictionary = {}
+var _navigation_revision := 0
 
 
 static func cell_key(gx: int, gz: int) -> int:
@@ -36,6 +40,8 @@ func configure(
 	_road_route.assign(road_route)
 	_blocked_regions.assign(blocked_regions)
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	_navigation_blockers.clear()
+	_navigation_revision = 0
 	_initialize_cells()
 	_build_grid_overlay()
 	rebuild_farmland_visuals()
@@ -195,10 +201,61 @@ func set_cell_state(gx: int, gz: int, next_state: int) -> bool:
 			return false
 	if not _transition_allowed(cell.state, next_state):
 		return false
+	var was_walkable := _state_is_navigation_walkable(cell.state)
+	var changed := cell.state != next_state
 	cell.state = next_state
 	_sync_farmland_visual(cell)
 	_emit_cell_state_changed(cell)
+	if changed and was_walkable != _state_is_navigation_walkable(cell.state):
+		notify_navigation_state_changed()
 	return true
+
+
+func get_navigation_revision() -> int:
+	return _navigation_revision
+
+
+func set_navigation_blocker(blocker_id: String, cell: Vector2i, active: bool) -> bool:
+	if blocker_id.is_empty():
+		return false
+	if active:
+		if not _is_in_bounds(cell.x, cell.y):
+			return false
+		if _navigation_blockers.get(blocker_id) == cell:
+			return false
+		_navigation_blockers[blocker_id] = cell
+	else:
+		if not _navigation_blockers.has(blocker_id):
+			return false
+		_navigation_blockers.erase(blocker_id)
+	notify_navigation_state_changed()
+	return true
+
+
+func is_navigation_cell_walkable(cell: Vector2i) -> bool:
+	if not _is_in_bounds(cell.x, cell.y):
+		return false
+	var grid_cell := get_cell(cell.x, cell.y)
+	if grid_cell == null or not _state_is_navigation_walkable(grid_cell.state):
+		return false
+	for blocked_cell in _navigation_blockers.values():
+		if blocked_cell == cell:
+			return false
+	return true
+
+
+func notify_navigation_state_changed() -> void:
+	_navigation_revision += 1
+	navigation_changed.emit(_navigation_revision)
+
+
+func _state_is_navigation_walkable(state: int) -> bool:
+	return state in [
+		GridCell.State.WASTELAND,
+		GridCell.State.FARMLAND,
+		GridCell.State.PLANTED,
+		GridCell.State.ROAD,
+	]
 
 
 func _transition_allowed(current: int, next: int) -> bool:
@@ -446,6 +503,7 @@ func reset_state() -> void:
 		cell.watered = false
 		cell.crop_instance = null
 	rebuild_farmland_visuals()
+	notify_navigation_state_changed()
 
 
 func saved_cell_state(data: Dictionary, gx: int, gz: int) -> int:
@@ -557,6 +615,7 @@ func from_dict(data: Dictionary) -> bool:
 				if instance.from_dict(crop_entry):
 					cell.crop_instance = instance
 	rebuild_farmland_visuals()
+	notify_navigation_state_changed()
 	return true
 
 

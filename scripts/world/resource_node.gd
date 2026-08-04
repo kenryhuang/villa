@@ -15,6 +15,7 @@ const STATE_VERSION := 2
 @export var respawn_days := 3
 @export var visual_stage := 0
 @export var gathering_enabled := true
+@export var interaction_radius := 0.52
 
 # Compatibility surfaces for old scenes and callers. Runtime rewards are always one unit.
 var hits_remaining: int:
@@ -165,6 +166,10 @@ func get_respawn_day() -> int:
 
 func get_display_name() -> String:
 	return str(ResourceCatalogScript.definition(resource_type).get("display_name", resource_type))
+
+
+func get_interaction_radius() -> float:
+	return maxf(0.0, interaction_radius)
 
 
 func to_dict() -> Dictionary:

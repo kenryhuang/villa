@@ -225,6 +225,9 @@ func _test_resource_catalog_and_v2_contract(assertions: TestAssert) -> void:
 	assertions.equal(state.get("remaining_units"), 3, "resource state stores remaining units")
 	assertions.equal(state.get("max_units"), 3, "resource state stores capacity")
 	assertions.equal(state.get("visual_stage"), 0, "full resource starts at visual stage zero")
+	assertions.truthy(node.has_method("get_interaction_radius"), "resource exposes its interaction radius")
+	if node.has_method("get_interaction_radius"):
+		assertions.near(float(node.get_interaction_radius()), 0.52, 0.001, "resource interaction radius matches its fallback body")
 	node.commit_gather("pickaxe", 4)
 	state = node.to_dict()
 	assertions.equal(state.get("remaining_units"), 2, "one action removes one resource unit")

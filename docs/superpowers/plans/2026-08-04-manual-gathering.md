@@ -131,17 +131,17 @@ Commit: `feat: generate deterministic gathering zones`
 - Create: `tests/test_grid_pathfinder.gd`
 - Modify: `tests/run_grid_system_tests.gd`
 
-- [ ] **Step 1: 写 A* 失败测试**
+- [x] **Step 1: 写 A* 失败测试**
 
 覆盖：绕开水域和建筑、八向行走不穿角、资源格不可走、从目标周围选择最低成本交互格、无解返回空数组、导航修订未变化时不重建、变化后只重建一次。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_grid_system_tests.gd`
 
 Expected: FAIL，`GridPathfinder` 与导航修订 API 尚不存在。
 
-- [ ] **Step 3: 为 GridSystem 增加动态阻挡接口**
+- [x] **Step 3: 为 GridSystem 增加动态阻挡接口**
 
 新增：
 
@@ -154,7 +154,7 @@ func is_navigation_cell_walkable(cell: Vector2i) -> bool
 
 只有阻挡实际改变才增加修订；建筑放置/拆除和资源激活/采空调用统一接口，不污染农田业务状态。
 
-- [ ] **Step 4: 实现 GridPathfinder**
+- [x] **Step 4: 实现 GridPathfinder**
 
 使用 `AStarGrid2D` 的现有 36×28 范围；开启对角移动并使用 `DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES`。实现：
 
@@ -166,7 +166,7 @@ func invalidate() -> void
 
 路径结果转为地表世界坐标，终点以实际碰撞体平面距离验证。
 
-- [ ] **Step 5: 运行网格测试并提交**
+- [x] **Step 5: 运行网格测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_grid_system_tests.gd`
 

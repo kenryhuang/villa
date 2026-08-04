@@ -32,6 +32,7 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float) -> void:
 	var tree_width := float(tree_data.width)
 	var tree_height := float(tree_data.height)
+	interaction_radius = trunk_radius_for(float(tree_data.clearance))
 	configure_resource({
 		"resource_id": str(tree_data.get(
 			"id",
