@@ -273,17 +273,17 @@ Commit: `feat: make gathering transactions atomic`
 - Create: `tests/test_gathering_controller.gd`
 - Modify: `tests/run_main_gameplay_integration_tests.gd`
 
-- [ ] **Step 1: 写状态机失败测试**
+- [x] **Step 1: 写状态机失败测试**
 
 用玩家、寻路、工具、季节和动画替身验证完整状态序列；最新点击覆盖；WASD、地面、模式、Esc 取消；到达后二次校验；只允许一次重寻路；动作取消不提交；成功提交后推进 10 分钟并停止。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 
 Expected: FAIL，控制器尚不存在。
 
-- [ ] **Step 3: 实现依赖注入和状态信号**
+- [x] **Step 3: 实现依赖注入和状态信号**
 
 提供：
 
@@ -302,11 +302,11 @@ func cancel_current(reason: String) -> void
 
 每个请求使用单调递增 token，任何 await 恢复后先检查 token，防止旧协程提交。
 
-- [ ] **Step 4: 实现动作锁和最终提交**
+- [x] **Step 4: 实现动作锁和最终提交**
 
 到达后重新预览并验证距离；1.2 秒动作期间持锁并逐帧发进度。成功时先调用事务提交，成功才 `advance_game_minutes(10)`；失败和取消只释放锁。
 
-- [ ] **Step 5: 运行状态机测试并提交**
+- [x] **Step 5: 运行状态机测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 

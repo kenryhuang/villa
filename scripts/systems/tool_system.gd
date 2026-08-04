@@ -63,6 +63,14 @@ func switch_tool(tool_type: ToolType) -> void:
 		_event_bus.item_added.emit(_tool_to_item_id(tool_type), 0)
 
 
+func switch_tool_by_id(tool_id: String) -> bool:
+	var tool_type := _item_id_to_tool(tool_id)
+	if tool_type < 0:
+		return false
+	switch_tool(tool_type as ToolType)
+	return true
+
+
 func preview_gather_unit(target: Node) -> Dictionary:
 	var result := {
 		"allowed": false,
