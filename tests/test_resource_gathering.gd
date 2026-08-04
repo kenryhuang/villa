@@ -292,19 +292,22 @@ func _test_tool_target_matrix(
 
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
 	var texture := ImageTexture.create_from_image(image)
+	var atlas_image := Image.create_empty(64, 24, false, Image.FORMAT_RGBA8)
+	var atlas_texture := ImageTexture.create_from_image(atlas_image)
 	var tree_node := TreeInstanceScript.new()
 	tree_node.configure({
 		"id": "tree-test",
+		"variant": "pine-small",
 		"x": 0.0,
 		"z": 0.0,
 		"width": 2.0,
 		"height": 3.0,
 		"clearance": 1.0,
 		"gatherable": true,
-	}, texture, 0.0)
+	}, texture, 0.0, atlas_texture)
 	tools.switch_tool(ToolSystem.ToolType.AXE)
 	assertions.truthy(tools.use_tool_on(tree_node), "axe gathers a tree")
-	assertions.equal(inventory.get_item_count("wood"), 1, "tree action grants one wood")
+	assertions.equal(inventory.get_item_count("wood"), 5, "tree action grants all five wood")
 	assertions.equal(tree_node.required_tool, "axe", "tree requires axe")
 	assertions.equal(tree_node.max_units, 5, "gatherable tree has five units")
 	assertions.equal(tree_node.respawn_days, 3, "tree uses three-day respawn")
@@ -576,8 +579,8 @@ func _test_real_water_and_riverbank_adjacency(
 	for record in world_records:
 		if str(record.resource_type) == "tree":
 			saved_tree_count += 1
-	assertions.equal(world_records.size(), 25, "world saves minerals and designated resource trees only")
-	assertions.equal(saved_tree_count, 12, "world saves twelve gatherable resource-forest trees")
+	assertions.equal(world_records.size(), 41, "world saves minerals and all eligible stable trees")
+	assertions.equal(saved_tree_count, 28, "world saves all eligible forest, authored, and scattered trees")
 	var blocked_regions: Variant = (
 		main.world.call("get_blocked_regions")
 		if main.world.has_method("get_blocked_regions")

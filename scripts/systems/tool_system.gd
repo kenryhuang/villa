@@ -22,7 +22,7 @@ var tool_durability: Dictionary = {}
 const TOOL_STAMINA_COST := {
 	ToolType.HOE: 5,
 	ToolType.WATERING_CAN: 3,
-	ToolType.AXE: 10,
+	ToolType.AXE: 8,
 	ToolType.PICKAXE: 8,
 	ToolType.FISHING_ROD: 5,
 }
@@ -97,7 +97,6 @@ func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary
 	result.tool_id = required_tool
 	var remaining := _target_int_property(target, "remaining_units", -1)
 	result.remaining_before = remaining
-	result.remaining_after = remaining - 1 if remaining > 0 else remaining
 	if remaining == 0 or not bool(target.call("can_gather", required_tool)):
 		result.reason = "resource_depleted"
 		return result
@@ -105,10 +104,12 @@ func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary
 	if reward.size() != 1:
 		return result
 	var reward_item := str(reward.keys()[0])
-	if int(reward[reward_item]) != 1:
+	var reward_quantity := int(reward[reward_item])
+	if reward_quantity <= 0 or reward_quantity > remaining:
 		return result
 	result.item_id = reward_item
-	result.quantity = 1
+	result.quantity = reward_quantity
+	result.remaining_after = remaining - reward_quantity
 	result.stamina_cost = int(TOOL_STAMINA_COST.get(tool_type, 5))
 	var durability := get_durability(required_tool)
 	if durability.is_empty() or int(durability.current) <= 0:
@@ -118,7 +119,7 @@ func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary
 	if game_state == null or int(game_state.player_state.stamina) < int(result.stamina_cost):
 		result.reason = "insufficient_stamina"
 		return result
-	if inventory_ref == null or not _can_add_rewards({reward_item: 1}):
+	if inventory_ref == null or not _can_add_rewards({reward_item: reward_quantity}):
 		result.reason = "inventory_full"
 		return result
 	if require_range and not _target_is_in_range(target, tool_type):
@@ -154,7 +155,8 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	)
 	var tool_type := _item_id_to_tool(str(preview.tool_id)) as ToolType
 	current_tool = tool_type
-	if not bool(inventory_ref.call("add_item", str(preview.item_id), 1)):
+	var expected_rewards := {str(preview.item_id): int(preview.quantity)}
+	if not bool(inventory_ref.call("add_item", str(preview.item_id), int(preview.quantity))):
 		_rollback_gather(
 			target, target_snapshot, inventory_snapshot, stamina_before,
 			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction,
@@ -165,7 +167,7 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	var committed := _normalized_rewards(
 		target.call("commit_gather", str(preview.tool_id), _current_total_day())
 	)
-	if committed != {str(preview.item_id): 1}:
+	if committed != expected_rewards:
 		_rollback_gather(
 			target, target_snapshot, inventory_snapshot, stamina_before,
 			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction,
@@ -181,7 +183,7 @@ func commit_gather_unit(target: Node) -> Dictionary:
 		target.call("end_gather_transaction", true)
 	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
 	_end_inventory_event_transaction(owns_event_transaction)
-	_emit_committed_rewards({str(preview.item_id): 1}, owns_event_transaction)
+	_emit_committed_rewards(expected_rewards, owns_event_transaction)
 	if _event_bus != null:
 		_event_bus.stamina_changed.emit(int(game_state.player_state.stamina))
 		_emit_durability_changed(str(preview.tool_id))

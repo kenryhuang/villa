@@ -140,6 +140,23 @@ func is_chop_eligible() -> bool:
 	return TreeFellingCatalogScript.is_variant_choppable(variant) and felling_atlas != null
 
 
+func preview_reward(tool_id: String) -> Dictionary:
+	return {item_id: remaining_units} if can_gather(tool_id) else {}
+
+
+func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
+	if total_day < 0:
+		return {}
+	var reward := preview_reward(tool_id)
+	if reward.is_empty():
+		return {}
+	remaining_units = 0
+	_respawn_day = total_day + respawn_days
+	_update_visual_stage()
+	_set_gather_active(false)
+	return reward
+
+
 func begin_felling(fall_direction: int) -> bool:
 	if not is_chop_eligible() or remaining_units <= 0:
 		return false

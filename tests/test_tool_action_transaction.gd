@@ -3,6 +3,7 @@ extends RefCounted
 const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
 const ResourceNodeScript = preload("res://scripts/world/resource_node.gd")
+const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
 
 
 class GridDouble:
@@ -129,6 +130,54 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(game_state.player_state.stamina, 92, "commit spends stamina exactly once")
 	assertions.equal(tool.get_durability("pickaxe").current, 99, "commit spends one durability")
 
+	var tree_image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
+	var tree_texture := ImageTexture.create_from_image(tree_image)
+	var atlas_image := Image.create_empty(64, 24, false, Image.FORMAT_RGBA8)
+	var atlas_texture := ImageTexture.create_from_image(atlas_image)
+	var fresh_tree := TreeInstanceScript.new()
+	fresh_tree.configure({
+		"id": "transaction-tree",
+		"variant": "pine-small",
+		"x": 0.0,
+		"z": 0.0,
+		"width": 2.0,
+		"height": 3.0,
+		"clearance": 1.0,
+	}, tree_texture, 0.0, atlas_texture)
+	for slot_index in range(inventory.slots.size()):
+		inventory.slots[slot_index] = {"item_id": "grain_seed", "quantity": 99}
+	inventory.slots[0] = {"item_id": "wood", "quantity": 95}
+	var capacity_rejection := tool.preview_gather_unit(fresh_tree)
+	assertions.equal(capacity_rejection.get("reason"), "inventory_full", "tree needs room for all five wood")
+	assertions.equal(fresh_tree.remaining_units, 5, "batch preflight never damages the tree")
+	inventory.clear()
+	var tree_preview := tool.preview_gather_unit(fresh_tree)
+	assertions.equal(tree_preview.get("quantity"), 5, "fresh tree preview reports its full five wood")
+	assertions.equal(tree_preview.get("remaining_after"), 0, "fresh tree preview reports full depletion")
+	assertions.equal(tree_preview.get("stamina_cost"), 8, "one tree costs eight stamina")
+	var tree_result := tool.commit_gather_unit(fresh_tree)
+	assertions.equal(tree_result.get("allowed"), true, "fresh tree commits as one transaction")
+	assertions.equal(inventory.get_item_count("wood"), 5, "fresh tree grants five wood at once")
+	assertions.equal(fresh_tree.remaining_units, 0, "fresh tree is fully depleted by one click")
+	assertions.equal(tool.get_durability("axe").current, 99, "one tree costs one axe durability")
+
+	var partial_tree := TreeInstanceScript.new()
+	partial_tree.configure({
+		"id": "transaction-partial-tree",
+		"variant": "pine-small",
+		"x": 0.0,
+		"z": 0.0,
+		"width": 2.0,
+		"height": 3.0,
+		"clearance": 1.0,
+	}, tree_texture, 0.0, atlas_texture)
+	partial_tree.remaining_units = 3
+	partial_tree.call("_update_visual_stage")
+	var partial_preview := tool.preview_gather_unit(partial_tree)
+	assertions.equal(partial_preview.get("quantity"), 3, "legacy partial tree previews only remaining wood")
+	assertions.truthy(tool.commit_gather_unit(partial_tree).get("allowed"), "legacy partial tree commits once")
+	assertions.equal(inventory.get_item_count("wood"), 8, "partial tree grants only three remaining wood")
+
 	var faulty := FaultyCommitTarget.new()
 	assertions.truthy(faulty.configure_resource({
 		"resource_id": "faulty-final-stone",
@@ -158,7 +207,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(full_preview.get("allowed"), false, "full inventory rejects gather preview")
 	assertions.equal(full_preview.get("reason"), "inventory_full", "full inventory reports a stable reason")
 	assertions.equal(copper.remaining_units, 2, "rejected preview leaves target unchanged")
-	assertions.equal(game_state.player_state.stamina, 92, "rejected preview leaves stamina unchanged")
+	assertions.equal(game_state.player_state.stamina, 76, "rejected preview leaves stamina unchanged")
 	inventory.clear()
 
 	var reentrant := ReentrantTarget.new()
@@ -188,6 +237,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(inventory.get_item_count("stone"), 1, "failed preflight leaves inventory untouched")
 
 	reentrant.free()
+	partial_tree.free()
+	fresh_tree.free()
 	faulty.free()
 	copper.free()
 	inventory.free()
