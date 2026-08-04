@@ -238,25 +238,25 @@ Commit: `feat: add owned gathering clock locks`
 - Modify: `tests/test_tool_action_transaction.gd`
 - Modify: `tests/test_resource_gathering.gd`
 
-- [ ] **Step 1: 写预览与提交失败测试**
+- [x] **Step 1: 写预览与提交失败测试**
 
 验证 `preview_gather_unit()` 的所有返回字段；错误原因区分目标、工具损坏、体力、容量和距离；`commit_gather_unit()` 恰好增加 1 个物品、扣 1 耐久和对应体力。逐步注入背包写入失败、资源提交不一致和同步重入，确认全量回滚且没有部分事件。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 
 Expected: FAIL，新接口和结构化错误尚不存在。
 
-- [ ] **Step 3: 实现工具映射与预览**
+- [x] **Step 3: 实现工具映射与预览**
 
 增加字符串/枚举双向映射并允许控制器自动选择 `axe` 或 `pickaxe`。预览只读，不改变当前工具、背包、体力、耐久或资源。
 
-- [ ] **Step 4: 实现恰好一次提交**
+- [x] **Step 4: 实现恰好一次提交**
 
 提交使用 `_active_gather_transactions` 防重入；快照包括背包映射、资源 v2 状态、玩家体力、当前工具和耐久。所有变更成功后才解除事件阻塞并发送一次提交事件；任何失败按逆序完整恢复。
 
-- [ ] **Step 5: 保持旧入口兼容并提交**
+- [x] **Step 5: 保持旧入口兼容并提交**
 
 `use_tool_on()` 的斧头/镐分支委托 `commit_gather_unit()`，锄头、浇水和鱼竿行为不变。
 

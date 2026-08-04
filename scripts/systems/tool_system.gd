@@ -40,6 +40,7 @@ var inventory_ref
 var player_ref
 var _event_bus
 var _active_repair_transactions: Dictionary = {}
+var _active_gather_transactions: Dictionary = {}
 
 
 func _init() -> void:
@@ -62,7 +63,191 @@ func switch_tool(tool_type: ToolType) -> void:
 		_event_bus.item_added.emit(_tool_to_item_id(tool_type), 0)
 
 
+func preview_gather_unit(target: Node) -> Dictionary:
+	var result := {
+		"allowed": false,
+		"reason": "invalid_target",
+		"tool_id": "",
+		"item_id": "",
+		"quantity": 0,
+		"stamina_cost": 0,
+		"durability_cost": 1,
+		"remaining_before": -1,
+		"remaining_after": -1,
+	}
+	if (
+		target == null
+		or not target.has_method("can_gather")
+		or not target.has_method("preview_reward")
+		or not target.has_method("commit_gather")
+	):
+		return result
+	var required_tool := _target_string_property(target, "required_tool")
+	var tool_type := _item_id_to_tool(required_tool)
+	if required_tool not in ["axe", "pickaxe"] or tool_type < 0:
+		return result
+	result.tool_id = required_tool
+	var remaining := _target_int_property(target, "remaining_units", -1)
+	result.remaining_before = remaining
+	result.remaining_after = remaining - 1 if remaining > 0 else remaining
+	if remaining == 0 or not bool(target.call("can_gather", required_tool)):
+		result.reason = "resource_depleted"
+		return result
+	var reward := _normalized_rewards(target.call("preview_reward", required_tool))
+	if reward.size() != 1:
+		return result
+	var reward_item := str(reward.keys()[0])
+	if int(reward[reward_item]) != 1:
+		return result
+	result.item_id = reward_item
+	result.quantity = 1
+	result.stamina_cost = int(TOOL_STAMINA_COST.get(tool_type, 5))
+	var durability := get_durability(required_tool)
+	if durability.is_empty() or int(durability.current) <= 0:
+		result.reason = "tool_broken"
+		return result
+	var game_state = _game_state()
+	if game_state == null or int(game_state.player_state.stamina) < int(result.stamina_cost):
+		result.reason = "insufficient_stamina"
+		return result
+	if inventory_ref == null or not _can_add_rewards({reward_item: 1}):
+		result.reason = "inventory_full"
+		return result
+	if not _target_is_in_range(target, tool_type):
+		result.reason = "out_of_range"
+		return result
+	result.allowed = true
+	result.reason = ""
+	return result
+
+
+func commit_gather_unit(target: Node) -> Dictionary:
+	if target == null:
+		return _gather_failure("invalid_target")
+	var transaction_id := target.get_instance_id()
+	if _active_gather_transactions.has(transaction_id):
+		return _gather_failure("transaction_busy")
+	var preview := preview_gather_unit(target)
+	if not bool(preview.allowed):
+		return preview
+	_active_gather_transactions[transaction_id] = true
+	var game_state = _game_state()
+	var inventory_snapshot := _inventory_snapshot()
+	var target_snapshot: Dictionary = target.call("to_dict") if target.has_method("to_dict") else {}
+	var stamina_before := int(game_state.player_state.stamina)
+	var durability_snapshot := tool_durability.duplicate(true)
+	var tool_before := current_tool
+	var owns_event_transaction := _begin_inventory_event_transaction()
+	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
+	var tool_type := _item_id_to_tool(str(preview.tool_id)) as ToolType
+	current_tool = tool_type
+	if not bool(inventory_ref.call("add_item", str(preview.item_id), 1)):
+		_rollback_gather(
+			target, target_snapshot, inventory_snapshot, stamina_before,
+			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction
+		)
+		_active_gather_transactions.erase(transaction_id)
+		return _gather_failure("inventory_write_failed", preview)
+	var committed := _normalized_rewards(
+		target.call("commit_gather", str(preview.tool_id), _current_total_day())
+	)
+	if committed != {str(preview.item_id): 1}:
+		_rollback_gather(
+			target, target_snapshot, inventory_snapshot, stamina_before,
+			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction
+		)
+		_active_gather_transactions.erase(transaction_id)
+		return _gather_failure("target_changed", preview)
+	game_state.player_state.stamina = stamina_before - int(preview.stamina_cost)
+	tool_durability[str(preview.tool_id)]["current"] = (
+		int(tool_durability[str(preview.tool_id)].current) - int(preview.durability_cost)
+	)
+	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
+	_end_inventory_event_transaction(owns_event_transaction)
+	_emit_committed_rewards({str(preview.item_id): 1}, owns_event_transaction)
+	if _event_bus != null:
+		_event_bus.stamina_changed.emit(int(game_state.player_state.stamina))
+		_emit_durability_changed(str(preview.tool_id))
+		_event_bus.item_added.emit(str(preview.tool_id), 0)
+	_active_gather_transactions.erase(transaction_id)
+	return preview
+
+
+func _rollback_gather(
+	target: Node,
+	target_snapshot: Dictionary,
+	inventory_snapshot: Dictionary,
+	stamina_before: int,
+	durability_snapshot: Dictionary,
+	tool_before: ToolType,
+	owns_mapping_transaction: bool,
+	owns_event_transaction: bool
+) -> void:
+	_restore_inventory(inventory_snapshot)
+	if not target_snapshot.is_empty() and target.has_method("from_dict"):
+		target.call("from_dict", target_snapshot)
+	var game_state = _game_state()
+	if game_state != null:
+		game_state.player_state.stamina = stamina_before
+	tool_durability = durability_snapshot.duplicate(true)
+	current_tool = tool_before
+	_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+	_end_inventory_event_transaction(owns_event_transaction)
+
+
+func _gather_failure(reason: String, source: Dictionary = {}) -> Dictionary:
+	var result := {
+		"allowed": false,
+		"reason": reason,
+		"tool_id": "",
+		"item_id": "",
+		"quantity": 0,
+		"stamina_cost": 0,
+		"durability_cost": 1,
+		"remaining_before": -1,
+		"remaining_after": -1,
+	}
+	for key in source:
+		result[key] = source[key]
+	result.allowed = false
+	result.reason = reason
+	return result
+
+
+func _target_string_property(target: Object, property_name: String) -> String:
+	return str(target.get(property_name)) if _has_property(target, property_name) else ""
+
+
+func _target_int_property(target: Object, property_name: String, fallback: int) -> int:
+	if not _has_property(target, property_name):
+		return fallback
+	var value: Variant = target.get(property_name)
+	return int(value) if _valid_integer(value, -1, MAX_SAFE_INTEGER) else fallback
+
+
+func _target_is_in_range(target: Node, tool_type: ToolType) -> bool:
+	if not player_ref is Node3D or not target is Node3D:
+		return true
+	var player_node := player_ref as Node3D
+	var target_node := target as Node3D
+	var player_position := player_node.global_position if player_node.is_inside_tree() else player_node.position
+	var target_position := target_node.global_position if target_node.is_inside_tree() else target_node.position
+	var maximum_range := float(TOOL_RANGE.get(tool_type, 2.0))
+	if _has_property(player_node, "interaction_range"):
+		maximum_range = float(player_node.get("interaction_range"))
+	return Vector2(player_position.x, player_position.z).distance_to(
+		Vector2(target_position.x, target_position.z)
+	) <= maximum_range
+
+
 func use_tool_on(target: Variant) -> bool:
+	if current_tool in [ToolType.AXE, ToolType.PICKAXE]:
+		if not target is Node:
+			return false
+		var current_tool_id := _tool_to_item_id(current_tool)
+		if _target_string_property(target, "required_tool") != current_tool_id:
+			return false
+		return bool(commit_gather_unit(target).allowed)
 	# 检查体力
 	var game_state = _game_state()
 	if game_state == null:
@@ -499,3 +684,18 @@ func _tool_to_item_id(tool_type: ToolType) -> String:
 		ToolType.FISHING_ROD:
 			return "fishing_rod"
 	return ""
+
+
+func _item_id_to_tool(tool_id: String) -> int:
+	match tool_id:
+		"hoe":
+			return ToolType.HOE
+		"watering_can":
+			return ToolType.WATERING_CAN
+		"axe":
+			return ToolType.AXE
+		"pickaxe":
+			return ToolType.PICKAXE
+		"fishing_rod":
+			return ToolType.FISHING_ROD
+	return -1
