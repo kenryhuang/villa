@@ -2,6 +2,7 @@ class_name TreeScatter
 extends RefCounted
 
 const RoadMathScript = preload("res://scripts/world/road_math.gd")
+const TreeFellingCatalogScript = preload("res://scripts/world/tree_felling_catalog.gd")
 
 const DIMENSIONS := {
 	"canopy-medium": {"width": 1.75, "height": 1.9, "clearance": 1.05},
@@ -51,11 +52,11 @@ static func generate(route: Array[Dictionary], seed: int = 0x4b4f4455) -> Array[
 	var placements: Array[Dictionary] = []
 	for resource_tree in RESOURCE_FOREST:
 		var placement: Dictionary = _complete_tree_definition(resource_tree)
-		placement["gatherable"] = true
+		placement["gatherable"] = TreeFellingCatalogScript.is_variant_choppable(str(placement.variant))
 		placements.append(placement)
 	for authored in AUTHORED:
 		var placement: Dictionary = authored.duplicate()
-		placement["gatherable"] = false
+		placement["gatherable"] = TreeFellingCatalogScript.is_variant_choppable(str(placement.variant))
 		placements.append(placement)
 	var attempts := 0
 	var target_count := RESOURCE_FOREST.size() + 28
@@ -74,7 +75,7 @@ static func generate(route: Array[Dictionary], seed: int = 0x4b4f4455) -> Array[
 			"yaw_offset": (rng.randf() - 0.5) * 0.14,
 			"lean": (rng.randf() - 0.5) * 0.055,
 			"clearance": float(dimensions.clearance) * scale,
-			"gatherable": false,
+			"gatherable": TreeFellingCatalogScript.is_variant_choppable(variant),
 		}
 		attempts += 1
 		if Vector2(candidate.x, candidate.z).length() < 2.35:

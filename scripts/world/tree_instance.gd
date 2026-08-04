@@ -1,6 +1,7 @@
 class_name TreeInstance
 extends ResourceNode
 
+const TreeFellingCatalogScript = preload("res://scripts/world/tree_felling_catalog.gd")
 const TREE_TRUNK_LAYER := 16
 const CAMERA_OCCLUDER_LAYER := 32
 const OCCLUDED_OPACITY := 0.30
@@ -12,6 +13,7 @@ var sprite: Sprite3D
 var stump_visual: MeshInstance3D
 var axe_mark: Label3D
 var _full_sprite_scale := Vector3.ONE
+var variant := ""
 
 static func trunk_radius_for(clearance: float) -> float:
 	return clampf(clearance * 0.36, 0.24, 0.46)
@@ -35,6 +37,7 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float) -> void:
 	var tree_width := float(tree_data.width)
 	var tree_height := float(tree_data.height)
+	variant = str(tree_data.get("variant", ""))
 	interaction_radius = trunk_radius_for(float(tree_data.clearance))
 	configure_resource({
 		"resource_id": str(tree_data.get(
@@ -43,7 +46,7 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 		)),
 		"resource_type": "tree",
 		"position": Vector3(float(tree_data.x), terrain_height, float(tree_data.z)),
-		"gatherable": bool(tree_data.get("gatherable", false)),
+		"gatherable": TreeFellingCatalogScript.is_variant_choppable(variant),
 	})
 	add_to_group("tree_instance")
 
@@ -130,6 +133,10 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	add_child(camera_occluder)
 	_set_gather_active(gathering_enabled and remaining_units > 0)
 	_apply_visual_stage()
+
+
+func is_chop_eligible() -> bool:
+	return TreeFellingCatalogScript.is_variant_choppable(variant)
 
 
 func _set_gather_active(active: bool) -> void:

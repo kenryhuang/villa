@@ -2,6 +2,7 @@ extends RefCounted
 
 const RoadMath = preload("res://scripts/world/road_math.gd")
 const TreeScatter = preload("res://scripts/world/tree_scatter.gd")
+const TreeFellingCatalogScript = preload("res://scripts/world/tree_felling_catalog.gd")
 
 func run(assertions) -> void:
 	var route := _route()
@@ -10,16 +11,22 @@ func run(assertions) -> void:
 	assertions.equal(first, second, "same seed produces identical trees")
 	assertions.equal(first.size(), 40, "tree scatter includes decorative trees and resource forest")
 	var gatherable_count := 0
+	var gatherable_outside_resource_forest := 0
 	for tree in first:
+		var expected_gatherable := TreeFellingCatalogScript.is_variant_choppable(str(tree.variant))
+		assertions.equal(
+			bool(tree.get("gatherable", false)),
+			expected_gatherable,
+			"tree eligibility follows its variant for %s" % tree.id
+		)
 		if bool(tree.get("gatherable", false)):
 			gatherable_count += 1
-			assertions.truthy(
-				str(tree.id).begins_with("tree-resource-"),
-				"only stable resource-forest IDs are gatherable"
-			)
+			if not str(tree.id).begins_with("tree-resource-"):
+				gatherable_outside_resource_forest += 1
 		assertions.truthy(Vector2(tree.x, tree.z).length() >= 2.35, "tree clears player spawn")
 		assertions.truthy(RoadMath.distance_to_route(Vector2(tree.x, tree.z), tree.clearance, route) >= 0.45, "tree clears road")
-	assertions.equal(gatherable_count, 12, "resource forest contains twelve gatherable trees")
+	assertions.truthy(gatherable_count > 12, "eligible authored and scattered trees are gatherable")
+	assertions.truthy(gatherable_outside_resource_forest > 0, "gatherability applies outside the resource forest")
 	for index in first.size():
 		for other_index in range(index + 1, first.size()):
 			var a: Dictionary = first[index]

@@ -1,8 +1,27 @@
 extends RefCounted
 
 const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
+const TreeFellingCatalogScript = preload("res://scripts/world/tree_felling_catalog.gd")
 
 func run(assertions) -> void:
+	var expected := {
+		"pine-small": true,
+		"pine-tall": true,
+		"canopy-small": true,
+		"canopy-medium": true,
+		"round-small": true,
+		"fruit": false,
+		"oak-large": false,
+		"pine-large": false,
+		"round-medium": false,
+		"yellow": false,
+	}
+	for variant in expected:
+		assertions.equal(
+			TreeFellingCatalogScript.is_variant_choppable(variant),
+			expected[variant],
+			"eligibility is variant-driven for %s" % variant
+		)
 	assertions.near(TreeInstanceScript.trunk_radius_for(0.5), 0.24, 0.001, "small trunks clamp to minimum radius")
 	assertions.near(TreeInstanceScript.trunk_radius_for(2.0), 0.46, 0.001, "large trunks clamp to maximum radius")
 	assertions.near(TreeInstanceScript.trunk_height_for(2.0), 0.84, 0.001, "trunk height follows authored height")
