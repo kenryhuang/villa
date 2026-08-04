@@ -144,6 +144,92 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.equal(tree.get_node("TrunkBody").collision_layer, 0, "stump releases the tree obstacle")
 	tree.free()
 
+	var registered_tree_texture := load("res://assets/vegetation/tree-pine-small.png") as Texture2D
+	var registered_felling_atlas := load(
+		"res://assets/vegetation/felling/pine-small-felling-sheet.png"
+	) as Texture2D
+	var registered_tree := TreeInstanceScript.new()
+	registered_tree.configure({
+		"id": "registered-visual-tree",
+		"variant": "pine-small",
+		"x": 0.0,
+		"z": 0.0,
+		"width": 1.05,
+		"height": 1.45,
+		"clearance": 1.0,
+		"gatherable": true,
+	}, registered_tree_texture, 0.0, registered_felling_atlas)
+	var registered_standing := registered_tree.get_node("Sprite3D") as Sprite3D
+	var standing_anchor := _rendered_ground_anchor(
+		registered_standing,
+		registered_tree_texture.get_size(),
+		_painted_ground_anchor(registered_tree_texture)
+	)
+	var standing_bounds := registered_tree_texture.get_image().get_used_rect()
+	var standing_painted_size := Vector2(
+		float(standing_bounds.size.x) * registered_standing.pixel_size * registered_standing.scale.x,
+		float(standing_bounds.size.y) * registered_standing.pixel_size * registered_standing.scale.y
+	)
+	assertions.truthy(registered_tree.begin_felling(1), "registered tree begins felling")
+	for frame_case in [[0.10, 0], [0.50, 1], [0.85, 2]]:
+		registered_tree.set_felling_progress(float(frame_case[0]))
+		var frame := int(frame_case[1])
+		var registered_frame_sprite := registered_tree.get_node("StumpVisual") as Sprite3D
+		var cell_size := Vector2(
+			float(registered_felling_atlas.get_width()) / 4.0,
+			float(registered_felling_atlas.get_height())
+		)
+		var frame_anchor := _painted_ground_anchor(registered_felling_atlas, frame)
+		var rendered_anchor := _rendered_ground_anchor(
+			registered_frame_sprite, cell_size, frame_anchor
+		)
+		assertions.near(
+			rendered_anchor.x,
+			standing_anchor.x,
+			0.002,
+			"felling frame %d keeps the original horizontal root anchor" % frame
+		)
+		assertions.near(
+			rendered_anchor.y,
+			standing_anchor.y,
+			0.002,
+			"felling frame %d keeps the original ground baseline" % frame
+		)
+		if frame == 0:
+			var frame_bounds := TreeInstanceScript.felling_frame_used_rect(
+				registered_felling_atlas, frame
+			)
+			var frame_painted_size := Vector2(
+				float(frame_bounds.size.x) * registered_frame_sprite.pixel_size * registered_frame_sprite.scale.x,
+				float(frame_bounds.size.y) * registered_frame_sprite.pixel_size * registered_frame_sprite.scale.y
+			)
+			assertions.near(
+				frame_painted_size.x,
+				standing_painted_size.x,
+				0.002,
+				"first felling frame preserves the standing tree painted width"
+			)
+			assertions.near(
+				frame_painted_size.y,
+				standing_painted_size.y,
+				0.002,
+				"first felling frame preserves the standing tree painted height"
+			)
+	registered_tree.remaining_units = 0
+	registered_tree.call("_update_visual_stage")
+	var registered_stump := registered_tree.get_node("StumpVisual") as Sprite3D
+	var stump_anchor := _rendered_ground_anchor(
+		registered_stump,
+		Vector2(
+			float(registered_felling_atlas.get_width()) / 4.0,
+			float(registered_felling_atlas.get_height())
+		),
+		_painted_ground_anchor(registered_felling_atlas, 3)
+	)
+	assertions.near(stump_anchor.x, standing_anchor.x, 0.002, "painted stump keeps the original horizontal root anchor")
+	assertions.near(stump_anchor.y, standing_anchor.y, 0.002, "painted stump keeps the original ground baseline")
+	registered_tree.free()
+
 	var feedback_scene := load(FEEDBACK_SCENE_PATH) as PackedScene
 	var feedback = feedback_scene.instantiate()
 	scene_tree.root.add_child(feedback)
@@ -189,3 +275,42 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.truthy(impact_target.get_node_or_null("GatherImpact") == null, "one-shot impact particles clean themselves up")
 	impact_target.free()
 	feedback.free()
+
+
+static func _painted_ground_anchor(texture: Texture2D, frame: int = -1) -> Vector2:
+	var image := texture.get_image()
+	var cell_width := image.get_width() if frame < 0 else image.get_width() / 4
+	var source_x := 0 if frame < 0 else cell_width * frame
+	var region := image.get_region(Rect2i(source_x, 0, cell_width, image.get_height()))
+	var used_rect := region.get_used_rect()
+	var band_start := maxi(used_rect.position.y, floori(float(region.get_height()) * 0.90))
+	var weighted_x := 0.0
+	var total_alpha := 0.0
+	for y in range(band_start, used_rect.end.y):
+		for x in range(used_rect.position.x, used_rect.end.x):
+			var alpha := region.get_pixel(x, y).a
+			if alpha <= 0.10:
+				continue
+			weighted_x += float(x) * alpha
+			total_alpha += alpha
+	return Vector2(
+		weighted_x / total_alpha if total_alpha > 0.0 else float(used_rect.get_center().x),
+		float(used_rect.end.y)
+	)
+
+
+static func _rendered_ground_anchor(
+	sprite_node: Sprite3D,
+	texture_size: Vector2,
+	anchor_pixel: Vector2
+) -> Vector2:
+	return Vector2(
+		sprite_node.position.x
+			+ (anchor_pixel.x - texture_size.x * 0.5)
+			* sprite_node.pixel_size
+			* sprite_node.scale.x,
+		sprite_node.position.y
+			+ (texture_size.y * 0.5 - anchor_pixel.y)
+			* sprite_node.pixel_size
+			* sprite_node.scale.y
+	)

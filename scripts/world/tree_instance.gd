@@ -21,6 +21,7 @@ var variant := ""
 var felling_atlas: Texture2D
 var _felling_active := false
 var _felling_frame := -1
+var _felling_frame_positions: Array[Vector3] = []
 
 static func trunk_radius_for(clearance: float) -> float:
 	return clampf(clearance * 0.36, 0.24, 0.46)
@@ -50,6 +51,40 @@ static func felling_frame_used_rect(texture: Texture2D, frame: int = 0) -> Rect2
 		return Rect2i()
 	var cell_width := image.get_width() / 4
 	return image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height())).get_used_rect()
+
+
+static func painted_ground_anchor(texture: Texture2D, frame: int = -1) -> Vector2:
+	if texture == null:
+		return Vector2.ZERO
+	var image := texture.get_image()
+	if image == null or image.is_empty():
+		return Vector2.ZERO
+	var cell_width := image.get_width()
+	var source_x := 0
+	if frame >= 0:
+		if image.get_width() % 4 != 0 or frame > 3:
+			return Vector2.ZERO
+		cell_width = image.get_width() / 4
+		source_x = cell_width * frame
+	var region := image.get_region(Rect2i(source_x, 0, cell_width, image.get_height()))
+	var used_rect := region.get_used_rect()
+	if not used_rect.has_area():
+		return Vector2(float(cell_width) * 0.5, float(image.get_height()))
+	var band_start := maxi(used_rect.position.y, floori(float(region.get_height()) * 0.90))
+	var weighted_x := 0.0
+	var total_alpha := 0.0
+	for y in range(band_start, used_rect.end.y):
+		for x in range(used_rect.position.x, used_rect.end.x):
+			var alpha := region.get_pixel(x, y).a
+			if alpha <= 0.10:
+				continue
+			weighted_x += float(x) * alpha
+			total_alpha += alpha
+	var anchor := Vector2(
+		weighted_x / total_alpha if total_alpha > 0.0 else float(used_rect.get_center().x),
+		float(used_rect.end.y)
+	)
+	return anchor
 
 func configure(
 	tree_data: Dictionary,
@@ -97,19 +132,45 @@ func configure(
 	if felling_atlas != null:
 		var cell_size := Vector2(float(felling_atlas.get_width()) / 4.0, float(felling_atlas.get_height()))
 		var standing_bounds := felling_frame_used_rect(felling_atlas)
+		var source_bounds := texture.get_image().get_used_rect()
+		var source_painted_size := Vector2(
+			maxf(float(source_bounds.size.x) * sprite.pixel_size * sprite.scale.x, 0.001),
+			maxf(float(source_bounds.size.y) * sprite.pixel_size * sprite.scale.y, 0.001)
+		)
 		var painted_width := maxf(float(standing_bounds.size.x), 1.0)
 		var painted_height := maxf(float(standing_bounds.size.y), 1.0)
-		stump_visual.pixel_size = tree_width / painted_width
+		stump_visual.pixel_size = source_painted_size.x / painted_width
 		stump_visual.scale = Vector3(
 			1.0,
-			tree_height / (painted_height * stump_visual.pixel_size),
+			source_painted_size.y / (painted_height * stump_visual.pixel_size),
 			1.0
 		)
-		stump_visual.position.y = (
-			(float(standing_bounds.end.y) - cell_size.y * 0.5)
-			* stump_visual.pixel_size
-			* stump_visual.scale.y
+		var standing_anchor := painted_ground_anchor(texture)
+		var registered_anchor := Vector2(
+			sprite.position.x
+				+ (standing_anchor.x - float(texture.get_width()) * 0.5)
+				* sprite.pixel_size
+				* sprite.scale.x,
+			sprite.position.y
+				+ (float(texture.get_height()) * 0.5 - standing_anchor.y)
+				* sprite.pixel_size
+				* sprite.scale.y
 		)
+		_felling_frame_positions.clear()
+		for frame in range(4):
+			var frame_anchor := painted_ground_anchor(felling_atlas, frame)
+			_felling_frame_positions.append(Vector3(
+				registered_anchor.x
+					- (frame_anchor.x - cell_size.x * 0.5)
+					* stump_visual.pixel_size
+					* stump_visual.scale.x,
+				registered_anchor.y
+					- (cell_size.y * 0.5 - frame_anchor.y)
+					* stump_visual.pixel_size
+					* stump_visual.scale.y,
+				0.0
+			))
+		stump_visual.position = _felling_frame_positions[0]
 	stump_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stump_visual.visible = false
 	add_child(stump_visual)
@@ -296,6 +357,8 @@ func _set_felling_texture(target_sprite: Sprite3D, frame: int) -> void:
 	var cell_width := float(felling_atlas.get_width()) / 4.0
 	atlas_texture.region = Rect2(cell_width * float(frame), 0.0, cell_width, felling_atlas.get_height())
 	target_sprite.texture = atlas_texture
+	if frame < _felling_frame_positions.size():
+		target_sprite.position = _felling_frame_positions[frame]
 
 
 func _set_sprite_alpha(target_sprite: Sprite3D, alpha: float) -> void:
