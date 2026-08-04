@@ -402,25 +402,25 @@ Commit: `feat: integrate click-to-gather gameplay`
 - Modify: `tests/test_resource_gathering.gd`
 - Modify: `tests/test_economy_save_integration.gd`
 
-- [ ] **Step 1: 写迁移和回滚失败测试**
+- [x] **Step 1: 写迁移和回滚失败测试**
 
 覆盖 v2 往返；旧满/半满/0 命中按比例向上取整；旧概率奖励丢弃；旧存档缺少新资源时补目录默认值；非法单条资源、重复 ID、错误刷新日均导致整个资源/背包/时间/工具快照不变。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 
 Expected: FAIL，旧记录尚不能升级为完整 v2 世界快照。
 
-- [ ] **Step 3: 在资源世界中标准化存档**
+- [x] **Step 3: 在资源世界中标准化存档**
 
 增加纯函数式标准化步骤，先把传入数组复制并迁移为按当前目录排序的完整 v2 记录，再统一验证，最后才逐节点应用。运行时加载更早日期时同步每日游标。
 
-- [ ] **Step 4: 让 SaveManager 在提交前取消动作**
+- [x] **Step 4: 让 SaveManager 在提交前取消动作**
 
 保存只收集最后一次成功提交状态；加载前通过主场景回调取消路径/动画并释放锁。既有经济系统回滚顺序保持不变，资源迁移失败必须触发全局快照回滚。
 
-- [ ] **Step 5: 运行存档测试并提交**
+- [x] **Step 5: 运行存档测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 

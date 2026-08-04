@@ -99,4 +99,45 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"single-unit gathering stops after completion"
 		)
 
+		var cancel_target: Node3D
+		for resource in resources:
+			if resource != target and str(resource.get("resource_type")) == "stone":
+				cancel_target = resource as Node3D
+				break
+		assertions.truthy(cancel_target != null, "load-cancel fixture finds another resource")
+		if cancel_target != null:
+			assertions.truthy(
+				main.gathering_controller.request_gather(cancel_target),
+				"load-cancel fixture starts another command"
+			)
+			var cancel_endpoint: Vector3 = main.player._auto_path[-1]
+			main.player._auto_path_index = main.player._auto_path.size() - 1
+			main.player.global_position = cancel_endpoint
+			main.player._update_auto_movement(0.0)
+			assertions.equal(
+				main.gathering_controller.get_state_name(),
+				"ACTING",
+				"load-cancel fixture owns the action clock"
+			)
+			var inventory_before_load: Array = main.inventory_system.slots.duplicate(true)
+			var valid_save: Dictionary = main.save_manager._gather_save_data().duplicate(true)
+			assertions.truthy(
+				main.save_manager._apply_save_data(valid_save),
+				"valid restore cancels transient action before applying"
+			)
+			assertions.equal(
+				main.gathering_controller.get_state_name(),
+				"IDLE",
+				"load leaves gathering idle"
+			)
+			assertions.truthy(
+				main.season_system._action_clock_locks.is_empty(),
+				"load cancellation releases the gathering clock lock"
+			)
+			assertions.equal(
+				main.inventory_system.slots,
+				inventory_before_load,
+				"cancelled pre-commit action adds no resource"
+			)
+
 	main.free()

@@ -118,41 +118,61 @@ func get_gatherable_nodes() -> Array[Node]:
 
 
 func validate_resource_dicts(value: Variant, loaded_day: int = -1) -> bool:
+	return normalize_resource_dicts(value, loaded_day) is Array
+
+
+func normalize_resource_dicts(value: Variant, loaded_day: int = -1) -> Variant:
 	if not value is Array:
-		return false
+		return null
 	var known := {}
 	for gatherable in _gatherable_nodes():
 		var id := str(gatherable.get("resource_id"))
 		if id.is_empty() or known.has(id):
-			return false
+			return null
 		known[id] = gatherable
-	if value.size() != known.size():
-		return false
-	var seen := {}
+	var normalized_by_id := {}
 	for record in value:
 		if not record is Dictionary:
-			return false
+			return null
 		var id := str(record.get("resource_id", ""))
-		if id.is_empty() or seen.has(id) or not known.has(id):
-			return false
+		if id.is_empty() or normalized_by_id.has(id) or not known.has(id):
+			return null
 		var gatherable: Variant = known[id]
 		if (
-			not gatherable.has_method("validate_state_dict")
-			or not bool(gatherable.call("validate_state_dict", record, loaded_day))
+			not gatherable.has_method("normalize_state_dict")
+			or not gatherable.has_method("default_state_dict")
 		):
-			return false
-		seen[id] = true
-	return true
+			return null
+		var normalized: Dictionary = gatherable.call(
+			"normalize_state_dict", record, loaded_day
+		)
+		if normalized.is_empty():
+			return null
+		normalized_by_id[id] = normalized
+	var ids: Array = known.keys()
+	ids.sort()
+	var complete: Array[Dictionary] = []
+	for id in ids:
+		if normalized_by_id.has(id):
+			complete.append(normalized_by_id[id])
+		else:
+			complete.append(known[id].call("default_state_dict"))
+	return complete
 
 
 func restore_resource_dicts(value: Variant, loaded_day: int = 0) -> bool:
-	if not validate_resource_dicts(value, loaded_day):
+	var normalized_value: Variant = normalize_resource_dicts(value, loaded_day)
+	if not normalized_value is Array:
 		return false
+	var normalized: Array = normalized_value as Array
 	var by_id := {}
 	for gatherable in _gatherable_nodes():
 		by_id[str(gatherable.get("resource_id"))] = gatherable
-	for record in value:
+	var before: Array[Dictionary] = to_resource_dicts()
+	for record in normalized:
 		if not bool(by_id[str(record.resource_id)].call("from_dict", record)):
+			for previous in before:
+				by_id[str(previous.resource_id)].call("from_dict", previous)
 			return false
 	for gatherable in by_id.values():
 		gatherable.call("sync_day_cursor", loaded_day)

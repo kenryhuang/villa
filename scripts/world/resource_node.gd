@@ -195,6 +195,26 @@ func validate_state_dict(data: Variant, loaded_day: int = -1) -> bool:
 	return not _normalized_state(data, loaded_day).is_empty()
 
 
+func normalize_state_dict(data: Variant, loaded_day: int = -1) -> Dictionary:
+	return _normalized_state(data, loaded_day)
+
+
+func default_state_dict() -> Dictionary:
+	return {
+		"state_version": STATE_VERSION,
+		"resource_id": resource_id,
+		"resource_type": resource_type,
+		"item_id": item_id,
+		"required_tool": required_tool,
+		"max_units": max_units,
+		"remaining_units": max_units,
+		"respawn_days": respawn_days,
+		"respawn_day": 0,
+		"position": [position.x, position.y, position.z],
+		"visual_stage": 0,
+	}
+
+
 func from_dict(data: Dictionary) -> bool:
 	var normalized := _normalized_state(data)
 	if normalized.is_empty():

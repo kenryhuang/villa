@@ -267,7 +267,8 @@ func _connect_systems() -> bool:
 		economy_progression_system,
 		tool_system,
 		production_system,
-		economy_notification_system
+		economy_notification_system,
+		self
 	))
 	if not save_manager_configured:
 		return false
@@ -286,6 +287,11 @@ func _connect_systems() -> bool:
 	# ExplorationSystem 依赖 Player
 	exploration_system.configure(player)
 	return true
+
+
+func cancel_transient_actions(reason: String = "save_restore") -> void:
+	if gathering_controller != null:
+		gathering_controller.cancel_current(reason)
 
 
 func _connect_save_load_completed() -> void:

@@ -101,12 +101,21 @@ class RejectingResourceWorld:
 		pass
 
 
+class StateTransitionOwnerDouble:
+	extends RefCounted
+	var reasons: Array[String] = []
+
+	func cancel_transient_actions(reason: String) -> void:
+		reasons.append(reason)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_save_round_trip_and_legacy_load(assertions, tree)
 	_test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(assertions, tree)
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
 	_test_task13_legacy_iron_migration_and_missing_economy_idempotence(assertions, tree)
 	_test_task13_resource_apply_failure_rolls_back_economy(assertions, tree)
+	_test_load_cancels_transient_gathering_before_commit(assertions, tree)
 	_test_task13_corrupt_producer_load_is_atomic(assertions, tree)
 	_test_task13_short_building_restore_is_atomic(assertions, tree)
 	_test_task13_invalid_top_level_and_inventory_schema_is_atomic(assertions, tree)
@@ -505,6 +514,36 @@ func _test_task13_resource_apply_failure_rolls_back_economy(
 	assertions.equal(market.to_dict(), market_before, "resource apply failure rolls market back")
 	assertions.equal(daily.last_simulated_day, 0, "resource apply failure rolls daily cursor back")
 	assertions.equal(resources.to_resource_dicts(), resources_before, "resource apply failure preserves resources")
+	manager.free()
+	daily.free()
+	market.free()
+
+
+func _test_load_cancels_transient_gathering_before_commit(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var market := MarketSystemScript.new()
+	var daily := DailySimulationSystem.new()
+	var manager := SaveManagerScript.new()
+	var owner := StateTransitionOwnerDouble.new()
+	tree.root.add_child(market)
+	tree.root.add_child(daily)
+	tree.root.add_child(manager)
+	assertions.truthy(market.configure([_wood_definition()]), "load-cancel fixture configures market")
+	assertions.truthy(
+		manager.configure_economy(
+			market, daily, null, null, null, null, null, null, null, null, owner
+		),
+		"save manager accepts a transient-action owner"
+	)
+	var payload: Dictionary = manager._gather_save_data().duplicate(true)
+	assertions.truthy(manager._apply_save_data(payload), "valid payload applies after cancellation")
+	assertions.equal(
+		owner.reasons,
+		["save_restore"],
+		"load cancels movement and animation before applying state"
+	)
 	manager.free()
 	daily.free()
 	market.free()

@@ -25,6 +25,7 @@ var _progression_system: Variant
 var _tool_system: Variant
 var _production_system: Variant
 var _notification_system: Variant
+var _state_transition_owner: Variant
 
 
 func configure_economy(
@@ -37,7 +38,8 @@ func configure_economy(
 	progression_system: Variant = null,
 	tool_system: Variant = null,
 	production_system: Variant = null,
-	notification_system: Variant = null
+	notification_system: Variant = null,
+	state_transition_owner: Variant = null
 ) -> bool:
 	var upkeep_dependency_count := 0
 	for dependency in [progression_system, tool_system, production_system]:
@@ -86,6 +88,11 @@ func configure_economy(
 		"to_dict", "from_dict", "validate_dict", "reset_notifications",
 	]):
 		return false
+	if state_transition_owner != null and not _has_methods(
+		state_transition_owner,
+		["cancel_transient_actions"]
+	):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
@@ -96,6 +103,7 @@ func configure_economy(
 	_tool_system = tool_system
 	_production_system = production_system
 	_notification_system = notification_system
+	_state_transition_owner = state_transition_owner
 	return true
 
 
@@ -265,12 +273,22 @@ func _apply_save_data(data: Dictionary) -> bool:
 	var migrated_data := migrated_value as Dictionary
 	if not _validate_save_data(migrated_data):
 		return false
+	_cancel_transient_actions_for_restore()
 	var previous_state := _gather_save_data().duplicate(true)
 	if _apply_migrated_save_data(migrated_data):
 		return true
 	if not _apply_migrated_save_data(previous_state):
 		push_error("Failed to roll back rejected save data")
 	return false
+
+
+func _cancel_transient_actions_for_restore() -> void:
+	if (
+		_state_transition_owner != null
+		and is_instance_valid(_state_transition_owner)
+		and _state_transition_owner.has_method("cancel_transient_actions")
+	):
+		_state_transition_owner.call("cancel_transient_actions", "save_restore")
 
 
 func _apply_migrated_save_data(data: Dictionary) -> bool:

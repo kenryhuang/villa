@@ -39,6 +39,16 @@ class ToolDouble:
 		return true
 
 
+class GatheringDouble:
+	extends RefCounted
+	var requested: Array[Node] = []
+	func request_gather(target: Node) -> bool:
+		requested.append(target)
+		return true
+	func cancel_current(_reason: String) -> void: pass
+	func has_active_command() -> bool: return false
+
+
 class GridDouble:
 	extends RefCounted
 
@@ -181,6 +191,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_atomic_capacity_and_bonus(assertions, tree, resource_script)
 	_test_json_state_contract(assertions, resource_script)
 	_test_stable_world_generation_and_restore(assertions)
+	_test_world_v1_to_v2_normalization_is_complete_and_atomic(assertions)
 	_test_real_water_and_riverbank_adjacency(assertions, tree)
 	_test_player_target_routing(assertions, tree)
 	_test_save_and_legacy_initialization(assertions, tree)
@@ -457,6 +468,76 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	world.free()
 
 
+func _test_world_v1_to_v2_normalization_is_complete_and_atomic(
+	assertions: TestAssert
+) -> void:
+	var world: Variant = GameWorldScript.new()
+	var container := Node3D.new()
+	container.name = "ResourceNodes"
+	world.add_child(container)
+	world.call("generate_resource_nodes")
+	assertions.truthy(
+		world.has_method("normalize_resource_dicts"),
+		"resource world exposes a pure save normalizer"
+	)
+	if not world.has_method("normalize_resource_dicts"):
+		world.free()
+		return
+	var legacy := [{
+		"resource_id": "stone-00",
+		"position": [0.0, 0.0, 0.0],
+		"hits_remaining": 2,
+		"respawn_day": 0,
+		"bonus_table": [{"item_id": "coal", "chance": 1.0}],
+	}]
+	var normalized: Variant = world.call("normalize_resource_dicts", legacy, 5)
+	assertions.truthy(normalized is Array, "legacy partial resource array normalizes")
+	if normalized is Array:
+		assertions.equal(
+			normalized.size(),
+			world.to_resource_dicts().size(),
+			"normalization backfills every newly catalogued resource"
+		)
+		var migrated := _record_by_id(normalized, "stone-00")
+		assertions.equal(migrated.get("state_version"), 2, "legacy record migrates to v2")
+		assertions.equal(migrated.get("remaining_units"), 2, "legacy hits scale upward to v2 capacity")
+		assertions.truthy(not migrated.has("bonus_table"), "legacy random bonus is discarded")
+		var new_resource := _record_by_id(normalized, "gold-00")
+		assertions.equal(new_resource.get("remaining_units"), 2, "missing rare ore starts full")
+		assertions.equal(new_resource.get("respawn_day"), 0, "backfilled resource has no respawn timer")
+
+	var before: Array[Dictionary] = world.to_resource_dicts()
+	var duplicate := legacy.duplicate(true)
+	duplicate.append(legacy[0].duplicate(true))
+	assertions.equal(
+		world.call("normalize_resource_dicts", duplicate, 5),
+		null,
+		"duplicate stable resource IDs reject the entire snapshot"
+	)
+	assertions.truthy(
+		not world.restore_resource_dicts(duplicate, 5),
+		"duplicate resource snapshot cannot partially apply"
+	)
+	assertions.equal(world.to_resource_dicts(), before, "rejected normalization leaves world unchanged")
+	var invalid := before.duplicate(true)
+	invalid[0]["remaining_units"] = 0
+	invalid[0]["respawn_day"] = 5
+	invalid[0]["visual_stage"] = 3
+	assertions.truthy(
+		not world.restore_resource_dicts(invalid, 5),
+		"expired respawn boundary rejects the entire snapshot"
+	)
+	assertions.equal(world.to_resource_dicts(), before, "invalid respawn leaves every resource unchanged")
+	world.free()
+
+
+func _record_by_id(records: Array, resource_id: String) -> Dictionary:
+	for record in records:
+		if record is Dictionary and str(record.get("resource_id", "")) == resource_id:
+			return record
+	return {}
+
+
 func _test_real_water_and_riverbank_adjacency(
 	assertions: TestAssert,
 	tree: SceneTree
@@ -526,17 +607,19 @@ func _test_player_target_routing(assertions: TestAssert, tree: SceneTree) -> voi
 	var controller := PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
 	controller.configure(null, GridDouble.new(), null, building, tools, null)
+	var gathering := GatheringDouble.new()
+	assertions.truthy(controller.configure_gathering(gathering), "controller accepts gathering routing")
 	var target := GatherTarget.new()
 	var collider := Area3D.new()
 	target.add_child(collider)
 	tree.root.add_child(target)
 	assertions.truthy(controller.select_slot(2), "axe slot selects in farming mode")
 	assertions.truthy(controller.perform_target_interaction(target), "axe slot routes gather target")
-	assertions.equal(tools.used_targets, [target], "gather target reaches ToolSystem once")
+	assertions.equal(gathering.requested, [target], "gather target reaches GatheringController once")
 	assertions.equal(controller._find_interaction_target(collider), target, "raycast collider resolves gatherable parent")
 	assertions.truthy(controller.switch_mode(PlayerActionController.ActionMode.BUILDING), "fixture enters build mode")
 	assertions.truthy(not controller.perform_target_interaction(target), "build mode cannot gather resources")
-	assertions.equal(tools.used_targets.size(), 1, "blocked build-mode gather does not call ToolSystem")
+	assertions.equal(gathering.requested.size(), 1, "blocked build-mode gather creates no command")
 	target.free()
 	controller.free()
 
