@@ -37,13 +37,9 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 			"id",
 			"tree@%.3f,%.3f" % [float(tree_data.x), float(tree_data.z)]
 		)),
-		"required_tool": "axe",
-		"hits": 3,
-		"yield_per_hit": {"wood": 2},
-		"bonus_table": [],
-		"respawn_days": 3,
+		"resource_type": "tree",
 		"position": Vector3(float(tree_data.x), terrain_height, float(tree_data.z)),
-		"visual_kind": "tree",
+		"gatherable": bool(tree_data.get("gatherable", false)),
 	})
 	add_to_group("tree_instance")
 
@@ -99,16 +95,16 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	occluder_collision.position.y = tree_height * 0.5
 	camera_occluder.add_child(occluder_collision)
 	add_child(camera_occluder)
-	_set_gather_active(true)
+	_set_gather_active(gathering_enabled and remaining_units > 0)
 
 
 func _set_gather_active(active: bool) -> void:
 	super(active)
 	if sprite != null:
-		sprite.visible = active
+		sprite.visible = true
 	var trunk_body := get_node_or_null("TrunkBody") as CollisionObject3D
 	if trunk_body != null:
-		trunk_body.collision_layer = TREE_TRUNK_LAYER if active else 0
+		trunk_body.collision_layer = TREE_TRUNK_LAYER if (not gathering_enabled or active) else 0
 	var gather_area := get_node_or_null("GatherArea") as CollisionObject3D
 	if gather_area != null:
 		gather_area.collision_layer = INTERACTION_LAYER if active else 0

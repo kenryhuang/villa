@@ -26,7 +26,7 @@
 - Modify: `scripts/world/tree_instance.gd`
 - Modify: `tests/test_resource_gathering.gd`
 
-- [ ] **Step 1: 写资源目录与 v2 状态失败测试**
+- [x] **Step 1: 写资源目录与 v2 状态失败测试**
 
 在 `tests/test_resource_gathering.gd` 增加断言：
 
@@ -39,13 +39,13 @@ assertions.equal(node.to_dict().state_version, 2, "resource state uses schema v2
 
 并覆盖三阶段视觉、采空树桩/碎石仍可见但不可交互、同日刷新幂等、旧 `hits_remaining` 比例迁移。
 
-- [ ] **Step 2: 运行资源测试并确认失败**
+- [x] **Step 2: 运行资源测试并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 
 Expected: FAIL，提示 `ResourceCatalog`、`remaining_units` 或 `state_version` 尚不存在。
 
-- [ ] **Step 3: 实现不可变资源目录**
+- [x] **Step 3: 实现不可变资源目录**
 
 `scripts/world/resource_catalog.gd` 暴露：
 
@@ -59,17 +59,17 @@ static func all_types() -> Array[String]
 
 目录精确包含树木、石材、煤、铜、铁、银、金、水晶的 `item_id`、`required_tool`、`max_units`、`respawn_days`、显示名和颜色；每次返回深拷贝，调用者不能修改共享配置。
 
-- [ ] **Step 4: 将资源节点升级为 v2**
+- [x] **Step 4: 将资源节点升级为 v2**
 
 `ResourceNode` 改用 `resource_type`、`item_id`、`max_units`、`remaining_units`、`respawn_day` 与 `visual_stage`。提供兼容属性或读取路径，使旧测试与旧场景不会因 `hits_remaining` 消失而崩溃；`preview_reward()` 永远只返回 `{item_id: 1}`，删除运行时概率奖励。
 
 `to_dict()` 输出完整 v2 记录；`validate_state_dict()` 和 `from_dict()` 同时接受 v2 与旧记录，但任何失败都不改变节点。视觉在 `remaining_units` 变化时更新，不再用 `visible = false` 隐藏采空节点。
 
-- [ ] **Step 5: 配置可采树为 5 单位木材**
+- [x] **Step 5: 配置可采树为 5 单位木材**
 
 `TreeInstance.configure()` 只在数据包含 `gatherable: true` 时加入采集组，配置 `tree/wood/axe/5/3`；装饰树保持碰撞与遮挡，但不暴露采集接口给点击路由。
 
-- [ ] **Step 6: 运行资源测试并提交**
+- [x] **Step 6: 运行资源测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 

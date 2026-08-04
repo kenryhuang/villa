@@ -1,6 +1,7 @@
 extends RefCounted
 
 const RESOURCE_NODE_PATH := "res://scripts/world/resource_node.gd"
+const RESOURCE_CATALOG_PATH := "res://scripts/world/resource_catalog.gd"
 const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
 const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
@@ -161,6 +162,7 @@ class AdvancingWorldDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_resource_catalog_and_v2_contract(assertions)
 	_test_target_free_rewards_are_rejected(assertions, tree)
 	assertions.truthy(
 		ResourceLoader.exists(RESOURCE_NODE_PATH),
@@ -182,6 +184,50 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_save_and_legacy_initialization(assertions, tree)
 	_test_calendar_coherent_resource_snapshots(assertions, tree)
 	_test_daily_coordinator_owns_resource_advance(assertions)
+
+
+func _test_resource_catalog_and_v2_contract(assertions: TestAssert) -> void:
+	assertions.truthy(
+		ResourceLoader.exists(RESOURCE_CATALOG_PATH),
+		"manual gathering has an immutable resource catalog"
+	)
+	if not ResourceLoader.exists(RESOURCE_CATALOG_PATH):
+		return
+	var catalog_script := load(RESOURCE_CATALOG_PATH) as Script
+	assertions.truthy(catalog_script != null, "resource catalog script loads")
+	if catalog_script == null:
+		return
+	var tree_definition: Dictionary = catalog_script.call("definition", "tree")
+	var gold_definition: Dictionary = catalog_script.call("definition", "gold_ore")
+	assertions.equal(tree_definition.get("max_units"), 5, "tree capacity is five")
+	assertions.equal(tree_definition.get("respawn_days"), 3, "tree respawns in three days")
+	assertions.equal(gold_definition.get("max_units"), 2, "rare ore capacity is two")
+	assertions.equal(gold_definition.get("respawn_days"), 7, "rare ore respawns in seven days")
+	tree_definition["max_units"] = 99
+	assertions.equal(
+		(catalog_script.call("definition", "tree") as Dictionary).get("max_units"),
+		5,
+		"resource catalog definitions are returned by value"
+	)
+
+	var resource_script := load(RESOURCE_NODE_PATH) as Script
+	var node = resource_script.new()
+	assertions.truthy(node.configure_resource({
+		"resource_id": "copper-v2",
+		"resource_type": "copper_ore",
+		"position": Vector3.ZERO,
+	}), "resource node configures from catalog type")
+	assertions.equal(node.preview_reward("pickaxe"), {"copper_ore": 1}, "visible ore yields one unit")
+	var state: Dictionary = node.to_dict()
+	assertions.equal(state.get("state_version"), 2, "resource state uses schema v2")
+	assertions.equal(state.get("remaining_units"), 3, "resource state stores remaining units")
+	assertions.equal(state.get("max_units"), 3, "resource state stores capacity")
+	assertions.equal(state.get("visual_stage"), 0, "full resource starts at visual stage zero")
+	node.commit_gather("pickaxe", 4)
+	state = node.to_dict()
+	assertions.equal(state.get("remaining_units"), 2, "one action removes one resource unit")
+	assertions.equal(state.get("visual_stage"), 1, "partial resource advances its visual stage")
+	node.free()
 
 
 func _test_target_free_rewards_are_rejected(assertions: TestAssert, tree: SceneTree) -> void:
@@ -226,7 +272,7 @@ func _test_tool_target_matrix(
 
 	tools.switch_tool(ToolSystem.ToolType.PICKAXE)
 	assertions.truthy(tools.use_tool_on(rock), "pickaxe gathers rock")
-	assertions.equal(inventory.get_item_count("stone"), 2, "rock hit grants two stone")
+	assertions.equal(inventory.get_item_count("stone"), 1, "rock action grants one stone")
 
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
 	var texture := ImageTexture.create_from_image(image)
@@ -238,11 +284,13 @@ func _test_tool_target_matrix(
 		"width": 2.0,
 		"height": 3.0,
 		"clearance": 1.0,
+		"gatherable": true,
 	}, texture, 0.0)
 	tools.switch_tool(ToolSystem.ToolType.AXE)
 	assertions.truthy(tools.use_tool_on(tree_node), "axe gathers a tree")
-	assertions.equal(inventory.get_item_count("wood"), 2, "tree hit grants two wood")
+	assertions.equal(inventory.get_item_count("wood"), 1, "tree action grants one wood")
 	assertions.equal(tree_node.required_tool, "axe", "tree requires axe")
+	assertions.equal(tree_node.max_units, 5, "gatherable tree has five units")
 	assertions.equal(tree_node.respawn_days, 3, "tree uses three-day respawn")
 	tree_node.free()
 	rock.free()
@@ -256,7 +304,7 @@ func _test_depletion_and_exact_respawn(assertions: TestAssert, resource_script: 
 	var node = _resource(resource_script, "respawn-rock", "pickaxe", {"stone": 2}, [], 3)
 	for hit_index in range(3):
 		var reward: Dictionary = node.commit_gather("pickaxe", 7)
-		assertions.equal(reward, {"stone": 2}, "successful hit %d returns exact reward" % (hit_index + 1))
+		assertions.equal(reward, {"stone": 1}, "successful action %d returns one unit" % (hit_index + 1))
 	assertions.equal(node.hits_remaining, 0, "exactly three successful hits deplete")
 	assertions.truthy(not node.can_gather("pickaxe"), "depleted node is non-gatherable")
 	assertions.equal(node.get_respawn_day(), 10, "depletion records exact respawn boundary")
@@ -290,17 +338,16 @@ func _test_atomic_capacity_and_bonus(
 		[{"item_id": "coal", "quantity": 1, "every_hits": 1, "offset": 0}],
 		3
 	)
-	_fill_inventory(inventory, 19)
+	_fill_inventory(inventory, 20)
 	var hits_before: int = int(node.hits_remaining)
-	assertions.truthy(not tools.use_tool_on(node), "multi-item reward rejects insufficient total slots")
+	assertions.truthy(not tools.use_tool_on(node), "single-unit reward rejects a full inventory")
 	assertions.equal(node.hits_remaining, hits_before, "failed reward preflight causes no damage")
-	assertions.equal(inventory.get_item_count("stone"), 0, "failed reward commits no primary item")
-	assertions.equal(inventory.get_item_count("coal"), 0, "failed reward commits no bonus")
+	assertions.equal(inventory.get_item_count("stone"), 0, "failed reward commits no item")
 
 	inventory.clear()
-	assertions.truthy(tools.use_tool_on(node), "bonus reward succeeds with capacity")
-	assertions.equal(inventory.get_item_count("stone"), 2, "successful bonus hit adds stone")
-	assertions.equal(inventory.get_item_count("coal"), 1, "deterministic bonus adds coal")
+	assertions.truthy(tools.use_tool_on(node), "single-unit reward succeeds with capacity")
+	assertions.equal(inventory.get_item_count("stone"), 1, "successful action adds one stone")
+	assertions.equal(inventory.get_item_count("coal"), 0, "legacy probability bonus is ignored")
 
 	var tree_node = _resource(resource_script, "full-tree", "axe", {"wood": 2})
 	_fill_inventory(inventory, 20)
@@ -327,12 +374,13 @@ func _test_json_state_contract(assertions: TestAssert, resource_script: Script) 
 	assertions.equal(restored.to_dict(), source.to_dict(), "resource state round-trips exactly")
 
 	var integral_floats: Dictionary = source.to_dict()
-	integral_floats["hits_remaining"] = float(integral_floats.hits_remaining)
+	integral_floats["remaining_units"] = float(integral_floats.remaining_units)
+	integral_floats["max_units"] = float(integral_floats.max_units)
 	integral_floats["respawn_day"] = float(integral_floats.respawn_day)
 	assertions.truthy(restored.from_dict(integral_floats), "integral JSON floats are accepted")
 	var before: Dictionary = restored.to_dict()
 	var malformed := integral_floats.duplicate(true)
-	malformed["hits_remaining"] = 1.5
+	malformed["remaining_units"] = 1.5
 	assertions.truthy(not restored.from_dict(malformed), "fractional hit state is rejected")
 	assertions.equal(restored.to_dict(), before, "malformed state is rejected atomically")
 	malformed = integral_floats.duplicate(true)
@@ -508,8 +556,9 @@ func _test_calendar_coherent_resource_snapshots(
 	var before_resources: Array[Dictionary] = world.call("to_resource_dicts")
 	var stale_resources := before_resources.duplicate(true)
 	var stale_record: Dictionary = stale_resources[0]
-	stale_record["hits_remaining"] = 0
+	stale_record["remaining_units"] = 0
 	stale_record["respawn_day"] = 3
+	stale_record["visual_stage"] = 3
 	stale_resources[0] = stale_record
 	var saved_market: Dictionary = market.to_dict()
 	saved_market["last_settled_day"] = 10
@@ -530,8 +579,9 @@ func _test_calendar_coherent_resource_snapshots(
 
 	var future_resources := before_resources.duplicate(true)
 	var future_record: Dictionary = future_resources[0]
-	future_record["hits_remaining"] = 0
+	future_record["remaining_units"] = 0
 	future_record["respawn_day"] = 12
+	future_record["visual_stage"] = 3
 	future_resources[0] = future_record
 	var future_save := stale_save.duplicate(true)
 	future_save["resource_nodes"] = future_resources

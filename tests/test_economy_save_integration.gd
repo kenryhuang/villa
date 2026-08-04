@@ -370,8 +370,9 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	assertions.equal(main.building_system.restore_buildings([workbench_record]), 1, "round-trip fixture restores queued producer")
 	main.production_system.register_existing_buildings()
 	var depleted_resources: Array[Dictionary] = main.world.to_resource_dicts()
-	depleted_resources[0]["hits_remaining"] = 0
+	depleted_resources[0]["remaining_units"] = 0
 	depleted_resources[0]["respawn_day"] = 7
+	depleted_resources[0]["visual_stage"] = 3
 	assertions.truthy(
 		main.world.restore_resource_dicts(depleted_resources, 4),
 		"round-trip fixture depletes a real resource"
@@ -389,7 +390,7 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	assertions.equal(str(encoded.economy_state.contracts[0].contract_id), contract.contract_id, "real JSON preserves contract identity")
 	assertions.equal(encoded.buildings[0].producer_state.jobs.size(), 1, "real JSON carries queued producer job")
 	assertions.equal(int(encoded.buildings[0].producer_state.outputs.plank), 2, "real JSON carries staged producer output")
-	assertions.equal(encoded.resource_nodes[0].hits_remaining, 0, "real JSON carries depleted resource")
+	assertions.equal(encoded.resource_nodes[0].remaining_units, 0, "real JSON carries depleted resource")
 	var expected_market: Dictionary = main.market_system.to_dict()
 	var expected_npc: Dictionary = main.npc_economy_system.to_dict()
 	var expected_economy: Dictionary = main.economy_system.to_dict()
@@ -1275,8 +1276,11 @@ func _prepare_divergent_atomic_payload(
 
 	if not incoming.resource_nodes.is_empty():
 		var resource: Dictionary = incoming.resource_nodes[0]
-		if int(resource.hits_remaining) > 1:
-			resource.hits_remaining = int(resource.hits_remaining) - 1
+		if int(resource.remaining_units) > 1:
+			resource.remaining_units = int(resource.remaining_units) - 1
+			var remaining := int(resource.remaining_units)
+			var capacity := int(resource.max_units)
+			resource.visual_stage = 0 if remaining >= capacity else (1 if remaining * 3 > capacity else 2)
 		incoming.resource_nodes[0] = resource
 
 	var added_grid_divergence := false

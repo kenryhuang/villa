@@ -1,83 +1,120 @@
 class_name ResourceNode
 extends Node3D
 
+const ResourceCatalogScript = preload("res://scripts/world/resource_catalog.gd")
 const INTERACTION_LAYER := 64
 const OBSTACLE_LAYER := 16
+const STATE_VERSION := 2
 
 @export var resource_id := ""
+@export var resource_type := "stone"
+@export var item_id := "stone"
 @export var required_tool := "pickaxe"
-@export var hits_remaining := 3
-@export var yield_per_hit: Dictionary = {"stone": 2}
-@export var bonus_table: Array[Dictionary] = []
+@export var max_units := 4
+@export var remaining_units := 4
 @export var respawn_days := 3
+@export var visual_stage := 0
+@export var gathering_enabled := true
 
-var visual_kind := "rock"
-var _max_hits := 3
+# Compatibility surfaces for old scenes and callers. Runtime rewards are always one unit.
+var hits_remaining: int:
+	get:
+		return remaining_units
+	set(value):
+		remaining_units = value
+		_update_visual_stage()
+var yield_per_hit: Dictionary:
+	get:
+		return {item_id: 1} if not item_id.is_empty() else {}
+	set(value):
+		if value is Dictionary and not value.is_empty():
+			item_id = str(value.keys()[0])
+var bonus_table: Array[Dictionary] = []
+var visual_kind := "stone"
+
 var _respawn_day := 0
 var _last_advanced_day := 0
+var _legacy_max_hits := 3
 
 
 func _ready() -> void:
-	add_to_group("gatherable_resource")
-	_set_gather_active(hits_remaining > 0)
+	if gathering_enabled:
+		add_to_group("gatherable_resource")
+	else:
+		remove_from_group("gatherable_resource")
+	_set_gather_active(gathering_enabled and remaining_units > 0)
+	_apply_visual_stage()
 
 
 func configure_resource(definition: Dictionary) -> bool:
 	var next_id := str(definition.get("resource_id", ""))
-	var next_tool := str(definition.get("required_tool", ""))
-	var next_hits_value: Variant = definition.get("hits", 3)
-	var next_respawn_value: Variant = definition.get("respawn_days", 3)
-	var next_yield: Variant = definition.get("yield_per_hit", {})
-	var next_bonus: Variant = definition.get("bonus_table", [])
 	var next_position: Variant = definition.get("position", Vector3.ZERO)
+	if next_id.is_empty() or not next_position is Vector3 or not _finite_vector3(next_position):
+		return false
+
+	var next_type := str(definition.get("resource_type", ""))
+	if next_type.is_empty():
+		next_type = _infer_resource_type(definition)
+	var catalog := ResourceCatalogScript.definition(next_type)
+	var next_item := str(definition.get("item_id", catalog.get("item_id", "")))
+	if next_item.is_empty():
+		var legacy_reward: Variant = definition.get("yield_per_hit", {})
+		if legacy_reward is Dictionary and not legacy_reward.is_empty():
+			next_item = str(legacy_reward.keys()[0])
+	var next_tool := str(definition.get("required_tool", catalog.get("required_tool", "")))
+	var next_max_value: Variant = definition.get(
+		"max_units",
+		definition.get("hits", catalog.get("max_units", 0))
+	)
+	var next_respawn_value: Variant = definition.get(
+		"respawn_days",
+		catalog.get("respawn_days", 0)
+	)
 	if (
-		next_id.is_empty()
+		next_type.is_empty()
+		or next_item.is_empty()
 		or next_tool not in ["axe", "pickaxe"]
-		or not _is_positive_integer(next_hits_value)
+		or not _is_positive_integer(next_max_value)
 		or not _is_non_negative_integer(next_respawn_value)
-		or not _valid_reward(next_yield)
-		or not _valid_bonus_table(next_bonus)
-		or not next_position is Vector3
-		or not _finite_vector3(next_position)
 	):
 		return false
+
 	resource_id = next_id
+	resource_type = next_type
+	item_id = next_item
 	required_tool = next_tool
-	_max_hits = int(next_hits_value)
-	hits_remaining = _max_hits
+	max_units = int(next_max_value)
+	remaining_units = max_units
+	_legacy_max_hits = int(definition.get("hits", max_units))
 	respawn_days = int(next_respawn_value)
-	yield_per_hit = _normalized_reward(next_yield)
-	bonus_table = _normalized_bonus_table(next_bonus)
 	position = next_position
-	visual_kind = str(definition.get("visual_kind", "rock"))
+	visual_kind = str(definition.get("visual_kind", catalog.get("visual_kind", next_type)))
+	gathering_enabled = bool(definition.get("gatherable", true))
+	bonus_table.clear()
 	_respawn_day = 0
 	_last_advanced_day = 0
-	_set_gather_active(true)
+	_update_visual_stage()
+	if is_inside_tree():
+		if gathering_enabled:
+			add_to_group("gatherable_resource")
+		else:
+			remove_from_group("gatherable_resource")
+	_set_gather_active(gathering_enabled and remaining_units > 0)
 	return true
 
 
 func can_gather(tool_id: String) -> bool:
 	return (
-		not resource_id.is_empty()
+		gathering_enabled
+		and not resource_id.is_empty()
 		and tool_id == required_tool
-		and hits_remaining > 0
-		and not yield_per_hit.is_empty()
+		and remaining_units > 0
+		and not item_id.is_empty()
 	)
 
 
 func preview_reward(tool_id: String) -> Dictionary:
-	if not can_gather(tool_id):
-		return {}
-	var reward := yield_per_hit.duplicate(true)
-	var hit_number := _max_hits - hits_remaining + 1
-	for entry in bonus_table:
-		var every_hits := int(entry.every_hits)
-		var offset := int(entry.offset)
-		if (hit_number - 1 - offset) % every_hits != 0:
-			continue
-		var item_id := str(entry.item_id)
-		reward[item_id] = int(reward.get(item_id, 0)) + int(entry.quantity)
-	return reward
+	return {item_id: 1} if can_gather(tool_id) else {}
 
 
 func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
@@ -86,10 +123,11 @@ func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
 	var reward := preview_reward(tool_id)
 	if reward.is_empty():
 		return {}
-	hits_remaining -= 1
-	if hits_remaining == 0:
+	remaining_units -= 1
+	if remaining_units == 0:
 		_respawn_day = total_day + respawn_days
-		_set_gather_active(false)
+	_update_visual_stage()
+	_set_gather_active(gathering_enabled and remaining_units > 0)
 	return reward
 
 
@@ -97,19 +135,21 @@ func advance_day(total_day: int) -> bool:
 	if total_day < 0 or total_day <= _last_advanced_day:
 		return false
 	_last_advanced_day = total_day
-	if hits_remaining > 0 or _respawn_day <= 0 or total_day < _respawn_day:
+	if remaining_units > 0 or _respawn_day <= 0 or total_day < _respawn_day:
 		return false
-	hits_remaining = _max_hits
+	remaining_units = max_units
 	_respawn_day = 0
-	_set_gather_active(true)
+	_update_visual_stage()
+	_set_gather_active(gathering_enabled)
 	return true
 
 
 func initialize_at_day(total_day: int) -> void:
-	hits_remaining = _max_hits
+	remaining_units = max_units
 	_respawn_day = 0
 	_last_advanced_day = maxi(total_day, 0)
-	_set_gather_active(true)
+	_update_visual_stage()
+	_set_gather_active(gathering_enabled)
 
 
 func sync_day_cursor(total_day: int) -> bool:
@@ -123,61 +163,40 @@ func get_respawn_day() -> int:
 	return _respawn_day
 
 
+func get_display_name() -> String:
+	return str(ResourceCatalogScript.definition(resource_type).get("display_name", resource_type))
+
+
 func to_dict() -> Dictionary:
 	return {
+		"state_version": STATE_VERSION,
 		"resource_id": resource_id,
-		"position": [position.x, position.y, position.z],
-		"hits_remaining": hits_remaining,
+		"resource_type": resource_type,
+		"item_id": item_id,
+		"required_tool": required_tool,
+		"max_units": max_units,
+		"remaining_units": remaining_units,
+		"respawn_days": respawn_days,
 		"respawn_day": _respawn_day,
+		"position": [position.x, position.y, position.z],
+		"visual_stage": visual_stage,
 	}
 
 
 func validate_state_dict(data: Variant, loaded_day: int = -1) -> bool:
-	if not data is Dictionary:
-		return false
-	for field in ["resource_id", "position", "hits_remaining", "respawn_day"]:
-		if not data.has(field):
-			return false
-	if str(data.resource_id) != resource_id or resource_id.is_empty():
-		return false
-	var saved_position: Variant = data.position
-	if not saved_position is Array or saved_position.size() != 3:
-		return false
-	for coordinate in saved_position:
-		if not _is_finite_number(coordinate):
-			return false
-	if not _is_integer_number(data.hits_remaining):
-		return false
-	if not _is_integer_number(data.respawn_day):
-		return false
-	var saved_hits := int(data.hits_remaining)
-	var saved_respawn := int(data.respawn_day)
-	if saved_hits < 0 or saved_hits > _max_hits or saved_respawn < 0:
-		return false
-	if saved_hits == 0 and saved_respawn <= 0:
-		return false
-	if saved_hits > 0 and saved_respawn != 0:
-		return false
-	if loaded_day >= 0 and saved_hits == 0 and (
-		saved_respawn <= loaded_day
-		or saved_respawn > loaded_day + respawn_days
-	):
-		return false
-	return true
+	return not _normalized_state(data, loaded_day).is_empty()
 
 
 func from_dict(data: Dictionary) -> bool:
-	if not validate_state_dict(data):
+	var normalized := _normalized_state(data)
+	if normalized.is_empty():
 		return false
-	var saved_position: Array = data.position
-	position = Vector3(
-		float(saved_position[0]),
-		float(saved_position[1]),
-		float(saved_position[2])
-	)
-	hits_remaining = int(data.hits_remaining)
-	_respawn_day = int(data.respawn_day)
-	_set_gather_active(hits_remaining > 0)
+	var saved_position: Array = normalized.position
+	position = Vector3(float(saved_position[0]), float(saved_position[1]), float(saved_position[2]))
+	remaining_units = int(normalized.remaining_units)
+	_respawn_day = int(normalized.respawn_day)
+	_update_visual_stage()
+	_set_gather_active(gathering_enabled and remaining_units > 0)
 	return true
 
 
@@ -186,34 +205,10 @@ func build_fallback_visual() -> void:
 		return
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "Visual"
-	var shape: Shape3D
-	match visual_kind:
-		"clay":
-			var clay_mesh := CylinderMesh.new()
-			clay_mesh.top_radius = 0.48
-			clay_mesh.bottom_radius = 0.58
-			clay_mesh.height = 0.32
-			mesh_instance.mesh = clay_mesh
-			var cylinder := CylinderShape3D.new()
-			cylinder.radius = 0.56
-			cylinder.height = 0.32
-			shape = cylinder
-		"sand":
-			var sand_mesh := SphereMesh.new()
-			sand_mesh.radius = 0.6
-			sand_mesh.height = 0.28
-			mesh_instance.mesh = sand_mesh
-			var sphere := SphereShape3D.new()
-			sphere.radius = 0.55
-			shape = sphere
-		_:
-			var rock_mesh := SphereMesh.new()
-			rock_mesh.radius = 0.48
-			rock_mesh.height = 0.8
-			mesh_instance.mesh = rock_mesh
-			var sphere := SphereShape3D.new()
-			sphere.radius = 0.48
-			shape = sphere
+	var rock_mesh := SphereMesh.new()
+	rock_mesh.radius = 0.52
+	rock_mesh.height = 0.82
+	mesh_instance.mesh = rock_mesh
 	var material := StandardMaterial3D.new()
 	material.roughness = 0.92
 	material.albedo_color = _fallback_color()
@@ -227,76 +222,154 @@ func build_fallback_visual() -> void:
 	body.collision_mask = 0
 	var collision := CollisionShape3D.new()
 	collision.name = "CollisionShape3D"
-	collision.shape = shape
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.52
+	collision.shape = sphere
 	collision.position.y = 0.2
 	body.add_child(collision)
 	add_child(body)
-	_set_gather_active(hits_remaining > 0)
+	_apply_visual_stage()
+	_set_gather_active(gathering_enabled and remaining_units > 0)
 
 
 func _set_gather_active(active: bool) -> void:
-	visible = active
+	visible = true
 	var body := get_node_or_null("Collision") as CollisionObject3D
 	if body != null:
 		body.collision_layer = (OBSTACLE_LAYER | INTERACTION_LAYER) if active else 0
 
 
-func _fallback_color() -> Color:
-	match visual_kind:
-		"clay":
-			return Color(0.52, 0.29, 0.18)
-		"sand":
-			return Color(0.82, 0.70, 0.45)
+func _update_visual_stage() -> void:
+	if remaining_units <= 0:
+		visual_stage = 3
+	elif remaining_units >= max_units:
+		visual_stage = 0
+	elif remaining_units * 3 > max_units:
+		visual_stage = 1
+	else:
+		visual_stage = 2
+	_apply_visual_stage()
+
+
+func _apply_visual_stage() -> void:
+	var visual := get_node_or_null("Visual") as Node3D
+	if visual == null:
+		return
+	match visual_stage:
+		0:
+			visual.scale = Vector3.ONE
+		1:
+			visual.scale = Vector3(0.82, 0.82, 0.82)
+		2:
+			visual.scale = Vector3(0.62, 0.62, 0.62)
 		_:
-			return Color(0.38, 0.40, 0.43)
+			visual.scale = Vector3(0.42, 0.18, 0.42)
 
 
-func _valid_reward(value: Variant) -> bool:
-	if not value is Dictionary or value.is_empty():
-		return false
-	for item_id in value:
-		if str(item_id).is_empty() or not _is_positive_integer(value[item_id]):
-			return false
-	return true
+func _fallback_color() -> Color:
+	return Color(ResourceCatalogScript.definition(resource_type).get("color", Color("62666a")))
 
 
-func _normalized_reward(value: Dictionary) -> Dictionary:
-	var result := {}
-	for item_id in value:
-		result[str(item_id)] = int(value[item_id])
-	return result
+func _normalized_state(data: Variant, loaded_day: int = -1) -> Dictionary:
+	if not data is Dictionary:
+		return {}
+	if int(data.get("state_version", 1)) == STATE_VERSION:
+		return _normalized_v2_state(data, loaded_day)
+	return _normalized_legacy_state(data, loaded_day)
 
 
-func _valid_bonus_table(value: Variant) -> bool:
-	if not value is Array:
-		return false
-	for entry in value:
-		if not entry is Dictionary:
-			return false
-		for field in ["item_id", "quantity", "every_hits"]:
-			if not entry.has(field):
-				return false
-		if (
-			str(entry.item_id).is_empty()
-			or not _is_positive_integer(entry.quantity)
-			or not _is_positive_integer(entry.every_hits)
-			or not _is_non_negative_integer(entry.get("offset", 0))
-			or int(entry.get("offset", 0)) >= int(entry.every_hits)
-		):
-			return false
-	return true
+func _normalized_v2_state(data: Dictionary, loaded_day: int) -> Dictionary:
+	for field in [
+		"resource_id", "resource_type", "item_id", "required_tool", "max_units",
+		"remaining_units", "respawn_days", "respawn_day", "position", "visual_stage",
+	]:
+		if not data.has(field):
+			return {}
+	if (
+		str(data.resource_id) != resource_id
+		or str(data.resource_type) != resource_type
+		or str(data.item_id) != item_id
+		or str(data.required_tool) != required_tool
+		or not _is_integer_number(data.max_units)
+		or int(data.max_units) != max_units
+		or not _is_integer_number(data.remaining_units)
+		or not _is_integer_number(data.respawn_days)
+		or int(data.respawn_days) != respawn_days
+		or not _is_integer_number(data.respawn_day)
+		or not _is_integer_number(data.visual_stage)
+	):
+		return {}
+	return _validated_normalized_state(data, loaded_day)
 
 
-func _normalized_bonus_table(value: Array) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for entry in value:
-		result.append({
-			"item_id": str(entry.item_id),
-			"quantity": int(entry.quantity),
-			"every_hits": int(entry.every_hits),
-			"offset": int(entry.get("offset", 0)),
-		})
-	return result
+func _normalized_legacy_state(data: Dictionary, loaded_day: int) -> Dictionary:
+	for field in ["resource_id", "position", "hits_remaining", "respawn_day"]:
+		if not data.has(field):
+			return {}
+	if str(data.resource_id) != resource_id or not _is_integer_number(data.hits_remaining):
+		return {}
+	var old_hits := int(data.hits_remaining)
+	if old_hits < 0 or old_hits > _legacy_max_hits:
+		return {}
+	var migrated_units := 0
+	if old_hits > 0:
+		migrated_units = ceili(float(old_hits) / float(_legacy_max_hits) * float(max_units))
+	return _validated_normalized_state({
+		"state_version": STATE_VERSION,
+		"resource_id": resource_id,
+		"resource_type": resource_type,
+		"item_id": item_id,
+		"required_tool": required_tool,
+		"max_units": max_units,
+		"remaining_units": migrated_units,
+		"respawn_days": respawn_days,
+		"respawn_day": data.respawn_day,
+		"position": data.position,
+		"visual_stage": _stage_for_units(migrated_units),
+	}, loaded_day)
+
+
+func _validated_normalized_state(data: Dictionary, loaded_day: int) -> Dictionary:
+	var saved_position: Variant = data.position
+	if not saved_position is Array or saved_position.size() != 3:
+		return {}
+	for coordinate in saved_position:
+		if not _is_finite_number(coordinate):
+			return {}
+	var saved_units := int(data.remaining_units)
+	var saved_respawn := int(data.respawn_day)
+	if saved_units < 0 or saved_units > max_units or saved_respawn < 0:
+		return {}
+	if saved_units == 0 and saved_respawn <= 0:
+		return {}
+	if saved_units > 0 and saved_respawn != 0:
+		return {}
+	if loaded_day >= 0 and saved_units == 0 and (
+		saved_respawn <= loaded_day or saved_respawn > loaded_day + respawn_days
+	):
+		return {}
+	var expected_stage := _stage_for_units(saved_units)
+	if int(data.visual_stage) != expected_stage:
+		return {}
+	return data.duplicate(true)
+
+
+func _stage_for_units(units: int) -> int:
+	if units <= 0:
+		return 3
+	if units >= max_units:
+		return 0
+	return 1 if units * 3 > max_units else 2
+
+
+func _infer_resource_type(definition: Dictionary) -> String:
+	var reward: Variant = definition.get("yield_per_hit", {})
+	if not reward is Dictionary or reward.is_empty():
+		return ""
+	var inferred_item := str(reward.keys()[0])
+	if inferred_item == "wood":
+		return "tree"
+	return inferred_item
 
 
 func _is_positive_integer(value: Variant) -> bool:
