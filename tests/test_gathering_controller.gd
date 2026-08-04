@@ -51,7 +51,7 @@ class ToolsDouble:
 	var selected_tool := ""
 	var commit_calls := 0
 
-	func preview_gather_unit(_target: Node) -> Dictionary:
+	func preview_gather_unit(_target: Node, _require_range: bool = true) -> Dictionary:
 		return {
 			"allowed": preview_allowed,
 			"reason": preview_reason,
@@ -124,6 +124,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var target := Node3D.new()
 	tree.root.add_child(target)
 	assertions.truthy(controller.request_gather(target), "valid target starts a gather command")
+	assertions.truthy(controller.has_active_command(), "moving gather command reports active")
 	assertions.equal(tools.selected_tool, "pickaxe", "request automatically equips the required tool")
 	assertions.equal(player.started_paths.size(), 1, "request starts one auto path")
 	assertions.equal(controller.get_state_name(), "MOVING", "request waits in moving state")
@@ -139,6 +140,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(season.owner, null, "successful action releases its clock lock")
 	assertions.equal(completed.size(), 1, "successful action emits completion once")
 	assertions.equal(controller.get_state_name(), "IDLE", "single-unit action stops when complete")
+	assertions.truthy(not controller.has_active_command(), "completed command reports inactive")
 	assertions.truthy(not progress_values.is_empty(), "action emits circular progress values")
 
 	var replacement := Node3D.new()

@@ -65,6 +65,7 @@ var farming_system: Variant
 var building_system: Variant
 var tool_system: Variant
 var inventory_system: Variant
+var gathering_controller: Variant
 var crop_data_override: CropData
 var _event_bus: Node
 
@@ -115,6 +116,18 @@ func configure(
 	select_mode_slot(_selected_slot)
 
 
+func configure_gathering(controller: Variant) -> bool:
+	if (
+		controller == null
+		or not controller.has_method("request_gather")
+		or not controller.has_method("cancel_current")
+		or not controller.has_method("has_active_command")
+	):
+		return false
+	gathering_controller = controller
+	return true
+
+
 func select_slot(index: int) -> bool:
 	if _action_mode != ActionMode.FARMING:
 		switch_mode(ActionMode.FARMING)
@@ -124,6 +137,7 @@ func select_slot(index: int) -> bool:
 func switch_mode(mode: ActionMode) -> bool:
 	if mode not in [ActionMode.FARMING, ActionMode.BUILDING]:
 		return false
+	_cancel_gathering("mode_changed")
 	if building_system != null and building_system.is_in_build_mode():
 		building_system.exit_preview_mode()
 	if grid_system != null:
@@ -148,6 +162,7 @@ func select_mode_slot(index: int) -> bool:
 	var labels := SLOT_LABELS if _action_mode == ActionMode.FARMING else BUILDING_LABELS
 	if index < 0 or index >= labels.size():
 		return false
+	_cancel_gathering("tool_changed")
 	if _action_mode == ActionMode.BUILDING:
 		var diagnostic := get_building_resource_diagnostic(index)
 		if not bool(diagnostic.get("allowed", false)):
@@ -189,8 +204,10 @@ func get_building_resource_diagnostic(index: int) -> Dictionary:
 
 
 func cancel_current_selection() -> bool:
+	var gathering_was_active := _gathering_is_active()
+	_cancel_gathering("selection_cancelled")
 	if _selected_slot < 0:
-		return false
+		return gathering_was_active
 	if _action_mode == ActionMode.BUILDING:
 		if building_system != null and building_system.is_in_build_mode():
 			building_system.exit_preview_mode()
@@ -311,9 +328,9 @@ func perform_target_interaction(target: Node) -> bool:
 	if target == null or _action_mode != ActionMode.FARMING:
 		return false
 	if target.has_method("can_gather"):
-		if _selected_slot not in [2, 3] or tool_system == null:
+		if gathering_controller == null:
 			return false
-		return bool(tool_system.use_tool_on(target))
+		return bool(gathering_controller.call("request_gather", target))
 	if target.has_method("start_dialogue"):
 		target.start_dialogue()
 		return true
@@ -404,12 +421,16 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 
 	var interaction_hit := _raycast_to_interaction(pointer_position)
 	if not interaction_hit.is_empty():
+		var interaction_target: Node = interaction_hit.get("target")
 		var hit_position: Vector3 = interaction_hit.get("position", Vector3.ZERO)
+		if interaction_target != null and interaction_target.has_method("can_gather"):
+			return perform_target_interaction(interaction_target)
 		if _point_in_player_range(hit_position):
-			return perform_target_interaction(interaction_hit.get("target"))
+			return perform_target_interaction(interaction_target)
 
 	if not ground_point is Vector3 or grid_system == null:
 		return false
+	_cancel_gathering("ground_clicked")
 	if not _point_in_player_range(ground_point):
 		return false
 	if _selected_slot < 0:
@@ -531,6 +552,18 @@ func _emit_build_feedback(details: Dictionary, prefix: String) -> void:
 			str(normalized.get("code", "unknown")),
 			str(normalized),
 		])
+
+
+func _gathering_is_active() -> bool:
+	return (
+		gathering_controller != null
+		and bool(gathering_controller.call("has_active_command"))
+	)
+
+
+func _cancel_gathering(reason: String) -> void:
+	if _gathering_is_active():
+		gathering_controller.call("cancel_current", reason)
 
 
 func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:

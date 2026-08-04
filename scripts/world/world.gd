@@ -113,6 +113,10 @@ func to_resource_dicts() -> Array[Dictionary]:
 	return records
 
 
+func get_gatherable_nodes() -> Array[Node]:
+	return _gatherable_nodes()
+
+
 func validate_resource_dicts(value: Variant, loaded_day: int = -1) -> bool:
 	if not value is Array:
 		return false

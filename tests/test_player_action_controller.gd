@@ -190,6 +190,36 @@ class InteractionDouble:
 		interactions += 1
 
 
+class GatheringDouble:
+	extends RefCounted
+
+	var requests: Array[Node] = []
+	var cancellations: Array[String] = []
+	var active := false
+
+	func request_gather(target: Node) -> bool:
+		requests.append(target)
+		active = true
+		return true
+
+	func cancel_current(reason: String) -> void:
+		if active:
+			cancellations.append(reason)
+		active = false
+
+	func has_active_command() -> bool:
+		return active
+
+
+class GatherTargetDouble:
+	extends Node3D
+
+	var gathering_enabled := true
+
+	func can_gather(_tool_id: String) -> bool:
+		return true
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var controller_path := "res://scripts/actors/player_action_controller.gd"
 	assertions.truthy(
@@ -209,6 +239,67 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_build_feedback_and_exhaustion(assertions, tree, controller_script)
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
+	_test_gathering_command_routing(assertions, tree, controller_script)
+
+
+func _test_gathering_command_routing(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var controller = controller_script.new()
+	var gathering := GatheringDouble.new()
+	var target := GatherTargetDouble.new()
+	tree.root.add_child(controller)
+	tree.root.add_child(target)
+	controller.configure(
+		null,
+		GridDouble.new(),
+		null,
+		BuildingDouble.new(),
+		ToolDouble.new(),
+		InventoryDouble.new()
+	)
+	assertions.truthy(
+		controller.has_method("configure_gathering"),
+		"action controller exposes gathering command injection"
+	)
+	if not controller.has_method("configure_gathering"):
+		target.free()
+		controller.free()
+		return
+	controller.configure_gathering(gathering)
+	controller.select_slot(0)
+	assertions.truthy(
+		controller.perform_target_interaction(target),
+		"gatherable click starts auto gathering regardless of selected tool"
+	)
+	assertions.equal(gathering.requests, [target], "gatherable target is routed once")
+	controller.select_slot(1)
+	assertions.equal(
+		gathering.cancellations[-1],
+		"tool_changed",
+		"manual tool selection cancels active gathering"
+	)
+	gathering.active = true
+	controller.switch_mode(PlayerActionController.ActionMode.BUILDING)
+	assertions.equal(
+		gathering.cancellations[-1],
+		"mode_changed",
+		"mode switch cancels active gathering"
+	)
+	gathering.active = true
+	assertions.truthy(
+		controller.cancel_current_selection(),
+		"escape-style selection cancel is handled during gathering"
+	)
+	assertions.equal(
+		gathering.cancellations[-1],
+		"selection_cancelled",
+		"escape-style cancellation stops gathering before commit"
+	)
+	target.free()
+	controller.free()
 
 
 func _test_action_priority(assertions: TestAssert, controller_script: Script) -> void:

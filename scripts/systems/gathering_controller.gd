@@ -71,7 +71,7 @@ func request_gather(target: Node) -> bool:
 	_target = target
 	_path_retry_used = false
 	_set_state(State.PREFLIGHT)
-	_preview = _tools.call("preview_gather_unit", target)
+	_preview = _tools.call("preview_gather_unit", target, false)
 	if not bool(_preview.get("allowed", false)):
 		_fail(str(_preview.get("reason", "invalid_target")))
 		return false
@@ -98,6 +98,10 @@ func cancel_current(reason: String) -> void:
 
 func get_state_name() -> String:
 	return State.keys()[int(_state)]
+
+
+func has_active_command() -> bool:
+	return _state != State.IDLE
 
 
 func _process(delta: float) -> void:

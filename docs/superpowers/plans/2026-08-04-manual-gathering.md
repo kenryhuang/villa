@@ -368,25 +368,25 @@ Commit: `feat: add gathering action and feedback visuals`
 - Create: `tests/test_main_gathering_integration.gd`
 - Modify: `tests/run_main_gameplay_integration_tests.gd`
 
-- [ ] **Step 1: 写真实主场景失败测试**
+- [x] **Step 1: 写真实主场景失败测试**
 
 实例化 `scenes/main.tscn`，点击远处资源，验证自动换工具、绕行、动作一次后停止；WASD、地面、建造模式和 Esc 取消。确认装饰树不会进入采集流程，现有农耕/建造点击仍正常。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 
 Expected: FAIL，主场景尚未创建或连接采集控制器。
 
-- [ ] **Step 3: 主场景编排依赖**
+- [x] **Step 3: 主场景编排依赖**
 
 `main.gd` 在网格、工具和玩家完成配置后创建 `GridPathfinder`、`GatheringController` 与反馈层，并连接资源阻挡。加载完成、场景退出和调试重置前统一取消当前采集并清理时钟锁。
 
-- [ ] **Step 4: 修改点击与模式路由**
+- [x] **Step 4: 修改点击与模式路由**
 
 普通工具模式点击 `gatherable_resource` 时将目标交给控制器，不再要求点击瞬间已在 2.5 米内。农耕和建造模式保持优先级；点击地面或其他目标先取消旧采集。HUD 自动高亮实际切换的工具。
 
-- [ ] **Step 5: 运行集成测试并提交**
+- [x] **Step 5: 运行集成测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd`
 

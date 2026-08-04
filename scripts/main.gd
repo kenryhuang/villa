@@ -19,6 +19,8 @@ const EconomyNotificationSystemScript := preload(
 	"res://scripts/systems/economy_notification_system.gd"
 )
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
+const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd")
+const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -41,6 +43,8 @@ static var _pending_debug_reload_save_slot := -1
 @onready var shop_ui = $ShopUI
 @onready var building_economy_ui = $BuildingEconomyUI
 @onready var economy_notification_ui: EconomyNotificationUI = $EconomyNotificationUI
+@onready var gathering_feedback: GatheringFeedback = $GatheringFeedback
+@onready var tool_swing_visual: ToolSwingVisual = $Actors/Player/ToolSwingVisual
 
 # 系统引用
 var grid_system: GridSystem
@@ -56,6 +60,8 @@ var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var building_system: BuildingSystem
 var tool_system: ToolSystem
+var grid_pathfinder: GridPathfinder
+var gathering_controller: GatheringController
 var villager_system
 var exploration_system: ExplorationSystem
 var collectible_system: CollectibleSystem
@@ -305,6 +311,21 @@ func _setup_player() -> void:
 	# 放置玩家到地形上
 	_place_on_terrain(player, Vector2(0.0, 0.0))
 	player.configure(camera_rig, world, tool_system, grid_system)
+	grid_pathfinder = GridPathfinderScript.new() as GridPathfinder
+	if not grid_pathfinder.configure(grid_system):
+		push_error("Unable to configure gathering pathfinder.")
+		return
+	gathering_controller = GatheringControllerScript.new() as GatheringController
+	gathering_controller.name = "GatheringController"
+	add_child(gathering_controller)
+	if not gathering_controller.configure(
+		player,
+		grid_pathfinder,
+		tool_system,
+		season_system
+	):
+		push_error("Unable to configure gathering controller.")
+		return
 	action_controller.configure(
 		player,
 		grid_system,
@@ -313,7 +334,50 @@ func _setup_player() -> void:
 		tool_system,
 		inventory_system
 	)
+	if not action_controller.configure_gathering(gathering_controller):
+		push_error("Unable to configure player gathering actions.")
+		return
+	if not gathering_feedback.bind(gathering_controller, tool_swing_visual):
+		push_error("Unable to configure gathering feedback.")
+		return
+	_register_resource_navigation()
 	camera_rig.set_target(player)
+
+
+func _register_resource_navigation() -> void:
+	if world == null or grid_system == null or not world.has_method("get_gatherable_nodes"):
+		return
+	for resource in world.get_gatherable_nodes():
+		if not resource is Node3D:
+			continue
+		var callback := Callable(self, "_on_resource_gathering_active_changed").bind(resource)
+		if (
+			resource.has_signal("gathering_active_changed")
+			and not resource.is_connected("gathering_active_changed", callback)
+		):
+			resource.connect("gathering_active_changed", callback)
+		var active := int(resource.get("remaining_units")) > 0
+		_set_resource_navigation_blocker(resource, active)
+
+
+func _on_resource_gathering_active_changed(
+	_resource_id: String,
+	active: bool,
+	resource: Node
+) -> void:
+	_set_resource_navigation_blocker(resource, active)
+
+
+func _set_resource_navigation_blocker(resource: Node, active: bool) -> void:
+	if grid_system == null or not resource is Node3D:
+		return
+	var node := resource as Node3D
+	var position := node.global_position if node.is_inside_tree() else node.position
+	grid_system.set_navigation_blocker(
+		"resource:%s" % str(resource.get("resource_id")),
+		grid_system.world_to_grid(position.x, position.z),
+		active
+	)
 
 
 func _setup_npcs() -> void:

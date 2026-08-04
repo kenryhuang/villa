@@ -71,7 +71,7 @@ func switch_tool_by_id(tool_id: String) -> bool:
 	return true
 
 
-func preview_gather_unit(target: Node) -> Dictionary:
+func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary:
 	var result := {
 		"allowed": false,
 		"reason": "invalid_target",
@@ -121,7 +121,7 @@ func preview_gather_unit(target: Node) -> Dictionary:
 	if inventory_ref == null or not _can_add_rewards({reward_item: 1}):
 		result.reason = "inventory_full"
 		return result
-	if not _target_is_in_range(target, tool_type):
+	if require_range and not _target_is_in_range(target, tool_type):
 		result.reason = "out_of_range"
 		return result
 	result.allowed = true
@@ -243,6 +243,8 @@ func _target_is_in_range(target: Node, tool_type: ToolType) -> bool:
 	var maximum_range := float(TOOL_RANGE.get(tool_type, 2.0))
 	if _has_property(player_node, "interaction_range"):
 		maximum_range = float(player_node.get("interaction_range"))
+	if target.has_method("get_interaction_radius"):
+		maximum_range += maxf(0.0, float(target.call("get_interaction_radius")))
 	return Vector2(player_position.x, player_position.z).distance_to(
 		Vector2(target_position.x, target_position.z)
 	) <= maximum_range
@@ -511,6 +513,10 @@ func get_current_tool_name() -> String:
 		ToolType.FISHING_ROD:
 			return "鱼竿"
 	return "未知"
+
+
+func get_current_tool_id() -> String:
+	return _tool_to_item_id(current_tool)
 
 
 func upgrade_tool(tool_type: ToolType) -> void:

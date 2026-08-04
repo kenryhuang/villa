@@ -1,6 +1,8 @@
 class_name ResourceNode
 extends Node3D
 
+signal gathering_active_changed(resource_id: String, active: bool)
+
 const ResourceCatalogScript = preload("res://scripts/world/resource_catalog.gd")
 const INTERACTION_LAYER := 64
 const OBSTACLE_LAYER := 16
@@ -36,6 +38,7 @@ var visual_kind := "stone"
 var _respawn_day := 0
 var _last_advanced_day := 0
 var _legacy_max_hits := 3
+var _gather_active := false
 
 
 func _ready() -> void:
@@ -256,6 +259,9 @@ func _set_gather_active(active: bool) -> void:
 	var body := get_node_or_null("Collision") as CollisionObject3D
 	if body != null:
 		body.collision_layer = (OBSTACLE_LAYER | INTERACTION_LAYER) if active else 0
+	if active != _gather_active:
+		_gather_active = active
+		gathering_active_changed.emit(resource_id, active)
 
 
 func _update_visual_stage() -> void:
