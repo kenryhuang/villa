@@ -119,7 +119,7 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			var tree := _requestable_resource(main, "tree")
 			if tree == null or not _arrive(main):
 				return false
-			main.gathering_controller._process(0.48)
+			main.gathering_controller._process(0.30)
 			_focus(main, [tree.global_position], 6.0)
 			return main.gathering_controller.get_state_name() == "ACTING"
 		"tree_hover_green":

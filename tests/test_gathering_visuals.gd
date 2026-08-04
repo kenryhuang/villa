@@ -16,8 +16,20 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	var tool_visual = tool_script.new()
 	scene_tree.root.add_child(tool_visual)
 	assertions.truthy(tool_visual.has_node("Pivot"), "tool visual authors a handle-end pivot")
-	assertions.truthy(tool_visual.has_node("Pivot/ToolSprite"), "tool sprite is offset from the pivot")
+	assertions.truthy(tool_visual.has_node("Pivot/ToolSprite"), "tool visual authors a sprite under the pivot")
 	assertions.truthy(tool_visual.play_tool("axe"), "tool visual plays the hand-painted axe")
+	var axe_sprite := tool_visual.get_node("Pivot/ToolSprite") as Sprite3D
+	assertions.equal(axe_sprite.position, Vector3.ZERO, "axe texture is anchored directly at its handle pivot")
+	var axe_material := axe_sprite.material_override as ShaderMaterial
+	assertions.truthy(axe_material != null, "axe uses the same painted-pivot shader approach as the hammer")
+	if axe_material != null:
+		var handle_uv: Vector2 = axe_material.get_shader_parameter("pivot_uv")
+		assertions.truthy(handle_uv.x > 0.65, "axe pivot follows the painted handle end on the right")
+		assertions.truthy(handle_uv.y > 0.85, "axe pivot follows the painted handle end at the bottom")
+	assertions.truthy(
+		tool_visual.has_method("get_axe_head_screen_offset"),
+		"axe exposes its painted head arc for direction verification"
+	)
 	assertions.equal(tool_visual.get_phase_at(0.05), "prepare", "axe begins with a short preparation")
 	assertions.equal(tool_visual.get_phase_at(0.18), "strike", "axe quickly strikes toward the right")
 	assertions.equal(tool_visual.get_phase_at(0.28), "impact", "axe briefly holds at impact")
@@ -25,12 +37,20 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.equal(tool_visual.get_phase_at(0.78), "prepare", "axe starts a new swing every 0.72 seconds")
 	tool_visual.set_action_progress(0.0)
 	var prepare_rotation: float = tool_visual.get_node("Pivot").rotation.z
+	var raised_head := Vector2.ZERO
+	if tool_visual.has_method("get_axe_head_screen_offset"):
+		raised_head = tool_visual.call("get_axe_head_screen_offset")
 	tool_visual.set_action_progress(0.10)
 	var impact_rotation: float = tool_visual.get_node("Pivot").rotation.z
 	assertions.truthy(
 		impact_rotation <= deg_to_rad(-108.0),
 		"axe reaches its rightward downward impact within the first 0.3 seconds"
 	)
+	if tool_visual.has_method("get_axe_head_screen_offset"):
+		var impact_head: Vector2 = tool_visual.call("get_axe_head_screen_offset")
+		assertions.truthy(raised_head.x < impact_head.x, "axe head sweeps from left to right")
+		assertions.near(impact_head.x, 0.0, 0.04, "impact places the axe head on the cut horizontally")
+		assertions.near(impact_head.y, 0.0, 0.04, "impact places the axe head on the cut vertically")
 	tool_visual.set_action_progress(0.26)
 	var repeated_prepare_rotation: float = tool_visual.get_node("Pivot").rotation.z
 	assertions.truthy(
@@ -133,12 +153,12 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	var progress_ring := feedback.get_node("Canvas/ProgressRing")
 	assertions.near(progress_ring.anchor_left, 0.0, 0.001, "progress ring uses projected target coordinates")
 	var anchor: Vector3 = feedback.tree_axe_anchor(Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0))
-	assertions.near(anchor.y, 1.20, 0.001, "axe pivot is 0.2m above ground")
-	assertions.near(anchor.x, 3.55, 0.001, "axe pivot is 0.45m left of the tree")
+	assertions.near(anchor.y, 1.12, 0.001, "axe contact is lowered to the felling-frame notch")
+	assertions.near(anchor.x, 3.88, 0.001, "axe contact sits just left of the trunk center")
 	var opposite_actor_anchor: Vector3 = feedback.tree_axe_anchor(
 		Vector3(4.0, 1.0, 2.0), Vector3(6.0, 1.0, 2.0)
 	)
-	assertions.near(opposite_actor_anchor.x, 3.55, 0.001, "axe remains left even when the actor approaches from the right")
+	assertions.near(opposite_actor_anchor.x, 3.88, 0.001, "axe contact remains left even when the actor approaches from the right")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
 	)

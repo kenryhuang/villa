@@ -65,7 +65,7 @@ static func progress_center_with_label_clearance(
 
 
 static func tree_axe_anchor(tree_position: Vector3, _actor_position: Vector3) -> Vector3:
-	return tree_position + Vector3.LEFT * 0.45 + Vector3.UP * 0.20
+	return tree_position + Vector3.LEFT * 0.12 + Vector3.UP * 0.12
 
 
 func _process(delta: float) -> void:
