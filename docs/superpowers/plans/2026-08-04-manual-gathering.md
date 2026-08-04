@@ -181,21 +181,21 @@ Commit: `feat: add grid pathfinding for gathering`
 - Modify: `tests/test_player_logic.gd`
 - Modify: `tests/test_player_grid_binding.gd`
 
-- [ ] **Step 1: 写自动移动失败测试**
+- [x] **Step 1: 写自动移动失败测试**
 
 验证 `start_auto_path()` 拒绝空路径、按顺序到达路径点、完成只发一次信号；WASD 先停止自动移动并发 `manual_movement_requested`；阻塞 0.5 秒只发一次 `auto_path_blocked`；停止后速度归零。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_tests.gd`
 
 Expected: FAIL，自动路径 API 与信号尚不存在。
 
-- [ ] **Step 3: 实现路径跟随**
+- [x] **Step 3: 实现路径跟随**
 
 在 `PlayerController` 增加设计约定的三个信号和三个方法。自动移动走普通 `speed`，不消耗冲刺；终点容差固定并可测试；手动输入优先于同帧自动移动。
 
-- [ ] **Step 4: 运行核心测试并提交**
+- [x] **Step 4: 运行核心测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_tests.gd`
 
