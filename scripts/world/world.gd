@@ -51,16 +51,19 @@ static func generated_resource_definitions(
 	seed: int = WORLD_GENERATION_SEED
 ) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = [
-		{"id": "rock-coal-00", "zone": "wasteland", "kind": "rock", "x": -12.4, "z": -8.1, "yield": {"stone": 2}, "bonus": [{"item_id": "coal", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "rock-coal-01", "zone": "wasteland", "kind": "rock", "x": 10.8, "z": 8.6, "yield": {"stone": 2}, "bonus": [{"item_id": "coal", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "rock-copper-00", "zone": "wasteland", "kind": "rock", "x": -10.6, "z": 7.7, "yield": {"stone": 2}, "bonus": [{"item_id": "copper_ore", "quantity": 1, "every_hits": 2, "offset": 1}]},
-		{"id": "rock-copper-01", "zone": "wasteland", "kind": "rock", "x": 12.3, "z": -7.5, "yield": {"stone": 2}, "bonus": [{"item_id": "copper_ore", "quantity": 1, "every_hits": 2, "offset": 1}]},
-		{"id": "rock-iron-00", "zone": "wasteland", "kind": "rock", "x": -14.0, "z": 2.6, "yield": {"stone": 2}, "bonus": [{"item_id": "iron_ore", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "rock-iron-01", "zone": "wasteland", "kind": "rock", "x": 14.2, "z": 3.3, "yield": {"stone": 2}, "bonus": [{"item_id": "iron_ore", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "river-clay-00", "zone": "riverbank", "kind": "clay", "x": -14.65, "z": -1.8, "yield": {"clay": 2}, "bonus": []},
-		{"id": "river-clay-01", "zone": "riverbank", "kind": "clay", "x": -14.65, "z": 2.0, "yield": {"clay": 2}, "bonus": []},
-		{"id": "river-sand-00", "zone": "riverbank", "kind": "sand", "x": 14.65, "z": -2.2, "yield": {"sand": 2}, "bonus": []},
-		{"id": "river-sand-01", "zone": "riverbank", "kind": "sand", "x": 14.65, "z": 1.7, "yield": {"sand": 2}, "bonus": []},
+		{"id": "stone-00", "zone": "common_mine", "type": "stone", "x": -14.2, "z": 8.0},
+		{"id": "stone-01", "zone": "common_mine", "type": "stone", "x": -11.2, "z": 9.2},
+		{"id": "stone-02", "zone": "common_mine", "type": "stone", "x": -8.4, "z": 10.7},
+		{"id": "stone-03", "zone": "common_mine", "type": "stone", "x": -13.2, "z": 5.5},
+		{"id": "coal-00", "zone": "common_mine", "type": "coal", "x": -9.2, "z": 6.0},
+		{"id": "coal-01", "zone": "common_mine", "type": "coal", "x": -14.5, "z": 11.2},
+		{"id": "copper-00", "zone": "common_mine", "type": "copper_ore", "x": -7.4, "z": 7.7},
+		{"id": "copper-01", "zone": "common_mine", "type": "copper_ore", "x": -11.8, "z": 11.7},
+		{"id": "iron-00", "zone": "common_mine", "type": "iron_ore", "x": -14.1, "z": 3.2},
+		{"id": "iron-01", "zone": "common_mine", "type": "iron_ore", "x": -10.5, "z": 3.8},
+		{"id": "silver-00", "zone": "rare_mine", "type": "silver_ore", "x": 10.0, "z": 11.5},
+		{"id": "gold-00", "zone": "rare_mine", "type": "gold_ore", "x": 12.8, "z": 11.2},
+		{"id": "crystal-00", "zone": "rare_mine", "type": "crystal", "x": 15.4, "z": 11.7},
 	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -69,13 +72,8 @@ static func generated_resource_definitions(
 		var jitter := Vector2(rng.randf_range(-0.18, 0.18), rng.randf_range(-0.18, 0.18))
 		definitions.append({
 			"resource_id": str(row.id),
-			"required_tool": "pickaxe",
-			"hits": 3,
-			"yield_per_hit": row.yield.duplicate(true),
-			"bonus_table": row.bonus.duplicate(true),
-			"respawn_days": 3,
+			"resource_type": str(row.type),
 			"position": Vector3(float(row.x) + jitter.x, 0.0, float(row.z) + jitter.y),
-			"visual_kind": str(row.kind),
 			"zone": str(row.zone),
 		})
 	return definitions
@@ -189,13 +187,23 @@ func _gatherable_nodes() -> Array[Node]:
 
 func _collect_gatherables(parent: Node, result: Array[Node]) -> void:
 	for child in parent.get_children():
-		if (
+		var is_gatherable := (
 			child.has_method("can_gather")
 			and child.has_method("to_dict")
 			and child.has_method("from_dict")
-		):
+		)
+		if is_gatherable and _has_property(child, "gathering_enabled"):
+			is_gatherable = bool(child.get("gathering_enabled"))
+		if is_gatherable:
 			result.append(child)
 		_collect_gatherables(child, result)
+
+
+func _has_property(target: Object, property_name: String) -> bool:
+	for property in target.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
 
 
 func _build_water_fallback() -> void:

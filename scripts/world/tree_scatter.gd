@@ -28,17 +28,39 @@ const AUTHORED := [
 	{"id": "authored-round-small", "variant": "round-small", "x": 7.2, "z": -2.7, "width": 1.18, "height": 1.4, "yaw_offset": 0.0, "lean": 0.0, "clearance": 0.75},
 ]
 
+const RESOURCE_FOREST := [
+	{"id": "tree-resource-00", "variant": "pine-small", "x": 8.6, "z": -10.7},
+	{"id": "tree-resource-01", "variant": "canopy-medium", "x": 10.8, "z": -10.7},
+	{"id": "tree-resource-02", "variant": "round-small", "x": 13.0, "z": -10.7},
+	{"id": "tree-resource-03", "variant": "pine-tall", "x": 15.2, "z": -10.7},
+	{"id": "tree-resource-04", "variant": "round-medium", "x": 8.6, "z": -8.4},
+	{"id": "tree-resource-05", "variant": "pine-small", "x": 10.8, "z": -8.4},
+	{"id": "tree-resource-06", "variant": "canopy-small", "x": 13.0, "z": -8.4},
+	{"id": "tree-resource-07", "variant": "fruit", "x": 15.2, "z": -8.4},
+	{"id": "tree-resource-08", "variant": "canopy-small", "x": 8.6, "z": -6.1},
+	{"id": "tree-resource-09", "variant": "pine-tall", "x": 10.8, "z": -6.1},
+	{"id": "tree-resource-10", "variant": "round-small", "x": 13.0, "z": -6.1},
+	{"id": "tree-resource-11", "variant": "pine-small", "x": 15.2, "z": -6.1},
+]
+
 static func generate(route: Array[Dictionary], seed: int = 0x4b4f4455) -> Array[Dictionary]:
 	if route.size() < 2:
 		return []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var placements: Array[Dictionary] = []
+	for resource_tree in RESOURCE_FOREST:
+		var placement: Dictionary = _complete_tree_definition(resource_tree)
+		placement["gatherable"] = true
+		placements.append(placement)
 	for authored in AUTHORED:
-		placements.append(authored.duplicate())
+		var placement: Dictionary = authored.duplicate()
+		placement["gatherable"] = false
+		placements.append(placement)
 	var attempts := 0
-	while placements.size() < 28 and attempts < 4000:
-		var generated_index := placements.size() - AUTHORED.size()
+	var target_count := RESOURCE_FOREST.size() + 28
+	while placements.size() < target_count and attempts < 4000:
+		var generated_index := placements.size() - RESOURCE_FOREST.size() - AUTHORED.size()
 		var variant: String = WEIGHTED_VARIANTS[generated_index % WEIGHTED_VARIANTS.size()]
 		var dimensions: Dictionary = DIMENSIONS[variant]
 		var scale := 0.88 + rng.randf() * 0.24
@@ -52,6 +74,7 @@ static func generate(route: Array[Dictionary], seed: int = 0x4b4f4455) -> Array[
 			"yaw_offset": (rng.randf() - 0.5) * 0.14,
 			"lean": (rng.randf() - 0.5) * 0.055,
 			"clearance": float(dimensions.clearance) * scale,
+			"gatherable": false,
 		}
 		attempts += 1
 		if Vector2(candidate.x, candidate.z).length() < 2.35:
@@ -62,6 +85,17 @@ static func generate(route: Array[Dictionary], seed: int = 0x4b4f4455) -> Array[
 			continue
 		placements.append(candidate)
 	return placements
+
+
+static func _complete_tree_definition(source: Dictionary) -> Dictionary:
+	var result := source.duplicate(true)
+	var dimensions: Dictionary = DIMENSIONS[str(result.variant)]
+	result["width"] = float(dimensions.width)
+	result["height"] = float(dimensions.height)
+	result["clearance"] = float(dimensions.clearance)
+	result["yaw_offset"] = 0.0
+	result["lean"] = 0.0
+	return result
 
 static func _has_clearance(candidate: Dictionary, placements: Array[Dictionary]) -> bool:
 	var candidate_position := Vector2(float(candidate.x), float(candidate.z))

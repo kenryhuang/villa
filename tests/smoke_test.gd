@@ -10,5 +10,5 @@ func run(assertions) -> void:
 	assertions.truthy(main.has_node("Actors/Player"), "main contains player")
 	assertions.truthy(main.has_node("CameraRig"), "main contains camera rig")
 	assertions.truthy(main.has_node("HUD"), "main contains HUD")
-	assertions.equal(scene_tree.get_nodes_in_group("tree_instance").size(), 28, "main world builds 28 runtime tree instances")
+	assertions.equal(scene_tree.get_nodes_in_group("tree_instance").size(), 40, "main world builds decorative trees and resource forest")
 	main.free()

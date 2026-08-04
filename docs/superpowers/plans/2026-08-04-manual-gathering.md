@@ -86,17 +86,17 @@ Commit: `feat: add versioned manual resource catalog`
 - Modify: `tests/test_resource_gathering.gd`
 - Modify: `tests/test_vegetation_builder.gd`
 
-- [ ] **Step 1: 写世界分布失败测试**
+- [x] **Step 1: 写世界分布失败测试**
 
 验证两次固定种子结果完全相同、ID 唯一，且准确包含：资源林区 10–14 棵可砍树；石材 4、煤 2、铜 2、铁 2；银、金、水晶各 1。验证道路、住宅和农田边缘装饰树不在 `gatherable_resource` 组。
 
-- [ ] **Step 2: 运行测试并确认现有概率岩石方案失败**
+- [x] **Step 2: 运行测试并确认现有概率岩石方案失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 
 Expected: FAIL，矿物类型数量和可砍树区域不符合新规则。
 
-- [ ] **Step 3: 实现确定性定义**
+- [x] **Step 3: 实现确定性定义**
 
 将 `GameWorld.generated_resource_definitions()` 改为按类型生成显式节点，配置示例：
 
@@ -110,11 +110,11 @@ Expected: FAIL，矿物类型数量和可砍树区域不符合新规则。
 
 资源点避开 `get_blocked_regions()`、道路主轴和主要建造区。资源林数据携带稳定 `tree-resource-00..NN` ID 和 `gatherable: true`；其他树的数据明确为 `false`。
 
-- [ ] **Step 4: 让世界统一枚举树木和矿脉存档**
+- [x] **Step 4: 让世界统一枚举树木和矿脉存档**
 
 `to_resource_dicts()`、`validate_resource_dicts()`、`restore_resource_dicts()` 和 `advance_resource_day()` 统一遍历所有 v2 可采资源，并按 `resource_id` 排序；读取不得复制节点或随机换位。
 
-- [ ] **Step 5: 运行测试并提交**
+- [x] **Step 5: 运行测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 

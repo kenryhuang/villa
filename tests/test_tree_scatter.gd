@@ -8,10 +8,18 @@ func run(assertions) -> void:
 	var first := TreeScatter.generate(route)
 	var second := TreeScatter.generate(route)
 	assertions.equal(first, second, "same seed produces identical trees")
-	assertions.equal(first.size(), 28, "tree scatter fills target density")
+	assertions.equal(first.size(), 40, "tree scatter includes decorative trees and resource forest")
+	var gatherable_count := 0
 	for tree in first:
+		if bool(tree.get("gatherable", false)):
+			gatherable_count += 1
+			assertions.truthy(
+				str(tree.id).begins_with("tree-resource-"),
+				"only stable resource-forest IDs are gatherable"
+			)
 		assertions.truthy(Vector2(tree.x, tree.z).length() >= 2.35, "tree clears player spawn")
 		assertions.truthy(RoadMath.distance_to_route(Vector2(tree.x, tree.z), tree.clearance, route) >= 0.45, "tree clears road")
+	assertions.equal(gatherable_count, 12, "resource forest contains twelve gatherable trees")
 	for index in first.size():
 		for other_index in range(index + 1, first.size()):
 			var a: Dictionary = first[index]

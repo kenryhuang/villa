@@ -9,6 +9,8 @@ const PlayerActionControllerScript = preload(
 	"res://scripts/actors/player_action_controller.gd"
 )
 const GameWorldScript = preload("res://scripts/world/world.gd")
+const RoadMathScript = preload("res://scripts/world/road_math.gd")
+const RoadBuilderScript = preload("res://scripts/world/road_builder.gd")
 const DailySimulationSystemScript = preload(
 	"res://scripts/systems/daily_simulation_system.gd"
 )
@@ -399,12 +401,29 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	assertions.equal(first, second, "fixed world seed repeats exact resource definitions")
 	var ids := {}
 	var zones := {}
+	var type_counts := {}
 	for definition in first:
 		ids[str(definition.resource_id)] = true
 		zones[str(definition.zone)] = true
+		var resource_type := str(definition.get("resource_type", ""))
+		type_counts[resource_type] = int(type_counts.get(resource_type, 0)) + 1
+		assertions.truthy(
+			not definition.has("bonus_table") and not definition.has("yield_per_hit"),
+			"world resource %s has a visible deterministic yield" % definition.resource_id
+		)
 	assertions.equal(ids.size(), first.size(), "generated resource IDs are unique")
-	assertions.truthy(zones.has("wasteland"), "generated rocks occupy wasteland definitions")
-	assertions.truthy(zones.has("riverbank"), "generated clay and sand occupy riverbank definitions")
+	assertions.equal(first.size(), 13, "world generates thirteen surface mineral nodes")
+	assertions.equal(type_counts, {
+		"stone": 4,
+		"coal": 2,
+		"copper_ore": 2,
+		"iron_ore": 2,
+		"silver_ore": 1,
+		"gold_ore": 1,
+		"crystal": 1,
+	}, "surface mineral counts match the approved distribution")
+	assertions.truthy(zones.has("common_mine"), "common minerals occupy the common mine zone")
+	assertions.truthy(zones.has("rare_mine"), "rare minerals occupy the remote mine zone")
 
 	var world: Variant = GameWorldScript.new()
 	var container := Node3D.new()
@@ -417,7 +436,8 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	assertions.equal(container.get_child_count(), count_before, "load does not duplicate resource nodes")
 	assertions.equal(world.call("to_resource_dicts"), state, "stable-ID restore preserves generated order")
 	var rewind_target: Variant = container.get_child(0)
-	for _hit in range(3):
+	var rewind_capacity := int(rewind_target.get("max_units"))
+	for _hit in range(rewind_capacity):
 		rewind_target.call("commit_gather", "pickaxe", 5)
 	var rewind_state: Array[Dictionary] = world.call("to_resource_dicts")
 	world.call("advance_resource_day", 20)
@@ -428,7 +448,7 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	world.call("advance_resource_day", 8)
 	assertions.equal(
 		int(rewind_target.get("hits_remaining")),
-		3,
+		rewind_capacity,
 		"resource cursor rewinds so the loaded respawn boundary still runs"
 	)
 	world.free()
@@ -454,6 +474,13 @@ func _test_real_water_and_riverbank_adjacency(
 	assertions.truthy(not water_cells.is_empty(), "fresh Main initializes positive WATER cells")
 	var water_container: Node = main.world.get_node_or_null("Water")
 	assertions.truthy(water_container != null, "world scene exposes deterministic Water container")
+	var world_records: Array[Dictionary] = main.world.to_resource_dicts()
+	var saved_tree_count := 0
+	for record in world_records:
+		if str(record.resource_type) == "tree":
+			saved_tree_count += 1
+	assertions.equal(world_records.size(), 25, "world saves minerals and designated resource trees only")
+	assertions.equal(saved_tree_count, 12, "world saves twelve gatherable resource-forest trees")
 	var blocked_regions: Variant = (
 		main.world.call("get_blocked_regions")
 		if main.world.has_method("get_blocked_regions")
@@ -469,20 +496,24 @@ func _test_real_water_and_riverbank_adjacency(
 			blocked_regions.size(),
 			"water mesh fallback covers every fixed region"
 		)
+	var authored_route: Array[Dictionary] = []
+	for route_point in RoadBuilderScript.MAIN_ROUTE:
+		authored_route.append(route_point)
 	for definition in GameWorldScript.generated_resource_definitions():
-		if str(definition.zone) != "riverbank":
-			continue
 		var point3: Vector3 = definition.position
-		var point := Vector2(point3.x, point3.z)
-		var nearest := INF
-		for water_cell in water_cells:
-			var center: Vector2 = water_cell.world_position()
-			var water_rect := Rect2(center - Vector2(0.5, 0.5), Vector2.ONE)
-			nearest = minf(nearest, _distance_to_rect(point, water_rect))
 		assertions.truthy(
-			nearest <= 0.75,
-			"riverbank node %s is geometrically adjacent to WATER" % definition.resource_id
+			RoadMathScript.distance_to_route(
+				Vector2(point3.x, point3.z),
+				0.7,
+				authored_route
+			) >= 0.45,
+			"resource %s does not block the authored road" % definition.resource_id
 		)
+		for region in blocked_regions:
+			assertions.truthy(
+				not (region.rect as Rect2).has_point(Vector2(point3.x, point3.z)),
+				"resource %s does not spawn inside water" % definition.resource_id
+			)
 	main.free()
 
 

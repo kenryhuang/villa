@@ -19,8 +19,8 @@ const TEXTURES := {
 
 func build(terrain: TerrainBuilder, route: Array[Dictionary]) -> int:
 	var placements := TreeScatterScript.generate(route)
-	if placements.size() < 28:
-		push_warning("Tree scatter placed %d of 28 trees" % placements.size())
+	if placements.size() < 40:
+		push_warning("Tree scatter placed %d of 40 trees" % placements.size())
 	for tree in placements:
 		var texture := load(TEXTURES[tree.variant]) as Texture2D
 		if texture == null:
