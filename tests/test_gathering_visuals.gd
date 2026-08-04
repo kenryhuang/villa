@@ -94,6 +94,7 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	scene_tree.root.add_child(feedback)
 	for node_path in [
 		"TargetRing",
+		"TreeHoverRing",
 		"PathPreview",
 		"Canvas/ProgressRing",
 		"Canvas/AutoEquipTip",
@@ -104,6 +105,7 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		assertions.truthy(feedback.has_node(node_path), "feedback scene contains %s" % node_path)
 	assertions.equal(feedback.error_message("inventory_full"), "背包已满", "inventory error has readable text")
 	assertions.equal(feedback.error_message("unreachable"), "无法到达", "path error has readable text")
+	assertions.equal(feedback.error_message("tree_not_choppable"), "此树不可砍伐", "red tree click has readable text")
 	var progress_ring := feedback.get_node("Canvas/ProgressRing")
 	assertions.near(progress_ring.anchor_left, 0.0, 0.001, "progress ring uses projected target coordinates")
 	var anchor: Vector3 = feedback.tree_axe_anchor(Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0))

@@ -215,9 +215,13 @@ class GatherTargetDouble:
 	extends Node3D
 
 	var gathering_enabled := true
+	var eligible := true
 
 	func can_gather(_tool_id: String) -> bool:
 		return true
+
+	func is_chop_eligible() -> bool:
+		return eligible
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -601,4 +605,28 @@ func _test_pointer_contract(
 		)
 		assertions.equal(target.interactions, 1, "interaction target is called once")
 		target.free()
+		var gathering := GatheringDouble.new()
+		controller.gathering_controller = gathering
+		controller.call("select_slot", 2)
+		var tree_target := GatherTargetDouble.new()
+		tree.root.add_child(tree_target)
+		var hover_events: Array = []
+		controller.tree_hover_changed.connect(
+			func(hover_target: Node, allowed: bool) -> void: hover_events.append([hover_target, allowed])
+		)
+		controller.call("_update_tree_hover", tree_target)
+		assertions.equal(hover_events[-1][1], true, "eligible axe hover reports green")
+		tree_target.eligible = false
+		controller.call("_update_tree_hover", tree_target)
+		assertions.equal(hover_events[-1][1], false, "ineligible axe hover reports red")
+		var rejected: Array[String] = []
+		controller.gather_rejected.connect(
+			func(_target: Node, reason: String) -> void: rejected.append(reason)
+		)
+		assertions.truthy(not controller.perform_target_interaction(tree_target), "red tree click starts no command")
+		assertions.equal(rejected[-1], "tree_not_choppable", "red tree click reports a stable reason")
+		assertions.equal(gathering.requests.size(), 0, "red tree click causes no movement request")
+		controller.call("_clear_tree_hover")
+		assertions.equal(hover_events[-1][0], null, "tool or pointer exit clears tree hover")
+		tree_target.free()
 	controller.free()

@@ -6,6 +6,8 @@ signal inventory_changed
 signal mode_changed(mode: ActionMode)
 signal palette_changed(mode: ActionMode, selected_index: int)
 signal build_feedback_requested(message: String, details: Dictionary)
+signal tree_hover_changed(target: Node, allowed: bool)
+signal gather_rejected(target: Node, reason: String)
 
 enum Action {
 	NONE,
@@ -74,6 +76,8 @@ var _selected_slot := 0
 var _last_farming_slot := 0
 var _last_building_slot := 0
 var _pointer_position: Variant
+var _hovered_tree: Node
+var _hovered_tree_allowed := false
 
 
 static func resolve_action(
@@ -147,6 +151,7 @@ func sync_auto_equipped_tool(tool_id: String) -> bool:
 
 
 func _on_gathering_started(_target: Node, preview: Dictionary) -> void:
+	_clear_tree_hover()
 	sync_auto_equipped_tool(str(preview.get("tool_id", "")))
 
 
@@ -157,6 +162,7 @@ func select_slot(index: int) -> bool:
 
 
 func switch_mode(mode: ActionMode) -> bool:
+	_clear_tree_hover()
 	if mode not in [ActionMode.FARMING, ActionMode.BUILDING]:
 		return false
 	_cancel_gathering("mode_changed")
@@ -185,6 +191,7 @@ func select_mode_slot(index: int) -> bool:
 	if index < 0 or index >= labels.size():
 		return false
 	_cancel_gathering("tool_changed")
+	_clear_tree_hover()
 	if _action_mode == ActionMode.BUILDING:
 		var diagnostic := get_building_resource_diagnostic(index)
 		if not bool(diagnostic.get("allowed", false)):
@@ -226,6 +233,7 @@ func get_building_resource_diagnostic(index: int) -> Dictionary:
 
 
 func cancel_current_selection() -> bool:
+	_clear_tree_hover()
 	var gathering_was_active := _gathering_is_active()
 	_cancel_gathering("selection_cancelled")
 	if _selected_slot < 0:
@@ -350,6 +358,9 @@ func perform_target_interaction(target: Node) -> bool:
 	if target == null or _action_mode != ActionMode.FARMING:
 		return false
 	if target.has_method("can_gather"):
+		if target.has_method("is_chop_eligible") and not bool(target.call("is_chop_eligible")):
+			gather_rejected.emit(target, "tree_not_choppable")
+			return false
 		if gathering_controller == null:
 			return false
 		return bool(gathering_controller.call("request_gather", target))
@@ -374,8 +385,10 @@ func _process(_delta: float) -> void:
 	if grid_system == null:
 		return
 	if _pointer_over_ui():
+		_clear_tree_hover()
 		grid_system.clear_highlights()
 		return
+	_update_tree_hover_from_pointer()
 	var ground_point = _raycast_to_ground(_effective_pointer_position())
 	if _action_mode == ActionMode.BUILDING:
 		grid_system.clear_highlights()
@@ -460,6 +473,42 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	return perform_cell_action(
 		grid_system.get_cell_at_world(ground_point.x, ground_point.z)
 	)
+
+
+func _update_tree_hover_from_pointer() -> void:
+	if (
+		_action_mode != ActionMode.FARMING
+		or _selected_slot != 2
+		or _gathering_is_active()
+	):
+		_clear_tree_hover()
+		return
+	var hit := _raycast_to_interaction(_effective_pointer_position())
+	var target := hit.get("target") as Node
+	if target == null or not target.has_method("is_chop_eligible"):
+		_clear_tree_hover()
+		return
+	_update_tree_hover(target)
+
+
+func _update_tree_hover(target: Node) -> void:
+	if target == null or not target.has_method("is_chop_eligible"):
+		_clear_tree_hover()
+		return
+	var allowed := bool(target.call("is_chop_eligible"))
+	if _hovered_tree == target and _hovered_tree_allowed == allowed:
+		return
+	_hovered_tree = target
+	_hovered_tree_allowed = allowed
+	tree_hover_changed.emit(target, allowed)
+
+
+func _clear_tree_hover() -> void:
+	if _hovered_tree == null:
+		return
+	_hovered_tree = null
+	_hovered_tree_allowed = false
+	tree_hover_changed.emit(null, false)
 
 
 func _raycast_to_interaction(pointer_position: Variant = null) -> Dictionary:

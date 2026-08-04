@@ -9,6 +9,7 @@ const ERROR_MESSAGES := {
 	"unreachable": "无法到达",
 	"target_invalid": "目标已失效",
 	"out_of_range": "距离过远",
+	"tree_not_choppable": "此树不可砍伐",
 }
 
 var _controller
@@ -21,6 +22,7 @@ var _impact_played := false
 
 func _ready() -> void:
 	_build_target_ring()
+	_build_tree_hover_ring()
 	(get_node("Canvas/ProgressRing") as Control).visible = false
 	(get_node("Canvas/AutoEquipTip") as Control).visible = false
 	(get_node("Canvas/StatusLabel") as Control).visible = false
@@ -28,7 +30,7 @@ func _ready() -> void:
 	(get_node("ResultLabel") as Label3D).visible = false
 
 
-func bind(controller, tool_visual: ToolSwingVisual) -> bool:
+func bind(controller, tool_visual: ToolSwingVisual, action_controller = null) -> bool:
 	if controller == null or tool_visual == null:
 		return false
 	_controller = controller
@@ -41,6 +43,11 @@ func bind(controller, tool_visual: ToolSwingVisual) -> bool:
 	controller.state_changed.connect(_on_state_changed)
 	if controller.has_signal("path_ready"):
 		controller.path_ready.connect(show_path)
+	if action_controller != null:
+		if action_controller.has_signal("tree_hover_changed"):
+			action_controller.tree_hover_changed.connect(show_tree_hover)
+		if action_controller.has_signal("gather_rejected"):
+			action_controller.gather_rejected.connect(_on_gather_failed)
 	return true
 
 
@@ -101,7 +108,24 @@ func show_path(points: Array[Vector3]) -> void:
 	preview.visible = true
 
 
+func show_tree_hover(target: Node, allowed: bool) -> void:
+	var ring := get_node("TreeHoverRing") as Node3D
+	if not target is Node3D:
+		ring.visible = false
+		return
+	ring.global_position = (target as Node3D).global_position + Vector3.UP * 0.04
+	var mesh := ring.get_child(0) as MeshInstance3D
+	var material := mesh.material_override as StandardMaterial3D
+	material.albedo_color = (
+		Color(0.25, 0.9, 0.38, 0.62)
+		if allowed
+		else Color(0.95, 0.2, 0.18, 0.62)
+	)
+	ring.visible = true
+
+
 func _on_gather_started(target: Node, preview: Dictionary) -> void:
+	(get_node("TreeHoverRing") as Node3D).visible = false
 	(get_node("ResultLabel") as Label3D).visible = false
 	(get_node("Canvas/StatusLabel") as Control).visible = false
 	_result_time_remaining = 0.0
@@ -292,6 +316,24 @@ func _build_target_ring() -> void:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.albedo_color = Color(1.0, 0.82, 0.30, 0.64)
+	mesh_instance.material_override = material
+	ring.add_child(mesh_instance)
+	ring.visible = false
+
+
+func _build_tree_hover_ring() -> void:
+	var ring := get_node("TreeHoverRing") as Node3D
+	if ring.get_child_count() > 0:
+		return
+	var mesh_instance := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.72
+	torus.outer_radius = 0.82
+	mesh_instance.mesh = torus
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(0.25, 0.9, 0.38, 0.62)
 	mesh_instance.material_override = material
 	ring.add_child(mesh_instance)
 	ring.visible = false

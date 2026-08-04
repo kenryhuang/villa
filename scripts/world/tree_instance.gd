@@ -137,7 +137,12 @@ func configure(
 
 
 func is_chop_eligible() -> bool:
-	return TreeFellingCatalogScript.is_variant_choppable(variant) and felling_atlas != null
+	return (
+		gathering_enabled
+		and remaining_units > 0
+		and TreeFellingCatalogScript.is_variant_choppable(variant)
+		and felling_atlas != null
+	)
 
 
 func get_gather_duration() -> float:
@@ -226,7 +231,7 @@ func _set_gather_active(active: bool) -> void:
 		trunk_body.collision_layer = TREE_TRUNK_LAYER if (not gathering_enabled or active) else 0
 	var gather_area := get_node_or_null("GatherArea") as CollisionObject3D
 	if gather_area != null:
-		gather_area.collision_layer = INTERACTION_LAYER if active else 0
+		gather_area.collision_layer = INTERACTION_LAYER if remaining_units > 0 else 0
 	_apply_visual_stage()
 
 

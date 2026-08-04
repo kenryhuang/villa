@@ -345,7 +345,7 @@ func _setup_player() -> void:
 	if not action_controller.configure_gathering(gathering_controller):
 		push_error("Unable to configure player gathering actions.")
 		return
-	if not gathering_feedback.bind(gathering_controller, tool_swing_visual):
+	if not gathering_feedback.bind(gathering_controller, tool_swing_visual, action_controller):
 		push_error("Unable to configure gathering feedback.")
 		return
 	_register_resource_navigation()
