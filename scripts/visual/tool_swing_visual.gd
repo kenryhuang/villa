@@ -13,6 +13,8 @@ const AXE_IMPACT_END := 0.34
 const AXE_RAISED_ANGLE := deg_to_rad(-20.0)
 const AXE_IMPACT_ANGLE := deg_to_rad(-112.0)
 const CANCEL_RECOVERY_DURATION := 0.14
+const DEFAULT_TOOL_PIXEL_SIZE := 0.0035
+const AXE_PIXEL_SIZE := DEFAULT_TOOL_PIXEL_SIZE * 0.5
 const TOOL_PIVOT_SHADER_PATH := "res://assets/buildings/construction/construction_hammer.gdshader"
 const TOOL_TEXTURES := {
 	"axe": "res://assets/ui/action_icons/axe.png",
@@ -35,7 +37,7 @@ func _init() -> void:
 	sprite.no_depth_test = true
 	sprite.shaded = false
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sprite.pixel_size = 0.0035
+	sprite.pixel_size = DEFAULT_TOOL_PIXEL_SIZE
 	sprite.position = Vector3.ZERO
 	pivot.add_child(sprite)
 	visible = false
@@ -56,6 +58,7 @@ func play_tool(tool_id: String) -> bool:
 		_configure_axe_pivot(sprite, texture)
 	else:
 		sprite.material_override = null
+		sprite.pixel_size = DEFAULT_TOOL_PIXEL_SIZE
 		sprite.position = Vector3(0.0, 0.38, 0.0)
 	visible = true
 	set_action_progress(0.0)
@@ -161,6 +164,7 @@ func _apply_rotation(value: float) -> void:
 
 
 func _configure_axe_pivot(sprite: Sprite3D, texture: Texture2D) -> void:
+	sprite.pixel_size = AXE_PIXEL_SIZE
 	var shader := load(TOOL_PIVOT_SHADER_PATH) as Shader
 	if shader == null:
 		sprite.material_override = null
@@ -180,6 +184,7 @@ func _configure_axe_pivot(sprite: Sprite3D, texture: Texture2D) -> void:
 	material.set_shader_parameter("sprite_height", sprite_height)
 	material.set_shader_parameter("pivot_uv", handle_uv)
 	material.set_shader_parameter("screen_offset", _axe_screen_offset)
+	material.set_shader_parameter("reflection_axis", _axe_head_from_handle.normalized())
 	material.set_shader_parameter("strike_angle", AXE_RAISED_ANGLE)
 	sprite.position = Vector3.ZERO
 	sprite.material_override = material

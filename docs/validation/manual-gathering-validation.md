@@ -32,9 +32,9 @@
 | `tests/run_building_system_tests.gd` | PASS：921 |
 | `tests/run_economy_system_tests.gd` | PASS：64132 |
 | `tests/run_economy_ui_tests.gd` | PASS：126 |
-| `tests/run_main_gameplay_integration_tests.gd` | PASS：1005 |
+| `tests/run_main_gameplay_integration_tests.gd` | PASS：1008 |
 | `tests/run_resource_gathering_tests.gd` | PASS：170 |
-| `tests/run_gathering_visual_tests.gd` | PASS：81 |
+| `tests/run_gathering_visual_tests.gd` | PASS：84 |
 | `tests/run_main_gathering_integration_tests.gd` | PASS：102 |
 
 经济测试保留两项既有非阻塞警告：恶意 JSON 指数过高的防御性解析警告，以及水车施工阶段图缺失时启用程序化回退；本功能未新增解析错误、无效节点、孤立信号或时间锁警告。
@@ -54,7 +54,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility `
 |---|---:|---:|---:|---|
 | 树木目标与虚线路径 | 通过 | 通过 | 通过 | 目标环、剩余量、路径端点清晰 |
 | 绿/红树木资格 | 通过 | 通过 | 通过 | 透明环颜色清晰，仍可看到树根与树种 |
-| 伐木动作与三帧 | 通过 | 通过 | 通过 | 种地方格阴影隐藏；斧柄末端为固定圆心，斧头头部从左向右做扇形往复并命中低处切口 |
+| 伐木动作与三帧 | 通过 | 通过 | 通过 | 种地方格阴影隐藏；斧头缩小 50%，刀刃朝下；斧柄末端为固定圆心，斧头头部从左向右做扇形往复并命中低处切口 |
 | 帧间淡出淡入 | 通过 | 通过 | 通过 | 1 秒和 2 秒附近两帧交叉半透明，无硬切或根部跳动 |
 | 固定向右倒向 | 通过 | 通过 | 通过 | 正常与旧反向输入均不水平翻转，树根基线不跳动 |
 | `+5 木材` 与手绘树桩 | 通过 | 通过 | 通过 | 本地化飘字可读，HUD 增加 5，灰色几何树桩已移除 |

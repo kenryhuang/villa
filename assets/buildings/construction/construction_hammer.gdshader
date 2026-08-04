@@ -6,6 +6,7 @@ uniform float strike_angle = 0.436332313;
 uniform float sprite_height = 0.72;
 uniform vec2 pivot_uv = vec2(0.5, 1.0);
 uniform vec2 screen_offset = vec2(0.0);
+uniform vec2 reflection_axis = vec2(0.0);
 
 void vertex() {
 	vec2 pivot_local = vec2(
@@ -13,6 +14,10 @@ void vertex() {
 		(0.5 - pivot_uv.y) * sprite_height
 	);
 	vec2 anchored = VERTEX.xy - pivot_local;
+	if (length(reflection_axis) > 0.5) {
+		vec2 axis = normalize(reflection_axis);
+		anchored = 2.0 * axis * dot(anchored, axis) - anchored;
+	}
 	float cosine = cos(strike_angle);
 	float sine = sin(strike_angle);
 	VERTEX.xy = vec2(

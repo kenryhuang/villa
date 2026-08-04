@@ -20,12 +20,23 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.truthy(tool_visual.play_tool("axe"), "tool visual plays the hand-painted axe")
 	var axe_sprite := tool_visual.get_node("Pivot/ToolSprite") as Sprite3D
 	assertions.equal(axe_sprite.position, Vector3.ZERO, "axe texture is anchored directly at its handle pivot")
+	assertions.near(axe_sprite.pixel_size, 0.00175, 0.00001, "axe is rendered at half of its previous size")
 	var axe_material := axe_sprite.material_override as ShaderMaterial
 	assertions.truthy(axe_material != null, "axe uses the same painted-pivot shader approach as the hammer")
 	if axe_material != null:
 		var handle_uv: Vector2 = axe_material.get_shader_parameter("pivot_uv")
 		assertions.truthy(handle_uv.x > 0.65, "axe pivot follows the painted handle end on the right")
 		assertions.truthy(handle_uv.y > 0.85, "axe pivot follows the painted handle end at the bottom")
+		var reflection_axis_value = axe_material.get_shader_parameter("reflection_axis")
+		assertions.truthy(
+			reflection_axis_value is Vector2,
+			"axe shader exposes a handle-axis reflection for blade orientation"
+		)
+		if reflection_axis_value is Vector2:
+			assertions.truthy(
+				(reflection_axis_value as Vector2).length() > 0.9,
+				"axe artwork is reflected across its handle axis so the blade faces down"
+			)
 	assertions.truthy(
 		tool_visual.has_method("get_axe_head_screen_offset"),
 		"axe exposes its painted head arc for direction verification"
