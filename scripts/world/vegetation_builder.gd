@@ -3,6 +3,7 @@ extends Node3D
 
 const TreeScatterScript = preload("res://scripts/world/tree_scatter.gd")
 const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
+const TreeFellingCatalogScript = preload("res://scripts/world/tree_felling_catalog.gd")
 
 const TEXTURES := {
 	"canopy-medium": "res://assets/vegetation/tree-canopy-medium.png",
@@ -26,8 +27,15 @@ func build(terrain: TerrainBuilder, route: Array[Dictionary]) -> int:
 		if texture == null:
 			push_warning("Missing tree texture: %s" % TEXTURES[tree.variant])
 			continue
+		var felling_atlas: Texture2D
+		if TreeFellingCatalogScript.is_variant_choppable(str(tree.variant)):
+			var atlas_path := TreeFellingCatalogScript.atlas_path(str(tree.variant))
+			felling_atlas = load(atlas_path) as Texture2D
+			if not TreeFellingCatalogScript.is_valid_atlas(felling_atlas):
+				push_warning("Tree variant %s is ineligible: missing or invalid felling atlas %s" % [tree.variant, atlas_path])
+				felling_atlas = null
 		var tree_instance = TreeInstanceScript.new()
 		tree_instance.name = str(tree.id)
-		tree_instance.configure(tree, texture, terrain.get_height_at(tree.x, tree.z))
+		tree_instance.configure(tree, texture, terrain.get_height_at(tree.x, tree.z), felling_atlas)
 		add_child(tree_instance)
 	return get_child_count()

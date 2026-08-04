@@ -14,6 +14,7 @@ var stump_visual: MeshInstance3D
 var axe_mark: Label3D
 var _full_sprite_scale := Vector3.ONE
 var variant := ""
+var felling_atlas: Texture2D
 
 static func trunk_radius_for(clearance: float) -> float:
 	return clampf(clearance * 0.36, 0.24, 0.46)
@@ -34,10 +35,16 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 	var pixel_size := target_size.x / texture_size.x
 	return target_size.y / (texture_size.y * pixel_size)
 
-func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float) -> void:
+func configure(
+	tree_data: Dictionary,
+	texture: Texture2D,
+	terrain_height: float,
+	loaded_felling_atlas: Texture2D = null
+) -> void:
 	var tree_width := float(tree_data.width)
 	var tree_height := float(tree_data.height)
 	variant = str(tree_data.get("variant", ""))
+	felling_atlas = loaded_felling_atlas if TreeFellingCatalogScript.is_valid_atlas(loaded_felling_atlas) else null
 	interaction_radius = trunk_radius_for(float(tree_data.clearance))
 	configure_resource({
 		"resource_id": str(tree_data.get(
@@ -46,7 +53,10 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 		)),
 		"resource_type": "tree",
 		"position": Vector3(float(tree_data.x), terrain_height, float(tree_data.z)),
-		"gatherable": TreeFellingCatalogScript.is_variant_choppable(variant),
+		"gatherable": (
+			TreeFellingCatalogScript.is_variant_choppable(variant)
+			and felling_atlas != null
+		),
 	})
 	add_to_group("tree_instance")
 
@@ -136,7 +146,7 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 
 
 func is_chop_eligible() -> bool:
-	return TreeFellingCatalogScript.is_variant_choppable(variant)
+	return TreeFellingCatalogScript.is_variant_choppable(variant) and felling_atlas != null
 
 
 func _set_gather_active(active: bool) -> void:

@@ -22,6 +22,15 @@ func run(assertions) -> void:
 			expected[variant],
 			"eligibility is variant-driven for %s" % variant
 		)
+	for variant in TreeFellingCatalogScript.CHOPPABLE_VARIANTS:
+		var path := TreeFellingCatalogScript.atlas_path(variant)
+		assertions.truthy(ResourceLoader.exists(path), "%s has a felling atlas" % variant)
+		if ResourceLoader.exists(path):
+			var atlas := load(path) as Texture2D
+			assertions.truthy(atlas != null, "%s atlas loads as a texture" % variant)
+			if atlas != null:
+				assertions.truthy(TreeFellingCatalogScript.is_valid_atlas(atlas), "%s atlas has four equal cells" % variant)
+				assertions.truthy(atlas.get_image().detect_alpha() != Image.ALPHA_NONE, "%s atlas keeps transparency" % variant)
 	assertions.near(TreeInstanceScript.trunk_radius_for(0.5), 0.24, 0.001, "small trunks clamp to minimum radius")
 	assertions.near(TreeInstanceScript.trunk_radius_for(2.0), 0.46, 0.001, "large trunks clamp to maximum radius")
 	assertions.near(TreeInstanceScript.trunk_height_for(2.0), 0.84, 0.001, "trunk height follows authored height")

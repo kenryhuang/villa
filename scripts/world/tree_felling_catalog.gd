@@ -26,3 +26,7 @@ static func is_variant_choppable(variant: String) -> bool:
 
 static func atlas_path(variant: String) -> String:
 	return str(FELLING_ATLAS_PATHS.get(variant, ""))
+
+
+static func is_valid_atlas(texture: Texture2D) -> bool:
+	return texture != null and texture.get_width() > 0 and texture.get_width() % 4 == 0
