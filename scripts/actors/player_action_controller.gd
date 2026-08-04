@@ -144,6 +144,8 @@ func sync_auto_equipped_tool(tool_id: String) -> bool:
 	_action_mode = ActionMode.FARMING
 	_selected_slot = slot
 	_last_farming_slot = slot
+	if not should_show_cell_highlight() and grid_system != null:
+		grid_system.clear_highlights()
 	selection_changed.emit(slot, _farming_slot_label(slot))
 	mode_changed.emit(_action_mode)
 	palette_changed.emit(_action_mode, slot)
@@ -200,6 +202,8 @@ func select_mode_slot(index: int) -> bool:
 	_selected_slot = index
 	if _action_mode == ActionMode.FARMING:
 		_last_farming_slot = index
+		if not should_show_cell_highlight() and grid_system != null:
+			grid_system.clear_highlights()
 	else:
 		_last_building_slot = index
 	var activated := _activate_current_slot()
@@ -210,6 +214,14 @@ func select_mode_slot(index: int) -> bool:
 
 func get_mode_selected_slot(mode: ActionMode) -> int:
 	return _last_farming_slot if mode == ActionMode.FARMING else _last_building_slot
+
+
+func should_show_cell_highlight() -> bool:
+	return (
+		_action_mode == ActionMode.FARMING
+		and _selected_slot >= 0
+		and _selected_slot != 2
+	)
 
 
 func get_building_resource_diagnostic(index: int) -> Dictionary:
@@ -399,6 +411,9 @@ func _process(_delta: float) -> void:
 			and ground_point is Vector3
 		):
 			building_system.update_preview_position(ground_point.x, ground_point.z)
+		return
+	if not should_show_cell_highlight():
+		grid_system.clear_highlights()
 		return
 	if _selected_slot < 0:
 		grid_system.clear_highlights()

@@ -18,15 +18,25 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.truthy(tool_visual.has_node("Pivot"), "tool visual authors a handle-end pivot")
 	assertions.truthy(tool_visual.has_node("Pivot/ToolSprite"), "tool sprite is offset from the pivot")
 	assertions.truthy(tool_visual.play_tool("axe"), "tool visual plays the hand-painted axe")
-	assertions.equal(tool_visual.get_phase_at(0.10), "prepare", "first 0.25 seconds prepare the swing")
-	assertions.equal(tool_visual.get_phase_at(0.40), "strike", "next 0.30 seconds strike downward")
-	assertions.equal(tool_visual.get_phase_at(0.65), "impact", "impact pauses for 0.15 seconds")
-	assertions.equal(tool_visual.get_phase_at(1.00), "recover", "last 0.50 seconds recover")
+	assertions.equal(tool_visual.get_phase_at(0.05), "prepare", "axe begins with a short preparation")
+	assertions.equal(tool_visual.get_phase_at(0.18), "strike", "axe quickly strikes toward the right")
+	assertions.equal(tool_visual.get_phase_at(0.28), "impact", "axe briefly holds at impact")
+	assertions.equal(tool_visual.get_phase_at(0.60), "recover", "axe recovers within one short cycle")
+	assertions.equal(tool_visual.get_phase_at(0.78), "prepare", "axe starts a new swing every 0.72 seconds")
 	tool_visual.set_action_progress(0.0)
 	var prepare_rotation: float = tool_visual.get_node("Pivot").rotation.z
-	tool_visual.set_action_progress(0.46)
+	tool_visual.set_action_progress(0.10)
 	var impact_rotation: float = tool_visual.get_node("Pivot").rotation.z
-	assertions.truthy(impact_rotation < prepare_rotation, "tool head rotates downward around the handle end")
+	assertions.truthy(
+		impact_rotation <= deg_to_rad(-108.0),
+		"axe reaches its rightward downward impact within the first 0.3 seconds"
+	)
+	tool_visual.set_action_progress(0.26)
+	var repeated_prepare_rotation: float = tool_visual.get_node("Pivot").rotation.z
+	assertions.truthy(
+		repeated_prepare_rotation > impact_rotation,
+		"three-second axe action recovers quickly enough to begin another swing"
+	)
 	tool_visual.cancel_tool()
 	assertions.truthy(tool_visual.visible, "runtime cancel enters recovery before hiding")
 	assertions.near(tool_visual.get_cancel_recovery_duration(), 0.14, 0.001, "runtime cancellation uses a short smooth recovery")
@@ -68,7 +78,7 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		"clearance": 1.0,
 		"gatherable": true,
 	}, texture, 0.0, atlas_texture)
-	assertions.near(tree.get_gather_duration(), 2.0, 0.001, "tree exposes a two-second gather duration")
+	assertions.near(tree.get_gather_duration(), 3.0, 0.001, "tree exposes a three-second gather duration")
 	var standing_sprite := tree.get_node("Sprite3D") as Sprite3D
 	var standing_position := standing_sprite.position
 	var cancellation_cases := [[0.10, 0], [0.50, 1], [0.85, 2]]
@@ -82,6 +92,17 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		assertions.equal(tree.remaining_units, 5, "visual cancellation never mutates tree units")
 		assertions.truthy(standing_sprite.visible, "cancel makes original tree visible")
 		assertions.equal(standing_sprite.position, standing_position, "cancel restores the standing tree position")
+	assertions.truthy(tree.begin_felling(-1), "felling direction fixture begins")
+	assertions.truthy(not tree.get_node("StumpVisual").flip_h, "every tree uses the authored right-falling frames")
+	tree.set_felling_progress(1.0 / 3.0)
+	assertions.truthy(tree.has_node("FellingBlendVisual"), "tree provides a second sprite for frame crossfade")
+	if tree.has_node("FellingBlendVisual"):
+		var outgoing := tree.get_node("StumpVisual") as Sprite3D
+		var incoming := tree.get_node("FellingBlendVisual") as Sprite3D
+		assertions.truthy(outgoing.visible and incoming.visible, "both felling frames overlap during crossfade")
+		assertions.near(outgoing.modulate.a, 0.5, 0.08, "outgoing frame fades toward transparent")
+		assertions.near(incoming.modulate.a, 0.5, 0.08, "incoming frame fades in from transparent")
+	tree.cancel_felling()
 	tree.remaining_units = 0
 	tree.call("_update_visual_stage")
 	tree.call("_set_gather_active", false)
@@ -113,7 +134,11 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.near(progress_ring.anchor_left, 0.0, 0.001, "progress ring uses projected target coordinates")
 	var anchor: Vector3 = feedback.tree_axe_anchor(Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0))
 	assertions.near(anchor.y, 1.20, 0.001, "axe pivot is 0.2m above ground")
-	assertions.near(anchor.x, 3.55, 0.001, "axe pivot is 0.45m actor-side")
+	assertions.near(anchor.x, 3.55, 0.001, "axe pivot is 0.45m left of the tree")
+	var opposite_actor_anchor: Vector3 = feedback.tree_axe_anchor(
+		Vector3(4.0, 1.0, 2.0), Vector3(6.0, 1.0, 2.0)
+	)
+	assertions.near(opposite_actor_anchor.x, 3.55, 0.001, "axe remains left even when the actor approaches from the right")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
 	)

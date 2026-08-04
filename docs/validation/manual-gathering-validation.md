@@ -1,18 +1,18 @@
 # 手动采集系统验收记录
 
 日期：2026-08-04  
-分支：`feature/single-click-tree-felling`
+分支：`main`
 设计依据：`docs/superpowers/specs/2026-08-04-manual-gathering-design.md`
 
 ## 验收范围
 
-本轮在原手动采集验收上加入单击伐木增量：五种可砍树、绿/红资格提示、2 秒三帧倒树、根部斧头、整树原子结算、手绘树桩和退休树记录迁移；矿石继续保持 1.2 秒单单位流程。
+本轮在原手动采集验收上加入单击伐木增量：五种可砍树、绿/红资格提示、3 秒三帧向右倒树、帧间淡入淡出、左侧根部斧头、整树原子结算、手绘树桩和退休树记录迁移；矿石继续保持 1.2 秒单单位流程。
 
 关键结果：
 
 - 新树一次增加 5 木材（旧部分树只增加剩余量），扣除 8 体力和 1 点斧头耐久；矿石仍一次增加 1 单位。
 - 仅 `pine-small`、`pine-tall`、`canopy-small`、`canopy-medium`、`round-small` 可砍；其他树显示红环并在点击时提示“此树不可砍伐”。
-- 五套透明图集各包含三张砍倒帧和一张同树种手绘树桩；左右倒向、根部基线和取消恢复均通过视觉检查。
+- 五套透明图集各包含三张砍倒帧和一张同树种手绘树桩；固定向右倒向、根部基线、帧间交叉淡入淡出和取消恢复均通过视觉检查。
 - 采集动作期间游戏时钟暂停；成功后精确推进 10 游戏分钟，23:55 开始的动作会在次日 06:05 完成。
 - 背包满、体力不足、工具损坏、不可达、目标失效以及任何主动取消均不会产生部分结算。
 - 采集所得立即进入玩家背包并减少建筑材料缺口；采集本身不改变市场，只有主动出售才改变金币与市场库存。
@@ -22,7 +22,7 @@
 
 ## 自动测试
 
-以下命令均在 `D:\UnityProject\villa\.worktrees\single-click-tree-felling` 执行，使用 Godot 4.7.1，退出码均为 0。
+以下命令均在 `D:\UnityProject\villa` 执行，使用 Godot 4.7.1，退出码均为 0。
 
 | 测试入口 | 实际结果 |
 |---|---:|
@@ -32,10 +32,10 @@
 | `tests/run_building_system_tests.gd` | PASS：921 |
 | `tests/run_economy_system_tests.gd` | PASS：64132 |
 | `tests/run_economy_ui_tests.gd` | PASS：126 |
-| `tests/run_main_gameplay_integration_tests.gd` | PASS：982 |
+| `tests/run_main_gameplay_integration_tests.gd` | PASS：997 |
 | `tests/run_resource_gathering_tests.gd` | PASS：170 |
-| `tests/run_gathering_visual_tests.gd` | PASS：64 |
-| `tests/run_main_gathering_integration_tests.gd` | PASS：100 |
+| `tests/run_gathering_visual_tests.gd` | PASS：73 |
+| `tests/run_main_gathering_integration_tests.gd` | PASS：102 |
 
 经济测试保留两项既有非阻塞警告：恶意 JSON 指数过高的防御性解析警告，以及水车施工阶段图缺失时启用程序化回退；本功能未新增解析错误、无效节点、孤立信号或时间锁警告。
 
@@ -48,14 +48,15 @@ godot --path . --display-driver windows --rendering-method gl_compatibility `
   -s res://tests/capture_manual_gathering.gd
 ```
 
-结果：`PASS: 39 deterministic manual gathering captures`。运行产物写入 `.godot/manual-gathering-validation/`，不纳入版本控制。
+结果：按状态与分辨率分别执行后，39 张确定性截图（13 个状态 × 3 个分辨率）均生成成功并通过尺寸校验；每个捕获进程退出码为 0。运行产物写入 `.godot/manual-gathering-validation/`，不纳入版本控制。
 
 | 状态 | 1280×720 | 1920×1080 | 3000×2000 | 人工检查 |
 |---|---:|---:|---:|---|
 | 树木目标与虚线路径 | 通过 | 通过 | 通过 | 目标环、剩余量、路径端点清晰 |
 | 绿/红树木资格 | 通过 | 通过 | 通过 | 透明环颜色清晰，仍可看到树根与树种 |
-| 伐木动作与三帧 | 通过 | 通过 | 通过 | 进度圆跟随目标；斧头位于根部；缺口、倾斜、近倒地三帧无单元格裁切 |
-| 左右倒向 | 通过 | 通过 | 通过 | 水平翻转方向明确，树根基线不跳动 |
+| 伐木动作与三帧 | 通过 | 通过 | 通过 | 种地方格阴影隐藏；斧头位于树根左侧并快速向右下方挥动 |
+| 帧间淡出淡入 | 通过 | 通过 | 通过 | 1 秒和 2 秒附近两帧交叉半透明，无硬切或根部跳动 |
+| 固定向右倒向 | 通过 | 通过 | 通过 | 正常与旧反向输入均不水平翻转，树根基线不跳动 |
 | `+5 木材` 与手绘树桩 | 通过 | 通过 | 通过 | 本地化飘字可读，HUD 增加 5，灰色几何树桩已移除 |
 | 矿脉完整/受损/碎石 | 通过 | 通过 | 通过 | 体积、裂纹与扁平碎石阶段可区分 |
 | 背包已满 | 通过 | 通过 | 通过 | 失败文字居中，无裁切，不启动移动 |

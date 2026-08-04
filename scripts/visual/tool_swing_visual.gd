@@ -5,6 +5,11 @@ const ACTION_DURATION := 1.2
 const PREPARE_END := 0.25
 const STRIKE_END := 0.55
 const IMPACT_END := 0.70
+const AXE_ACTION_DURATION := 3.0
+const AXE_SWING_CYCLE := 0.72
+const AXE_PREPARE_END := 0.10
+const AXE_STRIKE_END := 0.24
+const AXE_IMPACT_END := 0.34
 const CANCEL_RECOVERY_DURATION := 0.14
 const TOOL_TEXTURES := {
 	"axe": "res://assets/ui/action_icons/axe.png",
@@ -47,32 +52,51 @@ func play_tool(tool_id: String) -> bool:
 
 func set_action_progress(progress: float) -> void:
 	var elapsed := clampf(progress, 0.0, 1.0) * ACTION_DURATION
+	var prepare_end := PREPARE_END
+	var strike_end := STRIKE_END
+	var impact_end := IMPACT_END
+	var cycle_duration := ACTION_DURATION
+	if _tool_id == "axe":
+		elapsed = fmod(clampf(progress, 0.0, 1.0) * AXE_ACTION_DURATION, AXE_SWING_CYCLE)
+		prepare_end = AXE_PREPARE_END
+		strike_end = AXE_STRIKE_END
+		impact_end = AXE_IMPACT_END
+		cycle_duration = AXE_SWING_CYCLE
 	var rotation_value := 0.0
-	if elapsed < PREPARE_END:
-		rotation_value = lerpf(deg_to_rad(-20.0), deg_to_rad(-42.0), elapsed / PREPARE_END)
-	elif elapsed < STRIKE_END:
+	if elapsed < prepare_end:
+		rotation_value = lerpf(deg_to_rad(-20.0), deg_to_rad(-42.0), elapsed / prepare_end)
+	elif elapsed < strike_end:
 		rotation_value = lerpf(
 			deg_to_rad(-42.0),
 			deg_to_rad(-112.0),
-			(elapsed - PREPARE_END) / (STRIKE_END - PREPARE_END)
+			(elapsed - prepare_end) / (strike_end - prepare_end)
 		)
-	elif elapsed < IMPACT_END:
+	elif elapsed < impact_end:
 		rotation_value = deg_to_rad(-112.0)
 	else:
 		rotation_value = lerpf(
 			deg_to_rad(-112.0),
 			deg_to_rad(-20.0),
-			(elapsed - IMPACT_END) / (ACTION_DURATION - IMPACT_END)
+			(elapsed - impact_end) / (cycle_duration - impact_end)
 		)
 	(get_node("Pivot") as Node3D).rotation.z = rotation_value
 
 
 func get_phase_at(elapsed: float) -> String:
-	if elapsed < PREPARE_END:
+	var phase_elapsed := maxf(elapsed, 0.0)
+	var prepare_end := PREPARE_END
+	var strike_end := STRIKE_END
+	var impact_end := IMPACT_END
+	if _tool_id == "axe":
+		phase_elapsed = fmod(phase_elapsed, AXE_SWING_CYCLE)
+		prepare_end = AXE_PREPARE_END
+		strike_end = AXE_STRIKE_END
+		impact_end = AXE_IMPACT_END
+	if phase_elapsed < prepare_end:
 		return "prepare"
-	if elapsed < STRIKE_END:
+	if phase_elapsed < strike_end:
 		return "strike"
-	if elapsed < IMPACT_END:
+	if phase_elapsed < impact_end:
 		return "impact"
 	return "recover"
 

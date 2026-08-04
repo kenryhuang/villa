@@ -1,7 +1,7 @@
 class_name TreeFellingCatalog
 extends RefCounted
 
-const GATHER_DURATION := 2.0
+const GATHER_DURATION := 3.0
 
 const CHOPPABLE_VARIANTS := {
 	"pine-small": true,

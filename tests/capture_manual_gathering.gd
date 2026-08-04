@@ -9,7 +9,7 @@ const STATES := [
 	"tree_frame_1",
 	"tree_frame_2",
 	"tree_frame_3",
-	"tree_fall_left",
+	"tree_fall_right_forced",
 	"tree_fall_right",
 	"tree_result_stump",
 	"ore_stages",
@@ -140,15 +140,15 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			var tree := _requestable_resource(main, "tree")
 			if tree == null or not _arrive(main):
 				return false
-			var elapsed: float = float({"tree_frame_1": 0.20, "tree_frame_2": 1.0, "tree_frame_3": 1.7}[state_id])
+			var elapsed: float = float({"tree_frame_1": 0.35, "tree_frame_2": 1.0, "tree_frame_3": 2.5}[state_id])
 			main.gathering_controller._process(elapsed)
 			_focus(main, [tree.global_position], 6.0)
 			return main.gathering_controller.get_state_name() == "ACTING"
-		"tree_fall_left", "tree_fall_right":
+		"tree_fall_right_forced", "tree_fall_right":
 			var tree := _find_resource(main, "tree")
 			if tree == null:
 				return false
-			var direction: int = -1 if state_id == "tree_fall_left" else 1
+			var direction: int = -1 if state_id == "tree_fall_right_forced" else 1
 			tree.begin_felling(direction)
 			tree.set_felling_progress(0.85)
 			_focus(main, [tree.global_position], 6.0)
@@ -159,7 +159,7 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 				return false
 			if not main.gathering_controller.request_gather(tree) or not _arrive(main):
 				return false
-			main.gathering_controller._process(2.0)
+			main.gathering_controller._process(3.0)
 			_focus(main, [tree.global_position], 5.5)
 			return tree.remaining_units == 0
 		"ore_stages":

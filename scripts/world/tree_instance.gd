@@ -7,10 +7,14 @@ const CAMERA_OCCLUDER_LAYER := 32
 const OCCLUDED_OPACITY := 0.30
 const CLEAR_OPACITY := 1.0
 const FADE_RATE := 10.0
+const FRAME_FADE_DURATION := 0.20
+const FIRST_FRAME_CENTER := 1.0 / 3.0
+const SECOND_FRAME_CENTER := 2.0 / 3.0
 
 var occlusion_target := CLEAR_OPACITY
 var sprite: Sprite3D
 var stump_visual: Sprite3D
+var felling_blend_visual: Sprite3D
 var _full_sprite_scale := Vector3.ONE
 var _full_sprite_position := Vector3.ZERO
 var variant := ""
@@ -110,6 +114,19 @@ func configure(
 	stump_visual.visible = false
 	add_child(stump_visual)
 
+	felling_blend_visual = Sprite3D.new()
+	felling_blend_visual.name = "FellingBlendVisual"
+	felling_blend_visual.billboard = stump_visual.billboard
+	felling_blend_visual.alpha_cut = stump_visual.alpha_cut
+	felling_blend_visual.no_depth_test = stump_visual.no_depth_test
+	felling_blend_visual.pixel_size = stump_visual.pixel_size
+	felling_blend_visual.scale = stump_visual.scale
+	felling_blend_visual.position = stump_visual.position
+	felling_blend_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	felling_blend_visual.render_priority = 1
+	felling_blend_visual.visible = false
+	add_child(felling_blend_visual)
+
 	var trunk_height := trunk_height_for(tree_height)
 	var trunk_shape := CylinderShape3D.new()
 	trunk_shape.radius = trunk_radius_for(float(tree_data.clearance))
@@ -185,11 +202,12 @@ func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
 	return reward
 
 
-func begin_felling(fall_direction: int) -> bool:
+func begin_felling(_fall_direction: int) -> bool:
 	if not is_chop_eligible() or remaining_units <= 0:
 		return false
 	_felling_active = true
-	stump_visual.flip_h = fall_direction < 0
+	stump_visual.flip_h = false
+	felling_blend_visual.flip_h = false
 	set_felling_progress(0.0)
 	return true
 
@@ -198,8 +216,29 @@ func set_felling_progress(progress: float) -> void:
 	if not _felling_active:
 		return
 	var value := clampf(progress, 0.0, 1.0)
-	var next_frame := 0 if value < 0.325 else (1 if value < 0.675 else 2)
-	_show_felling_frame(next_frame)
+	var fade_half_progress := FRAME_FADE_DURATION / TreeFellingCatalogScript.GATHER_DURATION * 0.5
+	if absf(value - FIRST_FRAME_CENTER) <= fade_half_progress:
+		_show_felling_blend(
+			0,
+			1,
+			inverse_lerp(
+				FIRST_FRAME_CENTER - fade_half_progress,
+				FIRST_FRAME_CENTER + fade_half_progress,
+				value
+			)
+		)
+	elif absf(value - SECOND_FRAME_CENTER) <= fade_half_progress:
+		_show_felling_blend(
+			1,
+			2,
+			inverse_lerp(
+				SECOND_FRAME_CENTER - fade_half_progress,
+				SECOND_FRAME_CENTER + fade_half_progress,
+				value
+			)
+		)
+	else:
+		_show_felling_frame(0 if value < FIRST_FRAME_CENTER else (1 if value < SECOND_FRAME_CENTER else 2))
 
 
 func cancel_felling() -> void:
@@ -208,6 +247,11 @@ func cancel_felling() -> void:
 	if stump_visual != null:
 		stump_visual.visible = false
 		stump_visual.flip_h = false
+		_set_sprite_alpha(stump_visual, 1.0)
+	if felling_blend_visual != null:
+		felling_blend_visual.visible = false
+		felling_blend_visual.flip_h = false
+		_set_sprite_alpha(felling_blend_visual, 0.0)
 	if sprite != null:
 		sprite.visible = remaining_units > 0
 		_sprite_reset()
@@ -220,15 +264,44 @@ func get_felling_frame() -> int:
 func _show_felling_frame(frame: int) -> void:
 	if stump_visual == null or felling_atlas == null or frame < 0 or frame > 3:
 		return
-	var atlas_texture := AtlasTexture.new()
-	atlas_texture.atlas = felling_atlas
-	var cell_width := float(felling_atlas.get_width()) / 4.0
-	atlas_texture.region = Rect2(cell_width * float(frame), 0.0, cell_width, felling_atlas.get_height())
-	stump_visual.texture = atlas_texture
+	_set_felling_texture(stump_visual, frame)
+	_set_sprite_alpha(stump_visual, 1.0)
+	if felling_blend_visual != null:
+		felling_blend_visual.visible = false
+		_set_sprite_alpha(felling_blend_visual, 0.0)
 	stump_visual.visible = true
 	_felling_frame = frame
 	if sprite != null:
 		sprite.visible = false
+
+
+func _show_felling_blend(from_frame: int, to_frame: int, weight: float) -> void:
+	if stump_visual == null or felling_blend_visual == null or felling_atlas == null:
+		return
+	var blend := clampf(weight, 0.0, 1.0)
+	_set_felling_texture(stump_visual, from_frame)
+	_set_felling_texture(felling_blend_visual, to_frame)
+	_set_sprite_alpha(stump_visual, 1.0 - blend)
+	_set_sprite_alpha(felling_blend_visual, blend)
+	stump_visual.visible = true
+	felling_blend_visual.visible = true
+	_felling_frame = to_frame if blend >= 0.5 else from_frame
+	if sprite != null:
+		sprite.visible = false
+
+
+func _set_felling_texture(target_sprite: Sprite3D, frame: int) -> void:
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = felling_atlas
+	var cell_width := float(felling_atlas.get_width()) / 4.0
+	atlas_texture.region = Rect2(cell_width * float(frame), 0.0, cell_width, felling_atlas.get_height())
+	target_sprite.texture = atlas_texture
+
+
+func _set_sprite_alpha(target_sprite: Sprite3D, alpha: float) -> void:
+	var color := target_sprite.modulate
+	color.a = clampf(alpha, 0.0, 1.0)
+	target_sprite.modulate = color
 
 
 func _sprite_reset() -> void:

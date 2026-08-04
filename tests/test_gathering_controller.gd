@@ -110,7 +110,7 @@ class TimedTarget:
 	extends Node3D
 
 	func get_gather_duration() -> float:
-		return 2.0
+		return 3.0
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -171,9 +171,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(controller.request_gather(timed_target), "target-specific duration fixture starts")
 	player.auto_path_finished.emit()
 	controller._process(1.2)
-	assertions.equal(tools.commit_calls, 1, "two-second target does not commit at ore duration")
+	assertions.equal(tools.commit_calls, 1, "three-second target does not commit at ore duration")
 	controller._process(0.8)
-	assertions.equal(tools.commit_calls, 2, "two-second target commits at its own duration")
+	assertions.equal(tools.commit_calls, 1, "three-second target remains active at two seconds")
+	controller._process(1.0)
+	assertions.equal(tools.commit_calls, 2, "three-second target commits at its own duration")
 
 	var replacement := Node3D.new()
 	tree.root.add_child(replacement)

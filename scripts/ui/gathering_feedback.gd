@@ -64,12 +64,8 @@ static func progress_center_with_label_clearance(
 	return result
 
 
-static func tree_axe_anchor(tree_position: Vector3, actor_position: Vector3) -> Vector3:
-	var toward_actor := actor_position - tree_position
-	toward_actor.y = 0.0
-	if toward_actor.is_zero_approx():
-		toward_actor = Vector3.RIGHT
-	return tree_position + toward_actor.normalized() * 0.45 + Vector3.UP * 0.20
+static func tree_axe_anchor(tree_position: Vector3, _actor_position: Vector3) -> Vector3:
+	return tree_position + Vector3.LEFT * 0.45 + Vector3.UP * 0.20
 
 
 func _process(delta: float) -> void:
@@ -160,8 +156,7 @@ func _on_state_changed(state: int, context: Dictionary) -> void:
 			var actor := _controller.call("get_actor") as Node3D
 			if actor != null and str(_controller._preview.get("tool_id", "")) == "axe" and _target.has_method("begin_felling"):
 				_tool_visual.global_position = tree_axe_anchor(_target.global_position, actor.global_position)
-				var fall_direction := 1 if _target.global_position.x >= actor.global_position.x else -1
-				_target.call("begin_felling", fall_direction)
+				_target.call("begin_felling", 1)
 			elif actor != null:
 				var direction := _target.global_position - actor.global_position
 				direction.y = 0.0

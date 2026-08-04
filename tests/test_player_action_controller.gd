@@ -578,6 +578,8 @@ func _test_pointer_contract(
 	controller_script: Script
 ) -> void:
 	var controller = controller_script.new()
+	var grid := GridDouble.new()
+	controller.grid_system = grid
 	tree.root.add_child(controller)
 	assertions.truthy(
 		controller.has_method("_unhandled_input"),
@@ -607,7 +609,22 @@ func _test_pointer_contract(
 		target.free()
 		var gathering := GatheringDouble.new()
 		controller.gathering_controller = gathering
+		var clears_before_axe := grid.clear_highlights_calls
 		controller.call("select_slot", 2)
+		assertions.equal(
+			grid.clear_highlights_calls,
+			clears_before_axe + 1,
+			"selecting the axe immediately clears the farming cell shadow"
+		)
+		assertions.truthy(
+			controller.has_method("should_show_cell_highlight"),
+			"controller exposes cell-highlight eligibility"
+		)
+		if controller.has_method("should_show_cell_highlight"):
+			assertions.truthy(
+				not bool(controller.call("should_show_cell_highlight")),
+				"axe selection keeps the farming cell shadow hidden"
+			)
 		var tree_target := GatherTargetDouble.new()
 		tree.root.add_child(tree_target)
 		var hover_events: Array = []
