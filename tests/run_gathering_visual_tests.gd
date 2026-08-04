@@ -10,7 +10,7 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions := TestAssertScript.new()
-	GatheringVisualsTest.new().run(assertions)
+	await GatheringVisualsTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d gathering visual checks" % assertions.checks)
 		quit(0)

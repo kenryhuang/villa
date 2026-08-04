@@ -50,6 +50,16 @@ class ReentrantTarget:
 		return true
 
 
+class FaultyCommitTarget:
+	extends ResourceNode
+
+	func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
+		var reward := super(tool_id, total_day)
+		if reward.is_empty():
+			return reward
+		return {"coal": 1}
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var game_state = tree.root.get_node_or_null("GameState")
 	assertions.truthy(game_state != null, "tool transaction test has GameState")
@@ -119,6 +129,28 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(game_state.player_state.stamina, 92, "commit spends stamina exactly once")
 	assertions.equal(tool.get_durability("pickaxe").current, 99, "commit spends one durability")
 
+	var faulty := FaultyCommitTarget.new()
+	assertions.truthy(faulty.configure_resource({
+		"resource_id": "faulty-final-stone",
+		"resource_type": "stone",
+		"position": Vector3.ZERO,
+		"max_units": 1,
+	}), "faulty final-unit target configures")
+	var active_events: Array[bool] = []
+	faulty.gathering_active_changed.connect(
+		func(_id: String, active: bool) -> void: active_events.append(active)
+	)
+	var stone_before_fault: int = inventory.get_item_count("stone")
+	var stamina_before_fault: int = game_state.player_state.stamina
+	var durability_before_fault: int = int(tool.get_durability("pickaxe").current)
+	var faulty_result: Dictionary = tool.commit_gather_unit(faulty)
+	assertions.equal(faulty_result.get("reason"), "target_changed", "invalid target commit rolls back")
+	assertions.equal(faulty.remaining_units, 1, "rollback restores the final resource unit")
+	assertions.equal(active_events.size(), 0, "rollback publishes no transient depletion event")
+	assertions.equal(inventory.get_item_count("stone"), stone_before_fault, "rollback restores inventory")
+	assertions.equal(game_state.player_state.stamina, stamina_before_fault, "rollback restores stamina")
+	assertions.equal(int(tool.get_durability("pickaxe").current), durability_before_fault, "rollback restores durability")
+
 	inventory.clear()
 	for slot_index in range(inventory.slots.size()):
 		inventory.slots[slot_index] = {"item_id": "grain_seed", "quantity": 99}
@@ -156,6 +188,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(inventory.get_item_count("stone"), 1, "failed preflight leaves inventory untouched")
 
 	reentrant.free()
+	faulty.free()
 	copper.free()
 	inventory.free()
 	tool.free()

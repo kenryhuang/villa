@@ -10,6 +10,7 @@ const FADE_RATE := 10.0
 var occlusion_target := CLEAR_OPACITY
 var sprite: Sprite3D
 var stump_visual: MeshInstance3D
+var axe_mark: Label3D
 var _full_sprite_scale := Vector3.ONE
 
 static func trunk_radius_for(clearance: float) -> float:
@@ -73,6 +74,19 @@ func configure(tree_data: Dictionary, texture: Texture2D, terrain_height: float)
 	stump_visual.visible = false
 	add_child(stump_visual)
 
+	axe_mark = Label3D.new()
+	axe_mark.name = "AxeMark"
+	axe_mark.text = "╳"
+	axe_mark.font_size = 28
+	axe_mark.outline_size = 6
+	axe_mark.modulate = Color("6f3f27")
+	axe_mark.outline_modulate = Color(0.95, 0.76, 0.49, 0.84)
+	axe_mark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	axe_mark.no_depth_test = true
+	axe_mark.position = Vector3(0.0, 0.48, 0.0)
+	axe_mark.visible = false
+	add_child(axe_mark)
+
 	var trunk_height := trunk_height_for(tree_height)
 	var trunk_shape := CylinderShape3D.new()
 	trunk_shape.radius = trunk_radius_for(float(tree_data.clearance))
@@ -131,6 +145,19 @@ func _set_gather_active(active: bool) -> void:
 	_apply_visual_stage()
 
 
+func _update_visual_stage() -> void:
+	visual_stage = _stage_for_units(remaining_units)
+	_apply_visual_stage()
+
+
+func _stage_for_units(units: int) -> int:
+	if units <= 0:
+		return 3
+	if units >= 4:
+		return 0
+	return 1 if units >= 2 else 2
+
+
 func _apply_visual_stage() -> void:
 	if sprite != null:
 		sprite.visible = visual_stage < 3
@@ -142,6 +169,8 @@ func _apply_visual_stage() -> void:
 		sprite.modulate = color
 	if stump_visual != null:
 		stump_visual.visible = visual_stage == 3
+	if axe_mark != null:
+		axe_mark.visible = visual_stage in [1, 2]
 
 func set_camera_occluded(value: bool) -> void:
 	occlusion_target = OCCLUDED_OPACITY if value else CLEAR_OPACITY

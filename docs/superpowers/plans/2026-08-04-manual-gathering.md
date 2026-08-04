@@ -459,17 +459,17 @@ Commit: `test: verify manual gathering economy chain`
 - Create: `docs/validation/manual-gathering-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-04-manual-gathering.md`
 
-- [ ] **Step 1: 创建确定性视觉捕获场景**
+- [x] **Step 1: 创建确定性视觉捕获场景**
 
 捕获树木目标与路径、伐木进度、`+1` 飘字、树桩、矿脉完整/受损/碎石、背包已满和不可达。在 1280×720、1920×1080、3000×2000 下保存到临时验证目录，避免提交运行产物。
 
-- [ ] **Step 2: 运行视觉捕获并逐图检查**
+- [x] **Step 2: 运行视觉捕获并逐图检查**
 
 Run: `godot_console --path . --script res://tests/capture_manual_gathering.gd`
 
 Expected: 进程退出码 0，无裁切、重叠、工具轴心错误或不可读文字。
 
-- [ ] **Step 3: 运行全量自动测试**
+- [x] **Step 3: 运行全量自动测试**
 
 Run: `godot_console --headless --path . --script res://tests/run_tests.gd`
 
@@ -487,7 +487,7 @@ Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_i
 
 Expected: 所有入口 PASS，Godot 输出没有新的解析错误、无效节点、孤立信号或时间锁告警。
 
-- [ ] **Step 4: 静态检查和计划收尾**
+- [x] **Step 4: 静态检查和计划收尾**
 
 Run: `git diff --check`
 
@@ -497,7 +497,7 @@ Expected: `git diff --check` 无输出；搜索结果没有本功能遗留项。
 
 在 `docs/validation/manual-gathering-validation.md` 记录每个命令的实际 PASS 数、截图尺寸和人工检查结论；将本计划全部复选框改为完成。
 
-- [ ] **Step 5: 最终提交**
+- [x] **Step 5: 最终提交**
 
 Commit: `docs: validate manual gathering system`
 

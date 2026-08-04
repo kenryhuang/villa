@@ -72,6 +72,7 @@ var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModa
 
 # 建筑容器
 var buildings_container: Node3D
+var _world_navigation_blockers: Dictionary = {}
 
 
 func _ready() -> void:
@@ -309,6 +310,7 @@ func _on_save_load_completed(_slot: int) -> void:
 		push_error("Unable to synchronize production day after load.")
 		return
 	production_system.sync_clock(season_system.hour, season_system.minute)
+	_register_resource_navigation()
 	if npc_economy_system != null:
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
 
@@ -351,9 +353,9 @@ func _setup_player() -> void:
 
 
 func _register_resource_navigation() -> void:
-	if world == null or grid_system == null or not world.has_method("get_gatherable_nodes"):
+	if world == null or grid_system == null or not world.has_method("get_navigation_obstacle_nodes"):
 		return
-	for resource in world.get_gatherable_nodes():
+	for resource in world.get_navigation_obstacle_nodes():
 		if not resource is Node3D:
 			continue
 		var callback := Callable(self, "_on_resource_gathering_active_changed").bind(resource)
@@ -362,7 +364,10 @@ func _register_resource_navigation() -> void:
 			and not resource.is_connected("gathering_active_changed", callback)
 		):
 			resource.connect("gathering_active_changed", callback)
-		var active := int(resource.get("remaining_units")) > 0
+		var active := (
+			not bool(resource.get("gathering_enabled"))
+			or int(resource.get("remaining_units")) > 0
+		)
 		_set_resource_navigation_blocker(resource, active)
 
 
@@ -377,13 +382,35 @@ func _on_resource_gathering_active_changed(
 func _set_resource_navigation_blocker(resource: Node, active: bool) -> void:
 	if grid_system == null or not resource is Node3D:
 		return
+	var instance_id := resource.get_instance_id()
+	for blocker_id in _world_navigation_blockers.get(instance_id, []):
+		grid_system.set_navigation_blocker(str(blocker_id), Vector2i.ZERO, false)
+	_world_navigation_blockers.erase(instance_id)
+	if not active:
+		return
 	var node := resource as Node3D
 	var position := node.global_position if node.is_inside_tree() else node.position
-	grid_system.set_navigation_blocker(
-		"resource:%s" % str(resource.get("resource_id")),
-		grid_system.world_to_grid(position.x, position.z),
-		active
+	var center_cell := grid_system.world_to_grid(position.x, position.z)
+	var obstacle_radius := (
+		float(resource.call("get_interaction_radius"))
+		if resource.has_method("get_interaction_radius")
+		else 0.45
 	)
+	var player_radius := 0.35
+	var cell_half_diagonal := GridSystem.CELL_SIZE * sqrt(0.5)
+	var blocking_distance := obstacle_radius + player_radius + cell_half_diagonal
+	var cell_radius := ceili(blocking_distance / GridSystem.CELL_SIZE)
+	var blocker_ids: Array[String] = []
+	for gz in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
+		for gx in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+			var cell := Vector2i(gx, gz)
+			var cell_world := grid_system.grid_to_world(gx, gz)
+			if Vector2(position.x, position.z).distance_to(cell_world) > blocking_distance:
+				continue
+			var blocker_id := "world:%d:%d:%d" % [instance_id, gx, gz]
+			grid_system.set_navigation_blocker(blocker_id, cell, true)
+			blocker_ids.append(blocker_id)
+	_world_navigation_blockers[instance_id] = blocker_ids
 
 
 func _setup_npcs() -> void:

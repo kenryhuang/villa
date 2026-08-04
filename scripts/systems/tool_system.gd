@@ -147,12 +147,18 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	var tool_before := current_tool
 	var owns_event_transaction := _begin_inventory_event_transaction()
 	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
+	var owns_target_transaction := (
+		target.has_method("begin_gather_transaction")
+		and target.has_method("end_gather_transaction")
+		and bool(target.call("begin_gather_transaction"))
+	)
 	var tool_type := _item_id_to_tool(str(preview.tool_id)) as ToolType
 	current_tool = tool_type
 	if not bool(inventory_ref.call("add_item", str(preview.item_id), 1)):
 		_rollback_gather(
 			target, target_snapshot, inventory_snapshot, stamina_before,
-			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction
+			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction,
+			owns_target_transaction
 		)
 		_active_gather_transactions.erase(transaction_id)
 		return _gather_failure("inventory_write_failed", preview)
@@ -162,7 +168,8 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	if committed != {str(preview.item_id): 1}:
 		_rollback_gather(
 			target, target_snapshot, inventory_snapshot, stamina_before,
-			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction
+			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction,
+			owns_target_transaction
 		)
 		_active_gather_transactions.erase(transaction_id)
 		return _gather_failure("target_changed", preview)
@@ -170,6 +177,8 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	tool_durability[str(preview.tool_id)]["current"] = (
 		int(tool_durability[str(preview.tool_id)].current) - int(preview.durability_cost)
 	)
+	if owns_target_transaction:
+		target.call("end_gather_transaction", true)
 	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
 	_end_inventory_event_transaction(owns_event_transaction)
 	_emit_committed_rewards({str(preview.item_id): 1}, owns_event_transaction)
@@ -189,11 +198,14 @@ func _rollback_gather(
 	durability_snapshot: Dictionary,
 	tool_before: ToolType,
 	owns_mapping_transaction: bool,
-	owns_event_transaction: bool
+	owns_event_transaction: bool,
+	owns_target_transaction: bool
 ) -> void:
 	_restore_inventory(inventory_snapshot)
 	if not target_snapshot.is_empty() and target.has_method("from_dict"):
 		target.call("from_dict", target_snapshot)
+	if owns_target_transaction:
+		target.call("end_gather_transaction", false)
 	var game_state = _game_state()
 	if game_state != null:
 		game_state.player_state.stamina = stamina_before

@@ -33,6 +33,8 @@ class PathfinderDouble:
 
 	var calls := 0
 	var path: Array[Vector3] = [Vector3.ZERO, Vector3.RIGHT]
+	var revision := 0
+	var path_walkable := true
 
 	func find_path_to_interaction(
 		_start: Vector3,
@@ -41,6 +43,12 @@ class PathfinderDouble:
 	) -> Array[Vector3]:
 		calls += 1
 		return path.duplicate()
+
+	func get_navigation_revision() -> int:
+		return revision
+
+	func is_path_walkable(_points: Array[Vector3]) -> bool:
+		return path_walkable
 
 
 class ToolsDouble:
@@ -128,6 +136,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(tools.selected_tool, "pickaxe", "request automatically equips the required tool")
 	assertions.equal(player.started_paths.size(), 1, "request starts one auto path")
 	assertions.equal(controller.get_state_name(), "MOVING", "request waits in moving state")
+	pathfinder.revision = 1
+	controller._process(0.0)
+	assertions.equal(pathfinder.calls, 1, "unrelated navigation revision keeps a still-walkable path")
+	pathfinder.path_walkable = false
+	pathfinder.revision = 2
+	controller._process(0.0)
+	assertions.equal(pathfinder.calls, 2, "blocked current path replans once during movement")
+	pathfinder.path_walkable = true
 	player.active = false
 	player.auto_path_finished.emit()
 	assertions.equal(controller.get_state_name(), "ACTING", "arrival begins the action after recheck")
@@ -155,7 +171,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	assertions.truthy(controller.request_gather(target), "blocked fixture starts")
 	player.auto_path_blocked.emit()
-	assertions.equal(pathfinder.calls, 5, "first blockage performs one replacement path query")
+	assertions.equal(pathfinder.calls, 6, "first blockage performs one replacement path query")
 	player.auto_path_blocked.emit()
 	assertions.equal(failures[-1], "unreachable", "second blockage fails as unreachable")
 	assertions.equal(controller.get_state_name(), "IDLE", "unreachable command returns idle")
@@ -179,7 +195,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(invalid_target)
 	assertions.truthy(controller.request_gather(invalid_target), "invalid-target fixture starts movement")
 	invalid_target.free()
-	player.auto_path_finished.emit()
+	controller._process(0.0)
 	assertions.equal(failures[-1], "target_invalid", "freed target fails before action commit")
 	assertions.equal(tools.commit_calls, 1, "freed target never commits a reward")
 

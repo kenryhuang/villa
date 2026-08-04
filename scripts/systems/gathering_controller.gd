@@ -35,6 +35,8 @@ var _action_elapsed := 0.0
 var _path_retry_used := false
 var _clock_locked := false
 var _request_token := 0
+var _path_revision := -1
+var _active_path: Array[Vector3] = []
 
 
 func configure(player, pathfinder, tools, season) -> bool:
@@ -104,7 +106,33 @@ func has_active_command() -> bool:
 	return _state != State.IDLE
 
 
+func get_actor() -> Node3D:
+	return _player as Node3D
+
+
 func _process(delta: float) -> void:
+	if _state == State.MOVING:
+		if _target == null or not is_instance_valid(_target):
+			_fail("target_invalid")
+			return
+		if _has_property(_target, "remaining_units") and int(_target.get("remaining_units")) <= 0:
+			_fail("resource_depleted")
+			return
+		if _pathfinder.has_method("get_navigation_revision"):
+			var current_revision := int(_pathfinder.call("get_navigation_revision"))
+			if current_revision != _path_revision:
+				var path_still_walkable: bool = (
+					_pathfinder.has_method("is_path_walkable")
+					and bool(_pathfinder.call("is_path_walkable", _active_path))
+				)
+				if path_still_walkable:
+					_path_revision = current_revision
+				elif _path_retry_used:
+					_fail("unreachable")
+				else:
+					_path_retry_used = true
+					_start_path()
+		return
 	if _state != State.ACTING:
 		return
 	if _target == null or not is_instance_valid(_target):
@@ -134,6 +162,8 @@ func _start_path() -> bool:
 		_fail("unreachable")
 		return false
 	path_ready.emit(path.duplicate())
+	_active_path.assign(path)
+	_path_revision = int(_pathfinder.call("get_navigation_revision")) if _pathfinder.has_method("get_navigation_revision") else -1
 	_set_state(State.MOVING)
 	return true
 
@@ -216,6 +246,8 @@ func _clear_command() -> void:
 	_preview.clear()
 	_action_elapsed = 0.0
 	_path_retry_used = false
+	_path_revision = -1
+	_active_path.clear()
 
 
 func _set_state(next_state: State, extra: Dictionary = {}) -> void:

@@ -484,8 +484,8 @@ func _test_world_v1_to_v2_normalization_is_complete_and_atomic(
 		world.free()
 		return
 	var legacy := [{
-		"resource_id": "stone-00",
-		"position": [0.0, 0.0, 0.0],
+		"resource_id": "river-clay-00",
+		"position": [-14.65, 0.0, -1.8],
 		"hits_remaining": 2,
 		"respawn_day": 0,
 		"bonus_table": [{"item_id": "coal", "chance": 1.0}],
@@ -500,8 +500,12 @@ func _test_world_v1_to_v2_normalization_is_complete_and_atomic(
 		)
 		var migrated := _record_by_id(normalized, "stone-00")
 		assertions.equal(migrated.get("state_version"), 2, "legacy record migrates to v2")
-		assertions.equal(migrated.get("remaining_units"), 2, "legacy hits scale upward to v2 capacity")
+		assertions.equal(migrated.get("remaining_units"), 3, "real v1 hits scale upward from capacity three")
 		assertions.truthy(not migrated.has("bonus_table"), "legacy random bonus is discarded")
+		assertions.truthy(
+			migrated.get("position") != legacy[0].position,
+			"legacy ID migration adopts the current authored resource position"
+		)
 		var new_resource := _record_by_id(normalized, "gold-00")
 		assertions.equal(new_resource.get("remaining_units"), 2, "missing rare ore starts full")
 		assertions.equal(new_resource.get("respawn_day"), 0, "backfilled resource has no respawn timer")
@@ -528,6 +532,15 @@ func _test_world_v1_to_v2_normalization_is_complete_and_atomic(
 		"expired respawn boundary rejects the entire snapshot"
 	)
 	assertions.equal(world.to_resource_dicts(), before, "invalid respawn leaves every resource unchanged")
+	var stone_node: Node = container.get_node("stone-00")
+	var authored_position: Array = _record_by_id(before, "stone-00").position
+	stone_node.position = Vector3(99.0, 0.0, 99.0)
+	var defaults: Array = world.normalize_resource_dicts([], 5)
+	assertions.equal(
+		_record_by_id(defaults, "stone-00").position,
+		authored_position,
+		"missing new resource uses immutable authored position, not prior runtime state"
+	)
 	world.free()
 
 

@@ -8,6 +8,18 @@ const WATER_REGIONS: Array[Rect2] = [
 	Rect2(15.0, -5.0, 1.0, 10.0),
 ]
 const WATER_SURFACE_LIFT := 0.035
+const LEGACY_RESOURCE_ID_MAP := {
+	"rock-coal-00": "coal-00",
+	"rock-coal-01": "coal-01",
+	"rock-copper-00": "copper-00",
+	"rock-copper-01": "copper-01",
+	"rock-iron-00": "iron-00",
+	"rock-iron-01": "iron-01",
+	"river-clay-00": "stone-00",
+	"river-clay-01": "stone-01",
+	"river-sand-00": "stone-02",
+	"river-sand-01": "stone-03",
+}
 
 @onready var terrain: TerrainBuilder = $Terrain
 @onready var road: RoadBuilder = $Road
@@ -117,6 +129,12 @@ func get_gatherable_nodes() -> Array[Node]:
 	return _gatherable_nodes()
 
 
+func get_navigation_obstacle_nodes() -> Array[Node]:
+	var result: Array[Node] = []
+	_collect_navigation_obstacles(self, result)
+	return result
+
+
 func validate_resource_dicts(value: Variant, loaded_day: int = -1) -> bool:
 	return normalize_resource_dicts(value, loaded_day) is Array
 
@@ -134,7 +152,8 @@ func normalize_resource_dicts(value: Variant, loaded_day: int = -1) -> Variant:
 	for record in value:
 		if not record is Dictionary:
 			return null
-		var id := str(record.get("resource_id", ""))
+		var source_id := str(record.get("resource_id", ""))
+		var id := str(LEGACY_RESOURCE_ID_MAP.get(source_id, source_id))
 		if id.is_empty() or normalized_by_id.has(id) or not known.has(id):
 			return null
 		var gatherable: Variant = known[id]
@@ -143,8 +162,12 @@ func normalize_resource_dicts(value: Variant, loaded_day: int = -1) -> Variant:
 			or not gatherable.has_method("default_state_dict")
 		):
 			return null
+		var current_record: Dictionary = record.duplicate(true)
+		if source_id != id:
+			current_record["resource_id"] = id
+			current_record["position"] = gatherable.call("default_state_dict").position
 		var normalized: Dictionary = gatherable.call(
-			"normalize_state_dict", record, loaded_day
+			"normalize_state_dict", current_record, loaded_day
 		)
 		if normalized.is_empty():
 			return null
@@ -221,6 +244,18 @@ func _collect_gatherables(parent: Node, result: Array[Node]) -> void:
 		if is_gatherable:
 			result.append(child)
 		_collect_gatherables(child, result)
+
+
+func _collect_navigation_obstacles(parent: Node, result: Array[Node]) -> void:
+	for child in parent.get_children():
+		var is_tree := child.is_in_group("tree_instance")
+		var is_resource := (
+			child.has_method("can_gather")
+			and child.has_method("get_interaction_radius")
+		)
+		if (is_tree or is_resource) and child is Node3D:
+			result.append(child)
+		_collect_navigation_obstacles(child, result)
 
 
 func _has_property(target: Object, property_name: String) -> bool:

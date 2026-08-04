@@ -24,6 +24,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var resources: Array[Node] = main.world.get_gatherable_nodes()
 	assertions.truthy(resources.size() >= 20, "main exposes authored trees and mineral nodes")
+	var obstacles: Array[Node] = main.world.get_navigation_obstacle_nodes()
+	var decorative_tree_cells := {}
+	for obstacle in obstacles:
+		if bool(obstacle.get("gathering_enabled")):
+			continue
+		var obstacle_position: Vector3 = (obstacle as Node3D).global_position
+		var obstacle_cell: Vector2i = main.grid_system.world_to_grid(
+			obstacle_position.x, obstacle_position.z
+		)
+		decorative_tree_cells[obstacle_cell] = true
+		assertions.truthy(
+			not main.grid_system.is_navigation_cell_walkable(obstacle_cell),
+			"decorative tree cell participates in A* blocking"
+		)
+	assertions.truthy(decorative_tree_cells.size() >= 20, "main registers decorative tree obstacles")
 	var target: Node3D
 	for resource in resources:
 		if str(resource.get("resource_type")) == "stone":
@@ -64,16 +79,43 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"pickaxe",
 			"main resource click automatically equips pickaxe"
 		)
+		assertions.equal(
+			main.action_controller.get_selected_slot(),
+			3,
+			"auto-equipped pickaxe is highlighted in the action palette"
+		)
 		assertions.truthy(main.player.has_auto_movement(), "main player begins automatic movement")
-		var endpoint: Vector3 = main.player._auto_path[-1]
-		main.player._auto_path_index = main.player._auto_path.size() - 1
-		main.player.global_position = endpoint
-		main.player._update_auto_movement(0.0)
+		var physical_path: Array[Vector3] = main.player._auto_path.duplicate()
+		var physical_move_failures: Array[String] = []
+		main.gathering_controller.gather_failed.connect(
+			func(_failed_target: Node, reason: String) -> void: physical_move_failures.append(reason),
+			CONNECT_ONE_SHOT
+		)
+		for point in main.player._auto_path:
+			assertions.truthy(
+				not decorative_tree_cells.has(main.grid_system.world_to_grid(point.x, point.z)),
+				"automatic path does not cross a decorative tree cell"
+			)
+		var movement_frames := 0
+		while main.gathering_controller.get_state_name() == "MOVING" and movement_frames < 480:
+			await tree.physics_frame
+			movement_frames += 1
+		assertions.truthy(movement_frames > 1, "integration exercises physical auto movement instead of teleporting")
+		assertions.truthy(
+			physical_move_failures.is_empty(),
+			"physical auto movement reaches the target without failure: %s at %s waypoint %d/%d, end %s, target %s" % [
+				str(physical_move_failures), str(main.player.global_position),
+				main.player._auto_path_index, physical_path.size(), str(physical_path[-1]), str(target.global_position),
+			]
+		)
 		assertions.equal(
 			main.gathering_controller.get_state_name(),
 			"ACTING",
 			"arrival begins the timed gathering animation"
 		)
+		main.season_system.hour = 8
+		main.season_system.minute = 0
+		main.season_system._accumulator = 0.0
 		main.gathering_controller._process(1.2)
 		assertions.equal(
 			main.inventory_system.get_item_count("stone"),

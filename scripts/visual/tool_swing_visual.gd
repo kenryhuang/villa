@@ -5,12 +5,14 @@ const ACTION_DURATION := 1.2
 const PREPARE_END := 0.25
 const STRIKE_END := 0.55
 const IMPACT_END := 0.70
+const CANCEL_RECOVERY_DURATION := 0.14
 const TOOL_TEXTURES := {
 	"axe": "res://assets/ui/action_icons/axe.png",
 	"pickaxe": "res://assets/ui/action_icons/pickaxe.png",
 }
 
 var _tool_id := ""
+var _cancel_tween: Tween
 
 
 func _init() -> void:
@@ -34,6 +36,8 @@ func play_tool(tool_id: String) -> bool:
 	var texture := load(str(TOOL_TEXTURES[tool_id])) as Texture2D
 	if texture == null:
 		return false
+	if _cancel_tween != null and _cancel_tween.is_valid():
+		_cancel_tween.kill()
 	_tool_id = tool_id
 	(get_node("Pivot/ToolSprite") as Sprite3D).texture = texture
 	visible = true
@@ -74,6 +78,27 @@ func get_phase_at(elapsed: float) -> String:
 
 
 func cancel_tool() -> void:
+	if not visible:
+		_tool_id = ""
+		return
+	if not is_inside_tree():
+		_finish_cancel()
+		return
+	if _cancel_tween != null and _cancel_tween.is_valid():
+		_cancel_tween.kill()
+	_cancel_tween = create_tween()
+	_cancel_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_cancel_tween.tween_property(
+		get_node("Pivot"), "rotation:z", deg_to_rad(-20.0), CANCEL_RECOVERY_DURATION
+	)
+	_cancel_tween.tween_callback(_finish_cancel)
+
+
+func get_cancel_recovery_duration() -> float:
+	return CANCEL_RECOVERY_DURATION
+
+
+func _finish_cancel() -> void:
 	visible = false
 	_tool_id = ""
 

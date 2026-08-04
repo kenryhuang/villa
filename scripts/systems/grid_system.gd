@@ -235,6 +235,11 @@ func set_navigation_blocker(blocker_id: String, cell: Vector2i, active: bool) ->
 func is_navigation_cell_walkable(cell: Vector2i) -> bool:
 	if not _is_in_bounds(cell.x, cell.y):
 		return false
+	# The player's authored world clamp lies inside the outer grid-cell centers.
+	# Keeping the perimeter solid prevents auto paths from targeting unreachable
+	# waypoints such as x=-17.5 or z=13.5 and falsely reporting a stall.
+	if cell.x == 0 or cell.x == GRID_WIDTH - 1 or cell.y == 0 or cell.y == GRID_DEPTH - 1:
+		return false
 	var grid_cell := get_cell(cell.x, cell.y)
 	if grid_cell == null or not _state_is_navigation_walkable(grid_cell.state):
 		return false

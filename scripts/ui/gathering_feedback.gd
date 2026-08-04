@@ -14,6 +14,9 @@ const ERROR_MESSAGES := {
 var _controller
 var _tool_visual: ToolSwingVisual
 var _target: Node3D
+var _result_time_remaining := 0.0
+var _status_time_remaining := 0.0
+var _impact_played := false
 
 
 func _ready() -> void:
@@ -45,6 +48,25 @@ func error_message(reason: String) -> String:
 	return str(ERROR_MESSAGES.get(reason, "操作失败"))
 
 
+static func progress_center_with_label_clearance(
+	projected_center: Vector2,
+	remaining_label_center: Vector2
+) -> Vector2:
+	var result := projected_center
+	result.y = minf(result.y, remaining_label_center.y - 72.0)
+	return result
+
+
+func _process(delta: float) -> void:
+	_update_screen_positions()
+	_result_time_remaining = maxf(0.0, _result_time_remaining - maxf(delta, 0.0))
+	_status_time_remaining = maxf(0.0, _status_time_remaining - maxf(delta, 0.0))
+	if _result_time_remaining <= 0.0:
+		(get_node("ResultLabel") as Label3D).visible = false
+	if _status_time_remaining <= 0.0:
+		(get_node("Canvas/StatusLabel") as Control).visible = false
+
+
 func show_path(points: Array[Vector3]) -> void:
 	var preview := get_node("PathPreview") as MeshInstance3D
 	if points.size() < 2:
@@ -72,6 +94,11 @@ func show_path(points: Array[Vector3]) -> void:
 
 
 func _on_gather_started(target: Node, preview: Dictionary) -> void:
+	(get_node("ResultLabel") as Label3D).visible = false
+	(get_node("Canvas/StatusLabel") as Control).visible = false
+	_result_time_remaining = 0.0
+	_status_time_remaining = 0.0
+	_impact_played = false
 	_target = target as Node3D
 	if _target == null:
 		return
@@ -98,7 +125,15 @@ func _on_state_changed(state: int, context: Dictionary) -> void:
 	if state_name == "ACTING" and _target != null:
 		(get_node("Canvas/ProgressRing") as Control).visible = true
 		if _tool_visual != null:
-			_tool_visual.global_position = _target.global_position + Vector3(0.58, 0.15, 0.0)
+			var actor := _controller.call("get_actor") as Node3D
+			if actor != null:
+				var direction := _target.global_position - actor.global_position
+				direction.y = 0.0
+				if direction.is_zero_approx():
+					direction = Vector3.RIGHT
+				_tool_visual.global_position = actor.global_position + direction.normalized() * 0.46 + Vector3.UP * 0.42
+			else:
+				_tool_visual.global_position = _target.global_position + Vector3(0.58, 0.15, 0.0)
 			_tool_visual.play_tool(str(_controller._preview.get("tool_id", "")))
 	elif state_name in ["CANCELLED", "FAILED", "IDLE"] and context.get("target") == null:
 		if _tool_visual != null:
@@ -109,21 +144,31 @@ func _on_gather_progress(_target_node: Node, value: float) -> void:
 	(get_node("Canvas/ProgressRing") as GatheringProgressRing).set_progress(value)
 	if _tool_visual != null:
 		_tool_visual.set_action_progress(value)
+	if not _impact_played and value >= 0.46:
+		_impact_played = true
+		_play_impact_feedback(_target_node)
 
 
 func _on_gather_completed(target: Node, result: Dictionary) -> void:
 	var label := get_node("ResultLabel") as Label3D
-	label.text = "+1 %s" % str(result.get("item_id", "资源"))
+	label.text = "+1 %s" % _item_display_name(str(result.get("item_id", "")))
+	if _has_property(target, "remaining_units") and int(target.get("remaining_units")) <= 0 and target.has_method("get_respawn_day"):
+		label.text += " · 第%d天刷新" % int(target.call("get_respawn_day"))
 	if target is Node3D:
 		label.global_position = target.global_position + Vector3.UP * 1.55
 	label.visible = true
+	_result_time_remaining = 1.6
 	_hide_active_feedback()
 
 
-func _on_gather_failed(_target_node: Node, reason: String) -> void:
+func _on_gather_failed(target_node: Node, reason: String) -> void:
 	var status := get_node("Canvas/StatusLabel") as Label
-	status.text = "⚠ %s" % error_message(reason)
+	var message := error_message(reason)
+	if reason == "tool_broken" and target_node != null and _has_property(target_node, "required_tool"):
+		message = "斧头已损坏" if str(target_node.get("required_tool")) == "axe" else "镐已损坏"
+	status.text = "⚠ %s" % message
 	status.visible = true
+	_status_time_remaining = 1.8
 	_hide_active_feedback()
 
 
@@ -140,6 +185,77 @@ func _hide_active_feedback() -> void:
 	if _tool_visual != null:
 		_tool_visual.cancel_tool()
 	_target = null
+
+
+func _item_display_name(item_id: String) -> String:
+	var game_data := get_node_or_null("/root/GameData") if is_inside_tree() else null
+	if game_data != null and game_data.has_method("get_item"):
+		var item: Variant = game_data.call("get_item", item_id)
+		if item is Dictionary and not str(item.get("name", "")).is_empty():
+			return str(item.get("name"))
+	return item_id if not item_id.is_empty() else "资源"
+
+
+func _update_screen_positions() -> void:
+	if _target == null or not is_instance_valid(_target) or not is_inside_tree():
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or camera.is_position_behind(_target.global_position):
+		return
+	var projected_center := camera.unproject_position(_target.global_position + Vector3.UP * 2.0)
+	var remaining_center := camera.unproject_position(_target.global_position + Vector3.UP * 1.25)
+	var target_screen := progress_center_with_label_clearance(projected_center, remaining_center)
+	(get_node("Canvas/ProgressRing") as Control).position = target_screen - Vector2(48.0, 48.0)
+	if _controller != null and _controller.has_method("get_actor"):
+		var actor := _controller.call("get_actor") as Node3D
+		if actor != null and is_instance_valid(actor) and not camera.is_position_behind(actor.global_position):
+			var actor_screen := camera.unproject_position(actor.global_position + Vector3.UP * 1.72)
+			(get_node("Canvas/AutoEquipTip") as Control).position = actor_screen - Vector2(220.0, 0.0)
+
+
+func _play_impact_feedback(target: Node) -> void:
+	if not target is Node3D:
+		return
+	var target_node := target as Node3D
+	var visual := target_node.get_node_or_null("Sprite3D") as Node3D
+	if visual == null:
+		visual = target_node.get_node_or_null("Visual") as Node3D
+	if visual != null and target_node.is_inside_tree():
+		var original_position := visual.position
+		var shake := target_node.create_tween()
+		shake.tween_property(visual, "position:x", original_position.x + 0.07, 0.045)
+		shake.tween_property(visual, "position:x", original_position.x - 0.05, 0.055)
+		shake.tween_property(visual, "position:x", original_position.x, 0.07)
+
+	var particles := CPUParticles3D.new()
+	particles.name = "GatherImpact"
+	particles.one_shot = true
+	particles.amount = 9
+	particles.lifetime = 0.42
+	particles.explosiveness = 0.92
+	particles.direction = Vector3.UP
+	particles.spread = 62.0
+	particles.initial_velocity_min = 0.45
+	particles.initial_velocity_max = 1.05
+	particles.gravity = Vector3(0.0, -2.0, 0.0)
+	particles.position.y = 0.48
+	var particle_mesh := QuadMesh.new()
+	particle_mesh.size = Vector2(0.07, 0.07)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	material.albedo_color = (
+		Color("b97832")
+		if _has_property(target, "required_tool") and str(target.get("required_tool")) == "axe"
+		else Color("908a80")
+	)
+	particle_mesh.material = material
+	particles.mesh = particle_mesh
+	target_node.add_child(particles)
+	if target_node.is_inside_tree():
+		particles.finished.connect(particles.queue_free)
+	particles.emitting = true
 
 
 func _build_target_ring() -> void:

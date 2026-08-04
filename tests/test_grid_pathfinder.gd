@@ -25,6 +25,7 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(not grid.is_navigation_cell_walkable(Vector2i(4, 4)), "active resource cell is blocked")
 	assertions.truthy(grid.set_navigation_blocker("resource-a", Vector2i(4, 4), false), "resource blocker unregisters")
 	assertions.truthy(grid.is_navigation_cell_walkable(Vector2i(4, 4)), "depleted resource cell becomes walkable")
+	assertions.truthy(not grid.is_navigation_cell_walkable(Vector2i(0, 4)), "unreachable outer grid perimeter stays blocked")
 
 	var pathfinder = pathfinder_script.new()
 	assertions.truthy(pathfinder.configure(grid), "pathfinder accepts the grid")
@@ -60,6 +61,7 @@ func run(assertions: TestAssert) -> void:
 		1.6
 	)
 	assertions.truthy(not interaction_path.is_empty(), "pathfinder reaches a target interaction cell")
+	assertions.truthy(pathfinder.is_path_walkable(interaction_path), "pathfinder can validate its current route after a revision")
 	assertions.truthy(
 		interaction_path[-1].distance_to(target.position) <= 1.6,
 		"interaction endpoint is within gathering range"

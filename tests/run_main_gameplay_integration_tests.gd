@@ -29,7 +29,7 @@ func _run() -> void:
 	ActionPaletteButtonTest.new().run(assertions, self)
 	HudActionBarTest.new().run(assertions, self)
 	GatheringControllerTest.new().run(assertions, self)
-	GatheringVisualsTest.new().run(assertions)
+	await GatheringVisualsTest.new().run(assertions, self)
 	await MainGatheringIntegrationTest.new().run(assertions, self)
 	MainFarmingBuildingIntegrationTest.new().run(assertions, self)
 	await BuildingEconomyUITest.new().run(assertions, self)

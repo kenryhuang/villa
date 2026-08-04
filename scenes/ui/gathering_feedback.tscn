@@ -32,19 +32,15 @@ no_depth_test = true
 [node name="ProgressRing" type="Control" parent="Canvas"]
 visible = false
 layout_mode = 0
-offset_left = 1452.0
-offset_top = 826.0
-offset_right = 1548.0
-offset_bottom = 922.0
+offset_right = 96.0
+offset_bottom = 96.0
 mouse_filter = 2
 script = ExtResource("2_progress")
 
 [node name="AutoEquipTip" type="Label" parent="Canvas"]
 visible = false
-offset_left = 1280.0
-offset_top = 944.0
-offset_right = 1720.0
-offset_bottom = 1000.0
+offset_right = 440.0
+offset_bottom = 56.0
 theme_override_colors/font_color = Color(1, 0.91, 0.66, 1)
 theme_override_colors/font_outline_color = Color(0.08, 0.06, 0.03, 0.92)
 theme_override_constants/outline_size = 8
@@ -54,10 +50,14 @@ horizontal_alignment = 1
 
 [node name="StatusLabel" type="Label" parent="Canvas"]
 visible = false
-offset_left = 1180.0
-offset_top = 1030.0
-offset_right = 1820.0
-offset_bottom = 1092.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = 132.0
+offset_right = 320.0
+offset_bottom = 194.0
 theme_override_colors/font_color = Color(1, 0.75, 0.56, 1)
 theme_override_colors/font_outline_color = Color(0.08, 0.04, 0.03, 0.94)
 theme_override_constants/outline_size = 8

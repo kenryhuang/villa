@@ -39,6 +39,9 @@ var _respawn_day := 0
 var _last_advanced_day := 0
 var _legacy_max_hits := 3
 var _gather_active := false
+var _default_position := Vector3.ZERO
+var _gather_transaction_depth := 0
+var _gather_transaction_initial_active := false
 
 
 func _ready() -> void:
@@ -89,9 +92,10 @@ func configure_resource(definition: Dictionary) -> bool:
 	required_tool = next_tool
 	max_units = int(next_max_value)
 	remaining_units = max_units
-	_legacy_max_hits = int(definition.get("hits", max_units))
+	_legacy_max_hits = int(definition.get("hits", 3))
 	respawn_days = int(next_respawn_value)
 	position = next_position
+	_default_position = next_position
 	visual_kind = str(definition.get("visual_kind", catalog.get("visual_kind", next_type)))
 	gathering_enabled = bool(definition.get("gatherable", true))
 	bonus_table.clear()
@@ -210,7 +214,7 @@ func default_state_dict() -> Dictionary:
 		"remaining_units": max_units,
 		"respawn_days": respawn_days,
 		"respawn_day": 0,
-		"position": [position.x, position.y, position.z],
+		"position": [_default_position.x, _default_position.y, _default_position.z],
 		"visual_stage": 0,
 	}
 
@@ -281,7 +285,26 @@ func _set_gather_active(active: bool) -> void:
 		body.collision_layer = (OBSTACLE_LAYER | INTERACTION_LAYER) if active else 0
 	if active != _gather_active:
 		_gather_active = active
-		gathering_active_changed.emit(resource_id, active)
+		if _gather_transaction_depth == 0:
+			gathering_active_changed.emit(resource_id, active)
+
+
+func begin_gather_transaction() -> bool:
+	if _gather_transaction_depth != 0:
+		return false
+	_gather_transaction_initial_active = _gather_active
+	_gather_transaction_depth = 1
+	return true
+
+
+func end_gather_transaction(commit: bool) -> bool:
+	if _gather_transaction_depth != 1:
+		return false
+	var active_changed := _gather_active != _gather_transaction_initial_active
+	_gather_transaction_depth = 0
+	if commit and active_changed:
+		gathering_active_changed.emit(resource_id, _gather_active)
+	return true
 
 
 func _update_visual_stage() -> void:

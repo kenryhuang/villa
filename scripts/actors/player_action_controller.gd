@@ -125,7 +125,29 @@ func configure_gathering(controller: Variant) -> bool:
 	):
 		return false
 	gathering_controller = controller
+	var callback := Callable(self, "_on_gathering_started")
+	if controller.has_signal("gather_started") and not controller.is_connected(
+		"gather_started", callback
+	):
+		controller.connect("gather_started", callback)
 	return true
+
+
+func sync_auto_equipped_tool(tool_id: String) -> bool:
+	var slot := 2 if tool_id == "axe" else (3 if tool_id == "pickaxe" else -1)
+	if slot < 0:
+		return false
+	_action_mode = ActionMode.FARMING
+	_selected_slot = slot
+	_last_farming_slot = slot
+	selection_changed.emit(slot, _farming_slot_label(slot))
+	mode_changed.emit(_action_mode)
+	palette_changed.emit(_action_mode, slot)
+	return true
+
+
+func _on_gathering_started(_target: Node, preview: Dictionary) -> void:
+	sync_auto_equipped_tool(str(preview.get("tool_id", "")))
 
 
 func select_slot(index: int) -> bool:

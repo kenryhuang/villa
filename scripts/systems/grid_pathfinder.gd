@@ -24,6 +24,21 @@ func get_rebuild_count() -> int:
 	return _rebuild_count
 
 
+func get_navigation_revision() -> int:
+	return _grid.get_navigation_revision() if _grid != null else -1
+
+
+func is_path_walkable(points: Array[Vector3]) -> bool:
+	if _grid == null or points.is_empty():
+		return false
+	for point in points:
+		if not _grid.is_navigation_cell_walkable(
+			_grid.world_to_grid(point.x, point.z)
+		):
+			return false
+	return true
+
+
 func find_path_cells(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	if _grid == null:
