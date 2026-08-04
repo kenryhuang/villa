@@ -38,7 +38,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			not main.grid_system.is_navigation_cell_walkable(obstacle_cell),
 			"decorative tree cell participates in A* blocking"
 		)
-	assertions.truthy(decorative_tree_cells.size() >= 20, "main registers decorative tree obstacles")
+	assertions.truthy(decorative_tree_cells.size() >= 10, "main registers unchoppable decorative tree obstacles")
 	var target: Node3D
 	for resource in resources:
 		if str(resource.get("resource_type")) == "stone":
@@ -168,17 +168,33 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(tree_target != null, "economy chain finds a designated resource tree")
 		if tree_target != null:
 			var wood_before: int = main.inventory_system.get_item_count("wood")
-			var tree_units_before: int = int(tree_target.get("remaining_units"))
+			var tree_stamina_before: int = game_state.player_state.stamina
+			var axe_durability_before: int = int(main.tool_system.get_durability("axe").current)
 			var wood_missing_before := _missing_resource(
 				main.building_system.diagnose_resources("barn"), "wood"
 			)
 			var wood_market_before: int = main.market_system.get_stock("wood")
-			assertions.truthy(_complete_gather(main, tree_target), "real tree completes one action")
-			assertions.equal(main.inventory_system.get_item_count("wood"), wood_before + 1, "tree adds one wood")
-			assertions.equal(int(tree_target.get("remaining_units")), tree_units_before - 1, "tree loses one unit")
+			var tree_cell: Vector2i = main.grid_system.world_to_grid(tree_target.global_position.x, tree_target.global_position.z)
+			main.season_system.hour = 8
+			main.season_system.minute = 0
+			main.season_system._accumulator = 0.0
+			assertions.truthy(main.gathering_controller.request_gather(tree_target), "real tree starts one action")
+			assertions.truthy(_arrive_gather(main), "real tree reaches its root interaction point")
+			main.gathering_controller._process(1.2)
+			assertions.equal(main.gathering_controller.get_state_name(), "ACTING", "tree remains active at ore duration")
+			assertions.equal(main.inventory_system.get_item_count("wood"), wood_before, "tree commits nothing before two seconds")
+			main.gathering_controller._process(0.8)
+			assertions.equal(main.gathering_controller.get_state_name(), "IDLE", "real tree completes at two seconds")
+			assertions.equal(main.inventory_system.get_item_count("wood"), wood_before + 5, "tree adds five wood")
+			assertions.equal(int(tree_target.get("remaining_units")), 0, "tree is fully depleted")
+			assertions.equal(game_state.player_state.stamina, tree_stamina_before - 8, "tree spends eight stamina once")
+			assertions.equal(int(main.tool_system.get_durability("axe").current), axe_durability_before - 1, "tree spends one axe durability")
+			assertions.equal(main.season_system.minute, 10, "tree advances ten game minutes")
+			assertions.equal(tree_target.get_felling_frame(), 3, "tree completion leaves painted stump art")
+			assertions.truthy(main.grid_system.is_navigation_cell_walkable(tree_cell), "painted stump releases navigation")
 			assertions.equal(
 				_missing_resource(main.building_system.diagnose_resources("barn"), "wood"),
-				wood_missing_before - 1,
+				wood_missing_before - 5,
 				"gathered wood immediately reduces the barn shortage"
 			)
 			assertions.equal(main.market_system.get_stock("wood"), wood_market_before, "tree gathering leaves market stock unchanged")
@@ -249,8 +265,19 @@ func _complete_gather(main: Node, target: Node3D) -> bool:
 	main.player._update_auto_movement(0.0)
 	if main.gathering_controller.get_state_name() != "ACTING":
 		return false
-	main.gathering_controller._process(1.2)
+	var duration := float(target.call("get_gather_duration")) if target.has_method("get_gather_duration") else 1.2
+	main.gathering_controller._process(duration)
 	return main.gathering_controller.get_state_name() == "IDLE"
+
+
+func _arrive_gather(main: Node) -> bool:
+	if main.player._auto_path.is_empty():
+		return false
+	var endpoint: Vector3 = main.player._auto_path[-1]
+	main.player._auto_path_index = main.player._auto_path.size() - 1
+	main.player.global_position = endpoint
+	main.player._update_auto_movement(0.0)
+	return main.gathering_controller.get_state_name() == "ACTING"
 
 
 func _first_resource_of_type(

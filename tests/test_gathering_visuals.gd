@@ -68,17 +68,20 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		"clearance": 1.0,
 		"gatherable": true,
 	}, texture, 0.0, atlas_texture)
-	assertions.truthy(tree.begin_felling(1), "eligible tree begins its felling presentation")
 	assertions.near(tree.get_gather_duration(), 2.0, 0.001, "tree exposes a two-second gather duration")
-	tree.set_felling_progress(0.10)
-	assertions.equal(tree.get_felling_frame(), 0, "early progress shows notch frame")
-	tree.set_felling_progress(0.50)
-	assertions.equal(tree.get_felling_frame(), 1, "middle progress shows leaning frame")
-	tree.set_felling_progress(0.85)
-	assertions.equal(tree.get_felling_frame(), 2, "late progress shows nearly fallen frame")
-	tree.cancel_felling()
-	assertions.equal(tree.get_felling_frame(), -1, "cancel restores standing art")
-	assertions.truthy(tree.get_node("Sprite3D").visible, "cancel makes original tree visible")
+	var standing_sprite := tree.get_node("Sprite3D") as Sprite3D
+	var standing_position := standing_sprite.position
+	var cancellation_cases := [[0.10, 0], [0.50, 1], [0.85, 2]]
+	for cancellation_case in cancellation_cases:
+		assertions.truthy(tree.begin_felling(1), "eligible tree begins its felling presentation")
+		tree.set_felling_progress(float(cancellation_case[0]))
+		assertions.equal(tree.get_felling_frame(), int(cancellation_case[1]), "progress selects expected felling frame")
+		standing_sprite.position += Vector3(0.1, 0.05, 0.0)
+		tree.cancel_felling()
+		assertions.equal(tree.get_felling_frame(), -1, "cancel restores standing art from every frame")
+		assertions.equal(tree.remaining_units, 5, "visual cancellation never mutates tree units")
+		assertions.truthy(standing_sprite.visible, "cancel makes original tree visible")
+		assertions.equal(standing_sprite.position, standing_position, "cancel restores the standing tree position")
 	tree.remaining_units = 0
 	tree.call("_update_visual_stage")
 	tree.call("_set_gather_active", false)

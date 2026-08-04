@@ -31,6 +31,10 @@ func run(assertions) -> void:
 			if atlas != null:
 				assertions.truthy(TreeFellingCatalogScript.is_valid_atlas(atlas), "%s atlas has four equal cells" % variant)
 				assertions.truthy(atlas.get_image().detect_alpha() != Image.ALPHA_NONE, "%s atlas keeps transparency" % variant)
+				for frame in range(4):
+					var used_rect := TreeInstanceScript.felling_frame_used_rect(atlas, frame)
+					assertions.truthy(used_rect.has_area(), "%s frame %d contains painted art" % [variant, frame])
+					assertions.truthy(used_rect.end.x < atlas.get_width() / 4, "%s frame %d keeps right padding" % [variant, frame])
 	assertions.near(TreeInstanceScript.trunk_radius_for(0.5), 0.24, 0.001, "small trunks clamp to minimum radius")
 	assertions.near(TreeInstanceScript.trunk_radius_for(2.0), 0.46, 0.001, "large trunks clamp to maximum radius")
 	assertions.near(TreeInstanceScript.trunk_height_for(2.0), 0.84, 0.001, "trunk height follows authored height")

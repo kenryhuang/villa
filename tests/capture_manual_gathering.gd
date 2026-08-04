@@ -4,6 +4,13 @@ const OUTPUT_DIR := "res://.godot/manual-gathering-validation"
 const STATES := [
 	"tree_path",
 	"tree_action",
+	"tree_hover_green",
+	"tree_hover_red",
+	"tree_frame_1",
+	"tree_frame_2",
+	"tree_frame_3",
+	"tree_fall_left",
+	"tree_fall_right",
 	"tree_result_stump",
 	"ore_stages",
 	"inventory_full",
@@ -115,16 +122,44 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			main.gathering_controller._process(0.48)
 			_focus(main, [tree.global_position], 6.0)
 			return main.gathering_controller.get_state_name() == "ACTING"
+		"tree_hover_green":
+			var tree := _find_resource(main, "tree")
+			if tree == null:
+				return false
+			main.gathering_feedback.show_tree_hover(tree, true)
+			_focus(main, [tree.global_position], 6.0)
+			return true
+		"tree_hover_red":
+			var tree := _find_decorative_tree(main)
+			if tree == null:
+				return false
+			main.gathering_feedback.show_tree_hover(tree, false)
+			_focus(main, [tree.global_position], 6.0)
+			return true
+		"tree_frame_1", "tree_frame_2", "tree_frame_3":
+			var tree := _requestable_resource(main, "tree")
+			if tree == null or not _arrive(main):
+				return false
+			var elapsed: float = float({"tree_frame_1": 0.20, "tree_frame_2": 1.0, "tree_frame_3": 1.7}[state_id])
+			main.gathering_controller._process(elapsed)
+			_focus(main, [tree.global_position], 6.0)
+			return main.gathering_controller.get_state_name() == "ACTING"
+		"tree_fall_left", "tree_fall_right":
+			var tree := _find_resource(main, "tree")
+			if tree == null:
+				return false
+			var direction: int = -1 if state_id == "tree_fall_left" else 1
+			tree.begin_felling(direction)
+			tree.set_felling_progress(0.85)
+			_focus(main, [tree.global_position], 6.0)
+			return tree.get_felling_frame() == 2
 		"tree_result_stump":
 			var tree := _find_resource(main, "tree")
 			if tree == null:
 				return false
-			tree.remaining_units = 1
-			tree.call("_update_visual_stage")
-			tree.call("_set_gather_active", true)
 			if not main.gathering_controller.request_gather(tree) or not _arrive(main):
 				return false
-			main.gathering_controller._process(1.2)
+			main.gathering_controller._process(2.0)
 			_focus(main, [tree.global_position], 5.5)
 			return tree.remaining_units == 0
 		"ore_stages":
@@ -169,6 +204,13 @@ func _requestable_resource(main: Node, resource_type: String) -> Node3D:
 func _find_resource(main: Node, resource_type: String) -> Node3D:
 	for candidate in main.world.get_gatherable_nodes():
 		if str(candidate.get("resource_type")) == resource_type:
+			return candidate as Node3D
+	return null
+
+
+func _find_decorative_tree(main: Node) -> Node3D:
+	for candidate in main.world.get_navigation_obstacle_nodes():
+		if candidate.has_method("is_chop_eligible") and not bool(candidate.call("is_chop_eligible")):
 			return candidate as Node3D
 	return null
 

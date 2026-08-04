@@ -12,6 +12,7 @@ var occlusion_target := CLEAR_OPACITY
 var sprite: Sprite3D
 var stump_visual: Sprite3D
 var _full_sprite_scale := Vector3.ONE
+var _full_sprite_position := Vector3.ZERO
 var variant := ""
 var felling_atlas: Texture2D
 var _felling_active := false
@@ -35,6 +36,16 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 		return 1.0
 	var pixel_size := target_size.x / texture_size.x
 	return target_size.y / (texture_size.y * pixel_size)
+
+
+static func felling_frame_used_rect(texture: Texture2D, frame: int = 0) -> Rect2i:
+	if not TreeFellingCatalogScript.is_valid_atlas(texture) or frame < 0 or frame > 3:
+		return Rect2i()
+	var image := texture.get_image()
+	if image == null or image.is_empty():
+		return Rect2i()
+	var cell_width := image.get_width() / 4
+	return image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height())).get_used_rect()
 
 func configure(
 	tree_data: Dictionary,
@@ -70,6 +81,7 @@ func configure(
 	sprite.scale = Vector3(1.0, vertical_scale_for(texture.get_size(), Vector2(tree_width, tree_height)), 1.0)
 	_full_sprite_scale = sprite.scale
 	sprite.position = Vector3(0.0, tree_height * 0.5, 0.0)
+	_full_sprite_position = sprite.position
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(sprite)
 
@@ -80,13 +92,20 @@ func configure(
 	stump_visual.no_depth_test = false
 	if felling_atlas != null:
 		var cell_size := Vector2(float(felling_atlas.get_width()) / 4.0, float(felling_atlas.get_height()))
-		stump_visual.pixel_size = tree_width / cell_size.x
+		var standing_bounds := felling_frame_used_rect(felling_atlas)
+		var painted_width := maxf(float(standing_bounds.size.x), 1.0)
+		var painted_height := maxf(float(standing_bounds.size.y), 1.0)
+		stump_visual.pixel_size = tree_width / painted_width
 		stump_visual.scale = Vector3(
 			1.0,
-			vertical_scale_for(cell_size, Vector2(tree_width, tree_height)),
+			tree_height / (painted_height * stump_visual.pixel_size),
 			1.0
 		)
-	stump_visual.position.y = tree_height * 0.5
+		stump_visual.position.y = (
+			(float(standing_bounds.end.y) - cell_size.y * 0.5)
+			* stump_visual.pixel_size
+			* stump_visual.scale.y
+		)
 	stump_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stump_visual.visible = false
 	add_child(stump_visual)
@@ -216,6 +235,7 @@ func _sprite_reset() -> void:
 	if sprite == null:
 		return
 	sprite.scale = _full_sprite_scale
+	sprite.position = _full_sprite_position
 	var color := sprite.modulate
 	color.r = 1.0
 	color.g = 1.0
