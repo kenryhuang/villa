@@ -106,6 +106,13 @@ class SeasonDouble:
 		advanced_minutes += minutes
 
 
+class TimedTarget:
+	extends Node3D
+
+	func get_gather_duration() -> float:
+		return 2.0
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(ResourceLoader.exists(CONTROLLER_PATH), "manual gathering provides a controller")
 	if not ResourceLoader.exists(CONTROLLER_PATH):
@@ -159,6 +166,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(not controller.has_active_command(), "completed command reports inactive")
 	assertions.truthy(not progress_values.is_empty(), "action emits circular progress values")
 
+	var timed_target := TimedTarget.new()
+	tree.root.add_child(timed_target)
+	assertions.truthy(controller.request_gather(timed_target), "target-specific duration fixture starts")
+	player.auto_path_finished.emit()
+	controller._process(1.2)
+	assertions.equal(tools.commit_calls, 1, "two-second target does not commit at ore duration")
+	controller._process(0.8)
+	assertions.equal(tools.commit_calls, 2, "two-second target commits at its own duration")
+
 	var replacement := Node3D.new()
 	tree.root.add_child(replacement)
 	assertions.truthy(controller.request_gather(target), "replacement fixture starts first command")
@@ -167,11 +183,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	player.manual_movement_requested.emit()
 	assertions.equal(controller.get_state_name(), "IDLE", "manual movement cancels gathering")
 	assertions.equal(cancellations[-1], "manual_input", "manual cancellation reports a stable reason")
-	assertions.equal(tools.commit_calls, 1, "manual cancellation causes no commit")
+	assertions.equal(tools.commit_calls, 2, "manual cancellation causes no commit")
 
 	assertions.truthy(controller.request_gather(target), "blocked fixture starts")
 	player.auto_path_blocked.emit()
-	assertions.equal(pathfinder.calls, 6, "first blockage performs one replacement path query")
+	assertions.equal(pathfinder.calls, 7, "first blockage performs one replacement path query")
 	player.auto_path_blocked.emit()
 	assertions.equal(failures[-1], "unreachable", "second blockage fails as unreachable")
 	assertions.equal(controller.get_state_name(), "IDLE", "unreachable command returns idle")
@@ -181,7 +197,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tools.preview_reason = "inventory_full"
 	player.auto_path_finished.emit()
 	assertions.equal(failures[-1], "inventory_full", "arrival repeats transaction preflight")
-	assertions.equal(tools.commit_calls, 1, "failed arrival recheck does not commit")
+	assertions.equal(tools.commit_calls, 2, "failed arrival recheck does not commit")
 	tools.preview_allowed = true
 	tools.preview_reason = ""
 
@@ -189,7 +205,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	player.auto_path_finished.emit()
 	controller.cancel_current("mode_changed")
 	assertions.equal(season.owner, null, "action cancellation releases the clock lock")
-	assertions.equal(tools.commit_calls, 1, "cancelled animation causes no commit")
+	assertions.equal(tools.commit_calls, 2, "cancelled animation causes no commit")
 
 	var invalid_target := Node3D.new()
 	tree.root.add_child(invalid_target)
@@ -197,9 +213,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	invalid_target.free()
 	controller._process(0.0)
 	assertions.equal(failures[-1], "target_invalid", "freed target fails before action commit")
-	assertions.equal(tools.commit_calls, 1, "freed target never commits a reward")
+	assertions.equal(tools.commit_calls, 2, "freed target never commits a reward")
 
 	target.free()
+	timed_target.free()
 	replacement.free()
 	controller.free()
 	player.free()

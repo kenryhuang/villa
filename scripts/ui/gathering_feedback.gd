@@ -57,6 +57,14 @@ static func progress_center_with_label_clearance(
 	return result
 
 
+static func tree_axe_anchor(tree_position: Vector3, actor_position: Vector3) -> Vector3:
+	var toward_actor := actor_position - tree_position
+	toward_actor.y = 0.0
+	if toward_actor.is_zero_approx():
+		toward_actor = Vector3.RIGHT
+	return tree_position + toward_actor.normalized() * 0.45 + Vector3.UP * 0.20
+
+
 func _process(delta: float) -> void:
 	_update_screen_positions()
 	_result_time_remaining = maxf(0.0, _result_time_remaining - maxf(delta, 0.0))
@@ -126,7 +134,11 @@ func _on_state_changed(state: int, context: Dictionary) -> void:
 		(get_node("Canvas/ProgressRing") as Control).visible = true
 		if _tool_visual != null:
 			var actor := _controller.call("get_actor") as Node3D
-			if actor != null:
+			if actor != null and str(_controller._preview.get("tool_id", "")) == "axe" and _target.has_method("begin_felling"):
+				_tool_visual.global_position = tree_axe_anchor(_target.global_position, actor.global_position)
+				var fall_direction := 1 if _target.global_position.x >= actor.global_position.x else -1
+				_target.call("begin_felling", fall_direction)
+			elif actor != null:
 				var direction := _target.global_position - actor.global_position
 				direction.y = 0.0
 				if direction.is_zero_approx():
@@ -142,6 +154,8 @@ func _on_state_changed(state: int, context: Dictionary) -> void:
 
 func _on_gather_progress(_target_node: Node, value: float) -> void:
 	(get_node("Canvas/ProgressRing") as GatheringProgressRing).set_progress(value)
+	if _target_node != null and _target_node.has_method("set_felling_progress"):
+		_target_node.call("set_felling_progress", value)
 	if _tool_visual != null:
 		_tool_visual.set_action_progress(value)
 	if not _impact_played and value >= 0.46:
@@ -151,7 +165,10 @@ func _on_gather_progress(_target_node: Node, value: float) -> void:
 
 func _on_gather_completed(target: Node, result: Dictionary) -> void:
 	var label := get_node("ResultLabel") as Label3D
-	label.text = "+1 %s" % _item_display_name(str(result.get("item_id", "")))
+	label.text = "+%d %s" % [
+		int(result.get("quantity", 1)),
+		_item_display_name(str(result.get("item_id", ""))),
+	]
 	if _has_property(target, "remaining_units") and int(target.get("remaining_units")) <= 0 and target.has_method("get_respawn_day"):
 		label.text += " · 第%d天刷新" % int(target.call("get_respawn_day"))
 	if target is Node3D:
@@ -162,6 +179,8 @@ func _on_gather_completed(target: Node, result: Dictionary) -> void:
 
 
 func _on_gather_failed(target_node: Node, reason: String) -> void:
+	if target_node != null and target_node.has_method("cancel_felling"):
+		target_node.call("cancel_felling")
 	var status := get_node("Canvas/StatusLabel") as Label
 	var message := error_message(reason)
 	if reason == "tool_broken" and target_node != null and _has_property(target_node, "required_tool"):
@@ -173,6 +192,8 @@ func _on_gather_failed(target_node: Node, reason: String) -> void:
 
 
 func _on_gather_cancelled(_reason: String) -> void:
+	if _target != null and _target.has_method("cancel_felling"):
+		_target.call("cancel_felling")
 	_hide_active_feedback()
 
 

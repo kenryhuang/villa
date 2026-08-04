@@ -32,6 +32,7 @@ var _season
 var _target: Node
 var _preview: Dictionary = {}
 var _action_elapsed := 0.0
+var _active_action_duration := 1.2
 var _path_retry_used := false
 var _clock_locked := false
 var _request_token := 0
@@ -138,8 +139,8 @@ func _process(delta: float) -> void:
 	if _target == null or not is_instance_valid(_target):
 		_fail("target_invalid")
 		return
-	_action_elapsed = minf(action_duration, _action_elapsed + maxf(0.0, delta))
-	var progress := 1.0 if action_duration <= 0.0 else clampf(_action_elapsed / action_duration, 0.0, 1.0)
+	_action_elapsed = minf(_active_action_duration, _action_elapsed + maxf(0.0, delta))
+	var progress := 1.0 if _active_action_duration <= 0.0 else clampf(_action_elapsed / _active_action_duration, 0.0, 1.0)
 	gather_progress.emit(_target, progress)
 	if progress < 1.0:
 		return
@@ -184,6 +185,11 @@ func _on_auto_path_finished() -> void:
 		return
 	_clock_locked = true
 	_action_elapsed = 0.0
+	_active_action_duration = action_duration
+	if _target.has_method("get_gather_duration"):
+		var target_duration := float(_target.call("get_gather_duration"))
+		if is_finite(target_duration) and target_duration > 0.0:
+			_active_action_duration = target_duration
 	_set_state(State.ACTING)
 	gather_progress.emit(_target, 0.0)
 
@@ -245,6 +251,7 @@ func _clear_command() -> void:
 	_target = null
 	_preview.clear()
 	_action_elapsed = 0.0
+	_active_action_duration = action_duration
 	_path_retry_used = false
 	_path_revision = -1
 	_active_path.clear()

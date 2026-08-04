@@ -69,6 +69,7 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		"gatherable": true,
 	}, texture, 0.0, atlas_texture)
 	assertions.truthy(tree.begin_felling(1), "eligible tree begins its felling presentation")
+	assertions.near(tree.get_gather_duration(), 2.0, 0.001, "tree exposes a two-second gather duration")
 	tree.set_felling_progress(0.10)
 	assertions.equal(tree.get_felling_frame(), 0, "early progress shows notch frame")
 	tree.set_felling_progress(0.50)
@@ -105,6 +106,9 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.equal(feedback.error_message("unreachable"), "无法到达", "path error has readable text")
 	var progress_ring := feedback.get_node("Canvas/ProgressRing")
 	assertions.near(progress_ring.anchor_left, 0.0, 0.001, "progress ring uses projected target coordinates")
+	var anchor: Vector3 = feedback.tree_axe_anchor(Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0))
+	assertions.near(anchor.y, 1.20, 0.001, "axe pivot is 0.2m above ground")
+	assertions.near(anchor.x, 3.55, 0.001, "axe pivot is 0.45m actor-side")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
 	)

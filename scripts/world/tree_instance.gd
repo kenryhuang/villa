@@ -140,6 +140,10 @@ func is_chop_eligible() -> bool:
 	return TreeFellingCatalogScript.is_variant_choppable(variant) and felling_atlas != null
 
 
+func get_gather_duration() -> float:
+	return TreeFellingCatalogScript.GATHER_DURATION
+
+
 func preview_reward(tool_id: String) -> Dictionary:
 	return {item_id: remaining_units} if can_gather(tool_id) else {}
 
