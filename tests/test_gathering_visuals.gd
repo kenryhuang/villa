@@ -55,27 +55,36 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
 	var texture := ImageTexture.create_from_image(image)
+	var atlas_image := Image.create_empty(64, 24, false, Image.FORMAT_RGBA8)
+	var atlas_texture := ImageTexture.create_from_image(atlas_image)
 	var tree := TreeInstanceScript.new()
 	tree.configure({
 		"id": "visual-tree",
+		"variant": "pine-small",
 		"x": 0.0,
 		"z": 0.0,
 		"width": 2.0,
 		"height": 3.0,
 		"clearance": 1.0,
 		"gatherable": true,
-	}, texture, 0.0)
-	assertions.truthy(tree.get_node("AxeMark") != null, "resource tree authors a readable axe mark")
-	tree.commit_gather("axe", 1)
-	assertions.equal(tree.visual_stage, 0, "tree remains intact at four of five units")
-	assertions.truthy(not tree.get_node("AxeMark").visible, "first tree unit does not show premature damage")
-	tree.commit_gather("axe", 1)
-	assertions.equal(tree.visual_stage, 1, "tree becomes visibly damaged at three units")
-	assertions.truthy(tree.get_node("AxeMark").visible, "damaged tree shows an axe mark")
-	while tree.remaining_units > 0:
-		tree.commit_gather("axe", 1)
+	}, texture, 0.0, atlas_texture)
+	assertions.truthy(tree.begin_felling(1), "eligible tree begins its felling presentation")
+	tree.set_felling_progress(0.10)
+	assertions.equal(tree.get_felling_frame(), 0, "early progress shows notch frame")
+	tree.set_felling_progress(0.50)
+	assertions.equal(tree.get_felling_frame(), 1, "middle progress shows leaning frame")
+	tree.set_felling_progress(0.85)
+	assertions.equal(tree.get_felling_frame(), 2, "late progress shows nearly fallen frame")
+	tree.cancel_felling()
+	assertions.equal(tree.get_felling_frame(), -1, "cancel restores standing art")
+	assertions.truthy(tree.get_node("Sprite3D").visible, "cancel makes original tree visible")
+	tree.remaining_units = 0
+	tree.call("_update_visual_stage")
+	tree.call("_set_gather_active", false)
 	assertions.truthy(tree.get_node("StumpVisual").visible, "depleted tree leaves a visible stump")
 	assertions.truthy(not tree.get_node("Sprite3D").visible, "depleted tree hides its standing canopy")
+	assertions.equal(tree.get_felling_frame(), 3, "depleted tree uses painted atlas stump cell")
+	assertions.truthy(tree.get_node("StumpVisual") is Sprite3D, "stump is painted art instead of a cylinder mesh")
 	assertions.equal(tree.get_node("TrunkBody").collision_layer, 0, "stump releases the tree obstacle")
 	tree.free()
 

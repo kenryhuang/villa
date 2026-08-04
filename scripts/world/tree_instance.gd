@@ -10,11 +10,12 @@ const FADE_RATE := 10.0
 
 var occlusion_target := CLEAR_OPACITY
 var sprite: Sprite3D
-var stump_visual: MeshInstance3D
-var axe_mark: Label3D
+var stump_visual: Sprite3D
 var _full_sprite_scale := Vector3.ONE
 var variant := ""
 var felling_atlas: Texture2D
+var _felling_active := false
+var _felling_frame := -1
 
 static func trunk_radius_for(clearance: float) -> float:
 	return clampf(clearance * 0.36, 0.24, 0.46)
@@ -72,33 +73,23 @@ func configure(
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(sprite)
 
-	stump_visual = MeshInstance3D.new()
+	stump_visual = Sprite3D.new()
 	stump_visual.name = "StumpVisual"
-	var stump_mesh := CylinderMesh.new()
-	stump_mesh.top_radius = trunk_radius_for(float(tree_data.clearance)) * 0.82
-	stump_mesh.bottom_radius = trunk_radius_for(float(tree_data.clearance))
-	stump_mesh.height = 0.24
-	stump_visual.mesh = stump_mesh
-	var stump_material := StandardMaterial3D.new()
-	stump_material.roughness = 0.95
-	stump_material.albedo_color = Color("765034")
-	stump_visual.material_override = stump_material
-	stump_visual.position.y = 0.12
+	stump_visual.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	stump_visual.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+	stump_visual.no_depth_test = false
+	if felling_atlas != null:
+		var cell_size := Vector2(float(felling_atlas.get_width()) / 4.0, float(felling_atlas.get_height()))
+		stump_visual.pixel_size = tree_width / cell_size.x
+		stump_visual.scale = Vector3(
+			1.0,
+			vertical_scale_for(cell_size, Vector2(tree_width, tree_height)),
+			1.0
+		)
+	stump_visual.position.y = tree_height * 0.5
+	stump_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stump_visual.visible = false
 	add_child(stump_visual)
-
-	axe_mark = Label3D.new()
-	axe_mark.name = "AxeMark"
-	axe_mark.text = "╳"
-	axe_mark.font_size = 28
-	axe_mark.outline_size = 6
-	axe_mark.modulate = Color("6f3f27")
-	axe_mark.outline_modulate = Color(0.95, 0.76, 0.49, 0.84)
-	axe_mark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	axe_mark.no_depth_test = true
-	axe_mark.position = Vector3(0.0, 0.48, 0.0)
-	axe_mark.visible = false
-	add_child(axe_mark)
 
 	var trunk_height := trunk_height_for(tree_height)
 	var trunk_shape := CylinderShape3D.new()
@@ -149,6 +140,62 @@ func is_chop_eligible() -> bool:
 	return TreeFellingCatalogScript.is_variant_choppable(variant) and felling_atlas != null
 
 
+func begin_felling(fall_direction: int) -> bool:
+	if not is_chop_eligible() or remaining_units <= 0:
+		return false
+	_felling_active = true
+	stump_visual.flip_h = fall_direction < 0
+	set_felling_progress(0.0)
+	return true
+
+
+func set_felling_progress(progress: float) -> void:
+	if not _felling_active:
+		return
+	var value := clampf(progress, 0.0, 1.0)
+	var next_frame := 0 if value < 0.325 else (1 if value < 0.675 else 2)
+	_show_felling_frame(next_frame)
+
+
+func cancel_felling() -> void:
+	_felling_active = false
+	_felling_frame = -1
+	if stump_visual != null:
+		stump_visual.visible = false
+		stump_visual.flip_h = false
+	if sprite != null:
+		sprite.visible = remaining_units > 0
+		_sprite_reset()
+
+
+func get_felling_frame() -> int:
+	return _felling_frame
+
+
+func _show_felling_frame(frame: int) -> void:
+	if stump_visual == null or felling_atlas == null or frame < 0 or frame > 3:
+		return
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = felling_atlas
+	var cell_width := float(felling_atlas.get_width()) / 4.0
+	atlas_texture.region = Rect2(cell_width * float(frame), 0.0, cell_width, felling_atlas.get_height())
+	stump_visual.texture = atlas_texture
+	stump_visual.visible = true
+	_felling_frame = frame
+	if sprite != null:
+		sprite.visible = false
+
+
+func _sprite_reset() -> void:
+	if sprite == null:
+		return
+	sprite.scale = _full_sprite_scale
+	var color := sprite.modulate
+	color.r = 1.0
+	color.g = 1.0
+	sprite.modulate = color
+
+
 func _set_gather_active(active: bool) -> void:
 	super(active)
 	if sprite != null:
@@ -176,18 +223,17 @@ func _stage_for_units(units: int) -> int:
 
 
 func _apply_visual_stage() -> void:
-	if sprite != null:
-		sprite.visible = visual_stage < 3
-		var damage_scale: float = [1.0, 0.96, 0.90, 0.0][visual_stage]
-		sprite.scale = _full_sprite_scale * damage_scale
-		var color := sprite.modulate
-		color.r = 1.0 if visual_stage == 0 else 0.88
-		color.g = 1.0 if visual_stage == 0 else 0.82
-		sprite.modulate = color
-	if stump_visual != null:
-		stump_visual.visible = visual_stage == 3
-	if axe_mark != null:
-		axe_mark.visible = visual_stage in [1, 2]
+	if visual_stage == 3:
+		_felling_active = false
+		_show_felling_frame(3)
+		return
+	if not _felling_active:
+		_felling_frame = -1
+		if stump_visual != null:
+			stump_visual.visible = false
+		if sprite != null:
+			sprite.visible = true
+			_sprite_reset()
 
 func set_camera_occluded(value: bool) -> void:
 	occlusion_target = OCCLUDED_OPACITY if value else CLEAR_OPACITY
