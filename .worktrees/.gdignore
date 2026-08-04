@@ -1,0 +1,1 @@
+# Prevent the main Godot project and its LSP from scanning nested Git worktrees.

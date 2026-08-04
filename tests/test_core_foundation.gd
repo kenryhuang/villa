@@ -17,6 +17,11 @@ func _make_crop(growth_days: int, stage_count: int):
 
 
 func run(assertions: TestAssert) -> void:
+	assertions.truthy(
+		FileAccess.file_exists("res://.worktrees/.gdignore"),
+		"Godot ignores nested Git worktrees so global class names do not collide"
+	)
+
 	# GridCell world position
 	var cell = GridCellScript.new()
 	cell.gx = 0
