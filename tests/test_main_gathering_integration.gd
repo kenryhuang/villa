@@ -50,6 +50,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		var stone_before: int = main.inventory_system.get_item_count("stone")
 		var stamina_before: int = game_state.player_state.stamina
 		var durability_before: int = int(main.tool_system.get_durability("pickaxe").current)
+		var stone_missing_before := _missing_resource(
+			main.building_system.diagnose_resources("barn"), "stone"
+		)
+		var stone_market_before: int = main.market_system.get_stock("stone")
 		main.action_controller.select_slot(0)
 		assertions.truthy(
 			main.action_controller.perform_target_interaction(target),
@@ -89,6 +93,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(main.season_system.hour, 8, "gathering keeps the current hour")
 		assertions.equal(main.season_system.minute, 10, "gathering advances ten game minutes")
 		assertions.equal(target.remaining_units, 0, "single-unit action depletes final unit")
+		assertions.equal(
+			_missing_resource(main.building_system.diagnose_resources("barn"), "stone"),
+			stone_missing_before - 1,
+			"gathered stone immediately reduces a building material shortage"
+		)
+		assertions.equal(
+			main.market_system.get_stock("stone"),
+			stone_market_before,
+			"gathering does not inject stock into the market"
+		)
 		assertions.truthy(
 			main.grid_system.is_navigation_cell_walkable(target_cell),
 			"depleted resource releases its navigation blocker"
@@ -98,6 +112,45 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"IDLE",
 			"single-unit gathering stops after completion"
 		)
+		var sale_quote: int = main.market_system.quote_sell("stone", 1)
+		var gold_before_sale: int = game_state.gold
+		assertions.truthy(main.economy_system.sell_item("stone", 1), "player can actively sell gathered stone")
+		assertions.equal(game_state.gold, gold_before_sale + sale_quote, "sale credits the quoted gold")
+		assertions.equal(
+			main.market_system.get_stock("stone"),
+			stone_market_before + 1,
+			"only the active sale adds gathered material to market stock"
+		)
+
+		var tree_target := _first_resource_of_type(resources, "tree", target)
+		assertions.truthy(tree_target != null, "economy chain finds a designated resource tree")
+		if tree_target != null:
+			var wood_before: int = main.inventory_system.get_item_count("wood")
+			var tree_units_before: int = int(tree_target.get("remaining_units"))
+			var wood_missing_before := _missing_resource(
+				main.building_system.diagnose_resources("barn"), "wood"
+			)
+			var wood_market_before: int = main.market_system.get_stock("wood")
+			assertions.truthy(_complete_gather(main, tree_target), "real tree completes one action")
+			assertions.equal(main.inventory_system.get_item_count("wood"), wood_before + 1, "tree adds one wood")
+			assertions.equal(int(tree_target.get("remaining_units")), tree_units_before - 1, "tree loses one unit")
+			assertions.equal(
+				_missing_resource(main.building_system.diagnose_resources("barn"), "wood"),
+				wood_missing_before - 1,
+				"gathered wood immediately reduces the barn shortage"
+			)
+			assertions.equal(main.market_system.get_stock("wood"), wood_market_before, "tree gathering leaves market stock unchanged")
+
+		var copper_target := _first_resource_of_type(resources, "copper_ore", target)
+		assertions.truthy(copper_target != null, "economy chain finds a visible copper vein")
+		if copper_target != null:
+			var copper_before: int = main.inventory_system.get_item_count("copper_ore")
+			var copper_units_before: int = int(copper_target.get("remaining_units"))
+			var copper_market_before: int = main.market_system.get_stock("copper_ore")
+			assertions.truthy(_complete_gather(main, copper_target), "real copper vein completes one action")
+			assertions.equal(main.inventory_system.get_item_count("copper_ore"), copper_before + 1, "ore vein adds one copper ore")
+			assertions.equal(int(copper_target.get("remaining_units")), copper_units_before - 1, "ore vein loses one unit")
+			assertions.equal(main.market_system.get_stock("copper_ore"), copper_market_before, "ore gathering leaves market stock unchanged")
 
 		var cancel_target: Node3D
 		for resource in resources:
@@ -141,3 +194,35 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			)
 
 	main.free()
+
+
+func _complete_gather(main: Node, target: Node3D) -> bool:
+	if not main.gathering_controller.request_gather(target):
+		return false
+	if main.player._auto_path.is_empty():
+		return false
+	var endpoint: Vector3 = main.player._auto_path[-1]
+	main.player._auto_path_index = main.player._auto_path.size() - 1
+	main.player.global_position = endpoint
+	main.player._update_auto_movement(0.0)
+	if main.gathering_controller.get_state_name() != "ACTING":
+		return false
+	main.gathering_controller._process(1.2)
+	return main.gathering_controller.get_state_name() == "IDLE"
+
+
+func _first_resource_of_type(
+	resources: Array[Node],
+	resource_type: String,
+	excluded: Node = null
+) -> Node3D:
+	for resource in resources:
+		if resource != excluded and str(resource.get("resource_type")) == resource_type:
+			return resource as Node3D
+	return null
+
+
+func _missing_resource(diagnostic: Dictionary, item_id: String) -> int:
+	var missing: Dictionary = diagnostic.get("missing_resources", {})
+	var entry: Dictionary = missing.get(item_id, {})
+	return int(entry.get("missing", 0))

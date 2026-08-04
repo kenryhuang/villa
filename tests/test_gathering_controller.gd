@@ -175,6 +175,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(season.owner, null, "action cancellation releases the clock lock")
 	assertions.equal(tools.commit_calls, 1, "cancelled animation causes no commit")
 
+	var invalid_target := Node3D.new()
+	tree.root.add_child(invalid_target)
+	assertions.truthy(controller.request_gather(invalid_target), "invalid-target fixture starts movement")
+	invalid_target.free()
+	player.auto_path_finished.emit()
+	assertions.equal(failures[-1], "target_invalid", "freed target fails before action commit")
+	assertions.equal(tools.commit_calls, 1, "freed target never commits a reward")
+
 	target.free()
 	replacement.free()
 	controller.free()

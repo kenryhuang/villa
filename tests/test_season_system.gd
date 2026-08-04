@@ -50,6 +50,14 @@ func run(assertions: TestAssert) -> void:
 	assertions.equal(clock4.hour, 6, "18 hours from 6:00 wraps to next day 6:00")
 	assertions.equal(clock4.current_day, 2, "day advanced after full cycle")
 
+	var action_clock := SeasonSystemScript.new()
+	action_clock.hour = 23
+	action_clock.minute = 55
+	action_clock.advance_game_minutes(10)
+	assertions.equal(action_clock.hour, 6, "ten-minute late action crosses midnight to 06")
+	assertions.equal(action_clock.minute, 5, "cross-day action preserves five remaining minutes")
+	assertions.equal(action_clock.current_day, 2, "cross-day action advances exactly one day")
+
 	# Debug-friendly next-day advancement still uses the normal clock path.
 	var clock5 := SeasonSystemScript.new()
 	clock5.hour = 14
@@ -92,6 +100,7 @@ func run(assertions: TestAssert) -> void:
 	clock2.free()
 	clock3.free()
 	clock4.free()
+	action_clock.free()
 	clock5.free()
 	owner_a.free()
 	owner_b.free()

@@ -436,11 +436,11 @@ Commit: `feat: migrate gathering resources to save schema v2`
 - Modify: `tests/test_market_system.gd`
 - Modify: `tests/test_main_gathering_integration.gd`
 
-- [ ] **Step 1: 写端到端失败测试**
+- [x] **Step 1: 写端到端失败测试**
 
 从真实资源节点采 1 木材/石材/矿石，验证建造诊断立即减少缺口，市场库存不自动变化，玩家主动出售矿石后才改变金钱和市场库存。再覆盖背包已满、体力不足、工具损坏、不可达、目标失效、快速双击和动作跨日。
 
-- [ ] **Step 2: 运行并修复任何接线缺口**
+- [x] **Step 2: 运行并修复任何接线缺口**
 
 Run: `godot_console --headless --path . --script res://tests/run_economy_system_tests.gd`
 
@@ -448,7 +448,7 @@ Run: `godot_console --headless --path . --script res://tests/run_main_gameplay_i
 
 Expected: 两个测试入口均 PASS；若失败，只修复触发失败的边界，不扩大本期范围。
 
-- [ ] **Step 3: 提交产业链接入**
+- [x] **Step 3: 提交产业链接入**
 
 Commit: `test: verify manual gathering economy chain`
 

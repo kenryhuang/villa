@@ -190,7 +190,11 @@ func _commit_action() -> void:
 
 
 func _fail(reason: String) -> void:
-	var failed_target := _target
+	var failed_target: Node = (
+		_target
+		if _target != null and is_instance_valid(_target)
+		else null
+	)
 	if _player != null and _player.has_method("stop_auto_movement"):
 		_player.call("stop_auto_movement", reason)
 	_release_clock()
