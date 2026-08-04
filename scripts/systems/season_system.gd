@@ -16,6 +16,7 @@ var minute := 0
 
 var _accumulator := 0.0
 var _event_bus
+var _action_clock_locks: Dictionary = {}
 
 
 func _ready() -> void:
@@ -23,11 +24,48 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	clear_invalid_action_clock_locks()
+	if not _action_clock_locks.is_empty():
+		return
 	_accumulator += delta * MINUTES_PER_REAL_SECOND
 	var whole_minutes := int(_accumulator)
 	if whole_minutes > 0:
 		_accumulator -= whole_minutes
 		advance_game_minutes(whole_minutes)
+
+
+func acquire_action_clock_lock(owner: Object) -> bool:
+	if owner == null or not is_instance_valid(owner):
+		return false
+	var owner_id := owner.get_instance_id()
+	if _action_clock_locks.has(owner_id):
+		return false
+	_action_clock_locks[owner_id] = weakref(owner)
+	return true
+
+
+func release_action_clock_lock(owner: Object) -> bool:
+	if owner == null:
+		return false
+	var owner_id := owner.get_instance_id()
+	if not _action_clock_locks.has(owner_id):
+		return false
+	_action_clock_locks.erase(owner_id)
+	return true
+
+
+func clear_invalid_action_clock_locks() -> void:
+	var invalid_ids: Array[int] = []
+	for owner_id in _action_clock_locks:
+		var owner_ref := _action_clock_locks[owner_id] as WeakRef
+		if owner_ref == null or owner_ref.get_ref() == null:
+			invalid_ids.append(int(owner_id))
+	for owner_id in invalid_ids:
+		_action_clock_locks.erase(owner_id)
+
+
+func _exit_tree() -> void:
+	_action_clock_locks.clear()
 
 
 func advance_game_minutes(minutes_to_add: int) -> void:

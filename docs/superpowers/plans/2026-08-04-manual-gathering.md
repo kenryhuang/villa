@@ -209,21 +209,21 @@ Commit: `feat: add cancellable player auto movement`
 - Modify: `scripts/systems/season_system.gd`
 - Modify: `tests/test_season_system.gd`
 
-- [ ] **Step 1: 写时钟锁失败测试**
+- [x] **Step 1: 写时钟锁失败测试**
 
 覆盖同一拥有者重复锁拒绝、不同拥有者可同时持有、任一有效锁存在时 `_process` 不推进、释放最后一把锁后恢复、失效对象被清理，以及成功动作只推进精确 10 分钟。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `godot_console --headless --path . --script res://tests/run_tests.gd`
 
 Expected: FAIL，动作锁 API 尚不存在。
 
-- [ ] **Step 3: 实现锁并保护场景切换**
+- [x] **Step 3: 实现锁并保护场景切换**
 
 用实例 ID 到 `WeakRef` 的字典保存拥有者；`_process()` 开始时清理失效锁，锁非空则返回。释放必须幂等且不能释放其他拥有者的锁；`advance_game_minutes(10)` 仍允许显式调用。
 
-- [ ] **Step 4: 运行核心测试并提交**
+- [x] **Step 4: 运行核心测试并提交**
 
 Run: `godot_console --headless --path . --script res://tests/run_tests.gd`
 
