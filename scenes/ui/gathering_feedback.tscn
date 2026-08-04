@@ -1,0 +1,66 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/gathering_feedback.gd" id="1_feedback"]
+[ext_resource type="Script" path="res://scripts/ui/gathering_progress_ring.gd" id="2_progress"]
+
+[node name="GatheringFeedback" type="Node"]
+script = ExtResource("1_feedback")
+
+[node name="TargetRing" type="Node3D" parent="."]
+
+[node name="PathPreview" type="MeshInstance3D" parent="."]
+visible = false
+
+[node name="RemainingLabel" type="Label3D" parent="."]
+visible = false
+font_size = 28
+outline_size = 8
+modulate = Color(1, 0.95, 0.78, 1)
+billboard = 1
+no_depth_test = true
+
+[node name="ResultLabel" type="Label3D" parent="."]
+visible = false
+font_size = 34
+outline_size = 9
+modulate = Color(0.64, 1, 0.52, 1)
+billboard = 1
+no_depth_test = true
+
+[node name="Canvas" type="CanvasLayer" parent="."]
+
+[node name="ProgressRing" type="Control" parent="Canvas"]
+visible = false
+layout_mode = 0
+offset_right = 96.0
+offset_bottom = 96.0
+mouse_filter = 2
+script = ExtResource("2_progress")
+
+[node name="AutoEquipTip" type="Label" parent="Canvas"]
+visible = false
+offset_right = 440.0
+offset_bottom = 56.0
+theme_override_colors/font_color = Color(1, 0.91, 0.66, 1)
+theme_override_colors/font_outline_color = Color(0.08, 0.06, 0.03, 0.92)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 30
+text = "自动装备镐"
+horizontal_alignment = 1
+
+[node name="StatusLabel" type="Label" parent="Canvas"]
+visible = false
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = 132.0
+offset_right = 320.0
+offset_bottom = 194.0
+theme_override_colors/font_color = Color(1, 0.75, 0.56, 1)
+theme_override_colors/font_outline_color = Color(0.08, 0.04, 0.03, 0.94)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 32
+text = "⚠ 无法到达"
+horizontal_alignment = 1

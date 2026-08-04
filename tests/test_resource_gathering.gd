@@ -1,6 +1,7 @@
 extends RefCounted
 
 const RESOURCE_NODE_PATH := "res://scripts/world/resource_node.gd"
+const RESOURCE_CATALOG_PATH := "res://scripts/world/resource_catalog.gd"
 const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
 const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
@@ -8,6 +9,8 @@ const PlayerActionControllerScript = preload(
 	"res://scripts/actors/player_action_controller.gd"
 )
 const GameWorldScript = preload("res://scripts/world/world.gd")
+const RoadMathScript = preload("res://scripts/world/road_math.gd")
+const RoadBuilderScript = preload("res://scripts/world/road_builder.gd")
 const DailySimulationSystemScript = preload(
 	"res://scripts/systems/daily_simulation_system.gd"
 )
@@ -34,6 +37,16 @@ class ToolDouble:
 	func use_tool_on(target: Variant) -> bool:
 		used_targets.append(target)
 		return true
+
+
+class GatheringDouble:
+	extends RefCounted
+	var requested: Array[Node] = []
+	func request_gather(target: Node) -> bool:
+		requested.append(target)
+		return true
+	func cancel_current(_reason: String) -> void: pass
+	func has_active_command() -> bool: return false
 
 
 class GridDouble:
@@ -161,6 +174,7 @@ class AdvancingWorldDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_resource_catalog_and_v2_contract(assertions)
 	_test_target_free_rewards_are_rejected(assertions, tree)
 	assertions.truthy(
 		ResourceLoader.exists(RESOURCE_NODE_PATH),
@@ -177,11 +191,59 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_atomic_capacity_and_bonus(assertions, tree, resource_script)
 	_test_json_state_contract(assertions, resource_script)
 	_test_stable_world_generation_and_restore(assertions)
+	_test_world_v1_to_v2_normalization_is_complete_and_atomic(assertions)
 	_test_real_water_and_riverbank_adjacency(assertions, tree)
 	_test_player_target_routing(assertions, tree)
 	_test_save_and_legacy_initialization(assertions, tree)
 	_test_calendar_coherent_resource_snapshots(assertions, tree)
 	_test_daily_coordinator_owns_resource_advance(assertions)
+
+
+func _test_resource_catalog_and_v2_contract(assertions: TestAssert) -> void:
+	assertions.truthy(
+		ResourceLoader.exists(RESOURCE_CATALOG_PATH),
+		"manual gathering has an immutable resource catalog"
+	)
+	if not ResourceLoader.exists(RESOURCE_CATALOG_PATH):
+		return
+	var catalog_script := load(RESOURCE_CATALOG_PATH) as Script
+	assertions.truthy(catalog_script != null, "resource catalog script loads")
+	if catalog_script == null:
+		return
+	var tree_definition: Dictionary = catalog_script.call("definition", "tree")
+	var gold_definition: Dictionary = catalog_script.call("definition", "gold_ore")
+	assertions.equal(tree_definition.get("max_units"), 5, "tree capacity is five")
+	assertions.equal(tree_definition.get("respawn_days"), 3, "tree respawns in three days")
+	assertions.equal(gold_definition.get("max_units"), 2, "rare ore capacity is two")
+	assertions.equal(gold_definition.get("respawn_days"), 7, "rare ore respawns in seven days")
+	tree_definition["max_units"] = 99
+	assertions.equal(
+		(catalog_script.call("definition", "tree") as Dictionary).get("max_units"),
+		5,
+		"resource catalog definitions are returned by value"
+	)
+
+	var resource_script := load(RESOURCE_NODE_PATH) as Script
+	var node = resource_script.new()
+	assertions.truthy(node.configure_resource({
+		"resource_id": "copper-v2",
+		"resource_type": "copper_ore",
+		"position": Vector3.ZERO,
+	}), "resource node configures from catalog type")
+	assertions.equal(node.preview_reward("pickaxe"), {"copper_ore": 1}, "visible ore yields one unit")
+	var state: Dictionary = node.to_dict()
+	assertions.equal(state.get("state_version"), 2, "resource state uses schema v2")
+	assertions.equal(state.get("remaining_units"), 3, "resource state stores remaining units")
+	assertions.equal(state.get("max_units"), 3, "resource state stores capacity")
+	assertions.equal(state.get("visual_stage"), 0, "full resource starts at visual stage zero")
+	assertions.truthy(node.has_method("get_interaction_radius"), "resource exposes its interaction radius")
+	if node.has_method("get_interaction_radius"):
+		assertions.near(float(node.get_interaction_radius()), 0.52, 0.001, "resource interaction radius matches its fallback body")
+	node.commit_gather("pickaxe", 4)
+	state = node.to_dict()
+	assertions.equal(state.get("remaining_units"), 2, "one action removes one resource unit")
+	assertions.equal(state.get("visual_stage"), 1, "partial resource advances its visual stage")
+	node.free()
 
 
 func _test_target_free_rewards_are_rejected(assertions: TestAssert, tree: SceneTree) -> void:
@@ -226,7 +288,7 @@ func _test_tool_target_matrix(
 
 	tools.switch_tool(ToolSystem.ToolType.PICKAXE)
 	assertions.truthy(tools.use_tool_on(rock), "pickaxe gathers rock")
-	assertions.equal(inventory.get_item_count("stone"), 2, "rock hit grants two stone")
+	assertions.equal(inventory.get_item_count("stone"), 1, "rock action grants one stone")
 
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
 	var texture := ImageTexture.create_from_image(image)
@@ -238,11 +300,13 @@ func _test_tool_target_matrix(
 		"width": 2.0,
 		"height": 3.0,
 		"clearance": 1.0,
+		"gatherable": true,
 	}, texture, 0.0)
 	tools.switch_tool(ToolSystem.ToolType.AXE)
 	assertions.truthy(tools.use_tool_on(tree_node), "axe gathers a tree")
-	assertions.equal(inventory.get_item_count("wood"), 2, "tree hit grants two wood")
+	assertions.equal(inventory.get_item_count("wood"), 1, "tree action grants one wood")
 	assertions.equal(tree_node.required_tool, "axe", "tree requires axe")
+	assertions.equal(tree_node.max_units, 5, "gatherable tree has five units")
 	assertions.equal(tree_node.respawn_days, 3, "tree uses three-day respawn")
 	tree_node.free()
 	rock.free()
@@ -256,7 +320,7 @@ func _test_depletion_and_exact_respawn(assertions: TestAssert, resource_script: 
 	var node = _resource(resource_script, "respawn-rock", "pickaxe", {"stone": 2}, [], 3)
 	for hit_index in range(3):
 		var reward: Dictionary = node.commit_gather("pickaxe", 7)
-		assertions.equal(reward, {"stone": 2}, "successful hit %d returns exact reward" % (hit_index + 1))
+		assertions.equal(reward, {"stone": 1}, "successful action %d returns one unit" % (hit_index + 1))
 	assertions.equal(node.hits_remaining, 0, "exactly three successful hits deplete")
 	assertions.truthy(not node.can_gather("pickaxe"), "depleted node is non-gatherable")
 	assertions.equal(node.get_respawn_day(), 10, "depletion records exact respawn boundary")
@@ -290,17 +354,16 @@ func _test_atomic_capacity_and_bonus(
 		[{"item_id": "coal", "quantity": 1, "every_hits": 1, "offset": 0}],
 		3
 	)
-	_fill_inventory(inventory, 19)
+	_fill_inventory(inventory, 20)
 	var hits_before: int = int(node.hits_remaining)
-	assertions.truthy(not tools.use_tool_on(node), "multi-item reward rejects insufficient total slots")
+	assertions.truthy(not tools.use_tool_on(node), "single-unit reward rejects a full inventory")
 	assertions.equal(node.hits_remaining, hits_before, "failed reward preflight causes no damage")
-	assertions.equal(inventory.get_item_count("stone"), 0, "failed reward commits no primary item")
-	assertions.equal(inventory.get_item_count("coal"), 0, "failed reward commits no bonus")
+	assertions.equal(inventory.get_item_count("stone"), 0, "failed reward commits no item")
 
 	inventory.clear()
-	assertions.truthy(tools.use_tool_on(node), "bonus reward succeeds with capacity")
-	assertions.equal(inventory.get_item_count("stone"), 2, "successful bonus hit adds stone")
-	assertions.equal(inventory.get_item_count("coal"), 1, "deterministic bonus adds coal")
+	assertions.truthy(tools.use_tool_on(node), "single-unit reward succeeds with capacity")
+	assertions.equal(inventory.get_item_count("stone"), 1, "successful action adds one stone")
+	assertions.equal(inventory.get_item_count("coal"), 0, "legacy probability bonus is ignored")
 
 	var tree_node = _resource(resource_script, "full-tree", "axe", {"wood": 2})
 	_fill_inventory(inventory, 20)
@@ -327,12 +390,13 @@ func _test_json_state_contract(assertions: TestAssert, resource_script: Script) 
 	assertions.equal(restored.to_dict(), source.to_dict(), "resource state round-trips exactly")
 
 	var integral_floats: Dictionary = source.to_dict()
-	integral_floats["hits_remaining"] = float(integral_floats.hits_remaining)
+	integral_floats["remaining_units"] = float(integral_floats.remaining_units)
+	integral_floats["max_units"] = float(integral_floats.max_units)
 	integral_floats["respawn_day"] = float(integral_floats.respawn_day)
 	assertions.truthy(restored.from_dict(integral_floats), "integral JSON floats are accepted")
 	var before: Dictionary = restored.to_dict()
 	var malformed := integral_floats.duplicate(true)
-	malformed["hits_remaining"] = 1.5
+	malformed["remaining_units"] = 1.5
 	assertions.truthy(not restored.from_dict(malformed), "fractional hit state is rejected")
 	assertions.equal(restored.to_dict(), before, "malformed state is rejected atomically")
 	malformed = integral_floats.duplicate(true)
@@ -351,12 +415,29 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	assertions.equal(first, second, "fixed world seed repeats exact resource definitions")
 	var ids := {}
 	var zones := {}
+	var type_counts := {}
 	for definition in first:
 		ids[str(definition.resource_id)] = true
 		zones[str(definition.zone)] = true
+		var resource_type := str(definition.get("resource_type", ""))
+		type_counts[resource_type] = int(type_counts.get(resource_type, 0)) + 1
+		assertions.truthy(
+			not definition.has("bonus_table") and not definition.has("yield_per_hit"),
+			"world resource %s has a visible deterministic yield" % definition.resource_id
+		)
 	assertions.equal(ids.size(), first.size(), "generated resource IDs are unique")
-	assertions.truthy(zones.has("wasteland"), "generated rocks occupy wasteland definitions")
-	assertions.truthy(zones.has("riverbank"), "generated clay and sand occupy riverbank definitions")
+	assertions.equal(first.size(), 13, "world generates thirteen surface mineral nodes")
+	assertions.equal(type_counts, {
+		"stone": 4,
+		"coal": 2,
+		"copper_ore": 2,
+		"iron_ore": 2,
+		"silver_ore": 1,
+		"gold_ore": 1,
+		"crystal": 1,
+	}, "surface mineral counts match the approved distribution")
+	assertions.truthy(zones.has("common_mine"), "common minerals occupy the common mine zone")
+	assertions.truthy(zones.has("rare_mine"), "rare minerals occupy the remote mine zone")
 
 	var world: Variant = GameWorldScript.new()
 	var container := Node3D.new()
@@ -369,7 +450,8 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	assertions.equal(container.get_child_count(), count_before, "load does not duplicate resource nodes")
 	assertions.equal(world.call("to_resource_dicts"), state, "stable-ID restore preserves generated order")
 	var rewind_target: Variant = container.get_child(0)
-	for _hit in range(3):
+	var rewind_capacity := int(rewind_target.get("max_units"))
+	for _hit in range(rewind_capacity):
 		rewind_target.call("commit_gather", "pickaxe", 5)
 	var rewind_state: Array[Dictionary] = world.call("to_resource_dicts")
 	world.call("advance_resource_day", 20)
@@ -380,10 +462,93 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	world.call("advance_resource_day", 8)
 	assertions.equal(
 		int(rewind_target.get("hits_remaining")),
-		3,
+		rewind_capacity,
 		"resource cursor rewinds so the loaded respawn boundary still runs"
 	)
 	world.free()
+
+
+func _test_world_v1_to_v2_normalization_is_complete_and_atomic(
+	assertions: TestAssert
+) -> void:
+	var world: Variant = GameWorldScript.new()
+	var container := Node3D.new()
+	container.name = "ResourceNodes"
+	world.add_child(container)
+	world.call("generate_resource_nodes")
+	assertions.truthy(
+		world.has_method("normalize_resource_dicts"),
+		"resource world exposes a pure save normalizer"
+	)
+	if not world.has_method("normalize_resource_dicts"):
+		world.free()
+		return
+	var legacy := [{
+		"resource_id": "river-clay-00",
+		"position": [-14.65, 0.0, -1.8],
+		"hits_remaining": 2,
+		"respawn_day": 0,
+		"bonus_table": [{"item_id": "coal", "chance": 1.0}],
+	}]
+	var normalized: Variant = world.call("normalize_resource_dicts", legacy, 5)
+	assertions.truthy(normalized is Array, "legacy partial resource array normalizes")
+	if normalized is Array:
+		assertions.equal(
+			normalized.size(),
+			world.to_resource_dicts().size(),
+			"normalization backfills every newly catalogued resource"
+		)
+		var migrated := _record_by_id(normalized, "stone-00")
+		assertions.equal(migrated.get("state_version"), 2, "legacy record migrates to v2")
+		assertions.equal(migrated.get("remaining_units"), 3, "real v1 hits scale upward from capacity three")
+		assertions.truthy(not migrated.has("bonus_table"), "legacy random bonus is discarded")
+		assertions.truthy(
+			migrated.get("position") != legacy[0].position,
+			"legacy ID migration adopts the current authored resource position"
+		)
+		var new_resource := _record_by_id(normalized, "gold-00")
+		assertions.equal(new_resource.get("remaining_units"), 2, "missing rare ore starts full")
+		assertions.equal(new_resource.get("respawn_day"), 0, "backfilled resource has no respawn timer")
+
+	var before: Array[Dictionary] = world.to_resource_dicts()
+	var duplicate := legacy.duplicate(true)
+	duplicate.append(legacy[0].duplicate(true))
+	assertions.equal(
+		world.call("normalize_resource_dicts", duplicate, 5),
+		null,
+		"duplicate stable resource IDs reject the entire snapshot"
+	)
+	assertions.truthy(
+		not world.restore_resource_dicts(duplicate, 5),
+		"duplicate resource snapshot cannot partially apply"
+	)
+	assertions.equal(world.to_resource_dicts(), before, "rejected normalization leaves world unchanged")
+	var invalid := before.duplicate(true)
+	invalid[0]["remaining_units"] = 0
+	invalid[0]["respawn_day"] = 5
+	invalid[0]["visual_stage"] = 3
+	assertions.truthy(
+		not world.restore_resource_dicts(invalid, 5),
+		"expired respawn boundary rejects the entire snapshot"
+	)
+	assertions.equal(world.to_resource_dicts(), before, "invalid respawn leaves every resource unchanged")
+	var stone_node: Node = container.get_node("stone-00")
+	var authored_position: Array = _record_by_id(before, "stone-00").position
+	stone_node.position = Vector3(99.0, 0.0, 99.0)
+	var defaults: Array = world.normalize_resource_dicts([], 5)
+	assertions.equal(
+		_record_by_id(defaults, "stone-00").position,
+		authored_position,
+		"missing new resource uses immutable authored position, not prior runtime state"
+	)
+	world.free()
+
+
+func _record_by_id(records: Array, resource_id: String) -> Dictionary:
+	for record in records:
+		if record is Dictionary and str(record.get("resource_id", "")) == resource_id:
+			return record
+	return {}
 
 
 func _test_real_water_and_riverbank_adjacency(
@@ -406,6 +571,13 @@ func _test_real_water_and_riverbank_adjacency(
 	assertions.truthy(not water_cells.is_empty(), "fresh Main initializes positive WATER cells")
 	var water_container: Node = main.world.get_node_or_null("Water")
 	assertions.truthy(water_container != null, "world scene exposes deterministic Water container")
+	var world_records: Array[Dictionary] = main.world.to_resource_dicts()
+	var saved_tree_count := 0
+	for record in world_records:
+		if str(record.resource_type) == "tree":
+			saved_tree_count += 1
+	assertions.equal(world_records.size(), 25, "world saves minerals and designated resource trees only")
+	assertions.equal(saved_tree_count, 12, "world saves twelve gatherable resource-forest trees")
 	var blocked_regions: Variant = (
 		main.world.call("get_blocked_regions")
 		if main.world.has_method("get_blocked_regions")
@@ -421,20 +593,24 @@ func _test_real_water_and_riverbank_adjacency(
 			blocked_regions.size(),
 			"water mesh fallback covers every fixed region"
 		)
+	var authored_route: Array[Dictionary] = []
+	for route_point in RoadBuilderScript.MAIN_ROUTE:
+		authored_route.append(route_point)
 	for definition in GameWorldScript.generated_resource_definitions():
-		if str(definition.zone) != "riverbank":
-			continue
 		var point3: Vector3 = definition.position
-		var point := Vector2(point3.x, point3.z)
-		var nearest := INF
-		for water_cell in water_cells:
-			var center: Vector2 = water_cell.world_position()
-			var water_rect := Rect2(center - Vector2(0.5, 0.5), Vector2.ONE)
-			nearest = minf(nearest, _distance_to_rect(point, water_rect))
 		assertions.truthy(
-			nearest <= 0.75,
-			"riverbank node %s is geometrically adjacent to WATER" % definition.resource_id
+			RoadMathScript.distance_to_route(
+				Vector2(point3.x, point3.z),
+				0.7,
+				authored_route
+			) >= 0.45,
+			"resource %s does not block the authored road" % definition.resource_id
 		)
+		for region in blocked_regions:
+			assertions.truthy(
+				not (region.rect as Rect2).has_point(Vector2(point3.x, point3.z)),
+				"resource %s does not spawn inside water" % definition.resource_id
+			)
 	main.free()
 
 
@@ -444,17 +620,19 @@ func _test_player_target_routing(assertions: TestAssert, tree: SceneTree) -> voi
 	var controller := PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
 	controller.configure(null, GridDouble.new(), null, building, tools, null)
+	var gathering := GatheringDouble.new()
+	assertions.truthy(controller.configure_gathering(gathering), "controller accepts gathering routing")
 	var target := GatherTarget.new()
 	var collider := Area3D.new()
 	target.add_child(collider)
 	tree.root.add_child(target)
 	assertions.truthy(controller.select_slot(2), "axe slot selects in farming mode")
 	assertions.truthy(controller.perform_target_interaction(target), "axe slot routes gather target")
-	assertions.equal(tools.used_targets, [target], "gather target reaches ToolSystem once")
+	assertions.equal(gathering.requested, [target], "gather target reaches GatheringController once")
 	assertions.equal(controller._find_interaction_target(collider), target, "raycast collider resolves gatherable parent")
 	assertions.truthy(controller.switch_mode(PlayerActionController.ActionMode.BUILDING), "fixture enters build mode")
 	assertions.truthy(not controller.perform_target_interaction(target), "build mode cannot gather resources")
-	assertions.equal(tools.used_targets.size(), 1, "blocked build-mode gather does not call ToolSystem")
+	assertions.equal(gathering.requested.size(), 1, "blocked build-mode gather creates no command")
 	target.free()
 	controller.free()
 
@@ -508,8 +686,9 @@ func _test_calendar_coherent_resource_snapshots(
 	var before_resources: Array[Dictionary] = world.call("to_resource_dicts")
 	var stale_resources := before_resources.duplicate(true)
 	var stale_record: Dictionary = stale_resources[0]
-	stale_record["hits_remaining"] = 0
+	stale_record["remaining_units"] = 0
 	stale_record["respawn_day"] = 3
+	stale_record["visual_stage"] = 3
 	stale_resources[0] = stale_record
 	var saved_market: Dictionary = market.to_dict()
 	saved_market["last_settled_day"] = 10
@@ -530,8 +709,9 @@ func _test_calendar_coherent_resource_snapshots(
 
 	var future_resources := before_resources.duplicate(true)
 	var future_record: Dictionary = future_resources[0]
-	future_record["hits_remaining"] = 0
+	future_record["remaining_units"] = 0
 	future_record["respawn_day"] = 12
+	future_record["visual_stage"] = 3
 	future_resources[0] = future_record
 	var future_save := stale_save.duplicate(true)
 	future_save["resource_nodes"] = future_resources

@@ -19,6 +19,8 @@ const EconomyNotificationSystemScript := preload(
 	"res://scripts/systems/economy_notification_system.gd"
 )
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
+const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd")
+const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -41,6 +43,8 @@ static var _pending_debug_reload_save_slot := -1
 @onready var shop_ui = $ShopUI
 @onready var building_economy_ui = $BuildingEconomyUI
 @onready var economy_notification_ui: EconomyNotificationUI = $EconomyNotificationUI
+@onready var gathering_feedback: GatheringFeedback = $GatheringFeedback
+@onready var tool_swing_visual: ToolSwingVisual = $Actors/Player/ToolSwingVisual
 
 # 系统引用
 var grid_system: GridSystem
@@ -56,6 +60,8 @@ var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var building_system: BuildingSystem
 var tool_system: ToolSystem
+var grid_pathfinder: GridPathfinder
+var gathering_controller: GatheringController
 var villager_system
 var exploration_system: ExplorationSystem
 var collectible_system: CollectibleSystem
@@ -66,6 +72,7 @@ var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModa
 
 # 建筑容器
 var buildings_container: Node3D
+var _world_navigation_blockers: Dictionary = {}
 
 
 func _ready() -> void:
@@ -261,7 +268,8 @@ func _connect_systems() -> bool:
 		economy_progression_system,
 		tool_system,
 		production_system,
-		economy_notification_system
+		economy_notification_system,
+		self
 	))
 	if not save_manager_configured:
 		return false
@@ -282,6 +290,11 @@ func _connect_systems() -> bool:
 	return true
 
 
+func cancel_transient_actions(reason: String = "save_restore") -> void:
+	if gathering_controller != null:
+		gathering_controller.cancel_current(reason)
+
+
 func _connect_save_load_completed() -> void:
 	if save_manager == null or not save_manager.has_signal("load_completed"):
 		return
@@ -297,6 +310,7 @@ func _on_save_load_completed(_slot: int) -> void:
 		push_error("Unable to synchronize production day after load.")
 		return
 	production_system.sync_clock(season_system.hour, season_system.minute)
+	_register_resource_navigation()
 	if npc_economy_system != null:
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
 
@@ -305,6 +319,21 @@ func _setup_player() -> void:
 	# 放置玩家到地形上
 	_place_on_terrain(player, Vector2(0.0, 0.0))
 	player.configure(camera_rig, world, tool_system, grid_system)
+	grid_pathfinder = GridPathfinderScript.new() as GridPathfinder
+	if not grid_pathfinder.configure(grid_system):
+		push_error("Unable to configure gathering pathfinder.")
+		return
+	gathering_controller = GatheringControllerScript.new() as GatheringController
+	gathering_controller.name = "GatheringController"
+	add_child(gathering_controller)
+	if not gathering_controller.configure(
+		player,
+		grid_pathfinder,
+		tool_system,
+		season_system
+	):
+		push_error("Unable to configure gathering controller.")
+		return
 	action_controller.configure(
 		player,
 		grid_system,
@@ -313,7 +342,75 @@ func _setup_player() -> void:
 		tool_system,
 		inventory_system
 	)
+	if not action_controller.configure_gathering(gathering_controller):
+		push_error("Unable to configure player gathering actions.")
+		return
+	if not gathering_feedback.bind(gathering_controller, tool_swing_visual):
+		push_error("Unable to configure gathering feedback.")
+		return
+	_register_resource_navigation()
 	camera_rig.set_target(player)
+
+
+func _register_resource_navigation() -> void:
+	if world == null or grid_system == null or not world.has_method("get_navigation_obstacle_nodes"):
+		return
+	for resource in world.get_navigation_obstacle_nodes():
+		if not resource is Node3D:
+			continue
+		var callback := Callable(self, "_on_resource_gathering_active_changed").bind(resource)
+		if (
+			resource.has_signal("gathering_active_changed")
+			and not resource.is_connected("gathering_active_changed", callback)
+		):
+			resource.connect("gathering_active_changed", callback)
+		var active := (
+			not bool(resource.get("gathering_enabled"))
+			or int(resource.get("remaining_units")) > 0
+		)
+		_set_resource_navigation_blocker(resource, active)
+
+
+func _on_resource_gathering_active_changed(
+	_resource_id: String,
+	active: bool,
+	resource: Node
+) -> void:
+	_set_resource_navigation_blocker(resource, active)
+
+
+func _set_resource_navigation_blocker(resource: Node, active: bool) -> void:
+	if grid_system == null or not resource is Node3D:
+		return
+	var instance_id := resource.get_instance_id()
+	for blocker_id in _world_navigation_blockers.get(instance_id, []):
+		grid_system.set_navigation_blocker(str(blocker_id), Vector2i.ZERO, false)
+	_world_navigation_blockers.erase(instance_id)
+	if not active:
+		return
+	var node := resource as Node3D
+	var position := node.global_position if node.is_inside_tree() else node.position
+	var center_cell := grid_system.world_to_grid(position.x, position.z)
+	var obstacle_radius := (
+		float(resource.call("get_interaction_radius"))
+		if resource.has_method("get_interaction_radius")
+		else 0.45
+	)
+	var player_radius := 0.35
+	var cell_half_diagonal := GridSystem.CELL_SIZE * sqrt(0.5)
+	var blocking_distance := obstacle_radius + player_radius + cell_half_diagonal
+	var cell_radius := ceili(blocking_distance / GridSystem.CELL_SIZE)
+	var blocker_ids: Array[String] = []
+	for gz in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
+		for gx in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+			var cell := Vector2i(gx, gz)
+			var cell_world := grid_system.grid_to_world(gx, gz)
+			if Vector2(position.x, position.z).distance_to(cell_world) > blocking_distance:
+				continue
+			var blocker_id := "world:%d:%d:%d" % [instance_id, gx, gz]
+			grid_system.set_navigation_blocker(blocker_id, cell, true)
+			blocker_ids.append(blocker_id)
+	_world_navigation_blockers[instance_id] = blocker_ids
 
 
 func _setup_npcs() -> void:

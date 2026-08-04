@@ -8,6 +8,18 @@ const WATER_REGIONS: Array[Rect2] = [
 	Rect2(15.0, -5.0, 1.0, 10.0),
 ]
 const WATER_SURFACE_LIFT := 0.035
+const LEGACY_RESOURCE_ID_MAP := {
+	"rock-coal-00": "coal-00",
+	"rock-coal-01": "coal-01",
+	"rock-copper-00": "copper-00",
+	"rock-copper-01": "copper-01",
+	"rock-iron-00": "iron-00",
+	"rock-iron-01": "iron-01",
+	"river-clay-00": "stone-00",
+	"river-clay-01": "stone-01",
+	"river-sand-00": "stone-02",
+	"river-sand-01": "stone-03",
+}
 
 @onready var terrain: TerrainBuilder = $Terrain
 @onready var road: RoadBuilder = $Road
@@ -51,16 +63,19 @@ static func generated_resource_definitions(
 	seed: int = WORLD_GENERATION_SEED
 ) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = [
-		{"id": "rock-coal-00", "zone": "wasteland", "kind": "rock", "x": -12.4, "z": -8.1, "yield": {"stone": 2}, "bonus": [{"item_id": "coal", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "rock-coal-01", "zone": "wasteland", "kind": "rock", "x": 10.8, "z": 8.6, "yield": {"stone": 2}, "bonus": [{"item_id": "coal", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "rock-copper-00", "zone": "wasteland", "kind": "rock", "x": -10.6, "z": 7.7, "yield": {"stone": 2}, "bonus": [{"item_id": "copper_ore", "quantity": 1, "every_hits": 2, "offset": 1}]},
-		{"id": "rock-copper-01", "zone": "wasteland", "kind": "rock", "x": 12.3, "z": -7.5, "yield": {"stone": 2}, "bonus": [{"item_id": "copper_ore", "quantity": 1, "every_hits": 2, "offset": 1}]},
-		{"id": "rock-iron-00", "zone": "wasteland", "kind": "rock", "x": -14.0, "z": 2.6, "yield": {"stone": 2}, "bonus": [{"item_id": "iron_ore", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "rock-iron-01", "zone": "wasteland", "kind": "rock", "x": 14.2, "z": 3.3, "yield": {"stone": 2}, "bonus": [{"item_id": "iron_ore", "quantity": 1, "every_hits": 3, "offset": 2}]},
-		{"id": "river-clay-00", "zone": "riverbank", "kind": "clay", "x": -14.65, "z": -1.8, "yield": {"clay": 2}, "bonus": []},
-		{"id": "river-clay-01", "zone": "riverbank", "kind": "clay", "x": -14.65, "z": 2.0, "yield": {"clay": 2}, "bonus": []},
-		{"id": "river-sand-00", "zone": "riverbank", "kind": "sand", "x": 14.65, "z": -2.2, "yield": {"sand": 2}, "bonus": []},
-		{"id": "river-sand-01", "zone": "riverbank", "kind": "sand", "x": 14.65, "z": 1.7, "yield": {"sand": 2}, "bonus": []},
+		{"id": "stone-00", "zone": "common_mine", "type": "stone", "x": -14.2, "z": 8.0},
+		{"id": "stone-01", "zone": "common_mine", "type": "stone", "x": -11.2, "z": 9.2},
+		{"id": "stone-02", "zone": "common_mine", "type": "stone", "x": -8.4, "z": 10.7},
+		{"id": "stone-03", "zone": "common_mine", "type": "stone", "x": -13.2, "z": 5.5},
+		{"id": "coal-00", "zone": "common_mine", "type": "coal", "x": -9.2, "z": 6.0},
+		{"id": "coal-01", "zone": "common_mine", "type": "coal", "x": -14.5, "z": 11.2},
+		{"id": "copper-00", "zone": "common_mine", "type": "copper_ore", "x": -7.4, "z": 7.7},
+		{"id": "copper-01", "zone": "common_mine", "type": "copper_ore", "x": -11.8, "z": 11.7},
+		{"id": "iron-00", "zone": "common_mine", "type": "iron_ore", "x": -14.1, "z": 3.2},
+		{"id": "iron-01", "zone": "common_mine", "type": "iron_ore", "x": -10.5, "z": 3.8},
+		{"id": "silver-00", "zone": "rare_mine", "type": "silver_ore", "x": 10.0, "z": 11.5},
+		{"id": "gold-00", "zone": "rare_mine", "type": "gold_ore", "x": 12.8, "z": 11.2},
+		{"id": "crystal-00", "zone": "rare_mine", "type": "crystal", "x": 15.4, "z": 11.7},
 	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -69,13 +84,8 @@ static func generated_resource_definitions(
 		var jitter := Vector2(rng.randf_range(-0.18, 0.18), rng.randf_range(-0.18, 0.18))
 		definitions.append({
 			"resource_id": str(row.id),
-			"required_tool": "pickaxe",
-			"hits": 3,
-			"yield_per_hit": row.yield.duplicate(true),
-			"bonus_table": row.bonus.duplicate(true),
-			"respawn_days": 3,
+			"resource_type": str(row.type),
 			"position": Vector3(float(row.x) + jitter.x, 0.0, float(row.z) + jitter.y),
-			"visual_kind": str(row.kind),
 			"zone": str(row.zone),
 		})
 	return definitions
@@ -115,42 +125,77 @@ func to_resource_dicts() -> Array[Dictionary]:
 	return records
 
 
+func get_gatherable_nodes() -> Array[Node]:
+	return _gatherable_nodes()
+
+
+func get_navigation_obstacle_nodes() -> Array[Node]:
+	var result: Array[Node] = []
+	_collect_navigation_obstacles(self, result)
+	return result
+
+
 func validate_resource_dicts(value: Variant, loaded_day: int = -1) -> bool:
+	return normalize_resource_dicts(value, loaded_day) is Array
+
+
+func normalize_resource_dicts(value: Variant, loaded_day: int = -1) -> Variant:
 	if not value is Array:
-		return false
+		return null
 	var known := {}
 	for gatherable in _gatherable_nodes():
 		var id := str(gatherable.get("resource_id"))
 		if id.is_empty() or known.has(id):
-			return false
+			return null
 		known[id] = gatherable
-	if value.size() != known.size():
-		return false
-	var seen := {}
+	var normalized_by_id := {}
 	for record in value:
 		if not record is Dictionary:
-			return false
-		var id := str(record.get("resource_id", ""))
-		if id.is_empty() or seen.has(id) or not known.has(id):
-			return false
+			return null
+		var source_id := str(record.get("resource_id", ""))
+		var id := str(LEGACY_RESOURCE_ID_MAP.get(source_id, source_id))
+		if id.is_empty() or normalized_by_id.has(id) or not known.has(id):
+			return null
 		var gatherable: Variant = known[id]
 		if (
-			not gatherable.has_method("validate_state_dict")
-			or not bool(gatherable.call("validate_state_dict", record, loaded_day))
+			not gatherable.has_method("normalize_state_dict")
+			or not gatherable.has_method("default_state_dict")
 		):
-			return false
-		seen[id] = true
-	return true
+			return null
+		var current_record: Dictionary = record.duplicate(true)
+		if source_id != id:
+			current_record["resource_id"] = id
+			current_record["position"] = gatherable.call("default_state_dict").position
+		var normalized: Dictionary = gatherable.call(
+			"normalize_state_dict", current_record, loaded_day
+		)
+		if normalized.is_empty():
+			return null
+		normalized_by_id[id] = normalized
+	var ids: Array = known.keys()
+	ids.sort()
+	var complete: Array[Dictionary] = []
+	for id in ids:
+		if normalized_by_id.has(id):
+			complete.append(normalized_by_id[id])
+		else:
+			complete.append(known[id].call("default_state_dict"))
+	return complete
 
 
 func restore_resource_dicts(value: Variant, loaded_day: int = 0) -> bool:
-	if not validate_resource_dicts(value, loaded_day):
+	var normalized_value: Variant = normalize_resource_dicts(value, loaded_day)
+	if not normalized_value is Array:
 		return false
+	var normalized: Array = normalized_value as Array
 	var by_id := {}
 	for gatherable in _gatherable_nodes():
 		by_id[str(gatherable.get("resource_id"))] = gatherable
-	for record in value:
+	var before: Array[Dictionary] = to_resource_dicts()
+	for record in normalized:
 		if not bool(by_id[str(record.resource_id)].call("from_dict", record)):
+			for previous in before:
+				by_id[str(previous.resource_id)].call("from_dict", previous)
 			return false
 	for gatherable in by_id.values():
 		gatherable.call("sync_day_cursor", loaded_day)
@@ -189,13 +234,35 @@ func _gatherable_nodes() -> Array[Node]:
 
 func _collect_gatherables(parent: Node, result: Array[Node]) -> void:
 	for child in parent.get_children():
-		if (
+		var is_gatherable := (
 			child.has_method("can_gather")
 			and child.has_method("to_dict")
 			and child.has_method("from_dict")
-		):
+		)
+		if is_gatherable and _has_property(child, "gathering_enabled"):
+			is_gatherable = bool(child.get("gathering_enabled"))
+		if is_gatherable:
 			result.append(child)
 		_collect_gatherables(child, result)
+
+
+func _collect_navigation_obstacles(parent: Node, result: Array[Node]) -> void:
+	for child in parent.get_children():
+		var is_tree := child.is_in_group("tree_instance")
+		var is_resource := (
+			child.has_method("can_gather")
+			and child.has_method("get_interaction_radius")
+		)
+		if (is_tree or is_resource) and child is Node3D:
+			result.append(child)
+		_collect_navigation_obstacles(child, result)
+
+
+func _has_property(target: Object, property_name: String) -> bool:
+	for property in target.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
 
 
 func _build_water_fallback() -> void:

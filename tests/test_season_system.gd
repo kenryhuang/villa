@@ -50,6 +50,14 @@ func run(assertions: TestAssert) -> void:
 	assertions.equal(clock4.hour, 6, "18 hours from 6:00 wraps to next day 6:00")
 	assertions.equal(clock4.current_day, 2, "day advanced after full cycle")
 
+	var action_clock := SeasonSystemScript.new()
+	action_clock.hour = 23
+	action_clock.minute = 55
+	action_clock.advance_game_minutes(10)
+	assertions.equal(action_clock.hour, 6, "ten-minute late action crosses midnight to 06")
+	assertions.equal(action_clock.minute, 5, "cross-day action preserves five remaining minutes")
+	assertions.equal(action_clock.current_day, 2, "cross-day action advances exactly one day")
+
 	# Debug-friendly next-day advancement still uses the normal clock path.
 	var clock5 := SeasonSystemScript.new()
 	clock5.hour = 14
@@ -63,8 +71,37 @@ func run(assertions: TestAssert) -> void:
 		assertions.equal(clock5.hour, 6, "next-day advancement lands at 06")
 		assertions.equal(clock5.minute, 0, "next-day advancement clears minutes")
 		assertions.equal(clock5.current_day, 2, "next-day advancement increments the day once")
+
+	var locked_clock := SeasonSystemScript.new()
+	var owner_a := Node.new()
+	var owner_b := Node.new()
+	assertions.truthy(locked_clock.acquire_action_clock_lock(owner_a), "first action owner acquires a clock lock")
+	assertions.truthy(not locked_clock.acquire_action_clock_lock(owner_a), "same owner cannot acquire twice")
+	assertions.truthy(locked_clock.acquire_action_clock_lock(owner_b), "second action owner acquires independently")
+	locked_clock._process(1.0)
+	assertions.equal(locked_clock.minute, 0, "automatic time pauses while any action lock exists")
+	locked_clock.advance_game_minutes(10)
+	assertions.equal(locked_clock.minute, 10, "explicit successful action advances exactly ten minutes while locked")
+	assertions.truthy(locked_clock.release_action_clock_lock(owner_a), "first owner releases its own lock")
+	locked_clock._process(1.0)
+	assertions.equal(locked_clock.minute, 10, "remaining owner keeps automatic time paused")
+	assertions.truthy(locked_clock.release_action_clock_lock(owner_b), "last owner releases its lock")
+	assertions.truthy(not locked_clock.release_action_clock_lock(owner_b), "released owner cannot release twice")
+	locked_clock._process(1.0)
+	assertions.equal(locked_clock.minute, 13, "automatic time resumes after the last lock")
+
+	var invalid_owner := Node.new()
+	assertions.truthy(locked_clock.acquire_action_clock_lock(invalid_owner), "temporary owner acquires a lock")
+	invalid_owner.free()
+	locked_clock.clear_invalid_action_clock_locks()
+	locked_clock._process(1.0)
+	assertions.equal(locked_clock.minute, 17, "invalid lock owners are cleared before automatic time")
 	clock.free()
 	clock2.free()
 	clock3.free()
 	clock4.free()
+	action_clock.free()
 	clock5.free()
+	owner_a.free()
+	owner_b.free()
+	locked_clock.free()
