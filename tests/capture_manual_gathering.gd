@@ -12,6 +12,8 @@ const STATES := [
 	"tree_fall_right_forced",
 	"tree_fall_right",
 	"tree_result_stump",
+	"ore_hover_green",
+	"ore_hover_red",
 	"ore_action",
 	"ore_frame_1",
 	"ore_frame_2",
@@ -166,6 +168,23 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			main.gathering_controller._process(3.0)
 			_focus(main, [tree.global_position], 5.5)
 			return tree.remaining_units == 0
+		"ore_hover_green":
+			var ore := _find_resource(main, "copper_ore")
+			if ore == null:
+				return false
+			main.action_controller.select_slot(3)
+			main.gathering_feedback.show_tree_hover(ore, true)
+			_focus(main, [ore.global_position], 5.0)
+			return (main.gathering_feedback.get_node("TreeHoverRing") as Node3D).visible
+		"ore_hover_red":
+			var ore := _find_resource(main, "copper_ore")
+			if ore == null:
+				return false
+			ore.gathering_enabled = false
+			main.action_controller.select_slot(3)
+			main.gathering_feedback.show_tree_hover(ore, false)
+			_focus(main, [ore.global_position], 5.0)
+			return (main.gathering_feedback.get_node("TreeHoverRing") as Node3D).visible
 		"ore_action":
 			var ore := _requestable_resource(main, "copper_ore")
 			if ore == null or not _arrive(main):

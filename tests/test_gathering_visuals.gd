@@ -87,12 +87,18 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	var raised_pickaxe_head := Vector2.ZERO
 	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
 		raised_pickaxe_head = tool_visual.call("get_pickaxe_head_screen_offset")
-	tool_visual.set_action_progress(0.46)
+	tool_visual.set_action_progress(0.20)
 	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
 		var impact_pickaxe_head: Vector2 = tool_visual.call("get_pickaxe_head_screen_offset")
 		assertions.truthy(raised_pickaxe_head.x < impact_pickaxe_head.x, "pickaxe head sweeps toward the ore")
 		assertions.near(impact_pickaxe_head.x, 0.0, 0.04, "pickaxe head lands on the ore horizontally")
 		assertions.near(impact_pickaxe_head.y, 0.0, 0.04, "pickaxe head lands on the ore vertically")
+	tool_visual.set_action_progress(0.40)
+	var repeated_pickaxe_rotation: float = tool_visual.get_node("Pivot").rotation.z
+	assertions.truthy(
+		repeated_pickaxe_rotation > deg_to_rad(-20.0),
+		"three-second mining action begins another pickaxe swing instead of stretching one swing"
+	)
 	tool_visual.cancel_tool()
 	assertions.truthy(tool_visual.visible, "runtime cancel enters recovery before hiding")
 	assertions.near(tool_visual.get_cancel_recovery_duration(), 0.14, 0.001, "runtime cancellation uses a short smooth recovery")

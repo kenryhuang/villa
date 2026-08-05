@@ -24,6 +24,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	assertions.truthy(main.gathering_feedback != null, "main authors gathering feedback")
 	assertions.truthy(main.tool_swing_visual != null, "player authors tool swing visual")
+	assertions.truthy(
+		main.action_controller.is_connected(
+			"gather_hover_changed", Callable(main.gathering_feedback, "show_tree_hover")
+		),
+		"main binds generalized resource hover to the eligibility ring"
+	)
 
 	var resources: Array[Node] = main.world.get_gatherable_nodes()
 	assertions.truthy(resources.size() >= 20, "main exposes authored trees and mineral nodes")
@@ -49,9 +55,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			break
 	assertions.truthy(target != null, "main has a stone gathering target")
 	if target != null:
-		target.remaining_units = 1
+		target.remaining_units = target.max_units
 		target.call("_update_visual_stage")
 		target.call("_set_gather_active", true)
+		main.action_controller.select_slot(3)
+		main.action_controller.call("_update_gather_hover", target)
+		var hover_ring := main.gathering_feedback.get_node("TreeHoverRing") as Node3D
+		var hover_material := (hover_ring.get_child(0) as MeshInstance3D).material_override as StandardMaterial3D
+		assertions.truthy(hover_ring.visible, "mineable ore shows its hover ring")
+		assertions.near(hover_material.albedo_color.g, 0.9, 0.01, "mineable ore hover ring is green")
+		target.gathering_enabled = false
+		main.action_controller.call("_update_gather_hover", target)
+		assertions.near(hover_material.albedo_color.r, 0.95, 0.01, "unavailable ore hover ring is red")
+		target.gathering_enabled = true
+		target.call("_set_gather_active", true)
+		main.action_controller.call("_clear_gather_hover")
 		var target_cell: Vector2i = main.grid_system.world_to_grid(
 			target.global_position.x,
 			target.global_position.z
@@ -66,6 +84,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.season_system.minute = 0
 		main.season_system._accumulator = 0.0
 		var stone_before: int = main.inventory_system.get_item_count("stone")
+		var stone_units_before: int = int(target.remaining_units)
 		var stamina_before: int = game_state.player_state.stamina
 		var durability_before: int = int(main.tool_system.get_durability("pickaxe").current)
 		var stone_missing_before := _missing_resource(
@@ -86,6 +105,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			main.action_controller.get_selected_slot(),
 			3,
 			"auto-equipped pickaxe is highlighted in the action palette"
+		)
+		assertions.truthy(
+			not main.action_controller.should_show_cell_highlight(),
+			"auto-equipped pickaxe keeps the farming cell shadow hidden"
 		)
 		assertions.truthy(main.player.has_auto_movement(), "main player begins automatic movement")
 		var physical_path: Array[Vector3] = main.player._auto_path.duplicate()
@@ -133,7 +156,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			0.002,
 			"real pickaxe is anchored above the ore base"
 		)
-		main.tool_swing_visual.set_action_progress(0.46)
+		main.tool_swing_visual.set_action_progress(0.20)
 		var camera := main.get_viewport().get_camera_3d() as Camera3D
 		var ore_visual := target.get_node("Visual") as Sprite3D
 		var ore_atlas := load(ORE_MINING_ATLAS_PATH) as Texture2D
@@ -160,13 +183,25 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.season_system.hour = 8
 		main.season_system.minute = 0
 		main.season_system._accumulator = 0.0
-		main.gathering_controller._process(0.6)
+		main.gathering_controller._process(1.5)
 		assertions.equal(target.get_mining_frame(), 1, "halfway mining progress shows the cracked frame")
-		main.gathering_controller._process(0.6)
 		assertions.equal(
 			main.inventory_system.get_item_count("stone"),
-			stone_before + 1,
-			"one completed action adds exactly one stone"
+			stone_before,
+			"half-finished mining commits no partial stone"
+		)
+		main.gathering_controller._process(1.4)
+		assertions.equal(
+			main.inventory_system.get_item_count("stone"),
+			stone_before,
+			"mining remains atomic at 2.9 seconds"
+		)
+		assertions.equal(main.gathering_controller.get_state_name(), "ACTING", "mining remains active before three seconds")
+		main.gathering_controller._process(0.1)
+		assertions.equal(
+			main.inventory_system.get_item_count("stone"),
+			stone_before + stone_units_before,
+			"one completed action adds the whole stone node"
 		)
 		assertions.equal(
 			game_state.player_state.stamina,
@@ -180,11 +215,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.equal(main.season_system.hour, 8, "gathering keeps the current hour")
 		assertions.equal(main.season_system.minute, 10, "gathering advances ten game minutes")
-		assertions.equal(target.remaining_units, 0, "single-unit action depletes final unit")
+		assertions.equal(target.remaining_units, 0, "single mining action depletes the whole node")
 		assertions.equal(
 			_missing_resource(main.building_system.diagnose_resources("barn"), "stone"),
-			stone_missing_before - 1,
-			"gathered stone immediately reduces a building material shortage"
+			stone_missing_before - stone_units_before,
+			"whole-node stone immediately reduces a building material shortage"
 		)
 		assertions.equal(
 			main.market_system.get_stock("stone"),
@@ -198,7 +233,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(
 			main.gathering_controller.get_state_name(),
 			"IDLE",
-			"single-unit gathering stops after completion"
+			"whole-node gathering stops after completion"
 		)
 		var sale_quote: int = main.market_system.quote_sell("stone", 1)
 		var gold_before_sale: int = game_state.gold
@@ -255,8 +290,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			var copper_units_before: int = int(copper_target.get("remaining_units"))
 			var copper_market_before: int = main.market_system.get_stock("copper_ore")
 			assertions.truthy(_complete_gather(main, copper_target), "real copper vein completes one action")
-			assertions.equal(main.inventory_system.get_item_count("copper_ore"), copper_before + 1, "ore vein adds one copper ore")
-			assertions.equal(int(copper_target.get("remaining_units")), copper_units_before - 1, "ore vein loses one unit")
+			assertions.equal(main.inventory_system.get_item_count("copper_ore"), copper_before + copper_units_before, "ore vein adds all remaining copper ore")
+			assertions.equal(int(copper_target.get("remaining_units")), 0, "ore vein is fully depleted")
 			assertions.equal(main.market_system.get_stock("copper_ore"), copper_market_before, "ore gathering leaves market stock unchanged")
 
 		var cancel_target: Node3D

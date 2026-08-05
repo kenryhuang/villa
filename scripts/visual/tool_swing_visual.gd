@@ -12,6 +12,8 @@ const AXE_STRIKE_END := 0.24
 const AXE_IMPACT_END := 0.34
 const AXE_RAISED_ANGLE := deg_to_rad(-20.0)
 const AXE_IMPACT_ANGLE := deg_to_rad(-112.0)
+const PICKAXE_ACTION_DURATION := 3.0
+const PICKAXE_SWING_CYCLE := ACTION_DURATION
 const PICKAXE_RAISED_ANGLE := deg_to_rad(-5.0)
 const PICKAXE_PREPARED_ANGLE := deg_to_rad(-35.0)
 const PICKAXE_IMPACT_ANGLE := deg_to_rad(-95.0)
@@ -86,6 +88,11 @@ func set_action_progress(progress: float) -> void:
 		strike_end = AXE_STRIKE_END
 		impact_end = AXE_IMPACT_END
 		cycle_duration = AXE_SWING_CYCLE
+	elif _tool_id == "pickaxe":
+		# Keep the established 1.2-second swing cadence while the mining
+		# transaction spans three seconds, instead of stretching one slow hit.
+		elapsed = fmod(clampf(progress, 0.0, 1.0) * PICKAXE_ACTION_DURATION, PICKAXE_SWING_CYCLE)
+		cycle_duration = PICKAXE_SWING_CYCLE
 	var rotation_value := 0.0
 	if elapsed < prepare_end:
 		rotation_value = lerpf(raised_angle, prepared_angle, elapsed / prepare_end)
