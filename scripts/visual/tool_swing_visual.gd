@@ -12,9 +12,13 @@ const AXE_STRIKE_END := 0.24
 const AXE_IMPACT_END := 0.34
 const AXE_RAISED_ANGLE := deg_to_rad(-20.0)
 const AXE_IMPACT_ANGLE := deg_to_rad(-112.0)
+const PICKAXE_RAISED_ANGLE := deg_to_rad(-5.0)
+const PICKAXE_PREPARED_ANGLE := deg_to_rad(-35.0)
+const PICKAXE_IMPACT_ANGLE := deg_to_rad(-95.0)
 const CANCEL_RECOVERY_DURATION := 0.14
 const DEFAULT_TOOL_PIXEL_SIZE := 0.0035
 const AXE_PIXEL_SIZE := DEFAULT_TOOL_PIXEL_SIZE * 0.5
+const PICKAXE_PIXEL_SIZE := AXE_PIXEL_SIZE
 const TOOL_PIVOT_SHADER_PATH := "res://assets/buildings/construction/construction_hammer.gdshader"
 const TOOL_TEXTURES := {
 	"axe": "res://assets/ui/action_icons/axe.png",
@@ -23,8 +27,8 @@ const TOOL_TEXTURES := {
 
 var _tool_id := ""
 var _cancel_tween: Tween
-var _axe_head_from_handle := Vector2.ZERO
-var _axe_screen_offset := Vector2.ZERO
+var _tool_head_from_handle := Vector2.ZERO
+var _tool_screen_offset := Vector2.ZERO
 
 
 func _init() -> void:
@@ -56,6 +60,8 @@ func play_tool(tool_id: String) -> bool:
 	sprite.texture = texture
 	if tool_id == "axe":
 		_configure_axe_pivot(sprite, texture)
+	elif tool_id == "pickaxe":
+		_configure_pickaxe_pivot(sprite, texture)
 	else:
 		sprite.material_override = null
 		sprite.pixel_size = DEFAULT_TOOL_PIXEL_SIZE
@@ -71,6 +77,9 @@ func set_action_progress(progress: float) -> void:
 	var strike_end := STRIKE_END
 	var impact_end := IMPACT_END
 	var cycle_duration := ACTION_DURATION
+	var raised_angle := PICKAXE_RAISED_ANGLE if _tool_id == "pickaxe" else AXE_RAISED_ANGLE
+	var prepared_angle := PICKAXE_PREPARED_ANGLE if _tool_id == "pickaxe" else deg_to_rad(-42.0)
+	var impact_angle := PICKAXE_IMPACT_ANGLE if _tool_id == "pickaxe" else AXE_IMPACT_ANGLE
 	if _tool_id == "axe":
 		elapsed = fmod(clampf(progress, 0.0, 1.0) * AXE_ACTION_DURATION, AXE_SWING_CYCLE)
 		prepare_end = AXE_PREPARE_END
@@ -79,19 +88,19 @@ func set_action_progress(progress: float) -> void:
 		cycle_duration = AXE_SWING_CYCLE
 	var rotation_value := 0.0
 	if elapsed < prepare_end:
-		rotation_value = lerpf(AXE_RAISED_ANGLE, deg_to_rad(-42.0), elapsed / prepare_end)
+		rotation_value = lerpf(raised_angle, prepared_angle, elapsed / prepare_end)
 	elif elapsed < strike_end:
 		rotation_value = lerpf(
-			deg_to_rad(-42.0),
-			AXE_IMPACT_ANGLE,
+			prepared_angle,
+			impact_angle,
 			(elapsed - prepare_end) / (strike_end - prepare_end)
 		)
 	elif elapsed < impact_end:
-		rotation_value = AXE_IMPACT_ANGLE
+		rotation_value = impact_angle
 	else:
 		rotation_value = lerpf(
-			AXE_IMPACT_ANGLE,
-			AXE_RAISED_ANGLE,
+			impact_angle,
+			raised_angle,
 			(elapsed - impact_end) / (cycle_duration - impact_end)
 		)
 	_apply_rotation(rotation_value)
@@ -130,7 +139,7 @@ func cancel_tool() -> void:
 	_cancel_tween.tween_method(
 		_apply_rotation,
 		(get_node("Pivot") as Node3D).rotation.z,
-		AXE_RAISED_ANGLE,
+		PICKAXE_RAISED_ANGLE if _tool_id == "pickaxe" else AXE_RAISED_ANGLE,
 		CANCEL_RECOVERY_DURATION
 	)
 	_cancel_tween.tween_callback(_finish_cancel)
@@ -151,41 +160,82 @@ func get_tool_id() -> String:
 
 func get_axe_head_screen_offset() -> Vector2:
 	return _rotated_offset(
-		_axe_head_from_handle,
+		_tool_head_from_handle,
 		(get_node("Pivot") as Node3D).rotation.z
-	) + _axe_screen_offset
+	) + _tool_screen_offset
+
+
+func get_pickaxe_head_screen_offset() -> Vector2:
+	return _rotated_offset(
+		_tool_head_from_handle,
+		(get_node("Pivot") as Node3D).rotation.z
+	) + _tool_screen_offset
 
 
 func _apply_rotation(value: float) -> void:
 	(get_node("Pivot") as Node3D).rotation.z = value
 	var material := (get_node("Pivot/ToolSprite") as Sprite3D).material_override as ShaderMaterial
-	if _tool_id == "axe" and material != null:
+	if _tool_id in ["axe", "pickaxe"] and material != null:
 		material.set_shader_parameter("strike_angle", value)
 
 
 func _configure_axe_pivot(sprite: Sprite3D, texture: Texture2D) -> void:
-	sprite.pixel_size = AXE_PIXEL_SIZE
+	_configure_painted_pivot(
+		sprite,
+		texture,
+		AXE_PIXEL_SIZE,
+		AXE_RAISED_ANGLE,
+		AXE_IMPACT_ANGLE,
+		_painted_head_center_uv(texture),
+		true
+	)
+
+
+func _configure_pickaxe_pivot(sprite: Sprite3D, texture: Texture2D) -> void:
+	_configure_painted_pivot(
+		sprite,
+		texture,
+		PICKAXE_PIXEL_SIZE,
+		PICKAXE_RAISED_ANGLE,
+		PICKAXE_IMPACT_ANGLE,
+		_painted_pickaxe_head_center_uv(texture),
+		false
+	)
+
+
+func _configure_painted_pivot(
+	sprite: Sprite3D,
+	texture: Texture2D,
+	pixel_size: float,
+	raised_angle: float,
+	impact_angle: float,
+	head_uv: Vector2,
+	reflect_across_handle: bool
+) -> void:
+	sprite.pixel_size = pixel_size
 	var shader := load(TOOL_PIVOT_SHADER_PATH) as Shader
 	if shader == null:
 		sprite.material_override = null
 		return
 	var sprite_height := float(texture.get_height()) * sprite.pixel_size
 	var handle_uv := _painted_handle_pivot_uv(texture)
-	var head_uv := _painted_head_center_uv(texture)
-	_axe_head_from_handle = Vector2(
+	_tool_head_from_handle = Vector2(
 		(head_uv.x - handle_uv.x) * sprite_height,
 		(handle_uv.y - head_uv.y) * sprite_height
 	)
-	_axe_screen_offset = -_rotated_offset(_axe_head_from_handle, AXE_IMPACT_ANGLE)
+	_tool_screen_offset = -_rotated_offset(_tool_head_from_handle, impact_angle)
 	var material := ShaderMaterial.new()
 	material.shader = shader
 	material.render_priority = 10
 	material.set_shader_parameter("albedo_texture", texture)
 	material.set_shader_parameter("sprite_height", sprite_height)
 	material.set_shader_parameter("pivot_uv", handle_uv)
-	material.set_shader_parameter("screen_offset", _axe_screen_offset)
-	material.set_shader_parameter("reflection_axis", _axe_head_from_handle.normalized())
-	material.set_shader_parameter("strike_angle", AXE_RAISED_ANGLE)
+	material.set_shader_parameter("screen_offset", _tool_screen_offset)
+	material.set_shader_parameter(
+		"reflection_axis",
+		_tool_head_from_handle.normalized() if reflect_across_handle else Vector2.ZERO
+	)
+	material.set_shader_parameter("strike_angle", raised_angle)
 	sprite.position = Vector3.ZERO
 	sprite.material_override = material
 
@@ -235,6 +285,32 @@ static func _painted_head_center_uv(texture: Texture2D) -> Vector2:
 			total_alpha += alpha
 	if total_alpha <= 0.0:
 		return Vector2(0.32, 0.30)
+	var center := weighted / total_alpha
+	return Vector2(
+		center.x / float(maxi(image.get_width() - 1, 1)),
+		center.y / float(maxi(image.get_height() - 1, 1))
+	)
+
+
+static func _painted_pickaxe_head_center_uv(texture: Texture2D) -> Vector2:
+	var image := texture.get_image()
+	if image == null or image.is_empty():
+		return Vector2(0.52, 0.25)
+	var bounds := image.get_used_rect()
+	if not bounds.has_area():
+		return Vector2(0.52, 0.25)
+	var head_max_y := bounds.position.y + ceili(float(bounds.size.y) * 0.52)
+	var weighted := Vector2.ZERO
+	var total_alpha := 0.0
+	for y in range(bounds.position.y, mini(head_max_y, bounds.end.y)):
+		for x in range(bounds.position.x, bounds.end.x):
+			var alpha := image.get_pixel(x, y).a
+			if alpha <= 0.10:
+				continue
+			weighted += Vector2(x, y) * alpha
+			total_alpha += alpha
+	if total_alpha <= 0.0:
+		return Vector2(0.52, 0.25)
 	var center := weighted / total_alpha
 	return Vector2(
 		center.x / float(maxi(image.get_width() - 1, 1)),

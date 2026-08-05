@@ -12,6 +12,10 @@ const STATES := [
 	"tree_fall_right_forced",
 	"tree_fall_right",
 	"tree_result_stump",
+	"ore_action",
+	"ore_frame_1",
+	"ore_frame_2",
+	"ore_frame_3",
 	"ore_stages",
 	"inventory_full",
 	"unreachable",
@@ -162,6 +166,29 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			main.gathering_controller._process(3.0)
 			_focus(main, [tree.global_position], 5.5)
 			return tree.remaining_units == 0
+		"ore_action":
+			var ore := _requestable_resource(main, "copper_ore")
+			if ore == null or not _arrive(main):
+				return false
+			main.gathering_controller._process(0.55)
+			_focus(main, [ore.global_position], 5.0)
+			return main.gathering_controller.get_state_name() == "ACTING"
+		"ore_frame_1", "ore_frame_2", "ore_frame_3":
+			var ore := _find_resource(main, "copper_ore")
+			if ore == null or not ore.begin_mining():
+				return false
+			var progress: float = float({
+				"ore_frame_1": 0.10,
+				"ore_frame_2": 0.50,
+				"ore_frame_3": 0.90,
+			}[state_id])
+			ore.set_mining_progress(progress)
+			_focus(main, [ore.global_position], 5.0)
+			return ore.get_mining_frame() == int({
+				"ore_frame_1": 0,
+				"ore_frame_2": 1,
+				"ore_frame_3": 2,
+			}[state_id])
 		"ore_stages":
 			return _prepare_ore_gallery(main)
 		"inventory_full":

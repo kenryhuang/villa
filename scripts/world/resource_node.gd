@@ -7,6 +7,13 @@ const ResourceCatalogScript = preload("res://scripts/world/resource_catalog.gd")
 const INTERACTION_LAYER := 64
 const OBSTACLE_LAYER := 16
 const STATE_VERSION := 2
+const MINING_ATLAS_PATH := "res://assets/resources/mining/ore-mining-sheet.png"
+const MINING_ACTION_DURATION := 1.2
+const MINING_FRAME_FADE_DURATION := 0.16
+const FIRST_MINING_FRAME_CENTER := 1.0 / 3.0
+const SECOND_MINING_FRAME_CENTER := 2.0 / 3.0
+const ORE_PAINTED_WIDTH := 1.04
+const ORE_PAINTED_HEIGHT := 0.82
 
 @export var resource_id := ""
 @export var resource_type := "stone"
@@ -42,6 +49,11 @@ var _gather_active := false
 var _default_position := Vector3.ZERO
 var _gather_transaction_depth := 0
 var _gather_transaction_initial_active := false
+var _mining_active := false
+var _mining_frame := -1
+var _mining_atlas: Texture2D
+var _mining_blend_visual: Sprite3D
+var _mining_frame_positions: Array[Vector3] = []
 
 
 func _ready() -> void:
@@ -235,32 +247,25 @@ func from_dict(data: Dictionary) -> bool:
 func build_fallback_visual() -> void:
 	if get_node_or_null("Visual") != null or get_node_or_null("Collision") != null:
 		return
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "Visual"
-	var rock_mesh := SphereMesh.new()
-	rock_mesh.radius = 0.52
-	rock_mesh.height = 0.82
-	mesh_instance.mesh = rock_mesh
-	var material := StandardMaterial3D.new()
-	material.roughness = 0.92
-	material.albedo_color = _fallback_color()
-	mesh_instance.material_override = material
-	mesh_instance.position.y = 0.2
-	add_child(mesh_instance)
-	var crack_mark := MeshInstance3D.new()
-	crack_mark.name = "CrackMark"
-	var crack_quad := QuadMesh.new()
-	crack_quad.size = Vector2(0.42, 0.30)
-	crack_mark.mesh = crack_quad
-	var crack_material := StandardMaterial3D.new()
-	crack_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	crack_material.albedo_color = Color(0.12, 0.09, 0.07, 0.78)
-	crack_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	crack_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	crack_mark.material_override = crack_material
-	crack_mark.position = Vector3(0.0, 0.34, 0.46)
-	crack_mark.visible = false
-	add_child(crack_mark)
+	_mining_atlas = load(MINING_ATLAS_PATH) as Texture2D
+	if _mining_atlas == null or _mining_atlas.get_width() % 4 != 0:
+		push_error("Missing or invalid hand-painted mining atlas: %s" % MINING_ATLAS_PATH)
+		return
+	var visual := Sprite3D.new()
+	visual.name = "Visual"
+	_configure_mining_sprite(visual)
+	_prepare_mining_layout(visual)
+	add_child(visual)
+
+	_mining_blend_visual = Sprite3D.new()
+	_mining_blend_visual.name = "MiningBlendVisual"
+	_configure_mining_sprite(_mining_blend_visual)
+	_mining_blend_visual.pixel_size = visual.pixel_size
+	_mining_blend_visual.scale = visual.scale
+	_mining_blend_visual.position = visual.position
+	_mining_blend_visual.render_priority = 1
+	_mining_blend_visual.visible = false
+	add_child(_mining_blend_visual)
 
 	var body := StaticBody3D.new()
 	body.name = "Collision"
@@ -323,6 +328,11 @@ func _apply_visual_stage() -> void:
 	var visual := get_node_or_null("Visual") as Node3D
 	if visual == null:
 		return
+	if visual is Sprite3D and _mining_atlas != null:
+		_mining_active = false
+		_mining_frame = -1
+		_show_persistent_mining_stage()
+		return
 	match visual_stage:
 		0:
 			visual.scale = Vector3.ONE
@@ -332,9 +342,175 @@ func _apply_visual_stage() -> void:
 			visual.scale = Vector3(0.62, 0.62, 0.62)
 		_:
 			visual.scale = Vector3(0.42, 0.18, 0.42)
-	var crack_mark := get_node_or_null("CrackMark") as MeshInstance3D
-	if crack_mark != null:
-		crack_mark.visible = visual_stage in [1, 2]
+
+
+func begin_mining() -> bool:
+	if required_tool != "pickaxe" or remaining_units <= 0 or _mining_atlas == null:
+		return false
+	_mining_active = true
+	set_mining_progress(0.0)
+	return true
+
+
+func set_mining_progress(progress: float) -> void:
+	if not _mining_active:
+		return
+	var value := clampf(progress, 0.0, 1.0)
+	var fade_half_progress := MINING_FRAME_FADE_DURATION / MINING_ACTION_DURATION * 0.5
+	if absf(value - FIRST_MINING_FRAME_CENTER) <= fade_half_progress:
+		_show_mining_blend(
+			0,
+			1,
+			inverse_lerp(
+				FIRST_MINING_FRAME_CENTER - fade_half_progress,
+				FIRST_MINING_FRAME_CENTER + fade_half_progress,
+				value
+			)
+		)
+	elif absf(value - SECOND_MINING_FRAME_CENTER) <= fade_half_progress:
+		_show_mining_blend(
+			1,
+			2,
+			inverse_lerp(
+				SECOND_MINING_FRAME_CENTER - fade_half_progress,
+				SECOND_MINING_FRAME_CENTER + fade_half_progress,
+				value
+			)
+		)
+	else:
+		_show_mining_frame(
+			0 if value < FIRST_MINING_FRAME_CENTER else (1 if value < SECOND_MINING_FRAME_CENTER else 2)
+		)
+
+
+func cancel_mining() -> void:
+	_mining_active = false
+	_mining_frame = -1
+	_show_persistent_mining_stage()
+
+
+func get_mining_frame() -> int:
+	return _mining_frame
+
+
+func _configure_mining_sprite(target: Sprite3D) -> void:
+	target.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	target.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+	target.no_depth_test = false
+	target.shaded = false
+	target.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	target.modulate = Color.WHITE.lerp(_fallback_color(), 0.55)
+
+
+func _prepare_mining_layout(target: Sprite3D) -> void:
+	var cell_size := Vector2(float(_mining_atlas.get_width()) / 4.0, float(_mining_atlas.get_height()))
+	var standing_bounds := mining_frame_used_rect(_mining_atlas, 0)
+	var painted_width := maxf(float(standing_bounds.size.x), 1.0)
+	var painted_height := maxf(float(standing_bounds.size.y), 1.0)
+	target.pixel_size = ORE_PAINTED_WIDTH / painted_width
+	target.scale = Vector3(
+		1.0,
+		ORE_PAINTED_HEIGHT / (painted_height * target.pixel_size),
+		1.0
+	)
+	_mining_frame_positions.clear()
+	for frame in range(4):
+		var frame_anchor := mining_ground_anchor(_mining_atlas, frame)
+		_mining_frame_positions.append(Vector3(
+			-(frame_anchor.x - cell_size.x * 0.5) * target.pixel_size * target.scale.x,
+			-(cell_size.y * 0.5 - frame_anchor.y) * target.pixel_size * target.scale.y,
+			0.0
+		))
+	target.position = _mining_frame_positions[0]
+
+
+func _show_mining_frame(frame: int) -> void:
+	var visual := get_node_or_null("Visual") as Sprite3D
+	if visual == null or frame < 0 or frame > 2:
+		return
+	_set_mining_texture(visual, frame)
+	_set_mining_sprite_alpha(visual, 1.0)
+	visual.visible = true
+	if _mining_blend_visual != null:
+		_mining_blend_visual.visible = false
+		_set_mining_sprite_alpha(_mining_blend_visual, 0.0)
+	_mining_frame = frame
+
+
+func _show_mining_blend(from_frame: int, to_frame: int, weight: float) -> void:
+	var visual := get_node_or_null("Visual") as Sprite3D
+	if visual == null or _mining_blend_visual == null:
+		return
+	var blend := clampf(weight, 0.0, 1.0)
+	_set_mining_texture(visual, from_frame)
+	_set_mining_texture(_mining_blend_visual, to_frame)
+	_set_mining_sprite_alpha(visual, 1.0 - blend)
+	_set_mining_sprite_alpha(_mining_blend_visual, blend)
+	visual.visible = true
+	_mining_blend_visual.visible = true
+	_mining_frame = to_frame if blend >= 0.5 else from_frame
+
+
+func _show_persistent_mining_stage() -> void:
+	var visual := get_node_or_null("Visual") as Sprite3D
+	if visual == null or _mining_atlas == null:
+		return
+	_set_mining_texture(visual, clampi(visual_stage, 0, 3))
+	_set_mining_sprite_alpha(visual, 1.0)
+	visual.visible = true
+	visual.scale = Vector3(1.0, visual.scale.y, 1.0)
+	if _mining_blend_visual != null:
+		_mining_blend_visual.visible = false
+		_set_mining_sprite_alpha(_mining_blend_visual, 0.0)
+
+
+func _set_mining_texture(target: Sprite3D, frame: int) -> void:
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = _mining_atlas
+	var cell_width := float(_mining_atlas.get_width()) / 4.0
+	atlas_texture.region = Rect2(cell_width * float(frame), 0.0, cell_width, _mining_atlas.get_height())
+	target.texture = atlas_texture
+	if frame < _mining_frame_positions.size():
+		target.position = _mining_frame_positions[frame]
+
+
+func _set_mining_sprite_alpha(target: Sprite3D, alpha: float) -> void:
+	var color := target.modulate
+	color.a = clampf(alpha, 0.0, 1.0)
+	target.modulate = color
+
+
+static func mining_frame_used_rect(texture: Texture2D, frame: int) -> Rect2i:
+	if texture == null or texture.get_width() % 4 != 0 or frame < 0 or frame > 3:
+		return Rect2i()
+	var image := texture.get_image()
+	if image == null or image.is_empty():
+		return Rect2i()
+	var cell_width := image.get_width() / 4
+	return image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height())).get_used_rect()
+
+
+static func mining_ground_anchor(texture: Texture2D, frame: int) -> Vector2:
+	var used_rect := mining_frame_used_rect(texture, frame)
+	if not used_rect.has_area():
+		return Vector2.ZERO
+	var image := texture.get_image()
+	var cell_width := image.get_width() / 4
+	var region := image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height()))
+	var band_start := used_rect.position.y + floori(float(used_rect.size.y) * 0.90)
+	var weighted_x := 0.0
+	var total_alpha := 0.0
+	for y in range(band_start, used_rect.end.y):
+		for x in range(used_rect.position.x, used_rect.end.x):
+			var alpha := region.get_pixel(x, y).a
+			if alpha <= 0.10:
+				continue
+			weighted_x += float(x) * alpha
+			total_alpha += alpha
+	return Vector2(
+		weighted_x / total_alpha if total_alpha > 0.0 else float(used_rect.get_center().x),
+		float(used_rect.end.y)
+	)
 
 
 func _fallback_color() -> Color:

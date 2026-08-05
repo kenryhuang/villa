@@ -68,6 +68,12 @@ static func tree_axe_anchor(tree_position: Vector3, _actor_position: Vector3) ->
 	return tree_position + Vector3.LEFT * 0.12 + Vector3.UP * 0.12
 
 
+static func ore_pickaxe_anchor(ore_position: Vector3, _actor_position: Vector3) -> Vector3:
+	# Camera yaw is locked at -45 degrees; this X/Z pair moves the impact point
+	# horizontally on screen so the painted head overlaps the ore's left shoulder.
+	return ore_position + Vector3(-0.12, 0.38, 0.06)
+
+
 func _process(delta: float) -> void:
 	_update_screen_positions()
 	_result_time_remaining = maxf(0.0, _result_time_remaining - maxf(delta, 0.0))
@@ -154,9 +160,13 @@ func _on_state_changed(state: int, context: Dictionary) -> void:
 		(get_node("Canvas/ProgressRing") as Control).visible = true
 		if _tool_visual != null:
 			var actor := _controller.call("get_actor") as Node3D
-			if actor != null and str(_controller._preview.get("tool_id", "")) == "axe" and _target.has_method("begin_felling"):
+			var tool_id := str(_controller._preview.get("tool_id", ""))
+			if actor != null and tool_id == "axe" and _target.has_method("begin_felling"):
 				_tool_visual.global_position = tree_axe_anchor(_target.global_position, actor.global_position)
 				_target.call("begin_felling", 1)
+			elif actor != null and tool_id == "pickaxe" and _target.has_method("begin_mining"):
+				_tool_visual.global_position = ore_pickaxe_anchor(_target.global_position, actor.global_position)
+				_target.call("begin_mining")
 			elif actor != null:
 				var direction := _target.global_position - actor.global_position
 				direction.y = 0.0
@@ -175,6 +185,8 @@ func _on_gather_progress(_target_node: Node, value: float) -> void:
 	(get_node("Canvas/ProgressRing") as GatheringProgressRing).set_progress(value)
 	if _target_node != null and _target_node.has_method("set_felling_progress"):
 		_target_node.call("set_felling_progress", value)
+	if _target_node != null and _target_node.has_method("set_mining_progress"):
+		_target_node.call("set_mining_progress", value)
 	if _tool_visual != null:
 		_tool_visual.set_action_progress(value)
 	if not _impact_played and value >= 0.46:
@@ -200,6 +212,8 @@ func _on_gather_completed(target: Node, result: Dictionary) -> void:
 func _on_gather_failed(target_node: Node, reason: String) -> void:
 	if target_node != null and target_node.has_method("cancel_felling"):
 		target_node.call("cancel_felling")
+	if target_node != null and target_node.has_method("cancel_mining"):
+		target_node.call("cancel_mining")
 	var status := get_node("Canvas/StatusLabel") as Label
 	var message := error_message(reason)
 	if reason == "tool_broken" and target_node != null and _has_property(target_node, "required_tool"):
@@ -213,10 +227,14 @@ func _on_gather_failed(target_node: Node, reason: String) -> void:
 func _on_gather_cancelled(_reason: String) -> void:
 	if _target != null and _target.has_method("cancel_felling"):
 		_target.call("cancel_felling")
+	if _target != null and _target.has_method("cancel_mining"):
+		_target.call("cancel_mining")
 	_hide_active_feedback()
 
 
 func _hide_active_feedback() -> void:
+	if _target != null and _target.has_method("cancel_mining"):
+		_target.call("cancel_mining")
 	(get_node("TargetRing") as Node3D).visible = false
 	(get_node("PathPreview") as MeshInstance3D).visible = false
 	(get_node("Canvas/ProgressRing") as Control).visible = false

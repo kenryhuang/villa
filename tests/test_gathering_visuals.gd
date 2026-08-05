@@ -2,6 +2,7 @@ extends RefCounted
 
 const TOOL_VISUAL_PATH := "res://scripts/visual/tool_swing_visual.gd"
 const FEEDBACK_SCENE_PATH := "res://scenes/ui/gathering_feedback.tscn"
+const ORE_MINING_ATLAS_PATH := "res://assets/resources/mining/ore-mining-sheet.png"
 const ResourceNodeScript = preload("res://scripts/world/resource_node.gd")
 const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
 
@@ -68,6 +69,30 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		repeated_prepare_rotation > impact_rotation,
 		"three-second axe action recovers quickly enough to begin another swing"
 	)
+	assertions.truthy(tool_visual.play_tool("pickaxe"), "tool visual plays the hand-painted pickaxe")
+	var pickaxe_sprite := tool_visual.get_node("Pivot/ToolSprite") as Sprite3D
+	assertions.equal(pickaxe_sprite.position, Vector3.ZERO, "pickaxe texture is anchored at its handle pivot")
+	assertions.near(pickaxe_sprite.pixel_size, 0.00175, 0.00001, "pickaxe matches the axe display scale")
+	var pickaxe_material := pickaxe_sprite.material_override as ShaderMaterial
+	assertions.truthy(pickaxe_material != null, "pickaxe uses the painted handle-pivot shader")
+	if pickaxe_material != null:
+		var pickaxe_handle_uv: Vector2 = pickaxe_material.get_shader_parameter("pivot_uv")
+		assertions.truthy(pickaxe_handle_uv.x < 0.35, "pickaxe pivot follows the painted handle end on the left")
+		assertions.truthy(pickaxe_handle_uv.y > 0.85, "pickaxe pivot follows the painted handle end at the bottom")
+	assertions.truthy(
+		tool_visual.has_method("get_pickaxe_head_screen_offset"),
+		"pickaxe exposes its painted head arc for contact verification"
+	)
+	tool_visual.set_action_progress(0.0)
+	var raised_pickaxe_head := Vector2.ZERO
+	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
+		raised_pickaxe_head = tool_visual.call("get_pickaxe_head_screen_offset")
+	tool_visual.set_action_progress(0.46)
+	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
+		var impact_pickaxe_head: Vector2 = tool_visual.call("get_pickaxe_head_screen_offset")
+		assertions.truthy(raised_pickaxe_head.x < impact_pickaxe_head.x, "pickaxe head sweeps toward the ore")
+		assertions.near(impact_pickaxe_head.x, 0.0, 0.04, "pickaxe head lands on the ore horizontally")
+		assertions.near(impact_pickaxe_head.y, 0.0, 0.04, "pickaxe head lands on the ore vertically")
 	tool_visual.cancel_tool()
 	assertions.truthy(tool_visual.visible, "runtime cancel enters recovery before hiding")
 	assertions.near(tool_visual.get_cancel_recovery_duration(), 0.14, 0.001, "runtime cancellation uses a short smooth recovery")
@@ -75,6 +100,21 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.truthy(not tool_visual.visible, "cancel recovery hides the tool after its tween")
 	tool_visual.free()
 
+	assertions.truthy(FileAccess.file_exists(ORE_MINING_ATLAS_PATH), "ore uses a hand-painted four-cell mining atlas")
+	var offset_mining_image := Image.create_empty(40, 20, false, Image.FORMAT_RGBA8)
+	offset_mining_image.fill(Color.TRANSPARENT)
+	for y in range(2, 10):
+		for x in range(1, 9):
+			offset_mining_image.set_pixel(x, y, Color.WHITE)
+	for x in range(7, 9):
+		offset_mining_image.set_pixel(x, 10, Color.WHITE)
+	var offset_mining_texture := ImageTexture.create_from_image(offset_mining_image)
+	assertions.near(
+		ResourceNodeScript.mining_ground_anchor(offset_mining_texture, 0).x,
+		7.5,
+		0.01,
+		"ore ground registration samples the painted base despite transparent atlas padding"
+	)
 	var ore := ResourceNodeScript.new()
 	assertions.truthy(ore.configure_resource({
 		"resource_id": "visual-copper",
@@ -82,16 +122,74 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		"position": Vector3.ZERO,
 	}), "visual ore fixture configures")
 	ore.build_fallback_visual()
-	assertions.truthy(ore.get_node("CrackMark") != null, "ore visual authors a crack overlay")
+	var ore_visual := ore.get_node("Visual") as Node3D
+	var ore_authored_scale := ore_visual.scale
+	var ore_atlas := load(ORE_MINING_ATLAS_PATH) as Texture2D
+	assertions.truthy(ore_atlas != null and ore_atlas.get_width() % 4 == 0, "mining atlas has four equal-width cells")
+	var ore_cell_size := Vector2.ZERO
+	var ore_registered_anchor := Vector2.ZERO
+	if ore_visual is Sprite3D and ore_atlas != null:
+		ore_cell_size = Vector2(float(ore_atlas.get_width()) / 4.0, float(ore_atlas.get_height()))
+		ore_registered_anchor = _rendered_ground_anchor(
+			ore_visual as Sprite3D,
+			ore_cell_size,
+			_painted_mining_ground_anchor(ore_atlas, 0)
+		)
+	assertions.truthy(ore_visual is Sprite3D, "ore replaces the geometric sphere with painted sprite art")
+	assertions.truthy(ore.get_node_or_null("MiningBlendVisual") is Sprite3D, "ore provides a second sprite for frame crossfade")
+	assertions.truthy(ore.has_method("begin_mining"), "ore exposes a mining presentation lifecycle")
+	assertions.truthy(ore.has_method("set_mining_progress"), "ore accepts mining action progress")
+	assertions.truthy(ore.has_method("cancel_mining"), "ore can restore its persistent stage after cancellation")
+	if ore.has_method("begin_mining") and ore.has_method("set_mining_progress"):
+		assertions.truthy(ore.call("begin_mining"), "ore begins its three-frame mining presentation")
+		ore.call("set_mining_progress", 0.10)
+		assertions.equal(ore.call("get_mining_frame"), 0, "early mining progress shows the intact frame")
+		ore.call("set_mining_progress", 0.50)
+		assertions.equal(ore.call("get_mining_frame"), 1, "middle mining progress shows the cracked frame")
+		if ore_visual is Sprite3D and ore_atlas != null:
+			var cracked_anchor := _rendered_ground_anchor(
+				ore_visual as Sprite3D,
+				ore_cell_size,
+				_painted_mining_ground_anchor(ore_atlas, 1)
+			)
+			assertions.near(cracked_anchor.x, ore_registered_anchor.x, 0.002, "cracked ore keeps the horizontal ground anchor")
+			assertions.near(cracked_anchor.y, ore_registered_anchor.y, 0.002, "cracked ore keeps the ground baseline")
+		ore.call("set_mining_progress", 0.90)
+		assertions.equal(ore.call("get_mining_frame"), 2, "late mining progress shows the broken frame")
+		if ore_visual is Sprite3D and ore_atlas != null:
+			var broken_anchor := _rendered_ground_anchor(
+				ore_visual as Sprite3D,
+				ore_cell_size,
+				_painted_mining_ground_anchor(ore_atlas, 2)
+			)
+			assertions.near(broken_anchor.x, ore_registered_anchor.x, 0.002, "broken ore keeps the horizontal ground anchor")
+			assertions.near(broken_anchor.y, ore_registered_anchor.y, 0.002, "broken ore keeps the ground baseline")
+		ore.call("set_mining_progress", 1.0 / 3.0)
+		var ore_outgoing := ore.get_node("Visual") as Sprite3D
+		var ore_incoming := ore.get_node("MiningBlendVisual") as Sprite3D
+		assertions.truthy(ore_outgoing.visible and ore_incoming.visible, "ore crossfades adjacent mining frames")
+		assertions.near(ore_outgoing.modulate.a, 0.5, 0.08, "ore outgoing mining frame fades out")
+		assertions.near(ore_incoming.modulate.a, 0.5, 0.08, "ore incoming mining frame fades in")
+		ore.call("cancel_mining")
+		assertions.equal(ore.call("get_mining_frame"), -1, "cancel clears transient mining frame state")
 	ore.commit_gather("pickaxe", 1)
 	assertions.equal(ore.visual_stage, 1, "damaged ore advances to stage one")
-	assertions.truthy(ore.get_node("CrackMark").visible, "damaged ore shows cracks")
+	if ore_visual is Sprite3D:
+		assertions.truthy((ore_visual as Sprite3D).texture is AtlasTexture, "damaged ore keeps painted atlas art")
 	while ore.remaining_units > 0:
 		ore.commit_gather("pickaxe", 1)
 	assertions.equal(ore.visual_stage, 3, "depleted ore uses rubble stage")
 	assertions.truthy(ore.visible, "depleted ore remains visibly as rubble")
 	assertions.equal(ore.get_node("Collision").collision_layer, 0, "rubble no longer blocks movement or clicks")
-	assertions.truthy(ore.get_node("Visual").scale.y < ore.get_node("Visual").scale.x, "depleted ore is flattened into rubble")
+	assertions.equal(ore.get_node("Visual").scale, ore_authored_scale, "painted rubble keeps authored proportions instead of mesh flattening")
+	if ore_visual is Sprite3D and ore_atlas != null:
+		var rubble_anchor := _rendered_ground_anchor(
+			ore_visual as Sprite3D,
+			ore_cell_size,
+			_painted_mining_ground_anchor(ore_atlas, 3)
+		)
+		assertions.near(rubble_anchor.x, ore_registered_anchor.x, 0.002, "rubble keeps the original horizontal ground anchor")
+		assertions.near(rubble_anchor.y, ore_registered_anchor.y, 0.002, "rubble keeps the original ground baseline")
 	ore.free()
 
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
@@ -256,6 +354,14 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		Vector3(4.0, 1.0, 2.0), Vector3(6.0, 1.0, 2.0)
 	)
 	assertions.near(opposite_actor_anchor.x, 3.88, 0.001, "axe contact remains left even when the actor approaches from the right")
+	assertions.truthy(feedback.has_method("ore_pickaxe_anchor"), "feedback exposes a stable ore contact anchor")
+	if feedback.has_method("ore_pickaxe_anchor"):
+		var ore_anchor: Vector3 = feedback.call(
+			"ore_pickaxe_anchor", Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0)
+		)
+		assertions.near(ore_anchor.x, 3.88, 0.001, "pickaxe contact sits on the ore's left shoulder")
+		assertions.near(ore_anchor.y, 1.38, 0.001, "pickaxe contact sits above the ore base")
+		assertions.near(ore_anchor.z, 2.06, 0.001, "pickaxe contact follows the locked camera's screen-right axis")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
 	)
@@ -284,6 +390,27 @@ static func _painted_ground_anchor(texture: Texture2D, frame: int = -1) -> Vecto
 	var region := image.get_region(Rect2i(source_x, 0, cell_width, image.get_height()))
 	var used_rect := region.get_used_rect()
 	var band_start := maxi(used_rect.position.y, floori(float(region.get_height()) * 0.90))
+	var weighted_x := 0.0
+	var total_alpha := 0.0
+	for y in range(band_start, used_rect.end.y):
+		for x in range(used_rect.position.x, used_rect.end.x):
+			var alpha := region.get_pixel(x, y).a
+			if alpha <= 0.10:
+				continue
+			weighted_x += float(x) * alpha
+			total_alpha += alpha
+	return Vector2(
+		weighted_x / total_alpha if total_alpha > 0.0 else float(used_rect.get_center().x),
+		float(used_rect.end.y)
+	)
+
+
+static func _painted_mining_ground_anchor(texture: Texture2D, frame: int) -> Vector2:
+	var image := texture.get_image()
+	var cell_width := image.get_width() / 4
+	var region := image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height()))
+	var used_rect := region.get_used_rect()
+	var band_start := used_rect.position.y + floori(float(used_rect.size.y) * 0.90)
 	var weighted_x := 0.0
 	var total_alpha := 0.0
 	for y in range(band_start, used_rect.end.y):

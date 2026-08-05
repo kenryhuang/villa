@@ -1,5 +1,8 @@
 extends RefCounted
 
+const ResourceNodeScript = preload("res://scripts/world/resource_node.gd")
+const ORE_MINING_ATLAS_PATH := "res://assets/resources/mining/ore-mining-sheet.png"
+
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var packed := load("res://scenes/main.tscn") as PackedScene
@@ -113,10 +116,53 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"ACTING",
 			"arrival begins the timed gathering animation"
 		)
+		assertions.equal(target.get_mining_frame(), 0, "real ore begins on the intact mining frame")
+		assertions.equal(main.tool_swing_visual.get_tool_id(), "pickaxe", "real ore action shows the pickaxe")
+		var expected_pickaxe_anchor: Vector3 = main.gathering_feedback.ore_pickaxe_anchor(
+			target.global_position, main.player.global_position
+		)
+		assertions.near(
+			main.tool_swing_visual.global_position.x,
+			expected_pickaxe_anchor.x,
+			0.002,
+			"real pickaxe is anchored to the ore shoulder horizontally"
+		)
+		assertions.near(
+			main.tool_swing_visual.global_position.y,
+			expected_pickaxe_anchor.y,
+			0.002,
+			"real pickaxe is anchored above the ore base"
+		)
+		main.tool_swing_visual.set_action_progress(0.46)
+		var camera := main.get_viewport().get_camera_3d() as Camera3D
+		var ore_visual := target.get_node("Visual") as Sprite3D
+		var ore_atlas := load(ORE_MINING_ATLAS_PATH) as Texture2D
+		var used_rect := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 0)
+		var visual_center := camera.unproject_position(ore_visual.global_position)
+		var pixels_per_world := float(main.get_viewport().get_visible_rect().size.y) / camera.size
+		var cell_width := float(ore_atlas.get_width()) / 4.0
+		var painted_left := visual_center.x + (
+			float(used_rect.position.x) - cell_width * 0.5
+		) * ore_visual.pixel_size * ore_visual.scale.x * pixels_per_world
+		var painted_right := visual_center.x + (
+			float(used_rect.end.x) - cell_width * 0.5
+		) * ore_visual.pixel_size * ore_visual.scale.x * pixels_per_world
+		var pickaxe_contact_screen := camera.unproject_position(main.tool_swing_visual.global_position)
+		assertions.truthy(
+			pickaxe_contact_screen.x >= lerpf(painted_left, painted_right, 0.40)
+			and pickaxe_contact_screen.x <= lerpf(painted_left, painted_right, 0.58),
+			"projected pickaxe head lands inside the painted ore's left shoulder (%0.2f in %0.2f..%0.2f)" % [
+				pickaxe_contact_screen.x,
+				lerpf(painted_left, painted_right, 0.40),
+				lerpf(painted_left, painted_right, 0.58),
+			]
+		)
 		main.season_system.hour = 8
 		main.season_system.minute = 0
 		main.season_system._accumulator = 0.0
-		main.gathering_controller._process(1.2)
+		main.gathering_controller._process(0.6)
+		assertions.equal(target.get_mining_frame(), 1, "halfway mining progress shows the cracked frame")
+		main.gathering_controller._process(0.6)
 		assertions.equal(
 			main.inventory_system.get_item_count("stone"),
 			stone_before + 1,
