@@ -147,6 +147,28 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	var ore_authored_scale := ore_visual.scale
 	var ore_atlas := load(ORE_MINING_ATLAS_PATH) as Texture2D
 	assertions.truthy(ore_atlas != null and ore_atlas.get_width() % 4 == 0, "mining atlas has four equal-width cells")
+	if ore_atlas != null:
+		var intact_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 0)
+		var damaged_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 1)
+		var broken_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 2)
+		var depleted_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 3)
+		assertions.truthy(
+			float(damaged_bounds.size.y) <= float(intact_bounds.size.y) * 0.80,
+			"second mining frame loses a visibly large part of the intact silhouette"
+		)
+		assertions.truthy(
+			float(broken_bounds.size.y) <= float(intact_bounds.size.y) * 0.60,
+			"third mining frame collapses to nearly half the intact height"
+		)
+		assertions.truthy(
+			float(depleted_bounds.size.y) <= float(intact_bounds.size.y) * 0.45,
+			"depleted mining frame stays low enough to read as abandoned ground"
+		)
+		assertions.truthy(
+			_mining_frame_alpha_coverage(ore_atlas, 3)
+				<= _mining_frame_alpha_coverage(ore_atlas, 0) * 0.50,
+			"depleted mining frame retains less than half the painted mass"
+		)
 	var ore_cell_size := Vector2.ZERO
 	var ore_registered_anchor := Vector2.ZERO
 	if ore_visual is Sprite3D and ore_atlas != null:
@@ -389,7 +411,7 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 			"ore_pickaxe_anchor", Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0)
 		)
 		assertions.near(ore_anchor.x, 3.85, 0.001, "pickaxe contact shifts slightly left on the ore shoulder")
-		assertions.near(ore_anchor.y, 1.38, 0.001, "pickaxe contact sits above the ore base")
+		assertions.near(ore_anchor.y, 1.33, 0.001, "pickaxe contact is lowered slightly toward the ore base")
 		assertions.near(ore_anchor.z, 2.03, 0.001, "pickaxe contact shifts left along the locked camera plane")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
@@ -453,6 +475,17 @@ static func _painted_mining_ground_anchor(texture: Texture2D, frame: int) -> Vec
 		weighted_x / total_alpha if total_alpha > 0.0 else float(used_rect.get_center().x),
 		float(used_rect.end.y)
 	)
+
+
+static func _mining_frame_alpha_coverage(texture: Texture2D, frame: int) -> float:
+	var image := texture.get_image()
+	var cell_width := image.get_width() / 4
+	var region := image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height()))
+	var coverage := 0.0
+	for y in range(region.get_height()):
+		for x in range(region.get_width()):
+			coverage += region.get_pixel(x, y).a
+	return coverage
 
 
 static func _rendered_ground_anchor(
