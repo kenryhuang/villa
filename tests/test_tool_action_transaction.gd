@@ -112,11 +112,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(preview.get("reason"), "", "valid gather preview has no error")
 	assertions.equal(preview.get("tool_id"), "pickaxe", "preview automatically selects the required tool")
 	assertions.equal(preview.get("item_id"), "copper_ore", "preview reports visible ore item")
-	assertions.equal(preview.get("quantity"), 1, "preview reports exactly one unit")
+	assertions.equal(preview.get("quantity"), 3, "preview reports the whole copper vein")
 	assertions.equal(preview.get("stamina_cost"), 8, "pickaxe preview reports stamina cost")
 	assertions.equal(preview.get("durability_cost"), 1, "preview reports one durability")
 	assertions.equal(preview.get("remaining_before"), 3, "preview reports capacity before action")
-	assertions.equal(preview.get("remaining_after"), 2, "preview reports capacity after action")
+	assertions.equal(preview.get("remaining_after"), 0, "preview reports full depletion after action")
 	assertions.equal(tool.current_tool, ToolSystem.ToolType.HOE, "preview does not switch the active tool")
 	assertions.equal(game_state.player_state.stamina, 100, "preview does not spend stamina")
 	assertions.equal(tool.get_durability("pickaxe").current, 100, "preview does not spend durability")
@@ -125,8 +125,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var committed: Dictionary = tool.commit_gather_unit(copper)
 	assertions.equal(committed.get("allowed"), true, "valid gather transaction commits")
 	assertions.equal(tool.current_tool, ToolSystem.ToolType.PICKAXE, "commit automatically equips pickaxe")
-	assertions.equal(inventory.get_item_count("copper_ore"), 1, "commit adds exactly one ore")
-	assertions.equal(copper.remaining_units, 2, "commit removes exactly one target unit")
+	assertions.equal(inventory.get_item_count("copper_ore"), 3, "commit adds the full copper vein")
+	assertions.equal(copper.remaining_units, 0, "commit depletes the full copper vein")
 	assertions.equal(game_state.player_state.stamina, 92, "commit spends stamina exactly once")
 	assertions.equal(tool.get_durability("pickaxe").current, 99, "commit spends one durability")
 
@@ -201,12 +201,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(int(tool.get_durability("pickaxe").current), durability_before_fault, "rollback restores durability")
 
 	inventory.clear()
+	copper.remaining_units = 2
+	copper.call("_update_visual_stage")
+	copper.call("_set_gather_active", true)
 	for slot_index in range(inventory.slots.size()):
 		inventory.slots[slot_index] = {"item_id": "grain_seed", "quantity": 99}
 	var full_preview: Dictionary = tool.preview_gather_unit(copper)
-	assertions.equal(full_preview.get("allowed"), false, "full inventory rejects gather preview")
-	assertions.equal(full_preview.get("reason"), "inventory_full", "full inventory reports a stable reason")
-	assertions.equal(copper.remaining_units, 2, "rejected preview leaves target unchanged")
+	assertions.equal(full_preview.get("allowed"), false, "full inventory rejects the whole remaining ore batch")
+	assertions.equal(full_preview.get("reason"), "inventory_full", "whole-batch capacity failure reports a stable reason")
+	assertions.equal(copper.remaining_units, 2, "rejected whole-batch preview leaves target unchanged")
 	assertions.equal(game_state.player_state.stamina, 76, "rejected preview leaves stamina unchanged")
 	inventory.clear()
 

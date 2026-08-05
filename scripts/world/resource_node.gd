@@ -8,7 +8,7 @@ const INTERACTION_LAYER := 64
 const OBSTACLE_LAYER := 16
 const STATE_VERSION := 2
 const MINING_ATLAS_PATH := "res://assets/resources/mining/ore-mining-sheet.png"
-const MINING_ACTION_DURATION := 1.2
+const MINING_ACTION_DURATION := 3.0
 const MINING_FRAME_FADE_DURATION := 0.16
 const FIRST_MINING_FRAME_CENTER := 1.0 / 3.0
 const SECOND_MINING_FRAME_CENTER := 2.0 / 3.0
@@ -26,7 +26,8 @@ const ORE_PAINTED_HEIGHT := 0.82
 @export var gathering_enabled := true
 @export var interaction_radius := 0.52
 
-# Compatibility surfaces for old scenes and callers. Runtime rewards are always one unit.
+# Compatibility surfaces for old scenes and callers. Runtime rewards use the
+# target-owned batch returned by preview_reward().
 var hits_remaining: int:
 	get:
 		return remaining_units
@@ -134,7 +135,7 @@ func can_gather(tool_id: String) -> bool:
 
 
 func preview_reward(tool_id: String) -> Dictionary:
-	return {item_id: 1} if can_gather(tool_id) else {}
+	return {item_id: remaining_units} if can_gather(tool_id) else {}
 
 
 func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
@@ -143,12 +144,16 @@ func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:
 	var reward := preview_reward(tool_id)
 	if reward.is_empty():
 		return {}
-	remaining_units -= 1
+	remaining_units -= int(reward.get(item_id, 0))
 	if remaining_units == 0:
 		_respawn_day = total_day + respawn_days
 	_update_visual_stage()
 	_set_gather_active(gathering_enabled and remaining_units > 0)
 	return reward
+
+
+func get_gather_duration() -> float:
+	return MINING_ACTION_DURATION
 
 
 func advance_day(total_day: int) -> bool:

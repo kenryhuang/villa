@@ -230,7 +230,10 @@ func _test_resource_catalog_and_v2_contract(assertions: TestAssert) -> void:
 		"resource_type": "copper_ore",
 		"position": Vector3.ZERO,
 	}), "resource node configures from catalog type")
-	assertions.equal(node.preview_reward("pickaxe"), {"copper_ore": 1}, "visible ore yields one unit")
+	assertions.equal(node.preview_reward("pickaxe"), {"copper_ore": 3}, "visible ore previews its full remaining yield")
+	assertions.truthy(node.has_method("get_gather_duration"), "ore exposes a target-owned gather duration")
+	if node.has_method("get_gather_duration"):
+		assertions.near(float(node.get_gather_duration()), 3.0, 0.001, "ore action lasts three seconds")
 	var state: Dictionary = node.to_dict()
 	assertions.equal(state.get("state_version"), 2, "resource state uses schema v2")
 	assertions.equal(state.get("remaining_units"), 3, "resource state stores remaining units")
@@ -239,10 +242,19 @@ func _test_resource_catalog_and_v2_contract(assertions: TestAssert) -> void:
 	assertions.truthy(node.has_method("get_interaction_radius"), "resource exposes its interaction radius")
 	if node.has_method("get_interaction_radius"):
 		assertions.near(float(node.get_interaction_radius()), 0.52, 0.001, "resource interaction radius matches its fallback body")
-	node.commit_gather("pickaxe", 4)
+	var full_reward: Dictionary = node.commit_gather("pickaxe", 4)
+	assertions.equal(full_reward, {"copper_ore": 3}, "one mining commit returns the whole vein")
 	state = node.to_dict()
-	assertions.equal(state.get("remaining_units"), 2, "one action removes one resource unit")
-	assertions.equal(state.get("visual_stage"), 1, "partial resource advances its visual stage")
+	assertions.equal(state.get("remaining_units"), 0, "one mining commit depletes the whole vein")
+	assertions.equal(state.get("visual_stage"), 3, "one mining commit advances to rubble")
+	var partial_state := state.duplicate(true)
+	partial_state["remaining_units"] = 2
+	partial_state["respawn_day"] = 0
+	partial_state["visual_stage"] = 1
+	assertions.truthy(node.from_dict(partial_state), "legacy partial ore state restores")
+	assertions.equal(node.preview_reward("pickaxe"), {"copper_ore": 2}, "partial ore previews only its remaining yield")
+	assertions.equal(node.commit_gather("pickaxe", 4), {"copper_ore": 2}, "partial ore is mined in one action")
+	assertions.equal(node.remaining_units, 0, "partial ore is fully depleted by one action")
 	node.free()
 
 
@@ -288,7 +300,7 @@ func _test_tool_target_matrix(
 
 	tools.switch_tool(ToolSystem.ToolType.PICKAXE)
 	assertions.truthy(tools.use_tool_on(rock), "pickaxe gathers rock")
-	assertions.equal(inventory.get_item_count("stone"), 1, "rock action grants one stone")
+	assertions.equal(inventory.get_item_count("stone"), 3, "rock action grants the whole three-unit node")
 
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
 	var texture := ImageTexture.create_from_image(image)
@@ -321,10 +333,9 @@ func _test_tool_target_matrix(
 
 func _test_depletion_and_exact_respawn(assertions: TestAssert, resource_script: Script) -> void:
 	var node = _resource(resource_script, "respawn-rock", "pickaxe", {"stone": 2}, [], 3)
-	for hit_index in range(3):
-		var reward: Dictionary = node.commit_gather("pickaxe", 7)
-		assertions.equal(reward, {"stone": 1}, "successful action %d returns one unit" % (hit_index + 1))
-	assertions.equal(node.hits_remaining, 0, "exactly three successful hits deplete")
+	var reward: Dictionary = node.commit_gather("pickaxe", 7)
+	assertions.equal(reward, {"stone": 3}, "one successful action returns the whole node")
+	assertions.equal(node.hits_remaining, 0, "one successful action depletes all three units")
 	assertions.truthy(not node.can_gather("pickaxe"), "depleted node is non-gatherable")
 	assertions.equal(node.get_respawn_day(), 10, "depletion records exact respawn boundary")
 	assertions.truthy(not node.advance_day(9), "node does not respawn one day early")
@@ -359,13 +370,13 @@ func _test_atomic_capacity_and_bonus(
 	)
 	_fill_inventory(inventory, 20)
 	var hits_before: int = int(node.hits_remaining)
-	assertions.truthy(not tools.use_tool_on(node), "single-unit reward rejects a full inventory")
+	assertions.truthy(not tools.use_tool_on(node), "whole-node reward rejects a full inventory")
 	assertions.equal(node.hits_remaining, hits_before, "failed reward preflight causes no damage")
 	assertions.equal(inventory.get_item_count("stone"), 0, "failed reward commits no item")
 
 	inventory.clear()
-	assertions.truthy(tools.use_tool_on(node), "single-unit reward succeeds with capacity")
-	assertions.equal(inventory.get_item_count("stone"), 1, "successful action adds one stone")
+	assertions.truthy(tools.use_tool_on(node), "whole-node reward succeeds with capacity")
+	assertions.equal(inventory.get_item_count("stone"), 3, "successful action adds all three stone")
 	assertions.equal(inventory.get_item_count("coal"), 0, "legacy probability bonus is ignored")
 
 	var tree_node = _resource(resource_script, "full-tree", "axe", {"wood": 2})
@@ -454,8 +465,7 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 	assertions.equal(world.call("to_resource_dicts"), state, "stable-ID restore preserves generated order")
 	var rewind_target: Variant = container.get_child(0)
 	var rewind_capacity := int(rewind_target.get("max_units"))
-	for _hit in range(rewind_capacity):
-		rewind_target.call("commit_gather", "pickaxe", 5)
+	rewind_target.call("commit_gather", "pickaxe", 5)
 	var rewind_state: Array[Dictionary] = world.call("to_resource_dicts")
 	world.call("advance_resource_day", 20)
 	assertions.truthy(
