@@ -224,6 +224,16 @@ class GatherTargetDouble:
 		return eligible
 
 
+class OreTargetDouble:
+	extends Node3D
+
+	var required_tool := "pickaxe"
+	var allowed := true
+
+	func can_gather(tool_id: String) -> bool:
+		return allowed and tool_id == required_tool
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var controller_path := "res://scripts/actors/player_action_controller.gd"
 	assertions.truthy(
@@ -646,4 +656,46 @@ func _test_pointer_contract(
 		controller.call("_clear_tree_hover")
 		assertions.equal(hover_events[-1][0], null, "tool or pointer exit clears tree hover")
 		tree_target.free()
+		var clears_before_pickaxe := grid.clear_highlights_calls
+		controller.call("select_slot", 3)
+		assertions.equal(
+			grid.clear_highlights_calls,
+			clears_before_pickaxe + 1,
+			"selecting the pickaxe immediately clears the farming cell shadow"
+		)
+		assertions.truthy(
+			not bool(controller.call("should_show_cell_highlight")),
+			"pickaxe selection keeps the farming cell shadow hidden"
+		)
+		assertions.truthy(
+			controller.has_signal("gather_hover_changed"),
+			"controller exposes a generalized gather hover signal"
+		)
+		assertions.truthy(
+			controller.has_method("_update_gather_hover"),
+			"controller exposes tool-aware gather hover qualification"
+		)
+		if (
+			controller.has_signal("gather_hover_changed")
+			and controller.has_method("_update_gather_hover")
+		):
+			var ore_target := OreTargetDouble.new()
+			tree.root.add_child(ore_target)
+			var ore_hover_events: Array = []
+			controller.connect(
+				"gather_hover_changed",
+				func(hover_target: Node, allowed: bool) -> void:
+					ore_hover_events.append([hover_target, allowed])
+			)
+			controller.call("_update_gather_hover", ore_target)
+			assertions.equal(ore_hover_events[-1], [ore_target, true], "mineable ore hover reports green")
+			ore_target.allowed = false
+			controller.call("_update_gather_hover", ore_target)
+			assertions.equal(ore_hover_events[-1], [ore_target, false], "unavailable ore hover reports red")
+			var non_mineral := GatherTargetDouble.new()
+			tree.root.add_child(non_mineral)
+			controller.call("_update_gather_hover", non_mineral)
+			assertions.equal(ore_hover_events[-1][0], null, "pickaxe hover ignores non-mineral targets")
+			non_mineral.free()
+			ore_target.free()
 	controller.free()

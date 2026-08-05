@@ -44,7 +44,9 @@ func bind(controller, tool_visual: ToolSwingVisual, action_controller = null) ->
 	if controller.has_signal("path_ready"):
 		controller.path_ready.connect(show_path)
 	if action_controller != null:
-		if action_controller.has_signal("tree_hover_changed"):
+		if action_controller.has_signal("gather_hover_changed"):
+			action_controller.gather_hover_changed.connect(show_tree_hover)
+		elif action_controller.has_signal("tree_hover_changed"):
 			action_controller.tree_hover_changed.connect(show_tree_hover)
 		if action_controller.has_signal("gather_rejected"):
 			action_controller.gather_rejected.connect(_on_gather_failed)

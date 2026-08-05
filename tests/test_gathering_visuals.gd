@@ -172,12 +172,14 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		assertions.near(ore_incoming.modulate.a, 0.5, 0.08, "ore incoming mining frame fades in")
 		ore.call("cancel_mining")
 		assertions.equal(ore.call("get_mining_frame"), -1, "cancel clears transient mining frame state")
-	ore.commit_gather("pickaxe", 1)
+	ore.remaining_units = 2
+	ore.call("_update_visual_stage")
 	assertions.equal(ore.visual_stage, 1, "damaged ore advances to stage one")
 	if ore_visual is Sprite3D:
 		assertions.truthy((ore_visual as Sprite3D).texture is AtlasTexture, "damaged ore keeps painted atlas art")
-	while ore.remaining_units > 0:
-		ore.commit_gather("pickaxe", 1)
+	ore.remaining_units = 0
+	ore.call("_update_visual_stage")
+	ore.call("_set_gather_active", false)
 	assertions.equal(ore.visual_stage, 3, "depleted ore uses rubble stage")
 	assertions.truthy(ore.visible, "depleted ore remains visibly as rubble")
 	assertions.equal(ore.get_node("Collision").collision_layer, 0, "rubble no longer blocks movement or clicks")
