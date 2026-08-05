@@ -83,6 +83,11 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		tool_visual.has_method("get_pickaxe_head_screen_offset"),
 		"pickaxe exposes its painted head arc for contact verification"
 	)
+	assertions.equal(
+		tool_visual.get_phase_at(1.25),
+		"prepare",
+		"pickaxe phase reporting wraps with its repeated 1.2-second swing"
+	)
 	tool_visual.set_action_progress(0.0)
 	var raised_pickaxe_head := Vector2.ZERO
 	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
@@ -188,7 +193,13 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	ore.call("_set_gather_active", false)
 	assertions.equal(ore.visual_stage, 3, "depleted ore uses rubble stage")
 	assertions.truthy(ore.visible, "depleted ore remains visibly as rubble")
-	assertions.equal(ore.get_node("Collision").collision_layer, 0, "rubble no longer blocks movement or clicks")
+	var rubble_collision_layer: int = int(ore.get_node("Collision").collision_layer)
+	assertions.equal(
+		rubble_collision_layer,
+		64,
+		"rubble keeps only its pointer interaction layer for red eligibility hover"
+	)
+	assertions.equal(rubble_collision_layer & 16, 0, "rubble releases the navigation obstacle layer")
 	assertions.equal(ore.get_node("Visual").scale, ore_authored_scale, "painted rubble keeps authored proportions instead of mesh flattening")
 	if ore_visual is Sprite3D and ore_atlas != null:
 		var rubble_anchor := _rendered_ground_anchor(

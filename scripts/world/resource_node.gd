@@ -292,7 +292,12 @@ func _set_gather_active(active: bool) -> void:
 	visible = true
 	var body := get_node_or_null("Collision") as CollisionObject3D
 	if body != null:
-		body.collision_layer = (OBSTACLE_LAYER | INTERACTION_LAYER) if active else 0
+		# Inactive ore must stop blocking navigation, but its visible rubble/full
+		# model remains pointer-addressable so the pickaxe hover can explain the
+		# unavailable state with a red eligibility ring.
+		body.collision_layer = (
+			(OBSTACLE_LAYER | INTERACTION_LAYER) if active else INTERACTION_LAYER
+		)
 	if active != _gather_active:
 		_gather_active = active
 		if _gather_transaction_depth == 0:

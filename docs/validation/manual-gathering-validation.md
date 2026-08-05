@@ -14,7 +14,7 @@
 - 仅 `pine-small`、`pine-tall`、`canopy-small`、`canopy-medium`、`round-small` 可砍；其他树显示红环并在点击时提示“此树不可砍伐”。
 - 五套透明图集各包含三张砍倒帧和一张同树种手绘树桩；固定向右倒向、根部基线、帧间交叉淡入淡出和取消恢复均通过视觉检查。
 - 矿石图集包含完整、裂开、破碎三张动作帧和一张手绘碎石帧；各帧独立地面注册，铁镐以柄末为圆心落在矿体左侧偏上的真实接触点。
-- 镐子槽不显示种地方格阴影；可挖矿石显示绿色透明圆环，不可挖矿石显示红色透明圆环，开始动作后切换为黄色目标环与进度扇形。
+- 镐子槽不显示种地方格阴影；可挖矿石显示绿色透明圆环，不可挖矿石显示红色透明圆环，开始动作后切换为黄色目标环与进度扇形。不可挖矿石只保留鼠标交互层，不阻挡玩家寻路；绿/红状态均通过真实相机射线验收。
 - 采集动作期间游戏时钟暂停；成功后精确推进 10 游戏分钟，23:55 开始的动作会在次日 06:05 完成。
 - 背包满、体力不足、工具损坏、不可达、目标失效以及任何主动取消均不会产生部分结算。
 - 采集所得立即进入玩家背包并减少建筑材料缺口；采集本身不改变市场，只有主动出售才改变金币与市场库存。
@@ -34,10 +34,10 @@
 | `tests/run_building_system_tests.gd` | PASS：921 |
 | `tests/run_economy_system_tests.gd` | PASS：64137 |
 | `tests/run_economy_ui_tests.gd` | PASS：126 |
-| `tests/run_main_gameplay_integration_tests.gd` | PASS：1076 |
+| `tests/run_main_gameplay_integration_tests.gd` | PASS：1079 |
 | `tests/run_resource_gathering_tests.gd` | PASS：175 |
-| `tests/run_gathering_visual_tests.gd` | PASS：131 |
-| `tests/run_main_gathering_integration_tests.gd` | PASS：116 |
+| `tests/run_gathering_visual_tests.gd` | PASS：133 |
+| `tests/run_main_gathering_integration_tests.gd` | PASS：117 |
 
 经济测试保留两项既有非阻塞警告：恶意 JSON 指数过高的防御性解析警告，以及水车施工阶段图缺失时启用程序化回退；本功能未新增解析错误、无效节点、孤立信号或时间锁警告。
 

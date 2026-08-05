@@ -58,14 +58,28 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		target.remaining_units = target.max_units
 		target.call("_update_visual_stage")
 		target.call("_set_gather_active", true)
+		var hover_focus := Marker3D.new()
+		main.add_child(hover_focus)
+		hover_focus.global_position = target.global_position
+		main.camera_rig.orthographic_size = 5.0
+		main.camera_rig.set_target(hover_focus)
+		main.camera_rig.call("_process", 0.0)
 		main.action_controller.select_slot(3)
-		main.action_controller.call("_update_gather_hover", target)
+		await tree.physics_frame
+		var hover_camera := main.get_viewport().get_camera_3d() as Camera3D
+		main.action_controller._pointer_position = hover_camera.unproject_position(
+			target.global_position + Vector3(0.0, 0.2, 0.0)
+		)
+		main.action_controller.call("_update_gather_hover_from_pointer")
 		var hover_ring := main.gathering_feedback.get_node("TreeHoverRing") as Node3D
 		var hover_material := (hover_ring.get_child(0) as MeshInstance3D).material_override as StandardMaterial3D
 		assertions.truthy(hover_ring.visible, "mineable ore shows its hover ring")
 		assertions.near(hover_material.albedo_color.g, 0.9, 0.01, "mineable ore hover ring is green")
 		target.gathering_enabled = false
-		main.action_controller.call("_update_gather_hover", target)
+		target.call("_set_gather_active", false)
+		await tree.physics_frame
+		main.action_controller.call("_update_gather_hover_from_pointer")
+		assertions.truthy(hover_ring.visible, "unavailable ore remains pointer-interactive for red hover")
 		assertions.near(hover_material.albedo_color.r, 0.95, 0.01, "unavailable ore hover ring is red")
 		target.gathering_enabled = true
 		target.call("_set_gather_active", true)

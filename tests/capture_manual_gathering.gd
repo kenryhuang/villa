@@ -172,19 +172,12 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			var ore := _find_resource(main, "copper_ore")
 			if ore == null:
 				return false
-			main.action_controller.select_slot(3)
-			main.gathering_feedback.show_tree_hover(ore, true)
-			_focus(main, [ore.global_position], 5.0)
-			return (main.gathering_feedback.get_node("TreeHoverRing") as Node3D).visible
+			return await _prepare_ore_pointer_hover(main, ore, true)
 		"ore_hover_red":
 			var ore := _find_resource(main, "copper_ore")
 			if ore == null:
 				return false
-			ore.gathering_enabled = false
-			main.action_controller.select_slot(3)
-			main.gathering_feedback.show_tree_hover(ore, false)
-			_focus(main, [ore.global_position], 5.0)
-			return (main.gathering_feedback.get_node("TreeHoverRing") as Node3D).visible
+			return await _prepare_ore_pointer_hover(main, ore, false)
 		"ore_action":
 			var ore := _requestable_resource(main, "copper_ore")
 			if ore == null or not _arrive(main):
@@ -303,6 +296,33 @@ func _prepare_ore_gallery(main: Node) -> bool:
 		ore.add_child(label)
 	_focus(main, [anchor], 7.5)
 	return true
+
+
+func _prepare_ore_pointer_hover(main: Node, ore: Node3D, allowed: bool) -> bool:
+	main.action_controller.select_slot(3)
+	if not allowed:
+		ore.gathering_enabled = false
+		ore.call("_set_gather_active", false)
+	_focus(main, [ore.global_position], 5.0)
+	for _frame in range(3):
+		await process_frame
+		await physics_frame
+	var camera := main.get_viewport().get_camera_3d() as Camera3D
+	if camera == null:
+		return false
+	main.action_controller._pointer_position = camera.unproject_position(
+		ore.global_position + Vector3(0.0, 0.2, 0.0)
+	)
+	main.action_controller.call("_update_gather_hover_from_pointer")
+	var ring := main.gathering_feedback.get_node("TreeHoverRing") as Node3D
+	if not ring.visible:
+		return false
+	var material := (ring.get_child(0) as MeshInstance3D).material_override as StandardMaterial3D
+	return (
+		is_equal_approx(material.albedo_color.g, 0.9)
+		if allowed
+		else is_equal_approx(material.albedo_color.r, 0.95)
+	)
 
 
 func _focus(main: Node, points: Array, orthographic_size: float) -> void:

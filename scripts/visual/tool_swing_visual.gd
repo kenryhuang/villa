@@ -123,6 +123,8 @@ func get_phase_at(elapsed: float) -> String:
 		prepare_end = AXE_PREPARE_END
 		strike_end = AXE_STRIKE_END
 		impact_end = AXE_IMPACT_END
+	elif _tool_id == "pickaxe":
+		phase_elapsed = fmod(phase_elapsed, PICKAXE_SWING_CYCLE)
 	if phase_elapsed < prepare_end:
 		return "prepare"
 	if phase_elapsed < strike_end:
