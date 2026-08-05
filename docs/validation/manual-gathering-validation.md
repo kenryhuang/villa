@@ -34,9 +34,9 @@
 | `tests/run_building_system_tests.gd` | PASS：921 |
 | `tests/run_economy_system_tests.gd` | PASS：64137 |
 | `tests/run_economy_ui_tests.gd` | PASS：126 |
-| `tests/run_main_gameplay_integration_tests.gd` | PASS：1085 |
+| `tests/run_main_gameplay_integration_tests.gd` | PASS：1089 |
 | `tests/run_resource_gathering_tests.gd` | PASS：175 |
-| `tests/run_gathering_visual_tests.gd` | PASS：139 |
+| `tests/run_gathering_visual_tests.gd` | PASS：143 |
 | `tests/run_main_gathering_integration_tests.gd` | PASS：117 |
 
 经济测试保留两项既有非阻塞警告：恶意 JSON 指数过高的防御性解析警告，以及水车施工阶段图缺失时启用程序化回退；本功能未新增解析错误、无效节点、孤立信号或时间锁警告。
@@ -62,7 +62,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility `
 | `+5 木材` 与手绘树桩 | 通过 | 通过 | 通过 | 本地化飘字可读，HUD 增加 5，灰色几何树桩已移除 |
 | 绿/红矿石资格 | 通过 | 通过 | 通过 | 镐子槽下透明绿/红圆环清晰，种地方格阴影不出现；动作开始后资格环正确让位于黄色目标环 |
 | 镐子动作与矿石三帧 | 通过 | 通过 | 通过 | 3 秒内以 0.8 秒周期重复挥镐，频率提高 50%；镐子缩小 50%，接触锚点略向左并下移 0.05 米，镐柄末端固定，镐头扇形下落并接触矿体；三帧交叉淡入，无硬切或地面位移 |
-| 矿脉完整/受损/废弃 | 通过 | 通过 | 通过 | 第二帧高度不超过完整矿的 80%，第三帧不超过 60%；最终帧不超过 45%，绘制量少于完整矿的一半，只保留褪色地面、尘土和细碎石，不再呈现可采矿体 |
+| 矿脉完整/受损/废弃 | 通过 | 通过 | 通过 | 第二帧高度不超过完整矿的 80%，第三帧不超过 60%；最终帧不超过 45%，绘制量少于完整矿的一半，只保留褪色地面、尘土和细碎石；每格两侧保留至少 5px 透明边距，避免相邻帧采样串色 |
 | 背包已满 | 通过 | 通过 | 通过 | 失败文字居中，无裁切，不启动移动 |
 | 无法到达 | 通过 | 通过 | 通过 | 失败文字居中，无裁切，不产生结算 |
 

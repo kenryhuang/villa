@@ -73,7 +73,7 @@ static func tree_axe_anchor(tree_position: Vector3, _actor_position: Vector3) ->
 static func ore_pickaxe_anchor(ore_position: Vector3, _actor_position: Vector3) -> Vector3:
 	# Camera yaw is locked at -45 degrees; this X/Z pair moves the impact point
 	# horizontally on screen so the painted head overlaps the ore's left shoulder.
-	return ore_position + Vector3(-0.15, 0.33, 0.03)
+	return ore_position + Vector3(-0.145, 0.33, 0.035)
 
 
 func _process(delta: float) -> void:

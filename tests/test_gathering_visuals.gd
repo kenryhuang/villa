@@ -148,6 +148,11 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	var ore_atlas := load(ORE_MINING_ATLAS_PATH) as Texture2D
 	assertions.truthy(ore_atlas != null and ore_atlas.get_width() % 4 == 0, "mining atlas has four equal-width cells")
 	if ore_atlas != null:
+		for frame in range(4):
+			assertions.truthy(
+				_mining_frame_has_clear_gutter(ore_atlas, frame, 5),
+				"mining frame %d keeps a five-pixel transparent gutter on both cell edges" % frame
+			)
 		var intact_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 0)
 		var damaged_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 1)
 		var broken_bounds := ResourceNodeScript.mining_frame_used_rect(ore_atlas, 2)
@@ -410,9 +415,9 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		var ore_anchor: Vector3 = feedback.call(
 			"ore_pickaxe_anchor", Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0)
 		)
-		assertions.near(ore_anchor.x, 3.85, 0.001, "pickaxe contact shifts slightly left on the ore shoulder")
+		assertions.near(ore_anchor.x, 3.855, 0.001, "pickaxe contact shifts slightly left on the ore shoulder")
 		assertions.near(ore_anchor.y, 1.33, 0.001, "pickaxe contact is lowered slightly toward the ore base")
-		assertions.near(ore_anchor.z, 2.03, 0.001, "pickaxe contact shifts left along the locked camera plane")
+		assertions.near(ore_anchor.z, 2.035, 0.001, "pickaxe contact shifts left along the locked camera plane")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
 	)
@@ -486,6 +491,23 @@ static func _mining_frame_alpha_coverage(texture: Texture2D, frame: int) -> floa
 		for x in range(region.get_width()):
 			coverage += region.get_pixel(x, y).a
 	return coverage
+
+
+static func _mining_frame_has_clear_gutter(
+	texture: Texture2D,
+	frame: int,
+	gutter_width: int
+) -> bool:
+	var image := texture.get_image()
+	var cell_width := image.get_width() / 4
+	var region := image.get_region(Rect2i(cell_width * frame, 0, cell_width, image.get_height()))
+	for y in range(region.get_height()):
+		for x in range(gutter_width):
+			if region.get_pixel(x, y).a > 0.01:
+				return false
+			if region.get_pixel(region.get_width() - 1 - x, y).a > 0.01:
+				return false
+	return true
 
 
 static func _rendered_ground_anchor(
