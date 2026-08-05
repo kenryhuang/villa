@@ -182,7 +182,7 @@ func _prepare_state(main: Node, state_id: String) -> bool:
 			var ore := _requestable_resource(main, "copper_ore")
 			if ore == null or not _arrive(main):
 				return false
-			main.gathering_controller._process(0.55)
+			main.gathering_controller._process(0.40)
 			_focus(main, [ore.global_position], 5.0)
 			return main.gathering_controller.get_state_name() == "ACTING"
 		"ore_frame_1", "ore_frame_2", "ore_frame_3":

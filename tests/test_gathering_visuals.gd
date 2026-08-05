@@ -84,25 +84,35 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		"pickaxe exposes its painted head arc for contact verification"
 	)
 	assertions.equal(
-		tool_visual.get_phase_at(1.25),
+		tool_visual.get_phase_at(0.20),
+		"strike",
+		"50-percent faster pickaxe compresses preparation into one sixth of a second"
+	)
+	assertions.equal(
+		tool_visual.get_phase_at(0.40),
+		"impact",
+		"50-percent faster pickaxe reaches impact within its shortened cycle"
+	)
+	assertions.equal(
+		tool_visual.get_phase_at(0.85),
 		"prepare",
-		"pickaxe phase reporting wraps with its repeated 1.2-second swing"
+		"pickaxe phase reporting wraps with its repeated 0.8-second swing"
 	)
 	tool_visual.set_action_progress(0.0)
 	var raised_pickaxe_head := Vector2.ZERO
 	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
 		raised_pickaxe_head = tool_visual.call("get_pickaxe_head_screen_offset")
-	tool_visual.set_action_progress(0.20)
+	tool_visual.set_action_progress(0.14)
 	if tool_visual.has_method("get_pickaxe_head_screen_offset"):
 		var impact_pickaxe_head: Vector2 = tool_visual.call("get_pickaxe_head_screen_offset")
 		assertions.truthy(raised_pickaxe_head.x < impact_pickaxe_head.x, "pickaxe head sweeps toward the ore")
 		assertions.near(impact_pickaxe_head.x, 0.0, 0.04, "pickaxe head lands on the ore horizontally")
 		assertions.near(impact_pickaxe_head.y, 0.0, 0.04, "pickaxe head lands on the ore vertically")
-	tool_visual.set_action_progress(0.40)
+	tool_visual.set_action_progress(0.27)
 	var repeated_pickaxe_rotation: float = tool_visual.get_node("Pivot").rotation.z
 	assertions.truthy(
 		repeated_pickaxe_rotation > deg_to_rad(-20.0),
-		"three-second mining action begins another pickaxe swing instead of stretching one swing"
+		"three-second mining action begins another faster pickaxe swing instead of stretching one swing"
 	)
 	tool_visual.cancel_tool()
 	assertions.truthy(tool_visual.visible, "runtime cancel enters recovery before hiding")
@@ -378,9 +388,9 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		var ore_anchor: Vector3 = feedback.call(
 			"ore_pickaxe_anchor", Vector3(4.0, 1.0, 2.0), Vector3(2.0, 1.0, 2.0)
 		)
-		assertions.near(ore_anchor.x, 3.88, 0.001, "pickaxe contact sits on the ore's left shoulder")
+		assertions.near(ore_anchor.x, 3.85, 0.001, "pickaxe contact shifts slightly left on the ore shoulder")
 		assertions.near(ore_anchor.y, 1.38, 0.001, "pickaxe contact sits above the ore base")
-		assertions.near(ore_anchor.z, 2.06, 0.001, "pickaxe contact follows the locked camera's screen-right axis")
+		assertions.near(ore_anchor.z, 2.03, 0.001, "pickaxe contact shifts left along the locked camera plane")
 	var safe_progress_center: Vector2 = feedback.progress_center_with_label_clearance(
 		Vector2(500.0, 430.0), Vector2(500.0, 450.0)
 	)

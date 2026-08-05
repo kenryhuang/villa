@@ -170,7 +170,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			0.002,
 			"real pickaxe is anchored above the ore base"
 		)
-		main.tool_swing_visual.set_action_progress(0.20)
+		main.tool_swing_visual.set_action_progress(0.14)
 		var camera := main.get_viewport().get_camera_3d() as Camera3D
 		var ore_visual := target.get_node("Visual") as Sprite3D
 		var ore_atlas := load(ORE_MINING_ATLAS_PATH) as Texture2D

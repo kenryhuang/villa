@@ -34,9 +34,9 @@
 | `tests/run_building_system_tests.gd` | PASS：921 |
 | `tests/run_economy_system_tests.gd` | PASS：64137 |
 | `tests/run_economy_ui_tests.gd` | PASS：126 |
-| `tests/run_main_gameplay_integration_tests.gd` | PASS：1079 |
+| `tests/run_main_gameplay_integration_tests.gd` | PASS：1081 |
 | `tests/run_resource_gathering_tests.gd` | PASS：175 |
-| `tests/run_gathering_visual_tests.gd` | PASS：133 |
+| `tests/run_gathering_visual_tests.gd` | PASS：135 |
 | `tests/run_main_gathering_integration_tests.gd` | PASS：117 |
 
 经济测试保留两项既有非阻塞警告：恶意 JSON 指数过高的防御性解析警告，以及水车施工阶段图缺失时启用程序化回退；本功能未新增解析错误、无效节点、孤立信号或时间锁警告。
@@ -61,7 +61,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility `
 | 固定向右倒向 | 通过 | 通过 | 通过 | 正常与旧反向输入均不水平翻转；三个砍倒帧和树桩均保持原树根部与地面基线 |
 | `+5 木材` 与手绘树桩 | 通过 | 通过 | 通过 | 本地化飘字可读，HUD 增加 5，灰色几何树桩已移除 |
 | 绿/红矿石资格 | 通过 | 通过 | 通过 | 镐子槽下透明绿/红圆环清晰，种地方格阴影不出现；动作开始后资格环正确让位于黄色目标环 |
-| 镐子动作与矿石三帧 | 通过 | 通过 | 通过 | 3 秒内按原有节奏重复挥镐；镐子缩小 50%，镐柄末端固定，镐头扇形下落并接触矿体；完整、裂开、破碎帧交叉淡入，无硬切或地面位移 |
+| 镐子动作与矿石三帧 | 通过 | 通过 | 通过 | 3 秒内以 0.8 秒周期重复挥镐，频率提高 50%；镐子缩小 50%，接触锚点略向左移，镐柄末端固定，镐头扇形下落并接触矿体；完整、裂开、破碎帧交叉淡入，无硬切或地面位移 |
 | 矿脉完整/受损/碎石 | 通过 | 通过 | 通过 | 程序化几何体已替换为同建筑风格的手绘矿体；裂纹、破碎和低矮手绘碎石阶段可区分 |
 | 背包已满 | 通过 | 通过 | 通过 | 失败文字居中，无裁切，不启动移动 |
 | 无法到达 | 通过 | 通过 | 通过 | 失败文字居中，无裁切，不产生结算 |
