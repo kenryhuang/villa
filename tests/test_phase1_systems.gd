@@ -76,6 +76,25 @@ func _test_inventory(assertions: TestAssert) -> void:
 	assertions.equal(inventory.get_quick_item(0), "", "quick mapping follows physical slot")
 	assertions.truthy(not inventory.add_item("missing", 1), "unknown item is rejected")
 
+	var use_inventory = InventorySystemScript.new()
+	assertions.truthy(use_inventory.add_item("wood", 120), "use-item fixture creates two stacks")
+	assertions.truthy(use_inventory.set_quick_slot(1, 0), "use-item fixture maps the surviving second stack")
+	assertions.truthy(use_inventory.use_item(0), "material use consumes from the requested stack")
+	assertions.equal(use_inventory.slots[0].quantity, 99, "material use compacts the first stack")
+	assertions.equal(use_inventory.slots[1].quantity, 20, "material use preserves the surviving second stack")
+	assertions.equal(use_inventory.quick_slot_mappings[0], 1, "compaction preserves a mapped stack that still exists")
+	assertions.truthy(
+		use_inventory.normalize_saved_state(use_inventory.slots, use_inventory.quick_slot_mappings) != null,
+		"material use leaves a save-valid inventory state"
+	)
+	var remove_inventory = InventorySystemScript.new()
+	assertions.truthy(remove_inventory.add_item("wood", 120), "remove fixture creates two stacks")
+	assertions.truthy(remove_inventory.set_quick_slot(1, 0), "remove fixture maps the surviving second stack")
+	assertions.truthy(remove_inventory.remove_item("wood", 1), "remove fixture compacts partial stacks")
+	assertions.equal(remove_inventory.slots[0].quantity, 99, "remove compaction fills the first stack")
+	assertions.equal(remove_inventory.slots[1].quantity, 20, "remove compaction keeps the second stack")
+	assertions.equal(remove_inventory.quick_slot_mappings[0], 1, "remove compaction preserves a mapped stack that survives")
+
 	var mapping_inventory = InventorySystemScript.new()
 	mapping_inventory.add_item("grain_seed", 2)
 	mapping_inventory.add_item("carrot_seed", 1)

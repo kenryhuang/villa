@@ -482,7 +482,7 @@
 
 2026-08-07 完成正式实现与回归验证：
 
-- `res://tests/run_production_chain_tests.gd`：79 项产业链纵向验收通过；
+- `res://tests/run_production_chain_tests.gd`：89 项产业链纵向验收通过；
 - `res://tests/run_resource_gathering_tests.gd`：203 项资源采集检查通过；
 - `res://tests/run_gathering_visual_tests.gd`：157 项采集视觉检查通过；
 - `res://tests/run_building_system_tests.gd`：1336 项建筑系统检查通过；
@@ -490,7 +490,7 @@
 - `res://tests/run_economy_ui_tests.gd`：129 项经济 UI 集成检查通过；
 - `res://tests/run_main_gameplay_integration_tests.gd`：1149 项主玩法集成检查通过；
 - `res://tests/run_economy_progression_tests.gd`：267 项经济进度检查通过；
-- `res://tests/run_tests.gd`：1271 项核心检查通过；
+- `res://tests/run_tests.gd`：1284 项核心检查通过；
 - `--editor --quit` 解析/导入检查与 `--quit-after 10` 启动 smoke 均退出码 0，未出现脚本解析或运行时错误。
 
 纵向验收使用真实 `Main`、工具采集、市场交易、建筑扣费、生产队列、被动产出和 `SaveManager` JSON 往返；初始夹具之后不直接写入背包成品。验收同时覆盖大量建造后同类堆叠规范化，确保运行时生成的背包状态可以被正式存档校验接受并完整读回。

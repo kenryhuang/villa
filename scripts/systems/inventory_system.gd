@@ -132,7 +132,11 @@ func _compact_item_stacks(item_id: String, affected_indices: Array[int]) -> void
 	if first_destination < 0:
 		return
 	for quick_index in range(quick_slot_mappings.size()):
-		if quick_slot_mappings[quick_index] in affected_indices:
+		var mapped_index := quick_slot_mappings[quick_index]
+		if (
+			mapped_index in affected_indices
+			and (slots[mapped_index] as Dictionary).is_empty()
+		):
 			quick_slot_mappings[quick_index] = first_destination
 
 
@@ -295,11 +299,17 @@ func use_item(slot_index: int) -> bool:
 	var item_data = GameDataScript.get_item(slot.item_id)
 	if item_data and item_data.get("category") in ["crop", "material"]:
 		var previous_items := _snapshot_quick_items()
+		var item_id := str(slot.item_id)
+		var affected_indices: Array[int] = []
+		for index in range(slots.size()):
+			if not slots[index].is_empty() and slots[index].get("item_id", "") == item_id:
+				affected_indices.append(index)
 		slot.quantity -= 1
 		if _event_bus:
-			_event_bus.item_removed.emit(slot.item_id, 1)
+			_event_bus.item_removed.emit(item_id, 1)
 		if slot.quantity <= 0:
 			slots[slot_index] = {}
+		_compact_item_stacks(item_id, affected_indices)
 		_emit_changed_quick_items(previous_items)
 		return true
 

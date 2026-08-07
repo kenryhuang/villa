@@ -130,6 +130,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.production_system.collect_all(buildings.chicken_coop, main.inventory_system),
 		"chicken coop produces and collects eggs"
 	)
+	var passive_wood_before: int = main.inventory_system.get_item_count("wood")
+	var passive_stone_before: int = main.inventory_system.get_item_count("stone")
+	assertions.truthy(
+		main.production_system.collect_all(buildings.lumberyard, main.inventory_system),
+		"lumberyard automatic output is collected"
+	)
+	assertions.truthy(
+		main.production_system.collect_all(buildings.quarry, main.inventory_system),
+		"quarry automatic output is collected"
+	)
+	assertions.truthy(
+		main.inventory_system.get_item_count("wood") > passive_wood_before
+		and main.inventory_system.get_item_count("stone") > passive_stone_before,
+		"automatic resource buildings add their daily outputs to inventory"
+	)
 	assertions.truthy(_produce_collect(main, buildings.food_workshop, "bread", 1), "food workshop produces food")
 	assertions.truthy(_produce_collect(main, buildings.textile_machine, "cloth", 1), "textile machine produces cloth")
 	assertions.truthy(main.inventory_system.has_item("machine_parts", 1), "chain retains a produced machine part")
@@ -138,8 +153,33 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var gold_before_sale := int(game_state.gold)
 	assertions.truthy(main.economy_system.sell_item("bread", 1), "processed food sells through EconomySystem")
 	assertions.truthy(int(game_state.gold) > gold_before_sale, "processed food sale credits the wallet")
+	var order_result := _complete_one_order(main, game_state)
+	assertions.truthy(not order_result.is_empty(), "a generated NPC demand order is fulfilled through EconomySystem")
+	if not order_result.is_empty():
+		assertions.truthy(bool(order_result.get("completed", false)), "fulfilled NPC order persists its completed state")
+		assertions.truthy(int(game_state.gold) > int(order_result.get("gold_before", game_state.gold)), "fulfilled NPC order credits its reward")
 
-	assertions.truthy(_buy_requirements(main, {"wood": 8}), "market supplies final save-fixture timber")
+	assertions.truthy(_buy_requirements(main, {"wood": 120}), "market supplies final multi-stack save fixture")
+	var wood_indices: Array[int] = []
+	for slot_index in range(main.inventory_system.slots.size()):
+		if main.inventory_system.slots[slot_index].get("item_id", "") == "wood":
+			wood_indices.append(slot_index)
+	assertions.truthy(wood_indices.size() >= 2, "save fixture contains two canonical wood stacks")
+	if wood_indices.size() >= 2:
+		main.inventory_system.set_quick_slot(wood_indices[1], 0)
+		assertions.truthy(main.inventory_system.use_item(wood_indices[0]), "save fixture consumes one material through use_item")
+		assertions.equal(
+			main.inventory_system.quick_slot_mappings[0],
+			wood_indices[1],
+			"material compaction preserves the mapped surviving stack"
+		)
+		assertions.truthy(
+			main.inventory_system.normalize_saved_state(
+				main.inventory_system.slots,
+				main.inventory_system.quick_slot_mappings
+			) != null,
+			"use_item multi-stack state remains valid for save"
+		)
 	var unfinished_fence := _place_without_finishing(main, "fence", assertions)
 	assertions.truthy(unfinished_fence != null and not unfinished_fence.is_construction_complete(), "save fixture includes active construction")
 	assertions.truthy(_buy_requirements(main, {"wood": 2, "fiber": 4}), "market supplies queue fixture inputs")
@@ -244,6 +284,28 @@ func _purchase_blueprint(main: Node, service_id: String) -> bool:
 	if not _buy_requirements(main, raw_requirements):
 		return false
 	return main.economy_progression_system.purchase(service_id)
+
+
+func _complete_one_order(main: Node, game_state: Node) -> Dictionary:
+	if not main.economy_system.generate_demand_orders(40):
+		return {}
+	for order in main.economy_system.get_orders():
+		if bool(order.get("completed", false)) or bool(order.get("expired", false)):
+			continue
+		var item_id := str(order.get("item_id", ""))
+		var quantity := int(order.get("quantity", 0))
+		if item_id.is_empty() or quantity <= 0 or not _buy_requirements(main, {item_id: quantity}):
+			continue
+		var gold_before := int(game_state.gold)
+		if not main.economy_system.complete_order(str(order.get("order_id", ""))):
+			continue
+		for refreshed in main.economy_system.get_orders():
+			if str(refreshed.get("order_id", "")) == str(order.get("order_id", "")):
+				return {
+					"completed": bool(refreshed.get("completed", false)),
+					"gold_before": gold_before,
+				}
+	return {}
 
 
 func _produce_collect(main: Node, building: BuildingInstance, recipe_id: String, batches: int) -> bool:
