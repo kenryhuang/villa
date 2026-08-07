@@ -1312,10 +1312,58 @@ func _advance_building(building: BuildingInstance, minutes: int) -> void:
 		return
 	if is_maintenance_overdue(building):
 		return
-	for _minute in range(minutes):
+	var base_minutes_remaining := minutes
+	while base_minutes_remaining > 0:
 		if not _prepare_running_job(building, state):
 			return
-		_advance_effective_minutes(building, state, _effective_minutes(building, 1))
+		var current_job := state.jobs[0] as Dictionary
+		var effective_needed := maxi(int(current_job.get("remaining_minutes", 0)), 1)
+		var base_chunk := _base_minutes_for_effective_work(
+			building,
+			effective_needed,
+			base_minutes_remaining
+		)
+		_advance_effective_minutes(
+			building,
+			state,
+			_effective_minutes(building, base_chunk)
+		)
+		base_minutes_remaining -= base_chunk
+
+
+func _base_minutes_for_effective_work(
+	building: BuildingInstance,
+	effective_needed: int,
+	available_base_minutes: int
+) -> int:
+	if available_base_minutes <= 1:
+		return maxi(available_base_minutes, 1)
+	if _preview_effective_minutes(building, available_base_minutes) < effective_needed:
+		return available_base_minutes
+	var low := 1
+	var high := available_base_minutes
+	while low < high:
+		var middle := (low + high) / 2
+		if _preview_effective_minutes(building, middle) >= effective_needed:
+			high = middle
+		else:
+			low = middle + 1
+	return low
+
+
+func _preview_effective_minutes(building: BuildingInstance, minutes: int) -> int:
+	if minutes <= 0:
+		return 0
+	var speed_level := 0
+	if _progression_system != null and is_instance_valid(_progression_system):
+		speed_level = int(_progression_system.call("get_upgrade_level", building, "speed"))
+	if speed_level <= 0:
+		return minutes
+	var percent := speed_level * 25
+	var prior := int(speed_accumulators.get(building_key(building), 0))
+	var whole_bonus := (minutes / 100) * percent
+	whole_bonus += ((minutes % 100) * percent + prior) / 100
+	return minutes + whole_bonus
 
 
 func _prepare_running_job(building: BuildingInstance, state: ProducerState) -> bool:

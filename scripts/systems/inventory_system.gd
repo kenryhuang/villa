@@ -82,6 +82,10 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 	if total < quantity:
 		return false
 	var previous_items := _snapshot_quick_items()
+	var affected_indices: Array[int] = []
+	for index in range(slots.size()):
+		if not slots[index].is_empty() and slots[index].get("item_id", "") == item_id:
+			affected_indices.append(index)
 
 	var remaining = quantity
 	var i = 0
@@ -97,8 +101,39 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 		i += 1
 
 	var removed_all: bool = remaining <= 0
+	if removed_all:
+		_compact_item_stacks(item_id, affected_indices)
 	_emit_changed_quick_items(previous_items)
 	return removed_all
+
+
+func _compact_item_stacks(item_id: String, affected_indices: Array[int]) -> void:
+	if affected_indices.size() <= 1:
+		return
+	var definition: Variant = GameDataScript.get_item(item_id)
+	if not definition is Dictionary:
+		return
+	var max_stack := int((definition as Dictionary).get("max_stack", 0))
+	if max_stack <= 0:
+		return
+	var total := get_item_count(item_id)
+	for index in affected_indices:
+		slots[index] = {}
+	var remaining := total
+	var first_destination := -1
+	for index in affected_indices:
+		if remaining <= 0:
+			break
+		var stack_quantity := mini(remaining, max_stack)
+		slots[index] = {"item_id": item_id, "quantity": stack_quantity}
+		remaining -= stack_quantity
+		if first_destination < 0:
+			first_destination = index
+	if first_destination < 0:
+		return
+	for quick_index in range(quick_slot_mappings.size()):
+		if quick_slot_mappings[quick_index] in affected_indices:
+			quick_slot_mappings[quick_index] = first_destination
 
 
 func has_item(item_id: String, quantity: int = 1) -> bool:

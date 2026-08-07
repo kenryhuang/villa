@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-06
 
-**状态：** 待确认
+**状态：** 已实现
 
 **上位设计：** `docs/superpowers/specs/2026-08-01-dynamic-economy-system-design.md`
 
@@ -434,7 +434,7 @@
 - 缺料建筑显示逐项缺口且不进入预览。
 - 服务购买后不重开场景即可刷新卡片并允许建造。
 - 配方锁定行能定位对应服务；没有服务的错误数据不会崩溃。
-- 1280×720、1920×1080、3000×2000 下分类栏、建筑卡和成本条不重叠。
+- 1280×720、1920×1080、3000×2000 下分类栏、最多四张建筑卡、成本条和锁定详情均在视口内，且不与右上角经济操作区重叠。
 
 ### 15.4 完整纵向验收
 
@@ -477,3 +477,20 @@
 - 建造、生产和收取均通过现有权威事务执行且可正确回滚；
 - 新旧存档不会丢失建筑、队列、输出或资源状态；
 - 完整纵向验收与相关回归测试全部通过。
+
+## 18. 实现验证记录
+
+2026-08-07 完成正式实现与回归验证：
+
+- `res://tests/run_production_chain_tests.gd`：79 项产业链纵向验收通过；
+- `res://tests/run_resource_gathering_tests.gd`：203 项资源采集检查通过；
+- `res://tests/run_gathering_visual_tests.gd`：157 项采集视觉检查通过；
+- `res://tests/run_building_system_tests.gd`：1336 项建筑系统检查通过；
+- `res://tests/run_economy_system_tests.gd`：64599 项经济、存档与响应式 UI 检查通过；
+- `res://tests/run_economy_ui_tests.gd`：129 项经济 UI 集成检查通过；
+- `res://tests/run_main_gameplay_integration_tests.gd`：1149 项主玩法集成检查通过；
+- `res://tests/run_economy_progression_tests.gd`：267 项经济进度检查通过；
+- `res://tests/run_tests.gd`：1271 项核心检查通过；
+- `--editor --quit` 解析/导入检查与 `--quit-after 10` 启动 smoke 均退出码 0，未出现脚本解析或运行时错误。
+
+纵向验收使用真实 `Main`、工具采集、市场交易、建筑扣费、生产队列、被动产出和 `SaveManager` JSON 往返；初始夹具之后不直接写入背包成品。验收同时覆盖大量建造后同类堆叠规范化，确保运行时生成的背包状态可以被正式存档校验接受并完整读回。

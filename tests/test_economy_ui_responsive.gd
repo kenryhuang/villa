@@ -39,6 +39,57 @@ class InputCounter:
 		count += 1
 
 
+class HudToolDouble:
+	extends RefCounted
+
+	func switch_tool(_tool_type: int) -> void:
+		pass
+
+
+class HudEconomyDouble:
+	extends RefCounted
+
+	func has_resources(_cost: Dictionary) -> bool:
+		return true
+
+
+class HudBuildingDouble:
+	extends RefCounted
+	var inventory: InventorySystem
+	var locked_ids := {"furnace": true}
+
+	func enter_preview_mode(_building: Variant) -> bool:
+		return true
+
+	func exit_preview_mode() -> void:
+		pass
+
+	func is_in_build_mode() -> bool:
+		return false
+
+	func diagnose_resources(building: Variant) -> Dictionary:
+		return {
+			"allowed": true,
+			"code": "ok",
+			"message": "",
+			"building_id": str(building),
+			"missing_resources": {},
+		}
+
+	func diagnose_availability(building: Variant) -> Dictionary:
+		var building_id := str(building)
+		if locked_ids.has(building_id):
+			return {
+				"allowed": false,
+				"code": "blueprint_locked",
+				"message": "需要第8天",
+				"building_id": building_id,
+				"missing_resources": {},
+				"unlock_service_id": "blueprint_%s" % building_id,
+			}
+		return diagnose_resources(building)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
@@ -47,6 +98,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_building_modal_minimum_height(assertions)
 	await _test_panel_contracts(assertions, tree)
 	await _test_building_modal_control_bounds(assertions, tree)
+	await _test_building_palette_viewport_contract(assertions, tree)
 	await _test_runtime_scale_and_resize_state(assertions, tree)
 	await _test_market_drawer_state(assertions, tree)
 	await _test_real_keyboard_navigation(assertions, tree)
@@ -54,6 +106,78 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_narrow_shop_pagehost_bounds(assertions, tree)
 	await _test_trade_keyboard_and_wheel(assertions, tree)
 	await _test_trade_confirmation_modal(assertions, tree)
+
+
+func _test_building_palette_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
+	for viewport_size in VIEWPORT_SIZES:
+		var host := SubViewport.new()
+		host.size = Vector2i(viewport_size)
+		tree.root.add_child(host)
+		var inventory := InventorySystem.new()
+		host.add_child(inventory)
+		for item_id in ["wood", "stone", "plank", "stone_brick", "brick", "charcoal"]:
+			inventory.add_item(item_id, 80)
+		var building := HudBuildingDouble.new()
+		building.inventory = inventory
+		var controller := PlayerActionController.new()
+		host.add_child(controller)
+		controller.configure(null, null, null, building, HudToolDouble.new(), inventory)
+		var hud := (load("res://scenes/ui/hud.tscn") as PackedScene).instantiate()
+		host.add_child(hud)
+		hud.configure_action_bar(controller, inventory, HudEconomyDouble.new())
+		assertions.truthy(
+			controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
+			"building palette enters build mode at %s" % viewport_size
+		)
+		assertions.truthy(controller.set_building_category("basic"), "basic building category opens at %s" % viewport_size)
+		assertions.truthy(controller.select_mode_slot(0), "building cost selection opens at %s" % viewport_size)
+		await tree.process_frame
+
+		var viewport_rect := Rect2(Vector2.ZERO, viewport_size)
+		var economy_actions := hud.get_node("EconomyActions") as Control
+		var category_bar := hud.get_node("BottomBar/BuildCategoryBar") as Control
+		var quick_bar := hud.get_node("BottomBar/ActionRow/QuickBar") as Control
+		var cost_bar := hud.get_node("BottomBar/BuildCostBar") as Control
+		assertions.truthy(category_bar.visible, "category bar is visible at %s" % viewport_size)
+		assertions.truthy(cost_bar.visible, "cost bar is visible at %s" % viewport_size)
+		assertions.truthy(
+			viewport_rect.encloses(category_bar.get_global_rect())
+			and viewport_rect.encloses(quick_bar.get_global_rect())
+			and viewport_rect.encloses(cost_bar.get_global_rect()),
+			"category, palette, and cost controls stay inside %s" % viewport_size
+		)
+		assertions.truthy(
+			quick_bar.get_child_count() > 0 and quick_bar.get_child_count() <= 4,
+			"visible building category shows at most four palette buttons at %s" % viewport_size
+		)
+		for button in quick_bar.get_children():
+			assertions.truthy(
+				viewport_rect.encloses((button as Control).get_global_rect()),
+				"building palette button stays inside %s" % viewport_size
+			)
+		for control in [category_bar, quick_bar, cost_bar]:
+			assertions.truthy(
+				not (control as Control).get_global_rect().intersects(economy_actions.get_global_rect()),
+				"building control avoids economy actions at %s" % viewport_size
+			)
+
+		assertions.truthy(controller.set_building_category("production"), "production category opens at %s" % viewport_size)
+		await tree.process_frame
+		var furnace_button := quick_bar.get_child(1) as Button
+		furnace_button.pressed.emit()
+		await tree.process_frame
+		var lock_panel := hud.get_node("BuildLockPanel") as Control
+		assertions.truthy(lock_panel.visible, "locked blueprint detail opens at %s" % viewport_size)
+		assertions.truthy(
+			viewport_rect.encloses(lock_panel.get_global_rect()),
+			"locked blueprint detail stays inside %s" % viewport_size
+		)
+		assertions.truthy(
+			not lock_panel.get_global_rect().intersects(economy_actions.get_global_rect()),
+			"locked blueprint detail avoids economy actions at %s" % viewport_size
+		)
+		host.free()
+		await tree.process_frame
 
 
 func _test_layout_contract(assertions: TestAssert) -> void:

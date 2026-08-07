@@ -549,7 +549,7 @@ git commit -m "feat: expose production unlocks and world status"
 - Modify: `tests/test_economy_ui_responsive.gd`
 - Modify: `docs/superpowers/specs/2026-08-06-production-chain-connection-design.md`
 
-- [ ] **Step 1: Write the end-to-end acceptance test**
+- [x] **Step 1: Write the end-to-end acceptance test**
 
 Use real `InventorySystem`, `BuildingSystem`, `EconomyProgressionSystem`, `ProductionSystem`, `RecipeDatabase`, grid, clock, and save fixtures. The test must:
 
@@ -566,21 +566,21 @@ Use real `InventorySystem`, `BuildingSystem`, `EconomyProgressionSystem`, `Produ
 
 Do not weaken assertions to bypass timing or progression. This is an acceptance test over behavior already introduced test-first in Tasks 1–8, so it may pass on its first run.
 
-- [ ] **Step 2: Run the dedicated runner**
+- [x] **Step 2: Run the dedicated runner**
 
 ```powershell
 godot --headless --path . --script res://tests/run_production_chain_tests.gd
 ```
 
-- [ ] **Step 3: Handle any acceptance failure through a fresh TDD cycle**
+- [x] **Step 3: Handle any acceptance failure through a fresh TDD cycle**
 
 If the acceptance runner fails, stop at the first failing seam, add one focused failing test to the owning Task 1–8 test file, run it to verify the expected RED result, implement the minimal correction, run that focused suite GREEN, and rerun the acceptance test. Do not inject inventory items directly after the initial fixture; every later material must come from gathering, production, passive output, or market purchase.
 
-- [ ] **Step 4: Add responsive assertions**
+- [x] **Step 4: Add responsive assertions**
 
 At 1280×720, 1920×1080, and 3000×2000, assert the category bar, up to four palette buttons, cost bar, and lock panel remain inside the viewport and do not overlap the economy actions.
 
-- [ ] **Step 5: Run the dedicated and impacted runners GREEN**
+- [x] **Step 5: Run the dedicated and impacted runners GREEN**
 
 Run:
 
@@ -596,7 +596,7 @@ godot --headless --path . --script res://tests/run_main_gameplay_integration_tes
 
 Expected: every command exits 0 with no parse errors or orphan-node warnings.
 
-- [ ] **Step 6: Mark the design implemented and commit**
+- [x] **Step 6: Mark the design implemented and commit**
 
 Change the design status from `待确认` to `已实现`, append the exact verification commands/counts, then:
 
@@ -607,14 +607,14 @@ git commit -m "test: verify complete production chain"
 
 ## Final verification
 
-- [ ] Run all impacted runners from Task 9 again with fresh output.
-- [ ] Run parser/import validation:
+- [x] Run all impacted runners from Task 9 again with fresh output.
+- [x] Run parser/import validation:
 
 ```powershell
 godot --headless --path . --editor --quit
 ```
 
-- [ ] Run gameplay smoke:
+- [x] Run gameplay smoke:
 
 ```powershell
 godot --headless --path . --quit-after 10
