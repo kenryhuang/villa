@@ -1,6 +1,7 @@
 extends SceneTree
 
 const BuildingDataTest = preload("res://tests/test_building_data.gd")
+const BuildingCatalogTest = preload("res://tests/test_building_catalog.gd")
 const BuildingInstanceTest = preload("res://tests/test_building_instance.gd")
 const BuildingSystemCompleteTest = preload("res://tests/test_building_system_complete.gd")
 const BuildingArtAssetsTest = preload("res://tests/test_building_art_assets.gd")
@@ -19,6 +20,7 @@ func _init() -> void:
 func _run() -> void:
 	var assertions = TestAssertScript.new()
 	BuildingDataTest.new().run(assertions)
+	BuildingCatalogTest.new().run(assertions)
 	BuildingInstanceTest.new().run(assertions, self)
 	BuildingSystemCompleteTest.new().run(assertions, self)
 	BuildingArtAssetsTest.new().run(assertions)

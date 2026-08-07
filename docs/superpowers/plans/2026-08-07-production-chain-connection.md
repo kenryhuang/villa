@@ -41,7 +41,7 @@
 - Modify: `scripts/data/building_data.gd`
 - Modify: `tests/run_building_system_tests.gd`
 
-- [ ] **Step 1: Write the failing catalog tests**
+- [x] **Step 1: Write the failing catalog tests**
 
 Add `BuildingCatalogTest.run()` assertions that:
 
@@ -74,7 +74,7 @@ func run(assertions) -> void:
 
 Register the test in `tests/run_building_system_tests.gd` immediately after `BuildingDataTest`.
 
-- [ ] **Step 2: Run the focused suite and verify RED**
+- [x] **Step 2: Run the focused suite and verify RED**
 
 Run:
 
@@ -84,7 +84,7 @@ godot --headless --path . --script res://tests/run_building_system_tests.gd
 
 Expected: FAIL because `building_catalog.gd`, category metadata, and the new cost ladder do not exist.
 
-- [ ] **Step 3: Implement catalog metadata and exact costs**
+- [x] **Step 3: Implement catalog metadata and exact costs**
 
 Create `BuildingCatalog` as a stateless helper:
 
@@ -121,11 +121,11 @@ static func all_building_ids() -> Array[String]:
 
 Add `category` and `palette_order` to all 17 `GameData.BUILDINGS` entries. Replace construction costs with the exact section 8 table from the design, including `lamp: {"lamp": 1, "plank": 1}` and no `iron` references. Add matching exported fields to `BuildingData` and populate them in `from_dictionary()`.
 
-- [ ] **Step 4: Run catalog and building suites GREEN**
+- [x] **Step 4: Run catalog and building suites GREEN**
 
 Run the focused building runner. Expected: PASS and exactly 17 catalog IDs.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/core/building_catalog.gd scripts/core/game_data.gd scripts/data/building_data.gd tests/test_building_catalog.gd tests/run_building_system_tests.gd

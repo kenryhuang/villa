@@ -15,8 +15,18 @@ class EconomyDouble:
 	var holdings := {
 		"wood": 10000,
 		"stone": 10000,
-		"iron": 10000,
 		"glass": 10000,
+		"plank": 10000,
+		"stone_brick": 10000,
+		"wooden_crate": 10000,
+		"rope": 10000,
+		"brick": 10000,
+		"charcoal": 10000,
+		"iron_ingot": 10000,
+		"machine_parts": 10000,
+		"farm_tools": 10000,
+		"steel": 10000,
+		"lamp": 10000,
 	}
 
 	func get_resource_report(cost: Dictionary) -> Dictionary:
@@ -174,7 +184,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		grid.get_cell(gx, gz).state = GridCell.State.WASTELAND
 		blocked_index += 1
-	economy.holdings.wood = 42
+	economy.holdings.plank = 3
 	var resource_diagnostic: Dictionary = system.diagnose_placement(barn, 8, 8)
 	assertions.equal(
 		resource_diagnostic.code,
@@ -182,18 +192,18 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"resource diagnostic is specific"
 	)
 	assertions.equal(
-		resource_diagnostic.missing_resources.wood.required,
-		100,
+		resource_diagnostic.missing_resources.plank.required,
+		8,
 		"resource report includes requirement"
 	)
 	assertions.equal(
-		resource_diagnostic.missing_resources.wood.available,
-		42,
+		resource_diagnostic.missing_resources.plank.available,
+		3,
 		"resource report includes inventory"
 	)
 	assertions.equal(
-		resource_diagnostic.missing_resources.wood.missing,
-		58,
+		resource_diagnostic.missing_resources.plank.missing,
+		5,
 		"resource report includes shortage"
 	)
 	assertions.equal(
@@ -201,7 +211,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		resource_diagnostic.allowed,
 		"can_place wraps placement diagnostic"
 	)
-	economy.holdings.wood = 10000
+	economy.holdings.plank = 10000
 	grid.set_cell_state(3, 3, GridCell.State.FARMLAND)
 	grid.set_cell_state(4, 4, GridCell.State.FARMLAND)
 	assertions.truthy(system.can_place(barn, 3, 3), "mixed wasteland and farmland footprint is valid")

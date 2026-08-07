@@ -43,6 +43,8 @@ const VISUAL_SIZES := {
 
 @export var building_id := ""
 @export var display_name := ""
+@export var category := "basic"
+@export var palette_order := 0
 @export var footprint := Vector2i.ZERO
 @export var cost: Dictionary = {}
 @export_multiline var description := ""
@@ -78,6 +80,8 @@ static func from_dictionary(source: Dictionary) -> BuildingData:
 		return data
 	data.building_id = str(source.get("id", ""))
 	data.display_name = str(source.get("name", ""))
+	data.category = str(source.get("category", "basic"))
+	data.palette_order = int(source.get("palette_order", 0))
 	data.footprint = Vector2i(
 		int(source.get("footprint_x", 0)),
 		int(source.get("footprint_z", 0))

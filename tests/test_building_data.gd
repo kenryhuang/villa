@@ -5,11 +5,19 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const IDS := [
 	"barn",
 	"greenhouse",
+	"waterwheel",
 	"windmill",
 	"chicken_coop",
 	"beehive",
 	"well",
 	"workbench",
+	"stone_kiln",
+	"furnace",
+	"food_workshop",
+	"textile_machine",
+	"lumberyard",
+	"quarry",
+	"mine",
 	"lamp",
 	"fence",
 ]
@@ -27,6 +35,8 @@ func run(assertions: TestAssert) -> void:
 		assertions.equal(data.visual_width, data.visual_size.x, "%s exposes visual width" % id)
 		assertions.equal(data.visual_height, data.visual_size.y, "%s exposes visual height" % id)
 		assertions.equal(data.display_name, source.name, "%s preserves name" % id)
+		assertions.equal(data.category, str(source.get("category", "basic")), "%s preserves category" % id)
+		assertions.equal(data.palette_order, int(source.get("palette_order", 0)), "%s preserves palette order" % id)
 		assertions.equal(data.cost, source.cost, "%s preserves cost" % id)
 		assertions.equal(data.footprint, Vector2i(source.footprint_x, source.footprint_z), "%s preserves footprint" % id)
 		assertions.equal(data.effect, source.effect, "%s preserves effect" % id)
@@ -37,7 +47,7 @@ func run(assertions: TestAssert) -> void:
 	var barn = BuildingDataScript.from_dictionary(game_data.get_building("barn"))
 	assertions.equal(barn.footprint, Vector2i(2, 2), "barn footprint is 2x2")
 	barn.cost.wood = 1
-	assertions.equal(game_data.get_building("barn").cost.wood, 100, "cost is deep copied")
+	assertions.equal(game_data.get_building("barn").cost.plank, 8, "cost is deep copied")
 
 	var empty = BuildingDataScript.from_dictionary({})
 	assertions.equal(empty.is_valid(), false, "empty dictionary is invalid")
