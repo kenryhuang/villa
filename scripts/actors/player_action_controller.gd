@@ -9,6 +9,7 @@ signal build_feedback_requested(message: String, details: Dictionary)
 signal tree_hover_changed(target: Node, allowed: bool)
 signal gather_hover_changed(target: Node, allowed: bool)
 signal gather_rejected(target: Node, reason: String)
+signal building_category_changed(category_id: String, category_index: int)
 
 enum Action {
 	NONE,
@@ -25,7 +26,10 @@ enum ActionMode {
 }
 
 const SEED_SLOT := 5
+const BuildingCatalogScript = preload("res://scripts/core/building_catalog.gd")
+const GameDataScript = preload("res://scripts/core/game_data.gd")
 const SLOT_LABELS := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "种苗"]
+# Kept temporarily for HUD compatibility; controller selection uses BuildingCatalog.
 const BUILDING_IDS: Array[String] = [
 	"barn",
 	"greenhouse",
@@ -76,6 +80,7 @@ var _action_mode := ActionMode.FARMING
 var _selected_slot := 0
 var _last_farming_slot := 0
 var _last_building_slot := 0
+var _building_category_index := 0
 var _pointer_position: Variant
 var _hovered_tree: Node
 var _hovered_tree_allowed := false
@@ -190,14 +195,65 @@ func get_action_mode() -> ActionMode:
 	return _action_mode
 
 
+func get_building_category() -> String:
+	var categories := BuildingCatalogScript.categories()
+	if categories.is_empty():
+		return ""
+	_building_category_index = clampi(_building_category_index, 0, categories.size() - 1)
+	return categories[_building_category_index]
+
+
+func get_current_building_ids() -> Array[String]:
+	return BuildingCatalogScript.building_ids_for_category(get_building_category())
+
+
+func get_building_id_at(index: int) -> String:
+	var ids := get_current_building_ids()
+	return ids[index] if index >= 0 and index < ids.size() else ""
+
+
+func set_building_category(category_id: String) -> bool:
+	if _action_mode != ActionMode.BUILDING:
+		return false
+	var categories := BuildingCatalogScript.categories()
+	var next_index := categories.find(category_id)
+	if next_index < 0:
+		return false
+	if next_index == _building_category_index:
+		return true
+	_building_category_index = next_index
+	cancel_current_selection()
+	_last_building_slot = -1
+	building_category_changed.emit(get_building_category(), _building_category_index)
+	palette_changed.emit(_action_mode, -1)
+	return true
+
+
+func cycle_building_category(direction: int) -> bool:
+	if _action_mode != ActionMode.BUILDING or direction == 0:
+		return false
+	var categories := BuildingCatalogScript.categories()
+	if categories.is_empty():
+		return false
+	_building_category_index = posmod(
+		_building_category_index + signi(direction),
+		categories.size()
+	)
+	cancel_current_selection()
+	_last_building_slot = -1
+	building_category_changed.emit(get_building_category(), _building_category_index)
+	palette_changed.emit(_action_mode, -1)
+	return true
+
+
 func select_mode_slot(index: int) -> bool:
-	var labels := SLOT_LABELS if _action_mode == ActionMode.FARMING else BUILDING_LABELS
-	if index < 0 or index >= labels.size():
+	var slot_count := SLOT_LABELS.size() if _action_mode == ActionMode.FARMING else get_current_building_ids().size()
+	if index < 0 or index >= slot_count:
 		return false
 	_cancel_gathering("tool_changed")
 	_clear_tree_hover()
 	if _action_mode == ActionMode.BUILDING:
-		var diagnostic := get_building_resource_diagnostic(index)
+		var diagnostic := get_building_availability_diagnostic(index)
 		if not bool(diagnostic.get("allowed", false)):
 			_emit_build_feedback(diagnostic, "BuildSelectionRejected")
 			return false
@@ -226,8 +282,9 @@ func should_show_cell_highlight() -> bool:
 	)
 
 
-func get_building_resource_diagnostic(index: int) -> Dictionary:
-	if index < 0 or index >= BUILDING_IDS.size() or building_system == null:
+func get_building_availability_diagnostic(index: int) -> Dictionary:
+	var building_id := get_building_id_at(index)
+	if building_id.is_empty() or building_system == null:
 		return {
 			"allowed": false,
 			"code": "invalid_building",
@@ -235,15 +292,21 @@ func get_building_resource_diagnostic(index: int) -> Dictionary:
 			"building_id": "",
 			"missing_resources": {},
 		}
+	if building_system.has_method("diagnose_availability"):
+		return building_system.diagnose_availability(building_id)
 	if building_system.has_method("diagnose_resources"):
-		return building_system.diagnose_resources(BUILDING_IDS[index])
+		return building_system.diagnose_resources(building_id)
 	return {
 		"allowed": true,
 		"code": "ok",
 		"message": "",
-		"building_id": BUILDING_IDS[index],
+		"building_id": building_id,
 		"missing_resources": {},
 	}
+
+
+func get_building_resource_diagnostic(index: int) -> Dictionary:
+	return get_building_availability_diagnostic(index)
 
 
 func cancel_current_selection() -> bool:
@@ -273,17 +336,19 @@ func _activate_current_slot() -> bool:
 			grid_system.clear_highlights()
 		if building_system == null:
 			return false
-		var diagnostic := get_building_resource_diagnostic(_selected_slot)
+		var diagnostic := get_building_availability_diagnostic(_selected_slot)
 		if not bool(diagnostic.get("allowed", false)):
 			_selected_slot = -1
 			selection_changed.emit(-1, "未选择建筑")
 			_emit_build_feedback(diagnostic, "BuildSelectionRejected")
 			return false
-		var entered: bool = building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+		var building_id := get_building_id_at(_selected_slot)
+		var entered: bool = not building_id.is_empty() and building_system.enter_preview_mode(building_id)
 		if entered:
+			var building_data := GameDataScript.get_building(building_id)
 			selection_changed.emit(
 				_selected_slot,
-				BUILDING_LABELS[_selected_slot]
+				str(building_data.get("name", building_id))
 			)
 		return entered
 	if building_system != null and building_system.is_in_build_mode():
@@ -315,7 +380,7 @@ func slot_from_key(keycode: Key) -> int:
 	var index := -1
 	if keycode >= KEY_1 and keycode <= KEY_9:
 		index = int(keycode - KEY_1)
-	var maximum := SLOT_LABELS.size() if _action_mode == ActionMode.FARMING else BUILDING_IDS.size()
+	var maximum := SLOT_LABELS.size() if _action_mode == ActionMode.FARMING else get_current_building_ids().size()
 	return index if index >= 0 and index < maximum else -1
 
 
@@ -352,9 +417,9 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 		and _selected_slot >= 0
 	):
 		inventory_changed.emit()
-		var next_diagnostic := get_building_resource_diagnostic(_selected_slot)
+		var next_diagnostic := get_building_availability_diagnostic(_selected_slot)
 		if bool(next_diagnostic.get("allowed", false)):
-			building_system.enter_preview_mode(BUILDING_IDS[_selected_slot])
+			building_system.enter_preview_mode(get_building_id_at(_selected_slot))
 		else:
 			if building_system.is_in_build_mode():
 				building_system.exit_preview_mode()
@@ -438,6 +503,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_B and switch_mode(ActionMode.BUILDING):
 			get_viewport().set_input_as_handled()
 			return
+		if _action_mode == ActionMode.BUILDING and event.keycode in [KEY_Q, KEY_E]:
+			if cycle_building_category(-1 if event.keycode == KEY_Q else 1):
+				get_viewport().set_input_as_handled()
+				return
 		var slot := slot_from_key(event.keycode)
 		if slot >= 0:
 			select_mode_slot(slot)

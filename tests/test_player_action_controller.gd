@@ -138,6 +138,9 @@ class BuildingDouble:
 			"blocked_cell": {},
 		}
 
+	func diagnose_availability(building: Variant) -> Dictionary:
+		return diagnose_resources(building)
+
 	func try_place_selected_building(gx: int, gz: int) -> Dictionary:
 		if not placement_allowed:
 			return {
@@ -452,17 +455,53 @@ func _test_action_modes(
 		return
 
 	assertions.equal(controller.get_action_mode(), 0, "controller starts in farming mode")
+	for method_name in [
+		"get_building_category", "get_current_building_ids", "get_building_id_at",
+		"cycle_building_category", "set_building_category",
+		"get_building_availability_diagnostic",
+	]:
+		assertions.truthy(controller.has_method(method_name), "controller exposes %s" % method_name)
+	if not controller.has_method("get_building_category"):
+		controller.free()
+		return
+	assertions.equal(controller.get_building_category(), "basic", "building catalog starts in basic category")
+	assertions.equal(
+		controller.get_current_building_ids(),
+		["workbench", "stone_kiln", "barn", "well"],
+		"basic category exposes four ordered buildings"
+	)
 	assertions.truthy(controller.switch_mode(1), "controller switches to building mode")
 	assertions.equal(
 		controller.get_mode_selected_slot(1),
 		0,
-		"building mode defaults to barn"
+		"building mode defaults to first basic building"
 	)
-	assertions.equal(building.entered_ids, ["barn"], "building mode enters barn preview")
-	assertions.truthy(controller.select_mode_slot(8), "building mode accepts slot nine")
-	assertions.equal(building.entered_ids[-1], "fence", "slot nine selects fence")
-	assertions.truthy(not controller.select_mode_slot(9), "building mode rejects slot ten")
-	assertions.equal(controller.slot_from_key(KEY_9), 8, "building maps key nine")
+	assertions.equal(building.entered_ids, ["workbench"], "building mode enters workbench preview")
+	assertions.truthy(controller.select_mode_slot(3), "building mode accepts slot four")
+	assertions.equal(building.entered_ids[-1], "well", "slot four selects well")
+	assertions.truthy(not controller.select_mode_slot(4), "building mode rejects slot five")
+	assertions.equal(controller.slot_from_key(KEY_4), 3, "building maps key four")
+	assertions.equal(controller.slot_from_key(KEY_5), -1, "building rejects key five")
+	var exits_before_category := building.exit_calls
+	assertions.truthy(controller.cycle_building_category(1), "building mode cycles to the next category")
+	assertions.equal(controller.get_building_category(), "production", "next building category is production")
+	assertions.equal(
+		controller.get_current_building_ids(),
+		["windmill", "furnace", "food_workshop", "textile_machine"],
+		"production category uses catalog order"
+	)
+	assertions.equal(controller.get_selected_slot(), -1, "category change clears building selection")
+	assertions.equal(building.exit_calls, exits_before_category + 1, "category change exits active preview")
+	var category_event := InputEventKey.new()
+	category_event.pressed = true
+	category_event.keycode = KEY_E
+	controller._unhandled_input(category_event)
+	assertions.equal(controller.get_building_category(), "farming", "E cycles building category forward")
+	category_event.keycode = KEY_Q
+	controller._unhandled_input(category_event)
+	assertions.equal(controller.get_building_category(), "production", "Q cycles building category backward")
+	assertions.truthy(controller.set_building_category("basic"), "category can be selected directly")
+	assertions.truthy(controller.select_mode_slot(3), "basic selection can be restored after category change")
 
 	assertions.truthy(controller.switch_mode(0), "controller switches back to farming")
 	assertions.truthy(controller.select_mode_slot(5), "farming mode accepts slot six")
@@ -477,10 +516,10 @@ func _test_action_modes(
 	assertions.truthy(controller.switch_mode(1), "controller restores building mode")
 	assertions.equal(
 		controller.get_mode_selected_slot(1),
-		8,
-		"building mode remembers the last fence selection"
+		3,
+		"building mode remembers the last well selection"
 	)
-	assertions.equal(building.entered_ids[-1], "fence", "restored building re-enters preview")
+	assertions.equal(building.entered_ids[-1], "well", "restored building re-enters preview")
 	controller.free()
 
 

@@ -327,15 +327,15 @@ git commit -m "feat: unify building availability checks"
 - Modify: `scripts/actors/player_action_controller.gd`
 - Modify: `tests/test_player_action_controller.gd`
 
-- [ ] **Step 1: Write failing controller tests**
+- [x] **Step 1: Write failing controller tests**
 
 Test that the default build category is `basic`, its four IDs match the catalog, numeric key 4 resolves, numeric key 5 does not, `cycle_building_category(1)` switches to `production`, and Q/E only cycle categories while building mode is active. Confirm category change exits preview and clears the selected building without changing camera state.
 
-- [ ] **Step 2: Run main gameplay integration runner and verify RED**
+- [x] **Step 2: Run main gameplay integration runner and verify RED**
 
 Expected: controller exposes one hard-coded 9-item palette and ignores Q/E.
 
-- [ ] **Step 3: Replace hard-coded building arrays with catalog queries**
+- [x] **Step 3: Replace hard-coded building arrays with catalog queries**
 
 Add:
 
@@ -371,7 +371,7 @@ Rename the controller's primary query to `get_building_availability_diagnostic(i
 
 - [ ] **Step 4: Run controller and main gameplay tests GREEN**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/actors/player_action_controller.gd tests/test_player_action_controller.gd
