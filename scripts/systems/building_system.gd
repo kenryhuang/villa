@@ -60,7 +60,8 @@ func configure(
 
 func enter_preview_mode(building: Variant) -> bool:
 	var resolved := _resolve_data(building)
-	if resolved == null or not resolved.is_valid() or not load(resolved.scene_path) is PackedScene:
+	var availability := diagnose_availability(resolved)
+	if not bool(availability.allowed):
 		return false
 	exit_preview_mode()
 	_current_data = resolved
@@ -173,6 +174,35 @@ func diagnose_resources(building: Variant) -> Dictionary:
 	return result
 
 
+func diagnose_availability(building: Variant) -> Dictionary:
+	var resolved := _resolve_data(building)
+	if not _is_valid_building_data(resolved):
+		return _diagnostic(false, "invalid_building", "建筑数据不可用")
+	var managed_blueprint: bool = (
+		progression_ref != null
+		and (
+			not progression_ref.has_method("is_blueprint_managed")
+			or bool(progression_ref.call("is_blueprint_managed", resolved.building_id))
+		)
+	)
+	if managed_blueprint and not bool(progression_ref.call("is_blueprint_unlocked", resolved.building_id)):
+		var info := {
+			"reason": "尚未解锁%s蓝图" % resolved.display_name,
+			"service_id": "",
+		}
+		if progression_ref.has_method("get_blueprint_lock_info"):
+			info = progression_ref.call("get_blueprint_lock_info", resolved.building_id)
+		var locked := _diagnostic(
+			false,
+			"blueprint_locked",
+			str(info.get("reason", "尚未解锁蓝图"))
+		)
+		locked.building_id = resolved.building_id
+		locked.unlock_service_id = str(info.get("service_id", ""))
+		return locked
+	return diagnose_resources(resolved)
+
+
 func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 	var resolved := _resolve_data(building)
 	if not _is_valid_building_data(resolved):
@@ -184,18 +214,6 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 		unavailable.building_id = resolved.building_id
 		unavailable.grid = Vector2i(gx, gz)
 		return unavailable
-	var managed_blueprint: bool = (
-		progression_ref != null
-		and (
-			not progression_ref.has_method("is_blueprint_managed")
-			or bool(progression_ref.call("is_blueprint_managed", resolved.building_id))
-		)
-	)
-	if managed_blueprint and not bool(progression_ref.call("is_blueprint_unlocked", resolved.building_id)):
-		var locked := _diagnostic(false, "blueprint_locked", "尚未解锁%s蓝图" % resolved.display_name)
-		locked.building_id = resolved.building_id
-		locked.grid = Vector2i(gx, gz)
-		return locked
 	for cell_data in _footprint_cells(resolved, gx, gz):
 		var cell := grid_system_ref.get_cell(cell_data.x, cell_data.y)
 		if cell == null:
@@ -230,10 +248,10 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 			"water_required",
 			"无法建造%s：水车必须紧邻水域" % resolved.display_name
 		)
-	var resources := diagnose_resources(resolved)
-	resources.building_id = resolved.building_id
-	resources.grid = Vector2i(gx, gz)
-	return resources
+	var availability := diagnose_availability(resolved)
+	availability.building_id = resolved.building_id
+	availability.grid = Vector2i(gx, gz)
+	return availability
 
 
 func can_place_building(building_id: String, gx: int, gz: int) -> bool:
@@ -634,6 +652,7 @@ func _diagnostic(allowed: bool, code: String, message: String) -> Dictionary:
 		"grid": Vector2i(-1, -1),
 		"missing_resources": {},
 		"blocked_cell": {},
+		"unlock_service_id": "",
 	}
 
 

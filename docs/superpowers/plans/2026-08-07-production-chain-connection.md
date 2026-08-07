@@ -282,15 +282,15 @@ git commit -m "feat: complete production progression and migration"
 - Modify: `tests/test_building_system_complete.gd`
 - Modify: `tests/test_build_ui_build_mode.gd`
 
-- [ ] **Step 1: Write failing availability tests**
+- [x] **Step 1: Write failing availability tests**
 
 Assert that `diagnose_availability("furnace")` returns `blueprint_locked` before unlock, `insufficient_resources` after unlock without materials, and `ok` after adding exact materials. Assert `enter_preview_mode()` returns false in the first two states and true only in the third.
 
-- [ ] **Step 2: Run building tests and verify RED**
+- [x] **Step 2: Run building tests and verify RED**
 
 Expected: locked or unfunded buildings currently enter preview because `enter_preview_mode()` only validates scene data.
 
-- [ ] **Step 3: Implement one availability diagnostic**
+- [x] **Step 3: Implement one availability diagnostic**
 
 Add:
 
@@ -310,11 +310,11 @@ func diagnose_availability(building: Variant) -> Dictionary:
 
 Use it in `enter_preview_mode()` before changing any preview state, and reuse it at the end of `diagnose_placement()` before commit. `BuildUI` obtains its cards from `BuildingCatalog` and uses this same diagnostic; locked and missing cards remain clickable for feedback, while only `ready` enters preview.
 
-- [ ] **Step 4: Run building tests GREEN**
+- [x] **Step 4: Run building tests GREEN**
 
 Expected: unavailable selection has no preview or inventory side effects.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/systems/building_system.gd scripts/ui/build_ui.gd tests/test_building_system_complete.gd tests/test_build_ui_build_mode.gd

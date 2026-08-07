@@ -61,8 +61,18 @@ class ProgressionDouble:
 	extends RefCounted
 	var unlocked := {"workbench": true, "stone_kiln": true, "beehive": true}
 
+	func is_blueprint_managed(building_id: String) -> bool:
+		return not building_id.is_empty()
+
 	func is_blueprint_unlocked(building_id: String) -> bool:
 		return bool(unlocked.get(building_id, false))
+
+	func get_blueprint_lock_info(building_id: String) -> Dictionary:
+		return {
+			"unlocked": is_blueprint_unlocked(building_id),
+			"reason": "需要第8天" if not is_blueprint_unlocked(building_id) else "",
+			"service_id": "blueprint_%s" % building_id,
+		}
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -98,6 +108,30 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(locked_result.diagnostic.code, "blueprint_locked", "locked blueprint placement is rejected")
 	assertions.equal(locked_grid.get_cell(6, 6).state, locked_cell_state, "locked placement leaves grid untouched")
 	assertions.equal(locked_economy.spend_calls, 0, "locked placement spends no resources")
+	assertions.truthy(locked_system.has_method("diagnose_availability"), "building availability API exists")
+	if locked_system.has_method("diagnose_availability"):
+		var furnace_locked: Dictionary = locked_system.call("diagnose_availability", "furnace")
+		assertions.equal(furnace_locked.code, "blueprint_locked", "locked furnace availability is explicit")
+		assertions.equal(furnace_locked.unlock_service_id, "blueprint_furnace", "locked furnace links its service")
+		assertions.truthy(not locked_system.enter_preview_mode("furnace"), "locked furnace cannot enter preview")
+		assertions.truthy(not locked_system.is_in_build_mode(), "locked selection leaves preview inactive")
+		progression.unlocked.furnace = true
+		var furnace_cost: Dictionary = game_data.get_building("furnace").cost
+		for item_id in furnace_cost:
+			locked_economy.holdings[item_id] = 0
+		var furnace_missing: Dictionary = locked_system.call("diagnose_availability", "furnace")
+		assertions.equal(furnace_missing.code, "insufficient_resources", "unlocked furnace reports missing materials")
+		assertions.truthy(not locked_system.enter_preview_mode("furnace"), "unfunded furnace cannot enter preview")
+		assertions.truthy(not locked_system.is_in_build_mode(), "unfunded selection leaves preview inactive")
+		for item_id in furnace_cost:
+			locked_economy.holdings[item_id] = int(furnace_cost[item_id])
+		assertions.equal(
+			locked_system.call("diagnose_availability", "furnace").code,
+			"ok",
+			"funded furnace availability is ready"
+		)
+		assertions.truthy(locked_system.enter_preview_mode("furnace"), "funded furnace enters preview")
+		locked_system.exit_preview_mode()
 	var tier_zero = BuildingDataScript.from_dictionary(game_data.get_building("workbench"))
 	assertions.truthy(locked_system.place_building(tier_zero, 8, 8) is BuildingInstance, "tier-zero blueprint remains placeable")
 	locked_system.free()
