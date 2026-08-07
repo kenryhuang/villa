@@ -97,12 +97,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.season_system.hour = 8
 		main.season_system.minute = 0
 		main.season_system._accumulator = 0.0
+		var held_stone: int = main.inventory_system.get_item_count("stone")
+		if held_stone > 0:
+			main.inventory_system.remove_item("stone", held_stone)
 		var stone_before: int = main.inventory_system.get_item_count("stone")
 		var stone_units_before: int = int(target.remaining_units)
 		var stamina_before: int = game_state.player_state.stamina
 		var durability_before: int = int(main.tool_system.get_durability("pickaxe").current)
 		var stone_missing_before := _missing_resource(
-			main.building_system.diagnose_resources("barn"), "stone"
+			main.building_system.diagnose_resources("workbench"), "stone"
 		)
 		var stone_market_before: int = main.market_system.get_stock("stone")
 		main.action_controller.select_slot(0)
@@ -231,7 +234,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(main.season_system.minute, 10, "gathering advances ten game minutes")
 		assertions.equal(target.remaining_units, 0, "single mining action depletes the whole node")
 		assertions.equal(
-			_missing_resource(main.building_system.diagnose_resources("barn"), "stone"),
+			_missing_resource(main.building_system.diagnose_resources("workbench"), "stone"),
 			stone_missing_before - stone_units_before,
 			"whole-node stone immediately reduces a building material shortage"
 		)
@@ -262,11 +265,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		var tree_target := _first_resource_of_type(resources, "tree", target)
 		assertions.truthy(tree_target != null, "economy chain finds a designated resource tree")
 		if tree_target != null:
+			var held_wood: int = main.inventory_system.get_item_count("wood")
+			if held_wood > 0:
+				main.inventory_system.remove_item("wood", held_wood)
 			var wood_before: int = main.inventory_system.get_item_count("wood")
 			var tree_stamina_before: int = game_state.player_state.stamina
 			var axe_durability_before: int = int(main.tool_system.get_durability("axe").current)
 			var wood_missing_before := _missing_resource(
-				main.building_system.diagnose_resources("barn"), "wood"
+				main.building_system.diagnose_resources("workbench"), "wood"
 			)
 			var wood_market_before: int = main.market_system.get_stock("wood")
 			var tree_cell: Vector2i = main.grid_system.world_to_grid(tree_target.global_position.x, tree_target.global_position.z)
@@ -291,9 +297,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			assertions.equal(tree_target.get_felling_frame(), 3, "tree completion leaves painted stump art")
 			assertions.truthy(main.grid_system.is_navigation_cell_walkable(tree_cell), "painted stump releases navigation")
 			assertions.equal(
-				_missing_resource(main.building_system.diagnose_resources("barn"), "wood"),
+				_missing_resource(main.building_system.diagnose_resources("workbench"), "wood"),
 				wood_missing_before - 5,
-				"gathered wood immediately reduces the barn shortage"
+				"gathered wood immediately reduces the workbench shortage"
 			)
 			assertions.equal(main.market_system.get_stock("wood"), wood_market_before, "tree gathering leaves market stock unchanged")
 

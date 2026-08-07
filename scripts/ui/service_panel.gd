@@ -24,6 +24,7 @@ var _progression: EconomyProgressionSystem
 var _tool_system: ToolSystem
 var _production_system: ProductionSystem
 var _services_by_id: Dictionary = {}
+var selected_service_id := ""
 
 
 func _ready() -> void:
@@ -63,7 +64,36 @@ func select_category(category_id: String) -> void:
 	if category_id not in VALID_CATEGORIES:
 		return
 	selected_category = category_id
+	selected_service_id = ""
 	refresh_services()
+
+
+func select_service(service_id: String) -> bool:
+	if _progression == null or service_id.is_empty():
+		return false
+	var target: Dictionary = {}
+	for service in _progression.get_available_services():
+		if str(service.get("id", "")) == service_id:
+			target = service
+			break
+	if target.is_empty():
+		return false
+	var category_id := str(target.get("category", ""))
+	if category_id not in VALID_CATEGORIES:
+		return false
+	selected_category = category_id
+	selected_service_id = service_id
+	refresh_services()
+	var card := _card_for_service(service_id)
+	if card != null:
+		card.modulate = Color(1.0, 0.92, 0.58, 1.0)
+		var scroll := service_cards.get_parent() as ScrollContainer
+		if scroll != null and scroll.is_ancestor_of(card):
+			scroll.ensure_control_visible(card)
+		var action := card.get_node_or_null("ActionButton") as Button
+		if action != null and action.is_inside_tree():
+			action.grab_focus()
+	return card != null
 
 
 func refresh_services() -> void:
@@ -124,6 +154,8 @@ func _build_card(service: Dictionary) -> VBoxContainer:
 	card.add_theme_constant_override("separation", 4)
 	card.set_meta("service_id", str(service.get("id", "")))
 	card.set_meta("category", str(service.get("category", "")))
+	if str(service.get("id", "")) == selected_service_id:
+		card.modulate = Color(1.0, 0.92, 0.58, 1.0)
 	_add_label(card, "TitleLabel", str(service.get("display_name", service.get("id", "服务"))), 22)
 	_add_label(card, "GateLabel", "解锁条件：%s" % str(service.get("gate", "无")), 17)
 	_add_label(card, "LevelOwnedLabel", "当前：%s" % str(service.get("current_state", "未拥有")), 17)
@@ -140,6 +172,13 @@ func _build_card(service: Dictionary) -> VBoxContainer:
 	action.pressed.connect(request_service.bind(str(service.get("id", ""))))
 	card.add_child(action)
 	return card
+
+
+func _card_for_service(service_id: String) -> Control:
+	for card in service_cards.get_children():
+		if str(card.get_meta("service_id", "")) == service_id:
+			return card as Control
+	return null
 
 
 func _add_label(parent: Node, node_name: String, value: String, font_size: int) -> Label:

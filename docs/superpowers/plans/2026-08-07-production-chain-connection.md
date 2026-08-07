@@ -369,7 +369,7 @@ All building selection, labels, diagnostics, continuous placement, and numeric k
 
 Rename the controller's primary query to `get_building_availability_diagnostic(index)` and make it call `building_system.diagnose_availability(building_id)`. Keep `get_building_resource_diagnostic(index)` as a compatibility alias that forwards to the new method until all existing callers and tests are migrated.
 
-- [ ] **Step 4: Run controller and main gameplay tests GREEN**
+- [x] **Step 4: Run controller and main gameplay tests GREEN**
 
 - [x] **Step 5: Commit**
 
@@ -393,7 +393,7 @@ git commit -m "feat: add categorized building selection"
 - Modify: `tests/test_economy_ui_integration.gd`
 - Modify: `tests/test_main_farming_building_integration.gd`
 
-- [ ] **Step 1: Write failing UI-state and navigation tests**
+- [x] **Step 1: Write failing UI-state and navigation tests**
 
 Cover the four palette states, five category buttons, at most four building cards, material-name fallback, lock detail visibility, and `building_unlock_requested("blueprint_furnace")`. Add service tests for:
 
@@ -404,11 +404,11 @@ assertions.equal(service_panel.selected_service_id, "blueprint_furnace", "deep l
 assertions.truthy(main.open_economy_tab("services", "blueprint_furnace"), "main routes unlock target")
 ```
 
-- [ ] **Step 2: Run UI runners and verify RED**
+- [x] **Step 2: Run UI runners and verify RED**
 
 Run `run_main_gameplay_integration_tests.gd` and `run_economy_ui_tests.gd`. Expected: no category bar, lock detail, or service-target API.
 
-- [ ] **Step 3: Implement palette states and category bar**
+- [x] **Step 3: Implement palette states and category bar**
 
 Replace `ActionPaletteButton.set_available()` with a compatible `set_build_state(state)` that keeps `missing_resources` and `locked` clickable, applies green/red/gray modulation, and disables only `invalid`.
 
@@ -427,15 +427,15 @@ func _on_building_button_pressed(index: int) -> void:
 
 Category buttons call `action_controller.set_building_category(category_id)`. Inventory and `service_unlocked` events refresh cards and the cost bar immediately.
 
-- [ ] **Step 4: Implement service selection and Main routing**
+- [x] **Step 4: Implement service selection and Main routing**
 
 `ServicePanel.select_service(service_id)` refreshes services, derives the service category, selects it, rebuilds cards, records `selected_service_id`, and focuses/highlights the matching card. `ShopUI.open(tab_id, target_id)` and `Main.open_economy_tab()` accept service targets. Connect `hud.building_unlock_requested` to `open_economy_tab("services", service_id)`.
 
-- [ ] **Step 5: Run UI and integration tests GREEN**
+- [x] **Step 5: Run UI and integration tests GREEN**
 
 Expected: all five categories appear; locked cards navigate; buying a service refreshes the palette without scene reload.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/ui/action_palette_button.gd scripts/ui/hud.gd scenes/ui/hud.tscn scripts/ui/service_panel.gd scripts/ui/shop_ui.gd scripts/main.gd tests/test_action_palette_button.gd tests/test_hud_action_bar.gd tests/test_service_panel.gd tests/test_economy_ui_integration.gd tests/test_main_farming_building_integration.gd

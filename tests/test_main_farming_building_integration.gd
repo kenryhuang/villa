@@ -267,12 +267,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				})
 			assertions.equal(
 				main.inventory_system.get_item_count("wood"),
-				20,
-				"main fence placement spends ten wood"
+				28,
+				"main fence placement spends two wood"
 			)
 			assertions.equal(
 				main.hud.get_material_count_text("wood"),
-				"20",
+				"28",
 				"HUD immediately reflects building material spend"
 			)
 			assertions.equal(
@@ -281,17 +281,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				"main building starts at foundation"
 			)
 			assertions.truthy(
-				main.inventory_system.remove_item("wood", 11),
+				main.inventory_system.remove_item("wood", 27),
 				"integration fixture drains wood below fence cost"
 			)
 			assertions.truthy(
 				action_controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
 				"main switches to building palette with low materials"
 			)
-			var fence_button := main.hud.quick_bar.get_child(8) as Button
 			assertions.truthy(
-				fence_button.disabled,
-				"real main HUD disables fence below ten wood"
+				action_controller.set_building_category("decoration"),
+				"main selects decoration building category"
+			)
+			var fence_button := main.hud.quick_bar.get_child(1) as ActionPaletteButton
+			assertions.truthy(
+				fence_button.build_state == "missing_resources" and not fence_button.disabled,
+				"real main HUD marks fence missing below two wood"
 			)
 
 	var save_data: Dictionary = main.save_manager.call("_gather_save_data")

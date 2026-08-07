@@ -87,11 +87,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"pointer planting consumes one grain seed"
 	)
 
-	# The formal starter economy cannot afford a barn; fund this pointer-only fixture explicitly.
+	# Fund the starter workbench for this pointer-only fixture explicitly.
 	main.inventory_system.add_item("wood", 170)
 	main.inventory_system.add_item("stone", 80)
-	var build_cell := _nearest_build_origin(main, "barn")
-	assertions.truthy(build_cell != null, "main has a pointer-visible barn origin")
+	var build_cell := _nearest_build_origin(main, "workbench")
+	assertions.truthy(build_cell != null, "main has a pointer-visible workbench origin")
 	if build_cell:
 		var build_point: Vector3 = build_cell.world_position_3d()
 		var build_motion := InputEventMouseMotion.new()
@@ -117,8 +117,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.equal(
 			main.building_system.get_preview_marker_count(),
-			4,
-			"barn pointer preview shows its 2x2 footprint"
+			1,
+			"workbench pointer preview shows its 1x1 footprint"
 		)
 
 		var original_state: int = build_cell.state
@@ -176,12 +176,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(
 			main.action_controller.get_selected_slot(),
 			0,
-			"continuous placement keeps barn selected"
+			"continuous placement keeps workbench selected"
 		)
 		assertions.equal(
 			main.building_system.get_selected_building_id(),
-			"barn",
-			"continuous placement restores barn preview"
+			"workbench",
+			"continuous placement restores workbench preview"
 		)
 		assertions.truthy(
 			main.building_system.is_in_build_mode(),

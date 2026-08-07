@@ -7,6 +7,7 @@ signal quick_slot_selected(index: int)
 signal debug_reset_requested
 signal market_requested
 signal notifications_requested
+signal building_unlock_requested(service_id: String)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const ActionPaletteButtonScene = preload(
@@ -65,6 +66,20 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var build_feedback_toast: PanelContainer = $BottomBar/BuildFeedbackToast
 @onready var build_feedback_label: Label = $BottomBar/BuildFeedbackToast/Message
 @onready var build_feedback_timer: Timer = $BuildFeedbackTimer
+@onready var build_category_bar: HBoxContainer = $BottomBar/BuildCategoryBar
+@onready var build_category_buttons := {
+	"basic": $BottomBar/BuildCategoryBar/Basic,
+	"production": $BottomBar/BuildCategoryBar/Production,
+	"farming": $BottomBar/BuildCategoryBar/Farming,
+	"resource": $BottomBar/BuildCategoryBar/Resource,
+	"decoration": $BottomBar/BuildCategoryBar/Decoration,
+}
+@onready var build_lock_panel: PanelContainer = $BuildLockPanel
+@onready var build_lock_title: Label = $BuildLockPanel/Content/Title
+@onready var build_lock_reason: Label = $BuildLockPanel/Content/Reason
+@onready var build_lock_cost: Label = $BuildLockPanel/Content/Cost
+@onready var build_lock_unlock_button: Button = $BuildLockPanel/Content/UnlockButton
+@onready var build_lock_close_button: Button = $BuildLockPanel/Content/CloseButton
 @onready var _material_count_labels := {
 	"wood": $MaterialsPanel/MaterialsRow/Wood/Count,
 	"stone": $MaterialsPanel/MaterialsRow/Stone/Count,
@@ -80,6 +95,7 @@ var season_system_ref: Variant
 var _mode_menu_hover_token := 0
 var _economy_ui_unread_count := 0
 var notification_ref: EconomyNotificationSystem
+var _build_lock_service_id := ""
 
 
 func _ready() -> void:
@@ -96,6 +112,8 @@ func _ready() -> void:
 		_event_bus.day_changed.connect(_on_day_changed)
 		_event_bus.item_added.connect(_on_inventory_item_changed)
 		_event_bus.item_removed.connect(_on_inventory_item_changed)
+		if _event_bus.has_signal("service_unlocked"):
+			_event_bus.service_unlocked.connect(_on_service_unlocked)
 	if not debug_reset_button.pressed.is_connected(_on_debug_reset_pressed):
 		debug_reset_button.pressed.connect(_on_debug_reset_pressed)
 	if not market_button.pressed.is_connected(_on_market_pressed):
@@ -117,6 +135,12 @@ func _ready() -> void:
 	mode_menu_content.mouse_entered.connect(_on_mode_menu_mouse_entered)
 	mode_menu_content.mouse_exited.connect(_on_mode_menu_mouse_exited)
 	build_feedback_timer.timeout.connect(_on_build_feedback_timeout)
+	for category_id in build_category_buttons:
+		build_category_buttons[category_id].pressed.connect(
+			_on_build_category_pressed.bind(category_id)
+		)
+	build_lock_unlock_button.pressed.connect(_on_build_unlock_pressed)
+	build_lock_close_button.pressed.connect(_hide_build_lock_detail)
 	set_notification_count(0)
 
 
@@ -360,6 +384,11 @@ func _connect_action_controller(controller: Variant) -> void:
 		"build_feedback_requested",
 		Callable(self, "show_build_feedback")
 	)
+	_connect_controller_signal(
+		controller,
+		"building_category_changed",
+		Callable(self, "_on_building_category_changed")
+	)
 
 
 func _disconnect_action_controller(controller: Variant) -> void:
@@ -387,6 +416,11 @@ func _disconnect_action_controller(controller: Variant) -> void:
 		controller,
 		"build_feedback_requested",
 		Callable(self, "show_build_feedback")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"building_category_changed",
+		Callable(self, "_on_building_category_changed")
 	)
 
 
@@ -422,7 +456,20 @@ func rebuild_action_palette() -> void:
 	for child in quick_bar.get_children():
 		child.free()
 	var building_mode := _is_building_mode()
-	var labels: Array = BUILDING_NAMES if building_mode else ACTION_NAMES
+	var building_ids: Array = (
+		action_controller.get_current_building_ids()
+		if building_mode and action_controller.has_method("get_current_building_ids")
+		else []
+	)
+	var labels: Array = []
+	if building_mode:
+		for building_id in building_ids:
+			var source := GameDataScript.get_building(building_id)
+			labels.append(str(source.get("name", building_id)))
+	else:
+		labels = ACTION_NAMES
+	build_category_bar.visible = building_mode
+	_refresh_build_category_buttons()
 	quick_bar.add_theme_constant_override("separation", 4 if building_mode else 8)
 	var mode_name := "建造" if building_mode else "种植"
 	mode_button.configure(
@@ -474,16 +521,21 @@ func refresh_action_bar() -> void:
 		elif building_mode:
 			_configure_building_button(button, index)
 		button.set_selected(index == selected)
-		var available := true
 		if building_mode:
-			available = _building_resources_available(index)
-		button.set_available(available)
+			var diagnostic := _building_diagnostic(index)
+			button.set_build_state(_build_state_for_diagnostic(diagnostic))
+		else:
+			button.set_available(true)
 	_refresh_build_cost_bar(selected)
 
 
 func _on_quick_slot_pressed(index: int) -> void:
 	quick_slot_selected.emit(index)
-	if action_controller:
+	if not action_controller:
+		return
+	if _is_building_mode():
+		_on_building_button_pressed(index)
+	else:
 		action_controller.select_mode_slot(index)
 
 
@@ -504,7 +556,7 @@ func _on_action_palette_changed(_mode: int, _selected_index: int) -> void:
 
 func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
 	var item_data = GameDataScript.get_item(item_id)
-	if item_id in MATERIAL_IDS or (item_data and item_data.get("category", "") == "seed"):
+	if _is_building_mode() or item_id in MATERIAL_IDS or (item_data and item_data.get("category", "") == "seed"):
 		refresh_action_bar()
 
 
@@ -592,14 +644,17 @@ func _is_building_mode() -> bool:
 func _selection_label(index: int) -> String:
 	if index < 0:
 		return "未选择建筑" if _is_building_mode() else "未选择工具"
-	var labels: Array = BUILDING_NAMES if _is_building_mode() else ACTION_NAMES
-	return str(labels[index]) if index < labels.size() else ""
+	if _is_building_mode() and action_controller.has_method("get_building_id_at"):
+		var building_id := str(action_controller.get_building_id_at(index))
+		var source := GameDataScript.get_building(building_id)
+		return str(source.get("name", building_id))
+	return str(ACTION_NAMES[index]) if index < ACTION_NAMES.size() else ""
 
 
 func _configure_building_button(button: Button, index: int) -> void:
-	if index < 0 or index >= PlayerActionController.BUILDING_IDS.size():
+	var building_id := _building_id_at(index)
+	if building_id.is_empty():
 		return
-	var building_id: String = PlayerActionController.BUILDING_IDS[index]
 	var source: Dictionary = GameDataScript.get_building(building_id)
 	var footprint := Vector2i(
 		int(source.get("footprint_x", 0)),
@@ -614,7 +669,7 @@ func _configure_building_button(button: Button, index: int) -> void:
 			else 0
 		)
 		var part := "%s %d/%d" % [
-			MATERIAL_NAMES.get(item_id, item_id),
+			_item_display_name(str(item_id)),
 			required,
 			available,
 		]
@@ -622,7 +677,7 @@ func _configure_building_button(button: Button, index: int) -> void:
 			part += "（缺 %d）" % (required - available)
 		cost_parts.append(part)
 	button.tooltip_text = "%s\n占地 %d × %d\n%s" % [
-		str(source.get("name", BUILDING_NAMES[index])),
+		str(source.get("name", building_id)),
 		footprint.x,
 		footprint.y,
 		"、".join(cost_parts),
@@ -631,11 +686,14 @@ func _configure_building_button(button: Button, index: int) -> void:
 
 func _palette_texture(index: int, building_mode: bool) -> Texture2D:
 	var path := ""
-	if building_mode and index >= 0 and index < PlayerActionController.BUILDING_IDS.size():
-		path = _building_icon_path(PlayerActionController.BUILDING_IDS[index])
+	if building_mode:
+		path = _building_icon_path(_building_id_at(index))
 	elif not building_mode and index >= 0 and index < FARMING_ICON_PATHS.size():
 		path = FARMING_ICON_PATHS[index]
-	return _load_palette_icon(path)
+	var texture := _load_palette_icon(path)
+	if texture == null and building_mode:
+		texture = _load_palette_icon(_building_icon_path("workbench"))
+	return texture
 
 
 func _building_icon_path(building_id: String) -> String:
@@ -663,12 +721,107 @@ func _building_resources_available(index: int) -> bool:
 		)
 	if economy_ref == null or not economy_ref.has_method("has_resources"):
 		return true
-	if index < 0 or index >= PlayerActionController.BUILDING_IDS.size():
+	var building_id := _building_id_at(index)
+	if building_id.is_empty():
 		return false
-	var source: Dictionary = GameDataScript.get_building(
-		PlayerActionController.BUILDING_IDS[index]
-	)
+	var source: Dictionary = GameDataScript.get_building(building_id)
 	return bool(economy_ref.has_resources(source.get("cost", {})))
+
+
+func _building_id_at(index: int) -> String:
+	if action_controller == null or not action_controller.has_method("get_building_id_at"):
+		return ""
+	return str(action_controller.get_building_id_at(index))
+
+
+func _building_diagnostic(index: int) -> Dictionary:
+	if action_controller != null and action_controller.has_method("get_building_availability_diagnostic"):
+		return action_controller.get_building_availability_diagnostic(index)
+	if action_controller != null and action_controller.has_method("get_building_resource_diagnostic"):
+		return action_controller.get_building_resource_diagnostic(index)
+	return {
+		"allowed": false,
+		"code": "invalid_building",
+		"message": "建筑数据不可用",
+		"building_id": _building_id_at(index),
+	}
+
+
+func _build_state_for_diagnostic(diagnostic: Dictionary) -> String:
+	if bool(diagnostic.get("allowed", false)):
+		return "ready"
+	match str(diagnostic.get("code", "")):
+		"blueprint_locked":
+			return "locked"
+		"insufficient_resources":
+			return "missing_resources"
+	return "invalid"
+
+
+func _on_building_button_pressed(index: int) -> void:
+	var diagnostic := _building_diagnostic(index)
+	if str(diagnostic.get("code", "")) == "blueprint_locked":
+		_show_build_lock_detail(diagnostic)
+		return
+	if not bool(diagnostic.get("allowed", false)):
+		show_build_feedback(str(diagnostic.get("message", "建筑不可用")), diagnostic)
+		return
+	action_controller.select_mode_slot(index)
+
+
+func _on_build_category_pressed(category_id: String) -> void:
+	if action_controller != null and action_controller.has_method("set_building_category"):
+		action_controller.set_building_category(category_id)
+
+
+func _on_building_category_changed(_category_id: String, _category_index: int) -> void:
+	rebuild_action_palette()
+
+
+func _refresh_build_category_buttons() -> void:
+	var selected := (
+		str(action_controller.get_building_category())
+		if action_controller != null and action_controller.has_method("get_building_category")
+		else ""
+	)
+	for category_id in build_category_buttons:
+		build_category_buttons[category_id].button_pressed = category_id == selected
+
+
+func _show_build_lock_detail(diagnostic: Dictionary) -> void:
+	var building_id := str(diagnostic.get("building_id", ""))
+	var source := GameDataScript.get_building(building_id)
+	build_lock_title.text = "%s蓝图未解锁" % str(source.get("name", building_id))
+	build_lock_reason.text = str(diagnostic.get("message", "尚未解锁"))
+	var cost_parts: Array[String] = []
+	for item_id in source.get("cost", {}):
+		cost_parts.append("%s ×%d" % [_item_display_name(str(item_id)), int(source.cost[item_id])])
+	build_lock_cost.text = "最终造价：%s" % "、".join(cost_parts)
+	_build_lock_service_id = str(diagnostic.get("unlock_service_id", ""))
+	build_lock_unlock_button.disabled = _build_lock_service_id.is_empty()
+	build_lock_panel.visible = true
+
+
+func _hide_build_lock_detail() -> void:
+	build_lock_panel.visible = false
+	_build_lock_service_id = ""
+
+
+func _on_build_unlock_pressed() -> void:
+	if _build_lock_service_id.is_empty():
+		return
+	var service_id := _build_lock_service_id
+	_hide_build_lock_detail()
+	building_unlock_requested.emit(service_id)
+
+
+func _on_service_unlocked(_kind: String = "", _target_id: String = "") -> void:
+	refresh_action_bar()
+
+
+func _item_display_name(item_id: String) -> String:
+	var item_data = GameDataScript.get_item(item_id)
+	return str(item_data.get("name", MATERIAL_NAMES.get(item_id, item_id))) if item_data else str(MATERIAL_NAMES.get(item_id, item_id))
 
 
 func get_material_count_text(item_id: String) -> String:
@@ -698,17 +851,17 @@ func _refresh_build_cost_bar(selected_index: int) -> void:
 	if (
 		not _is_building_mode()
 		or selected_index < 0
-		or selected_index >= PlayerActionController.BUILDING_IDS.size()
+		or _building_id_at(selected_index).is_empty()
 	):
 		build_cost_bar.visible = false
 		return
-	var building_id: String = PlayerActionController.BUILDING_IDS[selected_index]
+	var building_id := _building_id_at(selected_index)
 	var source: Dictionary = GameDataScript.get_building(building_id)
 	if source.is_empty():
 		build_cost_bar.visible = false
 		return
 	building_cost_label.text = "%s　占地 %d×%d" % [
-		str(source.get("name", BUILDING_NAMES[selected_index])),
+		str(source.get("name", building_id)),
 		int(source.get("footprint_x", 0)),
 		int(source.get("footprint_z", 0)),
 	]
@@ -728,13 +881,22 @@ func _refresh_build_cost_bar(selected_index: int) -> void:
 func _create_cost_entry(item_id: String, required: int, available: int) -> HBoxContainer:
 	var entry := HBoxContainer.new()
 	entry.add_theme_constant_override("separation", 4)
-	entry.tooltip_text = str(MATERIAL_NAMES.get(item_id, item_id))
+	entry.tooltip_text = _item_display_name(item_id)
 	var icon := TextureRect.new()
 	icon.custom_minimum_size = Vector2(28, 28)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture = _load_palette_icon(str(MATERIAL_ICON_PATHS.get(item_id, "")))
-	entry.add_child(icon)
+	if icon.texture != null:
+		entry.add_child(icon)
+	else:
+		var fallback := Label.new()
+		fallback.custom_minimum_size = Vector2(28, 28)
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		fallback.text = _item_display_name(item_id).left(1)
+		fallback.tooltip_text = _item_display_name(item_id)
+		entry.add_child(fallback)
 	var amount := Label.new()
 	amount.add_theme_font_size_override("font_size", 22)
 	amount.add_theme_color_override(

@@ -424,6 +424,17 @@ func _test_every_modal_restores_original_pause(assertions: TestAssert, tree: Sce
 		assertions.equal(tree.paused, original_pause, "ShopUI restores original pause=%s" % original_pause)
 
 	var production_fixture := _production_fixture(tree)
+	assertions.truthy(
+		shop.configure(
+			inventory,
+			economy,
+			market,
+			production_fixture.progression,
+			production_fixture.tool,
+			production_fixture.production
+		),
+		"modal handoff fixture configures service routing"
+	)
 	_unlock_station(production_fixture.progression, "windmill")
 	production_fixture.production.set_progression_system(production_fixture.progression)
 	var windmill := _building("windmill", 1, 1)
@@ -456,6 +467,12 @@ func _test_every_modal_restores_original_pause(assertions: TestAssert, tree: Sce
 		shop.close_button.pressed.emit()
 		assertions.equal(tree.paused, original_pause, "closing handed-off ShopUI restores original pause=%s" % original_pause)
 		tree.root.add_child(windmill)
+	assertions.truthy(
+		main.open_economy_tab("services", "blueprint_furnace"),
+		"main routes blueprint unlock target to services"
+	)
+	assertions.equal(shop.service_panel.selected_service_id, "blueprint_furnace", "Main deep link selects requested service")
+	shop.close()
 	main.free()
 
 	# Nested trade confirmation and notification center must not replace their owner's snapshot.
@@ -492,15 +509,17 @@ func _production_fixture(tree: SceneTree) -> Dictionary:
 	var inventory := InventorySystemScript.new() as InventorySystem
 	var production := ProductionSystemScript.new() as ProductionSystem
 	var progression := ProgressionSystemScript.new() as EconomyProgressionSystem
-	for node in [grid, farming, inventory, production, progression]:
+	var tool := ToolSystemScript.new() as ToolSystem
+	for node in [grid, farming, inventory, production, progression, tool]:
 		tree.root.add_child(node)
 	farming.configure(grid, null, null)
 	production.configure(grid, farming, null, inventory)
-	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression}
+	tool.configure(null, inventory, null)
+	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression, "tool": tool}
 
 
 func _free_production_fixture(fixture: Dictionary) -> void:
-	_free_nodes([fixture.progression, fixture.production, fixture.inventory, fixture.farming, fixture.grid])
+	_free_nodes([fixture.tool, fixture.progression, fixture.production, fixture.inventory, fixture.farming, fixture.grid])
 
 
 func _unlock_station(progression: EconomyProgressionSystem, station: String) -> void:

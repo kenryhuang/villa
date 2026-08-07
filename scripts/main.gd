@@ -449,6 +449,9 @@ func _setup_ui() -> void:
 		var notification_callback := Callable(self, "_on_notifications_requested")
 		if not hud.notifications_requested.is_connected(notification_callback):
 			hud.notifications_requested.connect(notification_callback)
+		var unlock_callback := Callable(self, "_on_building_unlock_requested")
+		if hud.has_signal("building_unlock_requested") and not hud.building_unlock_requested.is_connected(unlock_callback):
+			hud.building_unlock_requested.connect(unlock_callback)
 
 	# 背包 UI
 	if inventory_ui:
@@ -500,6 +503,10 @@ func _on_market_requested() -> void:
 	open_economy_tab("market")
 
 
+func _on_building_unlock_requested(service_id: String) -> void:
+	open_economy_tab("services", service_id)
+
+
 func _on_notifications_requested() -> void:
 	if economy_notification_ui != null:
 		economy_notification_ui.toggle_center()
@@ -527,6 +534,9 @@ func open_economy_tab(tab_id: String, target_id: String = "") -> bool:
 					return false
 				panel = shop_ui.get("contract_panel")
 				select_method = "select_contract"
+			"services":
+				panel = shop_ui.get("service_panel")
+				select_method = "select_service"
 			_:
 				return false
 		if panel == null or not panel.has_method(select_method):

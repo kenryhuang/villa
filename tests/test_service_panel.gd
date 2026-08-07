@@ -66,6 +66,11 @@ func _test_categories_cards_transactions_and_shop_route(
 	tree.root.add_child(panel)
 	assertions.truthy(panel.configure(progression, tool, production), "service panel configures")
 	assertions.truthy(panel.configure(progression, tool, production), "service panel repeated configure is idempotent")
+	assertions.truthy(panel.has_method("select_service"), "service panel exposes deep-link selection")
+	if panel.has_method("select_service"):
+		assertions.truthy(panel.call("select_service", "blueprint_furnace"), "service can be deep-linked")
+		assertions.equal(panel.selected_category, "blueprints", "deep link selects category")
+		assertions.equal(panel.get("selected_service_id"), "blueprint_furnace", "deep link records target")
 	var event_bus := tree.root.get_node_or_null("EventBus")
 	if event_bus != null:
 		var refresh_connections := 0

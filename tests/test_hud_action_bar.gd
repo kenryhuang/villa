@@ -19,6 +19,7 @@ class BuildingDouble:
 
 	var build_mode := false
 	var inventory: InventorySystem
+	var locked_ids: Dictionary = {}
 
 	func enter_preview_mode(_building: Variant) -> bool:
 		build_mode = true
@@ -50,6 +51,19 @@ class BuildingDouble:
 			"building_id": building_id,
 			"missing_resources": missing,
 		}
+
+	func diagnose_availability(building: Variant) -> Dictionary:
+		var building_id := str(building)
+		if locked_ids.has(building_id):
+			return {
+				"allowed": false,
+				"code": "blueprint_locked",
+				"message": "需要第8天",
+				"building_id": building_id,
+				"missing_resources": {},
+				"unlock_service_id": "blueprint_%s" % building_id,
+			}
+		return diagnose_resources(building)
 
 
 class SeasonDouble:
@@ -145,6 +159,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		hud.get_node_or_null("BottomBar/BuildFeedbackToast") is PanelContainer,
 		"building feedback toast is authored"
 	)
+	assertions.truthy(
+		hud.get_node_or_null("BottomBar/BuildCategoryBar") is HBoxContainer,
+		"five-category building bar is authored"
+	)
+	assertions.truthy(
+		hud.get_node_or_null("BuildLockPanel") is PanelContainer,
+		"building lock detail panel is authored"
+	)
+	assertions.truthy(hud.has_signal("building_unlock_requested"), "HUD exposes blueprint deep-link signal")
 	assertions.truthy(
 		hud.get_node_or_null("BuildFeedbackTimer") is Timer,
 		"building feedback timer is authored"
@@ -413,15 +436,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
 		"controller enters building mode for HUD"
 	)
-	assertions.truthy(controller.select_mode_slot(5), "affordable well can be selected")
-	assertions.equal(hud.tool_label.text, "水井", "building slot six shows the well label")
+	assertions.truthy(controller.select_mode_slot(3), "affordable well can be selected")
+	assertions.equal(hud.tool_label.text, "水井", "building slot four shows the well label")
 	inventory.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
 	assertions.equal(
 		hud.tool_label.text,
 		"水井",
 		"planting remaps do not overwrite a selected building label"
 	)
-	assertions.equal(hud.get_palette_button_count(), 9, "building palette has nine buttons")
+	assertions.equal(hud.get_palette_button_count(), 4, "current building category has four buttons")
+	assertions.equal(hud.build_category_bar.get_child_count(), 5, "building palette has five category buttons")
+	assertions.truthy(hud.build_category_bar.visible, "building categories appear only in building mode")
 	if hud.mode_button is ActionPaletteButtonScript:
 		assertions.equal(
 			hud.mode_button.name_label.text,
@@ -437,9 +462,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			child is ActionPaletteButtonScript and child.icon_rect.texture != null,
 			"every building palette button has an icon"
 		)
-	var unavailable_tile := quick_bar.get_child(0)
+	building.locked_ids.furnace = true
+	var unlock_requests: Array[String] = []
+	hud.building_unlock_requested.connect(func(service_id: String) -> void: unlock_requests.append(service_id))
+	assertions.truthy(controller.set_building_category("production"), "HUD fixture selects production category")
+	(quick_bar.get_child(1) as Button).pressed.emit()
+	assertions.truthy(hud.build_lock_panel.visible, "locked building opens lock detail")
+	assertions.equal(hud.build_lock_unlock_button.disabled, false, "mapped lock can navigate to services")
+	hud.build_lock_unlock_button.pressed.emit()
+	assertions.equal(unlock_requests, ["blueprint_furnace"], "lock detail emits blueprint service target")
+	assertions.truthy(controller.set_building_category("basic"), "HUD fixture returns to basic category")
+	var unavailable_tile := quick_bar.get_child(2)
 	if unavailable_tile is ActionPaletteButtonScript:
-		assertions.truthy(unavailable_tile.disabled, "unaffordable building is truly disabled")
+		assertions.truthy(not unavailable_tile.disabled, "unaffordable building remains clickable for feedback")
+		assertions.equal(unavailable_tile.build_state, "missing_resources", "unaffordable building uses missing state")
 		assertions.equal(
 			unavailable_tile.name_label.modulate,
 			Color.WHITE,
@@ -450,8 +486,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"resource dimming targets icon"
 		)
 		assertions.truthy(
-			unavailable_tile.tooltip_text.contains("木材"),
-			"disabled building keeps localized cost tooltip"
+			unavailable_tile.tooltip_text.contains("木板"),
+			"missing building keeps localized cost tooltip"
 		)
 	assertions.truthy(
 		hud.has_method("show_build_feedback"),
@@ -473,16 +509,18 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"repeated feedback reuses one Toast"
 		)
 
-	inventory.add_item("wood", 58)
+	inventory.add_item("plank", 8)
+	inventory.add_item("stone_brick", 6)
+	inventory.add_item("wooden_crate", 1)
 	if hud.has_method("get_material_count_text"):
 		assertions.equal(
 			hud.get_material_count_text("wood"),
-			"100",
+			"42",
 			"material count refreshes"
 		)
-	unavailable_tile = quick_bar.get_child(0)
-	assertions.truthy(not unavailable_tile.disabled, "building re-enables when cost is met")
-	assertions.truthy(controller.select_mode_slot(0), "affordable barn can be selected")
+	unavailable_tile = quick_bar.get_child(2)
+	assertions.equal(unavailable_tile.build_state, "ready", "building becomes ready when cost is met")
+	assertions.truthy(controller.select_mode_slot(2), "affordable barn can be selected")
 	assertions.truthy(
 		hud.get_node("BottomBar/BuildCostBar").visible,
 		"selected building shows persistent cost bar"
@@ -491,10 +529,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		hud.get_node("BottomBar/BuildCostBar/CostRow/BuildingLabel").text.contains("占地 2×2"),
 		"cost bar shows building footprint"
 	)
-	(quick_bar.get_child(8) as Button).pressed.emit()
+	assertions.truthy(controller.set_building_category("decoration"), "HUD fixture selects decoration category")
+	(quick_bar.get_child(1) as Button).pressed.emit()
 	assertions.equal(
 		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),
-		8,
+		1,
 		"mouse selects fence through the shared controller API"
 	)
 	hud.set_mode_menu_open(true)
@@ -535,6 +574,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"mode_changed": Callable(hud, "_on_action_mode_changed"),
 		"palette_changed": Callable(hud, "_on_action_palette_changed"),
 		"build_feedback_requested": Callable(hud, "show_build_feedback"),
+		"building_category_changed": Callable(hud, "_on_building_category_changed"),
 	}
 	for signal_name in controller_connections:
 		var callback: Callable = controller_connections[signal_name]

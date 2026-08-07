@@ -105,10 +105,11 @@ func configure(
 	return configured
 
 
-func open(tab_id: String = "market") -> void:
+func open(tab_id: String = "market", target_id: String = "") -> void:
 	if _is_open:
 		if tab_id != "market":
 			select_tab(tab_id)
+		_select_target(tab_id, target_id)
 		return
 	if not _modal_coordinator.acquire(self):
 		return
@@ -126,6 +127,25 @@ func open(tab_id: String = "market") -> void:
 		order_panel.refresh_orders()
 	elif selected_tab == "contracts":
 		contract_panel.refresh_contracts()
+	_select_target(selected_tab, target_id)
+
+
+func _select_target(tab_id: String, target_id: String) -> bool:
+	if target_id.is_empty():
+		return true
+	match tab_id:
+		"market":
+			market_panel.select_item(target_id)
+			return true
+		"orders":
+			order_panel.select_order(target_id)
+			return true
+		"contracts":
+			contract_panel.select_contract(target_id)
+			return true
+		"services":
+			return service_panel != null and service_panel.select_service(target_id)
+	return false
 
 
 func select_tab(tab_id: String) -> bool:
