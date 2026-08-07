@@ -139,7 +139,7 @@ git commit -m "feat: add complete building catalog and cost ladder"
 - Modify: `tests/test_recipe_database.gd`
 - Modify: `tests/test_building_catalog.gd`
 
-- [ ] **Step 1: Write failing recipe reachability tests**
+- [x] **Step 1: Write failing recipe reachability tests**
 
 Add assertions for:
 
@@ -156,7 +156,7 @@ for recipe in RecipeDatabase.get_all_recipes():
 
 Add a source closure in `test_building_catalog.gd` starting with `wood`, `fiber`, `stone`, `clay`, `sand`, `coal`, all ores, crops, honey, beeswax, egg, feather, and market-only `salt`; repeatedly add recipe outputs whose inputs are available, then assert every recipe output becomes available.
 
-- [ ] **Step 2: Run economy tests and verify RED**
+- [x] **Step 2: Run economy tests and verify RED**
 
 Run:
 
@@ -166,7 +166,7 @@ godot --headless --path . --script res://tests/run_economy_system_tests.gd
 
 Expected: FAIL for the absent container recipes and orphan `kitchen` station.
 
-- [ ] **Step 3: Implement the minimal recipe fixes**
+- [x] **Step 3: Implement the minimal recipe fixes**
 
 Add:
 
@@ -177,11 +177,11 @@ Add:
 
 Change `bread` and `honey_cake` station IDs to `food_workshop`. Do not change their inputs, outputs, duration, or tiers.
 
-- [ ] **Step 4: Run recipe, building, and economy runners GREEN**
+- [x] **Step 4: Run recipe, building, and economy runners GREEN**
 
 Expected: all item/station/source assertions pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/core/recipe_database.gd tests/test_recipe_database.gd tests/test_building_catalog.gd

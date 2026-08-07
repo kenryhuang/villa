@@ -2,6 +2,7 @@ extends RefCounted
 
 const BuildingCatalogScript = preload("res://scripts/core/building_catalog.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 
 const EXPECTED_CATEGORIES: Array[String] = [
 	"basic", "production", "farming", "resource", "decoration",
@@ -69,3 +70,33 @@ func run(assertions: TestAssert) -> void:
 			BuildingCatalogScript.building_ids_for_category(category_id).size() > 0,
 			"%s category is populated" % category_id
 		)
+
+	var available := {
+		"wood": true, "fiber": true, "stone": true, "clay": true,
+		"sand": true, "coal": true, "copper_ore": true, "iron_ore": true,
+		"silver_ore": true, "gold_ore": true, "crystal": true,
+		"grain": true, "sunflower": true, "strawberry": true,
+		"honey": true, "beeswax": true, "egg": true, "salt": true,
+		"carrot": true, "tomato": true, "lavender": true, "rose": true,
+	}
+	var changed := true
+	while changed:
+		changed = false
+		for recipe in RecipeDatabaseScript.get_all_recipes():
+			var inputs_ready := true
+			for item_id in recipe.inputs:
+				if not available.has(str(item_id)):
+					inputs_ready = false
+					break
+			if not inputs_ready:
+				continue
+			for item_id in recipe.outputs:
+				if not available.has(str(item_id)):
+					available[str(item_id)] = true
+					changed = true
+	for recipe in RecipeDatabaseScript.get_all_recipes():
+		for item_id in recipe.outputs:
+			assertions.truthy(
+				available.has(str(item_id)),
+				"%s output is reachable" % item_id
+			)

@@ -6,6 +6,7 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const REQUIRED_RECIPE_IDS := [
 	"plank", "rope", "charcoal", "stone_brick", "brick",
 	"glass", "copper_ingot", "iron_ingot", "steel", "cloth",
+	"glass_jar", "glass_bottle",
 	"flour", "animal_feed", "sunflower_oil", "fruit_jam", "pickles",
 	"tomato_sauce", "fruit_juice", "bread", "honey_cake",
 	"wooden_crate", "furniture", "farm_tools", "machine_parts", "lamp",
@@ -14,6 +15,7 @@ const REQUIRED_RECIPE_IDS := [
 const MATERIAL_RECIPE_IDS := [
 	"plank", "rope", "charcoal", "stone_brick", "brick",
 	"glass", "copper_ingot", "iron_ingot", "steel", "cloth",
+	"glass_jar", "glass_bottle",
 ]
 const FOOD_RECIPE_IDS := [
 	"flour", "animal_feed", "sunflower_oil", "fruit_jam", "pickles",
@@ -41,6 +43,26 @@ func run(assertions: TestAssert) -> void:
 		"food_workshop",
 		"jam station"
 	)
+	assertions.equal(
+		RecipeDatabaseScript.get_recipe("bread").station,
+		"food_workshop",
+		"bread has a real station"
+	)
+	assertions.equal(
+		RecipeDatabaseScript.get_recipe("honey_cake").station,
+		"food_workshop",
+		"cake has a real station"
+	)
+	assertions.equal(
+		RecipeDatabaseScript.get_recipe("glass_jar").outputs,
+		{"glass_jar": 2},
+		"jar recipe exists"
+	)
+	assertions.equal(
+		RecipeDatabaseScript.get_recipe("glass_bottle").outputs,
+		{"glass_bottle": 2},
+		"bottle recipe exists"
+	)
 	assertions.equal(RecipeDatabaseScript.get_recipe("missing"), {}, "unknown recipe is empty")
 
 	var all_recipes := RecipeDatabaseScript.get_all_recipes()
@@ -56,6 +78,10 @@ func run(assertions: TestAssert) -> void:
 		assertions.truthy(recipe.inputs is Dictionary and not recipe.inputs.is_empty(), "%s has inputs" % recipe_id)
 		assertions.truthy(recipe.outputs is Dictionary and not recipe.outputs.is_empty(), "%s has outputs" % recipe_id)
 		assertions.truthy(int(recipe.unlock_tier) >= 0, "%s has nonnegative tier" % recipe_id)
+		assertions.truthy(
+			not GameDataScript.get_building(str(recipe.station)).is_empty(),
+			"%s station exists" % recipe_id
+		)
 		for item_id in recipe.inputs:
 			assertions.truthy(GameDataScript.get_item(str(item_id)) != null, "%s input %s is an inventory item" % [recipe_id, item_id])
 		for item_id in recipe.outputs:

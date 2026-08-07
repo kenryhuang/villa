@@ -1311,6 +1311,7 @@ func _test_recipe_value_ladders(assertions: TestAssert) -> void:
 			"copper_ingot", "iron_ingot", "steel", "cloth", "flour", "animal_feed",
 			"wooden_crate",
 		],
+		"container": ["glass_jar", "glass_bottle"],
 		"food": [
 			"sunflower_oil", "fruit_jam", "pickles", "tomato_sauce",
 			"fruit_juice", "bread", "honey_cake",
@@ -1335,6 +1336,8 @@ func _test_recipe_value_ladders(assertions: TestAssert) -> void:
 	assertions.equal(mapped, actual, "recipe value categories exhaustively cover RecipeDatabase")
 	for recipe_id in categories.initial:
 		_assert_recipe_ratio(assertions, recipe_id, 1.20, 1.40)
+	for recipe_id in categories.container:
+		_assert_recipe_ratio(assertions, recipe_id, 0.50, 0.60)
 	for recipe_id in categories.food:
 		_assert_recipe_ratio(assertions, recipe_id, 1.40, 1.70)
 	for recipe_id in categories.craft:
