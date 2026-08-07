@@ -247,7 +247,24 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 		assertions.near(rubble_anchor.x, ore_registered_anchor.x, 0.002, "rubble keeps the original horizontal ground anchor")
 		assertions.near(rubble_anchor.y, ore_registered_anchor.y, 0.002, "rubble keeps the original ground baseline")
 	ore.free()
-
+	for resource_type in ["clay", "sand"]:
+		var river_resource := ResourceNodeScript.new()
+		assertions.truthy(river_resource.configure_resource({
+			"resource_id": "%s-visual" % resource_type,
+			"resource_type": resource_type,
+			"position": Vector3.ZERO,
+		}), "%s visual fixture configures" % resource_type)
+		river_resource.build_fallback_visual()
+		assertions.equal(river_resource.required_tool, "pickaxe", "%s uses the pickaxe" % resource_type)
+		assertions.truthy(river_resource.get_node("Visual") is Sprite3D, "%s reuses painted mining art" % resource_type)
+		assertions.truthy(river_resource.get_node("Visual").texture is AtlasTexture, "%s starts on the four-frame atlas" % resource_type)
+		assertions.truthy(river_resource.begin_mining(), "%s uses the shared mining animation" % resource_type)
+		river_resource.set_mining_progress(0.9)
+		assertions.equal(river_resource.get_mining_frame(), 2, "%s reaches the broken mining frame" % resource_type)
+		river_resource.remaining_units = 0
+		river_resource.call("_update_visual_stage")
+		assertions.equal(river_resource.visual_stage, 3, "%s ends as depleted rubble" % resource_type)
+		river_resource.free()
 	var image := Image.create_empty(16, 24, false, Image.FORMAT_RGBA8)
 	var texture := ImageTexture.create_from_image(image)
 	var atlas_image := Image.create_empty(64, 24, false, Image.FORMAT_RGBA8)
@@ -437,6 +454,7 @@ func run(assertions: TestAssert, scene_tree: SceneTree) -> void:
 	assertions.truthy(impact_target.get_node_or_null("GatherImpact") == null, "one-shot impact particles clean themselves up")
 	impact_target.free()
 	feedback.free()
+	await scene_tree.physics_frame
 
 
 static func _painted_ground_anchor(texture: Texture2D, frame: int = -1) -> Vector2:

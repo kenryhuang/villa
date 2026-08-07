@@ -452,7 +452,7 @@ git commit -m "feat: connect building palette to blueprint services"
 - Modify: `tests/test_gathering_visuals.gd`
 - Modify: `tests/test_main_gathering_integration.gd`
 
-- [ ] **Step 1: Write failing resource tests**
+- [x] **Step 1: Write failing resource tests**
 
 Expect 17 surface mineral nodes: the existing 13 plus two clay and two sand nodes. Assert catalog definitions:
 
@@ -465,11 +465,11 @@ assertions.equal(ResourceCatalog.definition("sand").respawn_days, 3, "sand respa
 
 For an eligible full tree, assert preview and commit return `{"wood": 5, "fiber": 1}` and preserve the 3-second animation/transaction semantics. Assert clay/sand use the same stable-base four-frame atlas, hover circle, pickaxe position, and save round trip as other minerals.
 
-- [ ] **Step 2: Run resource and gathering visual runners RED**
+- [x] **Step 2: Run resource and gathering visual runners RED**
 
 Expected: only 13 minerals exist and tree rewards contain wood only.
 
-- [ ] **Step 3: Implement catalog/world/tree supply**
+- [x] **Step 3: Implement catalog/world/tree supply**
 
 Add `clay` and `sand` catalog records with `pickaxe`, capacity 4, respawn 3, warm brown/pale gold tint, and mining visual kind. Add stable IDs `clay-00`, `clay-01`, `sand-00`, `sand-01` near riverbanks without reusing legacy IDs.
 
@@ -484,9 +484,9 @@ func preview_reward(tool_id: String) -> Dictionary:
 
 Keep `remaining_units = 0` and wood quantity 5. The existing atomic multi-item gather preflight must reject the whole gather if the backpack cannot hold both outputs.
 
-- [ ] **Step 4: Run resource, visual, and main gathering suites GREEN**
+- [x] **Step 4: Run resource, visual, and main gathering suites GREEN**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/world/resource_catalog.gd scripts/world/world.gd scripts/world/tree_instance.gd tests/test_resource_gathering.gd tests/test_gathering_visuals.gd tests/test_main_gathering_integration.gd

@@ -212,10 +212,23 @@ func _test_resource_catalog_and_v2_contract(assertions: TestAssert) -> void:
 		return
 	var tree_definition: Dictionary = catalog_script.call("definition", "tree")
 	var gold_definition: Dictionary = catalog_script.call("definition", "gold_ore")
+	var clay_definition: Dictionary = catalog_script.call("definition", "clay")
+	var sand_definition: Dictionary = catalog_script.call("definition", "sand")
 	assertions.equal(tree_definition.get("max_units"), 5, "tree capacity is five")
 	assertions.equal(tree_definition.get("respawn_days"), 3, "tree respawns in three days")
 	assertions.equal(gold_definition.get("max_units"), 2, "rare ore capacity is two")
 	assertions.equal(gold_definition.get("respawn_days"), 7, "rare ore respawns in seven days")
+	assertions.equal(clay_definition.get("item_id"), "clay", "clay is gatherable")
+	assertions.equal(sand_definition.get("item_id"), "sand", "sand is gatherable")
+	assertions.equal(clay_definition.get("max_units"), 4, "clay capacity is four")
+	assertions.equal(sand_definition.get("respawn_days"), 3, "sand respawns in three days")
+	var surface_definitions := GameWorldScript.generated_resource_definitions()
+	assertions.equal(surface_definitions.size(), 17, "world authors thirteen minerals plus four riverbank inputs")
+	for resource_id in ["clay-00", "clay-01", "sand-00", "sand-01"]:
+		assertions.truthy(
+			surface_definitions.any(func(row: Dictionary) -> bool: return str(row.resource_id) == resource_id),
+			"world authors stable resource %s" % resource_id
+		)
 	tree_definition["max_units"] = 99
 	assertions.equal(
 		(catalog_script.call("definition", "tree") as Dictionary).get("max_units"),
@@ -318,8 +331,10 @@ func _test_tool_target_matrix(
 		"gatherable": true,
 	}, texture, 0.0, atlas_texture)
 	tools.switch_tool(ToolSystem.ToolType.AXE)
+	assertions.equal(tree_node.preview_reward("axe"), {"wood": 5, "fiber": 1}, "tree previews wood and renewable fiber")
 	assertions.truthy(tools.use_tool_on(tree_node), "axe gathers a tree")
 	assertions.equal(inventory.get_item_count("wood"), 5, "tree action grants all five wood")
+	assertions.equal(inventory.get_item_count("fiber"), 1, "tree action grants one renewable fiber")
 	assertions.equal(tree_node.required_tool, "axe", "tree requires axe")
 	assertions.equal(tree_node.max_units, 5, "gatherable tree has five units")
 	assertions.equal(tree_node.respawn_days, 3, "tree uses three-day respawn")
@@ -440,7 +455,7 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 			"world resource %s has a visible deterministic yield" % definition.resource_id
 		)
 	assertions.equal(ids.size(), first.size(), "generated resource IDs are unique")
-	assertions.equal(first.size(), 13, "world generates thirteen surface mineral nodes")
+	assertions.equal(first.size(), 17, "world generates minerals and riverbank inputs")
 	assertions.equal(type_counts, {
 		"stone": 4,
 		"coal": 2,
@@ -449,9 +464,12 @@ func _test_stable_world_generation_and_restore(assertions: TestAssert) -> void:
 		"silver_ore": 1,
 		"gold_ore": 1,
 		"crystal": 1,
-	}, "surface mineral counts match the approved distribution")
+		"clay": 2,
+		"sand": 2,
+	}, "surface resource counts match the approved distribution")
 	assertions.truthy(zones.has("common_mine"), "common minerals occupy the common mine zone")
 	assertions.truthy(zones.has("rare_mine"), "rare minerals occupy the remote mine zone")
+	assertions.truthy(zones.has("riverbank"), "clay and sand occupy the riverbank zone")
 
 	var world: Variant = GameWorldScript.new()
 	var container := Node3D.new()
@@ -603,7 +621,7 @@ func _test_real_water_and_riverbank_adjacency(
 	for record in world_records:
 		if str(record.resource_type) == "tree":
 			saved_tree_count += 1
-	assertions.equal(world_records.size(), 41, "world saves minerals and all eligible stable trees")
+	assertions.equal(world_records.size(), 45, "world saves seventeen minerals and all eligible stable trees")
 	assertions.equal(saved_tree_count, 28, "world saves all eligible forest, authored, and scattered trees")
 	var blocked_regions: Variant = (
 		main.world.call("get_blocked_regions")

@@ -54,10 +54,13 @@ directional_shadow_max_distance = 45.0
 [node name="Npcs" type="Node3D" parent="Actors"]
 
 [node name="NpcNorthwest" parent="Actors/Npcs" instance=ExtResource("4")]
+position = Vector3(-3, 0, -2)
 
 [node name="NpcSouth" parent="Actors/Npcs" instance=ExtResource("4")]
+position = Vector3(3, 0, -3)
 
 [node name="NpcEast" parent="Actors/Npcs" instance=ExtResource("4")]
+position = Vector3(4, 0, 2)
 
 [node name="Projectiles" type="Node3D" parent="."]
 

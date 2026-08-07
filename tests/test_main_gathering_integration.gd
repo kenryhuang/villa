@@ -15,6 +15,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for _frame in 4:
 		await tree.process_frame
 		await tree.physics_frame
+	assertions.near(main.player.global_position.x, 0.0, 0.05, "late-instantiated main keeps the player at the authored spawn x")
+	assertions.near(main.player.global_position.z, 0.0, 0.05, "late-instantiated main keeps the player at the authored spawn z")
 
 	assertions.truthy(main.gathering_controller != null, "main owns gathering controller")
 	assertions.truthy(main.grid_pathfinder != null, "main owns gathering pathfinder")
@@ -269,6 +271,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			if held_wood > 0:
 				main.inventory_system.remove_item("wood", held_wood)
 			var wood_before: int = main.inventory_system.get_item_count("wood")
+			var fiber_before: int = main.inventory_system.get_item_count("fiber")
 			var tree_stamina_before: int = game_state.player_state.stamina
 			var axe_durability_before: int = int(main.tool_system.get_durability("axe").current)
 			var wood_missing_before := _missing_resource(
@@ -290,6 +293,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			main.gathering_controller._process(1.0)
 			assertions.equal(main.gathering_controller.get_state_name(), "IDLE", "real tree completes at three seconds")
 			assertions.equal(main.inventory_system.get_item_count("wood"), wood_before + 5, "tree adds five wood")
+			assertions.equal(main.inventory_system.get_item_count("fiber"), fiber_before + 1, "tree adds one renewable fiber")
 			assertions.equal(int(tree_target.get("remaining_units")), 0, "tree is fully depleted")
 			assertions.equal(game_state.player_state.stamina, tree_stamina_before - 8, "tree spends eight stamina once")
 			assertions.equal(int(main.tool_system.get_durability("axe").current), axe_durability_before - 1, "tree spends one axe durability")

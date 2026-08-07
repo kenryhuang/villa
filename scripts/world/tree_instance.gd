@@ -247,7 +247,12 @@ func get_gather_duration() -> float:
 
 
 func preview_reward(tool_id: String) -> Dictionary:
-	return {item_id: remaining_units} if can_gather(tool_id) else {}
+	if not can_gather(tool_id):
+		return {}
+	return {
+		item_id: remaining_units,
+		"fiber": 1,
+	}
 
 
 func commit_gather(tool_id: String, total_day: int = 0) -> Dictionary:

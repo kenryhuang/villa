@@ -78,6 +78,7 @@ func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary
 		"tool_id": "",
 		"item_id": "",
 		"quantity": 0,
+		"rewards": {},
 		"stamina_cost": 0,
 		"durability_cost": 1,
 		"remaining_before": -1,
@@ -101,14 +102,15 @@ func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary
 		result.reason = "resource_depleted"
 		return result
 	var reward := _normalized_rewards(target.call("preview_reward", required_tool))
-	if reward.size() != 1:
+	var reward_item := _target_string_property(target, "item_id")
+	if reward.is_empty() or reward_item.is_empty() or not reward.has(reward_item):
 		return result
-	var reward_item := str(reward.keys()[0])
 	var reward_quantity := int(reward[reward_item])
 	if reward_quantity <= 0 or reward_quantity > remaining:
 		return result
 	result.item_id = reward_item
 	result.quantity = reward_quantity
+	result.rewards = reward.duplicate(true)
 	result.remaining_after = remaining - reward_quantity
 	result.stamina_cost = int(TOOL_STAMINA_COST.get(tool_type, 5))
 	var durability := get_durability(required_tool)
@@ -119,7 +121,7 @@ func preview_gather_unit(target: Node, require_range: bool = true) -> Dictionary
 	if game_state == null or int(game_state.player_state.stamina) < int(result.stamina_cost):
 		result.reason = "insufficient_stamina"
 		return result
-	if inventory_ref == null or not _can_add_rewards({reward_item: reward_quantity}):
+	if inventory_ref == null or not _can_add_rewards(reward):
 		result.reason = "inventory_full"
 		return result
 	if require_range and not _target_is_in_range(target, tool_type):
@@ -155,15 +157,16 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	)
 	var tool_type := _item_id_to_tool(str(preview.tool_id)) as ToolType
 	current_tool = tool_type
-	var expected_rewards := {str(preview.item_id): int(preview.quantity)}
-	if not bool(inventory_ref.call("add_item", str(preview.item_id), int(preview.quantity))):
-		_rollback_gather(
-			target, target_snapshot, inventory_snapshot, stamina_before,
-			durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction,
-			owns_target_transaction
-		)
-		_active_gather_transactions.erase(transaction_id)
-		return _gather_failure("inventory_write_failed", preview)
+	var expected_rewards: Dictionary = preview.get("rewards", {}).duplicate(true)
+	for item_id in expected_rewards:
+		if not bool(inventory_ref.call("add_item", str(item_id), int(expected_rewards[item_id]))):
+			_rollback_gather(
+				target, target_snapshot, inventory_snapshot, stamina_before,
+				durability_snapshot, tool_before, owns_mapping_transaction, owns_event_transaction,
+				owns_target_transaction
+			)
+			_active_gather_transactions.erase(transaction_id)
+			return _gather_failure("inventory_write_failed", preview)
 	var committed := _normalized_rewards(
 		target.call("commit_gather", str(preview.tool_id), _current_total_day())
 	)

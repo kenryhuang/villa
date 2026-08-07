@@ -80,6 +80,10 @@ static func generated_resource_definitions(
 		{"id": "silver-00", "zone": "rare_mine", "type": "silver_ore", "x": 10.0, "z": 11.5},
 		{"id": "gold-00", "zone": "rare_mine", "type": "gold_ore", "x": 12.8, "z": 11.2},
 		{"id": "crystal-00", "zone": "rare_mine", "type": "crystal", "x": 15.4, "z": 11.7},
+		{"id": "clay-00", "zone": "riverbank", "type": "clay", "x": -14.35, "z": -2.8},
+		{"id": "clay-01", "zone": "riverbank", "type": "clay", "x": 14.35, "z": -2.6},
+		{"id": "sand-00", "zone": "riverbank", "type": "sand", "x": -14.25, "z": 2.2},
+		{"id": "sand-01", "zone": "riverbank", "type": "sand", "x": 14.25, "z": 1.2},
 	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
