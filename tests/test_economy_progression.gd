@@ -9,6 +9,8 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const BuildingDataScript = preload("res://scripts/data/building_data.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
+const BuildingCatalogScript = preload("res://scripts/core/building_catalog.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 
 
 class DaySource:
@@ -121,6 +123,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var original_level := int(wallet.player_state.level)
 	var original_stamina := int(wallet.player_state.stamina)
 	_test_unlock_gates_and_strict_state(assertions, wallet)
+	_test_complete_unlock_routes_and_v1_migration(assertions)
 	_test_tool_durability_and_atomic_repair(assertions, wallet)
 	_test_failed_service_transactions_are_signal_atomic(assertions)
 	_test_service_transactions_reject_signal_reentry(assertions, wallet)
@@ -142,11 +145,11 @@ func _test_unlock_gates_and_strict_state(assertions: TestAssert, wallet: Node) -
 		progression.configure(tool, production, inventory, day, wallet),
 		"progression configures authoritative dependencies"
 	)
-	for id in ["workbench", "stone_kiln", "beehive"]:
+	for id in ["workbench", "stone_kiln", "beehive", "well", "fence"]:
 		assertions.truthy(progression.is_blueprint_unlocked(id), "tier zero unlocks %s" % id)
-	for id in ["windmill", "chicken_coop", "waterwheel", "furnace"]:
+	for id in ["barn", "windmill", "chicken_coop", "waterwheel", "furnace", "lumberyard", "quarry", "lamp"]:
 		assertions.truthy(not progression.is_blueprint_unlocked(id), "tier one locks %s" % id)
-	for id in ["greenhouse", "mine", "textile_machine"]:
+	for id in ["greenhouse", "mine", "textile_machine", "food_workshop"]:
 		assertions.truthy(not progression.is_blueprint_unlocked(id), "tier two locks %s" % id)
 	for recipe_id in ["plank", "rope", "charcoal", "stone_brick", "brick"]:
 		assertions.truthy(progression.is_recipe_unlocked(recipe_id), "tier zero exposes %s" % recipe_id)
@@ -222,9 +225,76 @@ func _test_unlock_gates_and_strict_state(assertions: TestAssert, wallet: Node) -
 	recipe_without_station.unlocked_recipes.append("flour")
 	assertions.truthy(not restored.from_dict(recipe_without_station), "recipe without unlocked station blueprint rejects")
 	var unobtainable_high_tier := saved.duplicate(true)
-	unobtainable_high_tier.unlocked_recipes.append("jewelry")
-	assertions.truthy(not restored.from_dict(unobtainable_high_tier), "unobtainable high-tier recipe injection rejects")
+	unobtainable_high_tier.unlocked_recipes.append("perfume")
+	assertions.truthy(not restored.from_dict(unobtainable_high_tier), "recipe without its locked station rejects")
 	assertions.equal(restored.to_dict(), before_bad, "unobtainable recipe rejection is atomic")
+
+
+func _test_complete_unlock_routes_and_v1_migration(assertions: TestAssert) -> void:
+	var progression = _track(ProgressionScript.new())
+	for method_name in [
+		"get_blueprint_service_id", "get_recipe_service_id", "get_blueprint_lock_info",
+		"can_eventually_unlock_recipe", "reconcile_placed_buildings",
+	]:
+		assertions.truthy(progression.has_method(method_name), "progression exposes %s" % method_name)
+	for building_id in BuildingCatalogScript.all_building_ids():
+		assertions.truthy(
+			progression.is_blueprint_managed(building_id),
+			"%s has explicit progression" % building_id
+		)
+	if progression.has_method("get_blueprint_service_id"):
+		assertions.equal(
+			progression.call("get_blueprint_service_id", "lumberyard"),
+			"blueprint_lumberyard",
+			"lumberyard service is addressable"
+		)
+		assertions.equal(
+			progression.call("get_blueprint_service_id", "food_workshop"),
+			"blueprint_food_workshop",
+			"food workshop service is addressable"
+		)
+	if progression.has_method("get_recipe_service_id"):
+		assertions.equal(
+			progression.call("get_recipe_service_id", "machine_parts"),
+			"recipe_machine_parts",
+			"machine parts service is addressable"
+		)
+	if progression.has_method("can_eventually_unlock_recipe"):
+		for recipe in RecipeDatabaseScript.get_all_recipes():
+			assertions.truthy(
+				progression.call("can_eventually_unlock_recipe", str(recipe.id)),
+				"%s is reachable" % recipe.id
+			)
+	var version_one := {
+		"version": 1,
+		"unlocked_blueprints": ["workbench", "stone_kiln", "beehive"],
+		"unlocked_recipes": ["plank", "rope", "charcoal", "stone_brick", "brick"],
+		"upgrade_levels": [],
+	}
+	assertions.truthy(progression.from_dict(version_one), "version-one progression migrates")
+	for building_id in ["workbench", "stone_kiln", "beehive", "well", "fence"]:
+		assertions.truthy(
+			progression.is_blueprint_unlocked(building_id),
+			"version-one migration adds tier-zero %s" % building_id
+		)
+	assertions.equal(progression.to_dict().version, 2, "migrated progression writes version two")
+	var future_version: Dictionary = progression.to_dict()
+	future_version.version = 3
+	assertions.truthy(not progression.from_dict(future_version), "future progression version rejects")
+	if progression.has_method("reconcile_placed_buildings"):
+		var lumberyard := _building("lumberyard", 17, 18)
+		assertions.equal(
+			progression.call("reconcile_placed_buildings", [lumberyard]),
+			1,
+			"placed lumberyard reconciles exactly once"
+		)
+		assertions.truthy(progression.is_blueprint_unlocked("lumberyard"), "placed lumberyard unlock is preserved")
+		assertions.equal(
+			progression.call("reconcile_placed_buildings", [lumberyard]),
+			0,
+			"placed lumberyard reconciliation is idempotent"
+		)
+		lumberyard.free()
 
 
 func _test_tool_durability_and_atomic_repair(assertions: TestAssert, wallet: Node) -> void:

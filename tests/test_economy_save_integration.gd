@@ -989,6 +989,25 @@ func _test_main_wires_economy_runtime(assertions: TestAssert, tree: SceneTree) -
 	main.economy_system.reset_order_state(11)
 	var main_save: Dictionary = manager._gather_save_data()
 	assertions.equal(main_save.get("total_days"), 11, "main save reads its child season system")
+	var migration_location := _find_restore_location(main, "lumberyard")
+	assertions.truthy(migration_location.x >= 0, "v1 migration finds a lumberyard footprint")
+	var version_one_save := main_save.duplicate(true)
+	version_one_save.progression = {
+		"version": 1,
+		"unlocked_blueprints": ["workbench", "stone_kiln", "beehive"],
+		"unlocked_recipes": ["plank", "rope", "charcoal", "stone_brick", "brick"],
+		"upgrade_levels": [],
+	}
+	version_one_save.buildings = [_plain_building_record(main, "lumberyard", migration_location)]
+	var migration_inventory: Dictionary = version_one_save.inventory.duplicate(true)
+	assertions.truthy(manager._apply_save_data(version_one_save), "version-one save with placed lumberyard loads")
+	assertions.equal(main.inventory_system.slots, migration_inventory.slots, "v1 migration preserves inventory")
+	assertions.equal(main.building_system.get_building_count(), 1, "v1 migration preserves placed buildings")
+	assertions.truthy(
+		main.economy_progression_system.is_blueprint_unlocked("lumberyard"),
+		"v1 migration reconciles the placed lumberyard blueprint"
+	)
+	assertions.equal(main.economy_progression_system.to_dict().version, 2, "v1 runtime migration adopts progression v2")
 	for missing_calendar_field in ["season", "day", "total_days", "hour", "minute"]:
 		var missing_calendar_save := main_save.duplicate(true)
 		missing_calendar_save.erase(missing_calendar_field)
@@ -1471,6 +1490,23 @@ func _passive_building_record(main: Node, building_id: String, location: Vector2
 		"gz": location.y,
 		"occupied_cells": occupied_cells,
 		"producer_state": state.to_dict(),
+	}
+
+
+func _plain_building_record(main: Node, building_id: String, location: Vector2i) -> Dictionary:
+	if location.x < 0:
+		return {}
+	var definition: Dictionary = GameDataScript.get_building(building_id)
+	var occupied_cells: Array[Dictionary] = []
+	for z in range(location.y, location.y + int(definition.get("footprint_z", 1))):
+		for x in range(location.x, location.x + int(definition.get("footprint_x", 1))):
+			var cell: GridCell = main.grid_system.get_cell(x, z)
+			occupied_cells.append({"gx": x, "gz": z, "previous_state": int(cell.state)})
+	return {
+		"building_id": building_id,
+		"gx": location.x,
+		"gz": location.y,
+		"occupied_cells": occupied_cells,
 	}
 
 

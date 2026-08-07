@@ -196,7 +196,7 @@ git commit -m "feat: close production recipe gaps"
 - Modify: `tests/test_economy_progression.gd`
 - Modify: `tests/test_economy_save_integration.gd`
 
-- [ ] **Step 1: Write failing progression and migration tests**
+- [x] **Step 1: Write failing progression and migration tests**
 
 Cover:
 
@@ -212,11 +212,11 @@ for recipe in RecipeDatabase.get_all_recipes():
 
 Add a version-1 fixture to `test_economy_save_integration.gd` with an already placed `lumberyard`, then assert loading succeeds and the new progression state unlocks `lumberyard` without resetting inventory, buildings, or queues.
 
-- [ ] **Step 2: Run progression/save tests and verify RED**
+- [x] **Step 2: Run progression/save tests and verify RED**
 
 Run the economy runner. Expected: FAIL for missing services, missing query methods, and strict version-1 rejection.
 
-- [ ] **Step 3: Implement explicit services and lock queries**
+- [x] **Step 3: Implement explicit services and lock queries**
 
 Set all 17 entries in `BLUEPRINT_TIERS`; set tier-zero IDs to `workbench`, `stone_kiln`, `beehive`, `well`, `fence`. Add the blueprint and recipe service definitions exactly as specified in design sections 5.3 and 7.3.
 
@@ -247,7 +247,7 @@ func get_blueprint_lock_info(building_id: String) -> Dictionary:
 
 `can_eventually_unlock_recipe()` returns true when the recipe is tier-zero for a tier-zero station, granted by a blueprint tier, or has an explicit recipe service.
 
-- [ ] **Step 4: Implement v1-to-v2 migration and placed-building reconciliation**
+- [x] **Step 4: Implement v1-to-v2 migration and placed-building reconciliation**
 
 Bump progression `VERSION` to 2. `_parse_dict()` accepts versions 1 and 2, normalizes arrays, adds all tier-zero blueprints/recipes, and preserves valid old unlocks. Add:
 
@@ -263,11 +263,11 @@ func reconcile_placed_buildings(buildings: Array[BuildingInstance]) -> int:
 
 After `SaveManager` restores buildings and progression, call reconciliation before validating the final applied runtime state. Do not charge or refund materials.
 
-- [ ] **Step 5: Run economy/save suites GREEN**
+- [x] **Step 5: Run economy/save suites GREEN**
 
 Expected: all services addressable; v1 and v2 fixtures load; invalid future versions still fail atomically.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/systems/economy_progression_system.gd scripts/core/save_manager.gd tests/test_economy_progression.gd tests/test_economy_save_integration.gd

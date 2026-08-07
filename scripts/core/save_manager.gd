@@ -346,6 +346,11 @@ func _apply_migrated_save_data(data: Dictionary) -> bool:
 		var restored_count := int(building_system.restore_buildings(building_records, false))
 		if restored_count != building_records.size():
 			return false
+	if building_system != null and _has_valid_progression_configuration():
+		_progression_system.call(
+			"reconcile_placed_buildings",
+			building_system.get_all_buildings()
+		)
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
@@ -885,6 +890,7 @@ func _has_valid_progression_configuration() -> bool:
 		_progression_system != null and is_instance_valid(_progression_system)
 		and _has_methods(_progression_system, [
 			"to_dict", "from_dict", "validate_dict", "reset_to_new_game",
+			"reconcile_placed_buildings",
 		])
 	)
 

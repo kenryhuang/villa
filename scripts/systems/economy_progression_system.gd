@@ -4,39 +4,57 @@ extends Node
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
-const VERSION := 1
+const VERSION := 2
 const MAX_SAFE_INTEGER := 9007199254740991
 const MAX_UPGRADE_LEVELS := {
 	"queue_slots": 2,
 	"speed": 3,
 	"storage": 3,
 }
-const TIER_ZERO_BLUEPRINTS := ["workbench", "stone_kiln", "beehive"]
+const TIER_ZERO_BLUEPRINTS := ["workbench", "stone_kiln", "beehive", "well", "fence"]
 const BLUEPRINT_TIERS := {
 	"workbench": 0,
 	"stone_kiln": 0,
 	"beehive": 0,
+	"well": 0,
+	"fence": 0,
+	"barn": 1,
 	"windmill": 1,
 	"chicken_coop": 1,
 	"waterwheel": 1,
 	"furnace": 1,
+	"lumberyard": 1,
+	"quarry": 1,
+	"lamp": 1,
 	"greenhouse": 2,
 	"mine": 2,
 	"textile_machine": 2,
+	"food_workshop": 2,
 }
 static var BLUEPRINT_SERVICES := {
+	"blueprint_barn": _service("blueprint_barn", "blueprints", "谷仓蓝图", "blueprint", "barn", 1, 8, 2, 90, {"wood": 8, "stone": 4}, "解锁谷仓"),
 	"blueprint_windmill": _service("blueprint_windmill", "blueprints", "风车蓝图", "blueprint", "windmill", 1, 8, 2, 120, {"wood": 10, "stone": 5}, "解锁风车与基础风车配方"),
 	"blueprint_chicken_coop": _service("blueprint_chicken_coop", "blueprints", "鸡舍蓝图", "blueprint", "chicken_coop", 1, 8, 2, 100, {"wood": 8, "stone": 4}, "解锁鸡舍"),
 	"blueprint_waterwheel": _service("blueprint_waterwheel", "blueprints", "水车蓝图", "blueprint", "waterwheel", 1, 8, 2, 140, {"wood": 10, "stone": 8}, "解锁自动灌溉水车"),
 	"blueprint_furnace": _service("blueprint_furnace", "blueprints", "熔炉蓝图", "blueprint", "furnace", 1, 8, 2, 160, {"stone": 12, "coal": 3}, "解锁熔炉与基础冶炼配方"),
+	"blueprint_lumberyard": _service("blueprint_lumberyard", "blueprints", "伐木场蓝图", "blueprint", "lumberyard", 1, 8, 2, 130, {"wood": 10, "stone": 6}, "解锁伐木场"),
+	"blueprint_quarry": _service("blueprint_quarry", "blueprints", "采石场蓝图", "blueprint", "quarry", 1, 8, 2, 150, {"wood": 8, "stone": 10}, "解锁采石场"),
+	"blueprint_lamp": _service("blueprint_lamp", "blueprints", "路灯蓝图", "blueprint", "lamp", 1, 8, 2, 50, {"plank": 2}, "解锁路灯"),
 	"blueprint_greenhouse": _service("blueprint_greenhouse", "blueprints", "温室蓝图", "blueprint", "greenhouse", 2, 22, 4, 420, {"wood": 20, "glass": 8}, "解锁全年种植温室"),
 	"blueprint_mine": _service("blueprint_mine", "blueprints", "矿场蓝图", "blueprint", "mine", 2, 22, 4, 460, {"wood": 20, "stone": 20}, "解锁矿场"),
 	"blueprint_textile_machine": _service("blueprint_textile_machine", "blueprints", "纺织机蓝图", "blueprint", "textile_machine", 2, 22, 4, 380, {"wood": 16, "iron_ingot": 4}, "解锁纺织机与纺织配方"),
+	"blueprint_food_workshop": _service("blueprint_food_workshop", "blueprints", "食品工坊蓝图", "blueprint", "food_workshop", 2, 22, 4, 360, {"wood": 15, "glass": 4}, "解锁食品工坊与食品配方"),
 }
 static var RECIPE_SERVICES := {
 	"recipe_wooden_crate": _service("recipe_wooden_crate", "recipes", "木箱配方", "recipe", "wooden_crate", 1, 8, 2, 45, {"plank": 2}, "解锁工作台木箱配方"),
 	"recipe_farm_tools": _service("recipe_farm_tools", "recipes", "农具配方", "recipe", "farm_tools", 1, 8, 2, 70, {"iron_ingot": 1}, "解锁工作台农具配方"),
+	"recipe_lamp": _service("recipe_lamp", "recipes", "灯具配方", "recipe", "lamp", 1, 8, 2, 60, {"copper_ingot": 1, "glass": 1}, "解锁工作台灯具配方"),
+	"recipe_candle": _service("recipe_candle", "recipes", "蜡烛配方", "recipe", "candle", 1, 8, 2, 50, {"beeswax": 1, "fiber": 2}, "解锁工作台蜡烛配方"),
 	"recipe_steel": _service("recipe_steel", "recipes", "钢材配方", "recipe", "steel", 2, 22, 4, 120, {"iron_ingot": 2}, "解锁熔炉钢材配方"),
+	"recipe_furniture": _service("recipe_furniture", "recipes", "家具配方", "recipe", "furniture", 2, 22, 4, 110, {"plank": 4, "cloth": 1}, "解锁工作台家具配方"),
+	"recipe_machine_parts": _service("recipe_machine_parts", "recipes", "机械零件配方", "recipe", "machine_parts", 2, 22, 4, 140, {"steel": 1, "copper_ingot": 1}, "解锁工作台机械零件配方"),
+	"recipe_perfume": _service("recipe_perfume", "recipes", "香水配方", "recipe", "perfume", 3, 36, 6, 160, {"rose": 2, "glass_bottle": 1}, "解锁食品工坊香水配方"),
+	"recipe_jewelry": _service("recipe_jewelry", "recipes", "珠宝配方", "recipe", "jewelry", 3, 36, 6, 220, {"gold_ore": 1, "crystal": 1}, "解锁工作台珠宝配方"),
 }
 const PLACEHOLDER_SERVICES := {
 	"transport_storage_future": {
@@ -109,6 +127,63 @@ func is_blueprint_managed(blueprint_id: String) -> bool:
 
 func is_recipe_unlocked(recipe_id: String) -> bool:
 	return bool(unlocked_recipes.get(recipe_id, false))
+
+
+func get_blueprint_service_id(building_id: String) -> String:
+	for service_id in BLUEPRINT_SERVICES:
+		if str((BLUEPRINT_SERVICES[service_id] as Dictionary).target_id) == building_id:
+			return str(service_id)
+	return ""
+
+
+func get_recipe_service_id(recipe_id: String) -> String:
+	for service_id in RECIPE_SERVICES:
+		if str((RECIPE_SERVICES[service_id] as Dictionary).target_id) == recipe_id:
+			return str(service_id)
+	return ""
+
+
+func get_blueprint_lock_info(building_id: String) -> Dictionary:
+	if not is_blueprint_managed(building_id):
+		return {"unlocked": false, "reason": "建筑蓝图数据不可用", "service_id": ""}
+	if is_blueprint_unlocked(building_id):
+		return {"unlocked": true, "reason": "", "service_id": ""}
+	var service_id := get_blueprint_service_id(building_id)
+	if service_id.is_empty():
+		return {"unlocked": false, "reason": "尚未解锁", "service_id": ""}
+	var service: Dictionary = _view_for_static_service(BLUEPRINT_SERVICES[service_id])
+	return {
+		"unlocked": false,
+		"reason": str(service.get("disabled_reason", "尚未解锁")),
+		"service_id": service_id,
+	}
+
+
+func can_eventually_unlock_recipe(recipe_id: String) -> bool:
+	var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
+	if recipe.is_empty():
+		return false
+	var station := str(recipe.get("station", ""))
+	if not BLUEPRINT_TIERS.has(station):
+		return false
+	return (
+		int(recipe.get("unlock_tier", -1)) <= int(BLUEPRINT_TIERS[station])
+		or not get_recipe_service_id(recipe_id).is_empty()
+	)
+
+
+func reconcile_placed_buildings(buildings: Array) -> int:
+	var added := 0
+	for value in buildings:
+		var building := value as BuildingInstance
+		if (
+			building != null and is_instance_valid(building)
+			and is_blueprint_managed(building.building_id)
+			and not is_blueprint_unlocked(building.building_id)
+		):
+			unlocked_blueprints[building.building_id] = true
+			added += 1
+	return added
 
 
 func get_available_services() -> Array[Dictionary]:
@@ -536,8 +611,9 @@ func _valid_cost(gold_cost: int, materials: Dictionary) -> bool:
 
 
 func _parse_dict(data: Dictionary) -> Variant:
-	if data.size() != 4 or not _integer_in_range(data.get("version"), VERSION, VERSION):
+	if data.size() != 4 or not _integer_in_range(data.get("version"), 1, VERSION):
 		return null
+	var source_version := int(data.version)
 	for field in ["unlocked_blueprints", "unlocked_recipes", "upgrade_levels"]:
 		if not data.get(field) is Array:
 			return null
@@ -546,6 +622,9 @@ func _parse_dict(data: Dictionary) -> Variant:
 		if not value is String or not BLUEPRINT_TIERS.has(value) or blueprints.has(value):
 			return null
 		blueprints[value] = true
+	if source_version == 1:
+		for blueprint_id in TIER_ZERO_BLUEPRINTS:
+			blueprints[blueprint_id] = true
 	for required in TIER_ZERO_BLUEPRINTS:
 		if not blueprints.has(required):
 			return null
@@ -554,6 +633,13 @@ func _parse_dict(data: Dictionary) -> Variant:
 		if not value is String or RecipeDatabaseScript.get_recipe(value).is_empty() or recipes.has(value):
 			return null
 		recipes[value] = true
+	if source_version == 1:
+		for recipe in RecipeDatabaseScript.get_all_recipes():
+			if (
+				int(recipe.get("unlock_tier", -1)) == 0
+				and str(recipe.get("station", "")) in TIER_ZERO_BLUEPRINTS
+			):
+				recipes[str(recipe.id)] = true
 	var required_recipes := {}
 	var obtainable_recipes := {}
 	for recipe in RecipeDatabaseScript.get_all_recipes():
