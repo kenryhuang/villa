@@ -218,9 +218,14 @@ func _test_queue_lifecycle(assertions: TestAssert) -> void:
 	production.advance_minutes(120)
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 1, "output stored")
 	assertions.equal(workbench.producer_state.jobs.size(), 0, "completed stored job leaves queue")
+	assertions.truthy(production.has_method("refresh_indicator"), "production exposes authoritative indicator refresh")
+	if workbench.has_method("get_economy_indicator"):
+		assertions.equal(workbench.call("get_economy_indicator"), "collect", "stored output shows collect indicator")
 	assertions.truthy(production.collect_all(workbench, inventory), "collection succeeds")
 	assertions.equal(inventory.get_item_count("plank"), 1, "collection moves output to inventory")
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 0, "collected output leaves building")
+	if workbench.has_method("get_economy_indicator"):
+		assertions.equal(workbench.call("get_economy_indicator"), "", "collection clears collect indicator")
 
 	assertions.truthy(production.start_recipe(workbench, "plank", 2, inventory), "multi-batch queue starts")
 	assertions.equal(inventory.get_item_count("wood"), 0, "multi-batch consumes four wood atomically")
@@ -340,6 +345,12 @@ func _test_queue_limit_and_output_pause(assertions: TestAssert) -> void:
 	assertions.equal(blocked.producer_state.jobs[0].remaining_minutes, 0, "blocked job remains authoritatively complete")
 	assertions.equal(blocked.producer_state.jobs[0].status, "output_full", "blocked job exposes full-output status")
 	assertions.equal(blocked.producer_state.outputs, {"stone": 1, "coal": 1, "fiber": 1}, "full output loses nothing")
+	if blocked.has_method("get_economy_indicator"):
+		assertions.equal(blocked.call("get_economy_indicator"), "full", "blocked output shows full indicator")
+	assertions.truthy(production.set_maintenance_due_day(blocked, production.get_current_day()), "indicator fixture reaches maintenance due day")
+	if blocked.has_method("get_economy_indicator"):
+		assertions.equal(blocked.call("get_economy_indicator"), "maintenance", "maintenance replaces full indicator")
+	production.set_maintenance_due_day(blocked, production.get_current_day() + 7)
 	assertions.truthy(production.collect_item(blocked, "stone", blocked_inventory), "one stored item can be collected")
 	production.advance_minutes(1)
 	assertions.equal(blocked.producer_state.get_output_count("plank"), 1, "pending completed job stores after capacity frees")

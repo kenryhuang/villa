@@ -1,6 +1,8 @@
 class_name BuildingEconomyUI
 extends Control
 
+signal unlock_requested(service_id: String)
+
 const PRODUCTION_BUILDINGS := [
 	"windmill", "workbench", "stone_kiln", "furnace", "food_workshop", "textile_machine",
 ]
@@ -175,6 +177,9 @@ func _connect_panel_signals() -> void:
 	var production_callback := Callable(self, "_on_production_snapshot_changed")
 	if not production_panel.snapshot_changed.is_connected(production_callback):
 		production_panel.snapshot_changed.connect(production_callback)
+	var unlock_callback := Callable(self, "_on_unlock_requested")
+	if not production_panel.unlock_requested.is_connected(unlock_callback):
+		production_panel.unlock_requested.connect(unlock_callback)
 	var status_callback := Callable(self, "_on_status_snapshot_changed")
 	if not status_panel.snapshot_changed.is_connected(status_callback):
 		status_panel.snapshot_changed.connect(status_callback)
@@ -188,6 +193,11 @@ func _on_production_snapshot_changed(state: String) -> void:
 func _on_status_snapshot_changed(state: String) -> void:
 	if _is_open and status_panel.visible:
 		state_label.text = _status_state_text(state)
+
+
+func _on_unlock_requested(service_id: String) -> void:
+	if not service_id.is_empty():
+		unlock_requested.emit(service_id)
 
 
 func _emit_event(signal_name: StringName, arguments: Array) -> void:

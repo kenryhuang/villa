@@ -486,6 +486,10 @@ func _setup_ui() -> void:
 		building_economy_modal
 	):
 		push_error("Unable to configure building economy UI.")
+	if building_economy_ui != null and building_economy_ui.has_signal("unlock_requested"):
+		var building_unlock_callback := Callable(self, "_on_building_unlock_requested")
+		if not building_economy_ui.is_connected("unlock_requested", building_unlock_callback):
+			building_economy_ui.connect("unlock_requested", building_unlock_callback)
 	if economy_notification_ui and not economy_notification_ui.configure(
 		economy_notification_system,
 		self

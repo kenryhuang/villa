@@ -72,6 +72,24 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 	return snapshot
 
 
+func refresh_indicator(building: BuildingInstance) -> String:
+	if building == null or not is_instance_valid(building) or not building.has_method("set_economy_indicator"):
+		return ""
+	var kind := ""
+	if _building_is_active(building):
+		if is_maintenance_overdue(building):
+			kind = "maintenance"
+		else:
+			var state := _get_state(building)
+			if state != null:
+				if _is_output_full(building, state):
+					kind = "full"
+				elif not state.outputs.is_empty():
+					kind = "collect"
+	building.call("set_economy_indicator", kind)
+	return kind
+
+
 func preflight_recipe(
 	building: BuildingInstance,
 	recipe_id: String,
@@ -216,8 +234,10 @@ func advance_minutes(minutes: int) -> void:
 			stale.append(building)
 			continue
 		if not _building_is_active(building):
+			refresh_indicator(building)
 			continue
 		_advance_building(building, minutes)
+		refresh_indicator(building)
 	for building in stale:
 		_registered_buildings.erase(building)
 
@@ -269,6 +289,11 @@ func collect_outputs(
 	if not _collect(building, inventory, result.requested):
 		result.ok = false
 		result.reason = "transaction_failed"
+	else:
+		var state := _get_state(building)
+		if state != null:
+			_prepare_running_job(building, state)
+		refresh_indicator(building)
 	return result
 
 
@@ -301,6 +326,7 @@ func finish_daily_outputs(total_day: int) -> void:
 		if not _building_is_active(building):
 			continue
 		_finish_passive_building(building, total_day)
+		refresh_indicator(building)
 
 
 func sync_clock(hour: int, minute: int) -> bool:
@@ -322,6 +348,7 @@ func begin_day(total_day: int) -> bool:
 		var due_day := get_maintenance_due_day(building)
 		if due_day > previous_day and due_day <= total_day:
 			_emit_event("production_maintenance_changed", [building, due_day])
+		refresh_indicator(building)
 	_refresh_greenhouse_cells()
 	return true
 
@@ -335,6 +362,8 @@ func sync_daily_cursor(total_day: int) -> bool:
 	_feed_shortage_active.clear()
 	_passive_output_blocked.clear()
 	_refresh_greenhouse_cells()
+	for building in _valid_registered_buildings():
+		refresh_indicator(building)
 	return true
 
 
@@ -355,12 +384,15 @@ func register_building(building: BuildingInstance) -> bool:
 		maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
 	_apply_saved_upgrades(building)
 	_refresh_greenhouse_cells()
+	refresh_indicator(building)
 	return true
 
 
 func unregister_building(building: BuildingInstance) -> void:
 	_registered_buildings.erase(building)
 	if building != null:
+		if is_instance_valid(building) and building.has_method("set_economy_indicator"):
+			building.call("set_economy_indicator", "")
 		var key := building_key(building)
 		maintenance_due_days.erase(key)
 		speed_accumulators.erase(key)
@@ -413,6 +445,7 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 	var previous_due_day := get_maintenance_due_day(building)
 	maintenance_due_days[building_key(building)] = due_day
 	_refresh_greenhouse_cells()
+	refresh_indicator(building)
 	if due_day <= _current_day and (previous_due_day < 0 or previous_due_day > _current_day):
 		_emit_event("production_maintenance_changed", [building, due_day])
 	return true
@@ -465,6 +498,7 @@ func maintain(
 		return false
 	maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
 	_refresh_greenhouse_cells()
+	refresh_indicator(building)
 	if owns_mapping:
 		inventory.end_mapping_transaction(true)
 	_end_inventory_event_transaction(owns_event, true, "item_removed", quote.materials)
@@ -533,6 +567,7 @@ func apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -
 			state.output_capacity = expected_output_capacity(building.building_id, level)
 		"speed":
 			pass
+	refresh_indicator(building)
 	return true
 
 
@@ -562,6 +597,8 @@ func from_dict(data: Dictionary) -> bool:
 		return false
 	maintenance_due_days = parsed.maintenance
 	speed_accumulators = parsed.speed
+	for building in _valid_registered_buildings():
+		refresh_indicator(building)
 	return true
 
 
@@ -573,6 +610,8 @@ func reset_maintenance(total_day: int = 0) -> bool:
 	speed_accumulators.clear()
 	_feed_shortage_active.clear()
 	_passive_output_blocked.clear()
+	for building in _valid_registered_buildings():
+		refresh_indicator(building)
 	return true
 
 
@@ -1068,6 +1107,22 @@ func _can_store_passive_outputs(
 	for quantity in output.values():
 		produced_quantity += int(quantity)
 	return stored_quantity + produced_quantity <= quantity_capacity
+
+
+func _is_output_full(building: BuildingInstance, state: ProducerState) -> bool:
+	for job in state.jobs:
+		if str((job as Dictionary).get("status", "")) == "output_full":
+			return true
+	if bool(_passive_output_blocked.get(building_key(building), false)):
+		return true
+	var quantity_capacity := _storage_quantity_capacity(building)
+	if quantity_capacity > 0:
+		var stored_quantity := 0
+		for quantity in state.outputs.values():
+			stored_quantity += int(quantity)
+		if stored_quantity >= quantity_capacity:
+			return true
+	return state.output_capacity > 0 and state.outputs.size() >= state.output_capacity
 
 
 func _resource_output_for(building: BuildingInstance, total_day: int) -> Dictionary:

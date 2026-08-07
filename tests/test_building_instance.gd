@@ -34,6 +34,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(instance.is_in_group("building_instance"), "%s joins building group" % id)
 		assertions.truthy(instance.has_node("VisualRoot/BackLayer"), "%s has back layer" % id)
 		assertions.truthy(instance.has_node("VisualRoot/FrontLayer"), "%s has front layer" % id)
+		assertions.truthy(instance.has_node("EconomyIndicator"), "%s has a world economy indicator" % id)
 		assertions.equal(instance.get_node("Collision").collision_layer, 16 | 64, "%s collision layers" % id)
 		assertions.equal(instance.get_node("InteractionArea").collision_layer, 64 | 256, "%s interaction layers" % id)
 		assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "%s occluder layer" % id)
@@ -42,6 +43,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(instance.get_node("CameraOccluder").collision_mask, 0, "%s occluder mask" % id)
 		assertions.equal(instance.to_dict().building_id, id, "%s serializes id" % id)
 		assertions.equal(instance.to_dict().gx, 3, "%s serializes grid x" % id)
+		if id == "workbench":
+			assertions.truthy(instance.has_method("set_economy_indicator"), "building exposes economy indicator updates")
+			assertions.truthy(instance.has_method("get_economy_indicator"), "building exposes economy indicator state")
+			if instance.has_method("set_economy_indicator") and instance.has_method("get_economy_indicator"):
+				instance.call("set_economy_indicator", "collect")
+				assertions.equal(instance.call("get_economy_indicator"), "collect", "collect indicator is visible")
+				assertions.equal(instance.get_node("EconomyIndicator").text, "收", "collect indicator uses a compact glyph")
+				instance.call("set_economy_indicator", "full")
+				assertions.equal(instance.call("get_economy_indicator"), "full", "full replaces collect")
+				instance.call("set_economy_indicator", "maintenance")
+				assertions.equal(instance.call("get_economy_indicator"), "maintenance", "maintenance has priority")
+				instance.call("set_economy_indicator", "")
+				assertions.truthy(not instance.get_node("EconomyIndicator").visible, "empty indicator hides the glyph")
 
 		instance.set_camera_occluded(true)
 		assertions.near(instance.get_target_opacity(), 0.3, 0.001, "%s fades for camera" % id)

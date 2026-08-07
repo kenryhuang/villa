@@ -91,6 +91,27 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	var modal := ModalCoordinatorScript.new()
 	assertions.truthy(ui.configure(production, inventory, progression, fixture.grid, modal), "building UI configures real economy systems")
 	assertions.truthy(ui.configure(production, inventory, progression, fixture.grid, modal), "repeated building UI configure is idempotent")
+	var locked_workbench := _scene_building("workbench", tree)
+	production.register_building(locked_workbench)
+	assertions.truthy(ui.open_for(locked_workbench), "workbench opens with locked advanced recipes visible")
+	var locked_panel = ui.production_panel
+	var crate_row := {}
+	for row in locked_panel.recipe_rows:
+		if str(row.get("recipe_id", "")) == "wooden_crate":
+			crate_row = row
+			break
+	assertions.truthy(not crate_row.is_empty(), "locked wooden crate recipe remains in the list")
+	assertions.equal(crate_row.get("unlock_service_id"), "recipe_wooden_crate", "locked recipe exposes its service target")
+	var crate_button := locked_panel.recipe_list.get_node_or_null("Recipe_wooden_crate") as Button
+	assertions.truthy(crate_button != null and not crate_button.disabled, "locked recipe remains clickable")
+	assertions.truthy(ui.has_signal("unlock_requested"), "building economy UI forwards recipe unlock requests")
+	var unlock_requests: Array[String] = []
+	if ui.has_signal("unlock_requested"):
+		ui.connect("unlock_requested", func(service_id: String) -> void: unlock_requests.append(service_id))
+	if crate_button != null:
+		crate_button.pressed.emit()
+	assertions.equal(unlock_requests, ["recipe_wooden_crate"], "locked recipe click requests its exact service")
+	ui.close()
 	assertions.truthy(ui.open_for(windmill), "completed windmill opens")
 	var panel = ui.production_panel
 	assertions.equal(panel.recipe_rows.size(), 3, "windmill exposes all three recipes")
@@ -368,6 +389,12 @@ func _test_main_route_and_construction_regression(assertions: TestAssert, tree: 
 	tree.root.add_child(main)
 	assertions.truthy(main.building_economy_ui != null, "Main authors building economy UI")
 	assertions.truthy(main.building_economy_ui.is_configured(), "Main configures building UI with authoritative systems")
+	assertions.truthy(main.building_economy_ui.has_signal("unlock_requested"), "Main building UI exposes unlock navigation")
+	if main.building_economy_ui.has_signal("unlock_requested"):
+		assertions.truthy(
+			main.building_economy_ui.is_connected("unlock_requested", Callable(main, "_on_building_unlock_requested")),
+			"Main connects recipe unlock navigation exactly once"
+		)
 	var completed := _scene_building("windmill", tree)
 	main.call("_on_building_instance_placed", completed)
 	assertions.truthy(completed.interacted.is_connected(Callable(main, "_on_building_interacted")), "Main connects BuildingInstance.interacted exactly once")

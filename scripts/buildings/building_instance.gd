@@ -51,6 +51,7 @@ var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
 var _completion_emitted := false
 var _missing_construction_art_warnings := {}
+var _economy_indicator_kind := ""
 
 var building_id: String:
 	get:
@@ -246,6 +247,7 @@ func deactivate() -> void:
 	camera_occluder.collision_mask = 0
 	camera_occluder.monitoring = false
 	remove_from_group("building_instance")
+	set_economy_indicator("")
 	_sync_construction_feedback(false)
 	visible = false
 	set_process(false)
@@ -285,6 +287,15 @@ func can_open_economy_panel() -> bool:
 	return is_construction_complete() and economy_effect_type() in [
 		"crafting", "honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output",
 	]
+
+
+func set_economy_indicator(kind: String) -> void:
+	_economy_indicator_kind = kind if kind in ["collect", "full", "maintenance"] else ""
+	_sync_economy_indicator()
+
+
+func get_economy_indicator() -> String:
+	return _economy_indicator_kind
 
 
 func to_dict() -> Dictionary:
@@ -482,6 +493,17 @@ func _ensure_nodes() -> void:
 		var feedback := ConstructionFeedbackScript.new() as ConstructionFeedback
 		feedback.name = "ConstructionFeedback"
 		add_child(feedback)
+	if get_node_or_null("EconomyIndicator") == null:
+		var indicator := Label3D.new()
+		indicator.name = "EconomyIndicator"
+		indicator.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		indicator.fixed_size = true
+		indicator.font_size = 32
+		indicator.outline_size = 8
+		indicator.modulate = Color.WHITE
+		indicator.visible = false
+		indicator.render_priority = 2
+		add_child(indicator)
 	_ensure_physics_node("Collision", StaticBody3D)
 	_ensure_physics_node("InteractionArea", Area3D)
 	_ensure_physics_node("CameraOccluder", Area3D)
@@ -534,6 +556,31 @@ func _sync_construction_feedback(active: bool = true) -> void:
 		_preview_mode,
 		is_construction_complete(),
 		active
+	)
+	_sync_economy_indicator()
+
+
+func _sync_economy_indicator() -> void:
+	var indicator := get_node_or_null("EconomyIndicator") as Label3D
+	if indicator == null:
+		return
+	var visual_size := data.visual_size if data != null else Vector2(1.0, 1.0)
+	indicator.position = Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
+	indicator.text = {
+		"collect": "收",
+		"full": "满",
+		"maintenance": "修",
+	}.get(_economy_indicator_kind, "")
+	indicator.modulate = {
+		"collect": Color("f5e6c8"),
+		"full": Color("ef6767"),
+		"maintenance": Color("f2b84b"),
+	}.get(_economy_indicator_kind, Color.WHITE)
+	indicator.visible = (
+		not indicator.text.is_empty()
+		and not _preview_mode
+		and is_construction_complete()
+		and visible
 	)
 
 

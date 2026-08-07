@@ -7,6 +7,7 @@ const MAX_UI_BATCHES := 9999
 const DEFAULT_INPUT_CAPACITY := 99
 
 signal snapshot_changed(state: String)
+signal unlock_requested(service_id: String)
 
 @onready var recipe_list: VBoxContainer = $ThreeColumns/RecipeColumn/RecipeList
 @onready var queue_slots_container: VBoxContainer = $ThreeColumns/QueueColumn/QueueSlots
@@ -195,6 +196,7 @@ func _build_recipe_rows(building: BuildingInstance) -> void:
 			"recipe_id": str(recipe.id),
 			"display_name": str(recipe.display_name),
 			"unlocked": unlocked,
+			"unlock_service_id": "" if unlocked else _progression.get_recipe_service_id(str(recipe.id)),
 			"lock_reason": "" if unlocked else "需要解锁%s配方" % str(recipe.display_name),
 			"materials_sufficient": missing.is_empty(),
 			"missing": missing,
@@ -333,9 +335,9 @@ func _render() -> void:
 		button.text = "%s  %s  %d分钟  %s" % [str(row.display_name), "可生产" if bool(row.materials_sufficient) else "缺材料", int(row.duration_minutes), _margin_status_text(str(row.margin_status))]
 		button.toggle_mode = true
 		button.button_pressed = str(row.recipe_id) == selected_recipe_id
-		button.disabled = not bool(row.unlocked)
+		button.disabled = false
 		button.tooltip_text = str(row.lock_reason)
-		button.pressed.connect(select_recipe.bind(str(row.recipe_id)))
+		button.pressed.connect(_on_recipe_pressed.bind(str(row.recipe_id)))
 		recipe_list.add_child(button)
 	_sync_queue_slot_nodes(queue_slots.size())
 	for index in range(queue_slot_nodes.size()):
@@ -465,6 +467,15 @@ func _select_max_batches() -> void:
 
 func _on_batch_value_changed(value: float) -> void:
 	set_batches(int(value))
+
+
+func _on_recipe_pressed(recipe_id: String) -> void:
+	if _progression == null or _progression.is_recipe_unlocked(recipe_id):
+		select_recipe(recipe_id)
+		return
+	var service_id := _progression.get_recipe_service_id(recipe_id)
+	if not service_id.is_empty():
+		unlock_requested.emit(service_id)
 
 
 func _multiply(source: Dictionary, multiplier: int) -> Dictionary:

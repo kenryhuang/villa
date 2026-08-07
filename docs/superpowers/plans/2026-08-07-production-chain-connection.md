@@ -505,7 +505,7 @@ git commit -m "feat: complete gatherable production inputs"
 - Modify: `tests/test_production_system.gd`
 - Modify: `tests/test_building_instance.gd`
 
-- [ ] **Step 1: Write failing recipe-navigation and indicator tests**
+- [x] **Step 1: Write failing recipe-navigation and indicator tests**
 
 Assert locked recipe rows remain clickable, expose their service ID, and emit `unlock_requested`. For building indicators, assert:
 
@@ -520,21 +520,21 @@ assertions.equal(building.get_economy_indicator(), "maintenance", "maintenance h
 
 Production tests assert collection clears `collect/full`, output blocking sets `full`, and overdue maintenance sets `maintenance`.
 
-- [ ] **Step 2: Run building/economy UI tests RED**
+- [x] **Step 2: Run building/economy UI tests RED**
 
-- [ ] **Step 3: Implement locked recipe navigation**
+- [x] **Step 3: Implement locked recipe navigation**
 
 Add `signal unlock_requested(service_id: String)` to `BuildingProductionPanel`. Locked recipe buttons remain enabled; pressing them calls `_progression.get_recipe_service_id(recipe_id)` and emits when non-empty. Forward the signal through `BuildingEconomyUI` to `Main`, which closes the building modal and opens `services` at the target.
 
-- [ ] **Step 4: Implement lightweight world indicators**
+- [x] **Step 4: Implement lightweight world indicators**
 
 `BuildingInstance._ensure_nodes()` adds a billboarded `Label3D` named `EconomyIndicator` positioned at the building visual's upper-right. `set_economy_indicator(kind)` maps `collect → 收`, `full → 满`, `maintenance → 修`, empty → hidden, with distinct cream/red/gold colors.
 
 Add `ProductionSystem.refresh_indicator(building)` with priority: overdue maintenance, storage full, any output, none. Call it after registration, job completion/output block, passive output, collection, maintenance, load/rebuild, and construction completion.
 
-- [ ] **Step 5: Run production, building, and UI suites GREEN**
+- [x] **Step 5: Run production, building, and UI suites GREEN**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/ui/building_production_panel.gd scripts/ui/building_economy_ui.gd scripts/buildings/building_instance.gd scripts/systems/production_system.gd scripts/main.gd tests/test_building_economy_ui.gd tests/test_production_system.gd tests/test_building_instance.gd
