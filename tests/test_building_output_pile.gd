@@ -111,6 +111,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"crate",
 		"future unknown output uses the crate fallback"
 	)
+	var charcoal_pile := BuildingOutputPileScript.new()
+	tree.root.add_child(charcoal_pile)
+	assertions.truthy(charcoal_pile.configure("charcoal", 2, 9), "charcoal label fixture configures")
+	assertions.equal(
+		(charcoal_pile.get_node("Tooltip") as Label3D).font_size,
+		8,
+		"charcoal quantity label is visually as compact as the brick label"
+	)
+	assertions.equal(
+		(charcoal_pile.get_node("PickupFeedback") as Label3D).font_size,
+		9,
+		"charcoal pickup label stays compact"
+	)
+	charcoal_pile.queue_free()
 	pile.queue_free()
 	await _test_collection_animation(assertions, tree)
 
@@ -128,7 +142,7 @@ func _test_collection_animation(assertions: TestAssert, tree: SceneTree) -> void
 	if feedback != null:
 		assertions.truthy(feedback.visible, "pickup feedback is immediately visible")
 		assertions.equal(feedback.text, "木炭 +2", "pickup feedback names the collected output")
-		assertions.equal(feedback.font_size, 11, "pickup feedback stays visually compact")
+		assertions.equal(feedback.font_size, 9, "charcoal pickup feedback stays visually compact")
 		assertions.equal(feedback.outline_size, 3, "pickup feedback uses a compact outline")
 	assertions.equal(pile.collision_layer, 0, "collected pile immediately disables collision")
 	assertions.truthy(

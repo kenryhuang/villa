@@ -8,6 +8,10 @@ const INTERACTION_LAYER := 128
 const ATLAS_FRAME_SIZE := Vector2(192.0, 192.0)
 const WORLD_WIDTH := 0.62
 const COLLECTION_ANIMATION_DURATION := 0.45
+const DEFAULT_TOOLTIP_FONT_SIZE := 10
+const DEFAULT_PICKUP_FONT_SIZE := 11
+const CHARCOAL_TOOLTIP_FONT_SIZE := 8
+const CHARCOAL_PICKUP_FONT_SIZE := 9
 const RASTER_FAMILIES := ["brick", "charcoal"]
 
 const FAMILY_BY_ITEM := {
@@ -284,7 +288,7 @@ func _ensure_nodes() -> void:
 		tooltip.name = "Tooltip"
 		tooltip.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		tooltip.fixed_size = true
-		tooltip.font_size = 10
+		tooltip.font_size = DEFAULT_TOOLTIP_FONT_SIZE
 		tooltip.outline_size = 3
 		tooltip.position = Vector3(0.0, 0.58, 0.02)
 		tooltip.modulate = Color("fff1d3")
@@ -297,7 +301,7 @@ func _ensure_nodes() -> void:
 		pickup_feedback.name = "PickupFeedback"
 		pickup_feedback.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		pickup_feedback.fixed_size = true
-		pickup_feedback.font_size = 11
+		pickup_feedback.font_size = DEFAULT_PICKUP_FONT_SIZE
 		pickup_feedback.outline_size = 3
 		pickup_feedback.position = Vector3(0.0, 0.72, 0.03)
 		pickup_feedback.modulate = Color("72f58b")
@@ -382,7 +386,11 @@ func _display_name() -> String:
 
 
 func _update_tooltip() -> void:
-	(get_node("Tooltip") as Label3D).text = "%s ×%d" % [_display_name(), quantity]
+	var tooltip := get_node("Tooltip") as Label3D
+	var pickup_feedback := get_node("PickupFeedback") as Label3D
+	tooltip.font_size = CHARCOAL_TOOLTIP_FONT_SIZE if item_id == "charcoal" else DEFAULT_TOOLTIP_FONT_SIZE
+	pickup_feedback.font_size = CHARCOAL_PICKUP_FONT_SIZE if item_id == "charcoal" else DEFAULT_PICKUP_FONT_SIZE
+	tooltip.text = "%s ×%d" % [_display_name(), quantity]
 
 
 func _show_failure_outline() -> void:
