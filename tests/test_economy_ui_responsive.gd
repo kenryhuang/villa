@@ -24,7 +24,7 @@ const PANEL_SCENES := [
 ]
 const MAIN_TITLE_CONTRACTS := {
 	"res://scenes/ui/shop_ui.tscn": "ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
-	"res://scenes/ui/economy/market_panel.tscn": "Columns/DetailColumn/ItemNameLabel",
+	"res://scenes/ui/economy/market_panel.tscn": "Columns/DetailColumn/DetailContent/DetailHeader/ItemNameLabel",
 	"res://scenes/ui/economy/building_economy_ui.tscn": "ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
 	"res://scenes/ui/economy/building_status_panel.tscn": "SummaryTitle",
 	"res://scenes/ui/economy/economy_notification_ui.tscn": "NotificationCenter/Margin/VBox/Header/Title",
@@ -232,17 +232,30 @@ func _test_compact_market_layout(assertions: TestAssert) -> void:
 	var catalog := market.get_node("Columns/CatalogColumn") as Control
 	var detail := market.get_node("Columns/DetailColumn") as Control
 	var trade := market.get_node("Columns/TradePanel") as Control
-	assertions.near(catalog.size_flags_stretch_ratio, 0.24, 0.001, "goods column is compact")
-	assertions.near(detail.size_flags_stretch_ratio, 0.49, 0.001, "curve owns the center")
-	assertions.near(trade.size_flags_stretch_ratio, 0.27, 0.001, "trade column is compact")
+	assertions.equal(catalog.custom_minimum_size.x, 280.0, "catalog card has a stable readable width")
+	assertions.equal(detail.custom_minimum_size.x, 520.0, "market curve owns the center card")
+	assertions.equal(trade.custom_minimum_size.x, 300.0, "trade card keeps controls aligned")
+	assertions.equal(catalog.theme_type_variation, &"EconomyCompactCard", "catalog is a raised compact card")
+	assertions.equal(detail.theme_type_variation, &"EconomyCompactCard", "detail is a raised compact card")
+	assertions.equal(trade.theme_type_variation, &"EconomyCompactCard", "trade is a raised compact card")
+	assertions.equal(
+		(market.get_node("Columns") as BoxContainer).get_theme_constant("separation"),
+		16,
+		"market cards use the shared grid gap"
+	)
 	assertions.truthy(
-		(market.get_node("Columns/DetailColumn/PriceChart") as Control).custom_minimum_size.y
+		(market.get_node("Columns/DetailColumn/DetailContent/PriceChart") as Control).custom_minimum_size.y
 		>= 190.0,
 		"central curve is prominent"
 	)
 	assertions.truthy(
-		market.has_node("Columns/CatalogColumn/CategoryTabs"),
+		market.has_node("Columns/CatalogColumn/CatalogContent/CategoryTabs"),
 		"categories use compact segmented controls"
+	)
+	assertions.equal(
+		(market.get_node("Columns/CatalogColumn/CatalogContent/CategoryTabs/RawMaterials") as Control).custom_minimum_size.y,
+		44.0,
+		"category controls share the standard control height"
 	)
 	market.free()
 
@@ -531,9 +544,9 @@ func _test_runtime_scale_and_resize_state(assertions: TestAssert, tree: SceneTre
 	market.set("selected_item_id", "grain")
 	var filler := Control.new()
 	filler.custom_minimum_size = Vector2(1.0, 1800.0)
-	market.get_node("Columns/CatalogColumn/ItemScroll/ItemRows").add_child(filler)
+	market.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows").add_child(filler)
 	await tree.process_frame
-	var scroll := market.get_node("Columns/CatalogColumn/ItemScroll") as ScrollContainer
+	var scroll := market.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll") as ScrollContainer
 	scroll.scroll_vertical = 120
 
 	EconomyLayoutScript.call("set_ui_scale", 1.2, tree)
@@ -574,7 +587,7 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	var panel := (load("res://scenes/ui/economy/market_panel.tscn") as PackedScene).instantiate()
 	tree.root.add_child(panel)
 	await tree.process_frame
-	var item_scroll := panel.get_node("Columns/CatalogColumn/ItemScroll") as ScrollContainer
+	var item_scroll := panel.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll") as ScrollContainer
 	assertions.equal(
 		item_scroll.horizontal_scroll_mode,
 		ScrollContainer.SCROLL_MODE_DISABLED,
@@ -592,20 +605,20 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "closing drawer restores product list")
 	panel.size = Vector2(900.0, 500.0)
 	panel.call("open_details_drawer")
-	assertions.truthy((panel.get_node("Columns/DetailColumn/PriceChart") as Control).visible, "tall drawer keeps the price curve")
+	assertions.truthy((panel.get_node("Columns/DetailColumn/DetailContent/PriceChart") as Control).visible, "tall drawer keeps the price curve")
 	panel.size = Vector2(900.0, 390.0)
 	panel.call("apply_responsive_layout", Vector2(900.0, 390.0))
-	assertions.truthy(not (panel.get_node("Columns/DetailColumn/PriceChart") as Control).visible, "short drawer hides the price curve")
+	assertions.truthy(not (panel.get_node("Columns/DetailColumn/DetailContent/PriceChart") as Control).visible, "short drawer hides the price curve")
 	panel.call("apply_responsive_layout", Vector2(1920, 1080))
 	assertions.equal(panel.call("get_layout_mode"), "three_column", "market restores three columns after resize")
 	assertions.truthy(
-		not (panel.get_node("Columns/DetailColumn/TagsLabel") as Control).visible
-		and not (panel.get_node("Columns/DetailColumn/SourceUseLabel") as Control).visible
-		and not (panel.get_node("Columns/DetailColumn/ProcessingLabel") as Control).visible,
+		not (panel.get_node("Columns/DetailColumn/DetailContent/TagsLabel") as Control).visible
+		and not (panel.get_node("Columns/DetailColumn/DetailContent/SourceUseLabel") as Control).visible
+		and not (panel.get_node("Columns/DetailColumn/DetailContent/ProcessingLabel") as Control).visible,
 		"wide market keeps secondary prose out of the compact panel"
 	)
 	assertions.truthy(
-		(panel.get_node("Columns/DetailColumn/PriceChart") as Control).visible,
+		(panel.get_node("Columns/DetailColumn/DetailContent/PriceChart") as Control).visible,
 		"wide market keeps the central price curve visible"
 	)
 	panel.free()
@@ -644,7 +657,7 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	market.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	await tree.process_frame
 	assertions.truthy(market.call("configure", inventory, economy, market_system), "keyboard fixture builds real market rows")
-	var item_rows := market.get_node("Columns/CatalogColumn/ItemScroll/ItemRows") as VBoxContainer
+	var item_rows := market.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows") as VBoxContainer
 	var product_buttons: Array[Button] = []
 	var product_ids: Array[String] = []
 	for row in item_rows.get_children():
@@ -699,7 +712,7 @@ func _test_shop_trade_modal_integration(assertions: TestAssert, tree: SceneTree)
 	var confirmation := trade.get_node("ConfirmationLayer") as Control
 	var confirm_button := trade.get_node("ConfirmationLayer/Content/VBox/Buttons/ConfirmButton") as Button
 	var orders_tab := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
-	var crops_button := market.get_node("Columns/CatalogColumn/CategoryTabs/Crops") as Button
+	var crops_button := market.get_node("Columns/CatalogColumn/CatalogContent/CategoryTabs/Crops") as Button
 	var close_button := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton") as Button
 	var orders_clicks := InputCounter.new()
 	var crops_clicks := InputCounter.new()

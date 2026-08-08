@@ -17,28 +17,28 @@ const SORT_IDS := ["recommended", "rise", "fall", "shortage", "owned_quantity", 
 const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名称"]
 
 @onready var category_buttons := {
-	"raw_materials": $Columns/CatalogColumn/CategoryTabs/RawMaterials,
-	"crops": $Columns/CatalogColumn/CategoryTabs/Crops,
-	"processed_materials": $Columns/CatalogColumn/CategoryTabs/ProcessedMaterials,
-	"food_handicrafts": $Columns/CatalogColumn/CategoryTabs/FoodHandicrafts,
-	"rare_goods": $Columns/CatalogColumn/CategoryTabs/RareGoods,
+	"raw_materials": $Columns/CatalogColumn/CatalogContent/CategoryTabs/RawMaterials,
+	"crops": $Columns/CatalogColumn/CatalogContent/CategoryTabs/Crops,
+	"processed_materials": $Columns/CatalogColumn/CatalogContent/CategoryTabs/ProcessedMaterials,
+	"food_handicrafts": $Columns/CatalogColumn/CatalogContent/CategoryTabs/FoodHandicrafts,
+	"rare_goods": $Columns/CatalogColumn/CatalogContent/CategoryTabs/RareGoods,
 }
-@onready var sort_option: OptionButton = $Columns/CatalogColumn/SortMode
-@onready var item_list: ItemList = $Columns/CatalogColumn/ItemList
-@onready var item_scroll: ScrollContainer = $Columns/CatalogColumn/ItemScroll
-@onready var item_rows: VBoxContainer = $Columns/CatalogColumn/ItemScroll/ItemRows
-@onready var empty_label: Label = $Columns/CatalogColumn/EmptyLabel
-@onready var item_name_label: Label = $Columns/DetailColumn/ItemNameLabel
-@onready var mid_price_label: Label = $Columns/DetailColumn/MidPriceLabel
-@onready var buy_price_label: Label = $Columns/DetailColumn/BuyPriceLabel
-@onready var sell_price_label: Label = $Columns/DetailColumn/SellPriceLabel
-@onready var stock_label: Label = $Columns/DetailColumn/StockLabel
-@onready var trend_label: Label = $Columns/DetailColumn/TrendLabel
-@onready var flow_label: Label = $Columns/DetailColumn/FlowLabel
-@onready var price_chart = $Columns/DetailColumn/PriceChart
-@onready var tags_label: Label = $Columns/DetailColumn/TagsLabel
-@onready var source_use_label: Label = $Columns/DetailColumn/SourceUseLabel
-@onready var processing_label: Label = $Columns/DetailColumn/ProcessingLabel
+@onready var sort_option: OptionButton = $Columns/CatalogColumn/CatalogContent/SortMode
+@onready var item_list: ItemList = $Columns/CatalogColumn/CatalogContent/ItemList
+@onready var item_scroll: ScrollContainer = $Columns/CatalogColumn/CatalogContent/ItemScroll
+@onready var item_rows: VBoxContainer = $Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows
+@onready var empty_label: Label = $Columns/CatalogColumn/CatalogContent/EmptyLabel
+@onready var item_name_label: Label = $Columns/DetailColumn/DetailContent/DetailHeader/ItemNameLabel
+@onready var mid_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel
+@onready var buy_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel
+@onready var sell_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel
+@onready var stock_label: Label = $Columns/DetailColumn/DetailContent/StockLabel
+@onready var trend_label: Label = $Columns/DetailColumn/DetailContent/DetailHeader/TrendLabel
+@onready var flow_label: Label = $Columns/DetailColumn/DetailContent/FlowLabel
+@onready var price_chart = $Columns/DetailColumn/DetailContent/PriceChart
+@onready var tags_label: Label = $Columns/DetailColumn/DetailContent/TagsLabel
+@onready var source_use_label: Label = $Columns/DetailColumn/DetailContent/SourceUseLabel
+@onready var processing_label: Label = $Columns/DetailColumn/DetailContent/ProcessingLabel
 @onready var trade_panel = $Columns/TradePanel
 
 var inventory_ref: InventorySystem
@@ -184,7 +184,17 @@ func apply_responsive_layout(logical_size: Vector2) -> void:
 
 
 func apply_economy_ui_scale(ui_scale: float) -> void:
-	var physical_size := size if size.x > 0.0 else get_viewport_rect().size
+	# Child minimum widths may make this container wider than the space the shell
+	# actually owns. Base the breakpoint on the centered modal's available width
+	# so a narrow window cannot accidentally select the three-card layout.
+	var physical_size := size
+	if get_parent() != null and get_parent().name == &"PageHost":
+		physical_size = EconomyLayoutScript.panel_rect_for(
+			get_viewport_rect().size,
+			EconomyLayoutScript.MARKET_PANEL_MAX_SIZE
+		).size
+	elif physical_size.x <= 0.0:
+		physical_size = get_viewport_rect().size
 	apply_responsive_layout(EconomyLayoutScript.logical_size_for(physical_size, ui_scale))
 
 
@@ -226,7 +236,7 @@ func _set_compact_detail(compact: bool) -> void:
 		).y
 	var show_chart := not compact or logical_height >= 420.0
 	price_chart.visible = show_chart
-	$Columns/DetailColumn/ChartTitle.visible = show_chart
+	$Columns/DetailColumn/DetailContent/ChartTitle.visible = show_chart
 	tags_label.visible = false
 	source_use_label.visible = false
 	processing_label.visible = false
@@ -271,7 +281,7 @@ func _rebuild_item_list() -> void:
 		item_rows.add_child(_create_item_row(definition, state, history, row_text))
 		_item_ids.append(candidate_id)
 	empty_label.visible = _item_ids.is_empty()
-	$Columns/CatalogColumn/ItemScroll.visible = not _item_ids.is_empty()
+	$Columns/CatalogColumn/CatalogContent/ItemScroll.visible = not _item_ids.is_empty()
 	if _item_ids.is_empty():
 		selected_item_id = ""
 		_show_empty_detail()
@@ -314,6 +324,8 @@ func _create_item_row(
 	var item_id := str(definition.get("id", ""))
 	var row := PanelContainer.new()
 	row.name = "ItemRow_%s" % item_id
+	row.custom_minimum_size = Vector2(0.0, EconomyLayoutScript.LIST_ROW_HEIGHT)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.set_meta("item_id", item_id)
 	row.set_meta("stock", int(state.get("stock", 0)))
 	row.set_meta("owned", inventory_ref.get_item_count(item_id) if inventory_ref != null else 0)
@@ -347,6 +359,7 @@ func _create_item_row(
 	select_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	select_button.flat = true
 	select_button.clip_text = true
+	select_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	select_button.toggle_mode = true
 	select_button.text = row_text
 	select_button.tooltip_text = "选择%s" % str(definition.get("name", item_id))
@@ -365,7 +378,8 @@ func _create_item_row(
 	var urgent_badge := Label.new()
 	urgent_badge.name = "UrgentBadge"
 	urgent_badge.visible = _is_urgent(state)
-	urgent_badge.text = "紧急需求"
+	urgent_badge.custom_minimum_size = Vector2(44.0, 0.0)
+	urgent_badge.text = "紧缺"
 	urgent_badge.add_theme_color_override("font_color", Color("#B65C4B"))
 	urgent_badge.add_theme_font_size_override("font_size", 16)
 	urgent_badge.tooltip_text = "库存紧缺或今日需求达到流动量"

@@ -4,15 +4,30 @@
 [ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="2_theme"]
 
 [node name="TradePanel" type="Control"]
-custom_minimum_size = Vector2(240, 0)
+custom_minimum_size = Vector2(300, 0)
 theme = ExtResource("2_theme")
+theme_type_variation = &"EconomyCompactCard"
 script = ExtResource("1_trade")
+
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"EconomyCompactCard"
 
 [node name="Content" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 6
