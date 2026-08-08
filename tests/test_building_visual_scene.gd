@@ -12,6 +12,9 @@ func _run() -> void:
 	if not _waterwheel_scene_contract_passes():
 		quit(1)
 		return
+	if not await _production_gallery_contract_passes():
+		quit(1)
+		return
 	var path := "res://tests/visual/building_system_verification.tscn"
 	if not ResourceLoader.exists(path):
 		push_error("missing building visual verification scene")
@@ -198,6 +201,30 @@ func _run() -> void:
 	instance.free()
 	print("PASS: building visual verification scene contract")
 	quit(0)
+
+
+func _production_gallery_contract_passes() -> bool:
+	var path := "res://tests/visual/production_building_gallery.tscn"
+	if not ResourceLoader.exists(path):
+		push_error("production building gallery scene is missing")
+		return false
+	var packed := load(path) as PackedScene
+	var instance := packed.instantiate() if packed != null else null
+	if instance == null or instance.get_script() == null:
+		push_error("production building gallery failed to instantiate")
+		return false
+	root.add_child(instance)
+	await process_frame
+	if not instance.has_method("gallery_contract_passes"):
+		push_error("production building gallery contract method is missing")
+		instance.free()
+		return false
+	if not bool(instance.call("gallery_contract_passes")):
+		push_error("production building gallery contract failed")
+		instance.free()
+		return false
+	instance.free()
+	return true
 
 
 func _waterwheel_scene_contract_passes() -> bool:
