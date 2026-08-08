@@ -599,8 +599,8 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	panel.call("open_details_drawer")
 	assertions.truthy(not (panel.get_node("Columns/CatalogColumn") as Control).visible, "drawer details cover the product list")
 	assertions.truthy((panel.get_node("Columns/DetailColumn") as Control).visible, "drawer keeps market details visible")
-	assertions.truthy((panel.get_node("Columns/TradePanel/Content/BuyTotalLabel") as Control).visible, "drawer keeps trade total visible")
-	assertions.truthy((panel.get_node("Columns/TradePanel/Content/DisabledReasonLabel") as Control).visible, "drawer keeps disabled reason visible")
+	assertions.truthy((panel.get_node("Columns/TradePanel/Content/SummaryGrid/BuyTotalLabel") as Control).visible, "drawer keeps trade total visible")
+	assertions.truthy((panel.get_node("Columns/TradePanel/Content/StatusArea/DisabledReasonLabel") as Control).visible, "drawer keeps disabled reason visible")
 	assertions.truthy(panel.call("handle_top_escape"), "escape closes the open details drawer")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "closing drawer restores product list")
 	panel.size = Vector2(900.0, 500.0)
@@ -776,8 +776,8 @@ func _test_narrow_shop_pagehost_bounds(assertions: TestAssert, tree: SceneTree) 
 		_controls_within_rect(market, page_host.get_global_rect()),
 		"nested 1280 market drawer controls stay inside PageHost %s: %s" % [page_host.get_global_rect(), _out_of_bounds_description(market, page_host.get_global_rect())]
 	)
-	var buy_total := market.get_node("Columns/TradePanel/Content/BuyTotalLabel") as Control
-	var disabled_reason := market.get_node("Columns/TradePanel/Content/DisabledReasonLabel") as Control
+	var buy_total := market.get_node("Columns/TradePanel/Content/SummaryGrid/BuyTotalLabel") as Control
+	var disabled_reason := market.get_node("Columns/TradePanel/Content/StatusArea/DisabledReasonLabel") as Control
 	assertions.truthy(buy_total.is_visible_in_tree() and page_host.get_global_rect().encloses(buy_total.get_global_rect()), "narrow drawer keeps buy total visible without scrolling")
 	assertions.truthy(disabled_reason.is_visible_in_tree() and page_host.get_global_rect().encloses(disabled_reason.get_global_rect()), "narrow drawer keeps disabled reason visible without scrolling")
 	shop.call("select_tab", "contracts")
@@ -852,6 +852,16 @@ func _test_trade_keyboard_and_wheel(assertions: TestAssert, tree: SceneTree) -> 
 	tree.root.add_child(panel)
 	await tree.process_frame
 	var quantity := panel.get_node("Content/QuantityRow/QuantitySpin") as SpinBox
+	var max_button := panel.get_node("Content/QuantityRow/MaxButton") as Button
+	var buy_button := panel.get_node("Content/Actions/BuyButton") as Button
+	var sell_button := panel.get_node("Content/Actions/SellButton") as Button
+	assertions.equal(quantity.custom_minimum_size.y, 44.0, "trade quantity uses the standard control height")
+	assertions.equal(max_button.custom_minimum_size.y, 44.0, "trade maximum uses the standard control height")
+	assertions.equal(buy_button.custom_minimum_size.y, 44.0, "trade buy uses the standard control height")
+	assertions.equal(sell_button.custom_minimum_size.y, 44.0, "trade sell uses the standard control height")
+	assertions.equal(buy_button.custom_minimum_size, sell_button.custom_minimum_size, "trade actions have equal geometry")
+	assertions.truthy(panel.has_node("Content/SummaryGrid"), "trade values use an aligned two-column summary")
+	assertions.truthy(panel.has_node("Content/StatusArea"), "trade feedback reserves one stable status area")
 	quantity.max_value = 10
 	quantity.value = 3
 	var wheel_up := InputEventMouseButton.new()
@@ -877,6 +887,7 @@ func _test_trade_confirmation_modal(assertions: TestAssert, tree: SceneTree) -> 
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	await tree.process_frame
 	var confirmation := panel.get_node("ConfirmationLayer") as Control
+	var confirmation_content := panel.get_node("ConfirmationLayer/Content") as Control
 	var buy_button := panel.get_node("Content/Actions/BuyButton") as Button
 	buy_button.disabled = false
 	var click_counter := InputCounter.new()
@@ -888,6 +899,14 @@ func _test_trade_confirmation_modal(assertions: TestAssert, tree: SceneTree) -> 
 		_rect_covers(confirmation.get_global_rect(), panel.get_global_rect()),
 		"trade confirmation covers complete panel (%s over %s)" % [confirmation.get_global_rect(), panel.get_global_rect()]
 	)
+	assertions.truthy(
+		confirmation.get_global_rect().encloses(confirmation_content.get_global_rect()),
+		"trade confirmation card remains inside its interaction layer"
+	)
+	assertions.equal(confirmation_content.offset_left, 12.0, "trade confirmation keeps the left safety inset")
+	assertions.equal(confirmation_content.offset_top, 12.0, "trade confirmation keeps the top safety inset")
+	assertions.equal(confirmation_content.offset_right, -12.0, "trade confirmation keeps the right safety inset")
+	assertions.equal(confirmation_content.offset_bottom, -12.0, "trade confirmation keeps the bottom safety inset")
 	await _send_key(tree, KEY_TAB)
 	var modal_focus := panel.get_viewport().gui_get_focus_owner()
 	assertions.truthy(modal_focus != null and confirmation.is_ancestor_of(modal_focus), "visible confirmation traps keyboard focus above underlying trade controls")
