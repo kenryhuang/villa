@@ -75,7 +75,7 @@ Expected: FAIL on the old 1080×600 and 980×560 limits and old radii.
 Update `economy_layout.gd`:
 
 ```gdscript
-const DRAWER_BREAKPOINT := 1120.0
+const DRAWER_BREAKPOINT := 1204.0
 const MARKET_PANEL_MAX_SIZE := Vector2(1400.0, 760.0)
 const BUILDING_PANEL_MAX_SIZE := Vector2(1400.0, 760.0)
 const WINDOW_INSET := 24.0

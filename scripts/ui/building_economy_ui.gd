@@ -10,7 +10,7 @@ const STATUS_BUILDINGS := [
 	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine",
 ]
 const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
-const OPEN_DURATION := 0.14
+const OPEN_DURATION := 0.16
 
 @onready var screen_layer: CanvasLayer = $ScreenLayer
 @onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
@@ -36,6 +36,7 @@ var _panel_tween: Tween
 
 
 func _ready() -> void:
+	add_to_group(EconomyLayoutScript.RESPONSIVE_GROUP)
 	visible = false
 	screen_layer.visible = false
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
@@ -153,6 +154,9 @@ func current_building() -> BuildingInstance:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _is_open or not event is InputEventKey or not event.pressed or event.echo or event.keycode != KEY_ESCAPE:
 		return
+	if production_panel.visible and production_panel.handle_top_escape():
+		get_viewport().set_input_as_handled()
+		return
 	close()
 	get_viewport().set_input_as_handled()
 
@@ -185,6 +189,13 @@ func _apply_compact_rect() -> void:
 	)
 	building_panel.position = rect.position
 	building_panel.size = rect.size
+	production_panel.apply_responsive_layout(
+		EconomyLayoutScript.logical_size_for(rect.size, EconomyLayoutScript.get_ui_scale())
+	)
+
+
+func apply_economy_ui_scale(_ui_scale: float) -> void:
+	_apply_compact_rect()
 
 
 func _sync_screen_layer_visibility() -> void:
@@ -223,7 +234,7 @@ func _animate_open(panel: Control) -> void:
 		return
 	_stop_transition()
 	panel.pivot_offset = panel.size * 0.5
-	panel.scale = Vector2(0.98, 0.98)
+	panel.scale = Vector2(0.985, 0.985)
 	panel.modulate.a = 0.0
 	_panel_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	_panel_tween.set_parallel(true)

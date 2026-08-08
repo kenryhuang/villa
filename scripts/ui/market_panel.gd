@@ -32,9 +32,11 @@ const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名�
 @onready var mid_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel
 @onready var buy_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel
 @onready var sell_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel
-@onready var stock_label: Label = $Columns/DetailColumn/DetailContent/StockLabel
+@onready var stock_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel
 @onready var trend_label: Label = $Columns/DetailColumn/DetailContent/DetailHeader/TrendLabel
-@onready var flow_label: Label = $Columns/DetailColumn/DetailContent/FlowLabel
+@onready var supply_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel
+@onready var demand_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel
+@onready var liquidity_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel
 @onready var price_chart = $Columns/DetailColumn/DetailContent/PriceChart
 @onready var tags_label: Label = $Columns/DetailColumn/DetailContent/TagsLabel
 @onready var source_use_label: Label = $Columns/DetailColumn/DetailContent/SourceUseLabel
@@ -136,17 +138,15 @@ func refresh_snapshot() -> void:
 	mid_price_label.text = "中间价：%d" % mid
 	buy_price_label.text = "买入价：%d" % buy_price
 	sell_price_label.text = "卖出价：%d" % sell_price
-	stock_label.text = "库存：%d / 目标 %d　%s" % [
+	stock_label.text = "库存\n%d / %d · %s" % [
 		int(state.get("stock", 0)),
 		int(state.get("target_stock", 0)),
 		_stock_status(state),
 	]
 	trend_label.text = "趋势：%s" % _trend_text(history)
-	flow_label.text = "今日供给 %d　今日需求 %d　流动量 %d" % [
-		int(state.get("supply", 0)),
-		int(state.get("demand", 0)),
-		int(state.get("daily_liquidity", 0)),
-	]
+	supply_label.text = "今日供给\n%d" % int(state.get("supply", 0))
+	demand_label.text = "今日需求\n%d" % int(state.get("demand", 0))
+	liquidity_label.text = "流动量\n%d" % int(state.get("daily_liquidity", 0))
 	price_chart.set_series(
 		history,
 		_history_dates(history.size()),
@@ -523,9 +523,11 @@ func _show_empty_detail() -> void:
 	mid_price_label.text = "中间价：—"
 	buy_price_label.text = "买入价：—"
 	sell_price_label.text = "卖出价：—"
-	stock_label.text = "库存：—"
+	stock_label.text = "库存\n—"
 	trend_label.text = "趋势：—"
-	flow_label.text = "今日供给 —　今日需求 —　流动量 —"
+	supply_label.text = "今日供给\n—"
+	demand_label.text = "今日需求\n—"
+	liquidity_label.text = "流动量\n—"
 	price_chart.set_history([])
 	tags_label.text = "标签：—"
 	trade_panel.set_item("")

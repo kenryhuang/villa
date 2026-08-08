@@ -79,6 +79,9 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 	assertions.equal(recipe_card.custom_minimum_size.x, 280.0, "production recipe card has a stable width")
 	assertions.equal(process_card.custom_minimum_size.x, 520.0, "production process card owns the center")
 	assertions.equal(activity_card.custom_minimum_size.x, 300.0, "production activity card has a stable width")
+	assertions.equal(recipe_card.size_flags_horizontal, Control.SIZE_FILL, "production recipe card remains fixed width")
+	assertions.equal(activity_card.size_flags_horizontal, Control.SIZE_FILL, "production activity card remains fixed width")
+	assertions.equal(process_card.size_flags_horizontal, Control.SIZE_EXPAND_FILL, "production process card receives flexible width")
 	assertions.equal(sections.get_theme_constant("separation"), 16, "production cards use the shared grid gap")
 	for control_path in [
 		"Sections/ProcessColumn/Content/BatchControls/BatchSpinBox",
@@ -91,6 +94,11 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 			44.0,
 			"production control %s uses the standard height" % control_path
 		)
+	assertions.equal(
+		(production_panel.get_node("Sections/ProcessColumn/Content/BatchControls/StartButton") as Control).custom_minimum_size.x,
+		148.0,
+		"production primary action uses the designed width"
+	)
 	production_panel.free()
 
 
@@ -148,7 +156,7 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.recipe_detail.get("inputs"), {"grain": 2}, "recipe details expose exact inputs")
 	assertions.equal(panel.recipe_detail.get("outputs"), {"flour": 1}, "recipe details expose exact outputs")
 	assertions.equal(panel.queue_slots.size(), 2, "production view always exposes two queue slots")
-	assertions.truthy(panel.queue_slot_nodes[0].custom_minimum_size.y <= 88.0, "queue slots use a compact card row")
+	assertions.equal(panel.queue_slot_nodes[0].custom_minimum_size.y, 52.0, "queue slots use the shared dynamic row height")
 	assertions.truthy(panel.recipe_detail.has("margin_status"), "recipe detail exposes margin status")
 	assertions.truthy(panel.recipe_detail.has("duration_minutes"), "recipe detail exposes duration")
 	var grain_before := inventory.get_item_count("grain")

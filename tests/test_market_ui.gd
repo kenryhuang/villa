@@ -54,9 +54,11 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel",
 		"Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel",
 		"Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel",
-		"Columns/DetailColumn/DetailContent/StockLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel",
 		"Columns/DetailColumn/DetailContent/DetailHeader/TrendLabel",
-		"Columns/DetailColumn/DetailContent/FlowLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel",
 		"Columns/DetailColumn/DetailContent/PriceChart",
 		"Columns/DetailColumn/DetailContent/TagsLabel",
 		"Columns/TradePanel",
@@ -271,11 +273,11 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel").text.contains(str(market.get_mid_price("wood"))), "wood selection shows mid price")
 	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel").text.contains(str(market.quote_buy("wood", 1))), "wood selection shows buy price")
 	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel").text.contains(str(market.quote_sell("wood", 1))), "wood selection shows sell price")
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/StockLabel").text.contains(str(market.get_stock("wood"))), "wood selection shows finite market stock")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel").text.contains(str(market.get_stock("wood"))), "wood selection shows finite market stock")
 	var wood_state := market.get_item_state("wood")
-	var flow_text: String = market_panel.get_node("Columns/DetailColumn/DetailContent/FlowLabel").text
-	for field in ["supply", "demand", "daily_liquidity"]:
-		assertions.truthy(flow_text.contains(str(wood_state[field])), "wood selection shows %s" % field)
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel").text.contains(str(wood_state.supply)), "wood selection shows supply")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel").text.contains(str(wood_state.demand)), "wood selection shows demand")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel").text.contains(str(wood_state.daily_liquidity)), "wood selection shows daily liquidity")
 	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/TagsLabel").text.contains("essential"), "wood selection shows market tags")
 	var chart = market_panel.get_node("Columns/DetailColumn/DetailContent/PriceChart")
 	assertions.equal(chart.get("history").size(), market.get_history("wood").size(), "chart uses only observed 1-7 day history")
@@ -328,7 +330,7 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.truthy(trade.get_node("Content/SummaryGrid/PlayerQuantityLabel").text.contains(str(owned_before + 1)), "successful buy redraws player quantity in same frame")
 	assertions.truthy(trade.get_node("Content/SummaryGrid/MarketQuantityLabel").text.contains(str(stock_before - 1)), "successful buy redraws stock in same frame")
 	assertions.truthy(
-		market_panel.get_node("Columns/DetailColumn/DetailContent/StockLabel").text.contains(str(stock_before - 1)),
+		market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel").text.contains(str(stock_before - 1)),
 		"successful buy redraws market detail stock in same frame"
 	)
 

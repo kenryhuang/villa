@@ -40,6 +40,8 @@ var max_batches := 0
 var disabled_reason := ""
 var failure_reason := ""
 var failure_message := ""
+var _layout_mode := "three_column"
+var _drawer_open := false
 
 var _production: ProductionSystem
 var _inventory: InventorySystem
@@ -100,6 +102,51 @@ func select_recipe(recipe_id: String) -> void:
 	_selected_by_building[_building_key(building)] = recipe_id
 	batches = 1
 	refresh_snapshot()
+	open_details_drawer()
+
+
+func apply_responsive_layout(logical_size: Vector2) -> void:
+	var next_mode: String = EconomyLayoutScript.mode_for_size(logical_size)
+	if next_mode != _layout_mode:
+		_layout_mode = next_mode
+		if _layout_mode == "three_column":
+			_drawer_open = false
+	_apply_drawer_visibility()
+
+
+func get_layout_mode() -> String:
+	return _layout_mode
+
+
+func open_details_drawer() -> void:
+	if _layout_mode != "drawer":
+		return
+	_drawer_open = true
+	_apply_drawer_visibility()
+	if start_button != null and start_button.is_visible_in_tree():
+		start_button.call_deferred("grab_focus")
+
+
+func handle_top_escape() -> bool:
+	if _layout_mode != "drawer" or not _drawer_open:
+		return false
+	_drawer_open = false
+	_apply_drawer_visibility()
+	return true
+
+
+func _apply_drawer_visibility() -> void:
+	var recipe_card := get_node("Sections/RecipeColumn") as Control
+	var process_card := get_node("Sections/ProcessColumn") as Control
+	var activity_card := get_node("Sections/RightColumn") as Control
+	if _layout_mode == "three_column":
+		recipe_card.visible = true
+		process_card.visible = true
+		activity_card.visible = true
+		return
+	recipe_card.visible = not _drawer_open
+	process_card.visible = _drawer_open
+	activity_card.visible = _drawer_open
 
 
 func set_batches(next_batches: int) -> void:
@@ -427,7 +474,7 @@ func _sync_queue_slot_nodes(target_count: int) -> void:
 func _create_queue_slot_node(index: int) -> PanelContainer:
 	var slot := PanelContainer.new()
 	slot.name = "Slot%d" % (index + 1)
-	slot.custom_minimum_size = Vector2(0, 76)
+	slot.custom_minimum_size = Vector2(0, EconomyLayoutScript.LIST_ROW_HEIGHT)
 	var slot_style := StyleBoxFlat.new()
 	slot_style.bg_color = Color("#FFF7E6")
 	slot_style.corner_radius_top_left = 10
@@ -435,13 +482,13 @@ func _create_queue_slot_node(index: int) -> PanelContainer:
 	slot_style.corner_radius_bottom_left = 10
 	slot_style.corner_radius_bottom_right = 10
 	slot_style.content_margin_left = 10.0
-	slot_style.content_margin_top = 8.0
+	slot_style.content_margin_top = 4.0
 	slot_style.content_margin_right = 10.0
-	slot_style.content_margin_bottom = 8.0
+	slot_style.content_margin_bottom = 4.0
 	slot.add_theme_stylebox_override("panel", slot_style)
 	var content := VBoxContainer.new()
 	content.name = "Content"
-	content.add_theme_constant_override("separation", 6)
+	content.add_theme_constant_override("separation", 4)
 	slot.add_child(content)
 	var header := HBoxContainer.new()
 	header.name = "Header"

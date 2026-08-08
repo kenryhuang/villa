@@ -22,7 +22,7 @@ theme_override_constants/separation = 16
 [node name="RecipeColumn" type="PanelContainer" parent="Sections"]
 custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 1
 size_flags_stretch_ratio = 0.25
 theme_type_variation = &"EconomyCompactCard"
 
@@ -197,7 +197,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="StartButton" type="Button" parent="Sections/ProcessColumn/Content/BatchControls"]
-custom_minimum_size = Vector2(128, 44)
+custom_minimum_size = Vector2(148, 44)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "开始生产"
@@ -205,7 +205,7 @@ text = "开始生产"
 [node name="RightColumn" type="PanelContainer" parent="Sections"]
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 1
 size_flags_stretch_ratio = 0.27
 theme_type_variation = &"EconomyCompactCard"
 

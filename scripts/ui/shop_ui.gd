@@ -7,8 +7,8 @@ const EconomyModalCoordinatorScript = preload(
 )
 const MarketPanelScript = preload("res://scripts/ui/market_panel.gd")
 const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
-const OPEN_DURATION := 0.14
-const CONTENT_FADE_DURATION := 0.10
+const OPEN_DURATION := 0.16
+const CONTENT_FADE_DURATION := 0.12
 
 @onready var screen_layer: CanvasLayer = $ScreenLayer
 @onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
@@ -266,7 +266,7 @@ func _animate_open(panel: Control) -> void:
 	if _panel_tween != null:
 		_panel_tween.kill()
 	panel.pivot_offset = panel.size * 0.5
-	panel.scale = Vector2(0.98, 0.98)
+	panel.scale = Vector2(0.985, 0.985)
 	panel.modulate.a = 0.0
 	_panel_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	_panel_tween.set_parallel(true)

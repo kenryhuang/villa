@@ -95,6 +95,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_compact_theme(assertions)
 	_test_compact_shells(assertions, tree)
 	_test_compact_market_layout(assertions)
+	_test_production_drawer_contract(assertions)
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
@@ -143,11 +144,17 @@ func _test_compact_theme(assertions: TestAssert) -> void:
 		)
 	var shell := theme.get_stylebox(&"panel", &"EconomyShell") as StyleBoxFlat
 	var card := theme.get_stylebox(&"panel", &"EconomyCompactCard") as StyleBoxFlat
+	var button_normal := theme.get_stylebox(&"normal", &"Button") as StyleBoxFlat
+	var button_hover := theme.get_stylebox(&"hover", &"Button") as StyleBoxFlat
+	var button_pressed := theme.get_stylebox(&"pressed", &"Button") as StyleBoxFlat
+	var line_edit := theme.get_stylebox(&"normal", &"LineEdit") as StyleBoxFlat
 	assertions.equal(shell.border_width_left, 1, "shell uses one-pixel border")
 	assertions.equal(shell.shadow_size, 12, "shell uses one soft window shadow")
 	assertions.equal(shell.corner_radius_top_left, 18, "window uses Apple-like radius")
 	assertions.equal(card.corner_radius_top_left, 14, "cards use aligned radius")
 	assertions.equal(card.border_width_left, 1, "cards use a hairline")
+	for control_style in [button_normal, button_hover, button_pressed, line_edit]:
+		assertions.equal(control_style.corner_radius_top_left, 10, "economy controls use the shared ten-pixel radius")
 	assertions.equal(theme.default_font_size, 18, "body text stays readable")
 
 
@@ -235,6 +242,9 @@ func _test_compact_market_layout(assertions: TestAssert) -> void:
 	assertions.equal(catalog.custom_minimum_size.x, 280.0, "catalog card has a stable readable width")
 	assertions.equal(detail.custom_minimum_size.x, 520.0, "market curve owns the center card")
 	assertions.equal(trade.custom_minimum_size.x, 300.0, "trade card keeps controls aligned")
+	assertions.equal(catalog.size_flags_horizontal, Control.SIZE_FILL, "catalog card remains fixed width")
+	assertions.equal(trade.size_flags_horizontal, Control.SIZE_FILL, "trade card remains fixed width")
+	assertions.equal(detail.size_flags_horizontal, Control.SIZE_EXPAND_FILL, "market detail receives flexible width")
 	assertions.equal(catalog.theme_type_variation, &"EconomyCompactCard", "catalog is a raised compact card")
 	assertions.equal(detail.theme_type_variation, &"EconomyCompactCard", "detail is a raised compact card")
 	assertions.equal(trade.theme_type_variation, &"EconomyCompactCard", "trade is a raised compact card")
@@ -257,7 +267,31 @@ func _test_compact_market_layout(assertions: TestAssert) -> void:
 		44.0,
 		"category controls share the standard control height"
 	)
+	assertions.truthy(
+		market.has_node("Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel")
+		and market.has_node("Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel")
+		and market.has_node("Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel")
+		and market.has_node("Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel"),
+		"market footer exposes four aligned metrics"
+	)
 	market.free()
+
+
+func _test_production_drawer_contract(assertions: TestAssert) -> void:
+	var panel := (load("res://scenes/ui/economy/building_production_panel.tscn") as PackedScene).instantiate() as Control
+	assertions.truthy(panel.has_method("apply_responsive_layout"), "production panel exposes responsive layout")
+	assertions.truthy(panel.has_method("open_details_drawer"), "production panel exposes a detail drawer")
+	if panel.has_method("apply_responsive_layout") and panel.has_method("open_details_drawer"):
+		panel.call("apply_responsive_layout", Vector2(900.0, 720.0))
+		assertions.equal(panel.call("get_layout_mode"), "drawer", "narrow production starts in drawer mode")
+		assertions.truthy((panel.get_node("Sections/RecipeColumn") as Control).visible, "production drawer starts with recipes")
+		assertions.truthy(not (panel.get_node("Sections/ProcessColumn") as Control).visible, "production details begin hidden")
+		panel.call("open_details_drawer")
+		assertions.truthy(not (panel.get_node("Sections/RecipeColumn") as Control).visible, "opening production details hides recipes")
+		assertions.truthy((panel.get_node("Sections/ProcessColumn") as Control).visible, "opening production details shows the process card")
+		assertions.truthy(panel.call("handle_top_escape"), "production detail drawer handles Escape")
+		assertions.truthy((panel.get_node("Sections/RecipeColumn") as Control).visible, "Escape restores production recipes")
+	panel.free()
 
 
 func _test_building_palette_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
@@ -335,8 +369,8 @@ func _test_building_palette_viewport_contract(assertions: TestAssert, tree: Scen
 func _test_layout_contract(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(3000, 2000)), "three_column", "target viewport uses columns")
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(1920, 1080)), "three_column", "desktop uses columns")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(1120, 900)), "three_column", "drawer threshold is exclusive")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(1119, 900)), "drawer", "narrow logical viewport uses drawer")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(1204, 900)), "three_column", "drawer threshold is exclusive")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(1203, 900)), "drawer", "narrow logical viewport uses drawer")
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(1280, 720)), "three_column", "compact desktop preserves the price curve")
 	assertions.equal(EconomyLayout.clamp_scale(0.5), 0.8, "scale has lower bound")
 	assertions.equal(EconomyLayout.clamp_scale(1.2), 1.2, "scale preserves supported value")

@@ -17,7 +17,7 @@ theme_override_constants/separation = 16
 [node name="CatalogColumn" type="PanelContainer" parent="Columns"]
 custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 1
 size_flags_stretch_ratio = 0.25
 theme_type_variation = &"EconomyCompactCard"
 
@@ -154,16 +154,6 @@ theme_override_font_sizes/font_size = 18
 text = "卖出价：—"
 vertical_alignment = 1
 
-[node name="StockLabel" type="Label" parent="Columns/DetailColumn/DetailContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "库存：—"
-
-[node name="FlowLabel" type="Label" parent="Columns/DetailColumn/DetailContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "今日供给 —　今日需求 —　流动量 —"
-
 [node name="ChartTitle" type="Label" parent="Columns/DetailColumn/DetailContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
@@ -175,6 +165,39 @@ layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 0
 script = ExtResource("2_chart")
+
+[node name="MarketMetrics" type="GridContainer" parent="Columns/DetailColumn/DetailContent"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+columns = 4
+
+[node name="StockLabel" type="Label" parent="Columns/DetailColumn/DetailContent/MarketMetrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "库存\n—"
+horizontal_alignment = 1
+
+[node name="SupplyLabel" type="Label" parent="Columns/DetailColumn/DetailContent/MarketMetrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "今日供给\n—"
+horizontal_alignment = 1
+
+[node name="DemandLabel" type="Label" parent="Columns/DetailColumn/DetailContent/MarketMetrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "今日需求\n—"
+horizontal_alignment = 1
+
+[node name="LiquidityLabel" type="Label" parent="Columns/DetailColumn/DetailContent/MarketMetrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "流动量\n—"
+horizontal_alignment = 1
 
 [node name="TagsLabel" type="Label" parent="Columns/DetailColumn/DetailContent"]
 visible = false
@@ -200,5 +223,5 @@ autowrap_mode = 2
 
 [node name="TradePanel" parent="Columns" instance=ExtResource("3_trade")]
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 1
 size_flags_stretch_ratio = 0.27

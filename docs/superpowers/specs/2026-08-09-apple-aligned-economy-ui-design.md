@@ -95,7 +95,7 @@ Selected tabs visually join the content surface:
 
 ## 4. Market Layout
 
-The market page uses a stable three-column grid at 1120 logical pixels and above:
+The market page uses a stable three-column grid at 1204 logical outer-shell pixels and above. This threshold reserves the shell's 48 px horizontal inset while keeping the 1132 px card grid intact:
 
 ```text
 MarketPage
@@ -178,8 +178,8 @@ ProductionPage
 
 ## 6. Responsive Behavior
 
-- `>=1120` logical width: three-column layout.
-- `<1120` logical width: drawer layout.
+- `>=1204` logical outer-shell width: three-column layout.
+- `<1204` logical outer-shell width: drawer layout.
 - Drawer opens the product/recipe list first and moves details/actions into the existing detail state.
 - In a drawer, keep the price chart when logical content height is at least 420 px; hide it below that threshold.
 - Lists scroll internally. The complete modal must not grow beyond its calculated rectangle.
