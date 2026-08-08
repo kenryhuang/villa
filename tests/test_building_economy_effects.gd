@@ -498,7 +498,21 @@ func _test_building_definitions_scenes_and_build_ui(assertions: TestAssert, tree
 				assertions.equal(instance.authored_building_id, id, "%s scene authors the matching building id" % id)
 				tree.root.add_child(instance)
 				assertions.equal(instance.building_id, id, "%s scene resolves its authored definition" % id)
-				assertions.truthy(instance.get_node("VisualRoot/FallbackBody").visible, "%s scene has a functional procedural fallback" % id)
+				var back := instance.get_node("VisualRoot/BackLayer") as Sprite3D
+				var front := instance.get_node("VisualRoot/FrontLayer") as Sprite3D
+				assertions.truthy(
+					back.texture != null and back.visible,
+					"%s scene shows its painted back layer" % id
+				)
+				assertions.truthy(
+					front.texture != null and front.visible,
+					"%s scene shows its painted front layer" % id
+				)
+				assertions.truthy(
+					not instance.get_node("VisualRoot/FallbackBody").visible
+					and not instance.get_node("VisualRoot/FallbackRoof").visible,
+					"%s scene hides its procedural fallback when painted art exists" % id
+				)
 				instance.free()
 	var build_ui := _track(BUILD_UI_SCENE.instantiate()) as BuildUI
 	tree.root.add_child(build_ui)
