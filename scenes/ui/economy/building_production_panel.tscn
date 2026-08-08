@@ -11,112 +11,133 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("2_theme")
-theme_override_constants/separation = 12
+theme_override_constants/separation = 8
 script = ExtResource("1")
 
-[node name="ThreeColumns" type="HBoxContainer" parent="."]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 12
-
-[node name="RecipeColumn" type="VBoxContainer" parent="ThreeColumns"]
-custom_minimum_size = Vector2(280, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.32
-
-[node name="TitleLabel" type="Label" parent="ThreeColumns/RecipeColumn"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "配方"
-
-[node name="RecipeList" type="VBoxContainer" parent="ThreeColumns/RecipeColumn"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="QueueColumn" type="VBoxContainer" parent="ThreeColumns"]
-custom_minimum_size = Vector2(320, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.38
-
-[node name="TitleLabel" type="Label" parent="ThreeColumns/QueueColumn"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "生产队列"
-
-[node name="QueueSlots" type="VBoxContainer" parent="ThreeColumns/QueueColumn"]
+[node name="Sections" type="HBoxContainer" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="StorageColumn" type="VBoxContainer" parent="ThreeColumns"]
-custom_minimum_size = Vector2(250, 0)
+[node name="RecipeColumn" type="VBoxContainer" parent="Sections"]
+custom_minimum_size = Vector2(190, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
+size_flags_stretch_ratio = 0.25
+theme_override_constants/separation = 8
 
-[node name="TitleLabel" type="Label" parent="ThreeColumns/StorageColumn"]
+[node name="TitleLabel" type="Label" parent="Sections/RecipeColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "成品仓"
+theme_override_font_sizes/font_size = 22
+text = "配方"
 
-[node name="StorageList" type="VBoxContainer" parent="ThreeColumns/StorageColumn"]
+[node name="RecipeScroll" type="ScrollContainer" parent="Sections/RecipeColumn"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="EmptyLabel" type="Label" parent="ThreeColumns/StorageColumn"]
+[node name="RecipeList" type="VBoxContainer" parent="Sections/RecipeColumn/RecipeScroll"]
 layout_mode = 2
-text = "暂无可收取产物"
-
-[node name="CapacityLabel" type="Label" parent="ThreeColumns/StorageColumn"]
-layout_mode = 2
-text = "容量 0/0"
-
-[node name="CollectAllButton" type="Button" parent="ThreeColumns/StorageColumn"]
-layout_mode = 2
-text = "全部收取"
-
-[node name="RecipeDetails" type="VBoxContainer" parent="."]
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="InputLabel" type="Label" parent="RecipeDetails"]
+[node name="ProcessColumn" type="VBoxContainer" parent="Sections"]
+custom_minimum_size = Vector2(330, 0)
 layout_mode = 2
-text = "投入：无"
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.45
+theme_override_constants/separation = 7
 
-[node name="OutputLabel" type="Label" parent="RecipeDetails"]
+[node name="TitleLabel" type="Label" parent="Sections/ProcessColumn"]
 layout_mode = 2
-text = "产出：无"
+theme_override_font_sizes/font_size = 22
+text = "生产"
 
-[node name="FuelLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "燃料：无"
-
-[node name="DurationLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "耗时：0 分钟"
-
-[node name="PricingLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "投入现值 0　产出参考价 0"
-
-[node name="MissingLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.71, 0.36, 0.29, 1)
-text = "选择左侧配方开始生产"
-
-[node name="BatchControls" type="HBoxContainer" parent="RecipeDetails"]
+[node name="Flow" type="HBoxContainer" parent="Sections/ProcessColumn"]
+custom_minimum_size = Vector2(0, 74)
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="BatchLabel" type="Label" parent="RecipeDetails/BatchControls"]
+[node name="InputItems" type="VBoxContainer" parent="Sections/ProcessColumn/Flow"]
 layout_mode = 2
-text = "批量"
+size_flags_horizontal = 3
+alignment = 1
 
-[node name="BatchSpinBox" type="SpinBox" parent="RecipeDetails/BatchControls"]
-custom_minimum_size = Vector2(120, 0)
+[node name="Caption" type="Label" parent="Sections/ProcessColumn/Flow/InputItems"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.39, 0.39, 0.36, 1)
+theme_override_font_sizes/font_size = 18
+text = "投入"
+horizontal_alignment = 1
+
+[node name="InputLabel" type="Label" parent="Sections/ProcessColumn/Flow/InputItems"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "无"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ProcessIcon" type="Label" parent="Sections/ProcessColumn/Flow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.55, 0.43, 1)
+theme_override_font_sizes/font_size = 18
+text = "→  加工  →"
+vertical_alignment = 1
+
+[node name="OutputItems" type="VBoxContainer" parent="Sections/ProcessColumn/Flow"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Caption" type="Label" parent="Sections/ProcessColumn/Flow/OutputItems"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.39, 0.39, 0.36, 1)
+theme_override_font_sizes/font_size = 18
+text = "产出"
+horizontal_alignment = 1
+
+[node name="OutputLabel" type="Label" parent="Sections/ProcessColumn/Flow/OutputItems"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "无"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="FuelLabel" type="Label" parent="Sections/ProcessColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "燃料：无"
+
+[node name="DurationLabel" type="Label" parent="Sections/ProcessColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "耗时：0 分钟"
+
+[node name="PricingLabel" type="Label" parent="Sections/ProcessColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "投入现值 0　产出参考价 0"
+autowrap_mode = 2
+
+[node name="MissingLabel" type="Label" parent="Sections/ProcessColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.71, 0.36, 0.29, 1)
+theme_override_font_sizes/font_size = 18
+text = "选择左侧配方开始生产"
+autowrap_mode = 2
+
+[node name="BatchControls" type="HBoxContainer" parent="Sections/ProcessColumn"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BatchLabel" type="Label" parent="Sections/ProcessColumn/BatchControls"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "批量"
+vertical_alignment = 1
+
+[node name="BatchSpinBox" type="SpinBox" parent="Sections/ProcessColumn/BatchControls"]
+custom_minimum_size = Vector2(86, 40)
 layout_mode = 2
 focus_mode = 2
 min_value = 1.0
@@ -125,20 +146,81 @@ value = 1.0
 allow_greater = false
 allow_lesser = false
 
-[node name="MaxButton" type="Button" parent="RecipeDetails/BatchControls"]
+[node name="MaxButton" type="Button" parent="Sections/ProcessColumn/BatchControls"]
+custom_minimum_size = Vector2(62, 40)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 text = "最大"
 
-[node name="Spacer" type="Control" parent="RecipeDetails/BatchControls"]
+[node name="Spacer" type="Control" parent="Sections/ProcessColumn/BatchControls"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="StartButton" type="Button" parent="RecipeDetails/BatchControls"]
-custom_minimum_size = Vector2(180, 48)
+[node name="StartButton" type="Button" parent="Sections/ProcessColumn/BatchControls"]
+custom_minimum_size = Vector2(128, 42)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 text = "开始生产"
+
+[node name="RightColumn" type="VBoxContainer" parent="Sections"]
+custom_minimum_size = Vector2(230, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+theme_override_constants/separation = 12
+
+[node name="QueueCard" type="VBoxContainer" parent="Sections/RightColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="Sections/RightColumn/QueueCard"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "生产队列"
+
+[node name="QueueScroll" type="ScrollContainer" parent="Sections/RightColumn/QueueCard"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="QueueSlots" type="VBoxContainer" parent="Sections/RightColumn/QueueCard/QueueScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="StorageCard" type="VBoxContainer" parent="Sections/RightColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 5
+
+[node name="TitleLabel" type="Label" parent="Sections/RightColumn/StorageCard"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "成品仓"
+
+[node name="StorageList" type="VBoxContainer" parent="Sections/RightColumn/StorageCard"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EmptyLabel" type="Label" parent="Sections/RightColumn/StorageCard"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "暂无可收取产物"
+
+[node name="CapacityLabel" type="Label" parent="Sections/RightColumn/StorageCard"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "容量 0/0"
+
+[node name="CollectAllButton" type="Button" parent="Sections/RightColumn/StorageCard"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "全部收取"
 
 [node name="FeedbackLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.71, 0.36, 0.29, 1)
+theme_override_font_sizes/font_size = 18
 autowrap_mode = 2

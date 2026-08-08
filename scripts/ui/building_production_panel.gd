@@ -9,21 +9,21 @@ const DEFAULT_INPUT_CAPACITY := 99
 signal snapshot_changed(state: String)
 signal unlock_requested(service_id: String)
 
-@onready var recipe_list: VBoxContainer = $ThreeColumns/RecipeColumn/RecipeList
-@onready var queue_slots_container: VBoxContainer = $ThreeColumns/QueueColumn/QueueSlots
-@onready var storage_list: VBoxContainer = $ThreeColumns/StorageColumn/StorageList
-@onready var storage_empty_label: Label = $ThreeColumns/StorageColumn/EmptyLabel
-@onready var storage_capacity_label: Label = $ThreeColumns/StorageColumn/CapacityLabel
-@onready var collect_all_button: Button = $ThreeColumns/StorageColumn/CollectAllButton
-@onready var input_label: Label = $RecipeDetails/InputLabel
-@onready var output_label: Label = $RecipeDetails/OutputLabel
-@onready var fuel_label: Label = $RecipeDetails/FuelLabel
-@onready var duration_label: Label = $RecipeDetails/DurationLabel
-@onready var pricing_label: Label = $RecipeDetails/PricingLabel
-@onready var missing_label: Label = $RecipeDetails/MissingLabel
-@onready var batch_spin_box: SpinBox = $RecipeDetails/BatchControls/BatchSpinBox
-@onready var max_button: Button = $RecipeDetails/BatchControls/MaxButton
-@onready var start_button: Button = $RecipeDetails/BatchControls/StartButton
+@onready var recipe_list: VBoxContainer = $Sections/RecipeColumn/RecipeScroll/RecipeList
+@onready var queue_slots_container: VBoxContainer = $Sections/RightColumn/QueueCard/QueueScroll/QueueSlots
+@onready var storage_list: VBoxContainer = $Sections/RightColumn/StorageCard/StorageList
+@onready var storage_empty_label: Label = $Sections/RightColumn/StorageCard/EmptyLabel
+@onready var storage_capacity_label: Label = $Sections/RightColumn/StorageCard/CapacityLabel
+@onready var collect_all_button: Button = $Sections/RightColumn/StorageCard/CollectAllButton
+@onready var input_label: Label = $Sections/ProcessColumn/Flow/InputItems/InputLabel
+@onready var output_label: Label = $Sections/ProcessColumn/Flow/OutputItems/OutputLabel
+@onready var fuel_label: Label = $Sections/ProcessColumn/FuelLabel
+@onready var duration_label: Label = $Sections/ProcessColumn/DurationLabel
+@onready var pricing_label: Label = $Sections/ProcessColumn/PricingLabel
+@onready var missing_label: Label = $Sections/ProcessColumn/MissingLabel
+@onready var batch_spin_box: SpinBox = $Sections/ProcessColumn/BatchControls/BatchSpinBox
+@onready var max_button: Button = $Sections/ProcessColumn/BatchControls/MaxButton
+@onready var start_button: Button = $Sections/ProcessColumn/BatchControls/StartButton
 @onready var feedback_label: Label = $FeedbackLabel
 
 var recipe_rows: Array[Dictionary] = []
