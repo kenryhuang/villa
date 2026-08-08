@@ -8,10 +8,10 @@ const INTERACTION_LAYER := 128
 const ATLAS_FRAME_SIZE := Vector2(192.0, 192.0)
 const WORLD_WIDTH := 0.62
 const COLLECTION_ANIMATION_DURATION := 0.45
-const DEFAULT_TOOLTIP_FONT_SIZE := 10
-const DEFAULT_PICKUP_FONT_SIZE := 11
-const CHARCOAL_TOOLTIP_FONT_SIZE := 8
-const CHARCOAL_PICKUP_FONT_SIZE := 9
+const LABEL_FONT_SIZE := 48
+const TOOLTIP_PIXEL_SIZE := 0.0015
+const PICKUP_PIXEL_SIZE := 0.00165
+const LABEL_OUTLINE_SIZE := 5
 const RASTER_FAMILIES := ["brick", "charcoal"]
 
 const FAMILY_BY_ITEM := {
@@ -287,9 +287,11 @@ func _ensure_nodes() -> void:
 		var tooltip := Label3D.new()
 		tooltip.name = "Tooltip"
 		tooltip.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		tooltip.fixed_size = true
-		tooltip.font_size = DEFAULT_TOOLTIP_FONT_SIZE
-		tooltip.outline_size = 3
+		tooltip.fixed_size = false
+		tooltip.font_size = LABEL_FONT_SIZE
+		tooltip.pixel_size = TOOLTIP_PIXEL_SIZE
+		tooltip.outline_size = LABEL_OUTLINE_SIZE
+		tooltip.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 		tooltip.position = Vector3(0.0, 0.58, 0.02)
 		tooltip.modulate = Color("fff1d3")
 		tooltip.no_depth_test = true
@@ -300,9 +302,11 @@ func _ensure_nodes() -> void:
 		var pickup_feedback := Label3D.new()
 		pickup_feedback.name = "PickupFeedback"
 		pickup_feedback.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		pickup_feedback.fixed_size = true
-		pickup_feedback.font_size = DEFAULT_PICKUP_FONT_SIZE
-		pickup_feedback.outline_size = 3
+		pickup_feedback.fixed_size = false
+		pickup_feedback.font_size = LABEL_FONT_SIZE
+		pickup_feedback.pixel_size = PICKUP_PIXEL_SIZE
+		pickup_feedback.outline_size = LABEL_OUTLINE_SIZE
+		pickup_feedback.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 		pickup_feedback.position = Vector3(0.0, 0.72, 0.03)
 		pickup_feedback.modulate = Color("72f58b")
 		pickup_feedback.outline_modulate = Color("17311d")
@@ -386,11 +390,7 @@ func _display_name() -> String:
 
 
 func _update_tooltip() -> void:
-	var tooltip := get_node("Tooltip") as Label3D
-	var pickup_feedback := get_node("PickupFeedback") as Label3D
-	tooltip.font_size = CHARCOAL_TOOLTIP_FONT_SIZE if item_id == "charcoal" else DEFAULT_TOOLTIP_FONT_SIZE
-	pickup_feedback.font_size = CHARCOAL_PICKUP_FONT_SIZE if item_id == "charcoal" else DEFAULT_PICKUP_FONT_SIZE
-	tooltip.text = "%s ×%d" % [_display_name(), quantity]
+	(get_node("Tooltip") as Label3D).text = "%s ×%d" % [_display_name(), quantity]
 
 
 func _show_failure_outline() -> void:

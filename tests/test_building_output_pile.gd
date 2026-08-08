@@ -33,8 +33,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	pile.update_quantity(9, 9)
 	assertions.equal(pile.density_frame(), 2, "full storage uses dense frame")
 	var tooltip := pile.get_node("Tooltip") as Label3D
-	assertions.equal(tooltip.font_size, 10, "output quantity uses a small unobtrusive font")
-	assertions.equal(tooltip.outline_size, 3, "output quantity uses a small readable outline")
+	assertions.truthy(not tooltip.fixed_size, "output quantity avoids depth-compensated screen scaling")
+	assertions.equal(tooltip.font_size, 48, "output quantity uses a high-resolution font raster")
+	assertions.near(tooltip.pixel_size, 0.0015, 0.00001, "output quantity stays compact in world space")
+	assertions.equal(tooltip.outline_size, 5, "output quantity uses a proportionally thin outline")
+	assertions.equal(tooltip.texture_filter, BaseMaterial3D.TEXTURE_FILTER_LINEAR, "output quantity avoids blurry mip filtering")
 	assertions.truthy(
 		pile.has_method("handle_direct_pointer_event"),
 		"pile owns an independent screen-space pointer handler"
@@ -116,13 +119,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(charcoal_pile.configure("charcoal", 2, 9), "charcoal label fixture configures")
 	assertions.equal(
 		(charcoal_pile.get_node("Tooltip") as Label3D).font_size,
-		8,
-		"charcoal quantity label is visually as compact as the brick label"
+		48,
+		"charcoal quantity label matches the crisp brick label"
 	)
 	assertions.equal(
 		(charcoal_pile.get_node("PickupFeedback") as Label3D).font_size,
-		9,
-		"charcoal pickup label stays compact"
+		48,
+		"charcoal pickup label uses a high-resolution font raster"
 	)
 	charcoal_pile.queue_free()
 	pile.queue_free()
@@ -142,8 +145,11 @@ func _test_collection_animation(assertions: TestAssert, tree: SceneTree) -> void
 	if feedback != null:
 		assertions.truthy(feedback.visible, "pickup feedback is immediately visible")
 		assertions.equal(feedback.text, "木炭 +2", "pickup feedback names the collected output")
-		assertions.equal(feedback.font_size, 9, "charcoal pickup feedback stays visually compact")
-		assertions.equal(feedback.outline_size, 3, "pickup feedback uses a compact outline")
+		assertions.truthy(not feedback.fixed_size, "pickup feedback avoids depth-compensated screen scaling")
+		assertions.equal(feedback.font_size, 48, "pickup feedback uses a high-resolution font raster")
+		assertions.near(feedback.pixel_size, 0.00165, 0.00001, "pickup feedback stays compact in world space")
+		assertions.equal(feedback.outline_size, 5, "pickup feedback uses a proportionally thin outline")
+		assertions.equal(feedback.texture_filter, BaseMaterial3D.TEXTURE_FILTER_LINEAR, "pickup feedback avoids blurry mip filtering")
 	assertions.equal(pile.collision_layer, 0, "collected pile immediately disables collision")
 	assertions.truthy(
 		not pile.is_processing_input(),
