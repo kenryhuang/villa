@@ -319,7 +319,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
 	_test_gathering_command_routing(assertions, tree, controller_script)
-	_test_output_pile_interaction(assertions, tree)
+	_test_output_pile_interaction(assertions, tree, controller_script)
 	_test_completed_building_click_in_build_mode(assertions, tree)
 
 
@@ -375,12 +375,12 @@ func _test_completed_building_click_in_build_mode(
 
 func _test_output_pile_interaction(
 	assertions: TestAssert,
-	tree: SceneTree
+	tree: SceneTree,
+	controller_script: Script
 ) -> void:
-	var controller := PointerControllerDouble.new()
+	var controller = controller_script.new()
 	var player := InteractionPlayerDouble.new()
 	var pile := OutputPileDouble.new()
-	controller.interaction_target = pile
 	tree.root.add_child(player)
 	tree.root.add_child(pile)
 	tree.root.add_child(controller)
@@ -394,56 +394,30 @@ func _test_output_pile_interaction(
 	)
 	controller.switch_mode(PlayerActionController.ActionMode.FARMING)
 	assertions.truthy(
-		controller.has_method("_update_output_hover"),
-		"controller exposes output-pile hover routing"
+		not controller.perform_target_interaction(pile),
+		"controller leaves farming-mode output clicks to the pile itself"
 	)
-	if controller.has_method("_update_output_hover"):
-		controller.call("_update_output_hover", pile)
-		assertions.truthy(pile.hovered, "normal pointer hover highlights output pile")
-		controller.call("_update_output_hover", null)
-		assertions.truthy(not pile.hovered, "moving away clears output-pile hover")
 	assertions.truthy(
 		controller.has_method("_try_interaction_hit"),
-		"controller exposes range-aware interaction hit routing"
-	)
-	var feedback: Array[String] = []
-	controller.build_feedback_requested.connect(
-		func(message: String, _details: Dictionary) -> void:
-			feedback.append(message)
+		"controller still exposes generic interaction hit routing"
 	)
 	if controller.has_method("_try_interaction_hit"):
 		assertions.truthy(
-			controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
-			"distant pile consumes rejected click"
+			not controller.call("_try_interaction_hit", pile, Vector3(1.0, 0.0, 0.0)),
+			"controller does not route nearby output clicks"
 		)
-		assertions.equal(pile.interactions, 0, "distant pile does not collect")
-		assertions.equal(pile.rejected_reason, "too_far", "distant pile reports stable reason")
-		assertions.equal(feedback[-1], "距离太远", "distant pile gives explicit player feedback")
-		assertions.truthy(
-			controller.call("_try_interaction_hit", pile, Vector3(1.0, 0.0, 0.0)),
-			"near pile click is handled"
-		)
-		assertions.equal(pile.interactions, 1, "near pile dispatches one interaction")
+	assertions.equal(pile.interactions, 0, "controller never dispatches output collection")
 	controller.switch_mode(PlayerActionController.ActionMode.BUILDING)
 	assertions.truthy(
-		controller.call("_update_output_hover_from_pointer") == null and pile.hovered,
-		"building mode still exposes output quantity hover"
-	)
-	assertions.truthy(
-		controller.call("_try_interaction_hit", pile, Vector3(1.0, 0.0, 0.0)),
-		"building mode gives nearby output collection priority"
-	)
-	assertions.equal(
-		pile.interactions,
-		2,
-		"building mode click collects the represented output"
+		not controller.perform_target_interaction(pile),
+		"controller leaves building-mode output clicks to the pile itself"
 	)
 	pile.rejected_reason = ""
 	assertions.truthy(
-		controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
-		"building mode consumes a distant output click without placing"
+		not controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
+		"controller does not own distant output clicks in building mode"
 	)
-	assertions.equal(pile.rejected_reason, "too_far", "building mode reports output range rejection")
+	assertions.equal(pile.rejected_reason, "", "controller does not mutate direct-pile feedback")
 	pile.queue_free()
 	player.queue_free()
 	controller.queue_free()

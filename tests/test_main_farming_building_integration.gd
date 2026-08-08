@@ -194,7 +194,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"木炭 ×2",
 			"charcoal hover exposes the stored quantity"
 		)
-		charcoal_pile.interact(null)
+		var charcoal_click := InputEventMouseButton.new()
+		charcoal_click.button_index = MOUSE_BUTTON_LEFT
+		charcoal_click.pressed = true
+		charcoal_pile.handle_direct_pointer_event(charcoal_click, true, false)
 	assertions.equal(
 		main.inventory_system.get_item_count("charcoal"),
 		charcoal_before + 2,
@@ -216,7 +219,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var brick_pile: Variant = output_display.call("get_pile", "stone_brick")
 	assertions.truthy(brick_pile != null, "finished bricks remain a clickable painted pile")
 	if brick_pile != null:
-		brick_pile.interact(null)
+		var brick_click := InputEventMouseButton.new()
+		brick_click.button_index = MOUSE_BUTTON_LEFT
+		brick_click.pressed = true
+		brick_pile.handle_direct_pointer_event(brick_click, true, false)
 	assertions.equal(
 		kiln.producer_state.outputs,
 		{"stone_brick": 3},

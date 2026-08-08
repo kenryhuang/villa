@@ -101,12 +101,12 @@ static func layout_positions_for_building(
 	var adjacent_x := half_x + 0.5
 	var adjacent_z := half_z + 0.5
 	var anchors: Array[Vector3] = [
-		Vector3(adjacent_x, 0.0, -0.5),
-		Vector3(adjacent_x, 0.0, 0.5),
-		Vector3(0.5, 0.0, adjacent_z),
 		Vector3(-0.5, 0.0, adjacent_z),
 		Vector3(-adjacent_x, 0.0, 0.5),
+		Vector3(0.5, 0.0, adjacent_z),
 		Vector3(-adjacent_x, 0.0, -0.5),
+		Vector3(adjacent_x, 0.0, 0.5),
+		Vector3(adjacent_x, 0.0, -0.5),
 	]
 	for index in mini(count, anchors.size()):
 		result.append(anchors[index])

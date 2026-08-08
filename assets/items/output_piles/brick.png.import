@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://0r65lccngbjk"
-path="res://.godot/imported/charcoal.svg-de32a2ee4eaf865db1b5d0b20041aed9.ctex"
+uid="uid://cr43j774pe6rx"
+path="res://.godot/imported/brick.png-72e8aa7dfcb27566b3308ba6d834abdd.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/items/output_piles/charcoal.svg"
-dest_files=["res://.godot/imported/charcoal.svg-de32a2ee4eaf865db1b5d0b20041aed9.ctex"]
+source_file="res://assets/items/output_piles/brick.png"
+dest_files=["res://.godot/imported/brick.png-72e8aa7dfcb27566b3308ba6d834abdd.ctex"]
 
 [params]
 
@@ -38,6 +38,3 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
-svg/scale=1.0
-editor/scale_with_editor_scale=false
-editor/convert_colors_with_editor_theme=false

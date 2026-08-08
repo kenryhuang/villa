@@ -5,6 +5,20 @@ const BuildingOutputPileScript := preload(
 )
 
 
+class UnhandledMouseProbe:
+	extends Node
+
+	var left_clicks := 0
+
+	func _unhandled_input(event: InputEvent) -> void:
+		if (
+			event is InputEventMouseButton
+			and event.button_index == MOUSE_BUTTON_LEFT
+			and event.pressed
+		):
+			left_clicks += 1
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var pile := BuildingOutputPileScript.new()
 	tree.root.add_child(pile)
@@ -18,9 +32,36 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(pile.density_frame(), 1, "four ninths uses medium frame")
 	pile.update_quantity(9, 9)
 	assertions.equal(pile.density_frame(), 2, "full storage uses dense frame")
-	pile.set_pointer_hovered(true)
-	assertions.truthy(pile.tooltip_visible(), "hover exposes exact tooltip")
+	var tooltip := pile.get_node("Tooltip") as Label3D
+	assertions.equal(tooltip.font_size, 14, "output quantity uses a compact font")
+	assertions.equal(tooltip.outline_size, 4, "output quantity uses a compact outline")
+	assertions.truthy(
+		pile.has_method("handle_direct_pointer_event"),
+		"pile owns an independent screen-space pointer handler"
+	)
+	var pointer_motion := InputEventMouseMotion.new()
+	if pile.has_method("handle_direct_pointer_event"):
+		pile.call("handle_direct_pointer_event", pointer_motion, true, false)
+	assertions.truthy(pile.tooltip_visible(), "direct hover exposes exact tooltip")
 	assertions.equal(pile.tooltip_text(), "石砖 ×9", "tooltip uses localized item name")
+	if pile.has_method("handle_direct_pointer_event"):
+		pile.call("handle_direct_pointer_event", pointer_motion, false, false)
+	assertions.truthy(not pile.tooltip_visible(), "direct pointer exit hides quantity")
+	var camera := Camera3D.new()
+	tree.root.add_child(camera)
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = 6.5
+	camera.position = Vector3(-7.0, 6.2, 7.0)
+	camera.look_at(Vector3.ZERO, Vector3.UP)
+	camera.current = true
+	var sprite := pile.get_node("Sprite") as Sprite3D
+	assertions.truthy(
+		pile.call(
+			"_pointer_inside_asset",
+			camera.unproject_position(sprite.global_position)
+		),
+		"screen-space trigger contains the visible pile center"
+	)
 	assertions.equal(pile.collision_layer, 128, "pile uses the existing interaction mask")
 
 	var requests: Array[String] = []
@@ -28,12 +69,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		func(requested_item_id: String) -> void:
 			requests.append(requested_item_id)
 	)
-	pile.interact(null)
-	assertions.equal(requests, ["stone_brick"], "click requests represented item")
+	var pointer_click := InputEventMouseButton.new()
+	pointer_click.button_index = MOUSE_BUTTON_LEFT
+	pointer_click.pressed = true
+	if pile.has_method("handle_direct_pointer_event"):
+		pile.call("handle_direct_pointer_event", pointer_click, true, false)
+	assertions.equal(requests, ["stone_brick"], "independent click requests represented item")
 	pile.set_interaction_enabled(false)
-	pile.interact(null)
+	if pile.has_method("handle_direct_pointer_event"):
+		pile.call("handle_direct_pointer_event", pointer_click, true, false)
 	assertions.equal(requests.size(), 1, "disabled pile emits no request")
 	pile.set_interaction_enabled(true)
+	camera.queue_free()
+	_test_viewport_input_route(assertions, tree)
 	pile.show_interaction_rejected("too_far")
 	assertions.equal(pile.feedback_reason(), "too_far", "range rejection is retained locally")
 	pile.play_failure("inventory_capacity")
@@ -64,3 +112,63 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"future unknown output uses the crate fallback"
 	)
 	pile.queue_free()
+
+
+func _test_viewport_input_route(assertions: TestAssert, tree: SceneTree) -> void:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(800, 600)
+	viewport.handle_input_locally = true
+	tree.root.add_child(viewport)
+	var pile := BuildingOutputPileScript.new()
+	viewport.add_child(pile)
+	pile.configure("stone_brick", 3, 9)
+	var camera := Camera3D.new()
+	viewport.add_child(camera)
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = 6.5
+	camera.position = Vector3(-7.0, 6.2, 7.0)
+	camera.look_at(Vector3.ZERO, Vector3.UP)
+	camera.current = true
+	var probe := UnhandledMouseProbe.new()
+	viewport.add_child(probe)
+	var requests: Array[String] = []
+	pile.collection_requested.connect(
+		func(requested_item_id: String) -> void:
+			requests.append(requested_item_id)
+	)
+	var sprite := pile.get_node("Sprite") as Sprite3D
+	var pointer_position := camera.unproject_position(sprite.global_position)
+	assertions.truthy(
+		pile.call("_pointer_inside_asset", pointer_position),
+		"viewport route targets the visible pile"
+	)
+	var pointer_click := InputEventMouseButton.new()
+	pointer_click.button_index = MOUSE_BUTTON_LEFT
+	pointer_click.pressed = true
+	pointer_click.position = pointer_position
+	viewport.push_input(pointer_click, true)
+	assertions.equal(
+		requests,
+		["stone_brick"],
+		"viewport click reaches the pile exactly once"
+	)
+	assertions.equal(
+		probe.left_clicks,
+		0,
+		"handled pile click does not reach later world interaction"
+	)
+	var ui_blocker := Control.new()
+	ui_blocker.position = pointer_position - Vector2(24.0, 24.0)
+	ui_blocker.size = Vector2(48.0, 48.0)
+	ui_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	viewport.add_child(ui_blocker)
+	var pointer_over_ui := InputEventMouseMotion.new()
+	pointer_over_ui.position = pointer_position
+	viewport.push_input(pointer_over_ui, true)
+	viewport.push_input(pointer_click, true)
+	assertions.equal(
+		requests.size(),
+		1,
+		"UI under the pointer blocks direct pile collection"
+	)
+	viewport.queue_free()

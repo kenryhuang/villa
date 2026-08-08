@@ -7,6 +7,7 @@ const GameDataScript := preload("res://scripts/core/game_data.gd")
 const INTERACTION_LAYER := 128
 const ATLAS_FRAME_SIZE := Vector2(192.0, 192.0)
 const WORLD_WIDTH := 0.62
+const RASTER_FAMILIES := ["brick", "charcoal"]
 
 const FAMILY_BY_ITEM := {
 	"wood": "wood",
@@ -71,6 +72,7 @@ static func visual_family(id: String) -> String:
 func _ready() -> void:
 	_ensure_nodes()
 	add_to_group("building_output_pile")
+	set_process_input(_interaction_enabled and quantity > 0)
 
 
 func configure(id: String, next_quantity: int, next_capacity: int) -> bool:
@@ -111,6 +113,8 @@ func set_interaction_enabled(enabled: bool) -> void:
 	collision_mask = 0
 	monitoring = false
 	monitorable = enabled and quantity > 0
+	input_ray_pickable = enabled and quantity > 0
+	set_process_input(enabled and quantity > 0)
 	if not enabled:
 		set_pointer_hovered(false)
 
@@ -118,6 +122,41 @@ func set_interaction_enabled(enabled: bool) -> void:
 func interact(_player: Node) -> void:
 	if _interaction_enabled and quantity > 0:
 		collection_requested.emit(item_id)
+
+
+func handle_direct_pointer_event(
+	event: InputEvent,
+	pointer_inside: bool,
+	pointer_over_ui: bool
+) -> bool:
+	var active := (
+		_interaction_enabled
+		and quantity > 0
+		and pointer_inside
+		and not pointer_over_ui
+	)
+	set_pointer_hovered(active)
+	if (
+		active
+		and event is InputEventMouseButton
+		and event.button_index == MOUSE_BUTTON_LEFT
+		and event.pressed
+	):
+		interact(null)
+		return true
+	return false
+
+
+func _input(event: InputEvent) -> void:
+	if not event is InputEventMouse:
+		return
+	var handled := handle_direct_pointer_event(
+		event,
+		_pointer_inside_asset(event.position),
+		_pointer_over_ui()
+	)
+	if handled:
+		get_viewport().set_input_as_handled()
 
 
 func set_pointer_hovered(hovered: bool) -> void:
@@ -196,9 +235,9 @@ func _ensure_nodes() -> void:
 		tooltip.name = "Tooltip"
 		tooltip.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		tooltip.fixed_size = true
-		tooltip.font_size = 24
-		tooltip.outline_size = 7
-		tooltip.position = Vector3(0.0, 0.72, 0.02)
+		tooltip.font_size = 14
+		tooltip.outline_size = 4
+		tooltip.position = Vector3(0.0, 0.58, 0.02)
 		tooltip.modulate = Color("fff1d3")
 		tooltip.no_depth_test = true
 		tooltip.render_priority = 3
@@ -217,7 +256,9 @@ func _ensure_nodes() -> void:
 func _apply_density_texture() -> void:
 	if not _configured:
 		return
-	var path := "res://assets/items/output_piles/%s.svg" % visual_family(item_id)
+	var family := visual_family(item_id)
+	var extension := "png" if family in RASTER_FAMILIES else "svg"
+	var path := "res://assets/items/output_piles/%s.%s" % [family, extension]
 	var source := load(path) as Texture2D if ResourceLoader.exists(path) else null
 	var texture: Texture2D
 	if source != null:
@@ -237,6 +278,37 @@ func _apply_density_texture() -> void:
 		sprite.pixel_size = WORLD_WIDTH / ATLAS_FRAME_SIZE.x
 		if node_name == "Sprite":
 			sprite.modulate = tint
+
+
+func _pointer_inside_asset(pointer_position: Vector2) -> bool:
+	if not is_inside_tree():
+		return false
+	var camera := get_viewport().get_camera_3d()
+	var sprite := get_node_or_null("Sprite") as Sprite3D
+	if camera == null or sprite == null or camera.is_position_behind(sprite.global_position):
+		return false
+	var center_world := sprite.global_position
+	var center_screen := camera.unproject_position(center_world)
+	var half_world := WORLD_WIDTH * 0.5
+	var camera_right := camera.global_transform.basis.x.normalized() * half_world
+	var camera_up := camera.global_transform.basis.y.normalized() * half_world
+	var half_width := maxf(
+		center_screen.distance_to(camera.unproject_position(center_world + camera_right)),
+		10.0
+	)
+	var half_height := maxf(
+		center_screen.distance_to(camera.unproject_position(center_world + camera_up)),
+		10.0
+	)
+	return Rect2(
+		center_screen - Vector2(half_width, half_height),
+		Vector2(half_width * 2.0, half_height * 2.0)
+	).has_point(pointer_position)
+
+
+func _pointer_over_ui() -> bool:
+	var hovered := get_viewport().gui_get_hovered_control()
+	return hovered != null and hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE
 
 
 func _update_tooltip() -> void:

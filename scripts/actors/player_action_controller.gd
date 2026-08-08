@@ -59,7 +59,7 @@ const TOOL_BY_SLOT := [
 	ToolSystem.ToolType.PICKAXE,
 	ToolSystem.ToolType.FISHING_ROD,
 ]
-const INTERACTION_MASK := 4 | 64 | 128
+const INTERACTION_MASK := 4 | 64
 const GROUND_MASK := 1
 const VALID_COLOR := Color(0.25, 0.9, 0.38, 0.5)
 const INVALID_COLOR := Color(0.95, 0.2, 0.18, 0.5)
@@ -437,9 +437,8 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 func perform_target_interaction(target: Node) -> bool:
 	if target == null:
 		return false
-	if target.is_in_group("building_output_pile") and target.has_method("interact"):
-		target.interact(player_ref)
-		return true
+	if target.is_in_group("building_output_pile"):
+		return false
 	if _action_mode == ActionMode.BUILDING:
 		if (
 			target.has_method("can_open_economy_panel")
@@ -481,7 +480,6 @@ func _process(_delta: float) -> void:
 		_clear_output_hover()
 		grid_system.clear_highlights()
 		return
-	_update_output_hover_from_pointer()
 	_update_gather_hover_from_pointer()
 	var ground_point = _raycast_to_ground(_effective_pointer_position())
 	if _action_mode == ActionMode.BUILDING:
@@ -576,18 +574,6 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:
 	if target == null:
 		return false
-	if target.is_in_group("building_output_pile"):
-		if _point_in_player_range(hit_position):
-			return perform_target_interaction(target)
-		if target.has_method("show_interaction_rejected"):
-			target.call("show_interaction_rejected", "too_far")
-		_emit_build_feedback({
-			"code": "too_far",
-			"message": "距离太远",
-			"building_id": "",
-			"grid": Vector2i(-1, -1),
-		}, "InteractionRejected")
-		return true
 	if _action_mode == ActionMode.BUILDING:
 		return (
 			_point_in_player_range(hit_position)

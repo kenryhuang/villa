@@ -250,7 +250,8 @@ func _validate_activity_atlas(path: String, assertions: TestAssert) -> void:
 
 
 func _validate_output_pile_atlas(family: String, assertions: TestAssert) -> void:
-	var path := "res://assets/items/output_piles/%s.svg" % family
+	var extension := "png" if family in ["brick", "charcoal"] else "svg"
+	var path := "res://assets/items/output_piles/%s.%s" % [family, extension]
 	assertions.truthy(ResourceLoader.exists(path), "%s pile atlas exists" % family)
 	if not ResourceLoader.exists(path):
 		return

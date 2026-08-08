@@ -85,12 +85,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	display.sync_outputs({"charcoal": 2, "stone_brick": 3}, 9, true)
 	assertions.equal(
 		display.get_pile("charcoal").position,
-		Vector3(1.5, 0.0, -0.5),
-		"kiln charcoal sits in the first adjacent grid cell"
+		Vector3(-0.5, 0.0, 1.5),
+		"kiln charcoal sits in the front-right adjacent grid cell"
 	)
 	assertions.equal(
 		display.get_pile("stone_brick").position,
-		Vector3(1.5, 0.0, 0.5),
-		"kiln bricks sit in the second adjacent grid cell"
+		Vector3(-1.5, 0.0, 0.5),
+		"kiln bricks sit in the front-left adjacent grid cell"
 	)
 	display.queue_free()
