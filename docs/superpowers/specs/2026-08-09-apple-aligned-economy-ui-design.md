@@ -1,7 +1,7 @@
 # Apple-Aligned Economy UI Design
 
-**Date:** 2026-08-09  
-**Status:** Approved by prior user authorization  
+**Date:** 2026-08-09
+**Status:** Approved by prior user authorization
 **Scope:** Market and building production interfaces only; economy rules and transactions remain unchanged.
 
 ## 1. Goal
