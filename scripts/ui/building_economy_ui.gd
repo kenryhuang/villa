@@ -10,6 +10,7 @@ const STATUS_BUILDINGS := [
 	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine",
 ]
 const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
+const OPEN_DURATION := 0.14
 
 @onready var screen_layer: CanvasLayer = $ScreenLayer
 @onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
@@ -30,6 +31,8 @@ var _grid: GridSystem
 var _modal: EconomyModalCoordinator
 var _building_ref: WeakRef
 var _is_open := false
+var animations_enabled := true
+var _panel_tween: Tween
 
 
 func _ready() -> void:
@@ -88,7 +91,8 @@ func open_for(building: BuildingInstance) -> bool:
 		_building_ref = weakref(building)
 		if not building.tree_exiting.is_connected(_on_current_building_tree_exiting):
 			building.tree_exiting.connect(_on_current_building_tree_exiting)
-	if not _is_open:
+	var was_closed := not _is_open
+	if was_closed:
 		if not _modal.acquire(self):
 			return false
 		_is_open = true
@@ -103,6 +107,8 @@ func open_for(building: BuildingInstance) -> bool:
 	else:
 		status_panel.show_building(building)
 		state_label.text = _status_state_text(status_panel.view_data.state)
+	if was_closed:
+		_animate_open(building_panel)
 	_emit_event("building_economy_opened", [building, kind])
 	return true
 
@@ -113,6 +119,7 @@ func close() -> void:
 		return
 	var building := current_building()
 	_is_open = false
+	_stop_transition()
 	screen_layer.visible = false
 	visible = false
 	_disconnect_current_building()
@@ -191,6 +198,37 @@ func _apply_page_kind(kind: String) -> void:
 	status_tab.theme_type_variation = (
 		&"EconomyTabSelected" if kind == "status" else &"EconomyTab"
 	)
+
+
+func set_animations_enabled(enabled: bool) -> void:
+	animations_enabled = enabled
+	if not enabled:
+		_stop_transition()
+		if is_node_ready():
+			building_panel.scale = Vector2.ONE
+			building_panel.modulate.a = 1.0
+
+
+func _animate_open(panel: Control) -> void:
+	if not animations_enabled:
+		panel.scale = Vector2.ONE
+		panel.modulate.a = 1.0
+		return
+	_stop_transition()
+	panel.pivot_offset = panel.size * 0.5
+	panel.scale = Vector2(0.98, 0.98)
+	panel.modulate.a = 0.0
+	_panel_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_panel_tween.set_parallel(true)
+	_panel_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel, "scale", Vector2.ONE, OPEN_DURATION)
+	_panel_tween.tween_property(panel, "modulate:a", 1.0, OPEN_DURATION)
+
+
+func _stop_transition() -> void:
+	if _panel_tween != null:
+		_panel_tween.kill()
+		_panel_tween = null
 
 
 func _production_state_text(state: String = "") -> String:

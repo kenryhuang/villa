@@ -7,6 +7,8 @@ const EconomyModalCoordinatorScript = preload(
 )
 const MarketPanelScript = preload("res://scripts/ui/market_panel.gd")
 const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
+const OPEN_DURATION := 0.14
+const CONTENT_FADE_DURATION := 0.10
 
 @onready var screen_layer: CanvasLayer = $ScreenLayer
 @onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
@@ -52,6 +54,9 @@ var _pending_contract_id := ""
 var _pending_contract_snapshot: Dictionary = {}
 var _sign_confirmation_in_progress := false
 var _trade_modal_focus_modes: Dictionary = {}
+var animations_enabled := true
+var _panel_tween: Tween
+var _content_tween: Tween
 
 
 func _ready() -> void:
@@ -139,6 +144,7 @@ func open(tab_id: String = "market", target_id: String = "") -> void:
 	elif selected_tab == "contracts":
 		contract_panel.refresh_contracts()
 	_select_target(selected_tab, target_id)
+	_animate_open(hub_panel)
 
 
 func _select_target(tab_id: String, target_id: String) -> bool:
@@ -180,6 +186,8 @@ func select_tab(tab_id: String) -> bool:
 		contract_panel.refresh_contracts()
 	elif selected_tab == "services" and service_panel != null:
 		service_panel.refresh_services()
+	if _is_open:
+		_animate_content(pages[selected_tab] as Control)
 	return true
 
 
@@ -190,6 +198,7 @@ func close() -> void:
 	if trade_confirmation_layer.visible:
 		trade_confirmation_layer.get_parent().call("dismiss_confirmation")
 	dismiss_contract_sign()
+	_stop_transitions()
 	screen_layer.visible = false
 	visible = false
 	_modal_coordinator.release(self)
@@ -236,6 +245,56 @@ func _apply_tab_styles() -> void:
 		button.theme_type_variation = (
 			&"EconomyTabSelected" if tab_id == selected_tab else &"EconomyTab"
 		)
+
+
+func set_animations_enabled(enabled: bool) -> void:
+	animations_enabled = enabled
+	if not enabled:
+		_stop_transitions()
+		if is_node_ready():
+			hub_panel.scale = Vector2.ONE
+			hub_panel.modulate.a = 1.0
+			for page in pages.values():
+				(page as Control).modulate.a = 1.0
+
+
+func _animate_open(panel: Control) -> void:
+	if not animations_enabled:
+		panel.scale = Vector2.ONE
+		panel.modulate.a = 1.0
+		return
+	if _panel_tween != null:
+		_panel_tween.kill()
+	panel.pivot_offset = panel.size * 0.5
+	panel.scale = Vector2(0.98, 0.98)
+	panel.modulate.a = 0.0
+	_panel_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_panel_tween.set_parallel(true)
+	_panel_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel, "scale", Vector2.ONE, OPEN_DURATION)
+	_panel_tween.tween_property(panel, "modulate:a", 1.0, OPEN_DURATION)
+
+
+func _animate_content(page: Control) -> void:
+	if _content_tween != null:
+		_content_tween.kill()
+	for value in pages.values():
+		(value as Control).modulate.a = 1.0
+	if not animations_enabled:
+		return
+	page.modulate.a = 0.0
+	_content_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_content_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_content_tween.tween_property(page, "modulate:a", 1.0, CONTENT_FADE_DURATION)
+
+
+func _stop_transitions() -> void:
+	if _panel_tween != null:
+		_panel_tween.kill()
+		_panel_tween = null
+	if _content_tween != null:
+		_content_tween.kill()
+		_content_tween = null
 
 
 func _sync_screen_layer_visibility() -> void:

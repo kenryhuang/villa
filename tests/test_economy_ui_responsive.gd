@@ -145,10 +145,15 @@ func _test_compact_theme(assertions: TestAssert) -> void:
 func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 	var shop := (load("res://scenes/ui/shop_ui.tscn") as PackedScene).instantiate() as ShopUI
 	tree.root.add_child(shop)
+	assertions.truthy(shop.has_method("set_animations_enabled"), "shop exposes deterministic animation control")
 	assertions.truthy(shop.has_node("ScreenLayer"), "shop provides an overlay CanvasLayer")
 	if shop.has_node("ScreenLayer"):
 		var shop_layer := shop.get_node("ScreenLayer") as CanvasLayer
 		assertions.truthy(shop_layer.layer > 1, "shop renders above HUD CanvasLayer")
+		assertions.truthy(
+			(shop.get_node("ScreenLayer/ModalLayer") as Control).theme != null,
+			"shop overlay preserves the economy theme across CanvasLayer"
+		)
 		var market_tab := shop.get_node(
 			"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab"
 		) as Button
@@ -171,11 +176,19 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 		as BuildingEconomyUI
 	)
 	tree.root.add_child(building)
+	assertions.truthy(
+		building.has_method("set_animations_enabled"),
+		"building modal exposes deterministic animation control"
+	)
 	assertions.truthy(building.has_node("ScreenLayer"), "building provides an overlay CanvasLayer")
 	if building.has_node("ScreenLayer"):
 		assertions.truthy(
 			(building.get_node("ScreenLayer") as CanvasLayer).layer > 1,
 			"building modal renders above HUD"
+		)
+		assertions.truthy(
+			(building.get_node("ScreenLayer/ModalLayer") as Control).theme != null,
+			"building overlay preserves the economy theme across CanvasLayer"
 		)
 	building.free()
 
@@ -278,9 +291,9 @@ func _test_building_palette_viewport_contract(assertions: TestAssert, tree: Scen
 func _test_layout_contract(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(3000, 2000)), "three_column", "target viewport uses columns")
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(1920, 1080)), "three_column", "desktop uses columns")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(1500, 900)), "three_column", "drawer threshold is exclusive")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(1499, 900)), "drawer", "narrow logical viewport uses drawer")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(1280, 720)), "drawer", "minimum viewport uses drawer")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(1000, 900)), "three_column", "drawer threshold is exclusive")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(999, 900)), "drawer", "narrow logical viewport uses drawer")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(1280, 720)), "three_column", "compact desktop preserves the price curve")
 	assertions.equal(EconomyLayout.clamp_scale(0.5), 0.8, "scale has lower bound")
 	assertions.equal(EconomyLayout.clamp_scale(1.2), 1.2, "scale preserves supported value")
 	assertions.equal(EconomyLayout.clamp_scale(2.0), 1.4, "scale has upper bound")
@@ -500,7 +513,7 @@ func _test_runtime_scale_and_resize_state(assertions: TestAssert, tree: SceneTre
 	assertions.equal(EconomyLayoutScript.call("get_ui_scale"), 1.4, "runtime entry stores supported scale")
 	for panel in panels:
 		assertions.truthy(is_equal_approx(panel.theme.default_base_scale, 1.4), "%s receives runtime theme scale" % panel.name)
-	assertions.equal(market.call("get_layout_mode"), "drawer", "layout uses physical size divided by UI scale")
+	assertions.equal(market.call("get_layout_mode"), "three_column", "desktop keeps the central curve at maximum UI scale")
 	assertions.equal(shop.get("selected_tab"), "contracts", "scale keeps selected economy tab")
 	assertions.equal(market.get("selected_category"), "crops", "scale keeps selected category")
 	assertions.equal(market.get("selected_item_id"), "grain", "scale keeps selected item")
@@ -534,7 +547,7 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 		ScrollContainer.SCROLL_MODE_DISABLED,
 		"market product list disables horizontal scrolling"
 	)
-	panel.call("apply_responsive_layout", Vector2(1280, 720))
+	panel.call("apply_responsive_layout", Vector2(900, 720))
 	assertions.equal(panel.call("get_layout_mode"), "drawer", "market uses drawer at minimum viewport")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "drawer starts with product list")
 	panel.call("open_details_drawer")
@@ -546,6 +559,16 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "closing drawer restores product list")
 	panel.call("apply_responsive_layout", Vector2(1920, 1080))
 	assertions.equal(panel.call("get_layout_mode"), "three_column", "market restores three columns after resize")
+	assertions.truthy(
+		not (panel.get_node("Columns/DetailColumn/TagsLabel") as Control).visible
+		and not (panel.get_node("Columns/DetailColumn/SourceUseLabel") as Control).visible
+		and not (panel.get_node("Columns/DetailColumn/ProcessingLabel") as Control).visible,
+		"wide market keeps secondary prose out of the compact panel"
+	)
+	assertions.truthy(
+		(panel.get_node("Columns/DetailColumn/PriceChart") as Control).visible,
+		"wide market keeps the central price curve visible"
+	)
 	panel.free()
 
 
@@ -608,7 +631,7 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	await _send_key(tree, KEY_ENTER)
 	assertions.equal(market.get("selected_item_id"), product_ids[2], "Enter activates the focused dynamic product button")
 
-	market.call("apply_responsive_layout", Vector2(1280.0, 720.0))
+	market.call("apply_responsive_layout", Vector2(900.0, 720.0))
 	market.set("selected_item_id", product_ids[0])
 	product_buttons[0].grab_focus()
 	await _send_key(tree, KEY_UP)

@@ -216,8 +216,11 @@ func _apply_drawer_visibility() -> void:
 
 
 func _set_compact_detail(compact: bool) -> void:
-	for control: Control in [price_chart, tags_label, source_use_label, processing_label, $Columns/DetailColumn/ChartTitle]:
-		control.visible = not compact
+	price_chart.visible = not compact
+	$Columns/DetailColumn/ChartTitle.visible = not compact
+	tags_label.visible = false
+	source_use_label.visible = false
+	processing_label.visible = false
 
 
 func _on_viewport_size_changed() -> void:

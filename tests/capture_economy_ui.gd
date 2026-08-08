@@ -4,7 +4,9 @@ const OUTPUT_DIR := "res://.godot/economy-ui-verification"
 const STATES := [
 	"market_normal",
 	"shortage_large_confirmation",
+	"market_trade_confirmation",
 	"running_producer",
+	"building_output_ready",
 	"full_maintenance_paused",
 	"orders_contracts",
 	"waterwheel_overlay",
@@ -145,13 +147,23 @@ func _build_state(state_id: String, viewport_size: Vector2i, wallet: Node) -> Co
 			if _failed:
 				stage.free()
 				return null
+		"market_trade_confirmation":
+			await _build_market(stage, wallet, true)
+			if _failed:
+				stage.free()
+				return null
 		"running_producer":
-			await _build_producer(stage, false)
+			await _build_producer(stage, "running")
+			if _failed:
+				stage.free()
+				return null
+		"building_output_ready":
+			await _build_producer(stage, "output_ready")
 			if _failed:
 				stage.free()
 				return null
 		"full_maintenance_paused":
-			await _build_producer(stage, true)
+			await _build_producer(stage, "maintenance_paused")
 			if _failed:
 				stage.free()
 				return null
@@ -216,6 +228,7 @@ func _content_host(stage: Control) -> MarginContainer:
 
 
 func _build_market(stage: Control, wallet: Node, shortage: bool) -> void:
+	stage.get_node("CaptureTitle").visible = false
 	var inventory := InventorySystemScript.new() as InventorySystem
 	var market := MarketSystemScript.new() as MarketSystem
 	var economy := EconomySystemScript.new() as EconomySystem
@@ -230,19 +243,21 @@ func _build_market(stage: Control, wallet: Node, shortage: bool) -> void:
 		market.settle_day(day)
 	economy.configure(inventory, wallet, market)
 	inventory.add_item("wood", 30)
-	var panel := preload("res://scenes/ui/economy/market_panel.tscn").instantiate()
-	_content_host(stage).add_child(panel)
+	var shop := preload("res://scenes/ui/shop_ui.tscn").instantiate() as ShopUI
+	stage.add_child(shop)
 	await process_frame
 	if _failed:
 		return
-	panel.configure(inventory, economy, market)
-	panel.select_item("wood")
+	shop.set_animations_enabled(false)
+	shop.configure(inventory, economy, market)
+	shop.open("market", "wood")
+	var panel: MarketPanel = shop.market_panel
 	if shortage:
 		panel.trade_panel.quantity_spin.value = 10
 		panel.trade_panel.request_sell()
 
 
-func _build_producer(stage: Control, paused_and_full: bool) -> void:
+func _build_producer(stage: Control, state: String) -> void:
 	stage.get_node("CaptureTitle").visible = false
 	var fixture := _production_fixture(stage)
 	_unlock_station(fixture.progression, "windmill")
@@ -252,7 +267,9 @@ func _build_producer(stage: Control, paused_and_full: bool) -> void:
 	stage.add_child(windmill)
 	fixture.production.register_building(windmill)
 	fixture.production.start_recipe(windmill, "flour", 1, fixture.inventory)
-	if paused_and_full:
+	if state == "output_ready":
+		windmill.producer_state.outputs = {"flour": 3}
+	elif state == "maintenance_paused":
 		windmill.producer_state.outputs = {"flour": 1, "animal_feed": 1, "sunflower_oil": 1}
 		fixture.production.set_maintenance_due_day(windmill, 0)
 	var ui := BuildingEconomyScene.instantiate() as BuildingEconomyUI
@@ -260,6 +277,7 @@ func _build_producer(stage: Control, paused_and_full: bool) -> void:
 	await process_frame
 	if _failed:
 		return
+	ui.set_animations_enabled(false)
 	ui.configure(fixture.production, fixture.inventory, fixture.progression, fixture.grid, ModalCoordinatorScript.new())
 	ui.open_for(windmill)
 	ui.production_panel.select_recipe("flour")
@@ -273,6 +291,7 @@ func _build_orders_contracts(stage: Control, wallet: Node) -> void:
 	await process_frame
 	if _failed:
 		return
+	shop.set_animations_enabled(false)
 	shop.configure(fixture.inventory, fixture.economy, fixture.market, null, null, null, fixture.npc)
 	shop.open("contracts")
 	shop.contract_panel.select_contract("lao_li:grain:1:3")
@@ -298,6 +317,7 @@ func _build_waterwheel(stage: Control) -> void:
 	await process_frame
 	if _failed:
 		return
+	ui.set_animations_enabled(false)
 	ui.configure(fixture.production, fixture.inventory, fixture.progression, fixture.grid, ModalCoordinatorScript.new())
 	ui.open_for(wheel)
 	ui.status_panel.range_preview_button.button_pressed = true
