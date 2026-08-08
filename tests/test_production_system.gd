@@ -3,6 +3,7 @@ extends RefCounted
 const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
 
@@ -125,6 +126,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
 	_test_queue_lifecycle(assertions)
+	_test_freed_registered_buildings_are_pruned(assertions)
 	_test_unfinished_building_lifecycle(assertions)
 	_test_start_failures_are_atomic(assertions)
 	_test_queue_limit_and_output_pause(assertions)
@@ -138,7 +140,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_cleanup_nodes()
 
 
+func _test_freed_registered_buildings_are_pruned(assertions: TestAssert) -> void:
+	var production := _production()
+	var building := _building("workbench")
+	assertions.truthy(production.register_building(building), "stale-building fixture registers")
+	building.free()
+	assertions.equal(production.get_registered_buildings(), [], "freed buildings are excluded from registration reads")
+	assertions.equal((production.get("_registered_buildings") as Array).size(), 0, "freed buildings are removed from authoritative registration")
+
+
 func _test_state_round_trip(assertions: TestAssert) -> void:
+	var remaining_minutes := int(RecipeDatabaseScript.get_recipe("plank").duration_minutes) * 2 - 1
 	var original := ProducerStateScript.new("workbench")
 	original.max_queue_slots = 4
 	original.output_capacity = 5
@@ -146,7 +158,7 @@ func _test_state_round_trip(assertions: TestAssert) -> void:
 	original.jobs = [{
 		"recipe_id": "plank",
 		"batches": 2,
-		"remaining_minutes": 90,
+		"remaining_minutes": remaining_minutes,
 		"status": "running",
 	}]
 	original.outputs = {"plank": 3}
@@ -162,7 +174,7 @@ func _test_state_round_trip(assertions: TestAssert) -> void:
 		assertions.equal(json_restored.to_dict(), original.to_dict(), "producer JSON round-trip is exact")
 	saved.jobs[0].remaining_minutes = 1
 	saved.outputs.plank = 99
-	assertions.equal(restored.jobs[0].remaining_minutes, 90, "jobs are deep copied")
+	assertions.equal(restored.jobs[0].remaining_minutes, remaining_minutes, "jobs are deep copied")
 	assertions.equal(restored.outputs.plank, 3, "outputs are deep copied")
 
 	var before := restored.to_dict()
@@ -212,10 +224,11 @@ func _test_queue_lifecycle(assertions: TestAssert) -> void:
 	var production := _production()
 	var workbench := _building("workbench")
 	var inventory := _inventory()
+	var plank_duration := int(RecipeDatabaseScript.get_recipe("plank").duration_minutes)
 	inventory.add_item("wood", 6)
 	assertions.truthy(production.start_recipe(workbench, "plank", 1, inventory), "queue starts")
 	assertions.equal(inventory.get_item_count("wood"), 4, "one plank batch consumes multiplied inputs")
-	production.advance_minutes(120)
+	production.advance_minutes(plank_duration)
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 1, "output stored")
 	assertions.equal(workbench.producer_state.jobs.size(), 0, "completed stored job leaves queue")
 	assertions.truthy(production.has_method("refresh_indicator"), "production exposes authoritative indicator refresh")
@@ -232,7 +245,7 @@ func _test_queue_lifecycle(assertions: TestAssert) -> void:
 
 	assertions.truthy(production.start_recipe(workbench, "plank", 2, inventory), "multi-batch queue starts")
 	assertions.equal(inventory.get_item_count("wood"), 0, "multi-batch consumes four wood atomically")
-	production.advance_minutes(239)
+	production.advance_minutes(plank_duration * 2 - 1)
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 0, "multi-batch waits full duration")
 	production.advance_minutes(1)
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 2, "multi-batch stores multiplied output")
@@ -415,6 +428,7 @@ func _test_input_transfer(assertions: TestAssert) -> void:
 
 
 func _test_building_round_trip(assertions: TestAssert) -> void:
+	var remaining_minutes := int(RecipeDatabaseScript.get_recipe("plank").duration_minutes) - 1
 	var building := _building("workbench")
 	building.grid_x = 7
 	building.grid_z = 8
@@ -423,7 +437,7 @@ func _test_building_round_trip(assertions: TestAssert) -> void:
 	building.producer_state.jobs = [{
 		"recipe_id": "plank",
 		"batches": 1,
-		"remaining_minutes": 40,
+		"remaining_minutes": remaining_minutes,
 		"status": "running",
 	}]
 	var saved := building.to_dict()
@@ -479,22 +493,23 @@ func _test_clock(assertions: TestAssert, tree: SceneTree) -> void:
 	var inventory := _inventory()
 	inventory.add_item("wood", 20)
 	var workbench := _building("workbench")
+	var initial_duration := int(RecipeDatabaseScript.get_recipe("plank").duration_minutes) * 10
 	production.start_recipe(workbench, "plank", 10, inventory)
 	assertions.truthy(production.sync_clock(10, 0), "clock sync accepts valid time")
 	var event_bus := tree.root.get_node("EventBus")
 	event_bus.emit_signal("time_changed", 11, 0)
-	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, 1140, "forward clock advances elapsed minutes")
+	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, initial_duration - 60, "forward clock advances elapsed minutes")
 	event_bus.emit_signal("time_changed", 11, 0)
-	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, 1140, "repeated clock value does not advance")
+	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, initial_duration - 60, "repeated clock value does not advance")
 	event_bus.emit_signal("time_changed", 9, 0)
-	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, 1140, "backward clock value does not advance")
+	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, initial_duration - 60, "backward clock value does not advance")
 	event_bus.emit_signal("time_changed", 12, 0)
-	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, 1080, "forward clock remains anchored after backward value")
+	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, initial_duration - 120, "forward clock remains anchored after backward value")
 	assertions.truthy(production.sync_clock(23, 50), "late clock sync succeeds")
 	event_bus.emit_signal("time_changed", 22, 0)
-	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, 1080, "late-day backward clock is not a rollover")
+	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, initial_duration - 120, "late-day backward clock is not a rollover")
 	event_bus.emit_signal("time_changed", 6, 10)
-	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, 1060, "day rollover advances active game minutes")
+	assertions.equal(workbench.producer_state.jobs[0].remaining_minutes, initial_duration - 140, "day rollover advances active game minutes")
 	assertions.truthy(not production.sync_clock(24, 0), "invalid hour is rejected")
 	assertions.truthy(not production.sync_clock(12, 60), "invalid minute is rejected")
 	production.apply_daily_effects(2)
@@ -638,6 +653,7 @@ func _test_rollback_signals_are_atomic(assertions: TestAssert, tree: SceneTree) 
 
 
 func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> void:
+	var remaining_minutes := int(RecipeDatabaseScript.get_recipe("plank").duration_minutes) - 1
 	var grid := _track(GRID_SYSTEM_SCENE.instantiate()) as GridSystem
 	var system := _track(BUILDING_SYSTEM_SCENE.instantiate()) as BuildingSystem
 	tree.root.add_child(grid)
@@ -650,7 +666,7 @@ func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> v
 	placed.producer_state.jobs = [{
 		"recipe_id": "plank",
 		"batches": 1,
-		"remaining_minutes": 40,
+		"remaining_minutes": remaining_minutes,
 		"status": "running",
 	}]
 	var records := [placed.to_dict()]
@@ -664,13 +680,13 @@ func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> v
 	)
 	assertions.equal(restored.producer_state.jobs.size(), 1, "building system restores queued job")
 	if not restored.producer_state.jobs.is_empty():
-		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, 40, "building system restores remaining job time")
+		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, remaining_minutes, "building system restores remaining job time")
 	var restore_production := _production()
 	restore_production.register_building(restored)
-	restore_production.advance_minutes(40)
+	restore_production.advance_minutes(remaining_minutes)
 	assertions.equal(restored.producer_state.jobs.size(), 1, "unfinished restored producer keeps its queued job")
 	if not restored.producer_state.jobs.is_empty():
-		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, 40, "unfinished restored producer keeps queued work paused")
+		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, remaining_minutes, "unfinished restored producer keeps queued work paused")
 	assertions.equal(restored.producer_state.get_output_count("plank"), 2, "unfinished restored producer stores no new output")
 	assertions.truthy(system.remove_building(restored), "valid restored producer can be removed")
 	assertions.truthy(grid.get_cell(10, 10).state != GridCell.State.BUILDING, "removal clears authoritative producer footprint")

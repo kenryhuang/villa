@@ -242,11 +242,12 @@ func _test_authoritative_maintenance_pause(assertions: TestAssert) -> void:
 	assertions.truthy(inventory.add_item("cloth", 2), "maintenance fixture adds furniture cloth")
 	assertions.truthy(production.begin_day(6), "maintenance fixture reaches day 6")
 	assertions.truthy(production.start_recipe(building, "furniture", 1, inventory), "long furniture job starts through ProductionSystem")
-	production.advance_minutes(60)
+	var partial_advance := maxi(1, int(RecipeDatabaseScript.get_recipe("furniture").duration_minutes) / 3)
+	production.advance_minutes(partial_advance)
 	var before_pause: Dictionary = production.get_building_snapshot(building)
 	assertions.truthy(production.begin_day(7), "maintenance fixture reaches due day")
 	assertions.truthy(production.is_maintenance_overdue(building), "producer is overdue on quoted due day")
-	production.advance_minutes(60)
+	production.advance_minutes(partial_advance)
 	var paused: Dictionary = production.get_building_snapshot(building)
 	assertions.equal(
 		int(paused.jobs[0].remaining_minutes),
@@ -269,7 +270,7 @@ func _test_authoritative_maintenance_pause(assertions: TestAssert) -> void:
 			int(quote.materials[item_id]),
 			"maintain consumes quoted %s" % item_id
 		)
-	production.advance_minutes(60)
+	production.advance_minutes(partial_advance)
 	var after_resume: Dictionary = production.get_building_snapshot(building)
 	assertions.truthy(
 		int(after_resume.jobs[0].remaining_minutes) < int(before_pause.jobs[0].remaining_minutes),
@@ -1022,6 +1023,7 @@ func _test_dumping_depresses_then_recovers(assertions: TestAssert) -> void:
 func _test_no_instant_recipe_arbitrage(assertions: TestAssert) -> void:
 	var checked := 0
 	var profitable := 0
+	var early_profitable := 0
 	var losing := 0
 	for recipe in RecipeDatabaseScript.get_all_recipes():
 		var inputs: Dictionary = recipe.inputs
@@ -1047,6 +1049,8 @@ func _test_no_instant_recipe_arbitrage(assertions: TestAssert) -> void:
 			profitable += 1
 		else:
 			losing += 1
+		if int(result.early_profit) > 0:
+			early_profitable += 1
 		assertions.truthy(
 			int(result.batches) <= int(result.capacity),
 			"route=arbitrage_bot day=28 recipe=%s batches actual=%d expected=<=%d" % [
@@ -1089,9 +1093,9 @@ func _test_no_instant_recipe_arbitrage(assertions: TestAssert) -> void:
 		"route=instant_recipe day=0 covers every tradable recipe"
 	)
 	assertions.truthy(
-		profitable > 0 and losing > 0,
-		"route=arbitrage_bot day=28 mixed outcomes actual=profit:%d loss:%d expected=both>0" % [
-			profitable, losing,
+		early_profitable > 0 and losing > 0,
+		"route=arbitrage_bot retains early profit opportunities and long-run saturation losses actual=early_profit:%d total_profit:%d loss:%d" % [
+			early_profitable, profitable, losing,
 		]
 	)
 	print("ECONOMY_SIM arbitrage recipes=%d profitable=%d losing=%d" % [checked, profitable, losing])

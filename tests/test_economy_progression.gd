@@ -399,7 +399,7 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.truthy(inventory.add_item("grain", 20), "maintenance fixture adds inputs")
 	production.sync_daily_cursor(1)
 	assertions.truthy(production.set_maintenance_due_day(windmill, 2), "fixture sets stable due day")
-	assertions.truthy(production.start_recipe(windmill, "flour", 1, inventory), "pre-due job starts")
+	assertions.truthy(production.start_recipe(windmill, "flour", 10, inventory), "pre-due long job starts")
 	var remaining_before := int(windmill.producer_state.jobs[0].remaining_minutes)
 	production.sync_daily_cursor(2)
 	production.advance_minutes(120)

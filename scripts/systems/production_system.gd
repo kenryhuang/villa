@@ -231,18 +231,12 @@ func add_input(
 func advance_minutes(minutes: int) -> void:
 	if minutes <= 0:
 		return
-	var stale: Array[BuildingInstance] = []
-	for building in _registered_buildings:
-		if not is_instance_valid(building):
-			stale.append(building)
-			continue
+	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
 			refresh_indicator(building)
 			continue
 		_advance_building(building, minutes)
 		refresh_indicator(building)
-	for building in stale:
-		_registered_buildings.erase(building)
 
 
 func collect_all(building: BuildingInstance, inventory: InventorySystem) -> bool:
@@ -1225,11 +1219,10 @@ func _building_is_active(building: BuildingInstance) -> bool:
 
 func _valid_registered_buildings() -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []
-	for building in _registered_buildings.duplicate():
-		if building == null or not is_instance_valid(building):
-			_registered_buildings.erase(building)
-		else:
+	for building in _registered_buildings:
+		if building != null and is_instance_valid(building):
 			result.append(building)
+	_registered_buildings = result.duplicate()
 	return result
 
 
