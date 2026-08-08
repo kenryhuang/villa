@@ -258,6 +258,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 focus_next = NodePath("../CancelButton")
 focus_previous = NodePath("../CancelButton")
+theme_override_colors/font_focus_color = Color(0.317647, 0.231373, 0.184314, 1)
 theme_override_font_sizes/font_size = 20
 text = "确认"
 
@@ -267,6 +268,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 focus_next = NodePath("../ConfirmButton")
 focus_previous = NodePath("../ConfirmButton")
+theme_override_colors/font_focus_color = Color(0.317647, 0.231373, 0.184314, 1)
 theme_override_font_sizes/font_size = 20
 text = "取消"
 

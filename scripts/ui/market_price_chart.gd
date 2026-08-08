@@ -5,6 +5,7 @@ const LINE_COLOR := Color("#5F8755")
 const POINT_COLOR := Color("#C58B35")
 const AREA_COLOR := Color(0.372549, 0.529412, 0.333333, 0.12)
 const GRID_COLOR := Color("#7B6758", 0.25)
+const EMPTY_TEXT_COLOR := Color("#7B6758", 0.72)
 const VERTICAL_PADDING := 0.10
 const HOVER_RADIUS := 10.0
 
@@ -33,6 +34,10 @@ static func normalized_points(prices: Array) -> PackedVector2Array:
 			normalized_y = 1.0 - float(observed[index] - low) / float(high - low)
 		result.append(Vector2(float(index) / float(count - 1), normalized_y))
 	return result
+
+
+static func empty_state_text(values: Array) -> String:
+	return "历史积累中" if values.is_empty() else ""
 
 
 static func smooth_points(anchors: PackedVector2Array) -> PackedVector2Array:
@@ -84,14 +89,26 @@ func set_series(prices: Array, observed_dates: Array, reasons: Array) -> void:
 
 
 func _draw() -> void:
-	var normalized := normalized_points(history)
-	_hover_points = PackedVector2Array()
-	if normalized.is_empty():
-		return
 	var chart_rect := Rect2(
 		Vector2(8.0, size.y * VERTICAL_PADDING),
 		Vector2(maxf(0.0, size.x - 16.0), size.y * (1.0 - VERTICAL_PADDING * 2.0))
 	)
+	var normalized := normalized_points(history)
+	_hover_points = PackedVector2Array()
+	if normalized.is_empty():
+		var message := empty_state_text(history)
+		var font := get_theme_default_font()
+		var font_size := get_theme_default_font_size()
+		draw_string(
+			font,
+			Vector2(chart_rect.position.x, chart_rect.get_center().y + float(font_size) * 0.35),
+			message,
+			HORIZONTAL_ALIGNMENT_CENTER,
+			chart_rect.size.x,
+			font_size,
+			EMPTY_TEXT_COLOR
+		)
+		return
 	draw_line(
 		Vector2(chart_rect.position.x, chart_rect.end.y),
 		chart_rect.end,

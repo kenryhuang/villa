@@ -8,6 +8,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if not ResourceLoader.exists(CHART_SCRIPT_PATH):
 		return
 	var chart_script: Script = load(CHART_SCRIPT_PATH)
+	assertions.equal(chart_script.call("empty_state_text", []), "历史积累中", "empty chart explains its state")
+	assertions.equal(chart_script.call("empty_state_text", [16]), "", "available history removes empty state")
 	assertions.equal(
 		chart_script.call("normalized_points", []),
 		PackedVector2Array(),
