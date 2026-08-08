@@ -10,8 +10,24 @@ const IDS := [
 	"workbench",
 	"lamp",
 	"fence",
+	"stone_kiln",
+	"furnace",
+	"food_workshop",
+	"textile_machine",
+	"lumberyard",
+	"quarry",
+	"mine",
 ]
 const PAINTED_ONLY_IDS := ["waterwheel"]
+const PAINTED_PRODUCTION_IDS := [
+	"stone_kiln",
+	"furnace",
+	"food_workshop",
+	"textile_machine",
+	"lumberyard",
+	"quarry",
+	"mine",
+]
 const LAYERS := ["back", "front"]
 const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
 const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
@@ -27,6 +43,10 @@ static func construction_texture_path(id: String, stage: String) -> String:
 	return "res://assets/buildings/construction/%s/%s_%s.png" % [id, id, stage]
 
 
+static func activity_texture_path(id: String) -> String:
+	return "res://assets/buildings/painted/%s/%s_activity.png" % [id, id]
+
+
 func run(assertions: TestAssert) -> void:
 	for id in IDS:
 		for layer in LAYERS:
@@ -36,6 +56,11 @@ func run(assertions: TestAssert) -> void:
 	for id in PAINTED_ONLY_IDS:
 		for layer in LAYERS:
 			_validate_texture(texture_path(id, layer), assertions, Vector2(1254, 1254))
+	for id in PAINTED_PRODUCTION_IDS:
+		_validate_layer_pair_ground_anchor(id, assertions)
+		for stage in CONSTRUCTION_STAGES:
+			_validate_ground_anchor(construction_texture_path(id, stage), assertions)
+		_validate_activity_atlas(activity_texture_path(id), assertions)
 	assertions.truthy(ResourceLoader.exists(HAMMER_ICON_PATH), "construction hammer icon exists")
 	if ResourceLoader.exists(HAMMER_ICON_PATH):
 		var hammer_texture := load(HAMMER_ICON_PATH) as Texture2D
@@ -111,3 +136,67 @@ func _validate_texture(
 	assertions.truthy(image.detect_alpha(), "%s contains alpha" % path)
 	assertions.truthy(image.get_used_rect().has_area(), "%s contains visible painted pixels" % path)
 	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s has a transparent corner" % path)
+
+
+func _validate_ground_anchor(path: String, assertions: TestAssert) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var texture := load(path) as Texture2D
+	if texture == null:
+		return
+	var image := texture.get_image()
+	var touches_anchor := false
+	for y in range(944, 977):
+		for x in range(image.get_width()):
+			if image.get_pixel(x, y).a > 0.05:
+				touches_anchor = true
+				break
+		if touches_anchor:
+			break
+	assertions.truthy(touches_anchor, "%s touches the shared ground-anchor band" % path)
+
+
+func _validate_layer_pair_ground_anchor(id: String, assertions: TestAssert) -> void:
+	var touches_anchor := false
+	for layer in LAYERS:
+		var path := texture_path(id, layer)
+		if not ResourceLoader.exists(path):
+			continue
+		var texture := load(path) as Texture2D
+		if texture == null:
+			continue
+		var image := texture.get_image()
+		for y in range(944, 977):
+			for x in range(image.get_width()):
+				if image.get_pixel(x, y).a > 0.05:
+					touches_anchor = true
+					break
+			if touches_anchor:
+				break
+		if touches_anchor:
+			break
+	assertions.truthy(
+		touches_anchor,
+		"%s painted layer pair touches the shared ground-anchor band" % id
+	)
+
+
+func _validate_activity_atlas(path: String, assertions: TestAssert) -> void:
+	_validate_texture(path, assertions, Vector2(2048, 512))
+	if not ResourceLoader.exists(path):
+		return
+	var texture := load(path) as Texture2D
+	if texture == null or texture.get_size() != Vector2(2048, 512):
+		return
+	var image := texture.get_image()
+	for frame in range(4):
+		var visible_pixels := 0
+		for y in range(512):
+			for x in range(frame * 512, (frame + 1) * 512):
+				if image.get_pixel(x, y).a > 0.05:
+					visible_pixels += 1
+		assertions.truthy(visible_pixels > 0, "%s frame %d contains activity art" % [path, frame])
+		assertions.truthy(
+			visible_pixels < int(512 * 512 * 0.35),
+			"%s frame %d only redraws moving parts" % [path, frame]
+		)
