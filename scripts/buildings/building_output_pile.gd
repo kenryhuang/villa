@@ -7,6 +7,7 @@ const GameDataScript := preload("res://scripts/core/game_data.gd")
 const INTERACTION_LAYER := 128
 const ATLAS_FRAME_SIZE := Vector2(192.0, 192.0)
 const WORLD_WIDTH := 0.62
+const COLLECTION_ANIMATION_DURATION := 0.45
 const RASTER_FAMILIES := ["brick", "charcoal"]
 
 const FAMILY_BY_ITEM := {
@@ -63,6 +64,7 @@ var quantity_capacity := 0
 var _interaction_enabled := true
 var _feedback_reason := ""
 var _configured := false
+var _collection_animating := false
 
 
 static func visual_family(id: String) -> String:
@@ -192,19 +194,66 @@ func feedback_reason() -> String:
 
 
 func play_collected() -> void:
+	if _collection_animating:
+		return
+	_collection_animating = true
+	var collected_display_name := _display_name()
+	var collected_quantity := quantity
 	set_interaction_enabled(false)
+	var outline := get_node("Outline") as Sprite3D
+	var tooltip := get_node("Tooltip") as Label3D
+	var feedback := get_node("PickupFeedback") as Label3D
+	outline.visible = false
+	tooltip.visible = false
+	feedback.text = "%s +%d" % [collected_display_name, collected_quantity]
+	feedback.visible = true
 	if not is_inside_tree():
 		queue_free()
 		return
 	var sprite := get_node("Sprite") as Sprite3D
-	var outline := get_node("Outline") as Sprite3D
-	var target_color := sprite.modulate
-	target_color.a = 0.0
-	outline.visible = false
+	var sprite_target_color := sprite.modulate
+	sprite_target_color.a = 0.0
+	var feedback_target_color := feedback.modulate
+	feedback_target_color.a = 0.0
+	var feedback_outline_target_color := feedback.outline_modulate
+	feedback_outline_target_color.a = 0.0
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(sprite, "modulate", target_color, 0.2)
-	tween.tween_property(sprite, "position:y", sprite.position.y + 0.14, 0.2)
-	tween.tween_property(sprite, "scale", sprite.scale * 0.72, 0.2)
+	tween.tween_property(
+		sprite,
+		"modulate",
+		sprite_target_color,
+		COLLECTION_ANIMATION_DURATION
+	)
+	tween.tween_property(
+		sprite,
+		"position:y",
+		sprite.position.y + 0.24,
+		COLLECTION_ANIMATION_DURATION
+	)
+	tween.tween_property(
+		sprite,
+		"scale",
+		sprite.scale * 0.55,
+		COLLECTION_ANIMATION_DURATION
+	)
+	tween.tween_property(
+		feedback,
+		"position:y",
+		feedback.position.y + 0.22,
+		COLLECTION_ANIMATION_DURATION
+	)
+	tween.tween_property(
+		feedback,
+		"modulate",
+		feedback_target_color,
+		COLLECTION_ANIMATION_DURATION
+	)
+	tween.tween_property(
+		feedback,
+		"outline_modulate",
+		feedback_outline_target_color,
+		COLLECTION_ANIMATION_DURATION
+	)
 	tween.chain().tween_callback(queue_free)
 
 
@@ -243,6 +292,20 @@ func _ensure_nodes() -> void:
 		tooltip.render_priority = 3
 		tooltip.visible = false
 		add_child(tooltip)
+	if get_node_or_null("PickupFeedback") == null:
+		var pickup_feedback := Label3D.new()
+		pickup_feedback.name = "PickupFeedback"
+		pickup_feedback.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		pickup_feedback.fixed_size = true
+		pickup_feedback.font_size = 15
+		pickup_feedback.outline_size = 5
+		pickup_feedback.position = Vector3(0.0, 0.72, 0.03)
+		pickup_feedback.modulate = Color("72f58b")
+		pickup_feedback.outline_modulate = Color("17311d")
+		pickup_feedback.no_depth_test = true
+		pickup_feedback.render_priority = 4
+		pickup_feedback.visible = false
+		add_child(pickup_feedback)
 	if get_node_or_null("CollisionShape3D") == null:
 		var collision_shape := CollisionShape3D.new()
 		collision_shape.name = "CollisionShape3D"
@@ -311,12 +374,15 @@ func _pointer_over_ui() -> bool:
 	return hovered != null and hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE
 
 
-func _update_tooltip() -> void:
+func _display_name() -> String:
 	var definition: Variant = GameDataScript.get_item(item_id)
-	var display_name := item_id
 	if definition is Dictionary:
-		display_name = str((definition as Dictionary).get("name", item_id))
-	(get_node("Tooltip") as Label3D).text = "%s ×%d" % [display_name, quantity]
+		return str((definition as Dictionary).get("name", item_id))
+	return item_id
+
+
+func _update_tooltip() -> void:
+	(get_node("Tooltip") as Label3D).text = "%s ×%d" % [_display_name(), quantity]
 
 
 func _show_failure_outline() -> void:

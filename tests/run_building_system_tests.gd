@@ -25,7 +25,7 @@ func _run() -> void:
 	BuildingDataTest.new().run(assertions)
 	BuildingCatalogTest.new().run(assertions)
 	BuildingInstanceTest.new().run(assertions, self)
-	BuildingOutputPileTest.new().run(assertions, self)
+	await BuildingOutputPileTest.new().run(assertions, self)
 	BuildingOutputDisplayTest.new().run(assertions, self)
 	BuildingActivityVisualTest.new().run(assertions)
 	BuildingSystemCompleteTest.new().run(assertions, self)

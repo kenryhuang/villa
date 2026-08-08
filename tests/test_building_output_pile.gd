@@ -112,6 +112,32 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"future unknown output uses the crate fallback"
 	)
 	pile.queue_free()
+	await _test_collection_animation(assertions, tree)
+
+
+func _test_collection_animation(assertions: TestAssert, tree: SceneTree) -> void:
+	var pile := BuildingOutputPileScript.new()
+	tree.root.add_child(pile)
+	assertions.truthy(
+		pile.configure("charcoal", 2, 9),
+		"collection animation fixture configures"
+	)
+	pile.play_collected()
+	var feedback := pile.get_node_or_null("PickupFeedback") as Label3D
+	assertions.truthy(feedback != null, "collection displays pickup feedback")
+	if feedback != null:
+		assertions.truthy(feedback.visible, "pickup feedback is immediately visible")
+		assertions.equal(feedback.text, "木炭 +2", "pickup feedback names the collected output")
+	assertions.equal(pile.collision_layer, 0, "collected pile immediately disables collision")
+	assertions.truthy(
+		not pile.is_processing_input(),
+		"collected pile immediately disables direct input"
+	)
+	await tree.create_timer(0.55).timeout
+	assertions.truthy(
+		not is_instance_valid(pile),
+		"collected pile is freed after the pickup animation"
+	)
 
 
 func _test_viewport_input_route(assertions: TestAssert, tree: SceneTree) -> void:
