@@ -220,12 +220,15 @@ func _test_queue_lifecycle(assertions: TestAssert) -> void:
 	assertions.equal(workbench.producer_state.jobs.size(), 0, "completed stored job leaves queue")
 	assertions.truthy(production.has_method("refresh_indicator"), "production exposes authoritative indicator refresh")
 	if workbench.has_method("get_economy_indicator"):
-		assertions.equal(workbench.call("get_economy_indicator"), "collect", "stored output shows collect indicator")
+		assertions.equal(workbench.call("get_economy_indicator"), "", "stored output uses no collect glyph")
+	assertions.equal(workbench.get_output_pile_count(), 1, "stored output projects one pile")
+	assertions.equal(workbench.get_output_pile_item_ids(), ["plank"], "projected pile represents output")
 	assertions.truthy(production.collect_all(workbench, inventory), "collection succeeds")
 	assertions.equal(inventory.get_item_count("plank"), 1, "collection moves output to inventory")
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 0, "collected output leaves building")
 	if workbench.has_method("get_economy_indicator"):
-		assertions.equal(workbench.call("get_economy_indicator"), "", "collection clears collect indicator")
+		assertions.equal(workbench.call("get_economy_indicator"), "", "collection leaves no collect indicator")
+	assertions.equal(workbench.get_output_pile_count(), 0, "collection removes projected pile")
 
 	assertions.truthy(production.start_recipe(workbench, "plank", 2, inventory), "multi-batch queue starts")
 	assertions.equal(inventory.get_item_count("wood"), 0, "multi-batch consumes four wood atomically")

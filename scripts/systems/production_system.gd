@@ -73,20 +73,23 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 
 
 func refresh_indicator(building: BuildingInstance) -> String:
-	if building == null or not is_instance_valid(building) or not building.has_method("set_economy_indicator"):
+	if building == null or not is_instance_valid(building):
 		return ""
 	var kind := ""
+	var state := _get_state(building)
 	if _building_is_active(building):
 		if is_maintenance_overdue(building):
 			kind = "maintenance"
-		else:
-			var state := _get_state(building)
-			if state != null:
-				if _is_output_full(building, state):
-					kind = "full"
-				elif not state.outputs.is_empty():
-					kind = "collect"
-	building.call("set_economy_indicator", kind)
+		elif state != null and _is_output_full(building, state):
+			kind = "full"
+	if building.has_method("sync_output_display"):
+		building.call(
+			"sync_output_display",
+			state.outputs if state != null else {},
+			_storage_quantity_capacity(building)
+		)
+	if building.has_method("set_economy_indicator"):
+		building.call("set_economy_indicator", kind)
 	return kind
 
 

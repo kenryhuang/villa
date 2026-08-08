@@ -320,6 +320,7 @@ func get_economy_indicator() -> String:
 
 
 func sync_output_display(outputs: Dictionary, quantity_capacity: int) -> void:
+	_ensure_nodes()
 	_output_quantity_capacity = maxi(quantity_capacity, 0)
 	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
 	if output_display != null:
