@@ -8,8 +8,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for footprint in [Vector2i(1, 1), Vector2i(2, 2), Vector2i(3, 3), Vector2i(4, 2)]:
 		assertions.equal(
 			BuildingInstance.construction_duration_for(footprint),
-			30.0,
-			"construction duration follows three ten-second frame transitions"
+			9.0,
+			"construction duration follows three three-second frame transitions"
 		)
 
 	var game_data = GameDataScript.new()
@@ -94,7 +94,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(feedback.visible, "leaving preview restores unfinished feedback")
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FOUNDATION, "construction starts at foundation")
 	assertions.equal(instance.construction_elapsed, 0.0, "construction starts with zero elapsed")
-	assertions.equal(instance.construction_duration, 30.0, "barn uses three ten-second frame transitions")
+	assertions.equal(instance.construction_duration, 9.0, "barn uses three three-second frame transitions")
 	assertions.near(instance.get_construction_progress(), 0.0, 0.0001, "initial progress is zero")
 	assertions.truthy(instance.has_node("VisualRoot/ConstructionLayer"), "construction sprite exists")
 	assertions.truthy(instance.has_node("VisualRoot/ConstructionFallback"), "construction fallback exists")
@@ -115,15 +115,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var foundation_texture: Texture2D = instance.get_node("VisualRoot/ConstructionLayer").texture
 	for tween in tree.get_processed_tweens():
 		tween.custom_step(2.0)
-	instance.advance_construction(9.99)
+	instance.advance_construction(2.99)
 	assertions.equal(
 		instance.construction_stage,
 		BuildingInstance.ConstructionStage.FOUNDATION,
-		"construction remains on foundation before ten seconds"
+		"construction remains on foundation before three seconds"
 	)
 	assertions.equal(stage_events.size(), 0, "no early stage signal")
 	instance.advance_construction(0.01)
-	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FRAME, "ten seconds advances to frame")
+	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.FRAME, "three seconds advances to frame")
 	assertions.equal(stage_events, [BuildingInstance.ConstructionStage.FRAME], "frame transition emits once")
 	if progress_disk != null:
 		var progress_material := progress_disk.material_override as ShaderMaterial
@@ -133,7 +133,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				float(progress_material.get_shader_parameter("progress")),
 				1.0 / 3.0,
 				0.001,
-				"ten seconds fills one third of total progress disk"
+				"three seconds fills one third of total progress disk"
 			)
 	assertions.equal(instance.get_node("CameraOccluder").collision_layer, 32, "frame enables camera occlusion")
 	assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "frame keeps interaction disabled")
@@ -201,7 +201,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	instance.interact(instance)
 	assertions.equal(interaction_events.size(), 1, "completed building accepts interaction")
 
-	instance.advance_construction(20.0)
+	instance.advance_construction(9.0)
 	instance.advance_construction_stage()
 	instance.complete_construction()
 	assertions.equal(stage_events.size(), 3, "completed construction ignores further advances")
@@ -210,7 +210,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	instance.start_construction()
 	stage_events.clear()
 	completion_events.clear()
-	instance.advance_construction(30.0)
+	instance.advance_construction(9.0)
 	assertions.equal(
 		stage_events,
 		[
