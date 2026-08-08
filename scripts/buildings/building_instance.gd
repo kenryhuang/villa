@@ -7,6 +7,7 @@ signal construction_stage_changed(
 	stage: ConstructionStage
 )
 signal construction_completed(building: BuildingInstance)
+signal output_collection_requested(building: BuildingInstance, item_id: String)
 
 enum ConstructionStage {
 	FOUNDATION,
@@ -23,6 +24,9 @@ const ConstructionFeedbackScript = preload(
 )
 const BuildingActivityVisualScript = preload(
 	"res://scripts/buildings/building_activity_visual.gd"
+)
+const BuildingOutputDisplayScript = preload(
+	"res://scripts/buildings/building_output_display.gd"
 )
 const COLLISION_LAYERS := 16 | 64
 const INTERACTION_LAYERS := 64 | 256
@@ -55,6 +59,7 @@ var _opacity_target := CLEAR_OPACITY
 var _completion_emitted := false
 var _missing_construction_art_warnings := {}
 var _economy_indicator_kind := ""
+var _output_quantity_capacity := 0
 
 var building_id: String:
 	get:
@@ -220,12 +225,14 @@ func configure(
 	_ensure_nodes()
 	if data == null or not data.is_valid():
 		return
+	(get_node("BuildingOutputDisplay") as Node).call("configure", data.footprint)
 	name = data.display_name
 	_configure_visuals()
 	_configure_physics()
 	_apply_construction_stage(false)
 	if not _preview_mode and not is_in_group("building_instance"):
 		add_to_group("building_instance")
+	_sync_output_display_state()
 
 
 func set_preview_mode(value: bool) -> void:
@@ -239,6 +246,7 @@ func set_preview_mode(value: bool) -> void:
 	_apply_visual_color()
 	_sync_construction_feedback()
 	sync_activity_visual()
+	_sync_output_display_state()
 
 
 func deactivate() -> void:
@@ -257,6 +265,9 @@ func deactivate() -> void:
 	remove_from_group("building_instance")
 	visible = false
 	set_economy_indicator("")
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	if output_display != null:
+		output_display.call("clear_immediately")
 	_sync_construction_feedback(false)
 	sync_activity_visual()
 	set_process(false)
@@ -299,13 +310,68 @@ func can_open_economy_panel() -> bool:
 
 
 func set_economy_indicator(kind: String) -> void:
-	_economy_indicator_kind = kind if kind in ["collect", "full", "maintenance"] else ""
+	_economy_indicator_kind = kind if kind in ["full", "maintenance"] else ""
 	_sync_economy_indicator()
 	sync_activity_visual()
 
 
 func get_economy_indicator() -> String:
 	return _economy_indicator_kind
+
+
+func sync_output_display(outputs: Dictionary, quantity_capacity: int) -> void:
+	_output_quantity_capacity = maxi(quantity_capacity, 0)
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	if output_display != null:
+		output_display.call(
+			"sync_outputs",
+			outputs,
+			_output_quantity_capacity,
+			_output_display_enabled()
+		)
+
+
+func request_output_collection(item_id: String) -> void:
+	if producer_state != null and producer_state.get_output_count(item_id) > 0:
+		output_collection_requested.emit(self, item_id)
+
+
+func get_output_pile_count() -> int:
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	return int(output_display.call("get_pile_count")) if output_display != null else 0
+
+
+func get_output_pile_item_ids() -> Array[String]:
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	var result: Array[String] = []
+	if output_display != null:
+		result.assign(output_display.call("get_item_ids"))
+	return result
+
+
+func show_output_collection_failure(item_id: String, reason: String) -> void:
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	if output_display != null:
+		output_display.call("show_collection_failure", item_id, reason)
+
+
+func _sync_output_display_state() -> void:
+	var outputs := producer_state.outputs if producer_state != null else {}
+	sync_output_display(outputs, _output_quantity_capacity)
+
+
+func _output_display_enabled() -> bool:
+	return (
+		data != null
+		and not _preview_mode
+		and is_construction_complete()
+		and visible
+		and is_in_group("building_instance")
+	)
+
+
+func _on_output_pile_collection_requested(item_id: String) -> void:
+	request_output_collection(item_id)
 
 
 func to_dict() -> Dictionary:
@@ -529,6 +595,14 @@ func _ensure_nodes() -> void:
 		indicator.visible = false
 		indicator.render_priority = 2
 		add_child(indicator)
+	if get_node_or_null("BuildingOutputDisplay") == null:
+		var output_display := BuildingOutputDisplayScript.new()
+		output_display.name = "BuildingOutputDisplay"
+		add_child(output_display)
+	var output_display: Variant = get_node("BuildingOutputDisplay")
+	var output_callback := Callable(self, "_on_output_pile_collection_requested")
+	if not output_display.is_connected("collection_requested", output_callback):
+		output_display.connect("collection_requested", output_callback)
 	_ensure_physics_node("Collision", StaticBody3D)
 	_ensure_physics_node("InteractionArea", Area3D)
 	_ensure_physics_node("CameraOccluder", Area3D)
@@ -626,12 +700,10 @@ func _sync_economy_indicator() -> void:
 	var visual_size := data.visual_size if data != null else Vector2(1.0, 1.0)
 	indicator.position = Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
 	indicator.text = {
-		"collect": "收",
 		"full": "满",
 		"maintenance": "修",
 	}.get(_economy_indicator_kind, "")
 	indicator.modulate = {
-		"collect": Color("f5e6c8"),
 		"full": Color("ef6767"),
 		"maintenance": Color("f2b84b"),
 	}.get(_economy_indicator_kind, Color.WHITE)
@@ -820,6 +892,7 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	feedback.configure(data.visual_size, construction_layer.texture)
 	_sync_construction_feedback()
 	sync_activity_visual()
+	_sync_output_display_state()
 	_apply_physics_state()
 	if play_effect:
 		_play_construction_effect(construction_stage)
