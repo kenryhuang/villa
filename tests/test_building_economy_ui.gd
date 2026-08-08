@@ -49,19 +49,19 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"WorldRangeOverlay",
 	])
 	_check_scene(assertions, PRODUCTION_SCENE, [
-		"Sections/RecipeColumn/RecipeScroll/RecipeList",
-		"Sections/ProcessColumn/Flow/InputItems/InputLabel",
-		"Sections/ProcessColumn/Flow/OutputItems/OutputLabel",
-		"Sections/ProcessColumn/DurationLabel",
-		"Sections/ProcessColumn/PricingLabel",
-		"Sections/ProcessColumn/MissingLabel",
-		"Sections/RightColumn/QueueCard/QueueScroll/QueueSlots",
-		"Sections/RightColumn/StorageCard/StorageList",
-		"Sections/RightColumn/StorageCard/CollectAllButton",
+		"Sections/RecipeColumn/Content/RecipeScroll/RecipeList",
+		"Sections/ProcessColumn/Content/Flow/InputItems/InputLabel",
+		"Sections/ProcessColumn/Content/Flow/OutputItems/OutputLabel",
+		"Sections/ProcessColumn/Content/Metrics/DurationLabel",
+		"Sections/ProcessColumn/Content/Metrics/PricingLabel",
+		"Sections/ProcessColumn/Content/MissingLabel",
+		"Sections/RightColumn/Content/QueueCard/QueueScroll/QueueSlots",
+		"Sections/RightColumn/Content/StorageCard/StorageList",
+		"Sections/RightColumn/Content/StorageCard/CollectAllButton",
 		"FeedbackLabel",
-		"Sections/ProcessColumn/BatchControls/BatchSpinBox",
-		"Sections/ProcessColumn/BatchControls/MaxButton",
-		"Sections/ProcessColumn/BatchControls/StartButton",
+		"Sections/ProcessColumn/Content/BatchControls/BatchSpinBox",
+		"Sections/ProcessColumn/Content/BatchControls/MaxButton",
+		"Sections/ProcessColumn/Content/BatchControls/StartButton",
 	])
 	_check_scene(assertions, STATUS_SCENE, [
 		"SummaryFields",
@@ -71,6 +71,27 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Actions/RangePreviewButton",
 		"FeedbackLabel",
 	])
+	var production_panel := (load(PRODUCTION_SCENE) as PackedScene).instantiate() as Control
+	var sections := production_panel.get_node("Sections") as HBoxContainer
+	var recipe_card := production_panel.get_node("Sections/RecipeColumn") as Control
+	var process_card := production_panel.get_node("Sections/ProcessColumn") as Control
+	var activity_card := production_panel.get_node("Sections/RightColumn") as Control
+	assertions.equal(recipe_card.custom_minimum_size.x, 280.0, "production recipe card has a stable width")
+	assertions.equal(process_card.custom_minimum_size.x, 520.0, "production process card owns the center")
+	assertions.equal(activity_card.custom_minimum_size.x, 300.0, "production activity card has a stable width")
+	assertions.equal(sections.get_theme_constant("separation"), 16, "production cards use the shared grid gap")
+	for control_path in [
+		"Sections/ProcessColumn/Content/BatchControls/BatchSpinBox",
+		"Sections/ProcessColumn/Content/BatchControls/MaxButton",
+		"Sections/ProcessColumn/Content/BatchControls/StartButton",
+		"Sections/RightColumn/Content/StorageCard/CollectAllButton",
+	]:
+		assertions.equal(
+			(production_panel.get_node(control_path) as Control).custom_minimum_size.y,
+			44.0,
+			"production control %s uses the standard height" % control_path
+		)
+	production_panel.free()
 
 
 func _feature_resources_exist() -> bool:
@@ -115,6 +136,10 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.truthy(ui.open_for(windmill), "completed windmill opens")
 	var panel = ui.production_panel
 	assertions.equal(panel.recipe_rows.size(), 3, "windmill exposes all three recipes")
+	var first_recipe_button := panel.recipe_list.get_child(0) as Button
+	assertions.equal(first_recipe_button.custom_minimum_size.y, 52.0, "dynamic recipe rows use the aligned list height")
+	assertions.truthy(first_recipe_button.clip_text, "dynamic recipe names clip inside the recipe card")
+	assertions.equal(first_recipe_button.text_overrun_behavior, TextServer.OVERRUN_TRIM_ELLIPSIS, "dynamic recipe names use ellipsis")
 	assertions.equal(panel.storage_capacity_label.text, "产物种类 0/3", "crafting storage shows authoritative output type slots")
 	panel.select_recipe("flour")
 	panel.set_batches(1)
@@ -123,13 +148,14 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.recipe_detail.get("inputs"), {"grain": 2}, "recipe details expose exact inputs")
 	assertions.equal(panel.recipe_detail.get("outputs"), {"flour": 1}, "recipe details expose exact outputs")
 	assertions.equal(panel.queue_slots.size(), 2, "production view always exposes two queue slots")
+	assertions.truthy(panel.queue_slot_nodes[0].custom_minimum_size.y <= 88.0, "queue slots use a compact card row")
 	assertions.truthy(panel.recipe_detail.has("margin_status"), "recipe detail exposes margin status")
 	assertions.truthy(panel.recipe_detail.has("duration_minutes"), "recipe detail exposes duration")
 	var grain_before := inventory.get_item_count("grain")
 	panel.start_button.pressed.emit()
 	assertions.equal(inventory.get_item_count("grain"), grain_before - 2, "one press deducts one batch exactly once after repeated configure")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "one press creates one authoritative job")
-	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "生产中", "running queue state renders in Chinese")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "生产中", "running queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "运行中", "shell title state updates in the same frame when production starts")
 	ui.close()
 	assertions.truthy(ui.open_for(windmill), "windmill reopens")
@@ -164,12 +190,12 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	ui.open_for(blocked)
 	panel = ui.production_panel
 	assertions.equal(panel.queue_slots[0].state, "output-full", "UI output-full state comes from production snapshot")
-	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "产物已满", "output-full queue state renders in Chinese")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "产物已满", "output-full queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "仓满暂停", "shell title state reflects output-full immediately")
 	blocked_production.set_maintenance_due_day(blocked, blocked_production.get_current_day())
 	panel.refresh_snapshot()
 	assertions.equal(panel.queue_slots[0].state, "maintenance-paused", "UI maintenance pause comes from production snapshot")
-	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "维护暂停", "maintenance queue state renders in Chinese")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "维护暂停", "maintenance queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "维护暂停", "shell title state reflects maintenance immediately")
 	var connections: int = panel.get_signal_connection_list("snapshot_changed").size() if panel.has_signal("snapshot_changed") else 0
 	assertions.equal(connections, 1, "repeated configure keeps exactly one shell snapshot listener")
@@ -178,6 +204,9 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	blocked_inventory.reset_slots()
 	blocked_inventory.add_item("honey", 98)
 	panel.refresh_snapshot()
+	var output_row := panel.storage_list.get_child(0) as Control
+	assertions.equal(output_row.custom_minimum_size.y, 52.0, "dynamic output rows use the aligned list height")
+	assertions.truthy(output_row.has_node("CollectButton"), "dynamic output rows expose an independent collect control")
 	panel.request_collect_item("honey")
 	assertions.equal(panel.failure_reason, "inventory_capacity", "production item collect exposes structured capacity reason")
 	assertions.truthy(panel.failure_message.contains("×1"), "production item collect shows exact missing quantity")
@@ -202,7 +231,7 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.queue_slots.size(), 4, "level-two queue upgrade exposes all four authoritative slots")
 	assertions.equal(panel.queue_slot_nodes.size(), 4, "queue UI builds four visible slot nodes dynamically")
 	if panel.queue_slot_nodes.size() >= 4:
-		assertions.equal(panel.queue_slot_nodes[3].get_node("StateLabel").text, "等待中", "fourth queued job is visible with a localized state")
+		assertions.equal(panel.queue_slot_nodes[3].get_node("Content/Header/StateLabel").text, "等待中", "fourth queued job is visible with a localized state")
 		var stale_slot: WeakRef = weakref(panel.queue_slot_nodes[3])
 		upgraded.producer_state.jobs.resize(1)
 		upgraded.producer_state.max_queue_slots = 2
