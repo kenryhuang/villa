@@ -324,17 +324,36 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	main.save_manager = manager
 	tree.root.add_child(main)
 	var game_state := tree.root.get_node_or_null("GameState")
-	assertions.equal(main.inventory_system.get_item_count("grain_seed"), 12, "new game grants exactly 12 grain seeds")
-	assertions.equal(main.inventory_system.get_item_count("wood"), 30, "new game grants exactly 30 wood")
-	assertions.equal(main.inventory_system.get_item_count("stone"), 20, "new game grants exactly 20 stone")
-	assertions.equal(main.inventory_system.get_item_count("fiber"), 10, "new game grants exactly 10 fiber")
+	var expected_starter_items := {
+		"grain_seed": 99,
+		"wood": 99,
+		"stone": 99,
+		"fiber": 99,
+		"plank": 99,
+		"stone_brick": 99,
+		"brick": 99,
+		"charcoal": 99,
+		"glass": 99,
+		"iron_ingot": 99,
+		"rope": 99,
+		"steel": 99,
+		"wooden_crate": 99,
+		"farm_tools": 99,
+		"machine_parts": 99,
+		"lamp": 99,
+	}
+	for item_id in expected_starter_items:
+		assertions.equal(
+			main.inventory_system.get_item_count(item_id),
+			expected_starter_items[item_id],
+			"new game grants large starter stack for %s" % item_id
+		)
 	assertions.equal(main.inventory_system.get_item_count("iron"), 0, "new game grants no legacy debug iron")
-	assertions.equal(main.inventory_system.get_item_count("glass"), 0, "new game grants no debug glass")
-	assertions.equal(game_state.gold if game_state != null else -1, 150, "new game starts with exactly 150 gold")
+	assertions.equal(game_state.gold if game_state != null else -1, 50_000, "new game starts with debug-friendly gold")
 	main._initial_game_state()
-	assertions.equal(main.inventory_system.get_item_count("grain_seed"), 12, "re-entering new-game lifecycle cannot duplicate seeds")
-	assertions.equal(main.inventory_system.get_item_count("wood"), 30, "re-entering new-game lifecycle cannot duplicate wood")
-	assertions.equal(game_state.gold if game_state != null else -1, 150, "re-entering new-game lifecycle preserves exact gold")
+	assertions.equal(main.inventory_system.get_item_count("grain_seed"), 99, "re-entering new-game lifecycle cannot duplicate seeds")
+	assertions.equal(main.inventory_system.get_item_count("wood"), 99, "re-entering new-game lifecycle cannot duplicate wood")
+	assertions.equal(game_state.gold if game_state != null else -1, 50_000, "re-entering new-game lifecycle preserves exact gold")
 
 	main.season_system.current_season = SeasonSystem.Season.SPRING
 	main.season_system.current_day = 4

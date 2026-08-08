@@ -21,6 +21,25 @@ const EconomyNotificationSystemScript := preload(
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
 const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd")
 const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
+const NEW_GAME_STARTER_ITEMS := {
+	"grain_seed": 99,
+	"wood": 99,
+	"stone": 99,
+	"fiber": 99,
+	"plank": 99,
+	"stone_brick": 99,
+	"brick": 99,
+	"charcoal": 99,
+	"glass": 99,
+	"iron_ingot": 99,
+	"rope": 99,
+	"steel": 99,
+	"wooden_crate": 99,
+	"farm_tools": 99,
+	"machine_parts": 99,
+	"lamp": 99,
+}
+const NEW_GAME_STARTER_GOLD := 50_000
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -736,13 +755,11 @@ static func default_crop_definitions() -> Array[CropData]:
 
 func _grant_new_game_items() -> void:
 	inventory_system.clear()
-	inventory_system.add_item("grain_seed", 12)
-	inventory_system.add_item("wood", 30)
-	inventory_system.add_item("stone", 20)
-	inventory_system.add_item("fiber", 10)
+	for item_id in NEW_GAME_STARTER_ITEMS:
+		inventory_system.add_item(item_id, int(NEW_GAME_STARTER_ITEMS[item_id]))
 	var game_state = get_node_or_null("/root/GameState")
 	if game_state != null:
-		game_state.gold = 150
+		game_state.gold = NEW_GAME_STARTER_GOLD
 		var event_bus = get_node_or_null("/root/EventBus")
 		if event_bus != null:
 			event_bus.gold_changed.emit(game_state.gold)

@@ -157,7 +157,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	assertions.equal(
 		main.inventory_system.get_item_count("grain_seed"),
-		12,
+		99,
 		"new game grants grain seed"
 	)
 	assertions.equal(
@@ -165,10 +165,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"grain_seed",
 		"new game maps grain seed to slot six"
 	)
-	assertions.equal(main.hud.get_material_count_text("wood"), "30", "HUD shows starting wood")
-	assertions.equal(main.hud.get_material_count_text("stone"), "20", "HUD shows starting stone")
+	assertions.equal(main.hud.get_material_count_text("wood"), "99", "HUD shows starting wood")
+	assertions.equal(main.hud.get_material_count_text("stone"), "99", "HUD shows starting stone")
 	assertions.equal(main.hud.get_material_count_text("iron"), "0", "HUD shows no legacy starter iron")
-	assertions.equal(main.hud.get_material_count_text("glass"), "0", "HUD shows no starter glass")
+	assertions.equal(main.hud.get_material_count_text("glass"), "99", "HUD shows starting glass")
 
 	var inventory_slots_before_output: Array[Dictionary] = []
 	inventory_slots_before_output.assign(main.inventory_system.slots.duplicate(true))
@@ -231,7 +231,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player plants grain")
 		assertions.equal(
 			main.inventory_system.get_item_count("grain_seed"),
-			11,
+			98,
 			"main planting consumes one seed"
 		)
 		action_controller.select_slot(1)
@@ -302,6 +302,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var build_cell := _find_build_cell(main)
 	assertions.truthy(build_cell != null, "main has a valid fence cell")
 	if build_cell:
+		var wood_before_fence: int = main.inventory_system.get_item_count("wood")
 		assertions.truthy(
 			main.building_system.enter_preview_mode("fence"),
 			"main enters fence preview"
@@ -320,12 +321,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				})
 			assertions.equal(
 				main.inventory_system.get_item_count("wood"),
-				28,
+				wood_before_fence - 2,
 				"main fence placement spends two wood"
 			)
 			assertions.equal(
 				main.hud.get_material_count_text("wood"),
-				"28",
+				str(wood_before_fence - 2),
 				"HUD immediately reflects building material spend"
 			)
 			assertions.equal(
@@ -333,8 +334,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				BuildingInstance.ConstructionStage.FOUNDATION,
 				"main building starts at foundation"
 			)
+			var wood_to_remove: int = main.inventory_system.get_item_count("wood") - 1
 			assertions.truthy(
-				main.inventory_system.remove_item("wood", 27),
+				main.inventory_system.remove_item("wood", wood_to_remove),
 				"integration fixture drains wood below fence cost"
 			)
 			assertions.truthy(
@@ -460,12 +462,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			)
 	assertions.equal(
 		main.inventory_system.get_item_count("wood"),
-		30,
+		99,
 		"debug reset restores starter wood"
 	)
 	assertions.equal(
 		main.inventory_system.get_item_count("stone"),
-		20,
+		99,
 		"debug reset restores starter stone"
 	)
 	assertions.equal(
@@ -475,12 +477,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	assertions.equal(
 		main.inventory_system.get_item_count("glass"),
-		0,
+		99,
 		"debug reset restores starter glass"
 	)
 	assertions.equal(
 		main.inventory_system.get_item_count("grain_seed"),
-		12,
+		99,
 		"debug reset restores starter grain seed"
 	)
 	assertions.equal(
@@ -489,7 +491,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"debug reset restores the starter quick slot"
 	)
 	if game_state:
-		assertions.equal(game_state.gold, 150, "debug reset restores starter gold")
+		assertions.equal(game_state.gold, 50_000, "debug reset restores starter gold")
 		assertions.equal(
 			game_state.player_state.stamina,
 			100,
@@ -503,7 +505,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(game_state.player_state.level, 1, "debug reset restores level one")
 		assertions.equal(game_state.player_state.exp, 0, "debug reset clears experience")
 		assertions.near(game_state.play_time, 0.0, 0.001, "debug reset clears play time")
-		assertions.equal(main.hud.gold_label.text, "💰 150", "debug reset refreshes HUD gold")
+		assertions.equal(main.hud.gold_label.text, "💰 50000", "debug reset refreshes HUD gold")
 		assertions.near(main.hud.stamina_bar.value, 100.0, 0.001, "debug reset refreshes HUD stamina")
 		assertions.equal(main.hud.level_label.text, "Lv.1", "debug reset refreshes HUD level")
 		assertions.near(main.hud.exp_bar.value, 0.0, 0.001, "debug reset refreshes HUD experience")
