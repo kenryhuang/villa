@@ -3,6 +3,7 @@
 **日期：** 2026-08-08
 **状态：** 已确认
 **适用范围：** 所有持有 `ProducerState.outputs` 的已建成建筑
+**修订：** 补充读档后信号重连与明确的成功入库动画
 
 ## 1. 背景
 
@@ -188,7 +189,9 @@ production_system.collect_outputs(building, inventory_system, item_id)
 
 ### 10.2 成功收取
 
-- 货堆在约 0.2 秒内轻微上浮、缩小并淡出。
+- 只有 `ProductionSystem.collect_outputs()` 成功提交后才开始播放动画。
+- 货堆在约 0.45 秒内原地上浮、缩小并淡出，动画期间立即停用点击，避免重复收取。
+- 货堆上方同步显示绿色“物品名称 +数量”，随货堆上浮并淡出，明确表示制品已经进入资产库。
 - HUD 继续使用现有资产增加反馈。
 - 若该物品仍有剩余，则按照最新数量级别重建或更新货堆。
 
@@ -232,6 +235,8 @@ production_system.collect_outputs(building, inventory_system, item_id)
 - 视觉丰满等级。
 
 存档继续只保存现有 `producer_state.outputs`。加载建筑并恢复 `ProducerState` 后，注册流程调用输出展示同步，按权威输出重建货堆。因此不需要存档格式迁移。
+
+`SaveManager` 为保证读档事务原子性，以不发送公开建筑放置信号的方式恢复建筑。读档成功后的编排层必须重新扫描全部已恢复建筑，并幂等连接 `interacted` 与 `output_collection_requested`；不能依赖读档前的初始扫描。连接失败或遗漏时，货堆虽然能由生产系统重建，但点击请求无法抵达资产库。
 
 ## 14. 兼容性与失败边界
 
@@ -277,6 +282,7 @@ production_system.collect_outputs(building, inventory_system, item_id)
 - 资产库容量不足时源和目标均不变。
 - 事务失败时完整回滚。
 - 收取成功后继续准备被输出容量阻塞的已完成任务。
+- 成功动画携带实际收取前的物品名称和数量，并在动画开始时禁用再次点击。
 
 ### 16.3 集成测试
 
@@ -287,6 +293,8 @@ production_system.collect_outputs(building, inventory_system, item_id)
 - 距离不足时显示反馈且不收取。
 - “满”和“修”仍正确显示。
 - 存档重载后货堆根据 `outputs` 正确重建。
+- 真实 `SaveManager.load_game()` 恢复的既有建筑会重新连接收取信号；点击恢复后的货堆能写入资产库并清除输出。
+- 成功收取后显示绿色“名称 +数量”，货堆上浮、缩小、淡出并最终释放。
 - 加工、资源和被动产出建筑采用相同规则。
 - 现有生产、经济、建筑及主游戏集成测试全部通过。
 
