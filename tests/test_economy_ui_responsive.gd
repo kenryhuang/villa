@@ -171,13 +171,18 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 		) as Button
 		assertions.equal(
 			market_tab.custom_minimum_size,
-			Vector2(104.0, 42.0),
+			Vector2(112.0, 44.0),
 			"market tab has fixed size"
 		)
 		assertions.equal(
 			orders_tab.custom_minimum_size,
 			market_tab.custom_minimum_size,
 			"tabs have equal size"
+		)
+		assertions.equal(
+			(shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton") as Button).custom_minimum_size,
+			Vector2(44.0, 44.0),
+			"market close aligns with top tabs"
 		)
 	shop.free()
 	var building := (
@@ -209,6 +214,13 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 			not (building.get_node("ScreenLayer") as CanvasLayer).visible,
 			"hiding the building root cannot leave a ghost modal layer"
 		)
+		assertions.equal(
+			building.production_tab.custom_minimum_size,
+			Vector2(112.0, 44.0),
+			"production tab uses aligned geometry"
+		)
+		assertions.equal(building.status_tab.custom_minimum_size, building.production_tab.custom_minimum_size, "building tabs remain equal")
+		assertions.equal(building.close_button.custom_minimum_size, Vector2(44.0, 44.0), "building close aligns with tabs")
 	building.free()
 
 
