@@ -190,6 +190,16 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 			(building.get_node("ScreenLayer/ModalLayer") as Control).theme != null,
 			"building overlay preserves the economy theme across CanvasLayer"
 		)
+		building.visible = true
+		assertions.truthy(
+			(building.get_node("ScreenLayer") as CanvasLayer).visible,
+			"showing the building root shows its CanvasLayer"
+		)
+		building.visible = false
+		assertions.truthy(
+			not (building.get_node("ScreenLayer") as CanvasLayer).visible,
+			"hiding the building root cannot leave a ghost modal layer"
+		)
 	building.free()
 
 
@@ -374,7 +384,9 @@ func _test_theme_contract(assertions: TestAssert) -> void:
 	var focus_style := theme.get_stylebox("focus", "Button") as StyleBoxFlat
 	assertions.truthy(panel_style != null, "theme supplies panel background")
 	assertions.truthy(card_style != null, "theme supplies card background")
-	assertions.truthy(focus_style != null and focus_style.border_width_left >= 2, "keyboard focus has visible border")
+	assertions.truthy(focus_style != null and focus_style.border_width_left == 2, "keyboard focus uses a thin two-pixel border")
+	assertions.equal((theme.get_stylebox("hover", "Button") as StyleBoxFlat).border_width_left, 1, "button hover keeps a one-pixel border")
+	assertions.equal((theme.get_stylebox("pressed", "Button") as StyleBoxFlat).border_width_left, 1, "button pressed state keeps a one-pixel border")
 	if panel_style != null:
 		assertions.equal(panel_style.bg_color, Color("#F1E5C8"), "theme uses exact panel color")
 		assertions.truthy(panel_style.corner_radius_top_left >= 8 and panel_style.corner_radius_top_left <= 12, "panel radius stays in design range")
@@ -557,6 +569,12 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy((panel.get_node("Columns/TradePanel/Content/DisabledReasonLabel") as Control).visible, "drawer keeps disabled reason visible")
 	assertions.truthy(panel.call("handle_top_escape"), "escape closes the open details drawer")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "closing drawer restores product list")
+	panel.size = Vector2(900.0, 500.0)
+	panel.call("open_details_drawer")
+	assertions.truthy((panel.get_node("Columns/DetailColumn/PriceChart") as Control).visible, "tall drawer keeps the price curve")
+	panel.size = Vector2(900.0, 390.0)
+	panel.call("apply_responsive_layout", Vector2(900.0, 390.0))
+	assertions.truthy(not (panel.get_node("Columns/DetailColumn/PriceChart") as Control).visible, "short drawer hides the price curve")
 	panel.call("apply_responsive_layout", Vector2(1920, 1080))
 	assertions.equal(panel.call("get_layout_mode"), "three_column", "market restores three columns after resize")
 	assertions.truthy(

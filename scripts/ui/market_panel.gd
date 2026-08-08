@@ -50,6 +50,7 @@ var sort_mode := "recommended"
 var _item_ids: Array[String] = []
 var _layout_mode := "three_column"
 var _drawer_open := false
+var _logical_layout_size := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -171,6 +172,7 @@ func handle_top_escape() -> bool:
 
 
 func apply_responsive_layout(logical_size: Vector2) -> void:
+	_logical_layout_size = logical_size
 	var next_mode: String = EconomyLayoutScript.mode_for_size(logical_size)
 	if next_mode == _layout_mode:
 		_apply_drawer_visibility()
@@ -216,8 +218,15 @@ func _apply_drawer_visibility() -> void:
 
 
 func _set_compact_detail(compact: bool) -> void:
-	price_chart.visible = not compact
-	$Columns/DetailColumn/ChartTitle.visible = not compact
+	var logical_height := _logical_layout_size.y
+	if logical_height <= 0.0:
+		logical_height = EconomyLayoutScript.logical_size_for(
+			size,
+			EconomyLayoutScript.get_ui_scale()
+		).y
+	var show_chart := not compact or logical_height >= 420.0
+	price_chart.visible = show_chart
+	$Columns/DetailColumn/ChartTitle.visible = show_chart
 	tags_label.visible = false
 	source_use_label.visible = false
 	processing_label.visible = false

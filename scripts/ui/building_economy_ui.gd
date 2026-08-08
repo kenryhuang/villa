@@ -39,6 +39,8 @@ func _ready() -> void:
 	visible = false
 	screen_layer.visible = false
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	if not visibility_changed.is_connected(_sync_screen_layer_visibility):
+		visibility_changed.connect(_sync_screen_layer_visibility)
 	if not close_button.pressed.is_connected(close):
 		close_button.pressed.connect(close)
 	if not get_viewport().size_changed.is_connected(_apply_compact_rect):
@@ -183,6 +185,11 @@ func _apply_compact_rect() -> void:
 	)
 	building_panel.position = rect.position
 	building_panel.size = rect.size
+
+
+func _sync_screen_layer_visibility() -> void:
+	if is_node_ready():
+		screen_layer.visible = visible
 
 
 func _apply_page_kind(kind: String) -> void:
