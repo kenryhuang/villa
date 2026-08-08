@@ -42,11 +42,11 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel",
 	])
 	_check_scene(assertions, MARKET_SCENE_PATH, [
-		"Columns/CatalogColumn/CategoryList/RawMaterials",
-		"Columns/CatalogColumn/CategoryList/Crops",
-		"Columns/CatalogColumn/CategoryList/ProcessedMaterials",
-		"Columns/CatalogColumn/CategoryList/FoodHandicrafts",
-		"Columns/CatalogColumn/CategoryList/RareGoods",
+		"Columns/CatalogColumn/CategoryTabs/RawMaterials",
+		"Columns/CatalogColumn/CategoryTabs/Crops",
+		"Columns/CatalogColumn/CategoryTabs/ProcessedMaterials",
+		"Columns/CatalogColumn/CategoryTabs/FoodHandicrafts",
+		"Columns/CatalogColumn/CategoryTabs/RareGoods",
 		"Columns/CatalogColumn/SortMode",
 		"Columns/CatalogColumn/ItemList",
 		"Columns/CatalogColumn/ItemScroll/ItemRows",

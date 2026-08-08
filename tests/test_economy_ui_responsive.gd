@@ -94,6 +94,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_compact_economy_geometry(assertions)
 	_test_compact_theme(assertions)
 	_test_compact_shells(assertions, tree)
+	_test_compact_market_layout(assertions)
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
@@ -177,6 +178,29 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 			"building modal renders above HUD"
 		)
 	building.free()
+
+
+func _test_compact_market_layout(assertions: TestAssert) -> void:
+	var market := (
+		(load("res://scenes/ui/economy/market_panel.tscn") as PackedScene).instantiate()
+		as Control
+	)
+	var catalog := market.get_node("Columns/CatalogColumn") as Control
+	var detail := market.get_node("Columns/DetailColumn") as Control
+	var trade := market.get_node("Columns/TradePanel") as Control
+	assertions.near(catalog.size_flags_stretch_ratio, 0.24, 0.001, "goods column is compact")
+	assertions.near(detail.size_flags_stretch_ratio, 0.49, 0.001, "curve owns the center")
+	assertions.near(trade.size_flags_stretch_ratio, 0.27, 0.001, "trade column is compact")
+	assertions.truthy(
+		(market.get_node("Columns/DetailColumn/PriceChart") as Control).custom_minimum_size.y
+		>= 190.0,
+		"central curve is prominent"
+	)
+	assertions.truthy(
+		market.has_node("Columns/CatalogColumn/CategoryTabs"),
+		"categories use compact segmented controls"
+	)
+	market.free()
 
 
 func _test_building_palette_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
@@ -359,7 +383,7 @@ func _test_shared_scene_tokens(assertions: TestAssert) -> void:
 			"ScreenLayer/ModalLayer/SignConfirmationLayer/Content": "EconomyCard",
 		},
 		"res://scenes/ui/economy/market_panel.tscn": {".": "EconomyCard"},
-		"res://scenes/ui/economy/trade_panel.tscn": {"ConfirmationLayer/Content": "EconomyCard"},
+		"res://scenes/ui/economy/trade_panel.tscn": {"ConfirmationLayer/Content": "EconomyCompactCard"},
 		"res://scenes/ui/economy/building_economy_ui.tscn": {"ScreenLayer/ModalLayer/BuildingPanel": "EconomyShell"},
 		"res://scenes/ui/economy/economy_notification_ui.tscn": {"NotificationCenter": "EconomyPaper"},
 	}
@@ -384,20 +408,20 @@ func _test_scene_font_overrides(assertions: TestAssert) -> void:
 			var font_size := control.get_theme_font_size("font_size")
 			var control_path := panel.get_path_to(control)
 			if control is BaseButton:
-				assertions.truthy(font_size >= 20, "%s %s button override is at least 20" % [scene_path, control_path])
+				assertions.truthy(font_size >= 18, "%s %s button override is at least 18" % [scene_path, control_path])
 			elif control is Label or control is LineEdit or control is RichTextLabel:
 				assertions.truthy(font_size >= 18, "%s %s text override is at least 18" % [scene_path, control_path])
 			if "title" in str(control.name).to_lower():
 				assertions.truthy(
-					font_size >= 24 and font_size <= 36,
-					"%s %s semantic title is 24-36" % [scene_path, control_path]
+					font_size >= 20 and font_size <= 36,
+					"%s %s semantic title is 20-36" % [scene_path, control_path]
 				)
 		panel.free()
 	for scene_path in MAIN_TITLE_CONTRACTS:
 		var panel := (load(scene_path) as PackedScene).instantiate() as Control
 		var title := panel.get_node(MAIN_TITLE_CONTRACTS[scene_path]) as Control
 		var title_size := title.get_theme_font_size("font_size")
-		assertions.truthy(title_size >= 24 and title_size <= 36, "%s main title is 24-36" % scene_path)
+		assertions.truthy(title_size >= 20 and title_size <= 36, "%s main title is 20-36" % scene_path)
 		panel.free()
 
 
@@ -613,7 +637,7 @@ func _test_shop_trade_modal_integration(assertions: TestAssert, tree: SceneTree)
 	var confirmation := trade.get_node("ConfirmationLayer") as Control
 	var confirm_button := trade.get_node("ConfirmationLayer/Content/VBox/Buttons/ConfirmButton") as Button
 	var orders_tab := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
-	var crops_button := market.get_node("Columns/CatalogColumn/CategoryList/Crops") as Button
+	var crops_button := market.get_node("Columns/CatalogColumn/CategoryTabs/Crops") as Button
 	var close_button := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton") as Button
 	var orders_clicks := InputCounter.new()
 	var crops_clicks := InputCounter.new()

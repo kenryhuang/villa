@@ -17,11 +17,11 @@ const SORT_IDS := ["recommended", "rise", "fall", "shortage", "owned_quantity", 
 const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名称"]
 
 @onready var category_buttons := {
-	"raw_materials": $Columns/CatalogColumn/CategoryList/RawMaterials,
-	"crops": $Columns/CatalogColumn/CategoryList/Crops,
-	"processed_materials": $Columns/CatalogColumn/CategoryList/ProcessedMaterials,
-	"food_handicrafts": $Columns/CatalogColumn/CategoryList/FoodHandicrafts,
-	"rare_goods": $Columns/CatalogColumn/CategoryList/RareGoods,
+	"raw_materials": $Columns/CatalogColumn/CategoryTabs/RawMaterials,
+	"crops": $Columns/CatalogColumn/CategoryTabs/Crops,
+	"processed_materials": $Columns/CatalogColumn/CategoryTabs/ProcessedMaterials,
+	"food_handicrafts": $Columns/CatalogColumn/CategoryTabs/FoodHandicrafts,
+	"rare_goods": $Columns/CatalogColumn/CategoryTabs/RareGoods,
 }
 @onready var sort_option: OptionButton = $Columns/CatalogColumn/SortMode
 @onready var item_list: ItemList = $Columns/CatalogColumn/ItemList
