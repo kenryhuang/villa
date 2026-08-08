@@ -64,7 +64,7 @@ func _run() -> void:
 	_check_scene("res://scenes/ui/economy/order_panel.tscn", ["Columns/Orders/OrderScroll/OrderRows"])
 	_check_scene("res://scenes/ui/economy/contract_panel.tscn", ["Content/Details/DeliverButton"])
 	_check_scene("res://scenes/ui/economy/service_panel.tscn", ["ServiceScroll/ServiceCards"])
-	_check_scene("res://scenes/ui/economy/building_economy_ui.tscn", ["ModalLayer/BuildingPanel", "WorldRangeOverlay"])
+	_check_scene("res://scenes/ui/economy/building_economy_ui.tscn", ["ScreenLayer/ModalLayer/BuildingPanel", "WorldRangeOverlay"])
 	_check_scene("res://scenes/ui/economy/economy_notification_ui.tscn", ["ToastStack", "NotificationCenter"])
 	_check(ResourceLoader.exists("res://tests/run_economy_ui_tests.gd"), "economy UI integration runner exists")
 	_check(ResourceLoader.exists("res://tests/capture_economy_ui.gd"), "economy UI capture runner exists")

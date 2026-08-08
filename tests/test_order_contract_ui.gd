@@ -119,15 +119,15 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 	if shop_scene != null:
 		var shop := shop_scene.instantiate()
 		assertions.truthy(
-			shop.has_node("ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel"),
+			shop.has_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel"),
 			"shop embeds the real order panel"
 		)
 		assertions.truthy(
-			shop.has_node("ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel"),
+			shop.has_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel"),
 			"shop embeds the real contract panel"
 		)
 		assertions.truthy(
-			shop.has_node("ModalLayer/SignConfirmationLayer"),
+			shop.has_node("ScreenLayer/ModalLayer/SignConfirmationLayer"),
 			"contract confirmation belongs to ShopUI ModalLayer"
 		)
 		shop.free()
@@ -318,7 +318,7 @@ func _test_contract_confirmation_and_delivery(assertions: TestAssert, tree: Scen
 		"shop configures order and contract dependencies"
 	)
 	shop.call("select_tab", "orders")
-	var order_panel := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel")
+	var order_panel := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel")
 	order_panel.call("set_filter", "urgent")
 	order_panel.call("select_order", "tiejiang_zhang:iron_ore:1")
 	shop.call("select_tab", "contracts")
@@ -327,14 +327,14 @@ func _test_contract_confirmation_and_delivery(assertions: TestAssert, tree: Scen
 	assertions.equal(order_panel.get("selected_order_id"), "tiejiang_zhang:iron_ore:1", "order selection survives a tab round trip")
 	shop.call("open", "contracts")
 	assertions.truthy(tree.paused, "contract page remains interactive while economy hub pauses")
-	var panel := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel")
+	var panel := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel")
 	panel.call("select_contract", "lao_li:grain:1:3")
 	panel.call("request_sign", "lao_li:grain:1:3")
-	assertions.truthy(shop.get_node("ModalLayer/SignConfirmationLayer").visible, "signing opens exactly one ShopUI confirmation")
+	assertions.truthy(shop.get_node("ScreenLayer/ModalLayer/SignConfirmationLayer").visible, "signing opens exactly one ShopUI confirmation")
 	assertions.equal((economy.get_contracts() as Array)[0].signed, false, "sign request alone creates no obligation")
 	shop.call("confirm_contract_sign")
 	assertions.equal((economy.get_contracts() as Array)[0].signed, true, "confirmed signing creates one cross-day obligation")
-	assertions.truthy(not shop.get_node("ModalLayer/SignConfirmationLayer").visible, "successful confirmation closes")
+	assertions.truthy(not shop.get_node("ScreenLayer/ModalLayer/SignConfirmationLayer").visible, "successful confirmation closes")
 	var gold_before: int = int(fixture.wallet.gold)
 	var npc_before := int(npc.get_npc_state("lao_li").inventory.get("grain", 0))
 	var pre_delivery_assets := _assets(fixture)
@@ -342,7 +342,7 @@ func _test_contract_confirmation_and_delivery(assertions: TestAssert, tree: Scen
 	assertions.equal(_assets(fixture), pre_delivery_assets, "extreme pre-delivery quantity changes no assets")
 	assertions.truthy(panel.get_node("Content/Details/ErrorLabel").text.contains("每日必须交付 5"), "extreme pre-delivery quantity shows the exact bound")
 	panel.call("request_delivery", "lao_li:grain:1:3", 5)
-	assertions.truthy(not shop.get_node("ModalLayer/SignConfirmationLayer").visible, "daily delivery never opens confirmation")
+	assertions.truthy(not shop.get_node("ScreenLayer/ModalLayer/SignConfirmationLayer").visible, "daily delivery never opens confirmation")
 	assertions.equal(inventory.get_item_count("grain"), 0, "contract delivery removes one authoritative daily quantity")
 	assertions.equal(int(npc.get_npc_state("lao_li").inventory.get("grain", 0)), npc_before + 5, "contract delivery updates real NPC inventory")
 	assertions.equal(fixture.wallet.gold, gold_before + 50, "contract daily delivery pays once")

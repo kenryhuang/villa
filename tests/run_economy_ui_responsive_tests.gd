@@ -11,8 +11,7 @@ func _init() -> void:
 func _run() -> void:
 	var assertions := TestAssertScript.new()
 	var suite := EconomyUIResponsiveTest.new()
-	suite.call("_test_compact_economy_geometry", assertions)
-	suite.call("_test_compact_theme", assertions)
+	await suite.run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d responsive economy UI checks" % assertions.checks)
 		quit(0)

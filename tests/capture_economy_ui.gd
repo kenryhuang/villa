@@ -305,7 +305,7 @@ func _build_waterwheel(stage: Control) -> void:
 	# Keep the actual status shell visible while exposing enough of the world to
 	# inspect projection, depth occlusion, and click-through around it.
 	ui.modal_layer.color = Color(0.13, 0.10, 0.09, 0.32)
-	var building_panel := ui.get_node("ModalLayer/BuildingPanel") as Control
+	var building_panel := ui.get_node("ScreenLayer/ModalLayer/BuildingPanel") as Control
 	building_panel.anchor_left = 0.56
 	building_panel.anchor_top = 0.05
 	building_panel.anchor_right = 0.97

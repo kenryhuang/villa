@@ -6,36 +6,39 @@ const EconomyModalCoordinatorScript = preload(
 	"res://scripts/ui/economy_modal_coordinator.gd"
 )
 const MarketPanelScript = preload("res://scripts/ui/market_panel.gd")
+const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
 
-@onready var modal_layer: ColorRect = $ModalLayer
-@onready var header_gold_label: Label = $ModalLayer/HubPanel/Margin/Shell/Header/GoldLabel
-@onready var date_label: Label = $ModalLayer/HubPanel/Margin/Shell/Header/DateLabel
-@onready var market_status_label: Label = $ModalLayer/HubPanel/Margin/Shell/Header/MarketStatusLabel
-@onready var close_button: Button = $ModalLayer/HubPanel/Margin/Shell/Header/CloseButton
+@onready var screen_layer: CanvasLayer = $ScreenLayer
+@onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
+@onready var hub_panel: PanelContainer = $ScreenLayer/ModalLayer/HubPanel
+@onready var header_gold_label: Label = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/GoldLabel
+@onready var date_label: Label = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/DateLabel
+@onready var market_status_label: Label = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/MarketStatusLabel
+@onready var close_button: Button = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton
 @onready var tab_buttons := {
-	"market": $ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab,
-	"orders": $ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab,
-	"contracts": $ModalLayer/HubPanel/Margin/Shell/Tabs/ContractsTab,
-	"services": $ModalLayer/HubPanel/Margin/Shell/Tabs/ServicesTab,
+	"market": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab,
+	"orders": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab,
+	"contracts": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/ContractsTab,
+	"services": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/ServicesTab,
 }
 @onready var pages := {
-	"market": $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel,
-	"orders": $ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel,
-	"contracts": $ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel,
-	"services": $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage,
+	"market": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel,
+	"orders": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel,
+	"contracts": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel,
+	"services": $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage,
 }
-@onready var market_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel
-@onready var service_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage
-@onready var order_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel
-@onready var contract_panel = $ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel
-@onready var trade_modal_blocker: Control = $ModalLayer/TradeModalBlocker
-@onready var trade_confirmation_layer: Control = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel/Columns/TradePanel/ConfirmationLayer
-@onready var trade_confirm_button: Button = $ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel/Columns/TradePanel/ConfirmationLayer/Content/VBox/Buttons/ConfirmButton
-@onready var sign_confirmation_layer: ColorRect = $ModalLayer/SignConfirmationLayer
-@onready var sign_summary_label: Label = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/SummaryLabel
-@onready var sign_error_label: Label = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/ErrorLabel
-@onready var sign_cancel_button: Button = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions/CancelButton
-@onready var sign_confirm_button: Button = $ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions/ConfirmButton
+@onready var market_panel = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel
+@onready var service_panel = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage
+@onready var order_panel = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/OrderPanel
+@onready var contract_panel = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel
+@onready var trade_modal_blocker: Control = $ScreenLayer/ModalLayer/TradeModalBlocker
+@onready var trade_confirmation_layer: Control = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel/Columns/TradePanel/ConfirmationLayer
+@onready var trade_confirm_button: Button = $ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel/Columns/TradePanel/ConfirmationLayer/Content/VBox/Buttons/ConfirmButton
+@onready var sign_confirmation_layer: ColorRect = $ScreenLayer/ModalLayer/SignConfirmationLayer
+@onready var sign_summary_label: Label = $ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox/SummaryLabel
+@onready var sign_error_label: Label = $ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox/ErrorLabel
+@onready var sign_cancel_button: Button = $ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions/CancelButton
+@onready var sign_confirm_button: Button = $ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions/ConfirmButton
 
 var selected_tab := "market"
 var _is_open := false
@@ -53,6 +56,9 @@ var _trade_modal_focus_modes: Dictionary = {}
 
 func _ready() -> void:
 	visible = false
+	screen_layer.visible = false
+	if not visibility_changed.is_connected(_sync_screen_layer_visibility):
+		visibility_changed.connect(_sync_screen_layer_visibility)
 	close_button.pressed.connect(close)
 	for tab_id in tab_buttons:
 		tab_buttons[tab_id].pressed.connect(select_tab.bind(tab_id))
@@ -66,6 +72,8 @@ func _ready() -> void:
 		trade_confirmation_layer.visibility_changed.connect(_on_trade_confirmation_visibility_changed)
 	if not resized.is_connected(_layout_trade_modal_blocker):
 		resized.connect(_layout_trade_modal_blocker)
+	if not get_viewport().size_changed.is_connected(_apply_compact_rect):
+		get_viewport().size_changed.connect(_apply_compact_rect)
 	trade_modal_blocker.visible = trade_confirmation_layer.visible
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
@@ -74,6 +82,7 @@ func _ready() -> void:
 		if not event_bus.day_changed.is_connected(_on_day_changed):
 			event_bus.day_changed.connect(_on_day_changed)
 	select_tab(selected_tab)
+	_apply_compact_rect()
 
 
 func configure(
@@ -115,6 +124,8 @@ func open(tab_id: String = "market", target_id: String = "") -> void:
 		return
 	_is_open = true
 	visible = true
+	screen_layer.visible = true
+	_apply_compact_rect()
 	if not _has_opened:
 		select_tab(tab_id if tab_id in VALID_TABS else "market")
 	elif tab_id != "market" and tab_id in VALID_TABS:
@@ -160,6 +171,7 @@ func select_tab(tab_id: String) -> bool:
 		pages[page_id].visible = page_id == selected_tab
 	for button_id in tab_buttons:
 		tab_buttons[button_id].button_pressed = button_id == selected_tab
+	_apply_tab_styles()
 	if selected_tab == "market" and _market_ref != null:
 		market_panel.refresh_snapshot()
 	elif selected_tab == "orders" and _economy_ref != null:
@@ -178,6 +190,7 @@ func close() -> void:
 	if trade_confirmation_layer.visible:
 		trade_confirmation_layer.get_parent().call("dismiss_confirmation")
 	dismiss_contract_sign()
+	screen_layer.visible = false
 	visible = false
 	_modal_coordinator.release(self)
 
@@ -200,10 +213,34 @@ func _layout_trade_modal_blocker() -> void:
 	var blocker_origin := trade_modal_blocker.get_global_rect().position
 	var trade_rect := trade_confirmation_layer.get_global_rect()
 	var hole := Rect2(trade_rect.position - blocker_origin, trade_rect.size)
-	_set_blocker_rect($ModalLayer/TradeModalBlocker/Top, Rect2(0.0, 0.0, blocker_size.x, maxf(0.0, hole.position.y)))
-	_set_blocker_rect($ModalLayer/TradeModalBlocker/Bottom, Rect2(0.0, hole.end.y, blocker_size.x, maxf(0.0, blocker_size.y - hole.end.y)))
-	_set_blocker_rect($ModalLayer/TradeModalBlocker/Left, Rect2(0.0, hole.position.y, maxf(0.0, hole.position.x), hole.size.y))
-	_set_blocker_rect($ModalLayer/TradeModalBlocker/Right, Rect2(hole.end.x, hole.position.y, maxf(0.0, blocker_size.x - hole.end.x), hole.size.y))
+	_set_blocker_rect($ScreenLayer/ModalLayer/TradeModalBlocker/Top, Rect2(0.0, 0.0, blocker_size.x, maxf(0.0, hole.position.y)))
+	_set_blocker_rect($ScreenLayer/ModalLayer/TradeModalBlocker/Bottom, Rect2(0.0, hole.end.y, blocker_size.x, maxf(0.0, blocker_size.y - hole.end.y)))
+	_set_blocker_rect($ScreenLayer/ModalLayer/TradeModalBlocker/Left, Rect2(0.0, hole.position.y, maxf(0.0, hole.position.x), hole.size.y))
+	_set_blocker_rect($ScreenLayer/ModalLayer/TradeModalBlocker/Right, Rect2(hole.end.x, hole.position.y, maxf(0.0, blocker_size.x - hole.end.x), hole.size.y))
+
+
+func _apply_compact_rect() -> void:
+	if not is_node_ready():
+		return
+	var rect := EconomyLayoutScript.panel_rect_for(
+		get_viewport_rect().size,
+		EconomyLayoutScript.MARKET_PANEL_MAX_SIZE
+	)
+	hub_panel.position = rect.position
+	hub_panel.size = rect.size
+
+
+func _apply_tab_styles() -> void:
+	for tab_id in tab_buttons:
+		var button := tab_buttons[tab_id] as Button
+		button.theme_type_variation = (
+			&"EconomyTabSelected" if tab_id == selected_tab else &"EconomyTab"
+		)
+
+
+func _sync_screen_layer_visibility() -> void:
+	if is_node_ready():
+		screen_layer.visible = visible
 
 
 func _set_blocker_rect(control: Control, rect: Rect2) -> void:

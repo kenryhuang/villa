@@ -18,7 +18,10 @@ mouse_filter = 1
 script = ExtResource("1_shop")
 theme = ExtResource("6_theme")
 
-[node name="ModalLayer" type="ColorRect" parent="."]
+[node name="ScreenLayer" type="CanvasLayer" parent="."]
+layer = 20
+
+[node name="ModalLayer" type="ColorRect" parent="ScreenLayer"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -26,38 +29,32 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
-color = Color(0.129412, 0.101961, 0.0862745, 0.65098)
+color = Color(0.129412, 0.101961, 0.0862745, 0.28)
 
-[node name="HubPanel" type="PanelContainer" parent="ModalLayer"]
+[node name="HubPanel" type="PanelContainer" parent="ScreenLayer/ModalLayer"]
 layout_mode = 1
-anchor_left = 0.04
-anchor_top = 0.01
-anchor_right = 0.96
-anchor_bottom = 0.99
-grow_horizontal = 2
-grow_vertical = 2
-theme_type_variation = &"EconomyPaper"
+theme_type_variation = &"EconomyShell"
 
-[node name="Margin" type="MarginContainer" parent="ModalLayer/HubPanel"]
+[node name="Margin" type="MarginContainer" parent="ScreenLayer/ModalLayer/HubPanel"]
 layout_mode = 2
 
-[node name="Shell" type="VBoxContainer" parent="ModalLayer/HubPanel/Margin"]
+[node name="Shell" type="VBoxContainer" parent="ScreenLayer/ModalLayer/HubPanel/Margin"]
 layout_mode = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="ModalLayer/HubPanel/Margin/Shell"]
+[node name="Header" type="HBoxContainer" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 10
 
-[node name="TitleLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
-custom_minimum_size = Vector2(190, 52)
+[node name="TitleLabel" type="Label" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header"]
+custom_minimum_size = Vector2(160, 42)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.317647, 0.231373, 0.184314, 1)
-theme_override_font_sizes/font_size = 32
+theme_override_font_sizes/font_size = 26
 text = "区域市场"
 vertical_alignment = 1
 
-[node name="MarketStatusLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+[node name="MarketStatusLabel" type="Label" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
@@ -65,68 +62,68 @@ theme_override_font_sizes/font_size = 18
 text = "市场总体：平稳"
 vertical_alignment = 1
 
-[node name="CaravanStatusLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+[node name="CaravanStatusLabel" type="Label" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "商队：未到访"
 vertical_alignment = 1
 
-[node name="GoldLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+[node name="GoldLabel" type="Label" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.772549, 0.545098, 0.207843, 1)
 theme_override_font_sizes/font_size = 20
 text = "金币 100"
 vertical_alignment = 1
 
-[node name="DateLabel" type="Label" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
+[node name="DateLabel" type="Label" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 text = "春 1/7"
 vertical_alignment = 1
 
-[node name="CloseButton" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Header"]
-custom_minimum_size = Vector2(92, 48)
+[node name="CloseButton" type="Button" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header"]
+custom_minimum_size = Vector2(42, 42)
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "关闭"
+text = "×"
 
-[node name="Tabs" type="HBoxContainer" parent="ModalLayer/HubPanel/Margin/Shell"]
+[node name="Tabs" type="HBoxContainer" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
-[node name="MarketTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
-custom_minimum_size = Vector2(140, 46)
+[node name="MarketTab" type="Button" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(104, 42)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"EconomyTab"
 toggle_mode = true
 text = "市集"
 
-[node name="OrdersTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
-custom_minimum_size = Vector2(140, 46)
+[node name="OrdersTab" type="Button" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(104, 42)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"EconomyTab"
 toggle_mode = true
 text = "订单"
 
-[node name="ContractsTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
-custom_minimum_size = Vector2(140, 46)
+[node name="ContractsTab" type="Button" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(104, 42)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"EconomyTab"
 toggle_mode = true
 text = "合同"
 
-[node name="ServicesTab" type="Button" parent="ModalLayer/HubPanel/Margin/Shell/Tabs"]
-custom_minimum_size = Vector2(140, 46)
+[node name="ServicesTab" type="Button" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs"]
+custom_minimum_size = Vector2(104, 42)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"EconomyTab"
 toggle_mode = true
 text = "服务"
 
-[node name="PageHost" type="Control" parent="ModalLayer/HubPanel/Margin/Shell"]
+[node name="PageHost" type="Control" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="MarketPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("2_market")]
+[node name="MarketPanel" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("2_market")]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -134,7 +131,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="OrderPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("4_order")]
+[node name="OrderPanel" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("4_order")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -143,7 +140,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="ContractPanel" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("5_contract")]
+[node name="ContractPanel" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("5_contract")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -152,7 +149,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="ServicesPage" parent="ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("3_service")]
+[node name="ServicesPage" parent="ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost" instance=ExtResource("3_service")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -161,7 +158,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="TradeModalBlocker" type="Control" parent="ModalLayer"]
+[node name="TradeModalBlocker" type="Control" parent="ScreenLayer/ModalLayer"]
 visible = false
 z_index = 1
 layout_mode = 1
@@ -172,23 +169,23 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Top" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+[node name="Top" type="ColorRect" parent="ScreenLayer/ModalLayer/TradeModalBlocker"]
 mouse_filter = 0
 color = Color(0, 0, 0, 0)
 
-[node name="Bottom" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+[node name="Bottom" type="ColorRect" parent="ScreenLayer/ModalLayer/TradeModalBlocker"]
 mouse_filter = 0
 color = Color(0, 0, 0, 0)
 
-[node name="Left" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+[node name="Left" type="ColorRect" parent="ScreenLayer/ModalLayer/TradeModalBlocker"]
 mouse_filter = 0
 color = Color(0, 0, 0, 0)
 
-[node name="Right" type="ColorRect" parent="ModalLayer/TradeModalBlocker"]
+[node name="Right" type="ColorRect" parent="ScreenLayer/ModalLayer/TradeModalBlocker"]
 mouse_filter = 0
 color = Color(0, 0, 0, 0)
 
-[node name="SignConfirmationLayer" type="ColorRect" parent="ModalLayer"]
+[node name="SignConfirmationLayer" type="ColorRect" parent="ScreenLayer/ModalLayer"]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -199,7 +196,7 @@ grow_vertical = 2
 mouse_filter = 0
 color = Color(0.129412, 0.101961, 0.0862745, 0.65098)
 
-[node name="Content" type="PanelContainer" parent="ModalLayer/SignConfirmationLayer"]
+[node name="Content" type="PanelContainer" parent="ScreenLayer/ModalLayer/SignConfirmationLayer"]
 layout_mode = 1
 anchor_left = 0.3
 anchor_top = 0.25
@@ -209,43 +206,43 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"EconomyCard"
 
-[node name="Margin" type="MarginContainer" parent="ModalLayer/SignConfirmationLayer/Content"]
+[node name="Margin" type="MarginContainer" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content"]
 layout_mode = 2
 
-[node name="VBox" type="VBoxContainer" parent="ModalLayer/SignConfirmationLayer/Content/Margin"]
+[node name="VBox" type="VBoxContainer" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="TitleLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+[node name="TitleLabel" type="Label" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
 text = "确认签订长期合同"
 
-[node name="SummaryLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+[node name="SummaryLabel" type="Label" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 19
 text = "合同会产生跨日交付义务。"
 autowrap_mode = 2
 
-[node name="ErrorLabel" type="Label" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+[node name="ErrorLabel" type="Label" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.714, 0.361, 0.294, 1)
 theme_override_font_sizes/font_size = 18
 autowrap_mode = 2
 
-[node name="Actions" type="HBoxContainer" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
+[node name="Actions" type="HBoxContainer" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="CancelButton" type="Button" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
+[node name="CancelButton" type="Button" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
 custom_minimum_size = Vector2(140, 50)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = "取消"
 
-[node name="ConfirmButton" type="Button" parent="ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
+[node name="ConfirmButton" type="Button" parent="ScreenLayer/ModalLayer/SignConfirmationLayer/Content/Margin/VBox/Actions"]
 custom_minimum_size = Vector2(140, 50)
 layout_mode = 2
 size_flags_horizontal = 3

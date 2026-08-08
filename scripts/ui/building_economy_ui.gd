@@ -9,13 +9,18 @@ const PRODUCTION_BUILDINGS := [
 const STATUS_BUILDINGS := [
 	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine",
 ]
+const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
 
-@onready var modal_layer: ColorRect = $ModalLayer
-@onready var title_label: Label = $ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel
-@onready var state_label: Label = $ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel
-@onready var close_button: Button = $ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton
-@onready var production_panel: BuildingProductionPanel = $ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel
-@onready var status_panel: BuildingStatusPanel = $ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel
+@onready var screen_layer: CanvasLayer = $ScreenLayer
+@onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
+@onready var building_panel: PanelContainer = $ScreenLayer/ModalLayer/BuildingPanel
+@onready var title_label: Label = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel
+@onready var state_label: Label = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel
+@onready var close_button: Button = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton
+@onready var production_tab: Button = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Tabs/ProductionTab
+@onready var status_tab: Button = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Tabs/StatusTab
+@onready var production_panel: BuildingProductionPanel = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel
+@onready var status_panel: BuildingStatusPanel = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel
 @onready var range_overlay: WorldRangeOverlay = $WorldRangeOverlay
 
 var _production: ProductionSystem
@@ -29,9 +34,13 @@ var _is_open := false
 
 func _ready() -> void:
 	visible = false
+	screen_layer.visible = false
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	if not close_button.pressed.is_connected(close):
 		close_button.pressed.connect(close)
+	if not get_viewport().size_changed.is_connected(_apply_compact_rect):
+		get_viewport().size_changed.connect(_apply_compact_rect)
+	_apply_compact_rect()
 	_connect_panel_signals()
 	if is_configured():
 		production_panel.configure(_production, _inventory, _progression)
@@ -84,9 +93,10 @@ func open_for(building: BuildingInstance) -> bool:
 			return false
 		_is_open = true
 		visible = true
+		screen_layer.visible = true
+		_apply_compact_rect()
 	title_label.text = building.data.display_name if building.data != null else building.building_id
-	production_panel.visible = kind == "production"
-	status_panel.visible = kind == "status"
+	_apply_page_kind(kind)
 	if kind == "production":
 		production_panel.show_building(building)
 		state_label.text = _production_state_text()
@@ -103,6 +113,7 @@ func close() -> void:
 		return
 	var building := current_building()
 	_is_open = false
+	screen_layer.visible = false
 	visible = false
 	_disconnect_current_building()
 	if _modal != null:
@@ -154,6 +165,32 @@ func _disconnect_current_building() -> void:
 	if building != null and building.tree_exiting.is_connected(_on_current_building_tree_exiting):
 		building.tree_exiting.disconnect(_on_current_building_tree_exiting)
 	_building_ref = null
+
+
+func _apply_compact_rect() -> void:
+	if not is_node_ready():
+		return
+	var rect := EconomyLayoutScript.panel_rect_for(
+		get_viewport_rect().size,
+		EconomyLayoutScript.BUILDING_PANEL_MAX_SIZE
+	)
+	building_panel.position = rect.position
+	building_panel.size = rect.size
+
+
+func _apply_page_kind(kind: String) -> void:
+	production_panel.visible = kind == "production"
+	status_panel.visible = kind == "status"
+	production_tab.button_pressed = kind == "production"
+	status_tab.button_pressed = kind == "status"
+	production_tab.disabled = kind != "production"
+	status_tab.disabled = kind != "status"
+	production_tab.theme_type_variation = (
+		&"EconomyTabSelected" if kind == "production" else &"EconomyTab"
+	)
+	status_tab.theme_type_variation = (
+		&"EconomyTabSelected" if kind == "status" else &"EconomyTab"
+	)
 
 
 func _production_state_text(state: String = "") -> String:

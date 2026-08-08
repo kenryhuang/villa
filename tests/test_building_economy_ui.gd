@@ -41,11 +41,11 @@ func _test_routing(assertions: TestAssert) -> void:
 
 func _test_scene_contracts(assertions: TestAssert) -> void:
 	_check_scene(assertions, UI_SCENE, [
-		"ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
-		"ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel",
-		"ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton",
-		"ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel",
-		"ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel",
 		"WorldRangeOverlay",
 	])
 	_check_scene(assertions, PRODUCTION_SCENE, [

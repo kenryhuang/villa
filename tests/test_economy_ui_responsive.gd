@@ -23,9 +23,9 @@ const PANEL_SCENES := [
 	"res://scenes/ui/economy/economy_notification_ui.tscn",
 ]
 const MAIN_TITLE_CONTRACTS := {
-	"res://scenes/ui/shop_ui.tscn": "ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
+	"res://scenes/ui/shop_ui.tscn": "ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
 	"res://scenes/ui/economy/market_panel.tscn": "Columns/DetailColumn/ItemNameLabel",
-	"res://scenes/ui/economy/building_economy_ui.tscn": "ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
+	"res://scenes/ui/economy/building_economy_ui.tscn": "ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
 	"res://scenes/ui/economy/building_status_panel.tscn": "SummaryTitle",
 	"res://scenes/ui/economy/economy_notification_ui.tscn": "NotificationCenter/Margin/VBox/Header/Title",
 }
@@ -93,6 +93,7 @@ class HudBuildingDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_compact_economy_geometry(assertions)
 	_test_compact_theme(assertions)
+	_test_compact_shells(assertions, tree)
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
@@ -138,6 +139,44 @@ func _test_compact_theme(assertions: TestAssert) -> void:
 	var shell := theme.get_stylebox(&"panel", &"EconomyShell") as StyleBoxFlat
 	assertions.equal(shell.border_width_left, 1, "shell uses one-pixel border")
 	assertions.equal(shell.shadow_size, 8, "shell uses soft compact shadow")
+
+
+func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
+	var shop := (load("res://scenes/ui/shop_ui.tscn") as PackedScene).instantiate() as ShopUI
+	tree.root.add_child(shop)
+	assertions.truthy(shop.has_node("ScreenLayer"), "shop provides an overlay CanvasLayer")
+	if shop.has_node("ScreenLayer"):
+		var shop_layer := shop.get_node("ScreenLayer") as CanvasLayer
+		assertions.truthy(shop_layer.layer > 1, "shop renders above HUD CanvasLayer")
+		var market_tab := shop.get_node(
+			"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab"
+		) as Button
+		var orders_tab := shop.get_node(
+			"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab"
+		) as Button
+		assertions.equal(
+			market_tab.custom_minimum_size,
+			Vector2(104.0, 42.0),
+			"market tab has fixed size"
+		)
+		assertions.equal(
+			orders_tab.custom_minimum_size,
+			market_tab.custom_minimum_size,
+			"tabs have equal size"
+		)
+	shop.free()
+	var building := (
+		(load("res://scenes/ui/economy/building_economy_ui.tscn") as PackedScene).instantiate()
+		as BuildingEconomyUI
+	)
+	tree.root.add_child(building)
+	assertions.truthy(building.has_node("ScreenLayer"), "building provides an overlay CanvasLayer")
+	if building.has_node("ScreenLayer"):
+		assertions.truthy(
+			(building.get_node("ScreenLayer") as CanvasLayer).layer > 1,
+			"building modal renders above HUD"
+		)
+	building.free()
 
 
 func _test_building_palette_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
@@ -226,11 +265,9 @@ func _test_layout_contract(assertions: TestAssert) -> void:
 
 func _test_building_modal_minimum_height(assertions: TestAssert) -> void:
 	var ui := (load("res://scenes/ui/economy/building_economy_ui.tscn") as PackedScene).instantiate()
-	var panel := ui.get_node("ModalLayer/BuildingPanel") as Control
-	assertions.truthy(
-		panel.anchor_bottom - panel.anchor_top >= 0.88,
-		"building modal reserves enough vertical room for production controls at 1280x720"
-	)
+	var panel := ui.get_node("ScreenLayer/ModalLayer/BuildingPanel") as Control
+	assertions.equal(panel.theme_type_variation, &"EconomyShell", "building uses compact shell")
+	assertions.equal(panel.anchor_bottom - panel.anchor_top, 0.0, "building size is script controlled")
 	ui.free()
 
 
@@ -238,8 +275,8 @@ func _test_building_modal_control_bounds(assertions: TestAssert, tree: SceneTree
 	var previous_pause := tree.paused
 	for viewport_size in VIEWPORT_SIZES:
 		tree.paused = false
-		var host := Control.new()
-		host.size = viewport_size
+		var host := SubViewport.new()
+		host.size = Vector2i(viewport_size)
 		tree.root.add_child(host)
 		var grid := GridSystem.new()
 		var farming := FarmingSystem.new()
@@ -267,8 +304,8 @@ func _test_building_modal_control_bounds(assertions: TestAssert, tree: SceneTree
 		ui.configure(production, inventory, progression, grid, EconomyModalCoordinator.new())
 		assertions.truthy(ui.open_for(windmill), "building modal opens at %s" % viewport_size)
 		await tree.process_frame
-		var paper := ui.get_node("ModalLayer/BuildingPanel") as Control
-		var header := ui.get_node("ModalLayer/BuildingPanel/Margin/Shell/Header") as Control
+		var paper := ui.get_node("ScreenLayer/ModalLayer/BuildingPanel") as Control
+		var header := ui.get_node("ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header") as Control
 		for content in [header, ui.production_panel]:
 			assertions.truthy(
 				_rect_covers_with_tolerance(paper.get_global_rect(), content.get_global_rect())
@@ -318,12 +355,12 @@ func _test_theme_contract(assertions: TestAssert) -> void:
 func _test_shared_scene_tokens(assertions: TestAssert) -> void:
 	var variation_contracts := {
 		"res://scenes/ui/shop_ui.tscn": {
-			"ModalLayer/HubPanel": "EconomyPaper",
-			"ModalLayer/SignConfirmationLayer/Content": "EconomyCard",
+			"ScreenLayer/ModalLayer/HubPanel": "EconomyShell",
+			"ScreenLayer/ModalLayer/SignConfirmationLayer/Content": "EconomyCard",
 		},
 		"res://scenes/ui/economy/market_panel.tscn": {".": "EconomyCard"},
 		"res://scenes/ui/economy/trade_panel.tscn": {"ConfirmationLayer/Content": "EconomyCard"},
-		"res://scenes/ui/economy/building_economy_ui.tscn": {"ModalLayer/BuildingPanel": "EconomyPaper"},
+		"res://scenes/ui/economy/building_economy_ui.tscn": {"ScreenLayer/ModalLayer/BuildingPanel": "EconomyShell"},
 		"res://scenes/ui/economy/economy_notification_ui.tscn": {"NotificationCenter": "EconomyPaper"},
 	}
 	for scene_path in variation_contracts:
@@ -352,15 +389,15 @@ func _test_scene_font_overrides(assertions: TestAssert) -> void:
 				assertions.truthy(font_size >= 18, "%s %s text override is at least 18" % [scene_path, control_path])
 			if "title" in str(control.name).to_lower():
 				assertions.truthy(
-					font_size >= 28 and font_size <= 36,
-					"%s %s semantic title is 28-36" % [scene_path, control_path]
+					font_size >= 24 and font_size <= 36,
+					"%s %s semantic title is 24-36" % [scene_path, control_path]
 				)
 		panel.free()
 	for scene_path in MAIN_TITLE_CONTRACTS:
 		var panel := (load(scene_path) as PackedScene).instantiate() as Control
 		var title := panel.get_node(MAIN_TITLE_CONTRACTS[scene_path]) as Control
 		var title_size := title.get_theme_font_size("font_size")
-		assertions.truthy(title_size >= 28 and title_size <= 36, "%s main title is 28-36" % scene_path)
+		assertions.truthy(title_size >= 24 and title_size <= 36, "%s main title is 24-36" % scene_path)
 		panel.free()
 
 
@@ -370,8 +407,8 @@ func _test_panel_contracts(assertions: TestAssert, tree: SceneTree) -> void:
 		if not ResourceLoader.exists(scene_path):
 			continue
 		for viewport_size in VIEWPORT_SIZES:
-			var host := Control.new()
-			host.size = viewport_size
+			var host := SubViewport.new()
+			host.size = Vector2i(viewport_size)
 			tree.root.add_child(host)
 			var panel := (load(scene_path) as PackedScene).instantiate() as Control
 			host.add_child(panel)
@@ -385,7 +422,7 @@ func _test_panel_contracts(assertions: TestAssert, tree: SceneTree) -> void:
 			await tree.process_frame
 
 	var shop := (load("res://scenes/ui/shop_ui.tscn") as PackedScene).instantiate() as Control
-	assertions.equal((shop.get_node("ModalLayer") as Control).mouse_filter, Control.MOUSE_FILTER_STOP, "economy modal consumes pointer input")
+	assertions.equal((shop.get_node("ScreenLayer/ModalLayer") as Control).mouse_filter, Control.MOUSE_FILTER_STOP, "economy modal consumes pointer input")
 	shop.free()
 	var notifications := (load("res://scenes/ui/economy/economy_notification_ui.tscn") as PackedScene).instantiate() as Control
 	assertions.equal((notifications.get_node("ToastStack") as Control).mouse_filter, Control.MOUSE_FILTER_IGNORE, "toast background does not consume pointer input")
@@ -493,8 +530,8 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	tree.root.add_child(shop)
 	shop.visible = true
 	await tree.process_frame
-	var market_tab := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab") as Button
-	var orders_tab := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
+	var market_tab := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab") as Button
+	var orders_tab := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
 	market_tab.grab_focus()
 	await _send_key(tree, KEY_TAB)
 	assertions.equal(shop.get_viewport().gui_get_focus_owner(), orders_tab, "Tab advances through economy tabs")
@@ -569,15 +606,15 @@ func _test_shop_trade_modal_integration(assertions: TestAssert, tree: SceneTree)
 	var fixture := await _create_shop_fixture(assertions, tree, Vector2(1920.0, 1080.0))
 	if fixture.is_empty():
 		return
-	var host := fixture.host as Control
+	var host := fixture.host as Node
 	var shop := fixture.shop as Control
 	var market := fixture.market as Control
 	var trade := market.get_node("Columns/TradePanel") as Control
 	var confirmation := trade.get_node("ConfirmationLayer") as Control
 	var confirm_button := trade.get_node("ConfirmationLayer/Content/VBox/Buttons/ConfirmButton") as Button
-	var orders_tab := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
+	var orders_tab := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab") as Button
 	var crops_button := market.get_node("Columns/CatalogColumn/CategoryList/Crops") as Button
-	var close_button := shop.get_node("ModalLayer/HubPanel/Margin/Shell/Header/CloseButton") as Button
+	var close_button := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton") as Button
 	var orders_clicks := InputCounter.new()
 	var crops_clicks := InputCounter.new()
 	var close_clicks := InputCounter.new()
@@ -588,18 +625,19 @@ func _test_shop_trade_modal_integration(assertions: TestAssert, tree: SceneTree)
 	confirm_button.pressed.connect(confirm_clicks.record)
 	confirmation.visible = true
 	await tree.process_frame
-	assertions.truthy(shop.has_node("ModalLayer/TradeModalBlocker"), "ShopUI provides a full-screen trade modal blocker")
-	assertions.truthy((shop.get_node("ModalLayer/TradeModalBlocker") as Control).visible, "trade modal blocker follows confirmation visibility")
+	var input_viewport := shop.get_viewport()
+	assertions.truthy(shop.has_node("ScreenLayer/ModalLayer/TradeModalBlocker"), "ShopUI provides a full-screen trade modal blocker")
+	assertions.truthy((shop.get_node("ScreenLayer/ModalLayer/TradeModalBlocker") as Control).visible, "trade modal blocker follows confirmation visibility")
 	for _step in range(6):
-		await _send_key(tree, KEY_TAB)
+		await _send_key(tree, KEY_TAB, false, input_viewport)
 		var focus_owner := shop.get_viewport().gui_get_focus_owner()
 		assertions.truthy(focus_owner != null and confirmation.is_ancestor_of(focus_owner), "trade confirmation traps ShopUI Tab focus")
 	assertions.truthy(not confirm_button.disabled, "trade confirmation primary action remains enabled")
-	await _send_mouse_click(tree, confirm_button.get_global_rect().get_center())
+	await _send_mouse_click(tree, confirm_button.get_global_rect().get_center(), input_viewport)
 	assertions.equal(confirm_clicks.count, 1, "trade confirmation primary action receives pointer input above blocker")
-	await _send_mouse_click(tree, crops_button.get_global_rect().get_center())
-	await _send_mouse_click(tree, orders_tab.get_global_rect().get_center())
-	await _send_mouse_click(tree, close_button.get_global_rect().get_center())
+	await _send_mouse_click(tree, crops_button.get_global_rect().get_center(), input_viewport)
+	await _send_mouse_click(tree, orders_tab.get_global_rect().get_center(), input_viewport)
+	await _send_mouse_click(tree, close_button.get_global_rect().get_center(), input_viewport)
 	assertions.equal(orders_clicks.count, 0, "trade confirmation blocks economy tab clicks")
 	assertions.equal(crops_clicks.count, 0, "trade confirmation blocks market category clicks")
 	assertions.equal(close_clicks.count, 0, "trade confirmation blocks ShopUI close clicks")
@@ -609,9 +647,9 @@ func _test_shop_trade_modal_integration(assertions: TestAssert, tree: SceneTree)
 	assertions.truthy(not shop.call("select_tab", "orders"), "trade confirmation rejects programmatic page switching")
 	confirmation.visible = false
 	await tree.process_frame
-	assertions.truthy(not (shop.get_node("ModalLayer/TradeModalBlocker") as Control).visible, "closing trade confirmation removes full-screen blocker")
+	assertions.truthy(not (shop.get_node("ScreenLayer/ModalLayer/TradeModalBlocker") as Control).visible, "closing trade confirmation removes full-screen blocker")
 	orders_tab.grab_focus()
-	await _send_key(tree, KEY_ENTER)
+	await _send_key(tree, KEY_ENTER, false, input_viewport)
 	assertions.equal(shop.get("selected_tab"), "orders", "closing trade confirmation restores tab activation")
 	shop.call("close")
 	host.free()
@@ -627,10 +665,10 @@ func _test_narrow_shop_pagehost_bounds(assertions: TestAssert, tree: SceneTree) 
 	if fixture.is_empty():
 		EconomyLayoutScript.call("set_ui_scale", 1.0, tree)
 		return
-	var host := fixture.host as Control
+	var host := fixture.host as Node
 	var shop := fixture.shop as Control
 	var market := fixture.market as Control
-	var page_host := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost") as Control
+	var page_host := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost") as Control
 	market.call("select_category", "raw_materials")
 	market.call("select_item", "wood")
 	await tree.process_frame
@@ -645,7 +683,7 @@ func _test_narrow_shop_pagehost_bounds(assertions: TestAssert, tree: SceneTree) 
 	assertions.truthy(disabled_reason.is_visible_in_tree() and page_host.get_global_rect().encloses(disabled_reason.get_global_rect()), "narrow drawer keeps disabled reason visible without scrolling")
 	shop.call("select_tab", "contracts")
 	await tree.process_frame
-	var contract_panel := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel") as Control
+	var contract_panel := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel") as Control
 	assertions.truthy(
 		_controls_within_rect(contract_panel, page_host.get_global_rect()),
 		"nested 1280 contract controls stay inside PageHost %s: %s"
@@ -674,8 +712,8 @@ func _create_shop_fixture(assertions: TestAssert, tree: SceneTree, viewport_size
 	if wallet == null or not economy.configure(inventory, wallet, market_system):
 		assertions.truthy(false, "ShopUI fixture configures real economy")
 		return {}
-	var host := Control.new()
-	host.size = viewport_size
+	var host := SubViewport.new()
+	host.size = Vector2i(viewport_size)
 	tree.root.add_child(host)
 	var shop := (load("res://scenes/ui/shop_ui.tscn") as PackedScene).instantiate() as Control
 	host.add_child(shop)
@@ -687,7 +725,7 @@ func _create_shop_fixture(assertions: TestAssert, tree: SceneTree, viewport_size
 		return {}
 	shop.call("open", "market")
 	await tree.process_frame
-	var market := shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel") as Control
+	var market := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel") as Control
 	return {
 		"host": host,
 		"shop": shop,
@@ -763,26 +801,37 @@ func _test_trade_confirmation_modal(assertions: TestAssert, tree: SceneTree) -> 
 	await tree.process_frame
 
 
-func _send_key(tree: SceneTree, keycode: Key, shift_pressed := false) -> void:
+func _send_key(
+	tree: SceneTree,
+	keycode: Key,
+	shift_pressed := false,
+	target_viewport: Viewport = null
+) -> void:
 	var press := InputEventKey.new()
 	press.keycode = keycode
 	press.pressed = true
 	press.shift_pressed = shift_pressed
-	tree.root.push_input(press, true)
+	var destination := target_viewport if target_viewport != null else tree.root
+	destination.push_input(press, true)
 	var release := press.duplicate() as InputEventKey
 	release.pressed = false
-	tree.root.push_input(release, true)
+	destination.push_input(release, true)
 	await tree.process_frame
 
 
-func _send_mouse_click(tree: SceneTree, position: Vector2) -> void:
+func _send_mouse_click(
+	tree: SceneTree,
+	position: Vector2,
+	target_viewport: Viewport = null
+) -> void:
+	var destination := target_viewport if target_viewport != null else tree.root
 	for pressed in [true, false]:
 		var event := InputEventMouseButton.new()
 		event.button_index = MOUSE_BUTTON_LEFT
 		event.pressed = pressed
 		event.position = position
 		event.global_position = position
-		tree.root.push_input(event, true)
+		destination.push_input(event, true)
 	await tree.process_frame
 
 

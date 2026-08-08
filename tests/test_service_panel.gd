@@ -160,7 +160,7 @@ func _test_categories_cards_transactions_and_shop_route(
 	)
 	assertions.truthy(shop.select_tab("services"), "ShopUI preserves services route")
 	assertions.truthy(
-		shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage").get_script() != null,
+		shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage").get_script() != null,
 		"ShopUI services page is a real scripted panel"
 	)
 

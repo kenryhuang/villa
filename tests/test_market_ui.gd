@@ -29,17 +29,17 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"TopBar/GoldLabel",
 		"ScrollContainer/GridContainer",
 		"CloseButton",
-		"ModalLayer",
-		"ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/MarketStatusLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/GoldLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/DateLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/CloseButton",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/ContractsTab",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/ServicesTab",
-		"ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel",
+		"ScreenLayer/ModalLayer",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/MarketStatusLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/GoldLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/DateLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/ContractsTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/ServicesTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel",
 	])
 	_check_scene(assertions, MARKET_SCENE_PATH, [
 		"Columns/CatalogColumn/CategoryList/RawMaterials",
@@ -258,7 +258,7 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.equal(shop.get("selected_tab"), "orders", "economy hub preserves selected tab")
 	assertions.truthy(shop.call("select_tab", "market"), "economy hub returns to market tab")
 
-	var market_panel = shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel")
+	var market_panel = shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel")
 	market_panel.call("select_category", "raw_materials")
 	market_panel.call("select_item", "wood")
 	market_panel.call("refresh_snapshot")
