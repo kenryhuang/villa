@@ -2,6 +2,7 @@ extends RefCounted
 
 const BuildingDataScript = preload("res://scripts/data/building_data.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const IDS := [
 	"barn",
 	"greenhouse",
@@ -79,3 +80,83 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		instance.queue_free()
 
 	game_data.free()
+	_test_activity_state_bridge(assertions, tree)
+
+
+func _test_activity_state_bridge(assertions: TestAssert, tree: SceneTree) -> void:
+	var game_data = GameDataScript.new()
+	var kiln := _configured_building("stone_kiln", game_data, tree)
+	assertions.truthy(kiln.has_node("VisualRoot/ActivityLayer"), "building creates activity layer")
+	var kiln_activity := kiln.get_node("VisualRoot/ActivityLayer") as BuildingActivityVisual
+	assertions.near(kiln_activity.sorting_offset, 0.0, 0.001, "activity sorts between painted layers")
+	assertions.near(
+		(kiln.get_node("VisualRoot/BackLayer") as Sprite3D).sorting_offset,
+		-0.1,
+		0.001,
+		"back layer remains behind activity"
+	)
+	assertions.near(
+		(kiln.get_node("VisualRoot/FrontLayer") as Sprite3D).sorting_offset,
+		0.1,
+		0.001,
+		"front layer remains in front of activity"
+	)
+	kiln_activity.configure(
+		_activity_texture(),
+		kiln.data.visual_size,
+		kiln.data.ground_anchor_uv,
+		kiln.data.activity_fps
+	)
+	kiln.producer_state.jobs = [{
+		"recipe_id": "charcoal",
+		"batches": 1,
+		"remaining_minutes": 180,
+		"status": "running",
+	}]
+	kiln.sync_activity_visual()
+	assertions.truthy(kiln_activity.is_active(), "running crafting job activates the kiln")
+	kiln.set_economy_indicator("maintenance")
+	assertions.equal(kiln_activity.is_active(), false, "maintenance stops crafting activity")
+	kiln.set_economy_indicator("")
+	kiln.set_preview_mode(true)
+	assertions.equal(kiln_activity.is_active(), false, "preview stops crafting activity")
+	kiln.set_preview_mode(false)
+	kiln.start_construction()
+	assertions.equal(kiln_activity.is_active(), false, "construction stops crafting activity")
+	kiln.queue_free()
+
+	var lumberyard := _configured_building("lumberyard", game_data, tree)
+	var resource_activity := lumberyard.get_node("VisualRoot/ActivityLayer") as BuildingActivityVisual
+	resource_activity.configure(
+		_activity_texture(),
+		lumberyard.data.visual_size,
+		lumberyard.data.ground_anchor_uv,
+		lumberyard.data.activity_fps
+	)
+	lumberyard.producer_state = ProducerStateScript.new("lumberyard")
+	lumberyard.sync_activity_visual()
+	assertions.truthy(resource_activity.is_active(), "available passive output building works")
+	lumberyard.set_economy_indicator("full")
+	assertions.equal(resource_activity.is_active(), false, "full passive output building stops")
+	lumberyard.set_economy_indicator("")
+	lumberyard.sync_activity_visual()
+	assertions.truthy(resource_activity.is_active(), "clearing full state resumes passive activity")
+	lumberyard.deactivate()
+	assertions.equal(resource_activity.is_active(), false, "deactivated building stops activity")
+	lumberyard.queue_free()
+	game_data.free()
+
+
+func _configured_building(id: String, game_data: Node, tree: SceneTree) -> BuildingInstance:
+	var data = BuildingDataScript.from_dictionary(game_data.get_building(id))
+	var packed = load(data.scene_path) as PackedScene
+	var instance := packed.instantiate() as BuildingInstance
+	tree.root.add_child(instance)
+	instance.configure(data, 0, 0, [])
+	return instance
+
+
+func _activity_texture() -> ImageTexture:
+	var image := Image.create(2048, 512, false, Image.FORMAT_RGBA8)
+	image.fill(Color.WHITE)
+	return ImageTexture.create_from_image(image)

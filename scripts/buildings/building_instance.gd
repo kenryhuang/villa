@@ -21,6 +21,9 @@ const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ConstructionFeedbackScript = preload(
 	"res://scripts/buildings/construction_feedback.gd"
 )
+const BuildingActivityVisualScript = preload(
+	"res://scripts/buildings/building_activity_visual.gd"
+)
 const COLLISION_LAYERS := 16 | 64
 const INTERACTION_LAYERS := 64 | 256
 const CAMERA_OCCLUDER_LAYER := 32
@@ -235,6 +238,7 @@ func set_preview_mode(value: bool) -> void:
 		add_to_group("building_instance")
 	_apply_visual_color()
 	_sync_construction_feedback()
+	sync_activity_visual()
 
 
 func deactivate() -> void:
@@ -251,9 +255,10 @@ func deactivate() -> void:
 	camera_occluder.collision_mask = 0
 	camera_occluder.monitoring = false
 	remove_from_group("building_instance")
+	visible = false
 	set_economy_indicator("")
 	_sync_construction_feedback(false)
-	visible = false
+	sync_activity_visual()
 	set_process(false)
 
 
@@ -296,6 +301,7 @@ func can_open_economy_panel() -> bool:
 func set_economy_indicator(kind: String) -> void:
 	_economy_indicator_kind = kind if kind in ["collect", "full", "maintenance"] else ""
 	_sync_economy_indicator()
+	sync_activity_visual()
 
 
 func get_economy_indicator() -> String:
@@ -441,6 +447,10 @@ func _process(delta: float) -> void:
 	var feedback := get_node_or_null("ConstructionFeedback") as ConstructionFeedback
 	if feedback != null:
 		feedback.advance_animation(delta)
+	sync_activity_visual()
+	var activity := get_node_or_null("VisualRoot/ActivityLayer") as BuildingActivityVisual
+	if activity != null:
+		activity.advance_animation(delta)
 	if _preview_mode:
 		return
 	for geometry in _visual_geometry():
@@ -469,6 +479,12 @@ func _ensure_nodes() -> void:
 		var front := Sprite3D.new()
 		front.name = "FrontLayer"
 		visual_root.add_child(front)
+	if visual_root.get_node_or_null("ActivityLayer") == null:
+		var activity := BuildingActivityVisualScript.new() as BuildingActivityVisual
+		activity.name = "ActivityLayer"
+		visual_root.add_child(activity)
+	(visual_root.get_node("BackLayer") as Sprite3D).sorting_offset = -0.1
+	(visual_root.get_node("FrontLayer") as Sprite3D).sorting_offset = 0.1
 	if visual_root.get_node_or_null("FallbackBody") == null:
 		var fallback_body := MeshInstance3D.new()
 		fallback_body.name = "FallbackBody"
@@ -532,17 +548,49 @@ func _configure_visuals() -> void:
 	var base_path := "res://assets/buildings/painted/%s/%s" % [data.building_id, data.building_id]
 	var back_texture := _load_texture(base_path + "_back.png")
 	var front_texture := _load_texture(base_path + "_front.png")
+	var activity_texture := _load_texture(base_path + "_activity.png")
 	var has_painted_layers := back_texture != null and front_texture != null
 	back.visible = has_painted_layers
 	front.visible = has_painted_layers
 	if has_painted_layers:
 		_configure_sprite(back, back_texture, Vector3.ZERO, -0.1)
 		_configure_sprite(front, front_texture, Vector3(0.025, 0.0, 0.025), 0.1)
+	var activity := visual_root.get_node("ActivityLayer") as BuildingActivityVisual
+	activity.configure(
+		activity_texture,
+		data.visual_size,
+		data.ground_anchor_uv,
+		data.activity_fps
+	)
 	_configure_fallback(not has_painted_layers)
 	_configure_construction_fallback()
 	var feedback := get_node("ConstructionFeedback") as ConstructionFeedback
 	feedback.configure(data.visual_size)
 	_apply_visual_color()
+	sync_activity_visual()
+
+
+func should_play_activity() -> bool:
+	if data == null or _preview_mode or not is_construction_complete() or not visible:
+		return false
+	if _economy_indicator_kind in ["full", "maintenance"]:
+		return false
+	if data.effect_type == "crafting":
+		if producer_state == null:
+			return false
+		for job in producer_state.jobs:
+			if str(job.get("status", "")) == "running":
+				return true
+		return false
+	if data.effect_type == "resource_output":
+		return producer_state != null
+	return false
+
+
+func sync_activity_visual() -> void:
+	var activity := get_node_or_null("VisualRoot/ActivityLayer") as BuildingActivityVisual
+	if activity != null:
+		activity.set_active(should_play_activity())
 
 
 func _load_texture(path: String) -> Texture2D:
@@ -764,6 +812,7 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	var feedback := get_node("ConstructionFeedback") as ConstructionFeedback
 	feedback.configure(data.visual_size, construction_layer.texture)
 	_sync_construction_feedback()
+	sync_activity_visual()
 	_apply_physics_state()
 	if play_effect:
 		_play_construction_effect(construction_stage)
