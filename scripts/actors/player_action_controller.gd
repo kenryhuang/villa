@@ -435,7 +435,16 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 
 
 func perform_target_interaction(target: Node) -> bool:
-	if target == null or _action_mode != ActionMode.FARMING:
+	if target == null:
+		return false
+	if _action_mode == ActionMode.BUILDING:
+		if (
+			target.has_method("can_open_economy_panel")
+			and bool(target.call("can_open_economy_panel"))
+			and target.has_method("interact")
+		):
+			target.interact(player_ref)
+			return true
 		return false
 	if target.has_method("can_gather"):
 		if target.has_method("is_chop_eligible") and not bool(target.call("is_chop_eligible")):
@@ -531,6 +540,12 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if _pointer_over_ui():
 		return false
 	var ground_point = _raycast_to_ground(pointer_position)
+	var interaction_hit := _raycast_to_interaction(pointer_position)
+	if not interaction_hit.is_empty():
+		var interaction_target: Node = interaction_hit.get("target")
+		var hit_position: Vector3 = interaction_hit.get("position", Vector3.ZERO)
+		if _try_interaction_hit(interaction_target, hit_position):
+			return true
 	if _action_mode == ActionMode.BUILDING:
 		if (
 			_selected_slot < 0
@@ -542,13 +557,6 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 			return false
 		var grid_position = grid_system.world_to_grid(ground_point.x, ground_point.z)
 		return perform_build_action(grid_position.x, grid_position.y) != null
-
-	var interaction_hit := _raycast_to_interaction(pointer_position)
-	if not interaction_hit.is_empty():
-		var interaction_target: Node = interaction_hit.get("target")
-		var hit_position: Vector3 = interaction_hit.get("position", Vector3.ZERO)
-		if _try_interaction_hit(interaction_target, hit_position):
-			return true
 
 	if not ground_point is Vector3 or grid_system == null:
 		return false
@@ -565,6 +573,11 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:
 	if target == null:
 		return false
+	if _action_mode == ActionMode.BUILDING:
+		return (
+			_point_in_player_range(hit_position)
+			and perform_target_interaction(target)
+		)
 	if target.has_method("can_gather"):
 		return perform_target_interaction(target)
 	if _point_in_player_range(hit_position):
