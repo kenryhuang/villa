@@ -237,6 +237,32 @@ class OreTargetDouble:
 		return allowed and tool_id == required_tool
 
 
+class OutputPileDouble:
+	extends Node3D
+
+	var hovered := false
+	var interactions := 0
+	var rejected_reason := ""
+
+	func _ready() -> void:
+		add_to_group("building_output_pile")
+
+	func set_pointer_hovered(value: bool) -> void:
+		hovered = value
+
+	func show_interaction_rejected(reason: String) -> void:
+		rejected_reason = reason
+
+	func interact(_player: Node) -> void:
+		interactions += 1
+
+
+class InteractionPlayerDouble:
+	extends Node3D
+
+	var interaction_range := 3.0
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var controller_path := "res://scripts/actors/player_action_controller.gd"
 	assertions.truthy(
@@ -257,6 +283,68 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
 	_test_gathering_command_routing(assertions, tree, controller_script)
+	_test_output_pile_interaction(assertions, tree, controller_script)
+
+
+func _test_output_pile_interaction(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var controller = controller_script.new()
+	var player := InteractionPlayerDouble.new()
+	var pile := OutputPileDouble.new()
+	tree.root.add_child(player)
+	tree.root.add_child(pile)
+	tree.root.add_child(controller)
+	controller.configure(
+		player,
+		GridDouble.new(),
+		null,
+		BuildingDouble.new(),
+		ToolDouble.new(),
+		InventoryDouble.new()
+	)
+	controller.switch_mode(PlayerActionController.ActionMode.FARMING)
+	assertions.truthy(
+		controller.has_method("_update_output_hover"),
+		"controller exposes output-pile hover routing"
+	)
+	if controller.has_method("_update_output_hover"):
+		controller.call("_update_output_hover", pile)
+		assertions.truthy(pile.hovered, "normal pointer hover highlights output pile")
+		controller.call("_update_output_hover", null)
+		assertions.truthy(not pile.hovered, "moving away clears output-pile hover")
+	assertions.truthy(
+		controller.has_method("_try_interaction_hit"),
+		"controller exposes range-aware interaction hit routing"
+	)
+	var feedback: Array[String] = []
+	controller.build_feedback_requested.connect(
+		func(message: String, _details: Dictionary) -> void:
+			feedback.append(message)
+	)
+	if controller.has_method("_try_interaction_hit"):
+		assertions.truthy(
+			controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
+			"distant pile consumes rejected click"
+		)
+		assertions.equal(pile.interactions, 0, "distant pile does not collect")
+		assertions.equal(pile.rejected_reason, "too_far", "distant pile reports stable reason")
+		assertions.equal(feedback[-1], "距离太远", "distant pile gives explicit player feedback")
+		assertions.truthy(
+			controller.call("_try_interaction_hit", pile, Vector3(1.0, 0.0, 0.0)),
+			"near pile click is handled"
+		)
+		assertions.equal(pile.interactions, 1, "near pile dispatches one interaction")
+	controller.switch_mode(PlayerActionController.ActionMode.BUILDING)
+	assertions.truthy(
+		not controller.perform_target_interaction(pile),
+		"building mode retains click priority"
+	)
+	pile.queue_free()
+	player.queue_free()
+	controller.queue_free()
 
 
 func _test_gathering_command_routing(
