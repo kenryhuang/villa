@@ -241,6 +241,55 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		quick_mappings_before_output
 	)
 
+	var restored_kiln := (load(kiln_data.scene_path) as PackedScene).instantiate() as BuildingInstance
+	main.buildings_container.add_child(restored_kiln)
+	restored_kiln.configure(kiln_data, 0, 0, [])
+	restored_kiln.complete_construction()
+	main.building_system._buildings.append(restored_kiln)
+	assertions.truthy(
+		main.production_system.register_building(restored_kiln),
+		"restored output pickup fixture registers kiln"
+	)
+	restored_kiln.producer_state.outputs = {"charcoal": 2}
+	main.production_system.refresh_indicator(restored_kiln)
+	var restored_charcoal_before: int = main.inventory_system.get_item_count("charcoal")
+	main._on_save_load_completed(main.save_slot)
+	var restored_output_display: Variant = restored_kiln.get_node("BuildingOutputDisplay")
+	var restored_charcoal_pile: Variant = restored_output_display.call("get_pile", "charcoal")
+	assertions.truthy(
+		restored_charcoal_pile != null,
+		"restored charcoal creates a clickable painted pile"
+	)
+	if restored_charcoal_pile != null:
+		var restored_charcoal_click := InputEventMouseButton.new()
+		restored_charcoal_click.button_index = MOUSE_BUTTON_LEFT
+		restored_charcoal_click.pressed = true
+		restored_charcoal_pile.handle_direct_pointer_event(
+			restored_charcoal_click,
+			true,
+			false
+		)
+	assertions.equal(
+		main.inventory_system.get_item_count("charcoal"),
+		restored_charcoal_before + 2,
+		"load completion reconnects restored output pickup to player assets"
+	)
+	assertions.equal(
+		restored_kiln.producer_state.outputs,
+		{},
+		"restored output pickup clears collected charcoal"
+	)
+	main.production_system.unregister_building(restored_kiln)
+	main.building_system._buildings.erase(restored_kiln)
+	var restored_output_callback := Callable(main, "_on_building_output_collection_requested")
+	if restored_kiln.output_collection_requested.is_connected(restored_output_callback):
+		main.call("_on_economy_building_removed", restored_kiln)
+	restored_kiln.queue_free()
+	main.inventory_system.restore_state(
+		inventory_slots_before_output,
+		quick_mappings_before_output
+	)
+
 	var farm_cell := _find_farm_cell(main.grid_system)
 	assertions.truthy(farm_cell != null, "main has a buildable farm cell")
 	if farm_cell:

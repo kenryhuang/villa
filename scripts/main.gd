@@ -325,6 +325,7 @@ func _connect_save_load_completed() -> void:
 func _on_save_load_completed(_slot: int) -> void:
 	if production_system == null or season_system == null:
 		return
+	_rebind_restored_buildings()
 	if not production_system.sync_daily_cursor(season_system.total_days):
 		push_error("Unable to synchronize production day after load.")
 		return
@@ -332,6 +333,13 @@ func _on_save_load_completed(_slot: int) -> void:
 	_register_resource_navigation()
 	if npc_economy_system != null:
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
+
+
+func _rebind_restored_buildings() -> void:
+	if building_system == null:
+		return
+	for building in building_system.get_all_buildings():
+		_on_building_instance_placed(building)
 
 
 func _setup_player() -> void:
