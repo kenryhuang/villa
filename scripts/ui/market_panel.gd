@@ -337,6 +337,7 @@ func _create_item_row(
 	select_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	select_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	select_button.flat = true
+	select_button.clip_text = true
 	select_button.toggle_mode = true
 	select_button.text = row_text
 	select_button.tooltip_text = "选择%s" % str(definition.get("name", item_id))

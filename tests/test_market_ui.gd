@@ -399,6 +399,10 @@ func _test_market_row_affordances(
 	assertions.truthy(fiber_row != null, "market renders a fallback-icon row")
 	if wood_row != null:
 		assertions.truthy(wood_row.get_node("Content/Icon").texture != null, "wood row renders a product icon")
+		assertions.truthy(
+			(wood_row.get_node("Content/SelectButton") as Button).clip_text,
+			"long shortage rows clip inside the compact catalog column"
+		)
 		assertions.equal(wood_row.get_node("Content/StockColorBar").color, Color("#B65C4B"), "finite shortage renders error stock color bar")
 		assertions.truthy(wood_row.get_node("Content/UrgentBadge").visible, "finite shortage and real demand show urgent badge")
 	if stone_row != null:
