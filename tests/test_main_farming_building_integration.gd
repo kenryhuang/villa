@@ -2,6 +2,7 @@ extends RefCounted
 
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const GameDataScript := preload("res://scripts/core/game_data.gd")
+const TEST_OUTPUT_SAVE_SLOT := 1
 const TEST_SAVE_SLOT := 4
 const TEST_SIBLING_SAVE_SLOT := 2
 const TEST_SAVE_DIR := "user://villa_test_saves/debug_reset/"
@@ -241,53 +242,130 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		quick_mappings_before_output
 	)
 
-	var restored_kiln := (load(kiln_data.scene_path) as PackedScene).instantiate() as BuildingInstance
-	main.buildings_container.add_child(restored_kiln)
-	restored_kiln.configure(kiln_data, 0, 0, [])
-	restored_kiln.complete_construction()
-	main.building_system._buildings.append(restored_kiln)
+	var load_completed_callback := Callable(main, "_on_save_load_completed")
 	assertions.truthy(
-		main.production_system.register_building(restored_kiln),
-		"restored output pickup fixture registers kiln"
+		isolated_save_manager.load_completed.is_connected(load_completed_callback),
+		"isolated save manager connects load completion to Main"
 	)
-	restored_kiln.producer_state.outputs = {"charcoal": 2}
-	main.production_system.refresh_indicator(restored_kiln)
-	var restored_charcoal_before: int = main.inventory_system.get_item_count("charcoal")
-	main._on_save_load_completed(main.save_slot)
-	var restored_output_display: Variant = restored_kiln.get_node("BuildingOutputDisplay")
-	var restored_charcoal_pile: Variant = restored_output_display.call("get_pile", "charcoal")
-	assertions.truthy(
-		restored_charcoal_pile != null,
-		"restored charcoal creates a clickable painted pile"
-	)
-	if restored_charcoal_pile != null:
-		var restored_charcoal_click := InputEventMouseButton.new()
-		restored_charcoal_click.button_index = MOUSE_BUTTON_LEFT
-		restored_charcoal_click.pressed = true
-		restored_charcoal_pile.handle_direct_pointer_event(
-			restored_charcoal_click,
-			true,
-			false
+	var restored_output_cell := _find_building_cell(main, "stone_kiln")
+	assertions.truthy(restored_output_cell != null, "save/load fixture finds a valid kiln footprint")
+	var placed_kiln: BuildingInstance
+	var restored_kiln: BuildingInstance
+	var restored_output_snapshots: Array[Dictionary] = []
+	if restored_output_cell != null:
+		placed_kiln = main.building_system.place_building_by_id(
+			"stone_kiln",
+			restored_output_cell.gx,
+			restored_output_cell.gz
 		)
-	assertions.equal(
-		main.inventory_system.get_item_count("charcoal"),
-		restored_charcoal_before + 2,
-		"load completion reconnects restored output pickup to player assets"
+	assertions.truthy(placed_kiln != null, "save/load fixture places kiln through BuildingSystem")
+	if placed_kiln != null:
+		for snapshot in placed_kiln.occupied_cells:
+			restored_output_snapshots.append({
+				"gx": snapshot.gx,
+				"gz": snapshot.gz,
+				"previous_state": snapshot.previous_state,
+			})
+		placed_kiln.complete_construction()
+		assertions.truthy(
+			main.production_system.get_registered_buildings().has(placed_kiln),
+			"completed save/load kiln is registered for production"
+		)
+		placed_kiln.producer_state.outputs = {"charcoal": 2}
+		main.production_system.refresh_indicator(placed_kiln)
+		var restored_charcoal_before: int = main.inventory_system.get_item_count("charcoal")
+		assertions.truthy(
+			isolated_save_manager.save_game(TEST_OUTPUT_SAVE_SLOT),
+			"output pickup lifecycle saves through isolated SaveManager"
+		)
+		assertions.truthy(
+			isolated_save_manager.load_game(TEST_OUTPUT_SAVE_SLOT),
+			"output pickup lifecycle loads through isolated SaveManager"
+		)
+		for candidate in main.building_system.get_all_buildings():
+			if candidate.building_id == "stone_kiln":
+				restored_kiln = candidate
+				break
+		assertions.truthy(restored_kiln != null, "save/load restores the kiln through BuildingSystem")
+		if restored_kiln != null:
+			assertions.truthy(restored_kiln != placed_kiln, "save/load replaces the original kiln instance")
+			assertions.truthy(
+				main.production_system.get_registered_buildings().has(restored_kiln),
+				"save/load rebuilds production registration for the restored kiln"
+			)
+			var restored_output_display: Variant = restored_kiln.get_node("BuildingOutputDisplay")
+			var restored_charcoal_pile: Variant = restored_output_display.call("get_pile", "charcoal")
+			assertions.truthy(
+				restored_charcoal_pile != null,
+				"restored charcoal creates a clickable painted pile"
+			)
+			if restored_charcoal_pile != null:
+				var restored_charcoal_click := InputEventMouseButton.new()
+				restored_charcoal_click.button_index = MOUSE_BUTTON_LEFT
+				restored_charcoal_click.pressed = true
+				restored_charcoal_pile.handle_direct_pointer_event(
+					restored_charcoal_click,
+					true,
+					false
+				)
+			assertions.equal(
+				main.inventory_system.get_item_count("charcoal"),
+				restored_charcoal_before + 2,
+				"load completion reconnects restored output pickup to player assets"
+			)
+			assertions.equal(
+				restored_kiln.producer_state.outputs,
+				{},
+				"restored output pickup clears collected charcoal"
+			)
+	var active_kiln: BuildingInstance
+	for candidate in main.building_system.get_all_buildings():
+		if candidate.building_id == "stone_kiln":
+			active_kiln = candidate
+			break
+	if active_kiln != null:
+		assertions.truthy(
+			main.building_system.remove_building(active_kiln),
+			"save/load fixture removes the restored kiln and restores its grid"
+		)
+	for snapshot in restored_output_snapshots:
+		assertions.equal(
+			main.grid_system.get_cell(snapshot.gx, snapshot.gz).state,
+			snapshot.previous_state,
+			"save/load fixture restores each kiln footprint cell"
+		)
+	main.save_slot = TEST_SAVE_SLOT
+	assertions.truthy(
+		isolated_save_manager.clear_save(TEST_OUTPUT_SAVE_SLOT),
+		"save/load fixture clears its isolated output slot"
 	)
-	assertions.equal(
-		restored_kiln.producer_state.outputs,
-		{},
-		"restored output pickup clears collected charcoal"
+	assertions.truthy(
+		not isolated_save_manager.has_save(TEST_OUTPUT_SAVE_SLOT),
+		"save/load fixture leaves no isolated output save"
 	)
-	main.production_system.unregister_building(restored_kiln)
-	main.building_system._buildings.erase(restored_kiln)
-	var restored_output_callback := Callable(main, "_on_building_output_collection_requested")
-	if restored_kiln.output_collection_requested.is_connected(restored_output_callback):
-		main.call("_on_economy_building_removed", restored_kiln)
-	restored_kiln.queue_free()
 	main.inventory_system.restore_state(
 		inventory_slots_before_output,
 		quick_mappings_before_output
+	)
+	assertions.equal(
+		main.building_system.get_building_count(),
+		0,
+		"save/load fixture leaves no buildings for later integration checks"
+	)
+	assertions.equal(
+		main.inventory_system.slots,
+		inventory_slots_before_output,
+		"save/load fixture restores inventory for later integration checks"
+	)
+	assertions.equal(
+		main.inventory_system.quick_slot_mappings,
+		quick_mappings_before_output,
+		"save/load fixture restores quick mappings for later integration checks"
+	)
+	assertions.equal(
+		isolated_save_manager.current_slot,
+		TEST_SAVE_SLOT,
+		"save/load fixture restores the autosave slot for later integration checks"
 	)
 
 	var farm_cell := _find_farm_cell(main.grid_system)
@@ -690,7 +768,7 @@ func _snapshot_save_directory(directory: String) -> Dictionary:
 
 
 func _cleanup_test_save_directory() -> void:
-	for slot in [0, TEST_SIBLING_SAVE_SLOT, TEST_SAVE_SLOT]:
+	for slot in [0, TEST_OUTPUT_SAVE_SLOT, TEST_SIBLING_SAVE_SLOT, TEST_SAVE_SLOT]:
 		var path := TEST_SAVE_DIR.path_join("save_%d.json" % slot)
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
@@ -714,4 +792,12 @@ func _find_build_cell(main: Node) -> GridCell:
 	for cell in main.grid_system._cells.values():
 		if main.building_system.can_place("fence", cell.gx, cell.gz):
 			return cell
+	return null
+
+
+func _find_building_cell(main: Node, building_id: String) -> GridCell:
+	for gz in range(GridSystem.GRID_DEPTH):
+		for gx in range(GridSystem.GRID_WIDTH):
+			if main.building_system.can_place_building(building_id, gx, gz):
+				return main.grid_system.get_cell(gx, gz)
 	return null
