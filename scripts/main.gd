@@ -788,6 +788,15 @@ func _on_economy_building_removed(building: BuildingInstance) -> void:
 		building_economy_ui.close()
 	if building != null and building.interacted.is_connected(_on_building_interacted):
 		building.interacted.disconnect(_on_building_interacted)
+	if (
+		building != null
+		and building.output_collection_requested.is_connected(
+			_on_building_output_collection_requested
+		)
+	):
+		building.output_collection_requested.disconnect(
+			_on_building_output_collection_requested
+		)
 	if economy_progression_system != null:
 		economy_progression_system.clear_building_upgrades(building)
 
@@ -797,6 +806,41 @@ func _on_building_instance_placed(building: BuildingInstance) -> void:
 		return
 	if not building.interacted.is_connected(_on_building_interacted):
 		building.interacted.connect(_on_building_interacted)
+	if not building.output_collection_requested.is_connected(
+		_on_building_output_collection_requested
+	):
+		building.output_collection_requested.connect(
+			_on_building_output_collection_requested
+		)
+
+
+func _on_building_output_collection_requested(
+	building: BuildingInstance,
+	item_id: String
+) -> void:
+	if (
+		building == null
+		or not is_instance_valid(building)
+		or production_system == null
+		or inventory_system == null
+	):
+		return
+	var result := production_system.collect_outputs(
+		building,
+		inventory_system,
+		item_id
+	)
+	if bool(result.get("ok", false)):
+		return
+	var reason := str(result.get("reason", "transaction_failed"))
+	building.show_output_collection_failure(item_id, reason)
+	if hud != null and hud.has_method("show_build_feedback"):
+		var message := (
+			"资产库空间不足"
+			if reason == "inventory_capacity"
+			else "无法收取制品"
+		)
+		hud.call("show_build_feedback", message, result)
 
 
 func _on_building_interacted(building: BuildingInstance, _player: Node) -> void:

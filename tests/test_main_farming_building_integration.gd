@@ -1,6 +1,7 @@
 extends RefCounted
 
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
+const GameDataScript := preload("res://scripts/core/game_data.gd")
 const TEST_SAVE_SLOT := 4
 const TEST_SIBLING_SAVE_SLOT := 2
 const TEST_SAVE_DIR := "user://villa_test_saves/debug_reset/"
@@ -168,6 +169,58 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(main.hud.get_material_count_text("stone"), "20", "HUD shows starting stone")
 	assertions.equal(main.hud.get_material_count_text("iron"), "0", "HUD shows no legacy starter iron")
 	assertions.equal(main.hud.get_material_count_text("glass"), "0", "HUD shows no starter glass")
+
+	var inventory_slots_before_output: Array[Dictionary] = []
+	inventory_slots_before_output.assign(main.inventory_system.slots.duplicate(true))
+	var quick_mappings_before_output: Array[int] = []
+	quick_mappings_before_output.assign(main.inventory_system.quick_slot_mappings.duplicate())
+	var kiln_data := BuildingData.from_dictionary(GameDataScript.get_building("stone_kiln"))
+	var kiln := (load(kiln_data.scene_path) as PackedScene).instantiate() as BuildingInstance
+	main.buildings_container.add_child(kiln)
+	kiln.configure(kiln_data, 0, 0, [])
+	kiln.complete_construction()
+	main.call("_on_building_instance_placed", kiln)
+	assertions.truthy(main.production_system.register_building(kiln), "output pickup fixture registers kiln")
+	kiln.producer_state.outputs = {"charcoal": 2, "stone_brick": 3}
+	main.production_system.refresh_indicator(kiln)
+	var charcoal_before: int = main.inventory_system.get_item_count("charcoal")
+	kiln.request_output_collection("charcoal")
+	assertions.equal(
+		main.inventory_system.get_item_count("charcoal"),
+		charcoal_before + 2,
+		"pile request reaches player assets"
+	)
+	assertions.equal(
+		kiln.producer_state.outputs,
+		{"stone_brick": 3},
+		"pile request removes only represented item"
+	)
+	assertions.equal(
+		kiln.get_output_pile_item_ids(),
+		["stone_brick"],
+		"unrequested output pile remains"
+	)
+	for slot_index in range(main.inventory_system.slots.size()):
+		if main.inventory_system.slots[slot_index].is_empty():
+			main.inventory_system.slots[slot_index] = {"item_id": "wood", "quantity": 99}
+	kiln.request_output_collection("stone_brick")
+	assertions.equal(
+		kiln.producer_state.outputs,
+		{"stone_brick": 3},
+		"full inventory preserves represented output"
+	)
+	assertions.equal(
+		main.hud.build_feedback_label.text,
+		"资产库空间不足",
+		"full inventory gives explicit pickup feedback"
+	)
+	main.production_system.unregister_building(kiln)
+	main.call("_on_economy_building_removed", kiln)
+	kiln.queue_free()
+	main.inventory_system.restore_state(
+		inventory_slots_before_output,
+		quick_mappings_before_output
+	)
 
 	var farm_cell := _find_farm_cell(main.grid_system)
 	assertions.truthy(farm_cell != null, "main has a buildable farm cell")
