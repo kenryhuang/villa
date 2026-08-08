@@ -16,6 +16,12 @@ const IDS := [
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	assertions.near(
+		BuildingInstance.anchored_center_y(2.0, Vector2(0.5, 0.9375)),
+		0.875,
+		0.0001,
+		"explicit art anchor maps to world ground"
+	)
 	var game_data = GameDataScript.new()
 	for id in IDS:
 		var data = BuildingDataScript.from_dictionary(game_data.get_building(id))

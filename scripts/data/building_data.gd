@@ -40,6 +40,33 @@ const VISUAL_SIZES := {
 	"lamp": Vector2(0.65, 1.8),
 	"fence": Vector2(1.05, 0.85),
 }
+const PAINTED_PRODUCTION_IDS := [
+	"stone_kiln",
+	"furnace",
+	"food_workshop",
+	"textile_machine",
+	"lumberyard",
+	"quarry",
+	"mine",
+]
+const GROUND_ANCHORS := {
+	"stone_kiln": Vector2(0.5, 0.9375),
+	"furnace": Vector2(0.5, 0.9375),
+	"food_workshop": Vector2(0.5, 0.9375),
+	"textile_machine": Vector2(0.5, 0.9375),
+	"lumberyard": Vector2(0.5, 0.9375),
+	"quarry": Vector2(0.5, 0.9375),
+	"mine": Vector2(0.5, 0.9375),
+}
+const ACTIVITY_FPS := {
+	"stone_kiln": 4.0,
+	"furnace": 5.0,
+	"food_workshop": 4.0,
+	"textile_machine": 6.0,
+	"lumberyard": 6.0,
+	"quarry": 3.0,
+	"mine": 3.0,
+}
 
 @export var building_id := ""
 @export var display_name := ""
@@ -54,6 +81,8 @@ const VISUAL_SIZES := {
 @export var effect_config: Dictionary = {}
 @export_file("*.tscn") var scene_path := ""
 @export var visual_size := Vector2.ZERO
+@export var ground_anchor_uv := Vector2(0.5, 1.0)
+@export var activity_fps := 4.0
 
 var effect: String:
 	get:
@@ -94,6 +123,11 @@ static func from_dictionary(source: Dictionary) -> BuildingData:
 	data.effect_config = source.get("effect_config", {}).duplicate(true)
 	data.scene_path = str(SCENE_PATHS.get(data.building_id, ""))
 	data.visual_size = VISUAL_SIZES.get(data.building_id, Vector2.ZERO)
+	data.ground_anchor_uv = GROUND_ANCHORS.get(
+		data.building_id,
+		Vector2(0.5, 1.0)
+	)
+	data.activity_fps = float(ACTIVITY_FPS.get(data.building_id, 4.0))
 	return data
 
 

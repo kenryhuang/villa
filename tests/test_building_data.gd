@@ -21,6 +21,15 @@ const IDS := [
 	"lamp",
 	"fence",
 ]
+const PAINTED_PRODUCTION_IDS := [
+	"stone_kiln",
+	"furnace",
+	"food_workshop",
+	"textile_machine",
+	"lumberyard",
+	"quarry",
+	"mine",
+]
 
 
 func run(assertions: TestAssert) -> void:
@@ -46,6 +55,18 @@ func run(assertions: TestAssert) -> void:
 
 	var barn = BuildingDataScript.from_dictionary(game_data.get_building("barn"))
 	assertions.equal(barn.footprint, Vector2i(2, 2), "barn footprint is 2x2")
+	assertions.equal(barn.ground_anchor_uv, Vector2(0.5, 1.0), "existing art keeps bottom-edge anchor")
+	for id in PAINTED_PRODUCTION_IDS:
+		var production_data = BuildingDataScript.from_dictionary(game_data.get_building(id))
+		assertions.equal(
+			production_data.ground_anchor_uv,
+			Vector2(0.5, 0.9375),
+			"%s uses the shared ground anchor" % id
+		)
+		assertions.truthy(
+			production_data.activity_fps >= 3.0 and production_data.activity_fps <= 6.0,
+			"%s has restrained activity timing" % id
+		)
 	barn.cost.wood = 1
 	assertions.equal(game_data.get_building("barn").cost.plank, 8, "cost is deep copied")
 

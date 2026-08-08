@@ -83,6 +83,10 @@ static func vertical_scale_for(texture_size: Vector2, target_size: Vector2) -> f
 	return target_size.y / (texture_size.y * pixel_size)
 
 
+static func anchored_center_y(world_height: float, ground_anchor_uv: Vector2) -> float:
+	return (clampf(ground_anchor_uv.y, 0.0, 1.0) - 0.5) * world_height
+
+
 static func construction_duration_for(_footprint: Vector2i) -> float:
 	return CONSTRUCTION_SECONDS_PER_STAGE * float(CONSTRUCTION_TRANSITION_COUNT)
 
@@ -623,7 +627,7 @@ func _configure_sprite(
 	)
 	sprite.position = Vector3(
 		offset.x,
-		data.visual_size.y * 0.5 + offset.y,
+		anchored_center_y(data.visual_size.y, data.ground_anchor_uv) + offset.y,
 		offset.z
 	)
 	sprite.sorting_offset = sort_offset
