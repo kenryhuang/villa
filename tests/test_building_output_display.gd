@@ -60,4 +60,18 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		not display.has_enabled_collisions(),
 		"inactive output projection disables interaction"
 	)
+	display.sync_outputs({"missing_output": 1}, 9, true)
+	assertions.equal(
+		display.get_pile_count(),
+		0,
+		"invalid output ids do not create invisible interactive piles"
+	)
+
+	display.sync_outputs({"wood": 3, "stone": 3, "coal": 3}, 9, true)
+	for item_id in ["wood", "stone", "coal"]:
+		assertions.equal(
+			display.get_pile(item_id).density_frame(),
+			2,
+			"full shared storage renders %s as dense" % item_id
+		)
 	display.queue_free()

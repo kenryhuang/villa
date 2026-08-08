@@ -76,6 +76,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			assertions.truthy(not instance.get_node("BuildingOutputDisplay").visible, "construction hides output piles")
 			instance.complete_construction()
 			assertions.truthy(instance.get_node("BuildingOutputDisplay").visible, "completion restores output piles")
+			instance.visible = false
+			assertions.truthy(
+				not instance.get_node("BuildingOutputDisplay").has_enabled_collisions(),
+				"directly hidden building disables output pile interaction"
+			)
+			instance.visible = true
+			assertions.truthy(
+				instance.get_node("BuildingOutputDisplay").has_enabled_collisions(),
+				"directly shown building restores output pile interaction"
+			)
 
 		instance.set_camera_occluded(true)
 		assertions.near(instance.get_target_opacity(), 0.3, 0.001, "%s fades for camera" % id)

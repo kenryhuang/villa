@@ -534,9 +534,10 @@ git commit -m "feat: finish hand-painted building output pickups"
 
 Verification evidence (2026-08-08):
 
-- `1895` building system checks passed.
+- `1901` building system checks passed.
 - `64618` economy checks passed.
 - `124` player action controller checks passed.
 - `1166` main gameplay integration checks passed.
 - `89` production chain integration checks passed.
 - The focused stone-kiln render showed distinct charcoal and stone-brick piles outside the footprint with no “收” glyph.
+- Post-review regressions verify invalid item IDs create no invisible collider, full shared storage renders dense piles, and directly hidden buildings disable pile interaction.

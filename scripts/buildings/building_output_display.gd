@@ -21,6 +21,10 @@ func sync_outputs(
 	enabled: bool
 ) -> void:
 	var item_ids := _positive_item_ids(outputs)
+	var total_quantity := 0
+	for item_id in item_ids:
+		total_quantity += int(outputs.get(item_id, 0))
+	var storage_full := quantity_capacity > 0 and total_quantity >= quantity_capacity
 	for existing_value in _piles.keys():
 		var existing_id := str(existing_value)
 		if existing_id not in item_ids:
@@ -30,13 +34,15 @@ func sync_outputs(
 		var item_id := item_ids[index]
 		var quantity := int(outputs.get(item_id, 0))
 		var pile: Variant = _pile_for(item_id, quantity, quantity_capacity)
-		pile.update_quantity(quantity, quantity_capacity)
+		if pile == null:
+			continue
+		pile.update_quantity(quantity, quantity if storage_full else quantity_capacity)
 		pile.position = positions[index]
 		pile.scale = Vector3.ONE * (
 			0.75 if item_ids.size() > 4 and index >= 4 else 1.0
 		)
 		pile.set_interaction_enabled(enabled)
-	visible = enabled and not item_ids.is_empty()
+	visible = enabled and not _piles.is_empty()
 
 
 static func layout_positions(count: int, footprint: Vector2i) -> Array[Vector3]:
@@ -138,8 +144,10 @@ func _pile_for(
 		return existing
 	var pile: Variant = PileScript.new()
 	pile.name = "Output_%s" % item_id
+	if not pile.configure(item_id, quantity, quantity_capacity):
+		pile.free()
+		return null
 	add_child(pile)
-	pile.configure(item_id, quantity, quantity_capacity)
 	pile.collection_requested.connect(_on_pile_collection_requested)
 	_piles[item_id] = pile
 	return pile

@@ -201,10 +201,16 @@ func _transition_construction_stage(next_stage: ConstructionStage) -> void:
 
 func _ready() -> void:
 	_ensure_nodes()
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.connect(_on_visibility_changed)
 	if data == null and not authored_building_id.is_empty():
 		var game_data = GameDataScript.new()
 		configure(BuildingData.from_dictionary(game_data.get_building(authored_building_id)), 0, 0, [])
 		game_data.free()
+
+
+func _on_visibility_changed() -> void:
+	_sync_output_display_state()
 
 
 func configure(
