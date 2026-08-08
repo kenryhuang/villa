@@ -32,7 +32,7 @@
 - Create: `tests/test_building_output_pile.gd`
 - Modify: `tests/run_building_system_tests.gd`
 
-- [ ] **Step 1: Write the failing component tests**
+- [x] **Step 1: Write the failing component tests**
 
 Create a test that exercises the complete public contract:
 
@@ -63,7 +63,7 @@ pile.queue_free()
 
 Register `BuildingOutputPileTest.new().run(assertions, self)` in `tests/run_building_system_tests.gd`.
 
-- [ ] **Step 2: Run the building suite and verify RED**
+- [x] **Step 2: Run the building suite and verify RED**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_building_system_tests.gd
@@ -71,7 +71,7 @@ godot_console --headless --path . --script res://tests/run_building_system_tests
 
 Expected: parser/preload failure because `BuildingOutputPile` does not exist.
 
-- [ ] **Step 3: Implement the minimal pile node**
+- [x] **Step 3: Implement the minimal pile node**
 
 Create `class_name BuildingOutputPile extends Area3D` with `collection_requested(item_id)`, interaction layer 128, item/quantity state, and explicit current-output mapping:
 
@@ -112,11 +112,11 @@ func interact(_player: Node) -> void:
 
 `configure()` creates the main Sprite3D, enlarged tinted outline Sprite3D, Label3D, and CollisionShape3D. It loads the family atlas, crops the density frame with `AtlasTexture`, uses Billboard, applies `TINT_BY_ITEM` (default white), and resolves the localized item name from `GameData`. `play_failure()`, `show_interaction_rejected()`, and `play_collected()` change only local visuals.
 
-- [ ] **Step 4: Run the building suite and verify GREEN**
+- [x] **Step 4: Run the building suite and verify GREEN**
 
 Expected: PASS with the new pile contract.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/buildings/building_output_pile.gd tests/test_building_output_pile.gd tests/run_building_system_tests.gd
@@ -130,7 +130,7 @@ git commit -m "feat: add interactive building output pile"
 - Create: `tests/test_building_output_display.gd`
 - Modify: `tests/run_building_system_tests.gd`
 
-- [ ] **Step 1: Write failing display tests**
+- [x] **Step 1: Write failing display tests**
 
 ```gdscript
 var display := BuildingOutputDisplay.new()
@@ -153,11 +153,11 @@ display.sync_outputs({"stone": 2}, 9, false)
 assertions.truthy(not display.has_enabled_collisions(), "inactive display disables interaction")
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run the building suite. Expected: preload failure because `BuildingOutputDisplay` is absent.
 
-- [ ] **Step 3: Implement the display**
+- [x] **Step 3: Implement the display**
 
 Create `class_name BuildingOutputDisplay extends Node3D`. Sort positive-count item IDs, reconcile a dictionary of pile nodes, and assign the seven spec anchors:
 
@@ -184,11 +184,11 @@ func sync_outputs(outputs: Dictionary, quantity_capacity: int, enabled: bool) ->
 
 `layout_positions()` derives offsets from footprint half-extents; `_pile_for()` creates once and proxies `collection_requested`; `_remove_pile()` plays the 0.2-second fade before freeing.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Expected: PASS with one-to-seven layout, stable order, removal, and idempotence.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/buildings/building_output_display.gd tests/test_building_output_display.gd tests/run_building_system_tests.gd
@@ -202,7 +202,7 @@ git commit -m "feat: project building outputs around footprints"
 - Modify: `tests/test_building_instance.gd`
 - Modify: `tests/test_building_construction_state.gd`
 
-- [ ] **Step 1: Replace collect-glyph tests with output-display tests**
+- [x] **Step 1: Replace collect-glyph tests with output-display tests**
 
 ```gdscript
 assertions.truthy(instance.has_node("BuildingOutputDisplay"), "building owns output display")
@@ -216,11 +216,11 @@ assertions.equal(instance.call("get_output_pile_count"), 1, "stored output creat
 
 Add preview, construction, visibility, and `deactivate()` assertions that disable display collisions without changing `producer_state.outputs`.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run the building suite. Expected: FAIL because the display bridge is absent and collect is still accepted.
 
-- [ ] **Step 3: Integrate the component**
+- [x] **Step 3: Integrate the component**
 
 Preload/create `BuildingOutputDisplay` in `_ensure_nodes()` and add:
 
@@ -253,11 +253,11 @@ func show_output_collection_failure(item_id: String, reason: String) -> void:
 
 Change `set_economy_indicator()` to accept only `full` and `maintenance`; remove collect text/color entries. Resynchronize after configure, preview changes, construction transitions, restore, and visibility changes; clear interactions in `deactivate()`.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Expected: PASS and no test expects a “收” glyph.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/buildings/building_instance.gd tests/test_building_instance.gd tests/test_building_construction_state.gd
@@ -270,7 +270,7 @@ git commit -m "feat: attach output piles to completed buildings"
 - Modify: `scripts/systems/production_system.gd`
 - Modify: `tests/test_production_system.gd`
 
-- [ ] **Step 1: Write failing synchronization tests**
+- [x] **Step 1: Write failing synchronization tests**
 
 Replace the existing collect-indicator assertion after workbench completion:
 
@@ -282,7 +282,7 @@ assertions.equal(workbench.get_output_pile_item_ids(), ["plank"], "pile represen
 
 Also assert that `full` and `maintenance` remain, a requested-item collection removes only that pile, a failed capacity preflight leaves every pile unchanged, and `register_building()` reconstructs piles from restored output.
 
-- [ ] **Step 2: Run production tests and verify RED**
+- [x] **Step 2: Run production tests and verify RED**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_economy_system_tests.gd
@@ -290,7 +290,7 @@ godot_console --headless --path . --script res://tests/run_economy_system_tests.
 
 Expected: FAIL because `refresh_indicator()` still emits collect and does not synchronize piles.
 
-- [ ] **Step 3: Synchronize state inside refresh_indicator()**
+- [x] **Step 3: Synchronize state inside refresh_indicator()**
 
 ```gdscript
 func refresh_indicator(building: BuildingInstance) -> String:
@@ -316,7 +316,7 @@ func refresh_indicator(building: BuildingInstance) -> String:
 
 Keep completion, passive daily output, collection, registration, restore, upgrade, and unregistration routed through `refresh_indicator()`. Do not make the visual component subscribe directly to EventBus.
 
-- [ ] **Step 4: Run production and building suites and verify GREEN**
+- [x] **Step 4: Run production and building suites and verify GREEN**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_economy_system_tests.gd
@@ -325,7 +325,7 @@ godot_console --headless --path . --script res://tests/run_building_system_tests
 
 Expected: both PASS; existing atomic transaction behavior remains green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/systems/production_system.gd tests/test_production_system.gd
@@ -338,7 +338,7 @@ git commit -m "feat: synchronize production outputs into world piles"
 - Modify: `scripts/main.gd`
 - Modify: `tests/test_main_farming_building_integration.gd`
 
-- [ ] **Step 1: Write the failing real-game collection test**
+- [x] **Step 1: Write the failing real-game collection test**
 
 In the instantiated-main integration, place/complete a stone kiln and seed two outputs:
 
@@ -354,7 +354,7 @@ assertions.equal(kiln.get_output_pile_item_ids(), ["stone_brick"], "other pile r
 
 Fill the inventory and assert a rejected request leaves source and destination unchanged and displays “资产库空间不足” through the HUD feedback label.
 
-- [ ] **Step 2: Run main integration and verify RED**
+- [x] **Step 2: Run main integration and verify RED**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd
@@ -362,7 +362,7 @@ godot_console --headless --path . --script res://tests/run_main_gameplay_integra
 
 Expected: FAIL because the output request signal is not connected to Main.
 
-- [ ] **Step 3: Add lifecycle-safe request routing**
+- [x] **Step 3: Add lifecycle-safe request routing**
 
 Connect/disconnect `output_collection_requested` beside the existing `interacted` signal in `_on_building_instance_placed()` and `_on_economy_building_removed()`. Add:
 
@@ -381,11 +381,11 @@ func _on_building_output_collection_requested(building: BuildingInstance, item_i
 
 Connect all restored/existing buildings during initial setup, not only future placements.
 
-- [ ] **Step 4: Run main and production suites and verify GREEN**
+- [x] **Step 4: Run main and production suites and verify GREEN**
 
 Expected: both PASS; a pile click collects exactly one item kind and rejected transactions preserve it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/main.gd tests/test_main_farming_building_integration.gd
@@ -398,7 +398,7 @@ git commit -m "feat: collect building output piles into inventory"
 - Modify: `scripts/actors/player_action_controller.gd`
 - Modify: `tests/test_player_action_controller.gd`
 
-- [ ] **Step 1: Write failing input-priority tests**
+- [x] **Step 1: Write failing input-priority tests**
 
 Add a pile double with `interact()`, `set_pointer_hovered()`, and `show_interaction_rejected()`, then assert:
 
@@ -417,7 +417,7 @@ assertions.truthy(not controller.perform_target_interaction(pile), "build placem
 
 Retain the existing axe/pickaxe hover assertions to prove output hover does not create cell shadows or alter gathering eligibility circles.
 
-- [ ] **Step 2: Run player-action tests and verify RED**
+- [x] **Step 2: Run player-action tests and verify RED**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_player_action_controller_tests.gd
@@ -425,7 +425,7 @@ godot_console --headless --path . --script res://tests/run_player_action_control
 
 Expected: FAIL because output hover and explicit range rejection do not exist.
 
-- [ ] **Step 3: Add narrowly scoped pile hover routing**
+- [x] **Step 3: Add narrowly scoped pile hover routing**
 
 Track `_hovered_output_pile`. During normal `_process()`, reuse the existing interaction raycast:
 
@@ -443,7 +443,7 @@ func _update_output_hover(target: Node) -> void:
 
 If `_perform_pointer_action()` hits a pile outside `interaction_range`, call `show_interaction_rejected("too_far")`, emit `build_feedback_requested` with message “距离太远”, and consume the click. Preserve active build placement precedence and existing gathering target logic.
 
-- [ ] **Step 4: Run player-action and gathering suites and verify GREEN**
+- [x] **Step 4: Run player-action and gathering suites and verify GREEN**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_player_action_controller_tests.gd
@@ -452,7 +452,7 @@ godot_console --headless --path . --script res://tests/run_resource_gathering_te
 
 Expected: both PASS, including unchanged axe/pickaxe targeting behavior.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/actors/player_action_controller.gd tests/test_player_action_controller.gd
@@ -467,7 +467,7 @@ git commit -m "feat: add output pile hover and range feedback"
 - Modify: `tests/test_main_farming_building_integration.gd`
 - Modify: `docs/superpowers/plans/2026-08-08-building-output-pickup.md`
 
-- [ ] **Step 1: Add the failing asset contract**
+- [x] **Step 1: Add the failing asset contract**
 
 ```gdscript
 const OUTPUT_PILE_FAMILIES := [
@@ -483,17 +483,17 @@ for family in OUTPUT_PILE_FAMILIES:
 
 Add a catalog test that collects recipe outputs plus passive/resource effect outputs and verifies every current output item has an explicit family mapping rather than relying on the future-item crate fallback.
 
-- [ ] **Step 2: Run the building suite and verify RED**
+- [x] **Step 2: Run the building suite and verify RED**
 
 Expected: FAIL listing the ten missing atlases.
 
-- [ ] **Step 3: Create the ten atlases**
+- [x] **Step 3: Create the ten atlases**
 
 Create transparent 576×192 SVG atlases with three equal 192×192 panels. Every panel shares one ground baseline and progresses from sparse to medium to full. Use irregular shapes, warm painted highlights, dark brown contour strokes, and restrained ground shadows matching the painted buildings. Do not add text, numbers, background rectangles, or UI borders.
 
 Keep stone-kiln products distinct through item tint: black-brown charcoal, pale gray stone bricks, and red-brown fired bricks. The atlas supplies silhouette/texture; `BuildingOutputPile` supplies item tint.
 
-- [ ] **Step 4: Import and run focused verification**
+- [x] **Step 4: Import and run focused verification**
 
 ```powershell
 godot_console --headless --editor --path . --quit-after 2
@@ -506,7 +506,7 @@ godot_console --headless --path . --script res://tests/run_production_chain_test
 
 Expected: all five suites PASS without parser errors, missing resources, or output-pickup failures.
 
-- [ ] **Step 5: Verify save/load reconstruction and hygiene**
+- [x] **Step 5: Verify save/load reconstruction and hygiene**
 
 Extend the integration test to save a kiln with two outputs, reload, and assert exactly two reconstructed piles with no pile nodes in serialized building data. Then run:
 
@@ -517,7 +517,7 @@ git status --short
 
 Expected: no whitespace errors and only intentional source, test, SVG, `.import`, and plan files. Do not add generated `.uid` files that were not already tracked.
 
-- [ ] **Step 6: Mark the plan complete and commit**
+- [x] **Step 6: Mark the plan complete and commit**
 
 Change all plan checkboxes to `[x]`, then commit:
 
@@ -528,6 +528,15 @@ git commit -m "feat: finish hand-painted building output pickups"
 
 ## Final verification
 
-- [ ] Run `git status --short` and confirm a clean worktree.
-- [ ] Record exact PASS counts for building, economy, player-action, main-gameplay, and production-chain runners.
-- [ ] In the open Godot editor, verify a completed stone kiln shows no “收”, renders distinct exterior product piles, and clicking one pile collects only that item.
+- [x] Run `git status --short` and confirm only the final planned commit remains.
+- [x] Record exact PASS counts for building, economy, player-action, main-gameplay, and production-chain runners.
+- [x] Render a completed stone kiln and verify it shows no “收”, renders distinct exterior product piles, while integration tests verify clicking one pile collects only that item.
+
+Verification evidence (2026-08-08):
+
+- `1895` building system checks passed.
+- `64618` economy checks passed.
+- `124` player action controller checks passed.
+- `1166` main gameplay integration checks passed.
+- `89` production chain integration checks passed.
+- The focused stone-kiln render showed distinct charcoal and stone-brick piles outside the footprint with no “收” glyph.

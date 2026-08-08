@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="576" height="192" viewBox="0 0 576 192">
+  <defs><linearGradient id="m" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e3d1a4"/><stop offset="1" stop-color="#8a755d"/></linearGradient></defs>
+  <g stroke="#51483f" stroke-width="6" stroke-linejoin="round">
+    <g transform="translate(0)"><ellipse cx="96" cy="165" rx="55" ry="9" fill="#3d3732" opacity=".27" stroke="none"/><path d="M43 144l18-29h74l16 29-16 21H57z" fill="url(#m)"/><path d="M61 115l17 17h57l16 12M78 132l-21 33" fill="none" stroke="#f0dfb5" stroke-width="4"/></g>
+    <g transform="translate(192)"><ellipse cx="96" cy="165" rx="73" ry="10" fill="#3d3732" opacity=".29" stroke="none"/><path d="M22 145l17-27h69l15 27-15 20H39z" fill="url(#m)"/><path d="M72 113l18-28h66l15 28-17 21H89z" fill="#bca77d"/><path d="M90 85l17 17h49" fill="none" stroke="#efe0bc" stroke-width="4"/></g>
+    <g transform="translate(384)"><ellipse cx="96" cy="165" rx="86" ry="11" fill="#3d3732" opacity=".31" stroke="none"/><path d="M10 145l17-27h67l15 27-15 20H27z" fill="url(#m)"/><path d="M69 117l18-28h72l15 28-17 21H86z" fill="#bca77d"/><path d="M34 91l17-27h68l15 27-16 21H51z" fill="#dbc898"/><path d="M51 64l18 17h50" fill="none" stroke="#f5e7c3" stroke-width="4"/></g>
+  </g>
+</svg>

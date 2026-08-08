@@ -657,6 +657,11 @@ func _test_building_system_restore(assertions: TestAssert, tree: SceneTree) -> v
 	assertions.equal(system.restore_buildings(records), 1, "building system restores producer record")
 	var restored := system.get_building_at(10, 10)
 	assertions.equal(restored.producer_state.get_output_count("plank"), 2, "building system restores stored output")
+	assertions.equal(restored.get_output_pile_item_ids(), ["plank"], "restore reconstructs output pile projection")
+	assertions.truthy(
+		not restored.to_dict().has("output_piles"),
+		"save data excludes derived output pile nodes"
+	)
 	assertions.equal(restored.producer_state.jobs.size(), 1, "building system restores queued job")
 	if not restored.producer_state.jobs.is_empty():
 		assertions.equal(restored.producer_state.jobs[0].remaining_minutes, 40, "building system restores remaining job time")

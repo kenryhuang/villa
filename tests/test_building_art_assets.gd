@@ -1,5 +1,10 @@
 extends RefCounted
 
+const BuildingOutputPileScript := preload(
+	"res://scripts/buildings/building_output_pile.gd"
+)
+const RecipeDatabaseScript := preload("res://scripts/core/recipe_database.gd")
+
 const IDS := [
 	"barn",
 	"greenhouse",
@@ -33,6 +38,32 @@ const CONSTRUCTION_STAGES := ["foundation", "frame", "half_built"]
 const HAMMER_ICON_PATH := "res://assets/buildings/construction/construction_hammer_painted.png"
 const HAMMER_SHADER_PATH := "res://assets/buildings/construction/construction_hammer.gdshader"
 const PROGRESS_SHADER_PATH := "res://assets/buildings/construction/construction_progress.gdshader"
+const OUTPUT_PILE_FAMILIES := [
+	"wood",
+	"stone",
+	"ore",
+	"metal",
+	"sack",
+	"bottle",
+	"textile",
+	"food",
+	"crate",
+	"small",
+]
+const PASSIVE_OUTPUT_IDS := [
+	"wood",
+	"stone",
+	"coal",
+	"copper_ore",
+	"iron_ore",
+	"silver_ore",
+	"gold_ore",
+	"crystal",
+	"honey",
+	"beeswax",
+	"egg",
+	"feather",
+]
 
 
 static func texture_path(id: String, layer: String) -> String:
@@ -61,6 +92,20 @@ func run(assertions: TestAssert) -> void:
 		for stage in CONSTRUCTION_STAGES:
 			_validate_ground_anchor(construction_texture_path(id, stage), assertions)
 		_validate_activity_atlas(activity_texture_path(id), assertions)
+	for family in OUTPUT_PILE_FAMILIES:
+		_validate_output_pile_atlas(family, assertions)
+	for recipe in RecipeDatabaseScript.get_all_recipes():
+		for output_id_value in (recipe.outputs as Dictionary).keys():
+			var output_id := str(output_id_value)
+			assertions.truthy(
+				BuildingOutputPileScript.FAMILY_BY_ITEM.has(output_id),
+				"recipe output %s has an explicit pile family" % output_id
+			)
+	for output_id in PASSIVE_OUTPUT_IDS:
+		assertions.truthy(
+			BuildingOutputPileScript.FAMILY_BY_ITEM.has(output_id),
+			"passive output %s has an explicit pile family" % output_id
+		)
 	assertions.truthy(ResourceLoader.exists(HAMMER_ICON_PATH), "construction hammer icon exists")
 	if ResourceLoader.exists(HAMMER_ICON_PATH):
 		var hammer_texture := load(HAMMER_ICON_PATH) as Texture2D
@@ -199,4 +244,25 @@ func _validate_activity_atlas(path: String, assertions: TestAssert) -> void:
 		assertions.truthy(
 			visible_pixels < int(512 * 512 * 0.35),
 			"%s frame %d only redraws moving parts" % [path, frame]
+		)
+
+
+func _validate_output_pile_atlas(family: String, assertions: TestAssert) -> void:
+	var path := "res://assets/items/output_piles/%s.svg" % family
+	assertions.truthy(ResourceLoader.exists(path), "%s pile atlas exists" % family)
+	if not ResourceLoader.exists(path):
+		return
+	var texture := load(path) as Texture2D
+	assertions.truthy(texture != null, "%s pile atlas imports" % family)
+	if texture == null:
+		return
+	assertions.equal(texture.get_size(), Vector2(576, 192), "%s pile atlas has three frames" % family)
+	var image := texture.get_image()
+	assertions.truthy(image.detect_alpha(), "%s pile atlas contains alpha" % family)
+	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s pile atlas has a transparent corner" % family)
+	for frame in range(3):
+		var frame_rect := Rect2i(frame * 192, 0, 192, 192)
+		assertions.truthy(
+			image.get_region(frame_rect).get_used_rect().has_area(),
+			"%s pile density frame %d contains art" % [family, frame]
 		)
