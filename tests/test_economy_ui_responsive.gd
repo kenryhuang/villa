@@ -113,12 +113,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 
 func _test_compact_economy_geometry(assertions: TestAssert) -> void:
+	assertions.equal(EconomyLayout.MARKET_PANEL_MAX_SIZE, Vector2(1400.0, 760.0), "market uses selected comfortable size")
+	assertions.equal(EconomyLayout.BUILDING_PANEL_MAX_SIZE, Vector2(1400.0, 760.0), "production shell matches market")
+	assertions.equal(EconomyLayout.CARD_GAP, 16.0, "cards share the 8pt grid")
+	assertions.equal(EconomyLayout.CONTROL_HEIGHT, 44.0, "controls share one height")
+	assertions.equal(EconomyLayout.LIST_ROW_HEIGHT, 52.0, "dynamic rows share one height")
 	var market_rect: Rect2 = EconomyLayout.panel_rect_for(
 		Vector2(1920.0, 1080.0),
 		EconomyLayout.MARKET_PANEL_MAX_SIZE
 	)
-	assertions.truthy(market_rect.size.x <= 1080.0, "market width is capped")
-	assertions.truthy(market_rect.size.y <= 600.0, "market height is capped")
+	assertions.equal(market_rect, Rect2(260.0, 160.0, 1400.0, 760.0), "large market remains centered")
 	assertions.equal(market_rect.get_center(), Vector2(960.0, 540.0), "market stays centered")
 	var compact_rect: Rect2 = EconomyLayout.panel_rect_for(
 		Vector2(1280.0, 720.0),
@@ -138,8 +142,13 @@ func _test_compact_theme(assertions: TestAssert) -> void:
 			"%s exists" % variation
 		)
 	var shell := theme.get_stylebox(&"panel", &"EconomyShell") as StyleBoxFlat
+	var card := theme.get_stylebox(&"panel", &"EconomyCompactCard") as StyleBoxFlat
 	assertions.equal(shell.border_width_left, 1, "shell uses one-pixel border")
-	assertions.equal(shell.shadow_size, 8, "shell uses soft compact shadow")
+	assertions.equal(shell.shadow_size, 12, "shell uses one soft window shadow")
+	assertions.equal(shell.corner_radius_top_left, 18, "window uses Apple-like radius")
+	assertions.equal(card.corner_radius_top_left, 14, "cards use aligned radius")
+	assertions.equal(card.border_width_left, 1, "cards use a hairline")
+	assertions.equal(theme.default_font_size, 18, "body text stays readable")
 
 
 func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
@@ -301,8 +310,8 @@ func _test_building_palette_viewport_contract(assertions: TestAssert, tree: Scen
 func _test_layout_contract(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(3000, 2000)), "three_column", "target viewport uses columns")
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(1920, 1080)), "three_column", "desktop uses columns")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(1000, 900)), "three_column", "drawer threshold is exclusive")
-	assertions.equal(EconomyLayout.mode_for_size(Vector2(999, 900)), "drawer", "narrow logical viewport uses drawer")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(1120, 900)), "three_column", "drawer threshold is exclusive")
+	assertions.equal(EconomyLayout.mode_for_size(Vector2(1119, 900)), "drawer", "narrow logical viewport uses drawer")
 	assertions.equal(EconomyLayout.mode_for_size(Vector2(1280, 720)), "three_column", "compact desktop preserves the price curve")
 	assertions.equal(EconomyLayout.clamp_scale(0.5), 0.8, "scale has lower bound")
 	assertions.equal(EconomyLayout.clamp_scale(1.2), 1.2, "scale preserves supported value")

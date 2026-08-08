@@ -1,13 +1,17 @@
 class_name EconomyLayout
 extends RefCounted
 
-const DRAWER_BREAKPOINT := 1000.0
+const DRAWER_BREAKPOINT := 1120.0
 const MINIMUM_SCALE := 0.8
 const MAXIMUM_SCALE := 1.4
 const DEFAULT_SCALE := 1.0
-const MARKET_PANEL_MAX_SIZE := Vector2(1080.0, 600.0)
-const BUILDING_PANEL_MAX_SIZE := Vector2(980.0, 560.0)
+const MARKET_PANEL_MAX_SIZE := Vector2(1400.0, 760.0)
+const BUILDING_PANEL_MAX_SIZE := Vector2(1400.0, 760.0)
 const VIEWPORT_MARGIN := Vector2(20.0, 20.0)
+const WINDOW_INSET := 24.0
+const CARD_GAP := 16.0
+const CONTROL_HEIGHT := 44.0
+const LIST_ROW_HEIGHT := 52.0
 const THEME_PATH := "res://assets/ui/economy/economy_theme.tres"
 const RESPONSIVE_GROUP := &"economy_responsive_ui"
 
