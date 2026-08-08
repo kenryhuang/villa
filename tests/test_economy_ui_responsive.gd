@@ -91,6 +91,8 @@ class HudBuildingDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_compact_economy_geometry(assertions)
+	_test_compact_theme(assertions)
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
@@ -106,6 +108,36 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_narrow_shop_pagehost_bounds(assertions, tree)
 	await _test_trade_keyboard_and_wheel(assertions, tree)
 	await _test_trade_confirmation_modal(assertions, tree)
+
+
+func _test_compact_economy_geometry(assertions: TestAssert) -> void:
+	var market_rect: Rect2 = EconomyLayout.panel_rect_for(
+		Vector2(1920.0, 1080.0),
+		EconomyLayout.MARKET_PANEL_MAX_SIZE
+	)
+	assertions.truthy(market_rect.size.x <= 1080.0, "market width is capped")
+	assertions.truthy(market_rect.size.y <= 600.0, "market height is capped")
+	assertions.equal(market_rect.get_center(), Vector2(960.0, 540.0), "market stays centered")
+	var compact_rect: Rect2 = EconomyLayout.panel_rect_for(
+		Vector2(1280.0, 720.0),
+		EconomyLayout.MARKET_PANEL_MAX_SIZE
+	)
+	assertions.truthy(compact_rect.position.x >= 20.0, "compact market keeps left margin")
+	assertions.truthy(compact_rect.position.y >= 20.0, "compact market keeps top margin")
+	assertions.truthy(compact_rect.end.x <= 1260.0, "compact market keeps right margin")
+	assertions.truthy(compact_rect.end.y <= 700.0, "compact market keeps bottom margin")
+
+
+func _test_compact_theme(assertions: TestAssert) -> void:
+	var theme := load(EconomyLayout.THEME_PATH) as Theme
+	for variation in [&"EconomyShell", &"EconomyTab", &"EconomyTabSelected", &"EconomyCompactCard"]:
+		assertions.truthy(
+			theme.get_type_variation_base(variation) != &"",
+			"%s exists" % variation
+		)
+	var shell := theme.get_stylebox(&"panel", &"EconomyShell") as StyleBoxFlat
+	assertions.equal(shell.border_width_left, 1, "shell uses one-pixel border")
+	assertions.equal(shell.shadow_size, 8, "shell uses soft compact shadow")
 
 
 func _test_building_palette_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
