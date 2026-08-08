@@ -34,7 +34,7 @@
 - Modify: `tests/test_building_data.gd`
 - Modify: `tests/test_building_instance.gd`
 
-- [ ] **Step 1: Write failing art-profile tests**
+- [x] **Step 1: Write failing art-profile tests**
 
 Add assertions for all seven IDs:
 
@@ -61,7 +61,7 @@ assertions.near(
 )
 ```
 
-- [ ] **Step 2: Run the focused suite and verify RED**
+- [x] **Step 2: Run the focused suite and verify RED**
 
 Run:
 
@@ -71,7 +71,7 @@ godot_console --headless --path . --script res://tests/run_building_system_tests
 
 Expected: FAIL because `ground_anchor_uv`, `activity_fps`, and `anchored_center_y()` do not exist.
 
-- [ ] **Step 3: Add metadata and anchor calculation**
+- [x] **Step 3: Add metadata and anchor calculation**
 
 Add exported fields and authoritative maps to `BuildingData`:
 
@@ -104,11 +104,11 @@ static func anchored_center_y(world_height: float, ground_anchor_uv: Vector2) ->
 
 Use this value in `_configure_sprite()` for only the configured building data; default `(0.5, 1.0)` preserves all existing buildings.
 
-- [ ] **Step 4: Run the focused suite and verify GREEN**
+- [x] **Step 4: Run the focused suite and verify GREEN**
 
 Run the building suite. Expected: PASS with the existing check count plus new art-profile checks.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/data/building_data.gd scripts/buildings/building_instance.gd tests/test_building_data.gd tests/test_building_instance.gd
@@ -122,7 +122,7 @@ git commit -m "feat: add anchored production building art profiles"
 - Create: `tests/test_building_activity_visual.gd`
 - Modify: `tests/run_building_system_tests.gd`
 
-- [ ] **Step 1: Write the failing component tests**
+- [x] **Step 1: Write the failing component tests**
 
 Cover valid configuration, frame stepping, fade-in, fade-out/reset, invalid FPS fallback, missing texture, and malformed texture size. The core assertions are:
 
@@ -140,11 +140,11 @@ assertions.equal(visual.frame, 0, "inactive activity resets")
 assertions.equal(visual.visible, false, "inactive activity hides after fade")
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run the building suite. Expected: parser/preload failure because `BuildingActivityVisual` is absent.
 
-- [ ] **Step 3: Implement the minimal component**
+- [x] **Step 3: Implement the minimal component**
 
 Create a `Sprite3D` class with constants `FRAME_COUNT := 4`, `FADE_DURATION := 0.15`, and `FALLBACK_FPS := 4.0`. `configure()` must reject textures whose size is not 2048×512, set `hframes = 4`, billboard, alpha cut, fixed world width, anchored vertical position, and reset hidden. `set_active()` only changes the target state; `advance_animation(delta)` owns frame accumulation and alpha interpolation so headless tests remain deterministic.
 
@@ -158,11 +158,11 @@ func get_effective_fps() -> float
 
 Never read inventory, production systems, scene groups, or save data from this component.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run the building suite. Expected: PASS, including malformed-atlas and fade/reset cases.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/buildings/building_activity_visual.gd tests/test_building_activity_visual.gd tests/run_building_system_tests.gd
@@ -176,7 +176,7 @@ git commit -m "feat: add production building activity visual"
 - Modify: `tests/test_building_instance.gd`
 - Modify: `tests/test_building_construction_state.gd`
 
-- [ ] **Step 1: Write failing integration tests**
+- [x] **Step 1: Write failing integration tests**
 
 Assert that every building has `VisualRoot/ActivityLayer`, that it sorts between back and front, and that state gating is exact:
 
@@ -203,11 +203,11 @@ assertions.equal(resource_activity.is_active(), false, "full passive output buil
 
 Also assert construction, preview, `deactivate()`, and hidden states stop activity.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run the building suite. Expected: FAIL because the node and state bridge are absent.
 
-- [ ] **Step 3: Integrate without adding persistent state**
+- [x] **Step 3: Integrate without adding persistent state**
 
 Preload `BuildingActivityVisual`, create `ActivityLayer` in `_ensure_nodes()`, load `<id>_activity.png` in `_configure_visuals()`, and configure it from `BuildingData`.
 
@@ -235,11 +235,11 @@ func sync_activity_visual() -> void:
 
 Call the bridge after configuration, preview changes, construction stage changes, indicator changes, and on `_process()`. Advance the component with the same `delta`. Do not serialize animation state.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run the building suite. Expected: PASS with all state combinations covered.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/buildings/building_instance.gd tests/test_building_instance.gd tests/test_building_construction_state.gd
@@ -253,7 +253,7 @@ git commit -m "feat: drive painted building activity from production state"
 - Create: `assets/buildings/construction/{stone_kiln,furnace,food_workshop,textile_machine,lumberyard,quarry,mine}/*.png`
 - Modify: `tests/test_building_art_assets.gd`
 
-- [ ] **Step 1: Extend the asset contract and verify RED**
+- [x] **Step 1: Extend the asset contract and verify RED**
 
 Move the seven IDs into the full `IDS` set and add activity validation:
 
@@ -272,7 +272,7 @@ For all five static images per building, scan a narrow band around the authored 
 
 Run the building suite. Expected: FAIL listing all missing production-building assets.
 
-- [ ] **Step 2: Generate consistent source sheets with image generation**
+- [x] **Step 2: Generate consistent source sheets with image generation**
 
 Use the existing barn, windmill, workbench, and greenhouse PNGs as style references. For each building, use its exact Section 4 description from the design spec and this fixed contract in the prompt:
 
@@ -286,13 +286,13 @@ The same building design must remain consistent across completed, construction, 
 
 Generate one approved completed composition, one three-stage construction sheet, and one four-frame activity sheet per building. Use the completed composition as the reference for its own construction and activity calls.
 
-- [ ] **Step 3: Normalize and export exact runtime assets**
+- [x] **Step 3: Normalize and export exact runtime assets**
 
 Export final layers at 1024×1024 RGBA. The completed back contains the structure; the completed front contains only foreground occluders and contact details. Export the three construction panels as separate 1024×1024 files. Export the activity strip as 2048×512 RGBA with four 512×512 frames. Align every output to the exact normalized anchor `(0.5, 0.9375)` without scaling individual frames by their used rectangle.
 
 Inspect every exported PNG before moving on; reject sheets with opaque backgrounds, labels, inconsistent structures, clipped smoke, or changing ground contact.
 
-- [ ] **Step 4: Import and run asset tests**
+- [x] **Step 4: Import and run asset tests**
 
 Run:
 
@@ -303,7 +303,7 @@ godot_console --headless --path . --script res://tests/run_building_system_tests
 
 Expected: Godot imports all PNGs; the building suite passes dimensions, alpha, visible-pixel, activity-coverage, and fallback assertions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add assets/buildings/painted assets/buildings/construction tests/test_building_art_assets.gd
@@ -318,17 +318,17 @@ git commit -m "art: add painted production building sets"
 - Create: `tests/capture_production_buildings.gd`
 - Modify: `tests/test_building_visual_scene.gd`
 
-- [ ] **Step 1: Write the gallery contract test**
+- [x] **Step 1: Write the gallery contract test**
 
 Instantiate all seven scenes in a 4×2 grid using their real `BuildingData`, force completed status, and assert each has visible painted back/front layers, hidden fallback meshes, and a configured activity layer. Add a second row that forces foundation, frame, and half-built states for the currently selected building.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run `godot_console --headless --path . --script res://tests/test_building_visual_scene.gd`.
 
 Expected: FAIL because the new gallery scene is absent.
 
-- [ ] **Step 3: Implement the gallery and capture script**
+- [x] **Step 3: Implement the gallery and capture script**
 
 Create an orthographic camera, neutral hand-painted ground plane, fixed warm directional light, and labels outside the building silhouettes. `capture_production_buildings.gd` must save:
 
@@ -341,7 +341,7 @@ Create an orthographic camera, neutral hand-painted ground plane, fixed warm dir
 
 The active capture advances every activity layer to a representative nonzero frame; the idle capture asserts all activity layers are hidden.
 
-- [ ] **Step 4: Capture and inspect all four sheets**
+- [x] **Step 4: Capture and inspect all four sheets**
 
 Run:
 
@@ -351,7 +351,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility --sc
 
 Inspect all four PNGs. Tune only asset placement, visual-size metadata, anchor application, animation FPS, and activity-layer ordering needed to satisfy the design. Re-run the capture after every tuning change.
 
-- [ ] **Step 5: Run visual contract tests and commit**
+- [x] **Step 5: Run visual contract tests and commit**
 
 ```powershell
 godot_console --headless --path . --script res://tests/test_building_visual_scene.gd
@@ -365,7 +365,7 @@ git commit -m "test: add painted production building gallery"
 - Modify: `docs/superpowers/specs/2026-08-08-painted-production-buildings-design.md`
 - Modify: `docs/superpowers/plans/2026-08-08-painted-production-buildings.md`
 
-- [ ] **Step 1: Run parser/import verification**
+- [x] **Step 1: Run parser/import verification**
 
 ```powershell
 godot_console --headless --editor --quit --path .
@@ -373,7 +373,7 @@ godot_console --headless --editor --quit --path .
 
 Expected: exit 0 with no GDScript parse errors or failed resource imports.
 
-- [ ] **Step 2: Run focused and regression suites**
+- [x] **Step 2: Run focused and regression suites**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_building_system_tests.gd
@@ -385,7 +385,7 @@ godot_console --headless --path . --script res://tests/run_main_gameplay_integra
 
 Expected: all suites exit 0; known deliberate invalid-save warnings may remain, but there are no new script/runtime errors or missing production-building art warnings.
 
-- [ ] **Step 3: Run the game smoke test**
+- [x] **Step 3: Run the game smoke test**
 
 ```powershell
 godot_console --headless --path . --quit-after 10
@@ -393,7 +393,7 @@ godot_console --headless --path . --quit-after 10
 
 Expected: the main scene starts and exits without parser, resource-load, or null-node errors.
 
-- [ ] **Step 4: Update status and check the diff**
+- [x] **Step 4: Update status and check the diff**
 
 Set the design status to `已实现`, mark completed plan checkboxes, then run:
 
@@ -404,7 +404,7 @@ git status --short
 
 Expected: no whitespace errors and only intended code, art, tests, capture scripts, and documentation are modified.
 
-- [ ] **Step 5: Commit final verification**
+- [x] **Step 5: Commit final verification**
 
 ```powershell
 git add docs/superpowers/specs/2026-08-08-painted-production-buildings-design.md docs/superpowers/plans/2026-08-08-painted-production-buildings.md
