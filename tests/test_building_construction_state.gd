@@ -113,6 +113,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(interaction_events.size(), 0, "unfinished building rejects interaction")
 
 	var foundation_texture: Texture2D = instance.get_node("VisualRoot/ConstructionLayer").texture
+	for tween in tree.get_processed_tweens():
+		tween.custom_step(2.0)
 	instance.advance_construction(9.99)
 	assertions.equal(
 		instance.construction_stage,
@@ -155,6 +157,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				frame_hammer_offset.distance_to(foundation_hammer_offset) > 0.001,
 				"stage change updates hammer offset when painted bounds change"
 			)
+	var transitions := instance.get_node_or_null("VisualRoot/ConstructionTransitions")
+	assertions.truthy(transitions != null, "construction transitions root exists")
+	assertions.truthy(transitions != null and transitions.get_child_count() == 1, "stage change retains one outgoing sprite")
+	assertions.near(instance.STAGE_FADE_OUT_DURATION, 2.0, 0.001, "outgoing stage fade duration")
+	assertions.near(instance.STAGE_FADE_IN_DURATION, 2.0, 0.001, "incoming stage fade duration")
+	if transitions != null and transitions.get_child_count() == 1:
+		var outgoing := transitions.get_child(0) as Sprite3D
+		assertions.equal(outgoing.texture, foundation_texture, "outgoing sprite keeps previous stage texture")
+		for tween in tree.get_processed_tweens():
+			tween.custom_step(1.0)
+		assertions.near(outgoing.modulate.a, 0.5, 0.01, "outgoing frame is half transparent after one second")
+		assertions.near(construction_sprite.modulate.a, 0.5, 0.01, "incoming frame is half visible after one second")
+		for tween in tree.get_processed_tweens():
+			tween.custom_step(1.0)
+		assertions.near(outgoing.modulate.a, 0.0, 0.01, "outgoing frame finishes fading after two seconds")
+		assertions.near(construction_sprite.modulate.a, 1.0, 0.01, "incoming frame finishes fading after two seconds")
+		assertions.truthy(outgoing.is_queued_for_deletion(), "finished outgoing frame is queued for cleanup")
 	instance.set_camera_occluded(true)
 	instance._process(1.0)
 	assertions.near(construction_sprite.modulate.a, 0.3, 0.001, "camera occlusion fades construction art")
@@ -163,15 +182,6 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if progress_disk != null:
 		assertions.near(progress_disk.modulate.a, 1.0, 0.001, "camera occlusion does not fade construction progress")
 	instance.set_camera_occluded(false)
-	var transitions := instance.get_node_or_null("VisualRoot/ConstructionTransitions")
-	assertions.truthy(transitions != null, "construction transitions root exists")
-	assertions.truthy(transitions != null and transitions.get_child_count() == 1, "stage change retains one outgoing sprite")
-	if transitions != null and transitions.get_child_count() == 1:
-		var outgoing := transitions.get_child(0) as Sprite3D
-		assertions.equal(outgoing.texture, foundation_texture, "outgoing sprite keeps previous stage texture")
-	assertions.near(instance.STAGE_FADE_OUT_DURATION, 0.12, 0.001, "outgoing stage fade duration")
-	assertions.near(instance.STAGE_FADE_IN_DURATION, 0.18, 0.001, "incoming stage fade duration")
-
 	instance.advance_construction_stage()
 	assertions.equal(instance.construction_stage, BuildingInstance.ConstructionStage.HALF_BUILT, "manual advance moves exactly one stage")
 	assertions.equal(stage_events.size(), 2, "manual transition emits once")
