@@ -184,7 +184,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	kiln.producer_state.outputs = {"charcoal": 2, "stone_brick": 3}
 	main.production_system.refresh_indicator(kiln)
 	var charcoal_before: int = main.inventory_system.get_item_count("charcoal")
-	kiln.request_output_collection("charcoal")
+	var output_display: Variant = kiln.get_node("BuildingOutputDisplay")
+	var charcoal_pile: Variant = output_display.call("get_pile", "charcoal")
+	assertions.truthy(charcoal_pile != null, "finished charcoal creates a clickable painted pile")
+	if charcoal_pile != null:
+		charcoal_pile.set_pointer_hovered(true)
+		assertions.equal(
+			charcoal_pile.tooltip_text(),
+			"木炭 ×2",
+			"charcoal hover exposes the stored quantity"
+		)
+		charcoal_pile.interact(null)
 	assertions.equal(
 		main.inventory_system.get_item_count("charcoal"),
 		charcoal_before + 2,
@@ -203,7 +213,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for slot_index in range(main.inventory_system.slots.size()):
 		if main.inventory_system.slots[slot_index].is_empty():
 			main.inventory_system.slots[slot_index] = {"item_id": "wood", "quantity": 99}
-	kiln.request_output_collection("stone_brick")
+	var brick_pile: Variant = output_display.call("get_pile", "stone_brick")
+	assertions.truthy(brick_pile != null, "finished bricks remain a clickable painted pile")
+	if brick_pile != null:
+		brick_pile.interact(null)
 	assertions.equal(
 		kiln.producer_state.outputs,
 		{"stone_brick": 3},

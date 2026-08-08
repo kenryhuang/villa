@@ -45,8 +45,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	assertions.equal(
 		BuildingOutputPileScript.visual_family("charcoal"),
-		"ore",
-		"charcoal uses the ore pile family"
+		"charcoal",
+		"charcoal uses its painted kiln-output family"
+	)
+	assertions.equal(
+		BuildingOutputPileScript.visual_family("stone_brick"),
+		"brick",
+		"stone brick uses the kiln brick family"
 	)
 	assertions.equal(
 		BuildingOutputPileScript.visual_family("glass_jar"),

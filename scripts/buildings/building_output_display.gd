@@ -8,11 +8,17 @@ const INNER_MARGIN := 0.58
 const OUTER_MARGIN := 0.98
 
 var _footprint := Vector2i.ONE
+var _building_id := ""
 var _piles: Dictionary = {}
 
 
 func configure(footprint: Vector2i) -> void:
 	_footprint = Vector2i(maxi(footprint.x, 1), maxi(footprint.y, 1))
+
+
+func configure_for_building(footprint: Vector2i, building_id: String) -> void:
+	configure(footprint)
+	_building_id = building_id
 
 
 func sync_outputs(
@@ -29,7 +35,11 @@ func sync_outputs(
 		var existing_id := str(existing_value)
 		if existing_id not in item_ids:
 			_remove_pile(existing_id)
-	var positions := layout_positions(item_ids.size(), _footprint)
+	var positions := layout_positions_for_building(
+		item_ids.size(),
+		_footprint,
+		_building_id
+	)
 	for index in item_ids.size():
 		var item_id := item_ids[index]
 		var quantity := int(outputs.get(item_id, 0))
@@ -73,6 +83,33 @@ static func layout_positions(count: int, footprint: Vector2i) -> Array[Vector3]:
 			0.0,
 			outer_z + 0.55 + float(row / 2) * 0.34
 		))
+	return result
+
+
+static func layout_positions_for_building(
+	count: int,
+	footprint: Vector2i,
+	building_id: String
+) -> Array[Vector3]:
+	if building_id != "stone_kiln":
+		return layout_positions(count, footprint)
+	var result: Array[Vector3] = []
+	if count <= 0:
+		return result
+	var half_x := maxf(float(footprint.x) * 0.5, 0.5)
+	var half_z := maxf(float(footprint.y) * 0.5, 0.5)
+	var adjacent_x := half_x + 0.5
+	var adjacent_z := half_z + 0.5
+	var anchors: Array[Vector3] = [
+		Vector3(adjacent_x, 0.0, -0.5),
+		Vector3(adjacent_x, 0.0, 0.5),
+		Vector3(0.5, 0.0, adjacent_z),
+		Vector3(-0.5, 0.0, adjacent_z),
+		Vector3(-adjacent_x, 0.0, 0.5),
+		Vector3(-adjacent_x, 0.0, -0.5),
+	]
+	for index in mini(count, anchors.size()):
+		result.append(anchors[index])
 	return result
 
 

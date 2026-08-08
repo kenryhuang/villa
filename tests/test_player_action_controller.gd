@@ -319,7 +319,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
 	_test_gathering_command_routing(assertions, tree, controller_script)
-	_test_output_pile_interaction(assertions, tree, controller_script)
+	_test_output_pile_interaction(assertions, tree)
 	_test_completed_building_click_in_build_mode(assertions, tree)
 
 
@@ -375,12 +375,12 @@ func _test_completed_building_click_in_build_mode(
 
 func _test_output_pile_interaction(
 	assertions: TestAssert,
-	tree: SceneTree,
-	controller_script: Script
+	tree: SceneTree
 ) -> void:
-	var controller = controller_script.new()
+	var controller := PointerControllerDouble.new()
 	var player := InteractionPlayerDouble.new()
 	var pile := OutputPileDouble.new()
+	controller.interaction_target = pile
 	tree.root.add_child(player)
 	tree.root.add_child(pile)
 	tree.root.add_child(controller)
@@ -426,15 +426,24 @@ func _test_output_pile_interaction(
 		assertions.equal(pile.interactions, 1, "near pile dispatches one interaction")
 	controller.switch_mode(PlayerActionController.ActionMode.BUILDING)
 	assertions.truthy(
-		not controller.perform_target_interaction(pile),
-		"building mode retains click priority"
+		controller.call("_update_output_hover_from_pointer") == null and pile.hovered,
+		"building mode still exposes output quantity hover"
+	)
+	assertions.truthy(
+		controller.call("_try_interaction_hit", pile, Vector3(1.0, 0.0, 0.0)),
+		"building mode gives nearby output collection priority"
+	)
+	assertions.equal(
+		pile.interactions,
+		2,
+		"building mode click collects the represented output"
 	)
 	pile.rejected_reason = ""
 	assertions.truthy(
-		not controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
-		"building mode ignores distant output piles before placement"
+		controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
+		"building mode consumes a distant output click without placing"
 	)
-	assertions.equal(pile.rejected_reason, "", "building mode does not show output-pile rejection")
+	assertions.equal(pile.rejected_reason, "too_far", "building mode reports output range rejection")
 	pile.queue_free()
 	player.queue_free()
 	controller.queue_free()

@@ -74,4 +74,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			2,
 			"full shared storage renders %s as dense" % item_id
 		)
+
+	display.configure(Vector2i(2, 2))
+	assertions.truthy(
+		display.has_method("configure_for_building"),
+		"output display accepts building-specific adjacent layouts"
+	)
+	if display.has_method("configure_for_building"):
+		display.call("configure_for_building", Vector2i(2, 2), "stone_kiln")
+	display.sync_outputs({"charcoal": 2, "stone_brick": 3}, 9, true)
+	assertions.equal(
+		display.get_pile("charcoal").position,
+		Vector3(1.5, 0.0, -0.5),
+		"kiln charcoal sits in the first adjacent grid cell"
+	)
+	assertions.equal(
+		display.get_pile("stone_brick").position,
+		Vector3(1.5, 0.0, 0.5),
+		"kiln bricks sit in the second adjacent grid cell"
+	)
 	display.queue_free()

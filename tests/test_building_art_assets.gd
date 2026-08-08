@@ -49,6 +49,8 @@ const OUTPUT_PILE_FAMILIES := [
 	"food",
 	"crate",
 	"small",
+	"brick",
+	"charcoal",
 ]
 const PASSIVE_OUTPUT_IDS := [
 	"wood",
@@ -266,3 +268,13 @@ func _validate_output_pile_atlas(family: String, assertions: TestAssert) -> void
 			image.get_region(frame_rect).get_used_rect().has_area(),
 			"%s pile density frame %d contains art" % [family, frame]
 		)
+		if family in ["brick", "charcoal"]:
+			var right_gutter_clear := true
+			for y in range(192):
+				for x in range(frame * 192 + 189, frame * 192 + 192):
+					if image.get_pixel(x, y).a > 0.01:
+						right_gutter_clear = false
+			assertions.truthy(
+				right_gutter_clear,
+				"%s pile density frame %d keeps a transparent right gutter" % [family, frame]
+			)

@@ -437,6 +437,9 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 func perform_target_interaction(target: Node) -> bool:
 	if target == null:
 		return false
+	if target.is_in_group("building_output_pile") and target.has_method("interact"):
+		target.interact(player_ref)
+		return true
 	if _action_mode == ActionMode.BUILDING:
 		if (
 			target.has_method("can_open_economy_panel")
@@ -573,16 +576,9 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:
 	if target == null:
 		return false
-	if _action_mode == ActionMode.BUILDING:
-		return (
-			_point_in_player_range(hit_position)
-			and perform_target_interaction(target)
-		)
-	if target.has_method("can_gather"):
-		return perform_target_interaction(target)
-	if _point_in_player_range(hit_position):
-		return perform_target_interaction(target)
 	if target.is_in_group("building_output_pile"):
+		if _point_in_player_range(hit_position):
+			return perform_target_interaction(target)
 		if target.has_method("show_interaction_rejected"):
 			target.call("show_interaction_rejected", "too_far")
 		_emit_build_feedback({
@@ -592,6 +588,15 @@ func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:
 			"grid": Vector2i(-1, -1),
 		}, "InteractionRejected")
 		return true
+	if _action_mode == ActionMode.BUILDING:
+		return (
+			_point_in_player_range(hit_position)
+			and perform_target_interaction(target)
+		)
+	if target.has_method("can_gather"):
+		return perform_target_interaction(target)
+	if _point_in_player_range(hit_position):
+		return perform_target_interaction(target)
 	return false
 
 
@@ -600,9 +605,6 @@ func _update_tree_hover_from_pointer() -> void:
 
 
 func _update_output_hover_from_pointer() -> void:
-	if _action_mode != ActionMode.FARMING:
-		_clear_output_hover()
-		return
 	var hit := _raycast_to_interaction(_effective_pointer_position())
 	_update_output_hover(hit.get("target") as Node)
 

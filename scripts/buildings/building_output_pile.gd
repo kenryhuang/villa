@@ -14,10 +14,10 @@ const FAMILY_BY_ITEM := {
 	"furniture": "crate",
 	"wooden_crate": "crate",
 	"stone": "stone",
-	"stone_brick": "stone",
-	"brick": "stone",
+	"stone_brick": "brick",
+	"brick": "brick",
 	"coal": "ore",
-	"charcoal": "ore",
+	"charcoal": "charcoal",
 	"copper_ore": "ore",
 	"iron_ore": "ore",
 	"silver_ore": "ore",
@@ -54,11 +54,7 @@ const FAMILY_BY_ITEM := {
 	"jewelry": "small",
 }
 
-const TINT_BY_ITEM := {
-	"charcoal": Color("51443b"),
-	"stone_brick": Color("c7c1b3"),
-	"brick": Color("b96346"),
-}
+const TINT_BY_ITEM := {}
 
 var item_id := ""
 var quantity := 0
@@ -204,6 +200,8 @@ func _ensure_nodes() -> void:
 		tooltip.outline_size = 7
 		tooltip.position = Vector3(0.0, 0.72, 0.02)
 		tooltip.modulate = Color("fff1d3")
+		tooltip.no_depth_test = true
+		tooltip.render_priority = 3
 		tooltip.visible = false
 		add_child(tooltip)
 	if get_node_or_null("CollisionShape3D") == null:

@@ -231,7 +231,11 @@ func configure(
 	_ensure_nodes()
 	if data == null or not data.is_valid():
 		return
-	(get_node("BuildingOutputDisplay") as Node).call("configure", data.footprint)
+	(get_node("BuildingOutputDisplay") as Node).call(
+		"configure_for_building",
+		data.footprint,
+		data.building_id
+	)
 	name = data.display_name
 	_configure_visuals()
 	_configure_physics()
