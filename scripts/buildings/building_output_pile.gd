@@ -284,8 +284,8 @@ func _ensure_nodes() -> void:
 		tooltip.name = "Tooltip"
 		tooltip.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		tooltip.fixed_size = true
-		tooltip.font_size = 14
-		tooltip.outline_size = 4
+		tooltip.font_size = 10
+		tooltip.outline_size = 3
 		tooltip.position = Vector3(0.0, 0.58, 0.02)
 		tooltip.modulate = Color("fff1d3")
 		tooltip.no_depth_test = true
@@ -297,8 +297,8 @@ func _ensure_nodes() -> void:
 		pickup_feedback.name = "PickupFeedback"
 		pickup_feedback.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		pickup_feedback.fixed_size = true
-		pickup_feedback.font_size = 15
-		pickup_feedback.outline_size = 5
+		pickup_feedback.font_size = 11
+		pickup_feedback.outline_size = 3
 		pickup_feedback.position = Vector3(0.0, 0.72, 0.03)
 		pickup_feedback.modulate = Color("72f58b")
 		pickup_feedback.outline_modulate = Color("17311d")

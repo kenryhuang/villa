@@ -33,8 +33,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	pile.update_quantity(9, 9)
 	assertions.equal(pile.density_frame(), 2, "full storage uses dense frame")
 	var tooltip := pile.get_node("Tooltip") as Label3D
-	assertions.equal(tooltip.font_size, 14, "output quantity uses a compact font")
-	assertions.equal(tooltip.outline_size, 4, "output quantity uses a compact outline")
+	assertions.equal(tooltip.font_size, 10, "output quantity uses a small unobtrusive font")
+	assertions.equal(tooltip.outline_size, 3, "output quantity uses a small readable outline")
 	assertions.truthy(
 		pile.has_method("handle_direct_pointer_event"),
 		"pile owns an independent screen-space pointer handler"
@@ -128,6 +128,8 @@ func _test_collection_animation(assertions: TestAssert, tree: SceneTree) -> void
 	if feedback != null:
 		assertions.truthy(feedback.visible, "pickup feedback is immediately visible")
 		assertions.equal(feedback.text, "木炭 +2", "pickup feedback names the collected output")
+		assertions.equal(feedback.font_size, 11, "pickup feedback stays visually compact")
+		assertions.equal(feedback.outline_size, 3, "pickup feedback uses a compact outline")
 	assertions.equal(pile.collision_layer, 0, "collected pile immediately disables collision")
 	assertions.truthy(
 		not pile.is_processing_input(),

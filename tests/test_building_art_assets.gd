@@ -263,6 +263,22 @@ func _validate_output_pile_atlas(family: String, assertions: TestAssert) -> void
 	var image := texture.get_image()
 	assertions.truthy(image.detect_alpha(), "%s pile atlas contains alpha" % family)
 	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s pile atlas has a transparent corner" % family)
+	if family == "brick":
+		var vegetation_pixels := 0
+		for y in range(image.get_height()):
+			for x in range(image.get_width()):
+				var color := image.get_pixel(x, y)
+				if (
+					color.a > 0.1
+					and color.g > color.r * 1.05
+					and color.g > color.b * 1.5
+					and color.g > 0.2
+				):
+					vegetation_pixels += 1
+		assertions.truthy(
+			vegetation_pixels < 12,
+			"brick pile atlas contains standalone bricks without kiln grass or backdrop"
+		)
 	for frame in range(3):
 		var frame_rect := Rect2i(frame * 192, 0, 192, 192)
 		assertions.truthy(
