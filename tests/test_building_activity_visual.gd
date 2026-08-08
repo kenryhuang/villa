@@ -18,8 +18,18 @@ func run(assertions: TestAssert) -> void:
 	assertions.equal(visual.visible, false, "configured activity starts hidden")
 	assertions.truthy(visual.is_configured(), "valid atlas reports configured")
 
+	visual.set_external_tint(Color(0.8, 0.9, 1.0, 0.3))
 	visual.set_active(true)
-	visual.advance_animation(0.26)
+	visual.advance_animation(0.075)
+	assertions.near(
+		visual.modulate.a,
+		0.15,
+		0.001,
+		"activity fade composes with the parent building opacity"
+	)
+	assertions.near(visual.modulate.r, 0.8, 0.001, "activity inherits the parent tint")
+	visual.set_external_tint(Color.WHITE)
+	visual.advance_animation(0.185)
 	assertions.equal(visual.frame, 1, "activity advances at configured fps")
 	assertions.truthy(visual.is_active(), "activity reports active target state")
 	assertions.near(visual.modulate.a, 1.0, 0.001, "activity fades fully in")
@@ -46,6 +56,18 @@ func run(assertions: TestAssert) -> void:
 		0.001,
 		"invalid fps uses the safe fallback"
 	)
+	assertions.truthy(
+		fallback_fps.has_method("get_warning_count"),
+		"activity diagnostics expose their one-time warning count"
+	)
+	assertions.equal(fallback_fps.get_warning_count(), 1, "invalid fps warns once")
+	fallback_fps.configure(
+		valid_texture,
+		Vector2(2.0, 2.0),
+		Vector2(0.5, 0.9375),
+		0.0
+	)
+	assertions.equal(fallback_fps.get_warning_count(), 1, "repeated invalid fps does not spam")
 
 	var malformed := BuildingActivityVisual.new()
 	assertions.equal(
@@ -60,6 +82,7 @@ func run(assertions: TestAssert) -> void:
 	)
 	assertions.equal(malformed.visible, false, "malformed atlas remains hidden")
 	assertions.equal(malformed.is_configured(), false, "malformed atlas is not configured")
+	assertions.equal(malformed.get_warning_count(), 1, "malformed atlas warns once")
 
 	var missing := BuildingActivityVisual.new()
 	assertions.equal(
@@ -67,11 +90,21 @@ func run(assertions: TestAssert) -> void:
 			null,
 			Vector2(2.0, 2.0),
 			Vector2(0.5, 0.9375),
-			4.0
+			4.0,
+			"res://assets/buildings/painted/missing/missing_activity.png"
 		),
 		false,
 		"missing atlas is rejected"
 	)
+	assertions.equal(missing.get_warning_count(), 1, "required missing atlas warns once")
+	missing.configure(
+		null,
+		Vector2(2.0, 2.0),
+		Vector2(0.5, 0.9375),
+		4.0,
+		"res://assets/buildings/painted/missing/missing_activity.png"
+	)
+	assertions.equal(missing.get_warning_count(), 1, "required missing atlas path only warns once")
 
 	visual.free()
 	fallback_fps.free()

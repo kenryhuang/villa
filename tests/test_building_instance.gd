@@ -115,9 +115,26 @@ func _test_activity_state_bridge(assertions: TestAssert, tree: SceneTree) -> voi
 	}]
 	kiln.sync_activity_visual()
 	assertions.truthy(kiln_activity.is_active(), "running crafting job activates the kiln")
+	kiln.set_process(false)
+	kiln._process(0.2)
+	assertions.truthy(kiln_activity.visible, "runtime process fades active work art in")
 	kiln.set_economy_indicator("maintenance")
 	assertions.equal(kiln_activity.is_active(), false, "maintenance stops crafting activity")
+	for _step in 6:
+		kiln._process(0.05)
+	assertions.near(
+		kiln_activity.modulate.a,
+		0.0,
+		0.001,
+		"runtime process does not overwrite the activity fade-out"
+	)
+	assertions.equal(kiln_activity.frame, 0, "runtime fade-out resets the activity frame")
+	assertions.equal(kiln_activity.visible, false, "runtime fade-out hides stopped work art")
 	kiln.set_economy_indicator("")
+	kiln.visible = false
+	kiln.sync_activity_visual()
+	assertions.equal(kiln_activity.is_active(), false, "hidden building stops crafting activity")
+	kiln.visible = true
 	kiln.set_preview_mode(true)
 	assertions.equal(kiln_activity.is_active(), false, "preview stops crafting activity")
 	kiln.set_preview_mode(false)

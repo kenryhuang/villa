@@ -454,7 +454,12 @@ func _process(delta: float) -> void:
 	if _preview_mode:
 		return
 	for geometry in _visual_geometry():
-		if geometry is Sprite3D:
+		if geometry is BuildingActivityVisual:
+			var activity_visual := geometry as BuildingActivityVisual
+			var external_tint := activity_visual.get_external_tint()
+			external_tint.a = opacity_step(external_tint.a, _opacity_target, delta)
+			activity_visual.set_external_tint(external_tint)
+		elif geometry is Sprite3D:
 			var sprite := geometry as Sprite3D
 			var color: Color = sprite.modulate
 			color.a = opacity_step(color.a, _opacity_target, delta)
@@ -548,7 +553,8 @@ func _configure_visuals() -> void:
 	var base_path := "res://assets/buildings/painted/%s/%s" % [data.building_id, data.building_id]
 	var back_texture := _load_texture(base_path + "_back.png")
 	var front_texture := _load_texture(base_path + "_front.png")
-	var activity_texture := _load_texture(base_path + "_activity.png")
+	var activity_path := base_path + "_activity.png"
+	var activity_texture := _load_texture(activity_path)
 	var has_painted_layers := back_texture != null and front_texture != null
 	back.visible = has_painted_layers
 	front.visible = has_painted_layers
@@ -560,7 +566,8 @@ func _configure_visuals() -> void:
 		activity_texture,
 		data.visual_size,
 		data.ground_anchor_uv,
-		data.activity_fps
+		data.activity_fps,
+		activity_path if BuildingData.PAINTED_PRODUCTION_IDS.has(data.building_id) else ""
 	)
 	_configure_fallback(not has_painted_layers)
 	_configure_construction_fallback()
@@ -947,7 +954,9 @@ func _apply_visual_color() -> void:
 	if _preview_mode:
 		tint = Color(0.48, 1.0, 0.52, 0.68) if _preview_valid else Color(1.0, 0.38, 0.38, 0.68)
 	for geometry in _visual_geometry():
-		if geometry is Sprite3D:
+		if geometry is BuildingActivityVisual:
+			(geometry as BuildingActivityVisual).set_external_tint(tint)
+		elif geometry is Sprite3D:
 			(geometry as Sprite3D).modulate = tint
 		elif geometry is MeshInstance3D:
 			var mesh := geometry as MeshInstance3D
