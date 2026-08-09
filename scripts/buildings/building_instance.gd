@@ -28,6 +28,9 @@ const BuildingActivityVisualScript = preload(
 const BuildingOutputDisplayScript = preload(
 	"res://scripts/buildings/building_output_display.gd"
 )
+const BuildingMaintenanceVisualScript = preload(
+	"res://scripts/buildings/building_maintenance_visual.gd"
+)
 const COLLISION_LAYERS := 16 | 64
 const INTERACTION_LAYERS := 64 | 256
 const CAMERA_OCCLUDER_LAYER := 32
@@ -59,6 +62,7 @@ var _opacity_target := CLEAR_OPACITY
 var _completion_emitted := false
 var _missing_construction_art_warnings := {}
 var _economy_indicator_kind := ""
+var _maintenance_visual_state := "normal"
 var _output_quantity_capacity := 0
 
 var building_id: String:
@@ -275,6 +279,7 @@ func deactivate() -> void:
 	remove_from_group("building_instance")
 	visible = false
 	set_economy_indicator("")
+	set_maintenance_visual_state("normal")
 	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
 	if output_display != null:
 		output_display.call("clear_immediately")
@@ -320,13 +325,38 @@ func can_open_economy_panel() -> bool:
 
 
 func set_economy_indicator(kind: String) -> void:
-	_economy_indicator_kind = kind if kind in ["full", "maintenance"] else ""
+	if kind == "maintenance":
+		set_maintenance_visual_state("overdue")
+		kind = ""
+	_economy_indicator_kind = kind if kind == "full" else ""
 	_sync_economy_indicator()
 	sync_activity_visual()
 
 
 func get_economy_indicator() -> String:
 	return _economy_indicator_kind
+
+
+func set_maintenance_visual_state(next_state: String, remaining_seconds: float = 0.0) -> void:
+	var normalized := (
+		next_state
+		if next_state in ["normal", "warning", "overdue", "repairing"]
+		else "normal"
+	)
+	var previous := _maintenance_visual_state
+	_maintenance_visual_state = normalized
+	_ensure_nodes()
+	var maintenance_visual: Variant = get_node_or_null("BuildingMaintenanceVisual")
+	if maintenance_visual != null:
+		maintenance_visual.call("set_state", normalized, remaining_seconds)
+		if previous == "repairing" and normalized == "normal":
+			maintenance_visual.call("play_completion")
+	_apply_visual_color()
+	sync_activity_visual()
+
+
+func get_maintenance_visual_state() -> String:
+	return _maintenance_visual_state
 
 
 func sync_output_display(outputs: Dictionary, quantity_capacity: int) -> void:
@@ -595,6 +625,10 @@ func _ensure_nodes() -> void:
 		var feedback := ConstructionFeedbackScript.new() as ConstructionFeedback
 		feedback.name = "ConstructionFeedback"
 		add_child(feedback)
+	if get_node_or_null("BuildingMaintenanceVisual") == null:
+		var maintenance_visual := BuildingMaintenanceVisualScript.new()
+		maintenance_visual.name = "BuildingMaintenanceVisual"
+		add_child(maintenance_visual)
 	if get_node_or_null("EconomyIndicator") == null:
 		var indicator := Label3D.new()
 		indicator.name = "EconomyIndicator"
@@ -658,6 +692,9 @@ func _configure_visuals() -> void:
 	_configure_construction_fallback()
 	var feedback := get_node("ConstructionFeedback") as ConstructionFeedback
 	feedback.configure(data.visual_size)
+	var maintenance_visual: Variant = get_node("BuildingMaintenanceVisual")
+	maintenance_visual.call("configure", data.visual_size, data.ground_anchor_uv)
+	maintenance_visual.call("set_state", _maintenance_visual_state, 0.0)
 	_apply_visual_color()
 	sync_activity_visual()
 
@@ -665,7 +702,7 @@ func _configure_visuals() -> void:
 func should_play_activity() -> bool:
 	if data == null or _preview_mode or not is_construction_complete() or not visible:
 		return false
-	if _economy_indicator_kind in ["full", "maintenance"]:
+	if _economy_indicator_kind == "full" or _maintenance_visual_state in ["overdue", "repairing"]:
 		return false
 	if data.effect_type == "crafting":
 		if producer_state == null:
@@ -710,14 +747,8 @@ func _sync_economy_indicator() -> void:
 		return
 	var visual_size := data.visual_size if data != null else Vector2(1.0, 1.0)
 	indicator.position = Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
-	indicator.text = {
-		"full": "满",
-		"maintenance": "修",
-	}.get(_economy_indicator_kind, "")
-	indicator.modulate = {
-		"full": Color("ef6767"),
-		"maintenance": Color("f2b84b"),
-	}.get(_economy_indicator_kind, Color.WHITE)
+	indicator.text = "满" if _economy_indicator_kind == "full" else ""
+	indicator.modulate = Color("ef6767") if _economy_indicator_kind == "full" else Color.WHITE
 	indicator.visible = (
 		not indicator.text.is_empty()
 		and not _preview_mode
@@ -1037,6 +1068,10 @@ func _apply_visual_color() -> void:
 	var tint := Color.WHITE
 	if _preview_mode:
 		tint = Color(0.48, 1.0, 0.52, 0.68) if _preview_valid else Color(1.0, 0.38, 0.38, 0.68)
+	elif _maintenance_visual_state == "warning":
+		tint = Color(0.92, 0.89, 0.78, 1.0)
+	elif _maintenance_visual_state in ["overdue", "repairing"]:
+		tint = Color(0.76, 0.72, 0.66, 1.0)
 	for geometry in _visual_geometry():
 		if geometry is BuildingActivityVisual:
 			(geometry as BuildingActivityVisual).set_external_tint(tint)

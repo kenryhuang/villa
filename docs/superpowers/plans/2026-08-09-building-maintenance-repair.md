@@ -122,7 +122,7 @@ Write exact keys `version`, `maintenance`, `speed_accumulators`, and `repairing`
 - Modify: `tests/run_building_system_tests.gd`
 - Modify: `tests/test_building_construction_state.gd`
 
-- [ ] **Step 1: Write failing visual tests**
+- [x] **Step 1: Write failing visual tests**
 
 Assert normal hides damage, warning shows the subtle overlay, overdue shows the broken overlay, repairing shows the painted hammer, the component runs while paused, and `EconomyIndicator.text` is never “修”.
 
@@ -133,19 +133,19 @@ visual.set_state("repairing", 1.5)
 assertions.truthy(visual.hammer_pivot.visible, "repairing shows painted hammer")
 ```
 
-- [ ] **Step 2: Run building suite and verify RED**
+- [x] **Step 2: Run building suite and verify RED**
 
-- [ ] **Step 3: Implement `BuildingMaintenanceVisual`**
+- [x] **Step 3: Implement `BuildingMaintenanceVisual`**
 
 Use two transparent, irregular hand-painted SVG overlays. Scale them from `visual_size` and ground anchor. Reuse the painted construction hammer texture/shader with a 0.6-second pivot cycle, omit the construction progress disk, and add a 0.35-second completion fade. Expose only `configure()`, `set_state()`, and `play_completion()`.
 
-- [ ] **Step 4: Integrate with `BuildingInstance`**
+- [x] **Step 4: Integrate with `BuildingInstance`**
 
 Add `set_maintenance_visual_state()`. The legacy indicator keeps only `full`; `should_play_activity()` returns false for overdue/repairing.
 
-- [ ] **Step 5: Run building suite and require PASS**
+- [x] **Step 5: Run building suite and require PASS**
 
-- [ ] **Step 6: Commit `feat: render building damage and repair animation`**
+- [x] **Step 6: Commit `feat: render building damage and repair animation`**
 
 ### Task 5: In-building maintenance card
 

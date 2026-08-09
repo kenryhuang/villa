@@ -42,6 +42,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(instance.has_node("VisualRoot/BackLayer"), "%s has back layer" % id)
 		assertions.truthy(instance.has_node("VisualRoot/FrontLayer"), "%s has front layer" % id)
 		assertions.truthy(instance.has_node("EconomyIndicator"), "%s has a world economy indicator" % id)
+		assertions.truthy(instance.has_node("BuildingMaintenanceVisual"), "%s has maintenance damage visuals" % id)
 		assertions.truthy(instance.has_node("BuildingOutputDisplay"), "%s has an output display" % id)
 		assertions.equal(instance.get_node("Collision").collision_layer, 16 | 64, "%s collision layers" % id)
 		assertions.equal(instance.get_node("InteractionArea").collision_layer, 64 | 256, "%s interaction layers" % id)
@@ -61,7 +62,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				instance.call("set_economy_indicator", "full")
 				assertions.equal(instance.call("get_economy_indicator"), "full", "full indicator remains available")
 				instance.call("set_economy_indicator", "maintenance")
-				assertions.equal(instance.call("get_economy_indicator"), "maintenance", "maintenance has priority")
+				assertions.equal(instance.call("get_economy_indicator"), "", "maintenance never uses a text indicator")
+				assertions.equal(instance.get_node("EconomyIndicator").text, "", "repair character is removed")
+				assertions.equal(instance.call("get_maintenance_visual_state"), "overdue", "legacy maintenance signal maps to damage")
 				instance.call("set_economy_indicator", "")
 				assertions.truthy(not instance.get_node("EconomyIndicator").visible, "empty indicator hides the glyph")
 			instance.producer_state.outputs = {"plank": 2}
@@ -143,7 +146,7 @@ func _test_activity_state_bridge(assertions: TestAssert, tree: SceneTree) -> voi
 	kiln.set_process(false)
 	kiln._process(0.2)
 	assertions.truthy(kiln_activity.visible, "runtime process fades active work art in")
-	kiln.set_economy_indicator("maintenance")
+	kiln.set_maintenance_visual_state("overdue")
 	assertions.equal(kiln_activity.is_active(), false, "maintenance stops crafting activity")
 	for _step in 6:
 		kiln._process(0.05)

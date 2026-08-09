@@ -404,7 +404,8 @@ func _test_queue_limit_and_output_pause(assertions: TestAssert) -> void:
 		assertions.equal(blocked.call("get_economy_indicator"), "full", "blocked output shows full indicator")
 	assertions.truthy(production.set_maintenance_due_day(blocked, production.get_current_day()), "indicator fixture reaches maintenance due day")
 	if blocked.has_method("get_economy_indicator"):
-		assertions.equal(blocked.call("get_economy_indicator"), "maintenance", "maintenance replaces full indicator")
+		assertions.equal(blocked.call("get_economy_indicator"), "", "maintenance removes the text indicator")
+		assertions.equal(blocked.call("get_maintenance_visual_state"), "overdue", "maintenance shows broken visual state")
 	production.set_maintenance_due_day(blocked, production.get_current_day() + 7)
 	assertions.truthy(production.collect_item(blocked, "stone", blocked_inventory), "one stored item can be collected")
 	production.advance_minutes(1)

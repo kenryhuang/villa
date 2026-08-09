@@ -89,10 +89,14 @@ func refresh_indicator(building: BuildingInstance) -> String:
 	var kind := ""
 	var state := _get_state(building)
 	if _building_is_active(building):
-		if is_maintenance_paused(building):
-			kind = "maintenance"
-		elif state != null and _is_output_full(building, state):
+		if not is_maintenance_paused(building) and state != null and _is_output_full(building, state):
 			kind = "full"
+	if building.has_method("set_maintenance_visual_state"):
+		building.call(
+			"set_maintenance_visual_state",
+			get_maintenance_state(building),
+			get_repair_remaining_seconds(building)
+		)
 	if building.has_method("sync_output_display"):
 		building.call(
 			"sync_output_display",
