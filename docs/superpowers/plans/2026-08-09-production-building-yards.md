@@ -89,7 +89,7 @@ git commit -m "feat: define production building yards"
 - Modify: `tests/run_building_system_tests.gd`
 - Modify: `tests/test_building_art_assets.gd`
 
-- [ ] **Step 1: Write failing component and asset tests**
+- [x] **Step 1: Write failing component and asset tests**
 
 Assert each atlas exists, is an SVG with the documented 4-row × 2-column stage/orientation contract, and the component can:
 
@@ -105,15 +105,15 @@ assert(yard.get_construction_stage() == BuildingInstance.ConstructionStage.FRAME
 
 Test 4×4 segment count, style validation, back/side/front layers, preview tint, maintenance tint, collision-layer isolation, and immediate cleanup.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Expected: preload failures for the missing component and SVG assets.
 
-- [ ] **Step 3: Create the three painted SVG atlases**
+- [x] **Step 3: Create the three painted SVG atlases**
 
 Use hand-drawn uneven outlines, warm shadows, and style-specific palettes. Each atlas supplies front and side variants for foundation, frame, half-built, and complete states. Do not use plain untextured geometry as the completed visual.
 
-- [ ] **Step 4: Implement `BuildingProductionYard`**
+- [x] **Step 4: Implement `BuildingProductionYard`**
 
 The component must expose:
 
@@ -131,9 +131,9 @@ func clear_immediately() -> void
 
 Generate perimeter-only box collisions on the player/world layer. Fence bodies must not use output interaction layer 128 or building interaction layer 64. Produce six front-zone slots for 3×3 and eight for 4×4, all inside the fence boundary and clear of the shifted structure footprint.
 
-- [ ] **Step 5: Run component and building tests and require GREEN**
+- [x] **Step 5: Run component and building tests and require GREEN**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add assets/buildings/yards scripts/buildings/building_production_yard.gd tests/test_building_production_yard.gd tests/run_building_system_tests.gd tests/test_building_art_assets.gd
