@@ -550,7 +550,8 @@ func _setup_runtime_debug_tools() -> void:
 		npc_economy_system,
 		daily_simulation_system,
 		world,
-		get_node_or_null("/root/EventBus")
+		get_node_or_null("/root/EventBus"),
+		economy_progression_system
 	):
 		debug_state_editor = null
 		push_error("Unable to configure runtime debug state editor.")

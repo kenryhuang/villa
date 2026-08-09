@@ -117,6 +117,41 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.hud.debug_panel_requested.emit()
 		assertions.truthy(main.debug_panel.visible, "HUD request opens runtime debug panel")
 		main.debug_panel.close()
+		var progression_before: Dictionary = main.economy_progression_system.to_dict()
+		var debug_state_before: Dictionary = main.debug_state_editor.snapshot()
+		assertions.truthy(
+			not main.economy_progression_system.is_blueprint_unlocked("barn"),
+			"tier-one barn starts locked before a debug progression jump"
+		)
+		var progression_draft := debug_state_before.duplicate(true)
+		progression_draft["level"] = 2
+		progression_draft["elapsed_days"] = 7
+		var progression_result: Dictionary = main.debug_state_editor.apply(progression_draft)
+		assertions.truthy(
+			bool(progression_result.get("ok", false)),
+			"debug progression jump applies"
+		)
+		assertions.truthy(
+			main.economy_progression_system.is_blueprint_unlocked("barn"),
+			"debug progression jump grants gate-eligible blueprints"
+		)
+		assertions.truthy(
+			main.economy_progression_system.is_recipe_unlocked("flour"),
+			"debug blueprint grant includes its tier recipe"
+		)
+		assertions.truthy(
+			str(main.building_system.diagnose_availability("barn").get("code", ""))
+			!= "blueprint_locked",
+			"building availability observes debug-unlocked blueprints"
+		)
+		assertions.truthy(
+			main.economy_progression_system.from_dict(progression_before),
+			"debug progression fixture restores blueprint ownership"
+		)
+		assertions.truthy(
+			bool(main.debug_state_editor.apply(debug_state_before).get("ok", false)),
+			"debug progression fixture restores actor and date state"
+		)
 	var main_source := FileAccess.get_file_as_string("res://scripts/main.gd")
 	var initial_state_source := _get_method_source(main_source, "_initial_game_state")
 	assertions.truthy(

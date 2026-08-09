@@ -14,6 +14,7 @@ var _npc: Variant
 var _daily: Variant
 var _resources: Variant
 var _event_bus: Variant
+var _progression: Variant
 var _configured := false
 
 
@@ -26,7 +27,8 @@ func configure(
 	npc: Variant,
 	daily: Variant,
 	resources: Variant,
-	event_bus: Variant
+	event_bus: Variant,
+	progression: Variant = null
 ) -> bool:
 	if (
 		game_state == null
@@ -49,6 +51,10 @@ func configure(
 		or not _has_properties(daily, ["last_simulated_day"])
 		or not _has_methods(resources, ["to_resource_dicts", "restore_resource_dicts"])
 		or event_bus == null
+		or (
+			progression != null
+			and not _has_methods(progression, ["debug_unlock_gate_eligible_blueprints"])
+		)
 	):
 		return false
 	_game_state = game_state
@@ -60,6 +66,7 @@ func configure(
 	_daily = daily
 	_resources = resources
 	_event_bus = event_bus
+	_progression = progression
 	_configured = true
 	return true
 
@@ -215,11 +222,22 @@ func apply(draft: Dictionary) -> Dictionary:
 		target_inventory.get("slots"),
 		target_inventory.get("quick_mappings")
 	)
+	var unlocked_blueprint_count := 0
+	if _progression != null:
+		var unlock_result: Dictionary = _progression.call(
+			"debug_unlock_gate_eligible_blueprints"
+		)
+		if not bool(unlock_result.get("ok", false)):
+			return _failure(str(unlock_result.get("reason", "transaction_failed")))
+		unlocked_blueprint_count = (unlock_result.get("blueprints", []) as Array).size()
 	_emit_success_events(before, draft)
+	var message := "调试数据已应用；尚未写入存档"
+	if unlocked_blueprint_count > 0:
+		message = "调试数据已应用；新解锁 %d 个蓝图；尚未写入存档" % unlocked_blueprint_count
 	return {
 		"ok": true,
 		"reason": "",
-		"message": "调试数据已应用；尚未写入存档",
+		"message": message,
 	}
 
 

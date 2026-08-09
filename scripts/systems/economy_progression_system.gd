@@ -129,6 +129,45 @@ func is_recipe_unlocked(recipe_id: String) -> bool:
 	return bool(unlocked_recipes.get(recipe_id, false))
 
 
+func debug_unlock_gate_eligible_blueprints() -> Dictionary:
+	if not OS.is_debug_build():
+		return {"ok": false, "reason": "debug_build_required"}
+	if _day_source == null or not _valid_wallet(_wallet):
+		return {"ok": false, "reason": "not_configured"}
+	var service_ids: Array[String] = []
+	for service_id_value in BLUEPRINT_SERVICES:
+		service_ids.append(str(service_id_value))
+	service_ids.sort()
+	var granted_blueprints: Array[String] = []
+	var granted_recipes: Array[String] = []
+	for service_id in service_ids:
+		var definition := BLUEPRINT_SERVICES[service_id] as Dictionary
+		if not _gate_met(int(definition.day_gate), int(definition.level_gate)):
+			continue
+		var target_id := str(definition.target_id)
+		if is_blueprint_unlocked(target_id):
+			continue
+		unlocked_blueprints[target_id] = true
+		granted_blueprints.append(target_id)
+		var tier := int(BLUEPRINT_TIERS.get(target_id, -1))
+		for recipe in RecipeDatabaseScript.get_recipes_for_station(target_id):
+			var recipe_id := str(recipe.id)
+			if (
+				int(recipe.get("unlock_tier", -1)) <= tier
+				and not is_recipe_unlocked(recipe_id)
+			):
+				unlocked_recipes[recipe_id] = true
+				granted_recipes.append(recipe_id)
+	for blueprint_id in granted_blueprints:
+		_emit_event("service_unlocked", ["blueprint", blueprint_id])
+	return {
+		"ok": true,
+		"reason": "",
+		"blueprints": granted_blueprints,
+		"recipes": granted_recipes,
+	}
+
+
 func get_blueprint_service_id(building_id: String) -> String:
 	for service_id in BLUEPRINT_SERVICES:
 		if str((BLUEPRINT_SERVICES[service_id] as Dictionary).target_id) == building_id:

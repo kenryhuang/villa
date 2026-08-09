@@ -123,6 +123,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var original_level := int(wallet.player_state.level)
 	var original_stamina := int(wallet.player_state.stamina)
 	_test_unlock_gates_and_strict_state(assertions, wallet)
+	_test_debug_gate_unlocks(assertions, wallet)
 	_test_complete_unlock_routes_and_v1_migration(assertions)
 	_test_tool_durability_and_atomic_repair(assertions, wallet)
 	_test_failed_service_transactions_are_signal_atomic(assertions)
@@ -228,6 +229,38 @@ func _test_unlock_gates_and_strict_state(assertions: TestAssert, wallet: Node) -
 	unobtainable_high_tier.unlocked_recipes.append("perfume")
 	assertions.truthy(not restored.from_dict(unobtainable_high_tier), "recipe without its locked station rejects")
 	assertions.equal(restored.to_dict(), before_bad, "unobtainable recipe rejection is atomic")
+
+
+func _test_debug_gate_unlocks(assertions: TestAssert, wallet: Node) -> void:
+	var inventory := _inventory()
+	var tool := _tool(inventory)
+	var production := _production()
+	var day := DaySource.new()
+	var progression = _track(ProgressionScript.new())
+	assertions.truthy(
+		progression.configure(tool, production, inventory, day, wallet),
+		"debug unlock fixture configures progression"
+	)
+	wallet.player_state.level = 2
+	day.total_days = 7
+	var before_gate: Dictionary = progression.debug_unlock_gate_eligible_blueprints()
+	assertions.equal(before_gate.blueprints, [], "debug unlock preserves blueprints before the day gate")
+	assertions.truthy(not progression.is_blueprint_unlocked("barn"), "debug unlock respects the day gate")
+
+	day.total_days = 8
+	var tier_one: Dictionary = progression.debug_unlock_gate_eligible_blueprints()
+	assertions.truthy(bool(tier_one.ok), "debug unlock grants eligible tier-one progression")
+	assertions.equal(tier_one.blueprints.size(), 8, "debug unlock grants every tier-one blueprint")
+	assertions.truthy(progression.is_blueprint_unlocked("barn"), "debug unlock owns the barn blueprint")
+	assertions.truthy(progression.is_recipe_unlocked("flour"), "debug unlock grants blueprint tier recipes")
+	assertions.truthy(not progression.is_blueprint_unlocked("greenhouse"), "debug unlock keeps tier two gated")
+	var repeated: Dictionary = progression.debug_unlock_gate_eligible_blueprints()
+	assertions.equal(repeated.blueprints, [], "debug unlock is idempotent")
+
+	wallet.player_state.level = 1
+	day.total_days = 1
+	progression.debug_unlock_gate_eligible_blueprints()
+	assertions.truthy(progression.is_blueprint_unlocked("barn"), "lower debug values do not relock ownership")
 
 
 func _test_complete_unlock_routes_and_v1_migration(assertions: TestAssert) -> void:
