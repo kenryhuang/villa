@@ -359,7 +359,8 @@ func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
 		return {}
 	if building not in _production_system.get_registered_buildings():
 		return {}
-	var area := int(building.data.footprint.x * building.data.footprint.y)
+	var structure_size := building.get_structure_footprint()
+	var area := int(structure_size.x * structure_size.y)
 	var base_gold := 20
 	var base_materials := 1
 	if area >= 5:

@@ -31,6 +31,9 @@ const BuildingOutputDisplayScript = preload(
 const BuildingMaintenanceVisualScript = preload(
 	"res://scripts/buildings/building_maintenance_visual.gd"
 )
+const BuildingProductionYardScript = preload(
+	"res://scripts/buildings/building_production_yard.gd"
+)
 const COLLISION_LAYERS := 16 | 64
 const INTERACTION_LAYERS := 64 | 256
 const CAMERA_OCCLUDER_LAYER := 32
@@ -235,6 +238,8 @@ func configure(
 	_ensure_nodes()
 	if data == null or not data.is_valid():
 		return
+	_configure_production_yard()
+	_apply_structure_offset()
 	(get_node("BuildingOutputDisplay") as Node).call(
 		"configure_for_building",
 		data.footprint,
@@ -283,6 +288,10 @@ func deactivate() -> void:
 	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
 	if output_display != null:
 		output_display.call("clear_immediately")
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_interaction_enabled", false)
+		production_yard.call("clear_immediately")
 	_sync_construction_feedback(false)
 	sync_activity_visual()
 	set_process(false)
@@ -291,6 +300,10 @@ func deactivate() -> void:
 func set_preview_valid(value: bool) -> void:
 	_preview_valid = value
 	_apply_visual_color()
+
+
+func get_structure_footprint() -> Vector2i:
+	return data.structure_footprint() if data != null else Vector2i.ONE
 
 
 func set_camera_occluded(value: bool) -> void:
@@ -351,6 +364,9 @@ func set_maintenance_visual_state(next_state: String, remaining_seconds: float =
 		maintenance_visual.call("set_state", normalized, remaining_seconds)
 		if previous == "repairing" and normalized == "normal":
 			maintenance_visual.call("play_completion")
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_maintenance_state", normalized)
 	_apply_visual_color()
 	sync_activity_visual()
 
@@ -665,6 +681,39 @@ func _ensure_physics_node(node_name: String, node_type: Variant) -> void:
 		physics_node.add_child(collision_shape)
 
 
+func _configure_production_yard() -> void:
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if not data.has_production_yard():
+		if production_yard != null:
+			remove_child(production_yard)
+			production_yard.free()
+		return
+	if production_yard == null:
+		production_yard = BuildingProductionYardScript.new()
+		production_yard.name = "ProductionYard"
+		add_child(production_yard)
+	production_yard.call(
+		"configure",
+		data.production_yard_size(),
+		data.production_yard_style(),
+		data.production_yard_offset()
+	)
+	production_yard.call("set_construction_stage", int(construction_stage))
+	production_yard.call("set_preview_state", _preview_mode, _preview_valid)
+	production_yard.call("set_maintenance_state", _maintenance_visual_state)
+
+
+func _apply_structure_offset() -> void:
+	var offset := data.production_yard_offset() if data != null else Vector3.ZERO
+	var visual_root := get_node_or_null("VisualRoot") as Node3D
+	if visual_root != null:
+		visual_root.position = offset
+	for node_name in ["ConstructionFeedback", "BuildingMaintenanceVisual"]:
+		var anchored := get_node_or_null(node_name) as Node3D
+		if anchored != null:
+			anchored.position = offset
+
+
 func _configure_visuals() -> void:
 	var visual_root := get_node("VisualRoot") as Node3D
 	var back := visual_root.get_node("BackLayer") as Sprite3D
@@ -746,7 +795,8 @@ func _sync_economy_indicator() -> void:
 	if indicator == null:
 		return
 	var visual_size := data.visual_size if data != null else Vector2(1.0, 1.0)
-	indicator.position = Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
+	var structure_offset := data.production_yard_offset() if data != null else Vector3.ZERO
+	indicator.position = structure_offset + Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
 	indicator.text = "满" if _economy_indicator_kind == "full" else ""
 	indicator.modulate = Color("ef6767") if _economy_indicator_kind == "full" else Color.WHITE
 	indicator.visible = (
@@ -809,11 +859,12 @@ func _configure_fallback(visible: bool) -> void:
 	roof.visible = visible
 	if not visible:
 		return
+	var structure_size := get_structure_footprint()
 	var body_mesh := BoxMesh.new()
 	body_mesh.size = Vector3(
-		maxf(float(data.footprint.x) * 0.72, 0.45),
+		maxf(float(structure_size.x) * 0.72, 0.45),
 		data.visual_size.y * 0.55,
-		maxf(float(data.footprint.y) * 0.72, 0.45)
+		maxf(float(structure_size.y) * 0.72, 0.45)
 	)
 	body.mesh = body_mesh
 	body.position.y = body_mesh.size.y * 0.5
@@ -841,13 +892,14 @@ func _configure_construction_fallback() -> void:
 	for child in fallback.get_children():
 		child.free()
 
+	var structure_size := get_structure_footprint()
 	var slab := MeshInstance3D.new()
 	slab.name = "Foundation"
 	var slab_mesh := BoxMesh.new()
 	slab_mesh.size = Vector3(
-		maxf(float(data.footprint.x) * 0.82, 0.45),
+		maxf(float(structure_size.x) * 0.82, 0.45),
 		0.12,
-		maxf(float(data.footprint.y) * 0.82, 0.45)
+		maxf(float(structure_size.y) * 0.82, 0.45)
 	)
 	slab.mesh = slab_mesh
 	slab.position.y = 0.06
@@ -857,8 +909,8 @@ func _configure_construction_fallback() -> void:
 	var frame_root := Node3D.new()
 	frame_root.name = "Frame"
 	fallback.add_child(frame_root)
-	var width := maxf(float(data.footprint.x) * 0.72, 0.38)
-	var depth := maxf(float(data.footprint.y) * 0.72, 0.38)
+	var width := maxf(float(structure_size.x) * 0.72, 0.38)
+	var depth := maxf(float(structure_size.y) * 0.72, 0.38)
 	var height := maxf(data.visual_size.y * 0.72, 0.5)
 	for corner in [
 		Vector3(-width * 0.5, height * 0.5, -depth * 0.5),
@@ -896,6 +948,9 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	var construction_layer := visual_root.get_node("ConstructionLayer") as Sprite3D
 	var construction_fallback := visual_root.get_node("ConstructionFallback") as Node3D
 	var completed := is_construction_complete()
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_construction_stage", int(construction_stage))
 
 	if play_effect:
 		_retain_outgoing_construction_visual(construction_layer)
@@ -1013,25 +1068,29 @@ func _play_construction_effect(stage: ConstructionStage) -> void:
 
 
 func _configure_physics() -> void:
+	var structure_size := get_structure_footprint()
+	var structure_offset := data.production_yard_offset()
 	var footprint_size := Vector3(
-		maxf(float(data.footprint.x) * 0.78, 0.4),
+		maxf(float(structure_size.x) * 0.78, 0.4),
 		maxf(data.visual_size.y * 0.58, 0.5),
-		maxf(float(data.footprint.y) * 0.78, 0.4)
+		maxf(float(structure_size.y) * 0.78, 0.4)
 	)
-	_set_box_shape("Collision", footprint_size, footprint_size.y * 0.5)
+	_set_box_shape("Collision", footprint_size, footprint_size.y * 0.5, structure_offset)
 	_set_box_shape(
 		"InteractionArea",
 		footprint_size + Vector3(0.55, 0.35, 0.55),
-		(footprint_size.y + 0.35) * 0.5
+		(footprint_size.y + 0.35) * 0.5,
+		structure_offset
 	)
 	_set_box_shape(
 		"CameraOccluder",
 		Vector3(
 			maxf(data.visual_size.x * 0.82, 0.5),
 			maxf(data.visual_size.y * 0.9, 0.6),
-			maxf(float(data.footprint.y) * 0.65, 0.4)
+			maxf(float(structure_size.y) * 0.65, 0.4)
 		),
-		data.visual_size.y * 0.45
+		data.visual_size.y * 0.45,
+		structure_offset
 	)
 	set_preview_mode(_preview_mode)
 
@@ -1054,14 +1113,23 @@ func _apply_physics_state() -> void:
 	)
 	camera_occluder.collision_mask = 0
 	camera_occluder.monitoring = false
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_interaction_enabled", active)
+		production_yard.call("set_preview_state", _preview_mode, _preview_valid)
 
 
-func _set_box_shape(node_path: NodePath, size: Vector3, center_y: float) -> void:
+func _set_box_shape(
+	node_path: NodePath,
+	size: Vector3,
+	center_y: float,
+	structure_offset: Vector3 = Vector3.ZERO
+) -> void:
 	var collision_shape := get_node(NodePath("%s/CollisionShape3D" % node_path)) as CollisionShape3D
 	var shape := BoxShape3D.new()
 	shape.size = size
 	collision_shape.shape = shape
-	collision_shape.position.y = center_y
+	collision_shape.position = Vector3(structure_offset.x, center_y, structure_offset.z)
 
 
 func _apply_visual_color() -> void:
@@ -1083,6 +1151,10 @@ func _apply_visual_color() -> void:
 			if material:
 				material.albedo_color = Color(tint.r, tint.g, tint.b, 1.0)
 			mesh.transparency = 1.0 - tint.a
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_preview_state", _preview_mode, _preview_valid)
+		production_yard.call("set_maintenance_state", _maintenance_visual_state)
 
 
 func _visual_geometry() -> Array[GeometryInstance3D]:

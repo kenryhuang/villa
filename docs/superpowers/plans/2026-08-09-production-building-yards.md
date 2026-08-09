@@ -150,7 +150,7 @@ git commit -m "feat: add painted production yard fences"
 - Modify: `tests/test_building_construction_state.gd`
 - Modify: `tests/test_building_maintenance_visual.gd`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Instantiate each production building and assert it owns `ProductionYard`; excluded buildings do not. Verify:
 
@@ -163,19 +163,19 @@ assert(building.get_node("Collision/CollisionShape3D").shape.size.x < 2.0)
 
 Assert preview tint propagates, every construction stage propagates, the whole grid footprint is blocked from placement time, perimeter collisions enable outside preview, removal clears them, and maintenance/construction feedback remains anchored to the shifted structure rather than the yard corner.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
-- [ ] **Step 3: Integrate the component**
+- [x] **Step 3: Integrate the component**
 
 Create/configure `ProductionYard` in `_ensure_nodes()` and `configure()`. Shift `VisualRoot`, activity, maintenance, construction art, and feedback together by `building_offset_z`. Change `_configure_physics()` to size `Collision`, `InteractionArea`, and `CameraOccluder` from `data.structure_footprint()` while the yard owns perimeter collisions. Forward preview, construction, maintenance, visibility, deactivate, and cleanup state to the yard.
 
-- [ ] **Step 4: Preserve repair economics**
+- [x] **Step 4: Preserve repair economics**
 
 Change `EconomyProgressionSystem.get_maintenance_quote()` to use `building.get_structure_footprint()` and extend its tests so a former 1×1 workbench still receives the 1–2-cell quote after becoming a 3×3 yard.
 
-- [ ] **Step 5: Run building and progression suites and require GREEN**
+- [x] **Step 5: Run building and progression suites and require GREEN**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/buildings scripts/systems/economy_progression_system.gd tests/test_building_instance.gd tests/test_building_construction_state.gd tests/test_building_maintenance_visual.gd tests/test_economy_progression.gd
