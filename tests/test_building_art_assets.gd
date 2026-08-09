@@ -247,6 +247,39 @@ func _validate_activity_atlas(path: String, assertions: TestAssert) -> void:
 			visible_pixels < int(512 * 512 * 0.35),
 			"%s frame %d only redraws moving parts" % [path, frame]
 		)
+	if path.ends_with("/stone_kiln_activity.png"):
+		_validate_stone_kiln_chimney_smoke(image, assertions)
+
+
+func _validate_stone_kiln_chimney_smoke(image: Image, assertions: TestAssert) -> void:
+	for frame in range(4):
+		var chimney_smoke_pixels := 0
+		var old_plume_pixels := 0
+		var fire_pixels := 0
+		for y in range(8, 132):
+			for local_x in range(214, 299):
+				if image.get_pixel(frame * 512 + local_x, y).a > 0.05:
+					chimney_smoke_pixels += 1
+		for y in range(132, 265):
+			for local_x in range(205, 345):
+				if image.get_pixel(frame * 512 + local_x, y).a > 0.05:
+					old_plume_pixels += 1
+		for y in range(265, 390):
+			for local_x in range(220, 345):
+				if image.get_pixel(frame * 512 + local_x, y).a > 0.05:
+					fire_pixels += 1
+		assertions.truthy(
+			chimney_smoke_pixels > 180,
+			"stone kiln frame %d emits smoke above the top chimney" % frame
+		)
+		assertions.truthy(
+			old_plume_pixels < 200,
+			"stone kiln frame %d does not emit a smoke plume from the kiln mouth" % frame
+		)
+		assertions.truthy(
+			fire_pixels > 500,
+			"stone kiln frame %d keeps the fire inside the kiln mouth" % frame
+		)
 
 
 func _validate_output_pile_atlas(family: String, assertions: TestAssert) -> void:
