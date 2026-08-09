@@ -249,14 +249,14 @@ git commit -m "feat: version production yard saves"
 - Modify only when an in-scope verification failure identifies a defect.
 - Modify: `docs/superpowers/plans/2026-08-09-production-building-yards.md` for checkbox tracking.
 
-- [ ] **Step 1: Run formatting and repository checks**
+- [x] **Step 1: Run formatting and repository checks**
 
 ```powershell
 git diff --check
 git status --short
 ```
 
-- [ ] **Step 2: Run all affected suites with full output**
+- [x] **Step 2: Run all affected suites with full output**
 
 ```powershell
 godot --headless --path . --script res://tests/run_building_system_tests.gd
@@ -268,11 +268,11 @@ godot --headless --path . --script res://tests/run_production_chain_tests.gd
 godot --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd
 ```
 
-- [ ] **Step 3: Review every acceptance criterion**
+- [x] **Step 3: Review every acceptance criterion**
 
 Confirm all 11 buildings, exact sizes, three painted styles, staged construction, full traversal blocking, interior output interaction, unchanged economics, version-2 save rejection, and complete lifecycle behavior.
 
-- [ ] **Step 4: Commit final corrections**
+- [x] **Step 4: Commit final corrections**
 
 ```powershell
 git add -A
