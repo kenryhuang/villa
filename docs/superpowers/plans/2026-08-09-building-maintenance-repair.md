@@ -29,7 +29,7 @@ assertions.equal(production.get_maintenance_state(building), "overdue", "deadlin
 assertions.truthy(production.is_maintenance_paused(building), "overdue maintenance pauses production")
 ```
 
-- [ ] **Step 2: Run `godot --headless --path . --script res://tests/run_production_system_tests.gd`**
+- [ ] **Step 2: Run `godot --headless --path . --script res://tests/run_building_system_tests.gd`**
 
 Expected: FAIL because the state API is missing and the interval is still 7 days.
 
@@ -214,7 +214,7 @@ Service rows show `距到期 N 天`, `可提前维修`, `破损停产`, or `维�
 - [ ] **Step 2: Run affected suites with full output**
 
 ```powershell
-godot --headless --path . --script res://tests/run_production_system_tests.gd 2>&1 | Out-String
+godot --headless --path . --script res://tests/run_building_system_tests.gd 2>&1 | Out-String
 godot --headless --path . --script res://tests/run_economy_progression_tests.gd 2>&1 | Out-String
 godot --headless --path . --script res://tests/run_building_system_tests.gd 2>&1 | Out-String
 godot --headless --path . --script res://tests/run_economy_ui_tests.gd 2>&1 | Out-String
