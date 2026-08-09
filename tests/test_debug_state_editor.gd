@@ -97,6 +97,7 @@ func run(assertions: TestAssert) -> void:
 	_test_validation(assertions)
 	_test_apply_player_and_inventory(assertions)
 	_test_apply_rolls_back_on_cursor_failure(assertions)
+	_test_direct_elapsed_day_jump(assertions)
 
 
 func _test_snapshot(assertions: TestAssert) -> void:
@@ -255,6 +256,54 @@ func _test_apply_rolls_back_on_cursor_failure(assertions: TestAssert) -> void:
 	assertions.equal(fixture.npc.last_simulated_day, 9, "failed transaction restores NPC cursor")
 	assertions.equal(item_events, [], "failed transaction emits no inventory events")
 	fixture.inventory.free()
+
+
+func _test_direct_elapsed_day_jump(assertions: TestAssert) -> void:
+	var cases := [
+		{"elapsed": 0, "total": 1, "season": 0, "day": 1},
+		{"elapsed": 7, "total": 8, "season": 1, "day": 1},
+		{"elapsed": 27, "total": 28, "season": 3, "day": 7},
+		{"elapsed": 28, "total": 29, "season": 0, "day": 1},
+	]
+	for case in cases:
+		var fixture := _fixture()
+		var day_events: Array = []
+		var season_events: Array = []
+		fixture.event_bus.day_changed.connect(
+			func(total_day: int) -> void:
+				day_events.append(total_day)
+		)
+		fixture.event_bus.season_changed.connect(
+			func(season: int) -> void:
+				season_events.append(season)
+		)
+		var resource_state_before: Array = fixture.resources.state.duplicate(true)
+		var hour_before: int = fixture.season.hour
+		var minute_before: int = fixture.season.minute
+		var old_season: int = fixture.season.current_season
+		var draft: Dictionary = fixture.editor.snapshot()
+		draft["elapsed_days"] = int(case.elapsed)
+		var result: Dictionary = fixture.editor.apply(draft)
+		assertions.truthy(bool(result.get("ok", false)), "elapsed day %d applies" % case.elapsed)
+		assertions.equal(fixture.season.total_days, case.total, "elapsed day maps to total day")
+		assertions.equal(fixture.season.current_season, case.season, "elapsed day maps to season")
+		assertions.equal(fixture.season.current_day, case.day, "elapsed day maps within season")
+		assertions.equal(fixture.season.hour, hour_before, "date jump keeps hour")
+		assertions.equal(fixture.season.minute, minute_before, "date jump keeps minute")
+		assertions.equal(fixture.production.current_day, case.total, "production cursor synchronizes")
+		assertions.equal(fixture.npc.last_simulated_day, case.total, "NPC cursor synchronizes")
+		assertions.equal(fixture.market.last_settled_day, case.total, "market cursor synchronizes")
+		assertions.equal(fixture.daily.last_simulated_day, case.total, "daily cursor synchronizes")
+		assertions.equal(fixture.daily.run_day_calls, 0, "direct jump never settles skipped days")
+		assertions.equal(fixture.resources.cursor, case.total, "resource cursor synchronizes")
+		assertions.equal(fixture.resources.state, resource_state_before, "resource state stays unchanged")
+		assertions.equal(day_events, [case.total], "date jump emits one refresh event")
+		assertions.equal(
+			season_events,
+			[case.season] if old_season != int(case.season) else [],
+			"date jump only emits changed season"
+		)
+		fixture.inventory.free()
 
 
 func _fixture() -> Dictionary:

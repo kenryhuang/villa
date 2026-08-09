@@ -173,9 +173,6 @@ func apply(draft: Dictionary) -> Dictionary:
 		return validation
 
 	var target_total_days := int(draft.get("elapsed_days")) + 1
-	if target_total_days != int(_season.get("total_days")):
-		return _failure("date_jump_not_implemented")
-
 	var before := _capture_state()
 	var target_inventory := _build_target_inventory(draft.get("items") as Dictionary)
 	if target_inventory.is_empty():
@@ -205,6 +202,7 @@ func apply(draft: Dictionary) -> Dictionary:
 
 	_market.set("last_settled_day", target_total_days)
 	_daily.set("last_simulated_day", target_total_days)
+	_apply_date_fields(int(draft.get("elapsed_days")), target_total_days)
 	var player_state: Variant = _game_state.get("player_state")
 	var level := int(draft.get("level"))
 	player_state.set("level", level)
@@ -222,6 +220,16 @@ func apply(draft: Dictionary) -> Dictionary:
 		"reason": "",
 		"message": "调试数据已应用；尚未写入存档",
 	}
+
+
+func _apply_date_fields(elapsed_days: int, target_total_days: int) -> void:
+	var days_per_season := int(_season.DAYS_PER_SEASON)
+	_season.set("total_days", target_total_days)
+	_season.set("current_day", elapsed_days % days_per_season + 1)
+	_season.set(
+		"current_season",
+		floori(float(elapsed_days) / float(days_per_season)) % 4
+	)
 
 
 func _capture_state() -> Dictionary:
@@ -329,6 +337,10 @@ func _emit_success_events(before: Dictionary, draft: Dictionary) -> void:
 			_emit_signal_if_available("item_added", [item_id, current - previous])
 		elif current < previous:
 			_emit_signal_if_available("item_removed", [item_id, previous - current])
+	var current_season := int(_season.get("current_season"))
+	if current_season != int(before.season):
+		_emit_signal_if_available("season_changed", [current_season])
+	_emit_signal_if_available("day_changed", [int(_season.get("total_days"))])
 
 
 func _emit_signal_if_available(signal_name: StringName, arguments: Array) -> void:
