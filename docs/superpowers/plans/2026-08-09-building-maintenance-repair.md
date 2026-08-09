@@ -209,9 +209,9 @@ Service rows show `距到期 N 天`, `可提前维修`, `破损停产`, or `维�
 **Files:**
 - Modify only when a verification failure identifies an in-scope defect.
 
-- [ ] **Step 1: Run `git diff --check` and inspect `git status --short`**
+- [x] **Step 1: Run `git diff --check` and inspect `git status --short`**
 
-- [ ] **Step 2: Run affected suites with full output**
+- [x] **Step 2: Run affected suites with full output**
 
 ```powershell
 godot --headless --path . --script res://tests/run_economy_system_tests.gd 2>&1 | Out-String
@@ -223,8 +223,8 @@ godot --headless --path . --script res://tests/run_economy_system_tests.gd 2>&1 
 godot --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd 2>&1 | Out-String
 ```
 
-- [ ] **Step 3: Re-read every design acceptance criterion**
+- [x] **Step 3: Re-read every design acceptance criterion**
 
 Confirm no “修” text, warning/overdue visuals, in-building repair button, scaled cost, resumable three-second repair, 14-day reset, paused queue preservation, service overview, notifications, and version-one migration.
 
-- [ ] **Step 4: Commit any final correction as `fix: complete building maintenance repair flow`**
+- [x] **Step 4: Commit any final correction as `fix: complete building maintenance repair flow`**

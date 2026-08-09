@@ -444,6 +444,14 @@ func _get_inventory_system() -> Node:
 
 
 func _get_building_system() -> Node:
+	if (
+		_state_transition_owner != null
+		and is_instance_valid(_state_transition_owner)
+		and _has_property(_state_transition_owner, "building_system")
+	):
+		var owned_building_system: Variant = _state_transition_owner.get("building_system")
+		if owned_building_system is Node and is_instance_valid(owned_building_system):
+			return owned_building_system
 	if get_tree() == null:
 		return null
 	return get_tree().get_first_node_in_group("building_system")

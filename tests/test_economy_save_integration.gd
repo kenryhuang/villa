@@ -6,6 +6,7 @@ const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const TEST_SAVE_DIR := "user://villa_test_saves/economy_task_5/"
 const TEST_SLOT := 3
 const BAD_SLOT := 4
@@ -922,6 +923,30 @@ func _test_task13_failed_building_load_is_atomic(
 	var before := _capture_atomic_load_state(main, manager, game_state)
 	var incoming: Dictionary = manager._gather_save_data().duplicate(true)
 	_prepare_divergent_atomic_payload(assertions, main, incoming, scenario)
+	assertions.truthy(
+		not incoming.buildings.is_empty(),
+		"%s fixture serializes its queued producer" % scenario
+	)
+	if incoming.buildings.is_empty():
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	assertions.equal(
+		str(incoming.buildings[0].get("building_id", "")),
+		"workbench",
+		"%s fixture serializes the owned building system" % scenario
+	)
+	var incoming_jobs: Array = incoming.buildings[0].get("producer_state", {}).get("jobs", [])
+	assertions.truthy(
+		not incoming_jobs.is_empty(),
+		"%s fixture serializes the queued production job" % scenario
+	)
+	if incoming_jobs.is_empty():
+		main.free()
+		manager.free()
+		_cleanup()
+		return
 	if duplicate_record:
 		incoming.buildings.append((incoming.buildings[0] as Dictionary).duplicate(true))
 	else:
@@ -1479,7 +1504,7 @@ func _producer_building_record(main: Node, location: Vector2i) -> Dictionary:
 	state.enqueue_job({
 		"recipe_id": "plank",
 		"batches": 1,
-		"remaining_minutes": 60,
+		"remaining_minutes": int(RecipeDatabaseScript.get_recipe("plank").duration_minutes),
 		"status": "running",
 	})
 	state.add_outputs({"plank": 2})

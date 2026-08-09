@@ -238,14 +238,15 @@ func _test_authoritative_maintenance_pause(assertions: TestAssert) -> void:
 	context.buildings.append(building)
 	context.building_by_station.workbench = building
 	assertions.truthy(production.register_building(building), "maintenance fixture registers real workbench")
+	var maintenance_due_day := production.get_maintenance_due_day(building)
 	assertions.truthy(inventory.add_item("plank", 4), "maintenance fixture adds furniture planks")
 	assertions.truthy(inventory.add_item("cloth", 2), "maintenance fixture adds furniture cloth")
-	assertions.truthy(production.begin_day(6), "maintenance fixture reaches day 6")
+	assertions.truthy(production.begin_day(maintenance_due_day - 1), "maintenance fixture reaches warning day")
 	assertions.truthy(production.start_recipe(building, "furniture", 1, inventory), "long furniture job starts through ProductionSystem")
 	var partial_advance := maxi(1, int(RecipeDatabaseScript.get_recipe("furniture").duration_minutes) / 3)
 	production.advance_minutes(partial_advance)
 	var before_pause: Dictionary = production.get_building_snapshot(building)
-	assertions.truthy(production.begin_day(7), "maintenance fixture reaches due day")
+	assertions.truthy(production.begin_day(maintenance_due_day), "maintenance fixture reaches due day")
 	assertions.truthy(production.is_maintenance_overdue(building), "producer is overdue on quoted due day")
 	production.advance_minutes(partial_advance)
 	var paused: Dictionary = production.get_building_snapshot(building)
@@ -270,6 +271,7 @@ func _test_authoritative_maintenance_pause(assertions: TestAssert) -> void:
 			int(quote.materials[item_id]),
 			"maintain consumes quoted %s" % item_id
 		)
+	production.advance_repair_time(ProductionSystem.REPAIR_DURATION_SECONDS)
 	production.advance_minutes(partial_advance)
 	var after_resume: Dictionary = production.get_building_snapshot(building)
 	assertions.truthy(
@@ -534,7 +536,8 @@ func _run_authoritative_route_day(
 				result.transactions.buys += 1
 		var gold_before := int(wallet.gold)
 		var materials_before := _inventory_counts(inventory, quote.materials.keys())
-		assertions.truthy(production.maintain(building, wallet, inventory), "route=%s day=%d maintenance succeeds" % [route_id, day])
+		var maintained := production.maintain(building, wallet, inventory)
+		assertions.truthy(maintained, "route=%s day=%d maintenance succeeds" % [route_id, day])
 		assertions.equal(gold_before - int(wallet.gold), int(quote.gold_cost), "maintenance uses quoted gold")
 		for item_id_value in (quote.materials as Dictionary).keys():
 			var item_id := str(item_id_value)
@@ -543,6 +546,8 @@ func _run_authoritative_route_day(
 				int(quote.materials[item_id]),
 				"maintenance uses quoted %s" % item_id
 			)
+		if maintained:
+			production.advance_repair_time(ProductionSystem.REPAIR_DURATION_SECONDS)
 		assertions.truthy(not production.is_maintenance_overdue(building), "maintenance resumes producer")
 		result.maintenance_events += 1
 	var capacity := int(ROUTE_STAGE_CAPACITY[route_id][stage])
@@ -1161,6 +1166,8 @@ func _simulate_arbitrage_recipe(recipe: Dictionary, assertions: TestAssert) -> D
 					)
 					if not maintained:
 						transaction_failures += 1
+					else:
+						production.advance_repair_time(ProductionSystem.REPAIR_DURATION_SECONDS)
 		if (production.get_building_snapshot(building).jobs as Array).is_empty():
 			var missing_inputs := {}
 			for item_id_value in (recipe.inputs as Dictionary).keys():
