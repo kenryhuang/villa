@@ -143,13 +143,19 @@ func _test_compact_economy_geometry(assertions: TestAssert) -> void:
 
 func _test_compact_theme(assertions: TestAssert) -> void:
 	var theme := load(EconomyLayout.THEME_PATH) as Theme
-	for variation in [&"EconomyShell", &"EconomyTab", &"EconomyTabSelected", &"EconomyCompactCard"]:
+	for variation in [&"EconomyShell", &"EconomyTab", &"EconomyTabSelected", &"EconomyTabPage", &"EconomyPageContent", &"EconomyCompactCard", &"EconomyBlockTitle"]:
 		assertions.truthy(
 			theme.get_type_variation_base(variation) != &"",
 			"%s exists" % variation
 		)
 	var shell := theme.get_stylebox(&"panel", &"EconomyShell") as StyleBoxFlat
 	var card := theme.get_stylebox(&"panel", &"EconomyCompactCard") as StyleBoxFlat
+	var tab := theme.get_stylebox(&"normal", &"EconomyTab") as StyleBoxFlat
+	var tab_focus := theme.get_stylebox(&"focus", &"EconomyTab") as StyleBoxFlat
+	var selected_tab := theme.get_stylebox(&"normal", &"EconomyTabSelected") as StyleBoxFlat
+	var selected_tab_focus := theme.get_stylebox(&"focus", &"EconomyTabSelected") as StyleBoxFlat
+	var tab_page := theme.get_stylebox(&"panel", &"EconomyTabPage") as StyleBoxFlat
+	var block_title := theme.get_stylebox(&"normal", &"EconomyBlockTitle") as StyleBoxFlat
 	var button_normal := theme.get_stylebox(&"normal", &"Button") as StyleBoxFlat
 	var button_hover := theme.get_stylebox(&"hover", &"Button") as StyleBoxFlat
 	var button_pressed := theme.get_stylebox(&"pressed", &"Button") as StyleBoxFlat
@@ -157,8 +163,20 @@ func _test_compact_theme(assertions: TestAssert) -> void:
 	assertions.equal(shell.border_width_left, 1, "shell uses one-pixel border")
 	assertions.equal(shell.shadow_size, 12, "shell uses one soft window shadow")
 	assertions.equal(shell.corner_radius_top_left, 18, "window uses Apple-like radius")
-	assertions.equal(card.corner_radius_top_left, 14, "cards use aligned radius")
+	assertions.equal(card.corner_radius_top_left, 0, "content cards use square CSS-like blocks")
+	assertions.equal(card.content_margin_top, 20.0, "content cards keep text away from their edges")
 	assertions.equal(card.border_width_left, 1, "cards use a hairline")
+	assertions.equal(tab.corner_radius_top_left, 0, "unselected tabs use square corners")
+	assertions.equal(tab_focus.corner_radius_top_left, 0, "tab keyboard focus keeps square corners")
+	assertions.equal(selected_tab.corner_radius_top_left, 0, "selected tabs use square corners")
+	assertions.equal(selected_tab.border_width_bottom, 0, "selected tab has no seam below it")
+	assertions.equal(selected_tab_focus.border_width_bottom, 0, "focused selected tab keeps the page seam open")
+	assertions.equal(selected_tab.bg_color, tab_page.bg_color, "selected tab and page share one surface color")
+	assertions.equal(tab_page.corner_radius_top_left, 0, "tab page uses square corners")
+	assertions.equal(tab_page.border_width_top, 0, "tab page leaves the selected tab visually connected")
+	assertions.equal(tab_page.content_margin_top, 22.0, "tab content keeps vertical distance from the title row")
+	assertions.equal(block_title.corner_radius_top_left, 0, "section headers use square CSS-like blocks")
+	assertions.equal(block_title.border_width_bottom, 1, "section headers provide a clear block divider")
 	for control_style in [button_normal, button_hover, button_pressed, line_edit]:
 		assertions.equal(control_style.corner_radius_top_left, 10, "economy controls use the shared ten-pixel radius")
 	assertions.equal(theme.default_font_size, 18, "body text stays readable")
@@ -197,6 +215,10 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 			Vector2(44.0, 44.0),
 			"market close aligns with top tabs"
 		)
+		var page_surface := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/PageSurface") as Control
+		assertions.truthy(page_surface is PanelContainer, "shop tab content owns one styled page surface")
+		assertions.equal(page_surface.theme_type_variation, &"EconomyTabPage", "shop selected tab connects to its page")
+		assertions.equal(shop.market_panel.offset_top, 22.0, "shop content starts below the connected tab title")
 	shop.free()
 	var building := (
 		(load("res://scenes/ui/economy/building_economy_ui.tscn") as PackedScene).instantiate()
@@ -234,6 +256,10 @@ func _test_compact_shells(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.equal(building.status_tab.custom_minimum_size, building.production_tab.custom_minimum_size, "building tabs remain equal")
 		assertions.equal(building.close_button.custom_minimum_size, Vector2(44.0, 44.0), "building close aligns with tabs")
+		var page_surface := building.get_node("ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/PageSurface") as Control
+		assertions.truthy(page_surface is PanelContainer, "building tabs own one styled page surface")
+		assertions.equal(page_surface.theme_type_variation, &"EconomyTabPage", "building selected tab connects to its page")
+		assertions.equal(building.production_panel.offset_top, 22.0, "building content starts below the connected tab title")
 	building.free()
 
 
@@ -254,6 +280,9 @@ func _test_compact_market_layout(assertions: TestAssert) -> void:
 	assertions.equal(catalog.theme_type_variation, &"EconomyCompactCard", "catalog is a raised compact card")
 	assertions.equal(detail.theme_type_variation, &"EconomyCompactCard", "detail is a raised compact card")
 	assertions.equal(trade.theme_type_variation, &"EconomyCompactCard", "trade is a raised compact card")
+	assertions.equal((market.get_node("Columns/CatalogColumn/CatalogContent") as BoxContainer).get_theme_constant("separation"), 12, "market catalog uses CSS-like vertical rhythm")
+	assertions.equal((market.get_node("Columns/DetailColumn/DetailContent") as BoxContainer).get_theme_constant("separation"), 12, "market detail uses CSS-like vertical rhythm")
+	assertions.equal((trade.get_node("Content") as BoxContainer).get_theme_constant("separation"), 12, "trade form uses the primary vertical rhythm")
 	assertions.equal(
 		(market.get_node("Columns") as BoxContainer).get_theme_constant("separation"),
 		16,
@@ -297,6 +326,9 @@ func _test_production_drawer_contract(assertions: TestAssert, tree: SceneTree) -
 	var activity_card := panel.get_node("Sections/RightColumn") as Control
 	var narrow_scroll := panel.get_node("NarrowDetailScroll") as ScrollContainer
 	var narrow_stack := panel.get_node("NarrowDetailScroll/NarrowDetailStack") as VBoxContainer
+	assertions.equal((panel as BoxContainer).get_theme_constant("separation"), 12, "production page uses the primary vertical rhythm")
+	assertions.equal((panel.get_node("Sections/ProcessColumn/Content") as BoxContainer).get_theme_constant("separation"), 12, "production detail uses CSS-like vertical rhythm")
+	assertions.equal((panel.get_node("Sections/RightColumn/Content") as BoxContainer).get_theme_constant("separation"), 12, "production activity uses the primary vertical rhythm")
 	assertions.truthy(panel.has_method("apply_responsive_layout"), "production panel exposes responsive layout")
 	assertions.truthy(panel.has_method("open_details_drawer"), "production panel exposes a detail drawer")
 	if panel.has_method("apply_responsive_layout") and panel.has_method("open_details_drawer"):
@@ -509,8 +541,33 @@ func _test_shared_scene_tokens(assertions: TestAssert) -> void:
 			"ScreenLayer/ModalLayer/HubPanel": "EconomyShell",
 			"ScreenLayer/ModalLayer/SignConfirmationLayer/Content": "EconomyCard",
 		},
-		"res://scenes/ui/economy/market_panel.tscn": {".": "EconomyCard"},
-		"res://scenes/ui/economy/trade_panel.tscn": {"ConfirmationLayer/Content": "EconomyCompactCard"},
+		"res://scenes/ui/economy/market_panel.tscn": {
+			".": "EconomyPageContent",
+			"Columns/CatalogColumn/CatalogContent/CategoryTitle": "EconomyBlockTitle",
+			"Columns/DetailColumn/DetailContent/ChartTitle": "EconomyBlockTitle",
+		},
+		"res://scenes/ui/economy/trade_panel.tscn": {
+			"Content/TitleLabel": "EconomyBlockTitle",
+			"ConfirmationLayer/Content": "EconomyCompactCard",
+		},
+		"res://scenes/ui/economy/building_production_panel.tscn": {
+			"Sections/RecipeColumn/Content/TitleLabel": "EconomyBlockTitle",
+			"Sections/ProcessColumn/Content/TitleLabel": "EconomyBlockTitle",
+			"Sections/RightColumn/Content/QueueCard/TitleLabel": "EconomyBlockTitle",
+			"Sections/RightColumn/Content/StorageCard/TitleLabel": "EconomyBlockTitle",
+		},
+		"res://scenes/ui/economy/order_panel.tscn": {
+			"Columns/Orders/SectionTitle": "EconomyBlockTitle",
+			"Columns/Details/TitleLabel": "EconomyBlockTitle",
+		},
+		"res://scenes/ui/economy/contract_panel.tscn": {
+			"Content/ActiveTitle": "EconomyBlockTitle",
+			"Content/AvailableTitle": "EconomyBlockTitle",
+		},
+		"res://scenes/ui/economy/building_status_panel.tscn": {
+			"SummaryTitle": "EconomyBlockTitle",
+			"StorageTitle": "EconomyBlockTitle",
+		},
 		"res://scenes/ui/economy/building_economy_ui.tscn": {"ScreenLayer/ModalLayer/BuildingPanel": "EconomyShell"},
 		"res://scenes/ui/economy/economy_notification_ui.tscn": {"NotificationCenter": "EconomyPaper"},
 	}
@@ -566,7 +623,10 @@ func _test_panel_contracts(assertions: TestAssert, tree: SceneTree) -> void:
 			panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 			panel.visible = true
 			await tree.process_frame
-			assertions.truthy(_controls_within_viewport(panel, viewport_size), "%s controls stay in %s" % [scene_path, viewport_size])
+			assertions.truthy(
+				_controls_within_viewport(panel, viewport_size),
+				"%s controls stay in %s: %s" % [scene_path, viewport_size, _out_of_bounds_description(panel, Rect2(Vector2.ZERO, viewport_size))]
+			)
 			assertions.truthy(_visible_text_has_size(panel), "%s visible text has positive size at %s" % [scene_path, viewport_size])
 			assertions.truthy(_interactive_controls_focusable(panel), "%s interactive controls are focusable" % scene_path)
 			host.free()

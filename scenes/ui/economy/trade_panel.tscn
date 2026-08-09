@@ -30,11 +30,11 @@ offset_right = -16.0
 offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="Content"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.317647, 0.231373, 0.184314, 1)
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 22
 text = "交易操作"
 

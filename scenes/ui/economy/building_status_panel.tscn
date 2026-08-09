@@ -16,6 +16,7 @@ script = ExtResource("1")
 
 [node name="SummaryTitle" type="Label" parent="."]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 28
 text = "建筑状态"
 
@@ -28,6 +29,7 @@ layout_mode = 2
 
 [node name="StorageTitle" type="Label" parent="."]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 28
 text = "暂存产物"
 

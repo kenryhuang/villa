@@ -62,9 +62,11 @@ text = "已完成／失效"
 custom_minimum_size = Vector2(430, 0)
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 12
 
 [node name="SectionTitle" type="Label" parent="Columns/Orders"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 28
 text = "居民订单"
 
@@ -87,7 +89,7 @@ horizontal_alignment = 1
 custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 9
+theme_override_constants/separation = 12
 
 [node name="NpcLabel" type="Label" parent="Columns/Details"]
 layout_mode = 2
@@ -96,6 +98,7 @@ text = "NPC：—"
 
 [node name="TitleLabel" type="Label" parent="Columns/Details"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 28
 text = "选择订单查看详情"
 autowrap_mode = 2

@@ -6,7 +6,7 @@
 [ext_resource path="res://assets/ui/economy/economy_theme.tres" type="Theme" id="4_theme"]
 
 [node name="MarketPanel" type="PanelContainer"]
-theme_type_variation = &"EconomyCard"
+theme_type_variation = &"EconomyPageContent"
 theme = ExtResource("4_theme")
 script = ExtResource("1_market")
 
@@ -23,10 +23,11 @@ theme_type_variation = &"EconomyCompactCard"
 
 [node name="CatalogContent" type="VBoxContainer" parent="Columns/CatalogColumn"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 12
 
 [node name="CategoryTitle" type="Label" parent="Columns/CatalogColumn/CatalogContent"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 22
 text = "货物"
 
@@ -107,7 +108,7 @@ theme_type_variation = &"EconomyCompactCard"
 
 [node name="DetailContent" type="VBoxContainer" parent="Columns/DetailColumn"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 12
 
 [node name="DetailHeader" type="HBoxContainer" parent="Columns/DetailColumn/DetailContent"]
 layout_mode = 2
@@ -156,6 +157,7 @@ vertical_alignment = 1
 
 [node name="ChartTitle" type="Label" parent="Columns/DetailColumn/DetailContent"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 20
 text = "最近 7 日价格"
 

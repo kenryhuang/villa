@@ -11,7 +11,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("2_theme")
-theme_override_constants/separation = 8
+theme_override_constants/separation = 12
 script = ExtResource("1")
 
 [node name="Sections" type="HBoxContainer" parent="."]
@@ -28,10 +28,11 @@ theme_type_variation = &"EconomyCompactCard"
 
 [node name="Content" type="VBoxContainer" parent="Sections/RecipeColumn"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="Sections/RecipeColumn/Content"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 22
 text = "配方"
 
@@ -54,10 +55,11 @@ theme_type_variation = &"EconomyCompactCard"
 
 [node name="Content" type="VBoxContainer" parent="Sections/ProcessColumn"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="Sections/ProcessColumn/Content"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 22
 text = "生产"
 
@@ -211,7 +213,7 @@ theme_type_variation = &"EconomyCompactCard"
 
 [node name="Content" type="VBoxContainer" parent="Sections/RightColumn"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 12
 
 [node name="QueueCard" type="VBoxContainer" parent="Sections/RightColumn/Content"]
 layout_mode = 2
@@ -220,6 +222,7 @@ theme_override_constants/separation = 6
 
 [node name="TitleLabel" type="Label" parent="Sections/RightColumn/Content/QueueCard"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 22
 text = "生产队列"
 
@@ -243,6 +246,7 @@ theme_override_constants/separation = 6
 
 [node name="TitleLabel" type="Label" parent="Sections/RightColumn/Content/StorageCard"]
 layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
 theme_override_font_sizes/font_size = 22
 text = "成品仓"
 

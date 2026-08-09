@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=16 format=3]
+[gd_resource type="Theme" load_steps=21 format=3]
 
 [sub_resource type="StyleBoxFlat" id="Panel"]
 content_margin_left = 16.0
@@ -152,20 +152,53 @@ shadow_size = 12
 shadow_offset = Vector2(0, 6)
 
 [sub_resource type="StyleBoxFlat" id="EconomyCompactCard"]
-content_margin_left = 16.0
-content_margin_top = 16.0
-content_margin_right = 16.0
-content_margin_bottom = 16.0
+content_margin_left = 20.0
+content_margin_top = 20.0
+content_margin_right = 20.0
+content_margin_bottom = 20.0
 bg_color = Color(1, 0.996078431372549, 0.9803921568627451, 0.9215686274509803)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.17647058823529413, 0.2, 0.1843137254901961, 0.16)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_right = 14
-corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="EconomyTabPage"]
+content_margin_left = 12.0
+content_margin_top = 22.0
+content_margin_right = 12.0
+content_margin_bottom = 16.0
+bg_color = Color(0.9568627450980393, 0.8901960784313725, 0.7294117647058823, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.28627450980392155, 0.21176470588235294, 0.16470588235294117, 0.28)
+
+[sub_resource type="StyleBoxEmpty" id="EconomyPageContent"]
+
+[sub_resource type="StyleBoxFlat" id="EconomyBlockTitle"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+bg_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 0.12)
+border_width_bottom = 1
+border_color = Color(0.2823529411764706, 0.396078431372549, 0.23529411764705882, 0.36)
+
+[sub_resource type="StyleBoxFlat" id="EconomyTabFocus"]
+draw_center = false
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 1)
+
+[sub_resource type="StyleBoxFlat" id="EconomyTabSelectedFocus"]
+draw_center = false
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_color = Color(0.49411764705882355, 0.615686274509804, 0.4392156862745098, 1)
 
 [sub_resource type="StyleBoxFlat" id="EconomyTab"]
 content_margin_left = 12.0
@@ -178,8 +211,6 @@ border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.28627450980392155, 0.21176470588235294, 0.16470588235294117, 0.28)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
 
 [sub_resource type="StyleBoxFlat" id="EconomyTabSelected"]
 content_margin_left = 12.0
@@ -191,8 +222,6 @@ border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_color = Color(0.28627450980392155, 0.21176470588235294, 0.16470588235294117, 0.28)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
 
 [resource]
 default_font_size = 18
@@ -212,19 +241,27 @@ EconomyCard/base_type = &"PanelContainer"
 EconomyCard/styles/panel = SubResource("Card")
 EconomyCompactCard/base_type = &"PanelContainer"
 EconomyCompactCard/styles/panel = SubResource("EconomyCompactCard")
+EconomyBlockTitle/base_type = &"Label"
+EconomyBlockTitle/colors/font_color = Color(0.2823529411764706, 0.396078431372549, 0.23529411764705882, 1)
+EconomyBlockTitle/font_sizes/font_size = 22
+EconomyBlockTitle/styles/normal = SubResource("EconomyBlockTitle")
 EconomyError/base_type = &"Label"
 EconomyError/colors/font_color = Color(0.7137254901960784, 0.3607843137254902, 0.29411764705882354, 1)
 EconomyModal/base_type = &"PanelContainer"
 EconomyModal/styles/panel = SubResource("Modal")
 EconomyPaper/base_type = &"PanelContainer"
 EconomyPaper/styles/panel = SubResource("Paper")
+EconomyPageContent/base_type = &"PanelContainer"
+EconomyPageContent/styles/panel = SubResource("EconomyPageContent")
 EconomyShell/base_type = &"PanelContainer"
 EconomyShell/styles/panel = SubResource("EconomyShell")
+EconomyTabPage/base_type = &"PanelContainer"
+EconomyTabPage/styles/panel = SubResource("EconomyTabPage")
 EconomyTab/base_type = &"Button"
 EconomyTab/colors/font_color = Color(0.4392156862745098, 0.3254901960784314, 0.23921568627450981, 1)
 EconomyTab/colors/font_hover_color = Color(0.28627450980392155, 0.21176470588235294, 0.16470588235294117, 1)
 EconomyTab/font_sizes/font_size = 20
-EconomyTab/styles/focus = SubResource("ButtonFocus")
+EconomyTab/styles/focus = SubResource("EconomyTabFocus")
 EconomyTab/styles/hover = SubResource("EconomyTab")
 EconomyTab/styles/normal = SubResource("EconomyTab")
 EconomyTab/styles/pressed = SubResource("EconomyTabSelected")
@@ -233,7 +270,7 @@ EconomyTabSelected/colors/font_color = Color(0.2823529411764706, 0.3960784313725
 EconomyTabSelected/colors/font_hover_color = Color(0.2823529411764706, 0.396078431372549, 0.23529411764705882, 1)
 EconomyTabSelected/colors/font_pressed_color = Color(0.2823529411764706, 0.396078431372549, 0.23529411764705882, 1)
 EconomyTabSelected/font_sizes/font_size = 20
-EconomyTabSelected/styles/focus = SubResource("ButtonFocus")
+EconomyTabSelected/styles/focus = SubResource("EconomyTabSelectedFocus")
 EconomyTabSelected/styles/hover = SubResource("EconomyTabSelected")
 EconomyTabSelected/styles/normal = SubResource("EconomyTabSelected")
 EconomyTabSelected/styles/pressed = SubResource("EconomyTabSelected")

@@ -10,7 +10,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("2_theme")
-theme_override_constants/separation = 8
+theme_override_constants/separation = 12
 script = ExtResource("1_service")
 
 [node name="CategoryBar" type="HBoxContainer" parent="."]
