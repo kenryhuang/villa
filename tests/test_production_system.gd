@@ -136,6 +136,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_building_round_trip(assertions)
 	_test_building_system_restore(assertions, tree)
 	_test_clock(assertions, tree)
+	_test_maintenance_lifecycle(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
@@ -147,6 +148,44 @@ func _test_freed_registered_buildings_are_pruned(assertions: TestAssert) -> void
 	building.free()
 	assertions.equal(production.get_registered_buildings(), [], "freed buildings are excluded from registration reads")
 	assertions.equal((production.get("_registered_buildings") as Array).size(), 0, "freed buildings are removed from authoritative registration")
+
+
+func _test_maintenance_lifecycle(assertions: TestAssert) -> void:
+	var production := _production()
+	assertions.truthy(production.sync_daily_cursor(1), "maintenance fixture starts on day one")
+	var building := _building("workbench")
+	assertions.truthy(production.register_building(building), "maintenance lifecycle registers building")
+	assertions.equal(
+		production.get_maintenance_due_day(building),
+		15,
+		"new building gets a fourteen-day maintenance deadline"
+	)
+	production.begin_day(13)
+	assertions.equal(
+		production.get_maintenance_state(building),
+		"normal",
+		"two days before the deadline remains normal"
+	)
+	production.begin_day(14)
+	assertions.equal(
+		production.get_maintenance_state(building),
+		"warning",
+		"one day before the deadline enters warning"
+	)
+	assertions.truthy(
+		not production.is_maintenance_paused(building),
+		"warning maintenance keeps production active"
+	)
+	production.begin_day(15)
+	assertions.equal(
+		production.get_maintenance_state(building),
+		"overdue",
+		"the deadline enters overdue state"
+	)
+	assertions.truthy(
+		production.is_maintenance_paused(building),
+		"overdue maintenance pauses production"
+	)
 
 
 func _test_state_round_trip(assertions: TestAssert) -> void:

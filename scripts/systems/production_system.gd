@@ -9,7 +9,8 @@ const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
-const MAINTENANCE_INTERVAL_DAYS := 7
+const MAINTENANCE_INTERVAL_DAYS := 14
+const MAINTENANCE_WARNING_DAYS := 1
 const MAX_SAFE_INTEGER := EconomyLimitsScript.MAX_SAFE_INTEGER
 const MAX_SAFE_DATE := EconomyLimitsScript.MAX_SAFE_DATE
 
@@ -26,6 +27,7 @@ var _inventory_system: InventorySystem
 var _progression_system: Variant
 var _current_day := 0
 var maintenance_due_days: Dictionary = {}
+var repair_remaining_seconds: Dictionary = {}
 var speed_accumulators: Dictionary = {}
 var _active_maintenance_transactions: Dictionary = {}
 var _feed_shortage_active: Dictionary = {}
@@ -65,7 +67,10 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 	var snapshot: Dictionary = state.to_dict()
 	snapshot["building_id"] = building.building_id
 	snapshot["maintenance_due_day"] = get_maintenance_due_day(building)
-	snapshot["maintenance_paused"] = is_maintenance_overdue(building)
+	snapshot["maintenance_state"] = get_maintenance_state(building)
+	snapshot["maintenance_days_remaining"] = get_maintenance_days_remaining(building)
+	snapshot["repair_remaining_seconds"] = get_repair_remaining_seconds(building)
+	snapshot["maintenance_paused"] = is_maintenance_paused(building)
 	snapshot["storage_quantity_capacity"] = _storage_quantity_capacity(building)
 	if bool(snapshot.maintenance_paused) and not snapshot.jobs.is_empty():
 		snapshot.jobs[0].status = "maintenance_paused"
@@ -78,7 +83,7 @@ func refresh_indicator(building: BuildingInstance) -> String:
 	var kind := ""
 	var state := _get_state(building)
 	if _building_is_active(building):
-		if is_maintenance_overdue(building):
+		if is_maintenance_paused(building):
 			kind = "maintenance"
 		elif state != null and _is_output_full(building, state):
 			kind = "full"
@@ -106,7 +111,7 @@ func preflight_recipe(
 	if state == null:
 		failure.reason = "not_a_producer"
 		return failure
-	if is_maintenance_overdue(building):
+	if is_maintenance_paused(building):
 		failure.reason = "maintenance_overdue"
 		return failure
 	var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
@@ -304,7 +309,7 @@ func apply_daily_effects(total_day: int) -> void:
 		if (
 			not _building_is_active(building)
 			or not _has_effect(building, "irrigation")
-			or is_maintenance_overdue(building)
+			or is_maintenance_paused(building)
 		):
 			continue
 		if not is_water_connected(building):
@@ -451,6 +456,34 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 func is_maintenance_overdue(building: BuildingInstance) -> bool:
 	var due_day := get_maintenance_due_day(building)
 	return due_day >= 0 and _current_day >= due_day
+
+
+func get_maintenance_days_remaining(building: BuildingInstance) -> int:
+	var due_day := get_maintenance_due_day(building)
+	return maxi(0, due_day - _current_day) if due_day >= 0 else -1
+
+
+func get_repair_remaining_seconds(building: BuildingInstance) -> float:
+	if building == null:
+		return 0.0
+	return float(repair_remaining_seconds.get(building_key(building), 0.0))
+
+
+func get_maintenance_state(building: BuildingInstance) -> String:
+	if building == null or get_maintenance_due_day(building) < 0:
+		return "normal"
+	if get_repair_remaining_seconds(building) > 0.0:
+		return "repairing"
+	var remaining := get_maintenance_due_day(building) - _current_day
+	if remaining <= 0:
+		return "overdue"
+	if remaining <= MAINTENANCE_WARNING_DAYS:
+		return "warning"
+	return "normal"
+
+
+func is_maintenance_paused(building: BuildingInstance) -> bool:
+	return get_maintenance_state(building) in ["overdue", "repairing"]
 
 
 func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
@@ -799,7 +832,7 @@ func _is_crop_cell_currently_irrigated(position: Vector2i) -> bool:
 		if (
 			not _building_is_active(waterwheel)
 			or not _has_effect(waterwheel, "irrigation")
-			or is_maintenance_overdue(waterwheel)
+			or is_maintenance_paused(waterwheel)
 			or not is_water_connected(waterwheel)
 		):
 			continue
@@ -813,7 +846,7 @@ func get_covered_greenhouses(waterwheel: BuildingInstance) -> Array[String]:
 	if (
 		not _building_is_active(waterwheel)
 		or not _has_effect(waterwheel, "irrigation")
-		or is_maintenance_overdue(waterwheel)
+		or is_maintenance_paused(waterwheel)
 		or not is_water_connected(waterwheel)
 	):
 		return result
@@ -824,7 +857,7 @@ func get_covered_greenhouses(waterwheel: BuildingInstance) -> Array[String]:
 		if (
 			not _building_is_active(greenhouse)
 			or not _has_effect(greenhouse, "ignore_season")
-			or is_maintenance_overdue(greenhouse)
+			or is_maintenance_paused(greenhouse)
 		):
 			continue
 		for position in get_greenhouse_cells(greenhouse):
@@ -1011,7 +1044,7 @@ func _on_building_completed(building: BuildingInstance) -> void:
 
 
 func _finish_passive_building(building: BuildingInstance, total_day: int) -> void:
-	if is_maintenance_overdue(building):
+	if is_maintenance_paused(building):
 		return
 	var id := building.building_id
 	var state := _get_state(building)
@@ -1235,7 +1268,7 @@ func _refresh_greenhouse_cells() -> void:
 		if (
 			not _building_is_active(building)
 			or not _has_effect(building, "ignore_season")
-			or is_maintenance_overdue(building)
+			or is_maintenance_paused(building)
 		):
 			continue
 		for position in get_greenhouse_cells(building):
@@ -1306,7 +1339,7 @@ func _advance_building(building: BuildingInstance, minutes: int) -> void:
 	var state := _get_state(building)
 	if state == null:
 		return
-	if is_maintenance_overdue(building):
+	if is_maintenance_paused(building):
 		return
 	var base_minutes_remaining := minutes
 	while base_minutes_remaining > 0:

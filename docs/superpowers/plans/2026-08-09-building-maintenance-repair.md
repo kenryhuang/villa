@@ -16,7 +16,7 @@
 - Modify: `scripts/systems/production_system.gd`
 - Modify: `tests/test_production_system.gd`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Add boundary assertions:
 
@@ -29,11 +29,11 @@ assertions.equal(production.get_maintenance_state(building), "overdue", "deadlin
 assertions.truthy(production.is_maintenance_paused(building), "overdue maintenance pauses production")
 ```
 
-- [ ] **Step 2: Run `godot --headless --path . --script res://tests/run_economy_system_tests.gd`**
+- [x] **Step 2: Run `godot --headless --path . --script res://tests/run_economy_system_tests.gd`**
 
 Expected: FAIL because the state API is missing and the interval is still 7 days.
 
-- [ ] **Step 3: Implement the state model**
+- [x] **Step 3: Implement the state model**
 
 Set `MAINTENANCE_INTERVAL_DAYS := 14` and `MAINTENANCE_WARNING_DAYS := 1`. Add `get_maintenance_state()`, `get_maintenance_days_remaining()`, and `is_maintenance_paused()`. Include state, days remaining, and repair seconds in snapshots. Replace production/effect pause checks with `is_maintenance_paused()`.
 
@@ -47,9 +47,9 @@ func get_maintenance_state(building: BuildingInstance) -> String:
     return "normal"
 ```
 
-- [ ] **Step 4: Run the production suite and require PASS**
+- [x] **Step 4: Run the production suite and require PASS**
 
-- [ ] **Step 5: Commit `feat: add building maintenance lifecycle`**
+- [x] **Step 5: Commit `feat: add building maintenance lifecycle`**
 
 ### Task 2: Scaled quotes and timed atomic repair
 
