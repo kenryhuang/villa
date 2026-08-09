@@ -59,7 +59,7 @@ func get_maintenance_state(building: BuildingInstance) -> String:
 - Modify: `tests/test_economy_progression.gd`
 - Modify: `tests/test_production_system.gd`
 
-- [ ] **Step 1: Write failing quote and timing tests**
+- [x] **Step 1: Write failing quote and timing tests**
 
 Cover all footprint tiers, summed upgrade levels, warning-period repair, exact one-time deductions, double-start rejection, and the 3-second boundary.
 
@@ -74,15 +74,15 @@ production.advance_repair_time(0.1)
 assertions.equal(production.get_maintenance_state(building), "normal", "repair finishes at three seconds")
 ```
 
-- [ ] **Step 2: Run progression and production suites and verify RED**
+- [x] **Step 2: Run progression and production suites and verify RED**
 
-- [ ] **Step 3: Implement quote policy and timed repair**
+- [x] **Step 3: Implement quote policy and timed repair**
 
 Quote table: 1–2 cells = 20 gold + 1 wood + 1 stone; 3–4 cells = 35 + 2 + 2; 5+ cells = 55 + 3 + 3. Add `10 × total upgrade level` gold and `ceil(total upgrade level / 2)` of each material. `ProductionSystem.maintain()` receives the quote, commits payment atomically, records `3.0` seconds, and uses `PROCESS_MODE_ALWAYS`. `advance_repair_time(delta)` completes by setting due day to current day + 14.
 
-- [ ] **Step 4: Run both suites and require PASS**
+- [x] **Step 4: Run both suites and require PASS**
 
-- [ ] **Step 5: Commit `feat: add timed scaled building repairs`**
+- [x] **Step 5: Commit `feat: add timed scaled building repairs`**
 
 ### Task 3: Versioned repair persistence
 

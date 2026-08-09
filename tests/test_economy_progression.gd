@@ -441,14 +441,26 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	var grain_before_blocked := inventory.get_item_count("grain")
 	assertions.truthy(not production.start_recipe(windmill, "flour", 1, inventory), "overdue producer cannot start")
 	assertions.equal(inventory.get_item_count("grain"), grain_before_blocked, "overdue start consumes no inputs")
-	var quote: Dictionary = production.get_maintenance_quote(windmill)
+	var quote: Dictionary = progression.get_maintenance_quote(windmill)
+	assertions.equal(
+		quote,
+		{"gold_cost": 35, "materials": {"wood": 2, "stone": 2}},
+		"medium unupgraded building uses the tiered maintenance quote"
+	)
 	wallet.gold = 1000
 	_give_cost(inventory, quote.materials)
 	var before_maintain := _asset_snapshot(wallet, inventory)
-	assertions.truthy(progression.maintain(windmill), "exact maintenance payment resumes producer")
+	assertions.truthy(progression.maintain(windmill), "exact maintenance payment starts repair")
 	assertions.equal(int(wallet.gold), int(before_maintain.gold) - int(quote.gold_cost), "maintenance deducts exact gold")
 	_assert_material_delta(assertions, before_maintain, inventory, quote.materials, "maintenance")
-	assertions.equal(production.get_maintenance_due_day(windmill), 9, "maintenance schedules next weekly due day")
+	assertions.equal(production.get_maintenance_state(windmill), "repairing", "paid maintenance enters timed repair")
+	assertions.truthy(not progression.maintain(windmill), "repair cannot be started twice")
+	assertions.equal(production.get_maintenance_due_day(windmill), 2, "repair keeps the old deadline until completion")
+	production.advance_repair_time(2.9)
+	assertions.equal(production.get_maintenance_state(windmill), "repairing", "repair does not complete early")
+	production.advance_repair_time(0.1)
+	assertions.equal(production.get_maintenance_state(windmill), "normal", "repair completes at three seconds")
+	assertions.equal(production.get_maintenance_due_day(windmill), 16, "completed repair schedules fourteen days")
 	production.advance_minutes(120)
 	assertions.truthy(int(windmill.producer_state.jobs[0].remaining_minutes) < remaining_before, "maintained queue resumes")
 
@@ -465,6 +477,11 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.equal(windmill.producer_state.max_queue_slots, queue_before + 1, "queue upgrade adds one slot")
 	assertions.equal(windmill.producer_state.output_capacity, capacity_before + 1, "storage upgrade adds one slot")
 	assertions.equal(progression.get_upgrade_level(windmill, "speed"), 1, "speed level is owned by progression")
+	assertions.equal(
+		progression.get_maintenance_quote(windmill),
+		{"gold_cost": 65, "materials": {"wood": 4, "stone": 4}},
+		"three upgrade levels increase maintenance cost"
+	)
 	var hive := _building("beehive", 13, 14)
 	hive.producer_state.outputs = {"honey": 6}
 	assertions.truthy(production.register_building(hive), "passive storage fixture registers hive")
@@ -514,7 +531,7 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	var maintenance_saved: Dictionary = production.to_dict()
 	var restored_production := _production()
 	assertions.truthy(restored_production.from_dict(maintenance_saved), "maintenance due days round trip")
-	assertions.equal(restored_production.get_maintenance_due_day(windmill), 9, "maintenance restores by stable building key")
+	assertions.equal(restored_production.get_maintenance_due_day(windmill), 16, "maintenance restores by stable building key")
 	var before_bad: Dictionary = restored_production.to_dict()
 	var duplicate := maintenance_saved.duplicate(true)
 	duplicate.maintenance.append(duplicate.maintenance[0].duplicate(true))
@@ -757,7 +774,7 @@ func _test_save_json_round_trip_atomic_rejection_and_legacy(
 	for tool_id in tool.get_tool_ids():
 		assertions.equal(tool.get_durability(tool_id).current, tool.get_durability(tool_id).max, "legacy initializes full %s durability" % tool_id)
 	production.register_building(building)
-	assertions.equal(production.get_maintenance_due_day(building), 7, "legacy initializes one weekly maintenance deadline")
+	assertions.equal(production.get_maintenance_due_day(building), 14, "legacy initializes one fourteen-day maintenance deadline")
 
 
 func _building(id: String, gx: int, gz: int) -> BuildingInstance:

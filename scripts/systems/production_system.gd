@@ -11,6 +11,7 @@ const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
 const MAINTENANCE_INTERVAL_DAYS := 14
 const MAINTENANCE_WARNING_DAYS := 1
+const REPAIR_DURATION_SECONDS := 3.0
 const MAX_SAFE_INTEGER := EconomyLimitsScript.MAX_SAFE_INTEGER
 const MAX_SAFE_DATE := EconomyLimitsScript.MAX_SAFE_DATE
 
@@ -32,6 +33,11 @@ var speed_accumulators: Dictionary = {}
 var _active_maintenance_transactions: Dictionary = {}
 var _feed_shortage_active: Dictionary = {}
 var _passive_output_blocked: Dictionary = {}
+
+
+func _init() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(false)
 
 
 func _ready() -> void:
@@ -112,7 +118,11 @@ func preflight_recipe(
 		failure.reason = "not_a_producer"
 		return failure
 	if is_maintenance_paused(building):
-		failure.reason = "maintenance_overdue"
+		failure.reason = (
+			"maintenance_in_progress"
+			if get_maintenance_state(building) == "repairing"
+			else "maintenance_overdue"
+		)
 		return failure
 	var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
 	if recipe.is_empty():
@@ -397,10 +407,12 @@ func unregister_building(building: BuildingInstance) -> void:
 			building.call("set_economy_indicator", "")
 		var key := building_key(building)
 		maintenance_due_days.erase(key)
+		repair_remaining_seconds.erase(key)
 		speed_accumulators.erase(key)
 		_feed_shortage_active.erase(key)
 		_passive_output_blocked.erase(key)
 	_refresh_greenhouse_cells()
+	set_process(not repair_remaining_seconds.is_empty())
 
 
 func register_existing_buildings() -> int:
@@ -495,14 +507,22 @@ func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
 func maintain(
 	building: BuildingInstance,
 	wallet: Variant,
-	inventory: InventorySystem
+	inventory: InventorySystem,
+	quote_override: Dictionary = {}
 ) -> bool:
-	if building == null or wallet == null or inventory == null or not is_maintenance_overdue(building):
+	if (
+		building == null or wallet == null or inventory == null
+		or get_maintenance_state(building) not in ["warning", "overdue"]
+	):
 		return false
 	var key := building_key(building)
 	if _active_maintenance_transactions.has(key):
 		return false
-	var quote := get_maintenance_quote(building)
+	var quote := (
+		quote_override.duplicate(true)
+		if not quote_override.is_empty()
+		else get_maintenance_quote(building)
+	)
 	if quote.is_empty() or int(wallet.gold) < int(quote.gold_cost):
 		return false
 	for item_id in quote.materials:
@@ -515,20 +535,22 @@ func maintain(
 	}
 	var gold_before := int(wallet.gold)
 	var due_before := get_maintenance_due_day(building)
+	var repair_before := repair_remaining_seconds.duplicate(true)
 	var owns_event := _begin_event_bus_transaction()
 	var owns_mapping := inventory.begin_mapping_transaction()
 	for item_id in quote.materials:
 		if not inventory.remove_item(str(item_id), int(quote.materials[item_id])):
-			_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, key, owns_mapping, owns_event)
+			_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, repair_before, key, owns_mapping, owns_event)
 			_active_maintenance_transactions.erase(key)
 			return false
 	if not wallet.spend_gold(int(quote.gold_cost)):
-		_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, key, owns_mapping, owns_event)
+		_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, repair_before, key, owns_mapping, owns_event)
 		_active_maintenance_transactions.erase(key)
 		return false
-	maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
+	repair_remaining_seconds[key] = REPAIR_DURATION_SECONDS
 	_refresh_greenhouse_cells()
 	refresh_indicator(building)
+	set_process(true)
 	if owns_mapping:
 		inventory.end_mapping_transaction(true)
 	_end_inventory_event_transaction(owns_event, true, "item_removed", quote.materials)
@@ -539,12 +561,48 @@ func maintain(
 	return true
 
 
+func advance_repair_time(delta: float) -> void:
+	if delta <= 0.0 or repair_remaining_seconds.is_empty():
+		return
+	var completed_keys: Array[String] = []
+	var keys: Array[String] = []
+	keys.assign(repair_remaining_seconds.keys())
+	keys.sort()
+	for key in keys:
+		var remaining := maxf(0.0, float(repair_remaining_seconds[key]) - delta)
+		if remaining <= 0.0001:
+			completed_keys.append(key)
+		else:
+			repair_remaining_seconds[key] = remaining
+	for key in completed_keys:
+		repair_remaining_seconds.erase(key)
+		maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
+		var building := _building_for_key(key)
+		if building != null:
+			_refresh_greenhouse_cells()
+			refresh_indicator(building)
+			_emit_event("production_maintenance_changed", [building, get_maintenance_due_day(building)])
+	set_process(not repair_remaining_seconds.is_empty())
+
+
+func _process(delta: float) -> void:
+	advance_repair_time(delta)
+
+
+func _building_for_key(key: String) -> BuildingInstance:
+	for building in _valid_registered_buildings():
+		if building_key(building) == key:
+			return building
+	return null
+
+
 func _rollback_maintenance_transaction(
 	inventory: InventorySystem,
 	wallet: Variant,
 	snapshot: Dictionary,
 	gold_before: int,
 	due_before: int,
+	repair_before: Dictionary,
 	key: String,
 	owns_mapping: bool,
 	owns_event: bool
@@ -552,6 +610,7 @@ func _rollback_maintenance_transaction(
 	inventory.restore_state(snapshot.slots, snapshot.mappings)
 	wallet.set("gold", gold_before)
 	maintenance_due_days[key] = due_before
+	repair_remaining_seconds = repair_before.duplicate(true)
 	if owns_mapping:
 		inventory.end_mapping_transaction(false)
 	_end_inventory_event_transaction(owns_event, false, "item_removed", {})
@@ -560,6 +619,7 @@ func _rollback_maintenance_transaction(
 		and inventory.slots == snapshot.slots
 		and inventory.quick_slot_mappings == snapshot.mappings
 		and int(maintenance_due_days.get(key, -1)) == due_before
+		and repair_remaining_seconds == repair_before
 	)
 	if not rollback_ok:
 		push_error("Maintenance transaction rollback failed")
@@ -637,11 +697,13 @@ func reset_maintenance(total_day: int = 0) -> bool:
 		return false
 	_current_day = total_day
 	maintenance_due_days.clear()
+	repair_remaining_seconds.clear()
 	speed_accumulators.clear()
 	_feed_shortage_active.clear()
 	_passive_output_blocked.clear()
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
+	set_process(false)
 	return true
 
 

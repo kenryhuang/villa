@@ -345,8 +345,40 @@ func upgrade(building: BuildingInstance, upgrade_id: String) -> bool:
 func maintain(building: BuildingInstance) -> bool:
 	return (
 		_production_system != null
-		and _production_system.maintain(building, _wallet, _inventory_system)
+		and _production_system.maintain(
+			building,
+			_wallet,
+			_inventory_system,
+			get_maintenance_quote(building)
+		)
 	)
+
+
+func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
+	if building == null or building.data == null or _production_system == null:
+		return {}
+	if building not in _production_system.get_registered_buildings():
+		return {}
+	var area := int(building.data.footprint.x * building.data.footprint.y)
+	var base_gold := 20
+	var base_materials := 1
+	if area >= 5:
+		base_gold = 55
+		base_materials = 3
+	elif area >= 3:
+		base_gold = 35
+		base_materials = 2
+	var upgrade_total := 0
+	for upgrade_id in ["queue_slots", "speed", "storage"]:
+		upgrade_total += get_upgrade_level(building, upgrade_id)
+	var extra_materials := ceili(float(upgrade_total) / 2.0)
+	return {
+		"gold_cost": base_gold + 10 * upgrade_total,
+		"materials": {
+			"wood": base_materials + extra_materials,
+			"stone": base_materials + extra_materials,
+		},
+	}
 
 
 func get_upgrade_level(building: BuildingInstance, upgrade_id: String) -> int:
@@ -512,7 +544,7 @@ func _upgrade_service(building: BuildingInstance, upgrade_id: String) -> Diction
 
 
 func _maintenance_service(building: BuildingInstance) -> Dictionary:
-	var quote := _production_system.get_maintenance_quote(building)
+	var quote := get_maintenance_quote(building)
 	var overdue := _production_system.is_maintenance_overdue(building)
 	return {
 		"id": "maintenance_%s" % building_key(building), "category": "maintenance",
