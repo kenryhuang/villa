@@ -93,4 +93,32 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		Vector3(-1.5, 0.0, 0.5),
 		"kiln bricks sit in the front-left adjacent grid cell"
 	)
+
+	var yard_slots: Array[Vector3] = [
+		Vector3(-0.78, 0.0, 0.74),
+		Vector3(0.0, 0.0, 0.74),
+	]
+	assertions.truthy(
+		display.has_method("configure_for_yard"),
+		"output display accepts production-yard collection slots"
+	)
+	if display.has_method("configure_for_yard"):
+		display.call("configure_for_yard", yard_slots, "stone_kiln")
+	display.sync_outputs({"charcoal": 2, "stone_brick": 3}, 9, true)
+	assertions.equal(
+		display.get_pile("charcoal").position,
+		yard_slots[0],
+		"yard output uses the first interior collection slot"
+	)
+	assertions.equal(
+		display.get_pile("stone_brick").position,
+		yard_slots[1],
+		"yard output uses the second interior collection slot"
+	)
+	display.sync_outputs({"charcoal": 2, "stone_brick": 3, "plank": 1}, 9, true)
+	assertions.equal(
+		display.get_pile_count(),
+		2,
+		"yard display never spills outputs beyond its collection slots"
+	)
 	display.queue_free()

@@ -240,11 +240,20 @@ func configure(
 		return
 	_configure_production_yard()
 	_apply_structure_offset()
-	(get_node("BuildingOutputDisplay") as Node).call(
-		"configure_for_building",
-		data.footprint,
-		data.building_id
-	)
+	var output_display: Variant = get_node("BuildingOutputDisplay")
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		output_display.call(
+			"configure_for_yard",
+			production_yard.call("get_output_slots"),
+			data.building_id
+		)
+	else:
+		output_display.call(
+			"configure_for_building",
+			data.footprint,
+			data.building_id
+		)
 	name = data.display_name
 	_configure_visuals()
 	_configure_physics()

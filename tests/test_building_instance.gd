@@ -85,6 +85,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			instance.call("sync_output_display", instance.producer_state.outputs, 9)
 			assertions.equal(instance.call("get_output_pile_count"), 1, "stored output creates one pile")
 			assertions.equal(instance.call("get_output_pile_item_ids"), ["plank"], "pile represents stored plank")
+			var yard_slots: Array[Vector3] = instance.get_node("ProductionYard").get_output_slots()
+			assertions.equal(
+				instance.get_node("BuildingOutputDisplay").get_pile("plank").position,
+				yard_slots[0],
+				"production output appears inside the yard collection zone"
+			)
 			instance.set_preview_mode(true)
 			assertions.truthy(not instance.get_node("BuildingOutputDisplay").visible, "preview hides output piles")
 			instance.set_preview_mode(false)

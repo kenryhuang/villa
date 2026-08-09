@@ -192,21 +192,21 @@ git commit -m "feat: integrate production yard lifecycle"
 - Modify: `tests/test_building_economy_ui.gd`
 - Modify: `tests/test_main_farming_building_integration.gd`
 
-- [ ] **Step 1: Write failing output-layout tests**
+- [x] **Step 1: Write failing output-layout tests**
 
 Replace exterior-position expectations with yard-slot expectations. Assert stable sorted assignment, all slots are inside the front half, no two slots overlap, stone-kiln charcoal and bricks both receive hover text and collection, and an artificial ninth output is retained in producer state without producing an overlapping pile in a 4×4 yard.
 
-- [ ] **Step 2: Run building UI and building suites and verify RED**
+- [x] **Step 2: Run building UI and building suites and verify RED**
 
-- [ ] **Step 3: Route layout through the yard**
+- [x] **Step 3: Route layout through the yard**
 
 Add `configure_for_yard(slots, building_id)` to `BuildingOutputDisplay`. Use the supplied local positions directly and cap visual pile creation to slot count. Keep `_positive_item_ids()` sorted, preserve hidden output inventory, and leave collection signals and animations unchanged.
 
 `BuildingInstance._sync_output_display_state()` supplies `ProductionYard.get_output_slots()` for yard buildings and retains the existing layout only for non-yard buildings.
 
-- [ ] **Step 4: Run affected suites and require GREEN**
+- [x] **Step 4: Run affected suites and require GREEN**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/buildings/building_output_display.gd scripts/buildings/building_instance.gd tests/test_building_output_display.gd tests/test_building_instance.gd tests/test_building_economy_ui.gd tests/test_main_farming_building_integration.gd
