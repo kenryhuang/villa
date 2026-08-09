@@ -18,7 +18,7 @@
 - Modify: `tests/test_building_data.gd`
 - Modify: `tests/test_building_catalog.gd`
 
-- [ ] **Step 1: Write failing data tests**
+- [x] **Step 1: Write failing data tests**
 
 Add the exact 11-building mapping and assert that output-producing buildings expose valid yard profiles while excluded buildings do not:
 
@@ -40,7 +40,7 @@ const EXPECTED_YARDS := {
 
 Also assert malformed styles, mismatched authoritative footprints, non-negative offsets, and insufficient slot counts are rejected by `BuildingData.is_valid()`.
 
-- [ ] **Step 2: Run the building suite and verify RED**
+- [x] **Step 2: Run the building suite and verify RED**
 
 Run:
 
@@ -50,7 +50,7 @@ godot --headless --path . --script res://tests/run_building_system_tests.gd
 
 Expected: FAIL because `BuildingData` has no `production_yard`, `structure_footprint`, or yard helpers and the catalog still exposes the old footprints.
 
-- [ ] **Step 3: Implement the data contract**
+- [x] **Step 3: Implement the data contract**
 
 Add exported data and helpers:
 
@@ -69,9 +69,9 @@ func production_yard_style() -> String:
 
 Parse a deep copy in `from_dictionary`, validate styles against `timber`, `masonry`, and `industrial`, and require `production_yard.size == footprint`. Update the 11 `GameData.BUILDINGS` records with their confirmed yard footprint and profile without changing costs, effects, stations, or output capacities.
 
-- [ ] **Step 4: Run the building suite and require GREEN**
+- [x] **Step 4: Run the building suite and require GREEN**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/core/game_data.gd scripts/data/building_data.gd tests/test_building_data.gd tests/test_building_catalog.gd
