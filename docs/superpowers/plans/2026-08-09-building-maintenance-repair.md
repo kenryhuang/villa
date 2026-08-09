@@ -91,7 +91,7 @@ Quote table: 1–2 cells = 20 gold + 1 wood + 1 stone; 3–4 cells = 35 + 2 + 2;
 - Modify: `tests/test_economy_progression.gd`
 - Modify: `tests/test_production_chain_integration.gd`
 
-- [ ] **Step 1: Write failing persistence tests**
+- [x] **Step 1: Write failing persistence tests**
 
 ```gdscript
 var saved := production.to_dict()
@@ -101,15 +101,15 @@ assertions.equal(saved.repairing[0].remaining_seconds, 2.0, "repair time persist
 
 Also test strict malformed-value rejection, version-one migration with no active repairs, restored continuation, and no second payment.
 
-- [ ] **Step 2: Run economy progression and production chain suites and verify RED**
+- [x] **Step 2: Run economy progression and production chain suites and verify RED**
 
-- [ ] **Step 3: Implement version two**
+- [x] **Step 3: Implement version two**
 
 Write exact keys `version`, `maintenance`, `speed_accumulators`, and `repairing`. Accept strict version-one payloads and migrate them to an empty repairing dictionary. Validate unique canonical building keys and finite remaining seconds in `(0, 3]`. Remove repair records when a building is unregistered.
 
-- [ ] **Step 4: Run both suites and require PASS**
+- [x] **Step 4: Run both suites and require PASS**
 
-- [ ] **Step 5: Commit `feat: persist in-progress building repairs`**
+- [x] **Step 5: Commit `feat: persist in-progress building repairs`**
 
 ### Task 4: Damage overlays and repair hammer
 

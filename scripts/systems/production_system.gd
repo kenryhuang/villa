@@ -674,7 +674,21 @@ func to_dict() -> Dictionary:
 	speed_keys.sort()
 	for key in speed_keys:
 		speed_records.append({"building_key": key, "remainder": int(speed_accumulators[key])})
-	return {"version": 1, "maintenance": records, "speed_accumulators": speed_records}
+	var repairing_records: Array[Dictionary] = []
+	var repairing_keys: Array[String] = []
+	repairing_keys.assign(repair_remaining_seconds.keys())
+	repairing_keys.sort()
+	for key in repairing_keys:
+		repairing_records.append({
+			"building_key": key,
+			"remaining_seconds": float(repair_remaining_seconds[key]),
+		})
+	return {
+		"version": 2,
+		"maintenance": records,
+		"speed_accumulators": speed_records,
+		"repairing": repairing_records,
+	}
 
 
 func validate_dict(data: Dictionary) -> bool:
@@ -687,8 +701,10 @@ func from_dict(data: Dictionary) -> bool:
 		return false
 	maintenance_due_days = parsed.maintenance
 	speed_accumulators = parsed.speed
+	repair_remaining_seconds = parsed.repairing
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
+	set_process(not repair_remaining_seconds.is_empty())
 	return true
 
 
@@ -712,9 +728,14 @@ static func building_key(building: BuildingInstance) -> String:
 
 
 func _parse_maintenance(data: Dictionary) -> Variant:
-	if data.size() != 3 or not _integer_number_in_range(data.get("version"), 1, 1):
+	if not _integer_number_in_range(data.get("version"), 1, 2):
+		return null
+	var version := int(data.version)
+	if data.size() != (3 if version == 1 else 4):
 		return null
 	if not data.get("maintenance") is Array or not data.get("speed_accumulators") is Array:
+		return null
+	if version == 2 and not data.get("repairing") is Array:
 		return null
 	var maintenance := {}
 	for value in data.maintenance:
@@ -742,7 +763,24 @@ func _parse_maintenance(data: Dictionary) -> Variant:
 		if not _integer_number_in_range(record.get("remainder"), 0, 99):
 			return null
 		speed[key] = int(record.remainder)
-	return {"maintenance": maintenance, "speed": speed}
+	var repairing := {}
+	if version == 2:
+		for value in data.repairing:
+			if not value is Dictionary:
+				return null
+			var record := value as Dictionary
+			if record.size() != 2 or not record.get("building_key") is String:
+				return null
+			var key := str(record.building_key)
+			var remaining: Variant = record.get("remaining_seconds")
+			if (
+				not _valid_building_key(key) or repairing.has(key)
+				or not maintenance.has(key)
+				or not _finite_number_in_range(remaining, 0.000001, REPAIR_DURATION_SECONDS)
+			):
+				return null
+			repairing[key] = float(remaining)
+	return {"maintenance": maintenance, "speed": speed, "repairing": repairing}
 
 
 func _valid_building_key(key: String) -> bool:
@@ -756,6 +794,13 @@ static func _integer_number_in_range(value: Variant, minimum: int, maximum: int)
 		typeof(value) == TYPE_FLOAT and is_finite(value)
 		and floorf(value) == value and value >= float(minimum) and value <= float(maximum)
 	)
+
+
+static func _finite_number_in_range(value: Variant, minimum: float, maximum: float) -> bool:
+	if typeof(value) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	var number := float(value)
+	return is_finite(number) and number >= minimum and number <= maximum
 
 
 func passive_output_for(id: String, day: int, flowers: int) -> Dictionary:

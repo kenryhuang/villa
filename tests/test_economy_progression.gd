@@ -456,6 +456,33 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.equal(production.get_maintenance_state(windmill), "repairing", "paid maintenance enters timed repair")
 	assertions.truthy(not progression.maintain(windmill), "repair cannot be started twice")
 	assertions.equal(production.get_maintenance_due_day(windmill), 2, "repair keeps the old deadline until completion")
+	var repairing_saved: Dictionary = production.to_dict()
+	assertions.equal(repairing_saved.get("version"), 2, "active maintenance writes version two")
+	var repairing_records := repairing_saved.get("repairing", []) as Array
+	assertions.equal(repairing_records.size(), 1, "active repair is persisted")
+	if not repairing_records.is_empty():
+		assertions.equal(
+			float((repairing_records[0] as Dictionary).get("remaining_seconds", 0.0)),
+			3.0,
+			"repair persistence keeps remaining real seconds"
+		)
+	var repairing_restored := _production()
+	assertions.truthy(repairing_restored.from_dict(repairing_saved), "active repair state restores")
+	assertions.equal(
+		repairing_restored.get_repair_remaining_seconds(windmill),
+		3.0,
+		"restored repair resumes without another payment"
+	)
+	var version_one := repairing_saved.duplicate(true)
+	version_one["version"] = 1
+	version_one.erase("repairing")
+	var migrated_production := _production()
+	assertions.truthy(migrated_production.from_dict(version_one), "version-one maintenance state migrates")
+	assertions.equal(
+		migrated_production.get_repair_remaining_seconds(windmill),
+		0.0,
+		"version-one migration starts with no paid repair"
+	)
 	production.advance_repair_time(2.9)
 	assertions.equal(production.get_maintenance_state(windmill), "repairing", "repair does not complete early")
 	production.advance_repair_time(0.1)

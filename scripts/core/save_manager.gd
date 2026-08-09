@@ -655,7 +655,7 @@ func _validate_economy_building_keys(data: Dictionary) -> bool:
 		if producer.has("storage_quantity_capacity") and int(producer.storage_quantity_capacity) != ProductionSystemScript.expected_storage_quantity_capacity(str(building_record.building_id), int(levels.get("storage", 0))):
 			return false
 	var upkeep := data.production_upkeep as Dictionary
-	for field in ["maintenance", "speed_accumulators"]:
+	for field in ["maintenance", "speed_accumulators", "repairing"]:
 		for value in upkeep.get(field, []):
 			if not valid_keys.has(str((value as Dictionary).get("building_key", ""))):
 				return false
