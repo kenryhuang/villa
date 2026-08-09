@@ -240,6 +240,32 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	kiln.complete_construction()
 	main.call("_on_building_instance_placed", kiln)
 	assertions.truthy(main.production_system.register_building(kiln), "output pickup fixture registers kiln")
+	var maintenance_day_before: int = main.production_system.get_current_day()
+	assertions.truthy(
+		main.production_system.set_maintenance_due_day(kiln, maintenance_day_before + 1),
+		"main maintenance fixture enters the warning window"
+	)
+	assertions.equal(
+		kiln.get_maintenance_visual_state(),
+		"warning",
+		"direct maintenance date change refreshes the building warning visual"
+	)
+	assertions.truthy(
+		main.production_system.sync_daily_cursor(maintenance_day_before + 1),
+		"direct date jump reaches the maintenance deadline"
+	)
+	assertions.equal(
+		kiln.get_maintenance_visual_state(),
+		"overdue",
+		"direct date jump refreshes the building broken visual"
+	)
+	assertions.equal(
+		kiln.get_node("EconomyIndicator").text,
+		"",
+		"broken buildings never render the legacy repair glyph"
+	)
+	main.production_system.set_maintenance_due_day(kiln, maintenance_day_before + 14)
+	main.production_system.sync_daily_cursor(maintenance_day_before)
 	kiln.producer_state.outputs = {"charcoal": 2, "stone_brick": 3}
 	main.production_system.refresh_indicator(kiln)
 	var charcoal_before: int = main.inventory_system.get_item_count("charcoal")

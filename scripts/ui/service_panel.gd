@@ -144,7 +144,11 @@ func request_service(service_id: String) -> void:
 	refresh_services()
 	var refreshed: Dictionary = _services_by_id.get(service_id, {})
 	var reason := str(refreshed.get("disabled_reason", ""))
-	feedback_label.text = "服务完成" if succeeded else (reason if not reason.is_empty() else "服务未完成，请检查条件与费用")
+	feedback_label.text = (
+		("维修已开始" if str(service.get("kind", "")) == "maintenance" else "服务完成")
+		if succeeded
+		else (reason if not reason.is_empty() else "服务未完成，请检查条件与费用")
+	)
 
 
 func _build_card(service: Dictionary) -> VBoxContainer:

@@ -361,10 +361,14 @@ func begin_day(total_day: int) -> bool:
 	var previous_day := _current_day
 	_current_day = total_day
 	for building in _valid_registered_buildings():
-		var due_day := get_maintenance_due_day(building)
-		if due_day > previous_day and due_day <= total_day:
-			_emit_event("production_maintenance_changed", [building, due_day])
+		var previous_state := _maintenance_state_at_day(building, previous_day)
+		var current_state := get_maintenance_state(building)
 		refresh_indicator(building)
+		if current_state != previous_state and current_state in ["warning", "overdue"]:
+			_emit_event(
+				"production_maintenance_changed",
+				[building, get_maintenance_due_day(building)]
+			)
 	_refresh_greenhouse_cells()
 	return true
 
@@ -460,11 +464,12 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 		return false
 	if not _registered_buildings.has(building):
 		return false
-	var previous_due_day := get_maintenance_due_day(building)
+	var previous_state := get_maintenance_state(building)
 	maintenance_due_days[building_key(building)] = due_day
 	_refresh_greenhouse_cells()
 	refresh_indicator(building)
-	if due_day <= _current_day and (previous_due_day < 0 or previous_due_day > _current_day):
+	var current_state := get_maintenance_state(building)
+	if current_state != previous_state and current_state in ["warning", "overdue"]:
 		_emit_event("production_maintenance_changed", [building, due_day])
 	return true
 
@@ -491,6 +496,19 @@ func get_maintenance_state(building: BuildingInstance) -> String:
 	if get_repair_remaining_seconds(building) > 0.0:
 		return "repairing"
 	var remaining := get_maintenance_due_day(building) - _current_day
+	if remaining <= 0:
+		return "overdue"
+	if remaining <= MAINTENANCE_WARNING_DAYS:
+		return "warning"
+	return "normal"
+
+
+func _maintenance_state_at_day(building: BuildingInstance, total_day: int) -> String:
+	if building == null or get_maintenance_due_day(building) < 0:
+		return "normal"
+	if get_repair_remaining_seconds(building) > 0.0:
+		return "repairing"
+	var remaining := get_maintenance_due_day(building) - total_day
 	if remaining <= 0:
 		return "overdue"
 	if remaining <= MAINTENANCE_WARNING_DAYS:

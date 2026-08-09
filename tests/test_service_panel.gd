@@ -93,6 +93,29 @@ func _test_categories_cards_transactions_and_shop_route(
 			for child_name in ["GateLabel", "LevelOwnedLabel", "CostLabel", "EffectLabel", "ActionButton", "DisabledReasonLabel"]:
 				assertions.truthy(card.has_node(child_name), "%s card has %s" % [category, child_name])
 
+	production.set_maintenance_due_day(building, production.get_current_day() + 1)
+	var maintenance_service_id := "maintenance_%s" % ProductionSystemScript.building_key(building)
+	var maintenance_service := _service(progression, maintenance_service_id)
+	assertions.equal(maintenance_service.get("current_state"), "可提前维修", "service overview exposes warning repair")
+	wallet.gold = int(maintenance_service.get("gold_cost", 0))
+	for item_id in maintenance_service.get("materials", {}):
+		inventory.add_item(str(item_id), int(maintenance_service.materials[item_id]))
+	panel.select_category("maintenance")
+	panel.refresh_services()
+	var maintenance_card := _card(panel, maintenance_service_id)
+	assertions.truthy(
+		maintenance_card != null and not maintenance_card.get_node("ActionButton").disabled,
+		"service overview allows warning-period repair"
+	)
+	if maintenance_card != null:
+		maintenance_card.get_node("ActionButton").pressed.emit()
+	assertions.equal(production.get_maintenance_state(building), "repairing", "service overview starts timed repair")
+	maintenance_service = _service(progression, maintenance_service_id)
+	assertions.truthy(
+		str(maintenance_service.get("current_state", "")).begins_with("维修中"),
+		"service overview shows remaining repair seconds"
+	)
+
 	wallet.gold = 1000
 	wallet.player_state.level = 1
 	day.total_days = 1

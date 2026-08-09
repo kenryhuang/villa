@@ -190,19 +190,19 @@ The compact card contains a colored state dot, state/deadline labels, gold/wood/
 - Modify: `tests/test_economy_notifications.gd`
 - Modify: `tests/test_main_farming_building_integration.gd`
 
-- [ ] **Step 1: Write failing integration tests**
+- [x] **Step 1: Write failing integration tests**
 
 Assert a single warning notification, a single overdue notification, service-row states, visual refresh after direct date jumps, and the same repair command from both UI locations.
 
-- [ ] **Step 2: Run economy UI, economy system, and main integration suites and verify RED**
+- [x] **Step 2: Run economy UI, economy system, and main integration suites and verify RED**
 
-- [ ] **Step 3: Synchronize consumers**
+- [x] **Step 3: Synchronize consumers**
 
 Service rows show `距到期 N 天`, `可提前维修`, `破损停产`, or `维修中 %.1f 秒`. Notifications distinguish warning from overdue. Every daily/maintenance event refreshes the building visual and open UI from the production snapshot; no consumer recreates state locally.
 
-- [ ] **Step 4: Run affected suites and require PASS**
+- [x] **Step 4: Run affected suites and require PASS**
 
-- [ ] **Step 5: Commit `feat: integrate maintenance status across game UI`**
+- [x] **Step 5: Commit `feat: integrate maintenance status across game UI`**
 
 ### Task 7: Final verification
 

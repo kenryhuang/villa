@@ -545,14 +545,31 @@ func _upgrade_service(building: BuildingInstance, upgrade_id: String) -> Diction
 
 func _maintenance_service(building: BuildingInstance) -> Dictionary:
 	var quote := get_maintenance_quote(building)
-	var overdue := _production_system.is_maintenance_overdue(building)
+	var state := _production_system.get_maintenance_state(building)
+	var current_state := "距到期 %d 天" % _production_system.get_maintenance_days_remaining(building)
+	if state == "warning":
+		current_state = "可提前维修"
+	elif state == "overdue":
+		current_state = "破损停产"
+	elif state == "repairing":
+		current_state = "维修中 %.1f 秒" % _production_system.get_repair_remaining_seconds(building)
+	var disabled_reason := ""
+	if state == "normal":
+		disabled_reason = "维护尚未进入预警期"
+	elif state == "repairing":
+		disabled_reason = "维修正在进行"
+	else:
+		disabled_reason = _cost_reason(
+			int(quote.get("gold_cost", 0)),
+			quote.get("materials", {})
+		)
 	return {
 		"id": "maintenance_%s" % building_key(building), "category": "maintenance",
 		"display_name": "%s维护" % GameDataScript.get_building(building.building_id).get("name", building.building_id),
-		"kind": "maintenance", "building": building, "target_id": building_key(building), "gate": "维护到期后支付",
-		"current_state": "已到期" if overdue else "到期日 %d" % _production_system.get_maintenance_due_day(building),
+		"kind": "maintenance", "building": building, "target_id": building_key(building), "gate": "到期前1天可维修",
+		"current_state": current_state,
 		"gold_cost": int(quote.get("gold_cost", 0)), "materials": quote.get("materials", {}),
-		"effect": "恢复生产并延后7天", "disabled_reason": "维护尚未到期" if not overdue else _cost_reason(int(quote.get("gold_cost", 0)), quote.get("materials", {})), "owned": false,
+		"effect": "维修3秒并延后14天", "disabled_reason": disabled_reason, "owned": false,
 	}
 
 

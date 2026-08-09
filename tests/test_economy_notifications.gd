@@ -237,6 +237,21 @@ func _test_real_clock_and_event_bus_connections(assertions: TestAssert, tree: Sc
 	var real_merge_id: String = real_clock_system.push("unlock", "解锁", "配方解锁", 4, "service", "barn")
 	assertions.equal(real_merge_id, real_id, "production default uses monotonic ticks for immediate merge")
 	real_clock_system.free()
+	var maintenance_building := BuildingInstance.new()
+	maintenance_building.authored_building_id = "windmill"
+	maintenance_building.grid_x = 5
+	maintenance_building.grid_z = 6
+	maintenance_building.set_maintenance_visual_state("warning")
+	system.call("_on_maintenance_changed", maintenance_building, 5)
+	assertions.equal(str(system.get_recent()[0].kind), "maintenance_warning", "warning state creates advance notice")
+	maintenance_building.set_maintenance_visual_state("overdue")
+	system.call("_on_maintenance_changed", maintenance_building, 4)
+	assertions.equal(str(system.get_recent()[0].kind), "maintenance_due", "overdue state creates stop notice")
+	maintenance_building.set_maintenance_visual_state("repairing", 3.0)
+	var notification_count := system.get_recent().size()
+	system.call("_on_maintenance_changed", maintenance_building, 4)
+	assertions.equal(system.get_recent().size(), notification_count, "repair start creates no duplicate due notice")
+	maintenance_building.free()
 	system.free()
 	market.free()
 
