@@ -6,10 +6,16 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
 const MAX_UI_BATCHES := 9999
 const DEFAULT_INPUT_CAPACITY := 99
+const PROCESS_CARD_WIDTH := 520.0
+const ACTIVITY_CARD_WIDTH := 300.0
 
 signal snapshot_changed(state: String)
 signal unlock_requested(service_id: String)
 
+@onready var sections: HBoxContainer = $Sections
+@onready var recipe_card: Control = $Sections/RecipeColumn
+@onready var process_card: Control = $Sections/ProcessColumn
+@onready var activity_card: Control = $Sections/RightColumn
 @onready var recipe_list: VBoxContainer = $Sections/RecipeColumn/Content/RecipeScroll/RecipeList
 @onready var queue_slots_container: VBoxContainer = $Sections/RightColumn/Content/QueueCard/QueueScroll/QueueSlots
 @onready var storage_list: VBoxContainer = $Sections/RightColumn/Content/StorageCard/StorageList
@@ -25,6 +31,8 @@ signal unlock_requested(service_id: String)
 @onready var batch_spin_box: SpinBox = $Sections/ProcessColumn/Content/BatchControls/BatchSpinBox
 @onready var max_button: Button = $Sections/ProcessColumn/Content/BatchControls/MaxButton
 @onready var start_button: Button = $Sections/ProcessColumn/Content/BatchControls/StartButton
+@onready var narrow_detail_scroll: ScrollContainer = $NarrowDetailScroll
+@onready var narrow_detail_stack: VBoxContainer = $NarrowDetailScroll/NarrowDetailStack
 @onready var feedback_label: Label = $FeedbackLabel
 
 var recipe_rows: Array[Dictionary] = []
@@ -42,6 +50,7 @@ var failure_reason := ""
 var failure_message := ""
 var _layout_mode := "three_column"
 var _drawer_open := false
+var _logical_layout_size := Vector2.ZERO
 
 var _production: ProductionSystem
 var _inventory: InventorySystem
@@ -106,6 +115,7 @@ func select_recipe(recipe_id: String) -> void:
 
 
 func apply_responsive_layout(logical_size: Vector2) -> void:
+	_logical_layout_size = logical_size
 	var next_mode: String = EconomyLayoutScript.mode_for_size(logical_size)
 	if next_mode != _layout_mode:
 		_layout_mode = next_mode
@@ -136,17 +146,62 @@ func handle_top_escape() -> bool:
 
 
 func _apply_drawer_visibility() -> void:
-	var recipe_card := get_node("Sections/RecipeColumn") as Control
-	var process_card := get_node("Sections/ProcessColumn") as Control
-	var activity_card := get_node("Sections/RightColumn") as Control
+	if not is_node_ready():
+		return
 	if _layout_mode == "three_column":
+		_restore_cards_to_sections()
 		recipe_card.visible = true
 		process_card.visible = true
 		activity_card.visible = true
 		return
-	recipe_card.visible = not _drawer_open
-	process_card.visible = _drawer_open
-	activity_card.visible = _drawer_open
+	if not _drawer_open:
+		_restore_cards_to_sections()
+		recipe_card.visible = true
+		process_card.visible = false
+		activity_card.visible = false
+		return
+	if _logical_layout_size.x < EconomyLayoutScript.NARROW_STACK_BREAKPOINT:
+		process_card.visible = true
+		activity_card.visible = true
+		_move_card(process_card, narrow_detail_stack)
+		_move_card(activity_card, narrow_detail_stack)
+		var process_height: float = process_card.get_combined_minimum_size().y
+		var activity_height: float = activity_card.get_combined_minimum_size().y
+		process_card.custom_minimum_size.x = 0.0
+		activity_card.custom_minimum_size.x = 0.0
+		process_card.custom_minimum_size.y = process_height
+		activity_card.custom_minimum_size.y = activity_height
+		process_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		activity_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		recipe_card.visible = false
+		sections.visible = false
+		narrow_detail_scroll.visible = true
+	else:
+		_restore_cards_to_sections()
+		recipe_card.visible = false
+		process_card.visible = true
+		activity_card.visible = true
+
+
+func _restore_cards_to_sections() -> void:
+	_move_card(process_card, sections)
+	_move_card(activity_card, sections)
+	sections.move_child(process_card, 1)
+	sections.move_child(activity_card, 2)
+	process_card.custom_minimum_size.x = PROCESS_CARD_WIDTH
+	activity_card.custom_minimum_size.x = ACTIVITY_CARD_WIDTH
+	process_card.custom_minimum_size.y = 0.0
+	activity_card.custom_minimum_size.y = 0.0
+	process_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	activity_card.size_flags_horizontal = Control.SIZE_FILL
+	sections.visible = true
+	narrow_detail_scroll.visible = false
+
+
+func _move_card(card: Control, target: Container) -> void:
+	if card.get_parent() == target:
+		return
+	card.reparent(target, false)
 
 
 func set_batches(next_batches: int) -> void:

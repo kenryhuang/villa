@@ -2,6 +2,7 @@ class_name EconomyLayout
 extends RefCounted
 
 const DRAWER_BREAKPOINT := 1204.0
+const NARROW_STACK_BREAKPOINT := 908.0
 const MINIMUM_SCALE := 0.8
 const MAXIMUM_SCALE := 1.4
 const DEFAULT_SCALE := 1.0

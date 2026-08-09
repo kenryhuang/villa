@@ -406,3 +406,20 @@ git commit -m "test: verify Apple-aligned economy UI"
 ```
 
 Do not commit generated `.godot/` images or regenerated `.uid` files.
+
+### Task 7: Close the ultra-narrow drawer overflow gap
+
+**Files:**
+- Modify: `scripts/ui/economy_layout.gd`
+- Modify: `scripts/ui/market_panel.gd`
+- Modify: `scripts/ui/building_production_panel.gd`
+- Modify: `scenes/ui/economy/market_panel.tscn`
+- Modify: `scenes/ui/economy/building_production_panel.tscn`
+- Modify: `tests/test_economy_ui_responsive.gd`
+- Modify: `tests/test_building_economy_ui.gd`
+
+- [x] Add a shared 908 logical-pixel ultra-narrow breakpoint below the 1204 drawer threshold.
+- [x] Reparent market detail/trade and production process/activity cards into vertical scroll stacks below that breakpoint.
+- [x] Preserve natural card heights while stacked and restore desktop widths, parent order, visibility, and focus behavior when leaving the stack.
+- [x] Cover 800 px runtime geometry, vertical scrolling, 1204 threshold geometry, motion constants, and first-Escape drawer restoration.
+- [x] Re-run parser, responsive UI, economy UI, main gameplay, building, production-chain, and aggregate tests.

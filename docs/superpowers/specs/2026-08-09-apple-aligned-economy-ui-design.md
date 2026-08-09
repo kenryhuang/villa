@@ -179,9 +179,11 @@ ProductionPage
 ## 6. Responsive Behavior
 
 - `>=1204` logical outer-shell width: three-column layout.
-- `<1204` logical outer-shell width: drawer layout.
+- `908–1203` logical outer-shell width: drawer layout with detail and action cards side by side.
+- `<908` logical outer-shell width: drawer detail and action cards stack vertically in one internal scroll area.
 - Drawer opens the product/recipe list first and moves details/actions into the existing detail state.
 - In a drawer, keep the price chart when logical content height is at least 420 px; hide it below that threshold.
+- Stacked cards release their desktop minimum width, retain their natural content height, and restore their original parent/order when the drawer closes or the window widens.
 - Lists scroll internally. The complete modal must not grow beyond its calculated rectangle.
 - Resize and UI scale changes preserve selected tab, product, category, recipe, batch count, and scroll positions.
 

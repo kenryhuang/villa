@@ -263,7 +263,7 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	var market_panel = shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel")
 	# This fixture verifies the layered Escape behavior of the compact drawer.
 	# Pin its logical width instead of depending on the headless runner's window.
-	market_panel.call("apply_responsive_layout", Vector2(900.0, 720.0))
+	market_panel.call("apply_responsive_layout", Vector2(1000.0, 720.0))
 	market_panel.call("select_category", "raw_materials")
 	market_panel.call("select_item", "wood")
 	market_panel.call("refresh_snapshot")

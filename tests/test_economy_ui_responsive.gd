@@ -95,7 +95,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_compact_theme(assertions)
 	_test_compact_shells(assertions, tree)
 	_test_compact_market_layout(assertions)
-	_test_production_drawer_contract(assertions)
+	await _test_production_drawer_contract(assertions, tree)
 	_test_layout_contract(assertions)
 	_test_theme_contract(assertions)
 	_test_shared_scene_tokens(assertions)
@@ -119,6 +119,7 @@ func _test_compact_economy_geometry(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.CARD_GAP, 16.0, "cards share the 8pt grid")
 	assertions.equal(EconomyLayout.CONTROL_HEIGHT, 44.0, "controls share one height")
 	assertions.equal(EconomyLayout.LIST_ROW_HEIGHT, 52.0, "dynamic rows share one height")
+	assertions.equal(EconomyLayout.NARROW_STACK_BREAKPOINT, 908.0, "ultra-narrow details share one stack threshold")
 	var market_rect: Rect2 = EconomyLayout.panel_rect_for(
 		Vector2(1920.0, 1080.0),
 		EconomyLayout.MARKET_PANEL_MAX_SIZE
@@ -133,6 +134,11 @@ func _test_compact_economy_geometry(assertions: TestAssert) -> void:
 	assertions.truthy(compact_rect.position.y >= 20.0, "compact market keeps top margin")
 	assertions.truthy(compact_rect.end.x <= 1260.0, "compact market keeps right margin")
 	assertions.truthy(compact_rect.end.y <= 700.0, "compact market keeps bottom margin")
+	var threshold_rect: Rect2 = EconomyLayout.panel_rect_for(
+		Vector2(1244.0, 900.0),
+		EconomyLayout.MARKET_PANEL_MAX_SIZE
+	)
+	assertions.equal(threshold_rect.size.x, 1204.0, "physical viewport reaches the three-card threshold after shell margins")
 
 
 func _test_compact_theme(assertions: TestAssert) -> void:
@@ -277,21 +283,42 @@ func _test_compact_market_layout(assertions: TestAssert) -> void:
 	market.free()
 
 
-func _test_production_drawer_contract(assertions: TestAssert) -> void:
+func _test_production_drawer_contract(assertions: TestAssert, tree: SceneTree) -> void:
+	var host := SubViewport.new()
+	host.size = Vector2i(800, 720)
+	tree.root.add_child(host)
 	var panel := (load("res://scenes/ui/economy/building_production_panel.tscn") as PackedScene).instantiate() as Control
+	host.add_child(panel)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await tree.process_frame
+	var sections := panel.get_node("Sections") as Control
+	var recipe_card := panel.get_node("Sections/RecipeColumn") as Control
+	var process_card := panel.get_node("Sections/ProcessColumn") as Control
+	var activity_card := panel.get_node("Sections/RightColumn") as Control
+	var narrow_scroll := panel.get_node("NarrowDetailScroll") as ScrollContainer
+	var narrow_stack := panel.get_node("NarrowDetailScroll/NarrowDetailStack") as VBoxContainer
 	assertions.truthy(panel.has_method("apply_responsive_layout"), "production panel exposes responsive layout")
 	assertions.truthy(panel.has_method("open_details_drawer"), "production panel exposes a detail drawer")
 	if panel.has_method("apply_responsive_layout") and panel.has_method("open_details_drawer"):
-		panel.call("apply_responsive_layout", Vector2(900.0, 720.0))
+		panel.call("apply_responsive_layout", Vector2(800.0, 720.0))
 		assertions.equal(panel.call("get_layout_mode"), "drawer", "narrow production starts in drawer mode")
-		assertions.truthy((panel.get_node("Sections/RecipeColumn") as Control).visible, "production drawer starts with recipes")
-		assertions.truthy(not (panel.get_node("Sections/ProcessColumn") as Control).visible, "production details begin hidden")
+		assertions.truthy(recipe_card.visible, "production drawer starts with recipes")
+		assertions.truthy(not process_card.visible, "production details begin hidden")
 		panel.call("open_details_drawer")
-		assertions.truthy(not (panel.get_node("Sections/RecipeColumn") as Control).visible, "opening production details hides recipes")
-		assertions.truthy((panel.get_node("Sections/ProcessColumn") as Control).visible, "opening production details shows the process card")
+		await tree.process_frame
+		assertions.truthy(not sections.visible and narrow_scroll.visible, "ultra-narrow production opens a scrolling detail stack")
+		assertions.equal(process_card.get_parent(), narrow_stack, "production process card moves into the narrow stack")
+		assertions.equal(activity_card.get_parent(), narrow_stack, "production activity card moves into the narrow stack")
+		assertions.equal(process_card.custom_minimum_size.x, 0.0, "stacked production card releases its desktop width")
+		assertions.truthy(_controls_within_width(narrow_stack, panel.get_global_rect()), "stacked production details stay inside the narrow width")
+		assertions.equal(narrow_scroll.vertical_scroll_mode, ScrollContainer.SCROLL_MODE_AUTO, "stacked production details enable vertical scrolling when content grows")
+		assertions.truthy(narrow_scroll.follow_focus, "stacked production details keep keyboard focus in view")
 		assertions.truthy(panel.call("handle_top_escape"), "production detail drawer handles Escape")
-		assertions.truthy((panel.get_node("Sections/RecipeColumn") as Control).visible, "Escape restores production recipes")
-	panel.free()
+		await tree.process_frame
+		assertions.truthy(recipe_card.visible, "Escape restores production recipes")
+		assertions.equal(process_card.get_parent(), sections, "Escape restores the production card hierarchy")
+	host.free()
+	await tree.process_frame
 
 
 func _test_building_palette_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
@@ -376,6 +403,13 @@ func _test_layout_contract(assertions: TestAssert) -> void:
 	assertions.equal(EconomyLayout.clamp_scale(1.2), 1.2, "scale preserves supported value")
 	assertions.equal(EconomyLayout.clamp_scale(2.0), 1.4, "scale has upper bound")
 	assertions.equal(EconomyLayout.clamp_scale(NAN), 1.0, "non-finite scale falls back safely")
+	var shop_source := FileAccess.get_file_as_string("res://scripts/ui/shop_ui.gd")
+	var building_source := FileAccess.get_file_as_string("res://scripts/ui/building_economy_ui.gd")
+	assertions.truthy(shop_source.contains("const OPEN_DURATION := 0.16"), "market window uses the approved open duration")
+	assertions.truthy(shop_source.contains("const CONTENT_FADE_DURATION := 0.12"), "market tabs use the approved content fade")
+	assertions.truthy(shop_source.contains("Vector2(0.985, 0.985)"), "market window uses the restrained initial scale")
+	assertions.truthy(building_source.contains("const OPEN_DURATION := 0.16"), "production window uses the approved open duration")
+	assertions.truthy(building_source.contains("Vector2(0.985, 0.985)"), "production window uses the restrained initial scale")
 
 
 func _test_building_modal_minimum_height(assertions: TestAssert) -> void:
@@ -627,7 +661,7 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 		ScrollContainer.SCROLL_MODE_DISABLED,
 		"market product list disables horizontal scrolling"
 	)
-	panel.call("apply_responsive_layout", Vector2(900, 720))
+	panel.call("apply_responsive_layout", Vector2(1000, 720))
 	assertions.equal(panel.call("get_layout_mode"), "drawer", "market uses drawer at minimum viewport")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "drawer starts with product list")
 	panel.call("open_details_drawer")
@@ -637,12 +671,33 @@ func _test_market_drawer_state(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy((panel.get_node("Columns/TradePanel/Content/StatusArea/DisabledReasonLabel") as Control).visible, "drawer keeps disabled reason visible")
 	assertions.truthy(panel.call("handle_top_escape"), "escape closes the open details drawer")
 	assertions.truthy((panel.get_node("Columns/CatalogColumn") as Control).visible, "closing drawer restores product list")
-	panel.size = Vector2(900.0, 500.0)
+	panel.size = Vector2(1000.0, 500.0)
 	panel.call("open_details_drawer")
 	assertions.truthy((panel.get_node("Columns/DetailColumn/DetailContent/PriceChart") as Control).visible, "tall drawer keeps the price curve")
-	panel.size = Vector2(900.0, 390.0)
-	panel.call("apply_responsive_layout", Vector2(900.0, 390.0))
+	panel.size = Vector2(1000.0, 390.0)
+	panel.call("apply_responsive_layout", Vector2(1000.0, 390.0))
 	assertions.truthy(not (panel.get_node("Columns/DetailColumn/DetailContent/PriceChart") as Control).visible, "short drawer hides the price curve")
+	var columns := panel.get_node("Columns") as HBoxContainer
+	var detail_card := panel.get_node("Columns/DetailColumn") as Control
+	var trade_card := panel.get_node("Columns/TradePanel") as Control
+	var narrow_scroll := panel.get_node("NarrowDetailScroll") as ScrollContainer
+	var narrow_stack := panel.get_node("NarrowDetailScroll/NarrowDetailStack") as VBoxContainer
+	panel.size = Vector2(800.0, 720.0)
+	panel.call("apply_responsive_layout", Vector2(800.0, 720.0))
+	panel.call("open_details_drawer")
+	await tree.process_frame
+	assertions.truthy(not columns.visible and narrow_scroll.visible, "ultra-narrow market opens a scrolling detail stack")
+	assertions.equal(detail_card.get_parent(), narrow_stack, "market detail card moves into the narrow stack")
+	assertions.equal(trade_card.get_parent(), narrow_stack, "market trade card moves into the narrow stack")
+	assertions.equal(trade_card.custom_minimum_size.x, 0.0, "stacked trade card releases its desktop width")
+	assertions.truthy(_controls_within_width(narrow_stack, panel.get_global_rect()), "stacked market details stay inside the narrow width")
+	assertions.truthy(narrow_scroll.follow_focus, "stacked market details keep keyboard focus in view")
+	var quantity_spin := trade_card.get_node("Content/QuantityRow/QuantitySpin") as Control
+	assertions.equal(panel.get_viewport().gui_get_focus_owner(), quantity_spin, "ultra-narrow market focuses the primary trade control")
+	assertions.truthy(narrow_scroll.get_global_rect().intersects(quantity_spin.get_global_rect()), "focused trade control is scrolled into view")
+	assertions.truthy(panel.call("handle_top_escape"), "Escape closes the ultra-narrow market stack")
+	await tree.process_frame
+	assertions.equal(detail_card.get_parent(), columns, "Escape restores the market card hierarchy")
 	panel.call("apply_responsive_layout", Vector2(1920, 1080))
 	assertions.equal(panel.call("get_layout_mode"), "three_column", "market restores three columns after resize")
 	assertions.truthy(
@@ -717,7 +772,7 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	await _send_key(tree, KEY_ENTER)
 	assertions.equal(market.get("selected_item_id"), product_ids[2], "Enter activates the focused dynamic product button")
 
-	market.call("apply_responsive_layout", Vector2(900.0, 720.0))
+	market.call("apply_responsive_layout", Vector2(1000.0, 720.0))
 	market.set("selected_item_id", product_ids[0])
 	product_buttons[0].grab_focus()
 	await _send_key(tree, KEY_UP)
@@ -732,6 +787,18 @@ func _test_real_keyboard_navigation(assertions: TestAssert, tree: SceneTree) -> 
 	assertions.truthy((market.get_node("Columns/CatalogColumn") as Control).visible, "Down at last drawer product keeps catalog open")
 	product_buttons[0].grab_focus()
 	market.call("open_details_drawer")
+	await tree.process_frame
+	var drawer_focus := market.get_viewport().gui_get_focus_owner()
+	assertions.truthy(
+		drawer_focus != null
+		and drawer_focus.is_visible_in_tree()
+		and (market.get("trade_panel") as Node).is_ancestor_of(drawer_focus),
+		"opening drawer moves focus into visible trade controls"
+	)
+	market.free()
+	economy.free()
+	market_system.free()
+	inventory.free()
 	await tree.process_frame
 
 
@@ -807,13 +874,20 @@ func _test_narrow_shop_pagehost_bounds(assertions: TestAssert, tree: SceneTree) 
 	await tree.process_frame
 	assertions.equal(market.call("get_layout_mode"), "drawer", "nested 1280 ShopUI opens market drawer mode")
 	assertions.truthy(
-		_controls_within_rect(market, page_host.get_global_rect()),
-		"nested 1280 market drawer controls stay inside PageHost %s: %s" % [page_host.get_global_rect(), _out_of_bounds_description(market, page_host.get_global_rect())]
+		_controls_within_width(market, page_host.get_global_rect()),
+		"nested 1280 market drawer controls stay inside the PageHost width"
 	)
-	var buy_total := market.get_node("Columns/TradePanel/Content/SummaryGrid/BuyTotalLabel") as Control
-	var disabled_reason := market.get_node("Columns/TradePanel/Content/StatusArea/DisabledReasonLabel") as Control
-	assertions.truthy(buy_total.is_visible_in_tree() and page_host.get_global_rect().encloses(buy_total.get_global_rect()), "narrow drawer keeps buy total visible without scrolling")
-	assertions.truthy(disabled_reason.is_visible_in_tree() and page_host.get_global_rect().encloses(disabled_reason.get_global_rect()), "narrow drawer keeps disabled reason visible without scrolling")
+	var narrow_scroll := market.get("narrow_detail_scroll") as ScrollContainer
+	var trade := market.get("trade_panel") as Control
+	var buy_total := trade.get_node("Content/SummaryGrid/BuyTotalLabel") as Control
+	var disabled_reason := trade.get_node("Content/StatusArea/DisabledReasonLabel") as Control
+	assertions.truthy(page_host.get_global_rect().encloses(narrow_scroll.get_global_rect()), "ultra-narrow detail scroll stays inside PageHost")
+	assertions.truthy(buy_total.is_visible_in_tree(), "ultra-narrow stack keeps the trade summary available")
+	var scroll_bar := narrow_scroll.get_v_scroll_bar()
+	assertions.truthy(scroll_bar.max_value > scroll_bar.page, "ultra-narrow detail stack provides vertical scrolling")
+	narrow_scroll.scroll_vertical = int(scroll_bar.max_value)
+	await tree.process_frame
+	assertions.truthy(narrow_scroll.get_global_rect().intersects(disabled_reason.get_global_rect()), "scrolling reaches the trade status and actions")
 	shop.call("select_tab", "contracts")
 	await tree.process_frame
 	var contract_panel := shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ContractPanel") as Control
@@ -867,18 +941,6 @@ func _create_shop_fixture(assertions: TestAssert, tree: SceneTree, viewport_size
 		"market_system": market_system,
 		"economy": economy,
 	}
-	var drawer_focus := market.get_viewport().gui_get_focus_owner()
-	assertions.truthy(
-		drawer_focus != null
-		and drawer_focus.is_visible_in_tree()
-		and (market.get_node("Columns/TradePanel") as Node).is_ancestor_of(drawer_focus),
-		"opening drawer moves focus into visible trade controls"
-	)
-	market.free()
-	economy.free()
-	market_system.free()
-	inventory.free()
-	await tree.process_frame
 
 
 func _test_trade_keyboard_and_wheel(assertions: TestAssert, tree: SceneTree) -> void:
@@ -1013,6 +1075,16 @@ func _controls_within_rect(root: Control, bounds: Rect2) -> bool:
 		if not child.is_visible_in_tree() or child == root:
 			continue
 		if not _rect_covers_with_tolerance(bounds, child.get_global_rect()):
+			return false
+	return true
+
+
+func _controls_within_width(root: Control, bounds: Rect2) -> bool:
+	for child in _all_controls(root):
+		if not child.is_visible_in_tree() or child == root:
+			continue
+		var rect := child.get_global_rect()
+		if rect.position.x < bounds.position.x - 0.5 or rect.end.x > bounds.end.x + 0.5:
 			return false
 	return true
 

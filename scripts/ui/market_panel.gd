@@ -15,7 +15,12 @@ const CATEGORY_IDS := [
 ]
 const SORT_IDS := ["recommended", "rise", "fall", "shortage", "owned_quantity", "name"]
 const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名称"]
+const DETAIL_CARD_WIDTH := 520.0
+const TRADE_CARD_WIDTH := 300.0
 
+@onready var columns: HBoxContainer = $Columns
+@onready var catalog_card: Control = $Columns/CatalogColumn
+@onready var detail_card: Control = $Columns/DetailColumn
 @onready var category_buttons := {
 	"raw_materials": $Columns/CatalogColumn/CatalogContent/CategoryTabs/RawMaterials,
 	"crops": $Columns/CatalogColumn/CatalogContent/CategoryTabs/Crops,
@@ -38,10 +43,13 @@ const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名�
 @onready var demand_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel
 @onready var liquidity_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel
 @onready var price_chart = $Columns/DetailColumn/DetailContent/PriceChart
+@onready var chart_title: Label = $Columns/DetailColumn/DetailContent/ChartTitle
 @onready var tags_label: Label = $Columns/DetailColumn/DetailContent/TagsLabel
 @onready var source_use_label: Label = $Columns/DetailColumn/DetailContent/SourceUseLabel
 @onready var processing_label: Label = $Columns/DetailColumn/DetailContent/ProcessingLabel
 @onready var trade_panel = $Columns/TradePanel
+@onready var narrow_detail_scroll: ScrollContainer = $NarrowDetailScroll
+@onready var narrow_detail_stack: VBoxContainer = $NarrowDetailScroll/NarrowDetailStack
 
 var inventory_ref: InventorySystem
 var economy_ref: EconomySystem
@@ -207,7 +215,7 @@ func open_details_drawer() -> void:
 		return
 	_drawer_open = true
 	_apply_drawer_visibility()
-	var first_trade_control := $Columns/TradePanel/Content/QuantityRow/QuantitySpin as Control
+	var first_trade_control := trade_panel.get_node("Content/QuantityRow/QuantitySpin") as Control
 	if first_trade_control != null and first_trade_control.is_visible_in_tree():
 		first_trade_control.grab_focus()
 
@@ -216,15 +224,63 @@ func _apply_drawer_visibility() -> void:
 	if not is_node_ready():
 		return
 	if _layout_mode == "three_column":
-		$Columns/CatalogColumn.visible = true
-		$Columns/DetailColumn.visible = true
-		$Columns/TradePanel.visible = true
+		_restore_cards_to_columns()
+		catalog_card.visible = true
+		detail_card.visible = true
+		trade_panel.visible = true
 		_set_compact_detail(false)
 		return
-	$Columns/CatalogColumn.visible = not _drawer_open
-	$Columns/DetailColumn.visible = _drawer_open
-	$Columns/TradePanel.visible = _drawer_open
+	if not _drawer_open:
+		_restore_cards_to_columns()
+		catalog_card.visible = true
+		detail_card.visible = false
+		trade_panel.visible = false
+		_set_compact_detail(true)
+		return
+	if _logical_layout_size.x < EconomyLayoutScript.NARROW_STACK_BREAKPOINT:
+		detail_card.visible = true
+		trade_panel.visible = true
+		_move_card(detail_card, narrow_detail_stack)
+		_move_card(trade_panel, narrow_detail_stack)
+		var detail_height: float = detail_card.get_combined_minimum_size().y
+		var trade_content := trade_panel.get_node("Content") as Control
+		var trade_height: float = trade_content.get_combined_minimum_size().y + 32.0
+		detail_card.custom_minimum_size.x = 0.0
+		trade_panel.custom_minimum_size.x = 0.0
+		detail_card.custom_minimum_size.y = detail_height
+		trade_panel.custom_minimum_size.y = trade_height
+		detail_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		trade_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		catalog_card.visible = false
+		columns.visible = false
+		narrow_detail_scroll.visible = true
+	else:
+		_restore_cards_to_columns()
+		catalog_card.visible = false
+		detail_card.visible = true
+		trade_panel.visible = true
 	_set_compact_detail(true)
+
+
+func _restore_cards_to_columns() -> void:
+	_move_card(detail_card, columns)
+	_move_card(trade_panel, columns)
+	columns.move_child(detail_card, 1)
+	columns.move_child(trade_panel, 2)
+	detail_card.custom_minimum_size.x = DETAIL_CARD_WIDTH
+	trade_panel.custom_minimum_size.x = TRADE_CARD_WIDTH
+	detail_card.custom_minimum_size.y = 0.0
+	trade_panel.custom_minimum_size.y = 0.0
+	detail_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trade_panel.size_flags_horizontal = Control.SIZE_FILL
+	columns.visible = true
+	narrow_detail_scroll.visible = false
+
+
+func _move_card(card: Control, target: Container) -> void:
+	if card.get_parent() == target:
+		return
+	card.reparent(target, false)
 
 
 func _set_compact_detail(compact: bool) -> void:
@@ -236,7 +292,7 @@ func _set_compact_detail(compact: bool) -> void:
 		).y
 	var show_chart := not compact or logical_height >= 420.0
 	price_chart.visible = show_chart
-	$Columns/DetailColumn/DetailContent/ChartTitle.visible = show_chart
+	chart_title.visible = show_chart
 	tags_label.visible = false
 	source_use_label.visible = false
 	processing_label.visible = false

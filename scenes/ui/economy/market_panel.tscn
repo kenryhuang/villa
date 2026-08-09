@@ -225,3 +225,14 @@ autowrap_mode = 2
 layout_mode = 2
 size_flags_horizontal = 1
 size_flags_stretch_ratio = 0.27
+
+[node name="NarrowDetailScroll" type="ScrollContainer" parent="."]
+visible = false
+layout_mode = 2
+follow_focus = true
+horizontal_scroll_mode = 0
+
+[node name="NarrowDetailStack" type="VBoxContainer" parent="NarrowDetailScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16

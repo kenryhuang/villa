@@ -144,6 +144,16 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.truthy(ui.open_for(windmill), "completed windmill opens")
 	var panel = ui.production_panel
 	assertions.equal(panel.recipe_rows.size(), 3, "windmill exposes all three recipes")
+	panel.apply_responsive_layout(Vector2(800.0, 720.0))
+	panel.open_details_drawer()
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	ui.call("_unhandled_input", escape)
+	assertions.truthy(ui.is_open(), "first Escape returns from production details without closing the building window")
+	assertions.truthy(panel.recipe_card.visible, "first Escape restores the production recipe list")
+	assertions.equal(panel.process_card.get_parent(), panel.sections, "first Escape restores the production card hierarchy")
+	panel.apply_responsive_layout(Vector2(1920.0, 1080.0))
 	var first_recipe_button := panel.recipe_list.get_child(0) as Button
 	assertions.equal(first_recipe_button.custom_minimum_size.y, 52.0, "dynamic recipe rows use the aligned list height")
 	assertions.truthy(first_recipe_button.clip_text, "dynamic recipe names clip inside the recipe card")
