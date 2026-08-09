@@ -7,10 +7,12 @@ const ProgressionSystemScript = preload("res://scripts/systems/economy_progressi
 const ModalCoordinatorScript = preload("res://scripts/ui/economy_modal_coordinator.gd")
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
+const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 
 const UI_SCENE := "res://scenes/ui/economy/building_economy_ui.tscn"
 const PRODUCTION_SCENE := "res://scenes/ui/economy/building_production_panel.tscn"
 const STATUS_SCENE := "res://scenes/ui/economy/building_status_panel.tscn"
+const MAINTENANCE_SCENE := "res://scenes/ui/economy/building_maintenance_card.tscn"
 
 var _owned_nodes: Array[Node] = []
 
@@ -64,11 +66,23 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Sections/ProcessColumn/Content/BatchControls/StartButton",
 	])
 	_check_scene(assertions, STATUS_SCENE, [
+		"MaintenanceCard",
 		"SummaryFields",
 		"InputActions",
 		"StorageList",
 		"Actions/CollectAllButton",
 		"Actions/RangePreviewButton",
+		"FeedbackLabel",
+	])
+	_check_scene(assertions, MAINTENANCE_SCENE, [
+		"Header/StateDot",
+		"Header/StateLabel",
+		"DeadlineLabel",
+		"Costs/GoldLabel",
+		"Costs/WoodLabel",
+		"Costs/StoneLabel",
+		"RepairProgress",
+		"ActionButton",
 		"FeedbackLabel",
 	])
 	var production_panel := (load(PRODUCTION_SCENE) as PackedScene).instantiate() as Control
@@ -215,6 +229,13 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.queue_slots[0].state, "maintenance-paused", "UI maintenance pause comes from production snapshot")
 	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "维护暂停", "maintenance queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "维护暂停", "shell title state reflects maintenance immediately")
+	ui.close()
+	assertions.truthy(ui.open_for(blocked), "overdue crafting building reopens")
+	assertions.truthy(ui.status_panel.visible, "overdue crafting building opens maintenance status page")
+	assertions.truthy(not ui.production_tab.disabled, "overdue crafting building keeps production tab available")
+	assertions.truthy(not ui.status_tab.disabled, "overdue crafting building keeps status tab available")
+	ui.production_tab.pressed.emit()
+	assertions.truthy(ui.production_panel.visible, "crafting production tab remains selectable during repair stop")
 	var connections: int = panel.get_signal_connection_list("snapshot_changed").size() if panel.has_signal("snapshot_changed") else 0
 	assertions.equal(connections, 1, "repeated configure keeps exactly one shell snapshot listener")
 	blocked.producer_state.outputs = {"honey": 2}
@@ -268,7 +289,31 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	var panel = _instantiate_scene(STATUS_SCENE, tree)
 	var overlay = preload("res://scripts/ui/world_range_overlay.gd").new()
 	_track(overlay)
-	panel.configure(production, inventory, fixture.grid, overlay)
+	panel.configure(production, inventory, fixture.progression, fixture.grid, overlay)
+	var maintenance_building := _scene_building("workbench", tree)
+	maintenance_building.grid_x = 40
+	maintenance_building.grid_z = 40
+	production.register_building(maintenance_building)
+	production.set_maintenance_due_day(maintenance_building, production.get_current_day() + 1)
+	var maintenance_quote: Dictionary = fixture.progression.get_maintenance_quote(maintenance_building)
+	for item_id in maintenance_quote.materials:
+		inventory.add_item(str(item_id), int(maintenance_quote.materials[item_id]))
+	var wallet := tree.root.get_node_or_null("GameState")
+	var gold_before := int(wallet.gold)
+	wallet.gold = int(maintenance_quote.gold_cost)
+	panel.show_building(maintenance_building)
+	var maintenance_card := panel.get_node("MaintenanceCard")
+	assertions.equal(maintenance_card.maintenance_state, "warning", "status card shows advance warning")
+	assertions.equal(maintenance_card.get_node("ActionButton").text, "提前维修", "warning offers early repair")
+	assertions.truthy(maintenance_card.get_node("ActionButton").visible, "warning repair button is visible")
+	maintenance_card.get_node("ActionButton").pressed.emit()
+	assertions.equal(production.get_maintenance_state(maintenance_building), "repairing", "card starts authoritative repair")
+	assertions.truthy(maintenance_card.get_node("RepairProgress").visible, "repairing card shows progress")
+	production.advance_repair_time(3.0)
+	maintenance_card.refresh()
+	assertions.equal(maintenance_card.maintenance_state, "normal", "completed repair returns card to normal")
+	assertions.truthy(not maintenance_card.get_node("ActionButton").visible, "normal card hides repair action")
+	wallet.gold = gold_before
 	var required := {
 		"beehive": ["next_output", "mature_flowers", "bonus", "storage"],
 		"chicken_coop": ["animal_count", "feed_stock", "feed_days", "daily_egg_output"],
@@ -472,7 +517,11 @@ func _systems_fixture() -> Dictionary:
 	var production := _track(ProductionSystemScript.new()) as ProductionSystem
 	production.configure(grid, farming, null, inventory)
 	var progression := _track(ProgressionSystemScript.new()) as EconomyProgressionSystem
-	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression}
+	var tool := _track(ToolSystemScript.new()) as ToolSystem
+	tool.configure(grid, inventory, null)
+	var wallet := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("GameState")
+	progression.configure(tool, production, inventory, null, wallet)
+	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression, "tool": tool}
 
 
 func _unlock_recipe(progression: EconomyProgressionSystem, recipe_id: String) -> void:

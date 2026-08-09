@@ -157,7 +157,7 @@ Add `set_maintenance_visual_state()`. The legacy indicator keeps only `full`; `s
 - Modify: `scripts/ui/building_economy_ui.gd`
 - Modify: `tests/test_building_economy_ui.gd`
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
 Test normal, warning, overdue, repairing, insufficient assets, direct click, and repair progress. Warning/overdue/repairing buildings must open on the status page.
 
@@ -169,15 +169,15 @@ card.action_button.pressed.emit()
 assertions.equal(production.get_maintenance_state(building), "repairing", "button starts repair")
 ```
 
-- [ ] **Step 2: Run economy UI suite and verify RED**
+- [x] **Step 2: Run economy UI suite and verify RED**
 
-- [ ] **Step 3: Build and wire the card**
+- [x] **Step 3: Build and wire the card**
 
 The compact card contains a colored state dot, state/deadline labels, gold/wood/stone ownership rows, a progress bar, action button, and feedback. Pass progression into `BuildingStatusPanel`. Refresh the quote immediately before commands. Add `well` to supported status buildings. Crafting buildings under maintenance default to status but retain both tabs.
 
-- [ ] **Step 4: Run economy UI and responsive suites and require PASS**
+- [x] **Step 4: Run economy UI and responsive suites and require PASS**
 
-- [ ] **Step 5: Commit `feat: add building repair controls`**
+- [x] **Step 5: Commit `feat: add building repair controls`**
 
 ### Task 6: Service overview, notifications, and synchronization
 

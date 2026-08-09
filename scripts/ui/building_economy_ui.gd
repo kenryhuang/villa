@@ -7,7 +7,7 @@ const PRODUCTION_BUILDINGS := [
 	"windmill", "workbench", "stone_kiln", "furnace", "food_workshop", "textile_machine",
 ]
 const STATUS_BUILDINGS := [
-	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine",
+	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine", "well",
 ]
 const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
 const OPEN_DURATION := 0.16
@@ -44,13 +44,17 @@ func _ready() -> void:
 		visibility_changed.connect(_sync_screen_layer_visibility)
 	if not close_button.pressed.is_connected(close):
 		close_button.pressed.connect(close)
+	if not production_tab.pressed.is_connected(_on_production_tab_pressed):
+		production_tab.pressed.connect(_on_production_tab_pressed)
+	if not status_tab.pressed.is_connected(_on_status_tab_pressed):
+		status_tab.pressed.connect(_on_status_tab_pressed)
 	if not get_viewport().size_changed.is_connected(_apply_compact_rect):
 		get_viewport().size_changed.connect(_apply_compact_rect)
 	_apply_compact_rect()
 	_connect_panel_signals()
 	if is_configured():
 		production_panel.configure(_production, _inventory, _progression)
-		status_panel.configure(_production, _inventory, _grid, range_overlay)
+		status_panel.configure(_production, _inventory, _progression, _grid, range_overlay)
 
 
 static func panel_kind_for(building_id: String, effect_type: String) -> String:
@@ -78,7 +82,7 @@ func configure(
 	if not is_node_ready():
 		return true
 	_connect_panel_signals()
-	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, grid, range_overlay)
+	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, progression, grid, range_overlay)
 
 
 func open_for(building: BuildingInstance) -> bool:
@@ -103,13 +107,12 @@ func open_for(building: BuildingInstance) -> bool:
 		screen_layer.visible = true
 		_apply_compact_rect()
 	title_label.text = building.data.display_name if building.data != null else building.building_id
-	_apply_page_kind(kind)
 	if kind == "production":
 		production_panel.show_building(building)
-		state_label.text = _production_state_text()
-	else:
-		status_panel.show_building(building)
-		state_label.text = _status_state_text(status_panel.view_data.state)
+	status_panel.show_building(building)
+	var maintenance_state := _production.get_maintenance_state(building)
+	var page_kind := "status" if maintenance_state != "normal" else kind
+	_apply_page_kind(page_kind)
 	if was_closed:
 		_animate_open(building_panel)
 	_emit_event("building_economy_opened", [building, kind])
@@ -204,18 +207,38 @@ func _sync_screen_layer_visibility() -> void:
 
 
 func _apply_page_kind(kind: String) -> void:
+	var building := current_building()
+	var supports_production := (
+		building != null
+		and panel_kind_for(building.building_id, building.economy_effect_type()) == "production"
+	)
+	if kind == "production" and not supports_production:
+		kind = "status"
 	production_panel.visible = kind == "production"
 	status_panel.visible = kind == "status"
 	production_tab.button_pressed = kind == "production"
 	status_tab.button_pressed = kind == "status"
-	production_tab.disabled = kind != "production"
-	status_tab.disabled = kind != "status"
+	production_tab.disabled = not supports_production
+	status_tab.disabled = false
 	production_tab.theme_type_variation = (
 		&"EconomyTabSelected" if kind == "production" else &"EconomyTab"
 	)
 	status_tab.theme_type_variation = (
 		&"EconomyTabSelected" if kind == "status" else &"EconomyTab"
 	)
+	state_label.text = (
+		_production_state_text()
+		if kind == "production"
+		else _status_state_text(status_panel.view_data.state)
+	)
+
+
+func _on_production_tab_pressed() -> void:
+	_apply_page_kind("production")
+
+
+func _on_status_tab_pressed() -> void:
+	_apply_page_kind("status")
 
 
 func set_animations_enabled(enabled: bool) -> void:

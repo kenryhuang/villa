@@ -33,6 +33,7 @@ signal snapshot_changed(state: String)
 
 
 @onready var summary_fields: VBoxContainer = $SummaryFields
+@onready var maintenance_card: VBoxContainer = $MaintenanceCard
 @onready var input_actions: VBoxContainer = $InputActions
 @onready var storage_list: VBoxContainer = $StorageList
 @onready var collect_all_button: Button = $Actions/CollectAllButton
@@ -63,15 +64,18 @@ func _ready() -> void:
 func configure(
 	production: ProductionSystem,
 	inventory: InventorySystem,
+	progression: EconomyProgressionSystem,
 	grid: GridSystem,
 	range_overlay: WorldRangeOverlay
 ) -> bool:
-	if production == null or inventory == null or grid == null or range_overlay == null:
+	if production == null or inventory == null or progression == null or grid == null or range_overlay == null:
 		return false
 	_production = production
 	_inventory = inventory
 	_grid = grid
 	_range_overlay = range_overlay
+	if not maintenance_card.configure(production, inventory, progression):
+		return false
 	_connect_event_bus()
 	refresh_snapshot()
 	return true
@@ -86,6 +90,7 @@ func show_building(building: BuildingInstance) -> void:
 		_render()
 		return
 	_building_ref = weakref(building)
+	maintenance_card.show_building(building)
 	failure_reason = ""
 	failure_message = ""
 	refresh_snapshot()
@@ -172,6 +177,7 @@ func refresh_snapshot() -> void:
 		_render()
 		return
 	snapshot = _production.get_building_snapshot(building)
+	maintenance_card.show_building(building)
 	view_data = _view_data_for(building)
 	if _range_preview_enabled:
 		set_range_preview(true)

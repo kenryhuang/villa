@@ -320,7 +320,7 @@ func economy_effect_type() -> String:
 
 func can_open_economy_panel() -> bool:
 	return is_construction_complete() and economy_effect_type() in [
-		"crafting", "honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output",
+		"crafting", "honey", "animal", "irrigation", "water_source", "ignore_season", "inventory_expand", "resource_output",
 	]
 
 
