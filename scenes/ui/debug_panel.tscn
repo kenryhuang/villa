@@ -115,8 +115,9 @@ theme_override_styles/panel = SubResource("TabPanelStyle")
 theme_override_styles/tab_selected = SubResource("SelectedTabStyle")
 theme_override_styles/tab_unselected = SubResource("UnselectedTabStyle")
 
-[node name="PlayerState" type="MarginContainer" parent="Overlay/Center/Panel/Layout/Tabs"]
+[node name="PlayerState" type="VBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs"]
 layout_mode = 2
+theme_override_constants/separation = 18
 
 [node name="Fields" type="GridContainer" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState"]
 layout_mode = 2
@@ -126,6 +127,7 @@ columns = 2
 
 [node name="LevelLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
 theme_override_font_sizes/font_size = 19
 text = "角色等级"
 vertical_alignment = 1
@@ -142,6 +144,7 @@ update_on_text_changed = true
 
 [node name="ElapsedDaysLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
 theme_override_font_sizes/font_size = 19
 text = "已过天数"
 vertical_alignment = 1
@@ -156,6 +159,7 @@ update_on_text_changed = true
 
 [node name="GoldLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
 theme_override_font_sizes/font_size = 19
 text = "金币"
 vertical_alignment = 1
@@ -170,6 +174,7 @@ update_on_text_changed = true
 
 [node name="StaminaLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
 theme_override_font_sizes/font_size = 19
 text = "当前体力"
 vertical_alignment = 1

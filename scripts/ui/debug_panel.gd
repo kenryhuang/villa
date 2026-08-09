@@ -6,6 +6,7 @@ signal refresh_requested
 
 const EconomyLimitsScript := preload("res://scripts/core/economy_limits.gd")
 const PlayerStateScript := preload("res://scripts/data/player_state.gd")
+const PANEL_TEXT_COLOR := Color("513b2f")
 const CATEGORY_NAMES := {
 	"seed": "种子",
 	"crop": "作物",
@@ -102,7 +103,7 @@ func refresh_from_snapshot(snapshot_value: Dictionary) -> void:
 	search_input.text = ""
 	title_label.text = "调试数据"
 	status_label.text = "当前修改只影响运行状态"
-	status_label.remove_theme_color_override("font_color")
+	status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 	_loading = false
 	_apply_item_filters()
 
@@ -128,7 +129,7 @@ func show_apply_result(result: Dictionary, refreshed_snapshot: Dictionary = {}) 
 		status_label.text = str(
 			result.get("message", "调试数据已应用；尚未写入存档")
 		)
-		status_label.remove_theme_color_override("font_color")
+		status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 		return
 	status_label.text = _failure_message(result)
 	status_label.add_theme_color_override("font_color", Color("b65c4b"))
@@ -183,6 +184,7 @@ func _create_item_row(record: Dictionary, max_slots: int) -> HBoxContainer:
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.text = str(record.get("name", item_id))
 	name_label.add_theme_font_size_override("font_size", 18)
+	name_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 	row.add_child(name_label)
 
 	var id_label := Label.new()
@@ -276,7 +278,7 @@ func _mark_dirty() -> void:
 		return
 	title_label.text = "调试数据 · 未应用"
 	status_label.text = "存在尚未应用的修改"
-	status_label.remove_theme_color_override("font_color")
+	status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 
 
 func _failure_message(result: Dictionary) -> String:

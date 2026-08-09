@@ -26,8 +26,36 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(panel.has_node(node_path), "debug panel authors %s" % node_path)
 	var snapshot := _snapshot()
 	assertions.truthy(panel.configure(snapshot), "debug panel accepts a complete snapshot")
-	assertions.equal(panel.get_visible_item_ids().size(), 3, "debug panel authors every item row")
 	panel.open()
+	await tree.process_frame
+	assertions.equal(panel.get_visible_item_ids().size(), 3, "debug panel authors every item row")
+	var fields := panel.get_node(
+		"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"
+	) as Control
+	var hint := panel.get_node(
+		"Overlay/Center/Panel/Layout/Tabs/PlayerState/Hint"
+	) as Label
+	assertions.truthy(
+		hint.position.y >= fields.position.y + fields.size.y - 1.0,
+		"player date hint is laid out below the state fields (%s/%s after %s/%s)"
+		% [hint.position.y, hint.size.y, fields.position.y, fields.size.y]
+	)
+	for label_name in ["LevelLabel", "ElapsedDaysLabel", "GoldLabel", "StaminaLabel"]:
+		var field_label := fields.get_node(label_name) as Label
+		assertions.truthy(
+			field_label.get_theme_color("font_color").get_luminance() < 0.55,
+			"%s stays dark on the cream panel" % label_name
+		)
+	var wood_name := _item_editor(panel, "wood").get_parent().get_node("Name") as Label
+	assertions.truthy(
+		wood_name.get_theme_color("font_color").get_luminance() < 0.55,
+		"dynamic item names stay dark on the cream panel"
+	)
+	var initial_status := panel.get_node("Overlay/Center/Panel/Layout/Footer/Status") as Label
+	assertions.truthy(
+		initial_status.get_theme_color("font_color").get_luminance() < 0.55,
+		"footer status stays dark on the cream panel"
+	)
 	assertions.truthy(panel.visible, "debug panel opens")
 
 	(panel.get_node("Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Level") as SpinBox).value = 4
