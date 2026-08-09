@@ -90,10 +90,33 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"HUD debug reset request is connected to Main"
 	)
 	assertions.equal(
-		main.hud.debug_reset_button.visible,
+		main.hud.debug_actions.visible,
 		OS.is_debug_build(),
-		"Main exposes the reset button only in debug builds"
+		"Main exposes debug actions only in debug builds"
 	)
+	assertions.truthy(
+		main.hud.has_signal("debug_panel_requested"),
+		"HUD exposes the runtime debug panel request"
+	)
+	if OS.is_debug_build():
+		assertions.truthy(main.debug_state_editor != null, "Main creates a debug state editor")
+		assertions.truthy(main.debug_panel != null, "Main creates a runtime debug panel")
+		assertions.truthy(
+			main.hud.debug_panel_requested.is_connected(
+				Callable(main, "_on_debug_panel_requested")
+			),
+			"HUD debug panel request is connected to Main"
+		)
+		assertions.truthy(
+			main.debug_panel.apply_requested.is_connected(
+				Callable(main, "_on_debug_panel_apply_requested")
+			),
+			"runtime debug panel apply is connected to Main"
+		)
+		assertions.truthy(not main.debug_panel.visible, "runtime debug panel starts closed")
+		main.hud.debug_panel_requested.emit()
+		assertions.truthy(main.debug_panel.visible, "HUD request opens runtime debug panel")
+		main.debug_panel.close()
 	var main_source := FileAccess.get_file_as_string("res://scripts/main.gd")
 	var initial_state_source := _get_method_source(main_source, "_initial_game_state")
 	assertions.truthy(

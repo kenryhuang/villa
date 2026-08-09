@@ -21,6 +21,8 @@ const EconomyNotificationSystemScript := preload(
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
 const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd")
 const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
+const DebugStateEditorScript := preload("res://scripts/debug/debug_state_editor.gd")
+const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
 const NEW_GAME_STARTER_ITEMS := {
 	"grain_seed": 99,
 	"wood": 99,
@@ -87,6 +89,8 @@ var collectible_system: CollectibleSystem
 var story_system: StorySystem
 var puzzle_system: PuzzleSystem
 var save_manager: Node
+var debug_state_editor: Variant
+var debug_panel: Variant
 var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModalCoordinator
 
 # 建筑容器
@@ -465,7 +469,7 @@ func _setup_ui() -> void:
 		hud.visible = true
 		hud.configure_season_system(season_system)
 		hud.configure_action_bar(action_controller, inventory_system, economy_system)
-		hud.configure_debug_reset(OS.is_debug_build())
+		hud.configure_debug_tools(OS.is_debug_build())
 		hud.configure_notifications(economy_notification_system)
 		var reset_callback := Callable(self, "_on_debug_reset_requested")
 		if not hud.debug_reset_requested.is_connected(reset_callback):
@@ -479,6 +483,7 @@ func _setup_ui() -> void:
 		var unlock_callback := Callable(self, "_on_building_unlock_requested")
 		if hud.has_signal("building_unlock_requested") and not hud.building_unlock_requested.is_connected(unlock_callback):
 			hud.building_unlock_requested.connect(unlock_callback)
+	_setup_runtime_debug_tools()
 
 	# 背包 UI
 	if inventory_ui:
@@ -528,6 +533,68 @@ func _setup_ui() -> void:
 	# 连接建造系统信号
 	building_system.build_mode_entered.connect(_on_build_mode_entered)
 	building_system.build_mode_exited.connect(_on_build_mode_exited)
+
+
+func _setup_runtime_debug_tools() -> void:
+	if hud != null:
+		hud.configure_debug_tools(OS.is_debug_build())
+	if not OS.is_debug_build():
+		return
+	debug_state_editor = DebugStateEditorScript.new()
+	if not debug_state_editor.configure(
+		get_node_or_null("/root/GameState"),
+		season_system,
+		inventory_system,
+		production_system,
+		market_system,
+		npc_economy_system,
+		daily_simulation_system,
+		world,
+		get_node_or_null("/root/EventBus")
+	):
+		debug_state_editor = null
+		push_error("Unable to configure runtime debug state editor.")
+		return
+	debug_panel = DebugPanelScene.instantiate()
+	debug_panel.name = "DebugPanel"
+	add_child(debug_panel)
+	if not debug_panel.configure(debug_state_editor.snapshot()):
+		debug_panel.queue_free()
+		debug_panel = null
+		push_error("Unable to configure runtime debug panel.")
+		return
+	var open_callback := Callable(self, "_on_debug_panel_requested")
+	if not hud.debug_panel_requested.is_connected(open_callback):
+		hud.debug_panel_requested.connect(open_callback)
+	var apply_callback := Callable(self, "_on_debug_panel_apply_requested")
+	if not debug_panel.apply_requested.is_connected(apply_callback):
+		debug_panel.apply_requested.connect(apply_callback)
+	var refresh_callback := Callable(self, "_on_debug_panel_refresh_requested")
+	if not debug_panel.refresh_requested.is_connected(refresh_callback):
+		debug_panel.refresh_requested.connect(refresh_callback)
+
+
+func _on_debug_panel_requested() -> void:
+	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
+		return
+	debug_panel.open(debug_state_editor.snapshot())
+
+
+func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
+	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
+		return
+	var result: Dictionary = debug_state_editor.apply(draft)
+	if bool(result.get("ok", false)):
+		hud.refresh_action_bar()
+		debug_panel.show_apply_result(result, debug_state_editor.snapshot())
+		return
+	debug_panel.show_apply_result(result)
+
+
+func _on_debug_panel_refresh_requested() -> void:
+	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
+		return
+	debug_panel.refresh_from_snapshot(debug_state_editor.snapshot())
 
 
 func _on_market_requested() -> void:
