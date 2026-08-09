@@ -7,6 +7,7 @@ signal load_completed(slot: int)
 const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
+const BUILDING_LAYOUT_VERSION := 2
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
@@ -172,6 +173,8 @@ func _gather_save_data() -> Dictionary:
 	var building_system = _get_building_system()
 	if building_system:
 		data["buildings"] = _serialize_buildings(building_system)
+	if grid_system != null or building_system != null:
+		data["building_layout_version"] = BUILDING_LAYOUT_VERSION
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
@@ -564,6 +567,16 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 
 func _validate_save_data(data: Dictionary) -> bool:
 	if not _validate_economy_save_data(data):
+		return false
+	var has_layout_snapshot := data.has("grid") or data.has("buildings")
+	if has_layout_snapshot:
+		if (
+			not data.has("building_layout_version")
+			or not _is_integer_number(data.get("building_layout_version"))
+			or int(data["building_layout_version"]) != BUILDING_LAYOUT_VERSION
+		):
+			return false
+	elif data.has("building_layout_version"):
 		return false
 	var inventory = _get_inventory_system()
 	var grid_system = _get_grid_system()

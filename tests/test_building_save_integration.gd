@@ -44,9 +44,38 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"save record preserves construction stage"
 	)
 	assertions.truthy(float(records[0].construction_elapsed) > 0.0, "save record preserves construction elapsed")
+	var gathered: Dictionary = manager._gather_save_data()
+	assertions.equal(
+		gathered.get("building_layout_version"),
+		2,
+		"world saves declare the production-yard layout version"
+	)
+	var complete_payload := {
+		"building_layout_version": 2,
+		"grid": grid.to_dict(),
+		"buildings": records,
+	}
+	assertions.truthy(
+		manager._validate_save_data(complete_payload),
+		"layout version two validates with a complete world snapshot"
+	)
+	for invalid_version in [null, -1, 1, 1.5, 3]:
+		var invalid_payload: Dictionary = complete_payload.duplicate(true)
+		if invalid_version == null:
+			invalid_payload.erase("building_layout_version")
+		else:
+			invalid_payload["building_layout_version"] = invalid_version
+		assertions.truthy(
+			not manager._validate_save_data(invalid_payload),
+			"world snapshot rejects incompatible layout version %s" % invalid_version
+		)
 
 	var saved_grid: Dictionary = grid.to_dict()
-	manager._apply_save_data({"grid": saved_grid, "buildings": records})
+	manager._apply_save_data({
+		"building_layout_version": 2,
+		"grid": saved_grid,
+		"buildings": records,
+	})
 	assertions.equal(system.get_building_count(), 1, "load rebuilds one building instance")
 	var restored = system.get_building_at(6, 6)
 	assertions.truthy(restored is BuildingInstance, "loaded building is queryable at its occupied cell")
@@ -63,7 +92,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	short_duration_record.construction_stage = BuildingInstance.ConstructionStage.HALF_BUILT
 	short_duration_record.construction_elapsed = 2.7
 	short_duration_record.construction_duration = 4.0
-	manager._apply_save_data({"grid": saved_grid, "buildings": [short_duration_record]})
+	manager._apply_save_data({
+		"building_layout_version": 2,
+		"grid": saved_grid,
+		"buildings": [short_duration_record],
+	})
 	restored = system.get_building_at(6, 6)
 	assertions.equal(restored.construction_stage, BuildingInstance.ConstructionStage.HALF_BUILT, "old save keeps authoritative stage")
 	assertions.near(restored.construction_elapsed, 6.0, 0.001, "old short duration aligns to new half-built threshold")
@@ -72,7 +105,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	legacy_record.erase("construction_stage")
 	legacy_record.erase("construction_elapsed")
 	legacy_record.erase("construction_duration")
-	manager._apply_save_data({"grid": saved_grid, "buildings": [legacy_record]})
+	manager._apply_save_data({
+		"building_layout_version": 2,
+		"grid": saved_grid,
+		"buildings": [legacy_record],
+	})
 	restored = system.get_building_at(6, 6)
 	assertions.truthy(restored.is_construction_complete(), "legacy save restores building as complete")
 	system.remove_building(restored)

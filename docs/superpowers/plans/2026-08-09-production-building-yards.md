@@ -220,23 +220,23 @@ git commit -m "feat: place outputs inside production yards"
 - Modify: `tests/test_economy_save_integration.gd`
 - Modify: `tests/test_building_save_integration.gd`
 
-- [ ] **Step 1: Write failing save tests**
+- [x] **Step 1: Write failing save tests**
 
 Assert new saves contain `building_layout_version == 2`. Assert a complete payload with grid/buildings but a missing, fractional, negative, or non-2 version is rejected atomically. Assert a version-2 save round-trips complete yard `occupied_cells`, queued jobs, outputs, and maintenance repair state.
 
-- [ ] **Step 2: Run focused save tests and verify RED**
+- [x] **Step 2: Run focused save tests and verify RED**
 
 ```powershell
 godot --headless --path . --script res://tests/run_economy_save_integration_tests.gd
 ```
 
-- [ ] **Step 3: Implement version validation**
+- [x] **Step 3: Implement version validation**
 
 Add `const BUILDING_LAYOUT_VERSION := 2`, serialize it whenever grid/building snapshots are emitted, and require the exact integer version before validating either snapshot. Reject legacy layout data before mutating runtime state.
 
-- [ ] **Step 4: Run save, production-chain, and main integration suites and require GREEN**
+- [x] **Step 4: Run save, production-chain, and main integration suites and require GREEN**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts/core/save_manager.gd tests/test_economy_save_integration.gd tests/test_building_save_integration.gd
