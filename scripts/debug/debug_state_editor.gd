@@ -93,6 +93,7 @@ func snapshot() -> Dictionary:
 		"gold": int(_game_state.get("gold")),
 		"stamina": int(player_state.get("stamina")),
 		"max_stamina": int(player_state.get("max_stamina")),
+		"max_slots": int(_inventory.get("max_slots")),
 		"items": items,
 	}
 

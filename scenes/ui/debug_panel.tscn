@@ -1,0 +1,273 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/debug_panel.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="OuterPanelStyle"]
+content_margin_left = 24.0
+content_margin_top = 20.0
+content_margin_right = 24.0
+content_margin_bottom = 20.0
+bg_color = Color(0.945, 0.898, 0.785, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.31, 0.24, 0.85)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+shadow_color = Color(0.08, 0.06, 0.04, 0.3)
+shadow_size = 14
+
+[sub_resource type="StyleBoxFlat" id="TabPanelStyle"]
+content_margin_left = 18.0
+content_margin_top = 20.0
+content_margin_right = 18.0
+content_margin_bottom = 18.0
+bg_color = Color(1, 0.969, 0.902, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.46, 0.34, 0.46)
+
+[sub_resource type="StyleBoxFlat" id="SelectedTabStyle"]
+content_margin_left = 22.0
+content_margin_top = 10.0
+content_margin_right = 22.0
+content_margin_bottom = 11.0
+bg_color = Color(1, 0.969, 0.902, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_color = Color(0.55, 0.46, 0.34, 0.5)
+
+[sub_resource type="StyleBoxFlat" id="UnselectedTabStyle"]
+content_margin_left = 22.0
+content_margin_top = 10.0
+content_margin_right = 22.0
+content_margin_bottom = 10.0
+bg_color = Color(0.82, 0.76, 0.65, 0.82)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.31, 0.24, 0.36)
+
+[node name="DebugPanel" type="CanvasLayer"]
+layer = 50
+script = ExtResource("1_script")
+
+[node name="Overlay" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.08, 0.06, 0.05, 0.42)
+
+[node name="Center" type="CenterContainer" parent="Overlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Overlay/Center"]
+custom_minimum_size = Vector2(860, 620)
+layout_mode = 2
+theme_override_styles/panel = SubResource("OuterPanelStyle")
+
+[node name="Layout" type="VBoxContainer" parent="Overlay/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Overlay/Center/Panel/Layout"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Overlay/Center/Panel/Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_font_sizes/font_size = 26
+text = "调试数据"
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="Overlay/Center/Panel/Layout/Header"]
+custom_minimum_size = Vector2(44, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "×"
+tooltip_text = "关闭（Esc）"
+
+[node name="Tabs" type="TabContainer" parent="Overlay/Center/Panel/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/font_selected_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_colors/font_unselected_color = Color(0.38, 0.31, 0.24, 0.8)
+theme_override_font_sizes/font_size = 19
+theme_override_styles/panel = SubResource("TabPanelStyle")
+theme_override_styles/tab_selected = SubResource("SelectedTabStyle")
+theme_override_styles/tab_unselected = SubResource("UnselectedTabStyle")
+
+[node name="PlayerState" type="MarginContainer" parent="Overlay/Center/Panel/Layout/Tabs"]
+layout_mode = 2
+
+[node name="Fields" type="GridContainer" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState"]
+layout_mode = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 18
+columns = 2
+
+[node name="LevelLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "角色等级"
+vertical_alignment = 1
+
+[node name="Level" type="SpinBox" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+custom_minimum_size = Vector2(300, 44)
+layout_mode = 2
+min_value = 1.0
+max_value = 11.0
+value = 1.0
+allow_greater = false
+allow_lesser = false
+update_on_text_changed = true
+
+[node name="ElapsedDaysLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "已过天数"
+vertical_alignment = 1
+
+[node name="ElapsedDays" type="SpinBox" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+custom_minimum_size = Vector2(300, 44)
+layout_mode = 2
+max_value = 999999.0
+allow_greater = false
+allow_lesser = false
+update_on_text_changed = true
+
+[node name="GoldLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "金币"
+vertical_alignment = 1
+
+[node name="Gold" type="SpinBox" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+custom_minimum_size = Vector2(300, 44)
+layout_mode = 2
+max_value = 999999999.0
+allow_greater = false
+allow_lesser = false
+update_on_text_changed = true
+
+[node name="StaminaLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "当前体力"
+vertical_alignment = 1
+
+[node name="Stamina" type="SpinBox" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+custom_minimum_size = Vector2(300, 44)
+layout_mode = 2
+max_value = 100.0
+value = 100.0
+allow_greater = false
+allow_lesser = false
+update_on_text_changed = true
+
+[node name="Hint" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+theme_override_font_sizes/font_size = 16
+text = "天数会直接跳转并同步系统游标，不补算跳过日期。"
+
+[node name="Inventory" type="VBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Toolbar" type="HBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Search" type="LineEdit" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar"]
+custom_minimum_size = Vector2(360, 42)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "搜索名称或物品 ID"
+
+[node name="Category" type="OptionButton" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar"]
+custom_minimum_size = Vector2(190, 42)
+layout_mode = 2
+
+[node name="Columns" type="HBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Name" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/Columns"]
+custom_minimum_size = Vector2(210, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+text = "名称"
+
+[node name="ItemId" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/Columns"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+text = "物品 ID"
+
+[node name="Quantity" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/Columns"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+text = "数量"
+
+[node name="ItemScroll" type="ScrollContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ItemRows" type="VBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Footer" type="HBoxContainer" parent="Overlay/Center/Panel/Layout"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Status" type="Label" parent="Overlay/Center/Panel/Layout/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+theme_override_font_sizes/font_size = 16
+text = "当前修改只影响运行状态"
+vertical_alignment = 1
+
+[node name="RefreshButton" type="Button" parent="Overlay/Center/Panel/Layout/Footer"]
+custom_minimum_size = Vector2(96, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "刷新"
+
+[node name="CancelButton" type="Button" parent="Overlay/Center/Panel/Layout/Footer"]
+custom_minimum_size = Vector2(96, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "取消"
+
+[node name="ApplyButton" type="Button" parent="Overlay/Center/Panel/Layout/Footer"]
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "应用"
