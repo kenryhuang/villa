@@ -165,10 +165,175 @@ func validate(draft: Dictionary) -> Dictionary:
 	}
 
 
-func apply(_draft: Dictionary) -> Dictionary:
+func apply(draft: Dictionary) -> Dictionary:
 	if not OS.is_debug_build():
 		return _failure("debug_build_required")
-	return _failure("not_implemented")
+	var validation := validate(draft)
+	if not bool(validation.get("ok", false)):
+		return validation
+
+	var target_total_days := int(draft.get("elapsed_days")) + 1
+	if target_total_days != int(_season.get("total_days")):
+		return _failure("date_jump_not_implemented")
+
+	var before := _capture_state()
+	var target_inventory := _build_target_inventory(draft.get("items") as Dictionary)
+	if target_inventory.is_empty():
+		return _failure("transaction_failed")
+
+	if not bool(_production.call("sync_daily_cursor", target_total_days)):
+		_restore_cursors(before)
+		return _failure("transaction_failed")
+	if not bool(_npc.call("sync_daily_cursor", target_total_days)):
+		_restore_cursors(before)
+		return _failure("transaction_failed")
+	var resource_state: Variant = before.get("resources")
+	if not bool(
+		_resources.call(
+			"restore_resource_dicts",
+			resource_state,
+			target_total_days
+		)
+	):
+		_restore_cursors(before)
+		_resources.call(
+			"restore_resource_dicts",
+			resource_state,
+			int(before.get("resource_day", before.get("total_days", 1)))
+		)
+		return _failure("transaction_failed")
+
+	_market.set("last_settled_day", target_total_days)
+	_daily.set("last_simulated_day", target_total_days)
+	var player_state: Variant = _game_state.get("player_state")
+	var level := int(draft.get("level"))
+	player_state.set("level", level)
+	player_state.set("exp", int(PlayerStateScript.LEVEL_THRESHOLDS[level - 1]))
+	player_state.set("stamina", int(draft.get("stamina")))
+	_game_state.set("gold", int(draft.get("gold")))
+	_inventory.call(
+		"restore_state",
+		target_inventory.get("slots"),
+		target_inventory.get("quick_mappings")
+	)
+	_emit_success_events(before, draft)
+	return {
+		"ok": true,
+		"reason": "",
+		"message": "调试数据已应用；尚未写入存档",
+	}
+
+
+func _capture_state() -> Dictionary:
+	var player_state: Variant = _game_state.get("player_state")
+	return {
+		"level": int(player_state.get("level")),
+		"exp": int(player_state.get("exp")),
+		"stamina": int(player_state.get("stamina")),
+		"gold": int(_game_state.get("gold")),
+		"season": int(_season.get("current_season")),
+		"day": int(_season.get("current_day")),
+		"total_days": int(_season.get("total_days")),
+		"hour": int(_season.get("hour")),
+		"minute": int(_season.get("minute")),
+		"slots": (_inventory.get("slots") as Array).duplicate(true),
+		"quick_mappings": (
+			_inventory.get("quick_slot_mappings") as Array
+		).duplicate(),
+		"production_day": int(_production.call("get_current_day")),
+		"market_day": int(_market.get("last_settled_day")),
+		"npc_day": int(_npc.get("last_simulated_day")),
+		"daily_day": int(_daily.get("last_simulated_day")),
+		"resource_day": int(_season.get("total_days")),
+		"resources": _resources.call("to_resource_dicts"),
+		"item_counts": _item_counts(),
+	}
+
+
+func _restore_cursors(before: Dictionary) -> void:
+	if not bool(_production.call("sync_daily_cursor", int(before.production_day))):
+		if _has_properties(_production, ["_current_day"]):
+			_production.set("_current_day", int(before.production_day))
+	if not bool(_npc.call("sync_daily_cursor", int(before.npc_day))):
+		_npc.set("last_simulated_day", int(before.npc_day))
+	_market.set("last_settled_day", int(before.market_day))
+	_daily.set("last_simulated_day", int(before.daily_day))
+
+
+func _build_target_inventory(items: Dictionary) -> Dictionary:
+	var item_ids: Array[String] = []
+	for item_id_value in items:
+		item_ids.append(str(item_id_value))
+	item_ids.sort()
+	var slots: Array[Dictionary] = []
+	for item_id in item_ids:
+		var quantity := int((items[item_id] as Dictionary).get("quantity", 0))
+		if quantity <= 0:
+			continue
+		var definition := GameDataScript.get_item(item_id) as Dictionary
+		var max_stack := int(
+			definition.get("max_stack", GameDataScript.DEFAULT_MAX_STACK)
+		)
+		while quantity > 0:
+			var stack_quantity := mini(quantity, max_stack)
+			slots.append({"item_id": item_id, "quantity": stack_quantity})
+			quantity -= stack_quantity
+	if slots.size() > int(_inventory.get("max_slots")):
+		return {}
+	while slots.size() < int(_inventory.get("max_slots")):
+		slots.append({})
+
+	var previous_quick_items: Array[String] = []
+	var previous_slots := _inventory.get("slots") as Array
+	for mapping_value in _inventory.get("quick_slot_mappings") as Array:
+		var slot_index := int(mapping_value)
+		var item_id := ""
+		if slot_index >= 0 and slot_index < previous_slots.size():
+			item_id = str((previous_slots[slot_index] as Dictionary).get("item_id", ""))
+		previous_quick_items.append(item_id)
+	var first_slot_by_item := {}
+	for index in range(slots.size()):
+		var item_id := str(slots[index].get("item_id", ""))
+		if not item_id.is_empty() and not first_slot_by_item.has(item_id):
+			first_slot_by_item[item_id] = index
+	var quick_mappings: Array[int] = []
+	for item_id in previous_quick_items:
+		quick_mappings.append(int(first_slot_by_item.get(item_id, -1)))
+	return {"slots": slots, "quick_mappings": quick_mappings}
+
+
+func _item_counts() -> Dictionary:
+	var counts := {}
+	for definition_value in GameDataScript.get_all_items():
+		var definition := definition_value as Dictionary
+		var item_id := str(definition.get("id", ""))
+		if not item_id.is_empty():
+			counts[item_id] = int(_inventory.call("get_item_count", item_id))
+	return counts
+
+
+func _emit_success_events(before: Dictionary, draft: Dictionary) -> void:
+	_emit_signal_if_available("level_changed", [int(draft.level)])
+	_emit_signal_if_available("exp_gained", [0])
+	_emit_signal_if_available("gold_changed", [int(draft.gold)])
+	_emit_signal_if_available("stamina_changed", [int(draft.stamina)])
+	var before_counts := before.item_counts as Dictionary
+	var item_ids: Array[String] = []
+	for item_id_value in draft.items:
+		item_ids.append(str(item_id_value))
+	item_ids.sort()
+	for item_id in item_ids:
+		var previous := int(before_counts.get(item_id, 0))
+		var current := int((draft.items[item_id] as Dictionary).get("quantity", 0))
+		if current > previous:
+			_emit_signal_if_available("item_added", [item_id, current - previous])
+		elif current < previous:
+			_emit_signal_if_available("item_removed", [item_id, previous - current])
+
+
+func _emit_signal_if_available(signal_name: StringName, arguments: Array) -> void:
+	if _event_bus != null and _event_bus.has_signal(signal_name):
+		_event_bus.callv("emit_signal", [signal_name] + arguments)
 
 
 func _failure(reason: String, details: Dictionary = {}) -> Dictionary:

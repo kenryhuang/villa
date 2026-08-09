@@ -95,6 +95,8 @@ class EventBusDouble:
 func run(assertions: TestAssert) -> void:
 	_test_snapshot(assertions)
 	_test_validation(assertions)
+	_test_apply_player_and_inventory(assertions)
+	_test_apply_rolls_back_on_cursor_failure(assertions)
 
 
 func _test_snapshot(assertions: TestAssert) -> void:
@@ -174,6 +176,84 @@ func _test_validation(assertions: TestAssert) -> void:
 		"invalid_gold",
 		"negative gold is rejected"
 	)
+	fixture.inventory.free()
+
+
+func _test_apply_player_and_inventory(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	assertions.truthy(fixture.inventory.add_item("wood", 12), "apply fixture adds wood")
+	assertions.truthy(fixture.inventory.add_item("grain_seed", 4), "apply fixture adds seed")
+	assertions.truthy(fixture.inventory.set_quick_slot(0, 0), "apply fixture maps wood")
+	assertions.truthy(fixture.inventory.set_quick_slot(1, 5), "apply fixture maps seed")
+	var added_events: Array = []
+	var removed_events: Array = []
+	var level_events: Array = []
+	fixture.event_bus.item_added.connect(
+		func(item_id: String, quantity: int) -> void:
+			added_events.append([item_id, quantity])
+	)
+	fixture.event_bus.item_removed.connect(
+		func(item_id: String, quantity: int) -> void:
+			removed_events.append([item_id, quantity])
+	)
+	fixture.event_bus.level_changed.connect(
+		func(level: int) -> void:
+			level_events.append(level)
+	)
+
+	var draft: Dictionary = fixture.editor.snapshot()
+	draft["level"] = 4
+	draft["gold"] = 4321
+	draft["stamina"] = 17
+	(draft.items.wood as Dictionary)["quantity"] = 130
+	(draft.items.grain_seed as Dictionary)["quantity"] = 0
+	var result: Dictionary = fixture.editor.apply(draft)
+	assertions.truthy(bool(result.get("ok", false)), "valid debug state applies")
+	assertions.equal(fixture.game_state.player_state.level, 4, "debug apply writes level")
+	assertions.equal(
+		fixture.game_state.player_state.exp,
+		PlayerStateScript.LEVEL_THRESHOLDS[3],
+		"level applies matching minimum experience"
+	)
+	assertions.equal(fixture.game_state.gold, 4321, "debug apply writes gold")
+	assertions.equal(fixture.game_state.player_state.stamina, 17, "debug apply writes stamina")
+	assertions.equal(fixture.inventory.get_item_count("wood"), 130, "inventory restores target quantity")
+	assertions.equal(fixture.inventory.get_item_count("grain_seed"), 0, "zero quantity removes item")
+	assertions.equal(fixture.inventory.get_quick_item(0), "wood", "retained quick item stays mapped")
+	assertions.equal(fixture.inventory.get_quick_item(5), "", "removed quick item mapping clears")
+	assertions.equal(added_events, [["wood", 118]], "apply emits exact positive item delta")
+	assertions.equal(removed_events, [["grain_seed", 4]], "apply emits exact removed item delta")
+	assertions.equal(level_events, [4], "apply emits one level refresh")
+	assertions.equal(
+		str(result.get("message", "")),
+		"调试数据已应用；尚未写入存档",
+		"apply explains that state is not saved"
+	)
+	fixture.inventory.free()
+
+
+func _test_apply_rolls_back_on_cursor_failure(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	assertions.truthy(fixture.inventory.add_item("wood", 8), "rollback fixture adds wood")
+	var item_events: Array = []
+	fixture.event_bus.item_added.connect(
+		func(item_id: String, quantity: int) -> void:
+			item_events.append([item_id, quantity])
+	)
+	var draft: Dictionary = fixture.editor.snapshot()
+	draft["level"] = 5
+	draft["gold"] = 9999
+	(draft.items.wood as Dictionary)["quantity"] = 40
+	fixture.npc.fail_sync = true
+	var result: Dictionary = fixture.editor.apply(draft)
+	assertions.equal(result.get("reason"), "transaction_failed", "cursor failure rejects transaction")
+	assertions.equal(fixture.game_state.player_state.level, 1, "failed transaction restores level")
+	assertions.equal(fixture.game_state.player_state.exp, 0, "failed transaction restores experience")
+	assertions.equal(fixture.game_state.gold, 700, "failed transaction restores gold")
+	assertions.equal(fixture.inventory.get_item_count("wood"), 8, "failed transaction restores inventory")
+	assertions.equal(fixture.production.current_day, 9, "failed transaction restores production cursor")
+	assertions.equal(fixture.npc.last_simulated_day, 9, "failed transaction restores NPC cursor")
+	assertions.equal(item_events, [], "failed transaction emits no inventory events")
 	fixture.inventory.free()
 
 
