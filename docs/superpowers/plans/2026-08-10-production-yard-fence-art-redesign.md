@@ -75,23 +75,23 @@ git commit -m "test: define painted yard fence atlas contract"
 - Create: `assets/buildings/yards/industrial_yard_fence.png`
 - Create through Godot import: matching `.png.import` files
 
-- [ ] **Step 1: Generate the timber atlas from building references**
+- [x] **Step 1: Generate the timber atlas from building references**
 
 Use the existing lumberyard, workbench, and chicken-coop front sprites as visual references. Generate a transparent `1024×2048` two-column/four-row sheet: straight-facing segment left, side-perspective segment right; foundation, posts, partial rails, completed low fence from top to bottom. Require amber heavy timber, stone feet, nails, rope, grass, irregular painterly edges, warm upper light, and cool occlusion.
 
-- [ ] **Step 2: Generate the masonry atlas from building references**
+- [x] **Step 2: Generate the masonry atlas from building references**
 
 Use stone-kiln and quarry front sprites. Keep the exact same frame grid and baseline. Require irregular warm-gray stone piers, aged wood rails, brick chips, moss and soil contact, faceted hand-painted stone, and no flat vector outlines.
 
-- [ ] **Step 3: Generate the industrial atlas from building references**
+- [x] **Step 3: Generate the industrial atlas from building references**
 
 Use mine and furnace front sprites. Keep the exact same frame grid and baseline. Require dark mine timber, rubble feet, rusted brackets and restrained rail details; explicitly exclude modern gray steel fencing and clean procedural geometry.
 
-- [ ] **Step 4: Inspect every atlas at original resolution**
+- [x] **Step 4: Inspect every atlas at original resolution**
 
 Verify transparency, frame separation, consistent roots, no labels, no borders, no checkerboard baked into alpha, no cropped posts, and no duplicated full buildings in the output.
 
-- [ ] **Step 5: Import the PNGs in Godot**
+- [x] **Step 5: Import the PNGs in Godot**
 
 Run:
 
@@ -101,7 +101,7 @@ godot --headless --path . --import
 
 Expected: three `.png.import` files are created and each resource loads as `Texture2D`.
 
-- [ ] **Step 6: Commit the raster assets**
+- [x] **Step 6: Commit the raster assets**
 
 ```powershell
 git add assets/buildings/yards/*.png assets/buildings/yards/*.png.import
