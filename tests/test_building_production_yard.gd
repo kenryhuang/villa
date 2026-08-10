@@ -52,6 +52,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(yard.get_output_slots().size(), 6, "3x3 yard provides six collection slots")
 	assertions.truthy(yard.all_output_slots_inside_bounds(), "3x3 collection slots stay inside the fence")
 	assertions.equal(yard.get_style(), "timber", "yard preserves its style")
+	_assert_closed_rectangle_layout(yard, Vector2i(3, 3), assertions)
 	yard.set_construction_stage(1)
 	assertions.equal(yard.get_construction_stage(), 1, "yard exposes the frame construction stage")
 	yard.set_preview_state(true, false)
@@ -151,6 +152,11 @@ func _validate_painted_atlas(
 			highest - lowest <= 20,
 			"%s yard frames share one ground baseline" % style
 		)
+	for column in 2:
+		assertions.truthy(
+			_frame_horizontal_span(image, column, 3) >= 480,
+			"%s completed fence orientation %d reaches adjacent grid cells" % [style, column]
+		)
 
 
 func _frame_baseline(image: Image, column: int, row: int) -> int:
@@ -162,6 +168,42 @@ func _frame_baseline(image: Image, column: int, row: int) -> int:
 			if image.get_pixel(x_start + local_x, y_start + local_y).a > 0.05:
 				baseline = local_y
 	return baseline
+
+
+func _frame_horizontal_span(image: Image, column: int, row: int) -> int:
+	var left := FRAME_SIZE.x
+	var right := -1
+	var x_start := column * FRAME_SIZE.x
+	var y_start := row * FRAME_SIZE.y
+	for local_y in range(0, FRAME_SIZE.y, 4):
+		for local_x in range(0, FRAME_SIZE.x, 4):
+			if image.get_pixel(x_start + local_x, y_start + local_y).a > 0.05:
+				left = mini(left, local_x)
+				right = maxi(right, local_x)
+	return right - left + 1 if right >= left else 0
+
+
+func _assert_closed_rectangle_layout(
+	yard: Node3D,
+	size: Vector2i,
+	assertions: TestAssert
+) -> void:
+	var expected: Array[Vector2] = []
+	var half_x := float(size.x) * 0.5
+	var half_z := float(size.y) * 0.5
+	for index in size.x:
+		var x := -half_x + 0.5 + float(index)
+		expected.append(Vector2(x, -half_z))
+		expected.append(Vector2(x, half_z))
+	for index in size.y:
+		var z := -half_z + 0.5 + float(index)
+		expected.append(Vector2(-half_x, z))
+		expected.append(Vector2(half_x, z))
+	var actual: Array[Vector2] = []
+	for sprite in _fence_sprites(yard):
+		actual.append(Vector2(sprite.position.x, sprite.position.z))
+	for point in expected:
+		assertions.truthy(point in actual, "yard fence occupies closed perimeter point %s" % point)
 
 
 func _fence_sprites(root: Node) -> Array[Sprite3D]:
