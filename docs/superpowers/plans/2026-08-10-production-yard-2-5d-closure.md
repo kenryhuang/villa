@@ -104,7 +104,7 @@ git commit -m "fix: project yard fences as a closed 2.5d frame"
 - Verify: `scripts/buildings/building_production_yard.gd`
 - Verify: `tests/test_building_production_yard.gd`
 
-- [ ] **Step 1: Run affected integration suites**
+- [x] **Step 1: Run affected integration suites**
 
 Run:
 
@@ -116,7 +116,7 @@ godot --headless --path . --script res://tests/run_main_gameplay_integration_tes
 
 Expected: every runner exits `0` with a `PASS` summary.
 
-- [ ] **Step 2: Check repository integrity**
+- [x] **Step 2: Check repository integrity**
 
 Run:
 
@@ -127,7 +127,7 @@ git status --short
 
 Expected: no whitespace errors; only known unrelated untracked Godot `.uid` files may remain outside this change.
 
-- [ ] **Step 3: Mark the plan complete and commit only if the checklist changed after Task 1**
+- [x] **Step 3: Mark the plan complete and commit only if the checklist changed after Task 1**
 
 If Task 2 checkbox updates are not already included in the Task 1 commit, commit the completed plan separately:
 
