@@ -78,6 +78,46 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(large.get_fence_segment_count(), 0, "yard cleanup removes all derived fence segments")
 	large.free()
 
+	var transition_yard := YardScript.new()
+	tree.root.add_child(transition_yard)
+	assertions.truthy(
+		transition_yard.configure(Vector2i(3, 3), "masonry", Vector3.ZERO),
+		"transition test yard configures"
+	)
+	var has_transition_api := (
+		transition_yard.has_method("get_transition_sprite_count")
+		and transition_yard.has_method("advance_transition_for_test")
+	)
+	assertions.truthy(has_transition_api, "yard exposes deterministic crossfade lifecycle")
+	if has_transition_api:
+		transition_yard.set_construction_stage(0)
+		assertions.equal(
+			transition_yard.get_transition_sprite_count(),
+			12,
+			"stage change keeps one outgoing sprite per fence segment"
+		)
+		_assert_sprite_stage(_fence_sprites(transition_yard), 0, assertions, "incoming fence uses the new stage")
+		_assert_sprite_stage(_transition_sprites(transition_yard), 3, assertions, "outgoing fence keeps the old stage")
+		transition_yard.advance_transition_for_test(2.0)
+		assertions.equal(transition_yard.get_transition_sprite_count(), 0, "two seconds completes the fence crossfade")
+
+		transition_yard.set_construction_stage(1)
+		transition_yard.advance_transition_for_test(0.5)
+		transition_yard.set_construction_stage(2)
+		assertions.equal(
+			transition_yard.get_transition_sprite_count(),
+			12,
+			"interrupted crossfade replaces rather than stacks outgoing sprites"
+		)
+		_assert_sprite_stage(_transition_sprites(transition_yard), 1, assertions, "interrupted crossfade departs from the latest stage")
+		transition_yard.set_preview_state(true, false)
+		for sprite in _fence_sprites(transition_yard):
+			assertions.truthy(sprite.modulate.a < 0.68, "preview tint preserves incoming crossfade alpha")
+		transition_yard.clear_immediately()
+		assertions.equal(transition_yard.get_transition_sprite_count(), 0, "immediate cleanup removes outgoing fence sprites")
+		assertions.equal(_all_fence_sprites(transition_yard).size(), 0, "immediate cleanup removes every fence visual")
+	transition_yard.free()
+
 
 func _validate_painted_atlas(
 	style: String,
@@ -127,7 +167,35 @@ func _frame_baseline(image: Image, column: int, row: int) -> int:
 func _fence_sprites(root: Node) -> Array[Sprite3D]:
 	var result: Array[Sprite3D] = []
 	for child in root.get_children():
-		if child is Sprite3D:
+		if child is Sprite3D and not child.get_meta("yard_transition", false):
 			result.append(child as Sprite3D)
 		result.append_array(_fence_sprites(child))
 	return result
+
+
+func _transition_sprites(root: Node) -> Array[Sprite3D]:
+	var result: Array[Sprite3D] = []
+	for child in root.get_children():
+		if child is Sprite3D and child.get_meta("yard_transition", false):
+			result.append(child as Sprite3D)
+		result.append_array(_transition_sprites(child))
+	return result
+
+
+func _all_fence_sprites(root: Node) -> Array[Sprite3D]:
+	var result: Array[Sprite3D] = []
+	for child in root.get_children():
+		if child is Sprite3D:
+			result.append(child as Sprite3D)
+		result.append_array(_all_fence_sprites(child))
+	return result
+
+
+func _assert_sprite_stage(
+	sprites: Array[Sprite3D],
+	stage: int,
+	assertions: TestAssert,
+	message: String
+) -> void:
+	for sprite in sprites:
+		assertions.equal(sprite.region_rect.position.y, float(stage) * 512.0, message)

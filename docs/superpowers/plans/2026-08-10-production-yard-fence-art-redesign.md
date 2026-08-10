@@ -171,15 +171,15 @@ git commit -m "feat: render painted production yard fences"
 - Modify: `scripts/buildings/building_production_yard.gd`
 - Modify: `tests/test_building_production_yard.gd`
 
-- [ ] **Step 1: Write failing transition lifecycle tests**
+- [x] **Step 1: Write failing transition lifecycle tests**
 
 After changing from stage 0 to stage 1, assert the component temporarily owns outgoing transition sprites, both frame sets use the correct atlas regions, and `advance_transition_for_test(2.0)` removes every outgoing sprite. Interrupt with stage 2 and assert only stage 2 remains after completion. Call `clear_immediately` mid-transition and assert no visual or tween child remains.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Expected: failures report missing transition inspection and deterministic advancement methods.
 
-- [ ] **Step 3: Implement the transition layer**
+- [x] **Step 3: Implement the transition layer**
 
 Add:
 
@@ -203,15 +203,15 @@ func advance_transition_for_test(delta: float) -> void:
 
 Use one internal elapsed-time path for both `_process` and tests so headless verification does not depend on wall-clock sleeps.
 
-- [ ] **Step 4: Preserve preview and maintenance tinting during transitions**
+- [x] **Step 4: Preserve preview and maintenance tinting during transitions**
 
 Apply the same preview/maintenance color transform to incoming and outgoing sprites, multiplying alpha rather than replacing texture color.
 
-- [ ] **Step 5: Run building tests and require GREEN**
+- [x] **Step 5: Run building tests and require GREEN**
 
 Expected: stage transitions, interruption, preview, maintenance, and clear behavior all pass with no duplicate visual children.
 
-- [ ] **Step 6: Commit the transition**
+- [x] **Step 6: Commit the transition**
 
 ```powershell
 git add scripts/buildings/building_production_yard.gd tests/test_building_production_yard.gd

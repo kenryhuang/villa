@@ -7,6 +7,7 @@ const SEGMENT_PIXEL_SIZE := 512.0
 const SEGMENT_WORLD_SIZE := 1.04
 const SEGMENT_VERTICAL_SCALE := 0.78
 const SEGMENT_BASE_Y := 0.375
+const STAGE_CROSSFADE_SECONDS := 2.0
 const VALID_STYLES := ["timber", "masonry", "industrial"]
 const PHYSICAL_COLLISION_LAYER := 16
 const TEXTURES := {
@@ -29,6 +30,9 @@ var _segments: Array[Sprite3D] = []
 var _output_slots: Array[Vector3] = []
 var _collision_body: StaticBody3D
 var _yard_texture: Texture2D
+var _transition_sprites: Array[Sprite3D] = []
+var _transition_elapsed := 0.0
+var _transition_active := false
 
 
 func configure(size: Vector2i, style: String, structure_offset: Vector3) -> bool:
@@ -55,8 +59,11 @@ func set_preview_state(active: bool, valid: bool) -> void:
 
 
 func set_construction_stage(stage: int) -> void:
-	_construction_stage = clampi(stage, 0, 3)
-	_apply_visual_state()
+	var next_stage := clampi(stage, 0, 3)
+	if next_stage == _construction_stage:
+		_apply_visual_state()
+		return
+	_begin_stage_transition(next_stage)
 
 
 func get_construction_stage() -> int:
@@ -79,6 +86,14 @@ func get_output_slots() -> Array[Vector3]:
 
 func get_fence_segment_count() -> int:
 	return _segments.size()
+
+
+func get_transition_sprite_count() -> int:
+	return _transition_sprites.size()
+
+
+func advance_transition_for_test(delta: float) -> void:
+	_advance_transition(delta)
 
 
 func get_style() -> String:
@@ -116,6 +131,10 @@ func get_collision_layers() -> Array[int]:
 
 
 func clear_immediately() -> void:
+	_clear_transition_sprites()
+	_transition_active = false
+	_transition_elapsed = 0.0
+	set_process(false)
 	for child in get_children():
 		remove_child(child)
 		child.free()
@@ -196,6 +215,7 @@ func _slots_for_size(size: Vector2i) -> Array[Vector3]:
 
 func _apply_visual_state() -> void:
 	var tint := get_visual_tint()
+	var progress := clampf(_transition_elapsed / STAGE_CROSSFADE_SECONDS, 0.0, 1.0) if _transition_active else 1.0
 	for sprite in _segments:
 		var orientation := int(sprite.get_meta("orientation", 0))
 		sprite.region_rect = Rect2(
@@ -204,7 +224,9 @@ func _apply_visual_state() -> void:
 			ATLAS_FRAME_SIZE.x,
 			ATLAS_FRAME_SIZE.y
 		)
-		sprite.modulate = tint
+		sprite.modulate = _tint_with_alpha(tint, progress)
+	for sprite in _transition_sprites:
+		sprite.modulate = _tint_with_alpha(tint, 1.0 - progress)
 
 
 func _apply_collision_state() -> void:
@@ -224,3 +246,56 @@ func _load_yard_texture(style: String) -> Texture2D:
 			% path
 		)
 	return null
+
+
+func _process(delta: float) -> void:
+	_advance_transition(delta)
+
+
+func _begin_stage_transition(next_stage: int) -> void:
+	_clear_transition_sprites()
+	var tint := get_visual_tint()
+	for sprite in _segments:
+		sprite.modulate = tint
+		var outgoing := sprite.duplicate() as Sprite3D
+		outgoing.set_meta("yard_transition", true)
+		sprite.get_parent().add_child(outgoing)
+		_transition_sprites.append(outgoing)
+	_construction_stage = next_stage
+	if _transition_sprites.is_empty():
+		_transition_active = false
+		_transition_elapsed = 0.0
+		set_process(false)
+		_apply_visual_state()
+		return
+	_transition_active = true
+	_transition_elapsed = 0.0
+	set_process(true)
+	_apply_visual_state()
+
+
+func _advance_transition(delta: float) -> void:
+	if not _transition_active:
+		return
+	_transition_elapsed = minf(_transition_elapsed + maxf(delta, 0.0), STAGE_CROSSFADE_SECONDS)
+	if _transition_elapsed >= STAGE_CROSSFADE_SECONDS:
+		_clear_transition_sprites()
+		_transition_active = false
+		_transition_elapsed = 0.0
+		set_process(false)
+	_apply_visual_state()
+
+
+func _clear_transition_sprites() -> void:
+	for sprite in _transition_sprites:
+		if not is_instance_valid(sprite):
+			continue
+		var parent := sprite.get_parent()
+		if parent != null:
+			parent.remove_child(sprite)
+		sprite.free()
+	_transition_sprites.clear()
+
+
+func _tint_with_alpha(tint: Color, alpha_multiplier: float) -> Color:
+	return Color(tint.r, tint.g, tint.b, tint.a * clampf(alpha_multiplier, 0.0, 1.0))
