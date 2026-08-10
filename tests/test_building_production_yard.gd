@@ -37,18 +37,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				assertions.truthy(axis in [0, 1], "%s fence segment records its world axis" % style)
 				assertions.equal(
 					sprite.region_rect,
-					Rect2(512.0, float(stage) * 512.0, 512.0, 512.0),
-					"%s stage %d uses the diagonal 2.5D frame" % [style, stage]
+					Rect2(0.0, float(stage) * 512.0, 512.0, 512.0),
+					"%s stage %d uses the straight world-plane frame" % [style, stage]
 				)
 				assertions.equal(
 					sprite.billboard,
-					BaseMaterial3D.BILLBOARD_ENABLED,
-					"%s fence follows the locked 2.5D camera" % style
+					BaseMaterial3D.BILLBOARD_DISABLED,
+					"%s fence remains an axis-aligned 2.5D world card" % style
 				)
-				assertions.equal(
-					sprite.flip_h,
-					axis == 1,
-					"%s fence mirrors only the Z-axis edge" % style
+				assertions.truthy(
+					is_equal_approx(sprite.rotation.y, 0.0 if axis == 0 else PI * 0.5),
+					"%s fence rotates onto its X/Z perimeter axis" % style
 				)
 				assertions.truthy(
 					sprite.pixel_size * 512.0 * sprite.scale.y <= 0.82,

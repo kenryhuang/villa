@@ -174,12 +174,13 @@ func _add_segment(position_value: Vector3, axis: int, parent: Node, sorting: flo
 	var sprite := Sprite3D.new()
 	sprite.texture = _yard_texture
 	sprite.region_enabled = true
-	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	sprite.double_sided = true
 	sprite.pixel_size = SEGMENT_WORLD_SIZE / SEGMENT_PIXEL_SIZE
 	sprite.scale = Vector3(1.0, SEGMENT_VERTICAL_SCALE, 1.0)
 	sprite.position = position_value + Vector3(0.0, SEGMENT_BASE_Y, 0.0)
+	sprite.rotation.y = 0.0 if axis == 0 else PI * 0.5
 	sprite.sorting_offset = sorting
-	sprite.flip_h = axis == 1
 	sprite.set_meta("axis", axis)
 	parent.add_child(sprite)
 	_segments.append(sprite)
@@ -220,7 +221,7 @@ func _apply_visual_state() -> void:
 	var progress := clampf(_transition_elapsed / STAGE_CROSSFADE_SECONDS, 0.0, 1.0) if _transition_active else 1.0
 	for sprite in _segments:
 		sprite.region_rect = Rect2(
-			ATLAS_FRAME_SIZE.x,
+			0.0,
 			float(_construction_stage) * ATLAS_FRAME_SIZE.y,
 			ATLAS_FRAME_SIZE.x,
 			ATLAS_FRAME_SIZE.y
