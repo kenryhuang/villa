@@ -23,6 +23,27 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		Vector2(512.0, 512.0),
 		"yard atlas exposes high-detail 512px frames"
 	)
+	for style in ASSETS:
+		var staged_yard := YardScript.new()
+		tree.root.add_child(staged_yard)
+		assertions.truthy(
+			staged_yard.configure(Vector2i(3, 3), style, Vector3.ZERO),
+			"%s yard configures for frame inspection" % style
+		)
+		for stage in 4:
+			staged_yard.set_construction_stage(stage)
+			for sprite in _fence_sprites(staged_yard):
+				var orientation := int(sprite.get_meta("orientation", 0))
+				assertions.equal(
+					sprite.region_rect,
+					Rect2(float(orientation) * 512.0, float(stage) * 512.0, 512.0, 512.0),
+					"%s stage %d selects the matching painted frame" % [style, stage]
+				)
+				assertions.truthy(
+					sprite.pixel_size * 512.0 * sprite.scale.y <= 0.82,
+					"%s fence remains visually low" % style
+				)
+		staged_yard.free()
 
 	var yard := YardScript.new()
 	tree.root.add_child(yard)
@@ -101,3 +122,12 @@ func _frame_baseline(image: Image, column: int, row: int) -> int:
 			if image.get_pixel(x_start + local_x, y_start + local_y).a > 0.05:
 				baseline = local_y
 	return baseline
+
+
+func _fence_sprites(root: Node) -> Array[Sprite3D]:
+	var result: Array[Sprite3D] = []
+	for child in root.get_children():
+		if child is Sprite3D:
+			result.append(child as Sprite3D)
+		result.append_array(_fence_sprites(child))
+	return result

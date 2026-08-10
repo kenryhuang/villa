@@ -1,14 +1,21 @@
 class_name BuildingProductionYard
 extends Node3D
 
-const ATLAS_FRAME_SIZE := Vector2(256.0, 192.0)
+const ATLAS_FRAME_SIZE := Vector2(512.0, 512.0)
+const ATLAS_SIZE := Vector2(1024.0, 2048.0)
+const SEGMENT_PIXEL_SIZE := 512.0
+const SEGMENT_WORLD_SIZE := 1.04
+const SEGMENT_VERTICAL_SCALE := 0.78
+const SEGMENT_BASE_Y := 0.375
 const VALID_STYLES := ["timber", "masonry", "industrial"]
 const PHYSICAL_COLLISION_LAYER := 16
 const TEXTURES := {
-	"timber": "res://assets/buildings/yards/timber_yard_fence.svg",
-	"masonry": "res://assets/buildings/yards/masonry_yard_fence.svg",
-	"industrial": "res://assets/buildings/yards/industrial_yard_fence.svg",
+	"timber": "res://assets/buildings/yards/timber_yard_fence.png",
+	"masonry": "res://assets/buildings/yards/masonry_yard_fence.png",
+	"industrial": "res://assets/buildings/yards/industrial_yard_fence.png",
 }
+
+static var _warned_atlas_styles := {}
 
 var _yard_size := Vector2i.ZERO
 var _style := ""
@@ -21,6 +28,7 @@ var _collisions_enabled := false
 var _segments: Array[Sprite3D] = []
 var _output_slots: Array[Vector3] = []
 var _collision_body: StaticBody3D
+var _yard_texture: Texture2D
 
 
 func configure(size: Vector2i, style: String, structure_offset: Vector3) -> bool:
@@ -30,6 +38,7 @@ func configure(size: Vector2i, style: String, structure_offset: Vector3) -> bool
 	_yard_size = size
 	_style = style
 	_structure_offset = structure_offset
+	_yard_texture = _load_yard_texture(style)
 	_ensure_layers()
 	_build_fence_segments()
 	_build_perimeter_collision()
@@ -113,6 +122,7 @@ func clear_immediately() -> void:
 	_segments.clear()
 	_output_slots.clear()
 	_collision_body = null
+	_yard_texture = null
 
 
 func _ensure_layers() -> void:
@@ -140,11 +150,14 @@ func _build_fence_segments() -> void:
 
 
 func _add_segment(position_value: Vector3, orientation: int, parent: Node, sorting: float) -> void:
+	if _yard_texture == null:
+		return
 	var sprite := Sprite3D.new()
-	sprite.texture = load(TEXTURES[_style]) as Texture2D
+	sprite.texture = _yard_texture
 	sprite.region_enabled = true
-	sprite.pixel_size = 0.004
-	sprite.position = position_value + Vector3(0.0, 0.36, 0.0)
+	sprite.pixel_size = SEGMENT_WORLD_SIZE / SEGMENT_PIXEL_SIZE
+	sprite.scale = Vector3(1.0, SEGMENT_VERTICAL_SCALE, 1.0)
+	sprite.position = position_value + Vector3(0.0, SEGMENT_BASE_Y, 0.0)
 	sprite.sorting_offset = sorting
 	sprite.set_meta("orientation", orientation)
 	parent.add_child(sprite)
@@ -197,3 +210,17 @@ func _apply_visual_state() -> void:
 func _apply_collision_state() -> void:
 	if _collision_body != null:
 		_collision_body.collision_layer = PHYSICAL_COLLISION_LAYER if _collisions_enabled else 0
+
+
+func _load_yard_texture(style: String) -> Texture2D:
+	var path := str(TEXTURES.get(style, ""))
+	var texture := load(path) as Texture2D if ResourceLoader.exists(path) else null
+	if texture != null and texture.get_size() == ATLAS_SIZE:
+		return texture
+	if not _warned_atlas_styles.has(style):
+		_warned_atlas_styles[style] = true
+		push_warning(
+			"Missing or malformed production yard atlas '%s'; yard collisions and output slots remain active."
+			% path
+		)
+	return null

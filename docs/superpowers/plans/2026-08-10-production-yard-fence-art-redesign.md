@@ -114,7 +114,7 @@ git commit -m "art: add painted production yard fences"
 - Modify: `scripts/buildings/building_production_yard.gd`
 - Modify: `tests/test_building_production_yard.gd`
 
-- [ ] **Step 1: Add failing runtime frame assertions**
+- [x] **Step 1: Add failing runtime frame assertions**
 
 Configure every family at construction stages 0 through 3 and assert each segment's region is:
 
@@ -129,11 +129,11 @@ Rect2(
 
 Also assert all completed fence segments remain low enough that their Sprite3D vertical size is below the existing building foundation visual envelope.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run the building suite and require failures against the old atlas dimensions and paths.
 
-- [ ] **Step 3: Update texture and frame constants**
+- [x] **Step 3: Update texture and frame constants**
 
 Replace the component constants with:
 
@@ -150,15 +150,15 @@ const SEGMENT_WORLD_SIZE := 1.04
 
 Set each Sprite3D's `pixel_size` from `SEGMENT_WORLD_SIZE / SEGMENT_PIXEL_SIZE`, retain transparent rendering, and calibrate the vertical offset so every frame shares the same grid-edge root.
 
-- [ ] **Step 4: Warn once for missing or malformed atlases**
+- [x] **Step 4: Warn once for missing or malformed atlases**
 
 Validate texture presence and dimensions during `configure`. If invalid, leave perimeter collision and output slots intact, hide visual segments, and issue one warning per family. Do not fall back to the removed SVG art.
 
-- [ ] **Step 5: Run building tests and require GREEN**
+- [x] **Step 5: Run building tests and require GREEN**
 
 Run the building suite. Expected: all atlas, family, segment-count, collision, preview, maintenance, and deactivation assertions pass.
 
-- [ ] **Step 6: Commit the runtime switch**
+- [x] **Step 6: Commit the runtime switch**
 
 ```powershell
 git add scripts/buildings/building_production_yard.gd tests/test_building_production_yard.gd
