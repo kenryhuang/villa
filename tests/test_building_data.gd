@@ -89,7 +89,7 @@ func run(assertions: TestAssert) -> void:
 		assertions.truthy(yard_data.has_production_yard(), "%s has a production yard" % id)
 		assertions.equal(yard_data.footprint, expected[0], "%s uses the yard footprint" % id)
 		assertions.equal(yard_data.structure_footprint(), expected[1], "%s preserves its structure footprint" % id)
-		assertions.equal(yard_data.production_yard_style(), expected[2], "%s uses its matching fence style" % id)
+		assertions.equal(yard_data.production_yard_style(), expected[2], "%s uses its matching ground style" % id)
 		assertions.equal(int(yard_data.production_yard.get("output_capacity", 0)), expected[3], "%s exposes enough collection slots" % id)
 	for id in EXCLUDED_YARD_IDS:
 		var excluded_data = BuildingDataScript.from_dictionary(game_data.get_building(id))
