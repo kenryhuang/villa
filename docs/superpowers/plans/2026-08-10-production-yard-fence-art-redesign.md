@@ -229,11 +229,11 @@ git commit -m "feat: crossfade yard fence construction"
 - Delete: `assets/buildings/yards/industrial_yard_fence.svg.import`
 - Modify: `docs/superpowers/plans/2026-08-10-production-yard-fence-art-redesign.md`
 
-- [ ] **Step 1: Remove the obsolete SVG assets**
+- [x] **Step 1: Remove the obsolete SVG assets**
 
 Delete only the six explicitly listed SVG source/import files after confirming runtime and tests reference PNG paths.
 
-- [ ] **Step 2: Run repository checks**
+- [x] **Step 2: Run repository checks**
 
 ```powershell
 rg -n "yard_fence\.svg" scripts tests project.godot
@@ -243,7 +243,7 @@ git status --short
 
 Expected: no runtime/test SVG references and no whitespace errors.
 
-- [ ] **Step 3: Run all affected suites**
+- [x] **Step 3: Run all affected suites**
 
 ```powershell
 godot --headless --path . --script res://tests/run_building_system_tests.gd
@@ -257,11 +257,11 @@ godot --headless --path . --script res://tests/run_main_gameplay_integration_tes
 
 Expected: every runner exits `0` with a `PASS` summary and no hard failures.
 
-- [ ] **Step 4: Review visual acceptance criteria**
+- [x] **Step 4: Review visual acceptance criteria**
 
 Inspect all three atlases and confirm low height, painterly edges, family-specific materials, consistent roots, transparent gaps, no modern geometric rail style, visible output zone, and construction continuity.
 
-- [ ] **Step 5: Commit the cleanup and completed plan**
+- [x] **Step 5: Commit the cleanup and completed plan**
 
 ```powershell
 git add -A assets/buildings/yards docs/superpowers/plans/2026-08-10-production-yard-fence-art-redesign.md
