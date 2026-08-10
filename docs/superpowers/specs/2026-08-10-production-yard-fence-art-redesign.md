@@ -53,8 +53,8 @@ Each atlas is `1024×2048`, arranged as two columns by four rows. Every frame is
 
 | Column | Meaning |
 |---|---|
-| 0 | Front/back-facing grid edge segment |
-| 1 | Side-facing grid edge segment |
+| 0 | Legacy straight presentation retained in the atlas but not used for perimeter assembly |
+| 1 | Authoritative three-quarter diagonal segment used for both world axes |
 
 | Row | Construction stage |
 |---|---|
@@ -64,6 +64,22 @@ Each atlas is `1024×2048`, arranged as two columns by four rows. Every frame is
 | 3 | Completed low fence |
 
 All frames share the same ground baseline, lateral span, light direction, and visual center. The import configuration must preserve alpha, avoid filtering artifacts that blur the painted edges, and expose the atlas as a normal `Texture2D`.
+
+## 2.5D Closed-Perimeter Projection
+
+The production yard is a true rectangle in the ground-plane X/Z coordinates, but the locked orthographic camera projects those axes into two opposite screen diagonals. A horizontal fence sprite plus a one-sided diagonal sprite cannot describe that rectangle. Increasing the painted width only reduces gaps and does not correct the projected direction.
+
+Fence assembly therefore follows the same camera-facing convention as the building entities:
+
+- every segment is a camera-facing `Sprite3D` billboard;
+- both world-axis edge groups use atlas column 1, the three-quarter diagonal fence painting;
+- X-axis edges use the source diagonal without mirroring, producing the screen `/` direction;
+- Z-axis edges use the same source with `flip_h = true`, producing the screen `\` direction;
+- opposite sides share their axis direction, while world positions distinguish front/back and left/right;
+- segment centers remain on the authoritative rectangular perimeter and collisions remain aligned to the same X/Z bounds;
+- neighboring painted endpoints overlap slightly, including all four corners, so the projected result reads as one closed diamond-shaped rectangle rather than detached parallel decorations.
+
+The camera direction remains locked. If free camera rotation is reintroduced later, the fence system will require direction-aware frame selection or true 3D geometry; that behavior is outside this correction.
 
 ## Rendering and Composition
 
@@ -76,6 +92,8 @@ The existing back, side, and front layer structure remains. The new segment scal
 - the front output slots remain visible and independently clickable;
 - adjacent segments overlap slightly enough to avoid seams without producing doubled posts;
 - front and side perspectives meet cleanly at corners.
+
+Segment metadata records its world axis independently from the atlas column. Stage changes update only the atlas row; they preserve the diagonal frame column, mirroring, billboard mode, scale, and position.
 
 The structure collision and grid occupancy remain authoritative. Fence sprites never receive pointer interaction layers, so they cannot intercept product pickup.
 
@@ -105,6 +123,9 @@ Automated checks must verify:
 - three families load the correct texture and retain their expected material mapping;
 - 3×3 and 4×4 segment counts, output slots, collision layers, preview state, maintenance state, and deactivation behavior remain correct;
 - construction stage transitions finish without duplicate visual children;
+- every perimeter segment uses billboard mode and the diagonal atlas column;
+- X-axis and Z-axis segment groups use opposite horizontal mirroring;
+- the segment centers cover every expected point on the four X/Z perimeter edges;
 - the full building, production, economy, save, and main gameplay suites remain green.
 
 ## Acceptance Criteria
