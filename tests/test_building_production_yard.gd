@@ -2,15 +2,27 @@ extends RefCounted
 
 const YardScript = preload("res://scripts/buildings/building_production_yard.gd")
 const ASSETS := {
-	"timber": "res://assets/buildings/yards/timber_yard_fence.svg",
-	"masonry": "res://assets/buildings/yards/masonry_yard_fence.svg",
-	"industrial": "res://assets/buildings/yards/industrial_yard_fence.svg",
+	"timber": "res://assets/buildings/yards/timber_yard_fence.png",
+	"masonry": "res://assets/buildings/yards/masonry_yard_fence.png",
+	"industrial": "res://assets/buildings/yards/industrial_yard_fence.png",
 }
+const FRAME_SIZE := Vector2i(512, 512)
+const ATLAS_SIZE := Vector2(1024, 2048)
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for style in ASSETS:
 		assertions.truthy(ResourceLoader.exists(ASSETS[style]), "%s yard atlas exists" % style)
+		_validate_painted_atlas(style, ASSETS[style], assertions)
+		assertions.truthy(
+			str(YardScript.TEXTURES.get(style, "")).ends_with(".png"),
+			"%s yard runtime uses raster painted art" % style
+		)
+	assertions.equal(
+		YardScript.ATLAS_FRAME_SIZE,
+		Vector2(512.0, 512.0),
+		"yard atlas exposes high-detail 512px frames"
+	)
 
 	var yard := YardScript.new()
 	tree.root.add_child(yard)
@@ -45,3 +57,47 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(large.get_fence_segment_count(), 0, "yard cleanup removes all derived fence segments")
 	large.free()
 
+
+func _validate_painted_atlas(
+	style: String,
+	path: String,
+	assertions: TestAssert
+) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var texture := load(path) as Texture2D
+	assertions.truthy(texture != null, "%s yard atlas imports as Texture2D" % style)
+	if texture == null:
+		return
+	assertions.equal(texture.get_size(), ATLAS_SIZE, "%s yard atlas has the 2x4 frame dimensions" % style)
+	var image := texture.get_image()
+	assertions.truthy(image.detect_alpha(), "%s yard atlas preserves transparency" % style)
+	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s yard atlas has a transparent corner" % style)
+	var baselines: Array[int] = []
+	for row in 4:
+		for column in 2:
+			var baseline := _frame_baseline(image, column, row)
+			assertions.truthy(
+				baseline >= 0,
+				"%s yard frame %d:%d contains painted pixels" % [style, column, row]
+			)
+			if baseline >= 0:
+				baselines.append(baseline)
+	if baselines.size() == 8:
+		var lowest: int = int(baselines.min())
+		var highest: int = int(baselines.max())
+		assertions.truthy(
+			highest - lowest <= 20,
+			"%s yard frames share one ground baseline" % style
+		)
+
+
+func _frame_baseline(image: Image, column: int, row: int) -> int:
+	var baseline := -1
+	var x_start := column * FRAME_SIZE.x
+	var y_start := row * FRAME_SIZE.y
+	for local_y in range(0, FRAME_SIZE.y, 4):
+		for local_x in range(0, FRAME_SIZE.x, 4):
+			if image.get_pixel(x_start + local_x, y_start + local_y).a > 0.05:
+				baseline = local_y
+	return baseline

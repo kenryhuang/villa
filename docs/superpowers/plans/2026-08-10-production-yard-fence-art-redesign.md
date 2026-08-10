@@ -16,7 +16,7 @@
 - Modify: `tests/test_building_production_yard.gd`
 - Modify: `tests/run_building_system_tests.gd`
 
-- [ ] **Step 1: Add image-contract helpers and assertions**
+- [x] **Step 1: Add image-contract helpers and assertions**
 
 Add constants for the three PNG paths and verify each image loads as `1024×2048`, has alpha, and contains opaque pixels inside every `512×512` frame:
 
@@ -37,7 +37,7 @@ func _frame_has_visible_pixels(image: Image, column: int, row: int) -> bool:
 
 For every family, assert all eight frames are populated. Compute each frame's lowest visible sampled row and assert the baselines differ by no more than 20 pixels inside a family.
 
-- [ ] **Step 2: Assert runtime paths no longer use SVG**
+- [x] **Step 2: Assert runtime paths no longer use SVG**
 
 Add component assertions:
 
@@ -50,7 +50,7 @@ for style in ["timber", "masonry", "industrial"]:
 assertions.equal(BuildingProductionYardScript.ATLAS_FRAME_SIZE, Vector2i(512, 512), "yard atlas uses high-detail frames")
 ```
 
-- [ ] **Step 3: Run the building suite and verify RED**
+- [x] **Step 3: Run the building suite and verify RED**
 
 Run:
 
@@ -60,7 +60,7 @@ godot --headless --path . --script res://tests/run_building_system_tests.gd
 
 Expected: failures report missing PNG atlases and the old `256×192` frame contract.
 
-- [ ] **Step 4: Commit the failing tests**
+- [x] **Step 4: Commit the failing tests**
 
 ```powershell
 git add tests/test_building_production_yard.gd tests/run_building_system_tests.gd
