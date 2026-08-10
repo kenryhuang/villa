@@ -16,7 +16,7 @@
 - Modify: `tests/test_building_production_yard.gd`
 - Modify: `scripts/buildings/building_production_yard.gd`
 
-- [ ] **Step 1: Write failing projection assertions**
+- [x] **Step 1: Write failing projection assertions**
 
 In the existing style/stage loop, inspect every primary fence sprite and require the diagonal atlas column, billboard mode, and axis-specific mirroring:
 
@@ -42,7 +42,7 @@ assertions.equal(
 
 Keep `_assert_closed_rectangle_layout` so the test covers both the ground-plane rectangle and its screen-facing representation.
 
-- [ ] **Step 2: Run the building suite and verify RED**
+- [x] **Step 2: Run the building suite and verify RED**
 
 Run:
 
@@ -52,7 +52,7 @@ godot --headless --path . --script res://tests/run_building_system_tests.gd
 
 Expected: failures show missing `axis` metadata, disabled billboard mode, non-diagonal column selection on X-axis segments, and missing Z-axis mirroring.
 
-- [ ] **Step 3: Implement axis-aware billboard segments**
+- [x] **Step 3: Implement axis-aware billboard segments**
 
 Change `_add_segment` to treat its integer argument as the ground-plane axis:
 
@@ -87,11 +87,11 @@ sprite.region_rect = Rect2(
 
 Do not rotate the whole sprite: mirroring the diagonal painting keeps posts vertical while reversing only the projected fence direction.
 
-- [ ] **Step 4: Run the building suite and require GREEN**
+- [x] **Step 4: Run the building suite and require GREEN**
 
 Run the building suite again. Expected: all building-system assertions pass, including construction crossfades, preview/maintenance tinting, closed X/Z perimeter points, diagonal atlas selection, billboard mode, and mirroring.
 
-- [ ] **Step 5: Commit the runtime correction**
+- [x] **Step 5: Commit the runtime correction**
 
 ```powershell
 git add scripts/buildings/building_production_yard.gd tests/test_building_production_yard.gd docs/superpowers/plans/2026-08-10-production-yard-2-5d-closure.md

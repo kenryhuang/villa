@@ -168,17 +168,19 @@ func _build_fence_segments() -> void:
 		_add_segment(Vector3(half_x, 0.0, z), 1, get_node("SideFenceLayer"), 0.05)
 
 
-func _add_segment(position_value: Vector3, orientation: int, parent: Node, sorting: float) -> void:
+func _add_segment(position_value: Vector3, axis: int, parent: Node, sorting: float) -> void:
 	if _yard_texture == null:
 		return
 	var sprite := Sprite3D.new()
 	sprite.texture = _yard_texture
 	sprite.region_enabled = true
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	sprite.pixel_size = SEGMENT_WORLD_SIZE / SEGMENT_PIXEL_SIZE
 	sprite.scale = Vector3(1.0, SEGMENT_VERTICAL_SCALE, 1.0)
 	sprite.position = position_value + Vector3(0.0, SEGMENT_BASE_Y, 0.0)
 	sprite.sorting_offset = sorting
-	sprite.set_meta("orientation", orientation)
+	sprite.flip_h = axis == 1
+	sprite.set_meta("axis", axis)
 	parent.add_child(sprite)
 	_segments.append(sprite)
 
@@ -217,9 +219,8 @@ func _apply_visual_state() -> void:
 	var tint := get_visual_tint()
 	var progress := clampf(_transition_elapsed / STAGE_CROSSFADE_SECONDS, 0.0, 1.0) if _transition_active else 1.0
 	for sprite in _segments:
-		var orientation := int(sprite.get_meta("orientation", 0))
 		sprite.region_rect = Rect2(
-			float(orientation) * ATLAS_FRAME_SIZE.x,
+			ATLAS_FRAME_SIZE.x,
 			float(_construction_stage) * ATLAS_FRAME_SIZE.y,
 			ATLAS_FRAME_SIZE.x,
 			ATLAS_FRAME_SIZE.y

@@ -33,11 +33,22 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		for stage in 4:
 			staged_yard.set_construction_stage(stage)
 			for sprite in _fence_sprites(staged_yard):
-				var orientation := int(sprite.get_meta("orientation", 0))
+				var axis := int(sprite.get_meta("axis", -1))
+				assertions.truthy(axis in [0, 1], "%s fence segment records its world axis" % style)
 				assertions.equal(
 					sprite.region_rect,
-					Rect2(float(orientation) * 512.0, float(stage) * 512.0, 512.0, 512.0),
-					"%s stage %d selects the matching painted frame" % [style, stage]
+					Rect2(512.0, float(stage) * 512.0, 512.0, 512.0),
+					"%s stage %d uses the diagonal 2.5D frame" % [style, stage]
+				)
+				assertions.equal(
+					sprite.billboard,
+					BaseMaterial3D.BILLBOARD_ENABLED,
+					"%s fence follows the locked 2.5D camera" % style
+				)
+				assertions.equal(
+					sprite.flip_h,
+					axis == 1,
+					"%s fence mirrors only the Z-axis edge" % style
 				)
 				assertions.truthy(
 					sprite.pixel_size * 512.0 * sprite.scale.y <= 0.82,
