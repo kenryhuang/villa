@@ -1,253 +1,163 @@
 extends RefCounted
 
 const YardScript = preload("res://scripts/buildings/building_production_yard.gd")
-const ASSETS := {
-	"timber": "res://assets/buildings/yards/timber_yard_fence.png",
-	"masonry": "res://assets/buildings/yards/masonry_yard_fence.png",
-	"industrial": "res://assets/buildings/yards/industrial_yard_fence.png",
+const GROUND_ASSETS := {
+	"timber": "res://assets/buildings/yards/timber_yard_ground.png",
+	"masonry": "res://assets/buildings/yards/masonry_yard_ground.png",
+	"industrial": "res://assets/buildings/yards/industrial_yard_ground.png",
 }
-const FRAME_SIZE := Vector2i(512, 512)
-const ATLAS_SIZE := Vector2(1024, 2048)
+const GROUND_TEXTURE_SIZE := Vector2(1024.0, 1024.0)
+const TERRAIN_ONLY_CULL_MASK := 1 << 7
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
-	for style in ASSETS:
-		assertions.truthy(ResourceLoader.exists(ASSETS[style]), "%s yard atlas exists" % style)
-		_validate_painted_atlas(style, ASSETS[style], assertions)
-		assertions.truthy(
-			str(YardScript.TEXTURES.get(style, "")).ends_with(".png"),
-			"%s yard runtime uses raster painted art" % style
+	for style in GROUND_ASSETS:
+		var path := str(GROUND_ASSETS[style])
+		assertions.truthy(ResourceLoader.exists(path), "%s painted ground exists" % style)
+		_validate_painted_ground(style, path, assertions)
+		assertions.equal(
+			str(YardScript.TEXTURES.get(style, "")),
+			path,
+			"%s yard runtime uses its painted ground texture" % style
 		)
-	assertions.equal(
-		YardScript.ATLAS_FRAME_SIZE,
-		Vector2(512.0, 512.0),
-		"yard atlas exposes high-detail 512px frames"
-	)
-	for style in ASSETS:
-		var staged_yard := YardScript.new()
-		tree.root.add_child(staged_yard)
-		assertions.truthy(
-			staged_yard.configure(Vector2i(3, 3), style, Vector3.ZERO),
-			"%s yard configures for frame inspection" % style
-		)
-		for stage in 4:
-			staged_yard.set_construction_stage(stage)
-			for sprite in _fence_sprites(staged_yard):
-				var axis := int(sprite.get_meta("axis", -1))
-				assertions.truthy(axis in [0, 1], "%s fence segment records its world axis" % style)
-				assertions.equal(
-					sprite.region_rect,
-					Rect2(0.0, float(stage) * 512.0, 512.0, 512.0),
-					"%s stage %d uses the straight world-plane frame" % [style, stage]
-				)
-				assertions.equal(
-					sprite.billboard,
-					BaseMaterial3D.BILLBOARD_DISABLED,
-					"%s fence remains an axis-aligned 2.5D world card" % style
-				)
-				assertions.truthy(
-					is_equal_approx(sprite.rotation.y, 0.0 if axis == 0 else PI * 0.5),
-					"%s fence rotates onto its X/Z perimeter axis" % style
-				)
-				assertions.truthy(
-					sprite.pixel_size * 512.0 * sprite.scale.y <= 0.82,
-					"%s fence remains visually low" % style
-				)
-		staged_yard.free()
 
 	var yard := YardScript.new()
 	tree.root.add_child(yard)
-	assertions.truthy(yard.configure(Vector2i(3, 3), "timber", Vector3(0.0, 0.0, -0.35)), "3x3 timber yard configures")
-	assertions.equal(yard.get_fence_segment_count(), 12, "3x3 yard has one fence segment per perimeter edge cell")
-	assertions.equal(yard.get_output_slots().size(), 6, "3x3 yard provides six collection slots")
-	assertions.truthy(yard.all_output_slots_inside_bounds(), "3x3 collection slots stay inside the fence")
+	assertions.truthy(
+		yard.configure(Vector2i(3, 3), "timber", Vector3(0.0, 0.0, -0.35)),
+		"3x3 timber ground configures"
+	)
+	assertions.equal(_decals(yard).size(), 1, "yard creates one seamless ground decal")
+	assertions.equal(_sprites(yard).size(), 0, "yard creates no fence sprite cards")
+	assertions.equal(_static_bodies(yard).size(), 0, "yard creates no perimeter physics body")
+	assertions.equal(yard.get_fence_segment_count(), 0, "legacy fence query reports no fence segments")
+	assertions.equal(yard.get_output_slots().size(), 6, "3x3 yard preserves six collection slots")
+	assertions.truthy(yard.all_output_slots_inside_bounds(), "3x3 collection slots stay inside the ground area")
 	assertions.equal(yard.get_style(), "timber", "yard preserves its style")
-	_assert_closed_rectangle_layout(yard, Vector2i(3, 3), assertions)
-	yard.set_construction_stage(1)
-	assertions.equal(yard.get_construction_stage(), 1, "yard exposes the frame construction stage")
+	assertions.truthy(not yard.has_enabled_collisions(), "painted ground is always walkable")
+	assertions.equal(yard.get_collision_layers(), [], "painted ground owns no physics layer")
+	_assert_ground_contract(yard, Vector2i(3, 3), assertions)
+
+	var original_decal: Decal = _first_decal(yard)
+	var original_texture: Texture2D = original_decal.texture_albedo if original_decal != null else null
+	for stage in 4:
+		yard.set_construction_stage(stage)
+		assertions.equal(yard.get_construction_stage(), stage, "yard stores construction stage %d" % stage)
+		assertions.equal(_first_decal(yard), original_decal, "construction stage keeps the same ground decal")
+		if original_decal != null:
+			assertions.equal(original_decal.texture_albedo, original_texture, "construction stage keeps the ground texture")
+		assertions.equal(yard.get_transition_sprite_count(), 0, "ground has no construction crossfade sprites")
+
 	yard.set_preview_state(true, false)
-	assertions.equal(yard.get_visual_tint(), Color(1.0, 0.38, 0.38, 0.68), "invalid preview tints the whole fence red")
+	assertions.equal(yard.get_visual_tint(), Color(1.0, 0.38, 0.38, 0.68), "invalid preview tints ground red")
+	yard.set_preview_state(true, true)
+	assertions.equal(yard.get_visual_tint(), Color(0.48, 1.0, 0.52, 0.68), "valid preview tints ground green")
 	yard.set_preview_state(false, true)
 	yard.set_maintenance_state("overdue")
-	assertions.equal(yard.get_visual_tint(), Color(0.76, 0.72, 0.66, 1.0), "overdue maintenance desaturates the fence")
+	assertions.equal(yard.get_visual_tint(), Color.WHITE, "maintenance does not tint the painted ground")
 	yard.set_interaction_enabled(true)
-	assertions.truthy(yard.has_enabled_collisions(), "completed yard enables perimeter collision")
-	assertions.equal(yard.get_collision_layers(), [16], "yard collision uses only the physical world layer")
-	yard.set_interaction_enabled(false)
-	assertions.truthy(not yard.has_enabled_collisions(), "preview yard disables perimeter collision")
+	assertions.truthy(not yard.has_enabled_collisions(), "interaction state never gives ground a collision")
 	yard.free()
 
 	var large := YardScript.new()
 	tree.root.add_child(large)
-	assertions.truthy(large.configure(Vector2i(4, 4), "industrial", Vector3(0.0, 0.0, -0.55)), "4x4 industrial yard configures")
-	assertions.equal(large.get_fence_segment_count(), 16, "4x4 yard has sixteen perimeter segments")
-	assertions.equal(large.get_output_slots().size(), 8, "4x4 yard provides eight collection slots")
-	assertions.truthy(large.all_output_slots_inside_bounds(), "4x4 collection slots stay inside the fence")
+	assertions.truthy(
+		large.configure(Vector2i(4, 4), "industrial", Vector3(0.0, 0.0, -0.55)),
+		"4x4 industrial ground configures"
+	)
+	assertions.equal(_decals(large).size(), 1, "4x4 yard still uses one seamless decal")
+	assertions.equal(large.get_output_slots().size(), 8, "4x4 yard preserves eight collection slots")
+	assertions.truthy(large.all_output_slots_inside_bounds(), "4x4 collection slots stay inside the ground area")
+	_assert_ground_contract(large, Vector2i(4, 4), assertions)
 	assertions.truthy(not large.configure(Vector2i(2, 2), "timber", Vector3.ZERO), "unsupported yard size rejects")
 	assertions.truthy(not large.configure(Vector2i(4, 4), "plastic", Vector3.ZERO), "unknown yard style rejects")
 	large.clear_immediately()
-	assertions.equal(large.get_fence_segment_count(), 0, "yard cleanup removes all derived fence segments")
+	assertions.equal(_decals(large).size(), 0, "yard cleanup removes the painted ground immediately")
+	assertions.equal(large.get_output_slots().size(), 0, "yard cleanup clears derived output slots")
 	large.free()
 
-	var transition_yard := YardScript.new()
-	tree.root.add_child(transition_yard)
-	assertions.truthy(
-		transition_yard.configure(Vector2i(3, 3), "masonry", Vector3.ZERO),
-		"transition test yard configures"
-	)
-	var has_transition_api := (
-		transition_yard.has_method("get_transition_sprite_count")
-		and transition_yard.has_method("advance_transition_for_test")
-	)
-	assertions.truthy(has_transition_api, "yard exposes deterministic crossfade lifecycle")
-	if has_transition_api:
-		transition_yard.set_construction_stage(0)
-		assertions.equal(
-			transition_yard.get_transition_sprite_count(),
-			12,
-			"stage change keeps one outgoing sprite per fence segment"
-		)
-		_assert_sprite_stage(_fence_sprites(transition_yard), 0, assertions, "incoming fence uses the new stage")
-		_assert_sprite_stage(_transition_sprites(transition_yard), 3, assertions, "outgoing fence keeps the old stage")
-		transition_yard.advance_transition_for_test(2.0)
-		assertions.equal(transition_yard.get_transition_sprite_count(), 0, "two seconds completes the fence crossfade")
 
-		transition_yard.set_construction_stage(1)
-		transition_yard.advance_transition_for_test(0.5)
-		transition_yard.set_construction_stage(2)
-		assertions.equal(
-			transition_yard.get_transition_sprite_count(),
-			12,
-			"interrupted crossfade replaces rather than stacks outgoing sprites"
-		)
-		_assert_sprite_stage(_transition_sprites(transition_yard), 1, assertions, "interrupted crossfade departs from the latest stage")
-		transition_yard.set_preview_state(true, false)
-		for sprite in _fence_sprites(transition_yard):
-			assertions.truthy(sprite.modulate.a < 0.68, "preview tint preserves incoming crossfade alpha")
-		transition_yard.clear_immediately()
-		assertions.equal(transition_yard.get_transition_sprite_count(), 0, "immediate cleanup removes outgoing fence sprites")
-		assertions.equal(_all_fence_sprites(transition_yard).size(), 0, "immediate cleanup removes every fence visual")
-	transition_yard.free()
-
-
-func _validate_painted_atlas(
-	style: String,
-	path: String,
-	assertions: TestAssert
-) -> void:
-	if not ResourceLoader.exists(path):
-		return
-	var texture := load(path) as Texture2D
-	assertions.truthy(texture != null, "%s yard atlas imports as Texture2D" % style)
-	if texture == null:
-		return
-	assertions.equal(texture.get_size(), ATLAS_SIZE, "%s yard atlas has the 2x4 frame dimensions" % style)
-	var image := texture.get_image()
-	assertions.truthy(image.detect_alpha(), "%s yard atlas preserves transparency" % style)
-	assertions.equal(image.get_pixel(0, 0).a, 0.0, "%s yard atlas has a transparent corner" % style)
-	var baselines: Array[int] = []
-	for row in 4:
-		for column in 2:
-			var baseline := _frame_baseline(image, column, row)
-			assertions.truthy(
-				baseline >= 0,
-				"%s yard frame %d:%d contains painted pixels" % [style, column, row]
-			)
-			if baseline >= 0:
-				baselines.append(baseline)
-	if baselines.size() == 8:
-		var lowest: int = int(baselines.min())
-		var highest: int = int(baselines.max())
-		assertions.truthy(
-			highest - lowest <= 20,
-			"%s yard frames share one ground baseline" % style
-		)
-	for column in 2:
-		assertions.truthy(
-			_frame_horizontal_span(image, column, 3) >= 480,
-			"%s completed fence orientation %d reaches adjacent grid cells" % [style, column]
-		)
-
-
-func _frame_baseline(image: Image, column: int, row: int) -> int:
-	var baseline := -1
-	var x_start := column * FRAME_SIZE.x
-	var y_start := row * FRAME_SIZE.y
-	for local_y in range(0, FRAME_SIZE.y, 4):
-		for local_x in range(0, FRAME_SIZE.x, 4):
-			if image.get_pixel(x_start + local_x, y_start + local_y).a > 0.05:
-				baseline = local_y
-	return baseline
-
-
-func _frame_horizontal_span(image: Image, column: int, row: int) -> int:
-	var left := FRAME_SIZE.x
-	var right := -1
-	var x_start := column * FRAME_SIZE.x
-	var y_start := row * FRAME_SIZE.y
-	for local_y in range(0, FRAME_SIZE.y, 4):
-		for local_x in range(0, FRAME_SIZE.x, 4):
-			if image.get_pixel(x_start + local_x, y_start + local_y).a > 0.05:
-				left = mini(left, local_x)
-				right = maxi(right, local_x)
-	return right - left + 1 if right >= left else 0
-
-
-func _assert_closed_rectangle_layout(
+func _assert_ground_contract(
 	yard: Node3D,
 	size: Vector2i,
 	assertions: TestAssert
 ) -> void:
-	var expected: Array[Vector2] = []
-	var half_x := float(size.x) * 0.5
-	var half_z := float(size.y) * 0.5
-	for index in size.x:
-		var x := -half_x + 0.5 + float(index)
-		expected.append(Vector2(x, -half_z))
-		expected.append(Vector2(x, half_z))
-	for index in size.y:
-		var z := -half_z + 0.5 + float(index)
-		expected.append(Vector2(-half_x, z))
-		expected.append(Vector2(half_x, z))
-	var actual: Array[Vector2] = []
-	for sprite in _fence_sprites(yard):
-		actual.append(Vector2(sprite.position.x, sprite.position.z))
-	for point in expected:
-		assertions.truthy(point in actual, "yard fence occupies closed perimeter point %s" % point)
+	var decal := _first_decal(yard)
+	if decal == null:
+		return
+	assertions.equal(decal.cull_mask, TERRAIN_ONLY_CULL_MASK, "ground projects only onto terrain receiver layer")
+	assertions.truthy(
+		decal.size.x >= float(size.x) and decal.size.x <= float(size.x) + 0.2,
+		"ground width covers footprint with at most 0.1-cell overhang per side"
+	)
+	assertions.truthy(
+		decal.size.z >= float(size.y) and decal.size.z <= float(size.y) + 0.2,
+		"ground depth covers footprint with at most 0.1-cell overhang per side"
+	)
+	assertions.truthy(decal.size.y > 0.0, "ground decal has a terrain projection depth")
+	assertions.equal(decal.texture_albedo.get_size(), GROUND_TEXTURE_SIZE, "ground decal uses a 1024px texture")
 
 
-func _fence_sprites(root: Node) -> Array[Sprite3D]:
-	var result: Array[Sprite3D] = []
+func _validate_painted_ground(style: String, path: String, assertions: TestAssert) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var texture := load(path) as Texture2D
+	assertions.truthy(texture != null, "%s painted ground imports as Texture2D" % style)
+	if texture == null:
+		return
+	assertions.equal(texture.get_size(), GROUND_TEXTURE_SIZE, "%s painted ground is 1024x1024" % style)
+	var image := texture.get_image()
+	assertions.truthy(image.detect_alpha(), "%s painted ground preserves alpha" % style)
+	for corner in [Vector2i(0, 0), Vector2i(1023, 0), Vector2i(0, 1023), Vector2i(1023, 1023)]:
+		assertions.truthy(image.get_pixelv(corner).a <= 0.01, "%s painted ground has transparent corners" % style)
+	var painted := 0
+	var translucent := 0
+	var emphasized := 0
+	var edge_painted := 0
+	for y in range(0, image.get_height(), 8):
+		for x in range(0, image.get_width(), 8):
+			var alpha := image.get_pixel(x, y).a
+			if alpha > 0.05:
+				painted += 1
+				if alpha < 0.84:
+					translucent += 1
+				if alpha >= 0.85 and alpha <= 0.96:
+					emphasized += 1
+				if x < 80 or x > 943 or y < 80 or y > 943:
+					edge_painted += 1
+	assertions.truthy(painted > 3000, "%s ground contains a substantial painted surface" % style)
+	assertions.truthy(translucent > painted / 2, "%s main ground surface remains semi-transparent" % style)
+	assertions.truthy(emphasized > 20, "%s ground retains emphasized opaque details" % style)
+	assertions.truthy(edge_painted > 0, "%s irregular ground edge reaches the feather zone" % style)
+
+
+func _first_decal(root: Node) -> Decal:
+	var found := _decals(root)
+	return found[0] if not found.is_empty() else null
+
+
+func _decals(root: Node) -> Array[Decal]:
+	var result: Array[Decal] = []
 	for child in root.get_children():
-		if child is Sprite3D and not child.get_meta("yard_transition", false):
-			result.append(child as Sprite3D)
-		result.append_array(_fence_sprites(child))
+		if child is Decal:
+			result.append(child as Decal)
+		result.append_array(_decals(child))
 	return result
 
 
-func _transition_sprites(root: Node) -> Array[Sprite3D]:
-	var result: Array[Sprite3D] = []
-	for child in root.get_children():
-		if child is Sprite3D and child.get_meta("yard_transition", false):
-			result.append(child as Sprite3D)
-		result.append_array(_transition_sprites(child))
-	return result
-
-
-func _all_fence_sprites(root: Node) -> Array[Sprite3D]:
+func _sprites(root: Node) -> Array[Sprite3D]:
 	var result: Array[Sprite3D] = []
 	for child in root.get_children():
 		if child is Sprite3D:
 			result.append(child as Sprite3D)
-		result.append_array(_all_fence_sprites(child))
+		result.append_array(_sprites(child))
 	return result
 
 
-func _assert_sprite_stage(
-	sprites: Array[Sprite3D],
-	stage: int,
-	assertions: TestAssert,
-	message: String
-) -> void:
-	for sprite in sprites:
-		assertions.equal(sprite.region_rect.position.y, float(stage) * 512.0, message)
+func _static_bodies(root: Node) -> Array[StaticBody3D]:
+	var result: Array[StaticBody3D] = []
+	for child in root.get_children():
+		if child is StaticBody3D:
+			result.append(child as StaticBody3D)
+		result.append_array(_static_bodies(child))
+	return result

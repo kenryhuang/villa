@@ -64,8 +64,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			var structure_shape := instance.get_node("Collision/CollisionShape3D").shape as BoxShape3D
 			assertions.near(structure_shape.size.x, float(data.structure_footprint().x) * 0.78, 0.001, "%s collision uses structure width" % id)
 			assertions.near(structure_shape.size.z, float(data.structure_footprint().y) * 0.78, 0.001, "%s collision uses structure depth" % id)
-			assertions.truthy(yard.has_enabled_collisions(), "%s completed yard blocks perimeter traversal" % id)
-			assertions.equal(yard.get_collision_layers(), [16], "%s yard excludes pointer interaction layers" % id)
+			assertions.truthy(not yard.has_enabled_collisions(), "%s production ground stays walkable" % id)
+			assertions.equal(yard.get_collision_layers(), [], "%s production ground owns no physics layer" % id)
 		if id == "workbench":
 			assertions.truthy(instance.has_method("set_economy_indicator"), "building exposes economy indicator updates")
 			assertions.truthy(instance.has_method("get_economy_indicator"), "building exposes economy indicator state")
@@ -96,11 +96,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			instance.set_preview_mode(false)
 			assertions.truthy(instance.get_node("BuildingOutputDisplay").visible, "leaving preview restores output piles")
 			instance.start_construction()
-			assertions.equal(instance.get_node("ProductionYard").get_construction_stage(), 0, "yard starts with foundation posts")
-			assertions.truthy(instance.get_node("ProductionYard").has_enabled_collisions(), "construction yard remains physically closed")
+			assertions.equal(instance.get_node("ProductionYard").get_construction_stage(), 0, "ground records the initial construction stage")
+			assertions.truthy(not instance.get_node("ProductionYard").has_enabled_collisions(), "construction ground remains walkable")
 			assertions.truthy(not instance.get_node("BuildingOutputDisplay").visible, "construction hides output piles")
 			instance.complete_construction()
-			assertions.equal(instance.get_node("ProductionYard").get_construction_stage(), 3, "completed building completes its fence")
+			assertions.equal(instance.get_node("ProductionYard").get_construction_stage(), 3, "completed building records its final ground stage")
 			assertions.truthy(instance.get_node("BuildingOutputDisplay").visible, "completion restores output piles")
 			instance.visible = false
 			assertions.truthy(
@@ -120,14 +120,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(instance.get_node("InteractionArea").collision_layer, 0, "%s preview disables interaction" % id)
 		assertions.equal(instance.get_node("CameraOccluder").collision_layer, 0, "%s preview disables occluder" % id)
 		if data.has_production_yard():
-			assertions.truthy(not instance.get_node("ProductionYard").has_enabled_collisions(), "%s preview disables yard collision" % id)
+			assertions.truthy(not instance.get_node("ProductionYard").has_enabled_collisions(), "%s preview ground remains walkable" % id)
 		instance.set_preview_mode(false)
 		assertions.equal(instance.get_node("Collision").collision_layer, 16 | 64, "%s restores collision" % id)
 		if data.has_production_yard():
-			assertions.truthy(instance.get_node("ProductionYard").has_enabled_collisions(), "%s leaving preview restores yard collision" % id)
+			assertions.truthy(not instance.get_node("ProductionYard").has_enabled_collisions(), "%s leaving preview keeps ground walkable" % id)
 			instance.set_preview_valid(false)
 			instance.set_preview_mode(true)
-			assertions.equal(instance.get_node("ProductionYard").get_visual_tint(), Color(1.0, 0.38, 0.38, 0.68), "%s invalid preview tints fence red" % id)
+			assertions.equal(instance.get_node("ProductionYard").get_visual_tint(), Color(1.0, 0.38, 0.38, 0.68), "%s invalid preview tints ground red" % id)
 			instance.set_preview_mode(false)
 		instance.deactivate()
 		assertions.equal(instance.get_node("Collision").collision_layer, 0, "%s removal disables collision immediately" % id)
