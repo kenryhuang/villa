@@ -1,22 +1,20 @@
 class_name BuildingProductionYard
 extends Node3D
 
-const ATLAS_FRAME_SIZE := Vector2(512.0, 512.0)
-const ATLAS_SIZE := Vector2(1024.0, 2048.0)
-const SEGMENT_PIXEL_SIZE := 512.0
-const SEGMENT_WORLD_SIZE := 1.04
-const SEGMENT_VERTICAL_SCALE := 0.78
-const SEGMENT_BASE_Y := 0.375
-const STAGE_CROSSFADE_SECONDS := 2.0
+const TerrainBuilderScript = preload("res://scripts/world/terrain_builder.gd")
+
+const GROUND_TEXTURE_SIZE := Vector2(1024.0, 1024.0)
+const GROUND_OVERHANG_PER_SIDE := 0.1
+const GROUND_DECAL_CENTER_Y := 0.35
+const GROUND_DECAL_PROJECTION_DEPTH := 2.0
 const VALID_STYLES := ["timber", "masonry", "industrial"]
-const PHYSICAL_COLLISION_LAYER := 16
 const TEXTURES := {
-	"timber": "res://assets/buildings/yards/timber_yard_fence.png",
-	"masonry": "res://assets/buildings/yards/masonry_yard_fence.png",
-	"industrial": "res://assets/buildings/yards/industrial_yard_fence.png",
+	"timber": "res://assets/buildings/yards/timber_yard_ground.png",
+	"masonry": "res://assets/buildings/yards/masonry_yard_ground.png",
+	"industrial": "res://assets/buildings/yards/industrial_yard_ground.png",
 }
 
-static var _warned_atlas_styles := {}
+static var _warned_ground_styles := {}
 
 var _yard_size := Vector2i.ZERO
 var _style := ""
@@ -25,14 +23,8 @@ var _construction_stage := 3
 var _preview_active := false
 var _preview_valid := true
 var _maintenance_state := "normal"
-var _collisions_enabled := false
-var _segments: Array[Sprite3D] = []
 var _output_slots: Array[Vector3] = []
-var _collision_body: StaticBody3D
-var _yard_texture: Texture2D
-var _transition_sprites: Array[Sprite3D] = []
-var _transition_elapsed := 0.0
-var _transition_active := false
+var _ground_decal: Decal
 
 
 func configure(size: Vector2i, style: String, structure_offset: Vector3) -> bool:
@@ -42,13 +34,11 @@ func configure(size: Vector2i, style: String, structure_offset: Vector3) -> bool
 	_yard_size = size
 	_style = style
 	_structure_offset = structure_offset
-	_yard_texture = _load_yard_texture(style)
-	_ensure_layers()
-	_build_fence_segments()
-	_build_perimeter_collision()
 	_output_slots = _slots_for_size(size)
+	var texture := _load_ground_texture(style)
+	if texture != null:
+		_build_ground_decal(texture)
 	_apply_visual_state()
-	_apply_collision_state()
 	return true
 
 
@@ -59,11 +49,7 @@ func set_preview_state(active: bool, valid: bool) -> void:
 
 
 func set_construction_stage(stage: int) -> void:
-	var next_stage := clampi(stage, 0, 3)
-	if next_stage == _construction_stage:
-		_apply_visual_state()
-		return
-	_begin_stage_transition(next_stage)
+	_construction_stage = clampi(stage, 0, 3)
 
 
 func get_construction_stage() -> int:
@@ -72,12 +58,10 @@ func get_construction_stage() -> int:
 
 func set_maintenance_state(state: String) -> void:
 	_maintenance_state = state
-	_apply_visual_state()
 
 
-func set_interaction_enabled(enabled: bool) -> void:
-	_collisions_enabled = enabled
-	_apply_collision_state()
+func set_interaction_enabled(_enabled: bool) -> void:
+	pass
 
 
 func get_output_slots() -> Array[Vector3]:
@@ -85,15 +69,27 @@ func get_output_slots() -> Array[Vector3]:
 
 
 func get_fence_segment_count() -> int:
-	return _segments.size()
+	return 0
 
 
 func get_transition_sprite_count() -> int:
-	return _transition_sprites.size()
+	return 0
 
 
-func advance_transition_for_test(delta: float) -> void:
-	_advance_transition(delta)
+func advance_transition_for_test(_delta: float) -> void:
+	pass
+
+
+func get_ground_visual_count() -> int:
+	return 1 if _ground_decal != null and is_instance_valid(_ground_decal) else 0
+
+
+func get_ground_size() -> Vector3:
+	return _ground_decal.size if _ground_decal != null else Vector3.ZERO
+
+
+func get_ground_cull_mask() -> int:
+	return _ground_decal.cull_mask if _ground_decal != null else 0
 
 
 func get_style() -> String:
@@ -103,10 +99,6 @@ func get_style() -> String:
 func get_visual_tint() -> Color:
 	if _preview_active:
 		return Color(0.48, 1.0, 0.52, 0.68) if _preview_valid else Color(1.0, 0.38, 0.38, 0.68)
-	if _maintenance_state == "warning":
-		return Color(0.92, 0.89, 0.78, 1.0)
-	if _maintenance_state in ["overdue", "repairing"]:
-		return Color(0.76, 0.72, 0.66, 1.0)
 	return Color.WHITE
 
 
@@ -120,88 +112,36 @@ func all_output_slots_inside_bounds() -> bool:
 
 
 func has_enabled_collisions() -> bool:
-	return _collision_body != null and _collision_body.collision_layer != 0
+	return false
 
 
 func get_collision_layers() -> Array[int]:
-	var result: Array[int] = []
-	if _collision_body != null and _collision_body.collision_layer != 0:
-		result.append(_collision_body.collision_layer)
-	return result
+	return []
 
 
 func clear_immediately() -> void:
-	_clear_transition_sprites()
-	_transition_active = false
-	_transition_elapsed = 0.0
-	set_process(false)
-	for child in get_children():
-		remove_child(child)
-		child.free()
-	_segments.clear()
+	if _ground_decal != null and is_instance_valid(_ground_decal):
+		if _ground_decal.get_parent() == self:
+			remove_child(_ground_decal)
+		_ground_decal.free()
+	_ground_decal = null
 	_output_slots.clear()
-	_collision_body = null
-	_yard_texture = null
 
 
-func _ensure_layers() -> void:
-	for layer_name in ["BackFenceLayer", "SideFenceLayer", "FrontFenceLayer"]:
-		var layer := Node3D.new()
-		layer.name = layer_name
-		add_child(layer)
-	_collision_body = StaticBody3D.new()
-	_collision_body.name = "FenceCollisions"
-	_collision_body.collision_mask = 0
-	add_child(_collision_body)
-
-
-func _build_fence_segments() -> void:
-	var half_x := float(_yard_size.x) * 0.5
-	var half_z := float(_yard_size.y) * 0.5
-	for index in _yard_size.x:
-		var x := -half_x + 0.5 + float(index)
-		_add_segment(Vector3(x, 0.0, -half_z), 0, get_node("BackFenceLayer"), -0.35)
-		_add_segment(Vector3(x, 0.0, half_z), 0, get_node("FrontFenceLayer"), 0.45)
-	for index in _yard_size.y:
-		var z := -half_z + 0.5 + float(index)
-		_add_segment(Vector3(-half_x, 0.0, z), 1, get_node("SideFenceLayer"), 0.05)
-		_add_segment(Vector3(half_x, 0.0, z), 1, get_node("SideFenceLayer"), 0.05)
-
-
-func _add_segment(position_value: Vector3, axis: int, parent: Node, sorting: float) -> void:
-	if _yard_texture == null:
-		return
-	var sprite := Sprite3D.new()
-	sprite.texture = _yard_texture
-	sprite.region_enabled = true
-	sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	sprite.double_sided = true
-	sprite.pixel_size = SEGMENT_WORLD_SIZE / SEGMENT_PIXEL_SIZE
-	sprite.scale = Vector3(1.0, SEGMENT_VERTICAL_SCALE, 1.0)
-	sprite.position = position_value + Vector3(0.0, SEGMENT_BASE_Y, 0.0)
-	sprite.rotation.y = 0.0 if axis == 0 else PI * 0.5
-	sprite.sorting_offset = sorting
-	sprite.set_meta("axis", axis)
-	parent.add_child(sprite)
-	_segments.append(sprite)
-
-
-func _build_perimeter_collision() -> void:
-	var half_x := float(_yard_size.x) * 0.5
-	var half_z := float(_yard_size.y) * 0.5
-	_add_box_collision(Vector3(float(_yard_size.x), 0.8, 0.12), Vector3(0.0, 0.4, -half_z))
-	_add_box_collision(Vector3(float(_yard_size.x), 0.8, 0.12), Vector3(0.0, 0.4, half_z))
-	_add_box_collision(Vector3(0.12, 0.8, float(_yard_size.y)), Vector3(-half_x, 0.4, 0.0))
-	_add_box_collision(Vector3(0.12, 0.8, float(_yard_size.y)), Vector3(half_x, 0.4, 0.0))
-
-
-func _add_box_collision(size: Vector3, position_value: Vector3) -> void:
-	var collision := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = size
-	collision.shape = shape
-	collision.position = position_value
-	_collision_body.add_child(collision)
+func _build_ground_decal(texture: Texture2D) -> void:
+	_ground_decal = Decal.new()
+	_ground_decal.name = "GroundDecal"
+	_ground_decal.texture_albedo = texture
+	_ground_decal.size = Vector3(
+		float(_yard_size.x) + GROUND_OVERHANG_PER_SIDE * 2.0,
+		GROUND_DECAL_PROJECTION_DEPTH,
+		float(_yard_size.y) + GROUND_OVERHANG_PER_SIDE * 2.0
+	)
+	_ground_decal.position = Vector3(0.0, GROUND_DECAL_CENTER_Y, 0.0)
+	_ground_decal.cull_mask = TerrainBuilderScript.PRODUCTION_GROUND_RENDER_LAYER
+	_ground_decal.upper_fade = 0.0
+	_ground_decal.lower_fade = 0.0
+	add_child(_ground_decal)
 
 
 func _slots_for_size(size: Vector2i) -> Array[Vector3]:
@@ -217,87 +157,19 @@ func _slots_for_size(size: Vector2i) -> Array[Vector3]:
 
 
 func _apply_visual_state() -> void:
-	var tint := get_visual_tint()
-	var progress := clampf(_transition_elapsed / STAGE_CROSSFADE_SECONDS, 0.0, 1.0) if _transition_active else 1.0
-	for sprite in _segments:
-		sprite.region_rect = Rect2(
-			0.0,
-			float(_construction_stage) * ATLAS_FRAME_SIZE.y,
-			ATLAS_FRAME_SIZE.x,
-			ATLAS_FRAME_SIZE.y
-		)
-		sprite.modulate = _tint_with_alpha(tint, progress)
-	for sprite in _transition_sprites:
-		sprite.modulate = _tint_with_alpha(tint, 1.0 - progress)
+	if _ground_decal != null:
+		_ground_decal.modulate = get_visual_tint()
 
 
-func _apply_collision_state() -> void:
-	if _collision_body != null:
-		_collision_body.collision_layer = PHYSICAL_COLLISION_LAYER if _collisions_enabled else 0
-
-
-func _load_yard_texture(style: String) -> Texture2D:
+func _load_ground_texture(style: String) -> Texture2D:
 	var path := str(TEXTURES.get(style, ""))
 	var texture := load(path) as Texture2D if ResourceLoader.exists(path) else null
-	if texture != null and texture.get_size() == ATLAS_SIZE:
+	if texture != null and texture.get_size() == GROUND_TEXTURE_SIZE:
 		return texture
-	if not _warned_atlas_styles.has(style):
-		_warned_atlas_styles[style] = true
+	if not _warned_ground_styles.has(style):
+		_warned_ground_styles[style] = true
 		push_warning(
-			"Missing or malformed production yard atlas '%s'; yard collisions and output slots remain active."
+			"Missing or malformed production ground texture '%s'; ground omitted while output slots remain available."
 			% path
 		)
 	return null
-
-
-func _process(delta: float) -> void:
-	_advance_transition(delta)
-
-
-func _begin_stage_transition(next_stage: int) -> void:
-	_clear_transition_sprites()
-	var tint := get_visual_tint()
-	for sprite in _segments:
-		sprite.modulate = tint
-		var outgoing := sprite.duplicate() as Sprite3D
-		outgoing.set_meta("yard_transition", true)
-		sprite.get_parent().add_child(outgoing)
-		_transition_sprites.append(outgoing)
-	_construction_stage = next_stage
-	if _transition_sprites.is_empty():
-		_transition_active = false
-		_transition_elapsed = 0.0
-		set_process(false)
-		_apply_visual_state()
-		return
-	_transition_active = true
-	_transition_elapsed = 0.0
-	set_process(true)
-	_apply_visual_state()
-
-
-func _advance_transition(delta: float) -> void:
-	if not _transition_active:
-		return
-	_transition_elapsed = minf(_transition_elapsed + maxf(delta, 0.0), STAGE_CROSSFADE_SECONDS)
-	if _transition_elapsed >= STAGE_CROSSFADE_SECONDS:
-		_clear_transition_sprites()
-		_transition_active = false
-		_transition_elapsed = 0.0
-		set_process(false)
-	_apply_visual_state()
-
-
-func _clear_transition_sprites() -> void:
-	for sprite in _transition_sprites:
-		if not is_instance_valid(sprite):
-			continue
-		var parent := sprite.get_parent()
-		if parent != null:
-			parent.remove_child(sprite)
-		sprite.free()
-	_transition_sprites.clear()
-
-
-func _tint_with_alpha(tint: Color, alpha_multiplier: float) -> Color:
-	return Color(tint.r, tint.g, tint.b, tint.a * clampf(alpha_multiplier, 0.0, 1.0))

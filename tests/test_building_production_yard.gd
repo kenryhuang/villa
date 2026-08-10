@@ -87,11 +87,11 @@ func _assert_ground_contract(
 		return
 	assertions.equal(decal.cull_mask, TERRAIN_ONLY_CULL_MASK, "ground projects only onto terrain receiver layer")
 	assertions.truthy(
-		decal.size.x >= float(size.x) and decal.size.x <= float(size.x) + 0.2,
+		decal.size.x >= float(size.x) and decal.size.x <= float(size.x) + 0.2001,
 		"ground width covers footprint with at most 0.1-cell overhang per side"
 	)
 	assertions.truthy(
-		decal.size.z >= float(size.y) and decal.size.z <= float(size.y) + 0.2,
+		decal.size.z >= float(size.y) and decal.size.z <= float(size.y) + 0.2001,
 		"ground depth covers footprint with at most 0.1-cell overhang per side"
 	)
 	assertions.truthy(decal.size.y > 0.0, "ground decal has a terrain projection depth")

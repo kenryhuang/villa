@@ -6,6 +6,7 @@ const SUBDIVISIONS := 96
 const MIN_HEIGHT := -0.12
 const MAX_HEIGHT := 0.9
 const HEIGHTMAP_PATH := "res://assets/terrain/heightmap-valley.png"
+const PRODUCTION_GROUND_RENDER_LAYER := 1 << 7
 
 var height_image: Image
 
@@ -56,6 +57,7 @@ func build() -> bool:
 	mesh_instance.mesh = surface.commit()
 	mesh_instance.material_override = _terrain_material()
 	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mesh_instance.layers = 1 | PRODUCTION_GROUND_RENDER_LAYER
 	add_child(mesh_instance)
 	var body := StaticBody3D.new()
 	body.name = "TerrainBody"
