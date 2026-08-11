@@ -15,31 +15,41 @@ const CATEGORY_IDS := [
 ]
 const SORT_IDS := ["recommended", "rise", "fall", "shortage", "owned_quantity", "name"]
 const SORT_LABELS := ["推荐", "涨幅", "跌幅", "紧缺", "持有量", "名称"]
+const DETAIL_CARD_WIDTH := 520.0
+const TRADE_CARD_WIDTH := 300.0
 
+@onready var columns: HBoxContainer = $Columns
+@onready var catalog_card: Control = $Columns/CatalogColumn
+@onready var detail_card: Control = $Columns/DetailColumn
 @onready var category_buttons := {
-	"raw_materials": $Columns/CatalogColumn/CategoryList/RawMaterials,
-	"crops": $Columns/CatalogColumn/CategoryList/Crops,
-	"processed_materials": $Columns/CatalogColumn/CategoryList/ProcessedMaterials,
-	"food_handicrafts": $Columns/CatalogColumn/CategoryList/FoodHandicrafts,
-	"rare_goods": $Columns/CatalogColumn/CategoryList/RareGoods,
+	"raw_materials": $Columns/CatalogColumn/CatalogContent/CategoryTabs/RawMaterials,
+	"crops": $Columns/CatalogColumn/CatalogContent/CategoryTabs/Crops,
+	"processed_materials": $Columns/CatalogColumn/CatalogContent/CategoryTabs/ProcessedMaterials,
+	"food_handicrafts": $Columns/CatalogColumn/CatalogContent/CategoryTabs/FoodHandicrafts,
+	"rare_goods": $Columns/CatalogColumn/CatalogContent/CategoryTabs/RareGoods,
 }
-@onready var sort_option: OptionButton = $Columns/CatalogColumn/SortMode
-@onready var item_list: ItemList = $Columns/CatalogColumn/ItemList
-@onready var item_scroll: ScrollContainer = $Columns/CatalogColumn/ItemScroll
-@onready var item_rows: VBoxContainer = $Columns/CatalogColumn/ItemScroll/ItemRows
-@onready var empty_label: Label = $Columns/CatalogColumn/EmptyLabel
-@onready var item_name_label: Label = $Columns/DetailColumn/ItemNameLabel
-@onready var mid_price_label: Label = $Columns/DetailColumn/MidPriceLabel
-@onready var buy_price_label: Label = $Columns/DetailColumn/BuyPriceLabel
-@onready var sell_price_label: Label = $Columns/DetailColumn/SellPriceLabel
-@onready var stock_label: Label = $Columns/DetailColumn/StockLabel
-@onready var trend_label: Label = $Columns/DetailColumn/TrendLabel
-@onready var flow_label: Label = $Columns/DetailColumn/FlowLabel
-@onready var price_chart = $Columns/DetailColumn/PriceChart
-@onready var tags_label: Label = $Columns/DetailColumn/TagsLabel
-@onready var source_use_label: Label = $Columns/DetailColumn/SourceUseLabel
-@onready var processing_label: Label = $Columns/DetailColumn/ProcessingLabel
+@onready var sort_option: OptionButton = $Columns/CatalogColumn/CatalogContent/SortMode
+@onready var item_list: ItemList = $Columns/CatalogColumn/CatalogContent/ItemList
+@onready var item_scroll: ScrollContainer = $Columns/CatalogColumn/CatalogContent/ItemScroll
+@onready var item_rows: VBoxContainer = $Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows
+@onready var empty_label: Label = $Columns/CatalogColumn/CatalogContent/EmptyLabel
+@onready var item_name_label: Label = $Columns/DetailColumn/DetailContent/DetailHeader/ItemNameLabel
+@onready var mid_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel
+@onready var buy_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel
+@onready var sell_price_label: Label = $Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel
+@onready var stock_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel
+@onready var trend_label: Label = $Columns/DetailColumn/DetailContent/DetailHeader/TrendLabel
+@onready var supply_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel
+@onready var demand_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel
+@onready var liquidity_label: Label = $Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel
+@onready var price_chart = $Columns/DetailColumn/DetailContent/PriceChart
+@onready var chart_title: Label = $Columns/DetailColumn/DetailContent/ChartTitle
+@onready var tags_label: Label = $Columns/DetailColumn/DetailContent/TagsLabel
+@onready var source_use_label: Label = $Columns/DetailColumn/DetailContent/SourceUseLabel
+@onready var processing_label: Label = $Columns/DetailColumn/DetailContent/ProcessingLabel
 @onready var trade_panel = $Columns/TradePanel
+@onready var narrow_detail_scroll: ScrollContainer = $NarrowDetailScroll
+@onready var narrow_detail_stack: VBoxContainer = $NarrowDetailScroll/NarrowDetailStack
 
 var inventory_ref: InventorySystem
 var economy_ref: EconomySystem
@@ -50,6 +60,7 @@ var sort_mode := "recommended"
 var _item_ids: Array[String] = []
 var _layout_mode := "three_column"
 var _drawer_open := false
+var _logical_layout_size := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -135,17 +146,15 @@ func refresh_snapshot() -> void:
 	mid_price_label.text = "中间价：%d" % mid
 	buy_price_label.text = "买入价：%d" % buy_price
 	sell_price_label.text = "卖出价：%d" % sell_price
-	stock_label.text = "库存：%d / 目标 %d　%s" % [
+	stock_label.text = "库存\n%d / %d · %s" % [
 		int(state.get("stock", 0)),
 		int(state.get("target_stock", 0)),
 		_stock_status(state),
 	]
 	trend_label.text = "趋势：%s" % _trend_text(history)
-	flow_label.text = "今日供给 %d　今日需求 %d　流动量 %d" % [
-		int(state.get("supply", 0)),
-		int(state.get("demand", 0)),
-		int(state.get("daily_liquidity", 0)),
-	]
+	supply_label.text = "今日供给\n%d" % int(state.get("supply", 0))
+	demand_label.text = "今日需求\n%d" % int(state.get("demand", 0))
+	liquidity_label.text = "流动量\n%d" % int(state.get("daily_liquidity", 0))
 	price_chart.set_series(
 		history,
 		_history_dates(history.size()),
@@ -171,6 +180,7 @@ func handle_top_escape() -> bool:
 
 
 func apply_responsive_layout(logical_size: Vector2) -> void:
+	_logical_layout_size = logical_size
 	var next_mode: String = EconomyLayoutScript.mode_for_size(logical_size)
 	if next_mode == _layout_mode:
 		_apply_drawer_visibility()
@@ -182,7 +192,17 @@ func apply_responsive_layout(logical_size: Vector2) -> void:
 
 
 func apply_economy_ui_scale(ui_scale: float) -> void:
-	var physical_size := size if size.x > 0.0 else get_viewport_rect().size
+	# Child minimum widths may make this container wider than the space the shell
+	# actually owns. Base the breakpoint on the centered modal's available width
+	# so a narrow window cannot accidentally select the three-card layout.
+	var physical_size := size
+	if get_parent() != null and get_parent().name == &"PageHost":
+		physical_size = EconomyLayoutScript.panel_rect_for(
+			get_viewport_rect().size,
+			EconomyLayoutScript.MARKET_PANEL_MAX_SIZE
+		).size
+	elif physical_size.x <= 0.0:
+		physical_size = get_viewport_rect().size
 	apply_responsive_layout(EconomyLayoutScript.logical_size_for(physical_size, ui_scale))
 
 
@@ -195,7 +215,7 @@ func open_details_drawer() -> void:
 		return
 	_drawer_open = true
 	_apply_drawer_visibility()
-	var first_trade_control := $Columns/TradePanel/Content/QuantityRow/QuantitySpin as Control
+	var first_trade_control := trade_panel.get_node("Content/QuantityRow/QuantitySpin") as Control
 	if first_trade_control != null and first_trade_control.is_visible_in_tree():
 		first_trade_control.grab_focus()
 
@@ -204,20 +224,78 @@ func _apply_drawer_visibility() -> void:
 	if not is_node_ready():
 		return
 	if _layout_mode == "three_column":
-		$Columns/CatalogColumn.visible = true
-		$Columns/DetailColumn.visible = true
-		$Columns/TradePanel.visible = true
+		_restore_cards_to_columns()
+		catalog_card.visible = true
+		detail_card.visible = true
+		trade_panel.visible = true
 		_set_compact_detail(false)
 		return
-	$Columns/CatalogColumn.visible = not _drawer_open
-	$Columns/DetailColumn.visible = _drawer_open
-	$Columns/TradePanel.visible = _drawer_open
+	if not _drawer_open:
+		_restore_cards_to_columns()
+		catalog_card.visible = true
+		detail_card.visible = false
+		trade_panel.visible = false
+		_set_compact_detail(true)
+		return
+	if _logical_layout_size.x < EconomyLayoutScript.NARROW_STACK_BREAKPOINT:
+		detail_card.visible = true
+		trade_panel.visible = true
+		_move_card(detail_card, narrow_detail_stack)
+		_move_card(trade_panel, narrow_detail_stack)
+		var detail_height: float = detail_card.get_combined_minimum_size().y
+		var trade_content := trade_panel.get_node("Content") as Control
+		var trade_height: float = trade_content.get_combined_minimum_size().y + 32.0
+		detail_card.custom_minimum_size.x = 0.0
+		trade_panel.custom_minimum_size.x = 0.0
+		detail_card.custom_minimum_size.y = detail_height
+		trade_panel.custom_minimum_size.y = trade_height
+		detail_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		trade_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		catalog_card.visible = false
+		columns.visible = false
+		narrow_detail_scroll.visible = true
+	else:
+		_restore_cards_to_columns()
+		catalog_card.visible = false
+		detail_card.visible = true
+		trade_panel.visible = true
 	_set_compact_detail(true)
 
 
+func _restore_cards_to_columns() -> void:
+	_move_card(detail_card, columns)
+	_move_card(trade_panel, columns)
+	columns.move_child(detail_card, 1)
+	columns.move_child(trade_panel, 2)
+	detail_card.custom_minimum_size.x = DETAIL_CARD_WIDTH
+	trade_panel.custom_minimum_size.x = TRADE_CARD_WIDTH
+	detail_card.custom_minimum_size.y = 0.0
+	trade_panel.custom_minimum_size.y = 0.0
+	detail_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trade_panel.size_flags_horizontal = Control.SIZE_FILL
+	columns.visible = true
+	narrow_detail_scroll.visible = false
+
+
+func _move_card(card: Control, target: Container) -> void:
+	if card.get_parent() == target:
+		return
+	card.reparent(target, false)
+
+
 func _set_compact_detail(compact: bool) -> void:
-	for control: Control in [price_chart, tags_label, source_use_label, processing_label, $Columns/DetailColumn/ChartTitle]:
-		control.visible = not compact
+	var logical_height := _logical_layout_size.y
+	if logical_height <= 0.0:
+		logical_height = EconomyLayoutScript.logical_size_for(
+			size,
+			EconomyLayoutScript.get_ui_scale()
+		).y
+	var show_chart := not compact or logical_height >= 420.0
+	price_chart.visible = show_chart
+	chart_title.visible = show_chart
+	tags_label.visible = false
+	source_use_label.visible = false
+	processing_label.visible = false
 
 
 func _on_viewport_size_changed() -> void:
@@ -259,7 +337,7 @@ func _rebuild_item_list() -> void:
 		item_rows.add_child(_create_item_row(definition, state, history, row_text))
 		_item_ids.append(candidate_id)
 	empty_label.visible = _item_ids.is_empty()
-	$Columns/CatalogColumn/ItemScroll.visible = not _item_ids.is_empty()
+	$Columns/CatalogColumn/CatalogContent/ItemScroll.visible = not _item_ids.is_empty()
 	if _item_ids.is_empty():
 		selected_item_id = ""
 		_show_empty_detail()
@@ -302,6 +380,8 @@ func _create_item_row(
 	var item_id := str(definition.get("id", ""))
 	var row := PanelContainer.new()
 	row.name = "ItemRow_%s" % item_id
+	row.custom_minimum_size = Vector2(0.0, EconomyLayoutScript.LIST_ROW_HEIGHT)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.set_meta("item_id", item_id)
 	row.set_meta("stock", int(state.get("stock", 0)))
 	row.set_meta("owned", inventory_ref.get_item_count(item_id) if inventory_ref != null else 0)
@@ -334,6 +414,8 @@ func _create_item_row(
 	select_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	select_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	select_button.flat = true
+	select_button.clip_text = true
+	select_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	select_button.toggle_mode = true
 	select_button.text = row_text
 	select_button.tooltip_text = "选择%s" % str(definition.get("name", item_id))
@@ -352,7 +434,8 @@ func _create_item_row(
 	var urgent_badge := Label.new()
 	urgent_badge.name = "UrgentBadge"
 	urgent_badge.visible = _is_urgent(state)
-	urgent_badge.text = "紧急需求"
+	urgent_badge.custom_minimum_size = Vector2(44.0, 0.0)
+	urgent_badge.text = "紧缺"
 	urgent_badge.add_theme_color_override("font_color", Color("#B65C4B"))
 	urgent_badge.add_theme_font_size_override("font_size", 16)
 	urgent_badge.tooltip_text = "库存紧缺或今日需求达到流动量"
@@ -496,9 +579,11 @@ func _show_empty_detail() -> void:
 	mid_price_label.text = "中间价：—"
 	buy_price_label.text = "买入价：—"
 	sell_price_label.text = "卖出价：—"
-	stock_label.text = "库存：—"
+	stock_label.text = "库存\n—"
 	trend_label.text = "趋势：—"
-	flow_label.text = "今日供给 —　今日需求 —　流动量 —"
+	supply_label.text = "今日供给\n—"
+	demand_label.text = "今日需求\n—"
+	liquidity_label.text = "流动量\n—"
 	price_chart.set_history([])
 	tags_label.text = "标签：—"
 	trade_panel.set_item("")

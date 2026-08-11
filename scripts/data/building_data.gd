@@ -67,6 +67,7 @@ const ACTIVITY_FPS := {
 	"quarry": 3.0,
 	"mine": 3.0,
 }
+const PRODUCTION_YARD_STYLES := ["timber", "masonry", "industrial"]
 
 @export var building_id := ""
 @export var display_name := ""
@@ -83,6 +84,7 @@ const ACTIVITY_FPS := {
 @export var visual_size := Vector2.ZERO
 @export var ground_anchor_uv := Vector2(0.5, 1.0)
 @export var activity_fps := 4.0
+@export var production_yard: Dictionary = {}
 
 var effect: String:
 	get:
@@ -128,6 +130,7 @@ static func from_dictionary(source: Dictionary) -> BuildingData:
 		Vector2(0.5, 1.0)
 	)
 	data.activity_fps = float(ACTIVITY_FPS.get(data.building_id, 4.0))
+	data.production_yard = source.get("production_yard", {}).duplicate(true)
 	return data
 
 
@@ -141,4 +144,55 @@ func is_valid() -> bool:
 		and visual_size.x > 0.0
 		and visual_size.y > 0.0
 		and ResourceLoader.exists(scene_path)
+		and _is_valid_production_yard()
 	)
+
+
+func has_production_yard() -> bool:
+	return not production_yard.is_empty()
+
+
+func production_yard_size() -> Vector2i:
+	return production_yard.get("size", footprint) as Vector2i
+
+
+func structure_footprint() -> Vector2i:
+	return production_yard.get("structure_footprint", footprint) as Vector2i
+
+
+func production_yard_style() -> String:
+	return str(production_yard.get("style", ""))
+
+
+func production_yard_offset() -> Vector3:
+	return Vector3(0.0, 0.0, float(production_yard.get("building_offset_z", 0.0)))
+
+
+func production_yard_output_capacity() -> int:
+	return int(production_yard.get("output_capacity", 0))
+
+
+func _is_valid_production_yard() -> bool:
+	if production_yard.is_empty():
+		return true
+	var yard_size: Variant = production_yard.get("size")
+	var structure_size: Variant = production_yard.get("structure_footprint")
+	var offset: Variant = production_yard.get("building_offset_z")
+	var output_capacity: Variant = production_yard.get("output_capacity")
+	if not yard_size is Vector2i or not structure_size is Vector2i:
+		return false
+	if yard_size != footprint or yard_size.x not in [3, 4] or yard_size.y != yard_size.x:
+		return false
+	if structure_size.x <= 0 or structure_size.y <= 0:
+		return false
+	if structure_size.x > yard_size.x or structure_size.y > yard_size.y:
+		return false
+	if production_yard_style() not in PRODUCTION_YARD_STYLES:
+		return false
+	if typeof(offset) not in [TYPE_FLOAT, TYPE_INT] or not is_finite(float(offset)):
+		return false
+	if float(offset) > 0.0 or float(offset) < -2.0:
+		return false
+	if typeof(output_capacity) != TYPE_INT or int(output_capacity) <= 0:
+		return false
+	return true

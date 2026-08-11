@@ -59,7 +59,7 @@ const TOOL_BY_SLOT := [
 	ToolSystem.ToolType.PICKAXE,
 	ToolSystem.ToolType.FISHING_ROD,
 ]
-const INTERACTION_MASK := 4 | 64 | 128
+const INTERACTION_MASK := 4 | 64
 const GROUND_MASK := 1
 const VALID_COLOR := Color(0.25, 0.9, 0.38, 0.5)
 const INVALID_COLOR := Color(0.95, 0.2, 0.18, 0.5)
@@ -85,6 +85,7 @@ var _pointer_position: Variant
 var _hovered_tree: Node
 var _hovered_tree_allowed := false
 var _hovered_gather_slot := -1
+var _hovered_output_pile: Node
 
 
 static func resolve_action(
@@ -434,7 +435,18 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 
 
 func perform_target_interaction(target: Node) -> bool:
-	if target == null or _action_mode != ActionMode.FARMING:
+	if target == null:
+		return false
+	if target.is_in_group("building_output_pile"):
+		return false
+	if _action_mode == ActionMode.BUILDING:
+		if (
+			target.has_method("can_open_economy_panel")
+			and bool(target.call("can_open_economy_panel"))
+			and target.has_method("interact")
+		):
+			target.interact(player_ref)
+			return true
 		return false
 	if target.has_method("can_gather"):
 		if target.has_method("is_chop_eligible") and not bool(target.call("is_chop_eligible")):
@@ -465,6 +477,7 @@ func _process(_delta: float) -> void:
 		return
 	if _pointer_over_ui():
 		_clear_tree_hover()
+		_clear_output_hover()
 		grid_system.clear_highlights()
 		return
 	_update_gather_hover_from_pointer()
@@ -528,6 +541,12 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if _pointer_over_ui():
 		return false
 	var ground_point = _raycast_to_ground(pointer_position)
+	var interaction_hit := _raycast_to_interaction(pointer_position)
+	if not interaction_hit.is_empty():
+		var interaction_target: Node = interaction_hit.get("target")
+		var hit_position: Vector3 = interaction_hit.get("position", Vector3.ZERO)
+		if _try_interaction_hit(interaction_target, hit_position):
+			return true
 	if _action_mode == ActionMode.BUILDING:
 		if (
 			_selected_slot < 0
@@ -539,15 +558,6 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 			return false
 		var grid_position = grid_system.world_to_grid(ground_point.x, ground_point.z)
 		return perform_build_action(grid_position.x, grid_position.y) != null
-
-	var interaction_hit := _raycast_to_interaction(pointer_position)
-	if not interaction_hit.is_empty():
-		var interaction_target: Node = interaction_hit.get("target")
-		var hit_position: Vector3 = interaction_hit.get("position", Vector3.ZERO)
-		if interaction_target != null and interaction_target.has_method("can_gather"):
-			return perform_target_interaction(interaction_target)
-		if _point_in_player_range(hit_position):
-			return perform_target_interaction(interaction_target)
 
 	if not ground_point is Vector3 or grid_system == null:
 		return false
@@ -561,8 +571,46 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	)
 
 
+func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:
+	if target == null:
+		return false
+	if _action_mode == ActionMode.BUILDING:
+		return (
+			_point_in_player_range(hit_position)
+			and perform_target_interaction(target)
+		)
+	if target.has_method("can_gather"):
+		return perform_target_interaction(target)
+	if _point_in_player_range(hit_position):
+		return perform_target_interaction(target)
+	return false
+
+
 func _update_tree_hover_from_pointer() -> void:
 	_update_gather_hover_from_pointer()
+
+
+func _update_output_hover_from_pointer() -> void:
+	var hit := _raycast_to_interaction(_effective_pointer_position())
+	_update_output_hover(hit.get("target") as Node)
+
+
+func _update_output_hover(target: Node) -> void:
+	var next_target: Node
+	if target != null and target.is_in_group("building_output_pile"):
+		next_target = target
+	if next_target == _hovered_output_pile:
+		return
+	if _hovered_output_pile != null and is_instance_valid(_hovered_output_pile):
+		if _hovered_output_pile.has_method("set_pointer_hovered"):
+			_hovered_output_pile.call("set_pointer_hovered", false)
+	_hovered_output_pile = next_target
+	if _hovered_output_pile != null and _hovered_output_pile.has_method("set_pointer_hovered"):
+		_hovered_output_pile.call("set_pointer_hovered", true)
+
+
+func _clear_output_hover() -> void:
+	_update_output_hover(null)
 
 
 func _update_gather_hover_from_pointer() -> void:

@@ -7,10 +7,12 @@ const ProgressionSystemScript = preload("res://scripts/systems/economy_progressi
 const ModalCoordinatorScript = preload("res://scripts/ui/economy_modal_coordinator.gd")
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
+const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 
 const UI_SCENE := "res://scenes/ui/economy/building_economy_ui.tscn"
 const PRODUCTION_SCENE := "res://scenes/ui/economy/building_production_panel.tscn"
 const STATUS_SCENE := "res://scenes/ui/economy/building_status_panel.tscn"
+const MAINTENANCE_SCENE := "res://scenes/ui/economy/building_maintenance_card.tscn"
 
 var _owned_nodes: Array[Node] = []
 
@@ -41,29 +43,30 @@ func _test_routing(assertions: TestAssert) -> void:
 
 func _test_scene_contracts(assertions: TestAssert) -> void:
 	_check_scene(assertions, UI_SCENE, [
-		"ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
-		"ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel",
-		"ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton",
-		"ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel",
-		"ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel",
+		"ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel",
 		"WorldRangeOverlay",
 	])
 	_check_scene(assertions, PRODUCTION_SCENE, [
-		"ThreeColumns/RecipeColumn/RecipeList",
-		"ThreeColumns/QueueColumn/QueueSlots",
-		"ThreeColumns/StorageColumn/StorageList",
-		"ThreeColumns/StorageColumn/CollectAllButton",
-		"RecipeDetails/InputLabel",
-		"RecipeDetails/OutputLabel",
-		"RecipeDetails/DurationLabel",
-		"RecipeDetails/PricingLabel",
-		"RecipeDetails/MissingLabel",
+		"Sections/RecipeColumn/Content/RecipeScroll/RecipeList",
+		"Sections/ProcessColumn/Content/Flow/InputItems/InputLabel",
+		"Sections/ProcessColumn/Content/Flow/OutputItems/OutputLabel",
+		"Sections/ProcessColumn/Content/Metrics/DurationLabel",
+		"Sections/ProcessColumn/Content/Metrics/PricingLabel",
+		"Sections/ProcessColumn/Content/MissingLabel",
+		"Sections/RightColumn/Content/QueueCard/QueueScroll/QueueSlots",
+		"Sections/RightColumn/Content/StorageCard/StorageList",
+		"Sections/RightColumn/Content/StorageCard/CollectAllButton",
 		"FeedbackLabel",
-		"RecipeDetails/BatchControls/BatchSpinBox",
-		"RecipeDetails/BatchControls/MaxButton",
-		"RecipeDetails/BatchControls/StartButton",
+		"Sections/ProcessColumn/Content/BatchControls/BatchSpinBox",
+		"Sections/ProcessColumn/Content/BatchControls/MaxButton",
+		"Sections/ProcessColumn/Content/BatchControls/StartButton",
 	])
 	_check_scene(assertions, STATUS_SCENE, [
+		"MaintenanceCard",
 		"SummaryFields",
 		"InputActions",
 		"StorageList",
@@ -71,6 +74,46 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Actions/RangePreviewButton",
 		"FeedbackLabel",
 	])
+	_check_scene(assertions, MAINTENANCE_SCENE, [
+		"Header/StateDot",
+		"Header/StateLabel",
+		"DeadlineLabel",
+		"Costs/GoldLabel",
+		"Costs/WoodLabel",
+		"Costs/StoneLabel",
+		"RepairProgress",
+		"ActionButton",
+		"FeedbackLabel",
+	])
+	var production_panel := (load(PRODUCTION_SCENE) as PackedScene).instantiate() as Control
+	var sections := production_panel.get_node("Sections") as HBoxContainer
+	var recipe_card := production_panel.get_node("Sections/RecipeColumn") as Control
+	var process_card := production_panel.get_node("Sections/ProcessColumn") as Control
+	var activity_card := production_panel.get_node("Sections/RightColumn") as Control
+	assertions.equal(recipe_card.custom_minimum_size.x, 280.0, "production recipe card has a stable width")
+	assertions.equal(process_card.custom_minimum_size.x, 520.0, "production process card owns the center")
+	assertions.equal(activity_card.custom_minimum_size.x, 300.0, "production activity card has a stable width")
+	assertions.equal(recipe_card.size_flags_horizontal, Control.SIZE_FILL, "production recipe card remains fixed width")
+	assertions.equal(activity_card.size_flags_horizontal, Control.SIZE_FILL, "production activity card remains fixed width")
+	assertions.equal(process_card.size_flags_horizontal, Control.SIZE_EXPAND_FILL, "production process card receives flexible width")
+	assertions.equal(sections.get_theme_constant("separation"), 16, "production cards use the shared grid gap")
+	for control_path in [
+		"Sections/ProcessColumn/Content/BatchControls/BatchSpinBox",
+		"Sections/ProcessColumn/Content/BatchControls/MaxButton",
+		"Sections/ProcessColumn/Content/BatchControls/StartButton",
+		"Sections/RightColumn/Content/StorageCard/CollectAllButton",
+	]:
+		assertions.equal(
+			(production_panel.get_node(control_path) as Control).custom_minimum_size.y,
+			44.0,
+			"production control %s uses the standard height" % control_path
+		)
+	assertions.equal(
+		(production_panel.get_node("Sections/ProcessColumn/Content/BatchControls/StartButton") as Control).custom_minimum_size.x,
+		148.0,
+		"production primary action uses the designed width"
+	)
+	production_panel.free()
 
 
 func _feature_resources_exist() -> bool:
@@ -115,6 +158,20 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.truthy(ui.open_for(windmill), "completed windmill opens")
 	var panel = ui.production_panel
 	assertions.equal(panel.recipe_rows.size(), 3, "windmill exposes all three recipes")
+	panel.apply_responsive_layout(Vector2(800.0, 720.0))
+	panel.open_details_drawer()
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	ui.call("_unhandled_input", escape)
+	assertions.truthy(ui.is_open(), "first Escape returns from production details without closing the building window")
+	assertions.truthy(panel.recipe_card.visible, "first Escape restores the production recipe list")
+	assertions.equal(panel.process_card.get_parent(), panel.sections, "first Escape restores the production card hierarchy")
+	panel.apply_responsive_layout(Vector2(1920.0, 1080.0))
+	var first_recipe_button := panel.recipe_list.get_child(0) as Button
+	assertions.equal(first_recipe_button.custom_minimum_size.y, 52.0, "dynamic recipe rows use the aligned list height")
+	assertions.truthy(first_recipe_button.clip_text, "dynamic recipe names clip inside the recipe card")
+	assertions.equal(first_recipe_button.text_overrun_behavior, TextServer.OVERRUN_TRIM_ELLIPSIS, "dynamic recipe names use ellipsis")
 	assertions.equal(panel.storage_capacity_label.text, "产物种类 0/3", "crafting storage shows authoritative output type slots")
 	panel.select_recipe("flour")
 	panel.set_batches(1)
@@ -123,13 +180,14 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.recipe_detail.get("inputs"), {"grain": 2}, "recipe details expose exact inputs")
 	assertions.equal(panel.recipe_detail.get("outputs"), {"flour": 1}, "recipe details expose exact outputs")
 	assertions.equal(panel.queue_slots.size(), 2, "production view always exposes two queue slots")
+	assertions.equal(panel.queue_slot_nodes[0].custom_minimum_size.y, 52.0, "queue slots use the shared dynamic row height")
 	assertions.truthy(panel.recipe_detail.has("margin_status"), "recipe detail exposes margin status")
 	assertions.truthy(panel.recipe_detail.has("duration_minutes"), "recipe detail exposes duration")
 	var grain_before := inventory.get_item_count("grain")
 	panel.start_button.pressed.emit()
 	assertions.equal(inventory.get_item_count("grain"), grain_before - 2, "one press deducts one batch exactly once after repeated configure")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "one press creates one authoritative job")
-	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "生产中", "running queue state renders in Chinese")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "生产中", "running queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "运行中", "shell title state updates in the same frame when production starts")
 	ui.close()
 	assertions.truthy(ui.open_for(windmill), "windmill reopens")
@@ -164,13 +222,20 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	ui.open_for(blocked)
 	panel = ui.production_panel
 	assertions.equal(panel.queue_slots[0].state, "output-full", "UI output-full state comes from production snapshot")
-	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "产物已满", "output-full queue state renders in Chinese")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "产物已满", "output-full queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "仓满暂停", "shell title state reflects output-full immediately")
 	blocked_production.set_maintenance_due_day(blocked, blocked_production.get_current_day())
 	panel.refresh_snapshot()
 	assertions.equal(panel.queue_slots[0].state, "maintenance-paused", "UI maintenance pause comes from production snapshot")
-	assertions.equal(panel.queue_slot_nodes[0].get_node("StateLabel").text, "维护暂停", "maintenance queue state renders in Chinese")
+	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "维护暂停", "maintenance queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "维护暂停", "shell title state reflects maintenance immediately")
+	ui.close()
+	assertions.truthy(ui.open_for(blocked), "overdue crafting building reopens")
+	assertions.truthy(ui.status_panel.visible, "overdue crafting building opens maintenance status page")
+	assertions.truthy(not ui.production_tab.disabled, "overdue crafting building keeps production tab available")
+	assertions.truthy(not ui.status_tab.disabled, "overdue crafting building keeps status tab available")
+	ui.production_tab.pressed.emit()
+	assertions.truthy(ui.production_panel.visible, "crafting production tab remains selectable during repair stop")
 	var connections: int = panel.get_signal_connection_list("snapshot_changed").size() if panel.has_signal("snapshot_changed") else 0
 	assertions.equal(connections, 1, "repeated configure keeps exactly one shell snapshot listener")
 	blocked.producer_state.outputs = {"honey": 2}
@@ -178,6 +243,9 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	blocked_inventory.reset_slots()
 	blocked_inventory.add_item("honey", 98)
 	panel.refresh_snapshot()
+	var output_row := panel.storage_list.get_child(0) as Control
+	assertions.equal(output_row.custom_minimum_size.y, 52.0, "dynamic output rows use the aligned list height")
+	assertions.truthy(output_row.has_node("CollectButton"), "dynamic output rows expose an independent collect control")
 	panel.request_collect_item("honey")
 	assertions.equal(panel.failure_reason, "inventory_capacity", "production item collect exposes structured capacity reason")
 	assertions.truthy(panel.failure_message.contains("×1"), "production item collect shows exact missing quantity")
@@ -202,7 +270,7 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.queue_slots.size(), 4, "level-two queue upgrade exposes all four authoritative slots")
 	assertions.equal(panel.queue_slot_nodes.size(), 4, "queue UI builds four visible slot nodes dynamically")
 	if panel.queue_slot_nodes.size() >= 4:
-		assertions.equal(panel.queue_slot_nodes[3].get_node("StateLabel").text, "等待中", "fourth queued job is visible with a localized state")
+		assertions.equal(panel.queue_slot_nodes[3].get_node("Content/Header/StateLabel").text, "等待中", "fourth queued job is visible with a localized state")
 		var stale_slot: WeakRef = weakref(panel.queue_slot_nodes[3])
 		upgraded.producer_state.jobs.resize(1)
 		upgraded.producer_state.max_queue_slots = 2
@@ -221,7 +289,31 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	var panel = _instantiate_scene(STATUS_SCENE, tree)
 	var overlay = preload("res://scripts/ui/world_range_overlay.gd").new()
 	_track(overlay)
-	panel.configure(production, inventory, fixture.grid, overlay)
+	panel.configure(production, inventory, fixture.progression, fixture.grid, overlay)
+	var maintenance_building := _scene_building("workbench", tree)
+	maintenance_building.grid_x = 40
+	maintenance_building.grid_z = 40
+	production.register_building(maintenance_building)
+	production.set_maintenance_due_day(maintenance_building, production.get_current_day() + 1)
+	var maintenance_quote: Dictionary = fixture.progression.get_maintenance_quote(maintenance_building)
+	for item_id in maintenance_quote.materials:
+		inventory.add_item(str(item_id), int(maintenance_quote.materials[item_id]))
+	var wallet := tree.root.get_node_or_null("GameState")
+	var gold_before := int(wallet.gold)
+	wallet.gold = int(maintenance_quote.gold_cost)
+	panel.show_building(maintenance_building)
+	var maintenance_card := panel.get_node("MaintenanceCard")
+	assertions.equal(maintenance_card.maintenance_state, "warning", "status card shows advance warning")
+	assertions.equal(maintenance_card.get_node("ActionButton").text, "提前维修", "warning offers early repair")
+	assertions.truthy(maintenance_card.get_node("ActionButton").visible, "warning repair button is visible")
+	maintenance_card.get_node("ActionButton").pressed.emit()
+	assertions.equal(production.get_maintenance_state(maintenance_building), "repairing", "card starts authoritative repair")
+	assertions.truthy(maintenance_card.get_node("RepairProgress").visible, "repairing card shows progress")
+	production.advance_repair_time(3.0)
+	maintenance_card.refresh()
+	assertions.equal(maintenance_card.maintenance_state, "normal", "completed repair returns card to normal")
+	assertions.truthy(not maintenance_card.get_node("ActionButton").visible, "normal card hides repair action")
+	wallet.gold = gold_before
 	var required := {
 		"beehive": ["next_output", "mature_flowers", "bonus", "storage"],
 		"chicken_coop": ["animal_count", "feed_stock", "feed_days", "daily_egg_output"],
@@ -425,7 +517,11 @@ func _systems_fixture() -> Dictionary:
 	var production := _track(ProductionSystemScript.new()) as ProductionSystem
 	production.configure(grid, farming, null, inventory)
 	var progression := _track(ProgressionSystemScript.new()) as EconomyProgressionSystem
-	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression}
+	var tool := _track(ToolSystemScript.new()) as ToolSystem
+	tool.configure(grid, inventory, null)
+	var wallet := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("GameState")
+	progression.configure(tool, production, inventory, null, wallet)
+	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression, "tool": tool}
 
 
 func _unlock_recipe(progression: EconomyProgressionSystem, recipe_id: String) -> void:

@@ -117,8 +117,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.equal(
 			main.building_system.get_preview_marker_count(),
-			1,
-			"workbench pointer preview shows its 1x1 footprint"
+			9,
+			"workbench pointer preview shows its 3x3 production yard"
 		)
 
 		var original_state: int = build_cell.state

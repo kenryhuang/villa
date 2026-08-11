@@ -4,6 +4,7 @@ extends CanvasLayer
 ## 农庄 HUD - 体力、金币、等级、季节/日期、时间、快捷栏
 
 signal quick_slot_selected(index: int)
+signal debug_panel_requested
 signal debug_reset_requested
 signal market_requested
 signal notifications_requested
@@ -49,7 +50,9 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var exp_bar: ProgressBar = $TopBar/StatusRow/ExpBar
 @onready var season_label: Label = $TopBar/StatusRow/SeasonLabel
 @onready var time_label: Label = $TopBar/StatusRow/TimeLabel
-@onready var debug_reset_button: Button = $DebugResetButton
+@onready var debug_actions: HBoxContainer = $DebugActions
+@onready var debug_panel_button: Button = $DebugActions/DebugPanelButton
+@onready var debug_reset_button: Button = $DebugActions/DebugResetButton
 @onready var market_button: Button = $EconomyActions/MarketButton
 @onready var notification_button: Button = $EconomyActions/NotificationButton
 @onready var urgent_summaries: VBoxContainer = $UrgentSummaries
@@ -116,6 +119,8 @@ func _ready() -> void:
 			_event_bus.service_unlocked.connect(_on_service_unlocked)
 	if not debug_reset_button.pressed.is_connected(_on_debug_reset_pressed):
 		debug_reset_button.pressed.connect(_on_debug_reset_pressed)
+	if not debug_panel_button.pressed.is_connected(_on_debug_panel_pressed):
+		debug_panel_button.pressed.connect(_on_debug_panel_pressed)
 	if not market_button.pressed.is_connected(_on_market_pressed):
 		market_button.pressed.connect(_on_market_pressed)
 	if not notification_button.pressed.is_connected(_on_notification_pressed):
@@ -312,11 +317,20 @@ func configure_season_system(system: Variant) -> void:
 
 
 func configure_debug_reset(available: bool) -> void:
-	debug_reset_button.visible = available
+	configure_debug_tools(available)
+
+
+func configure_debug_tools(available: bool) -> void:
+	debug_actions.visible = available
+
+
+func _on_debug_panel_pressed() -> void:
+	if debug_actions.visible:
+		debug_panel_requested.emit()
 
 
 func _on_debug_reset_pressed() -> void:
-	if debug_reset_button.visible:
+	if debug_actions.visible:
 		debug_reset_requested.emit()
 
 

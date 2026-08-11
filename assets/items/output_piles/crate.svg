@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="576" height="192" viewBox="0 0 576 192">
+  <defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ca8a4e"/><stop offset="1" stop-color="#7b4c33"/></linearGradient></defs>
+  <g stroke="#573b2f" stroke-width="7" stroke-linejoin="round">
+    <g transform="translate(0)"><ellipse cx="96" cy="166" rx="53" ry="9" fill="#45332b" opacity=".28" stroke="none"/><path d="M46 96h100v70H46z" fill="url(#c)"/><path d="M51 102l90 58m0-58l-90 58" fill="none" stroke="#e0a35f" stroke-width="8"/></g>
+    <g transform="translate(192)"><ellipse cx="96" cy="166" rx="73" ry="10" fill="#45332b" opacity=".3" stroke="none"/><path d="M20 110h82v57H20z" fill="url(#c)"/><path d="M93 73h79v94H93z" fill="#a96b42"/><path d="M99 80l67 80m0-80l-67 80" fill="none" stroke="#d99956" stroke-width="7"/></g>
+    <g transform="translate(384)"><ellipse cx="96" cy="166" rx="86" ry="11" fill="#45332b" opacity=".32" stroke="none"/><path d="M9 116h75v51H9z" fill="url(#c)"/><path d="M71 77h82v90H71z" fill="#ae7044"/><path d="M126 101h58v66h-58z" fill="#c08049"/><path d="M77 84l70 76m0-76l-70 76" fill="none" stroke="#e0a05a" stroke-width="7"/></g>
+  </g>
+</svg>

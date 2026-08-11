@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="576" height="192" viewBox="0 0 576 192">
+  <defs><linearGradient id="o" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8e9aa2"/><stop offset="1" stop-color="#474c51"/></linearGradient></defs>
+  <g stroke="#403b3a" stroke-width="7" stroke-linejoin="round">
+    <g transform="translate(0)"><ellipse cx="96" cy="165" rx="52" ry="10" fill="#332e2c" opacity=".3" stroke="none"/><path d="M48 151l19-40 42-7 34 31-13 31H63z" fill="url(#o)"/><path d="M72 121l18 10 14-17m-4 34l20-11" fill="none" stroke="#c2a46a" stroke-width="6"/></g>
+    <g transform="translate(192)"><ellipse cx="96" cy="165" rx="72" ry="11" fill="#332e2c" opacity=".31" stroke="none"/><path d="M20 150l25-39 39-8 23 17 21-33 38 23 8 48-20 10H40z" fill="url(#o)"/><path d="M51 122l20 9 14-19m35 1l17 9 12-18m-65 47l22-19" fill="none" stroke="#c2a46a" stroke-width="6"/></g>
+    <g transform="translate(384)"><ellipse cx="96" cy="165" rx="86" ry="12" fill="#332e2c" opacity=".33" stroke="none"/><path d="M9 149l21-43 34-12 25 16 18-41 40 19 8 27 25 17-8 31-23 8H31z" fill="url(#o)"/><path d="M35 117l22 9 15-21m31-3l18 10 15-21m-65 68l24-30m43 20l20-20" fill="none" stroke="#c2a46a" stroke-width="6"/><path d="M43 103l16-5m58-20l16 6" stroke="#e3d08d" stroke-width="5"/></g>
+  </g>
+</svg>

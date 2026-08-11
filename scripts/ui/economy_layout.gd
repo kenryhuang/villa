@@ -1,10 +1,18 @@
 class_name EconomyLayout
 extends RefCounted
 
-const DRAWER_BREAKPOINT := 1500.0
+const DRAWER_BREAKPOINT := 1204.0
+const NARROW_STACK_BREAKPOINT := 908.0
 const MINIMUM_SCALE := 0.8
 const MAXIMUM_SCALE := 1.4
 const DEFAULT_SCALE := 1.0
+const MARKET_PANEL_MAX_SIZE := Vector2(1400.0, 760.0)
+const BUILDING_PANEL_MAX_SIZE := Vector2(1400.0, 760.0)
+const VIEWPORT_MARGIN := Vector2(20.0, 20.0)
+const WINDOW_INSET := 24.0
+const CARD_GAP := 16.0
+const CONTROL_HEIGHT := 44.0
+const LIST_ROW_HEIGHT := 52.0
 const THEME_PATH := "res://assets/ui/economy/economy_theme.tres"
 const RESPONSIVE_GROUP := &"economy_responsive_ui"
 
@@ -39,3 +47,15 @@ static func get_ui_scale() -> float:
 
 static func logical_size_for(physical_size: Vector2, ui_scale: float) -> Vector2:
 	return physical_size / clamp_scale(ui_scale)
+
+
+static func panel_rect_for(viewport_size: Vector2, maximum_size: Vector2) -> Rect2:
+	var available := Vector2(
+		maxf(1.0, viewport_size.x - VIEWPORT_MARGIN.x * 2.0),
+		maxf(1.0, viewport_size.y - VIEWPORT_MARGIN.y * 2.0)
+	)
+	var panel_size := Vector2(
+		minf(maximum_size.x, available.x),
+		minf(maximum_size.y, available.y)
+	)
+	return Rect2((viewport_size - panel_size) * 0.5, panel_size)

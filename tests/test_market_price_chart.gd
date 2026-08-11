@@ -8,6 +8,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if not ResourceLoader.exists(CHART_SCRIPT_PATH):
 		return
 	var chart_script: Script = load(CHART_SCRIPT_PATH)
+	assertions.equal(chart_script.call("empty_state_text", []), "历史积累中", "empty chart explains its state")
+	assertions.equal(chart_script.call("empty_state_text", [16]), "", "available history removes empty state")
 	assertions.equal(
 		chart_script.call("normalized_points", []),
 		PackedVector2Array(),
@@ -33,6 +35,26 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.near(seven[3].x, 0.5, 0.001, "seven-day history spaces observations evenly")
 	assertions.equal(seven[0].y, 0.0, "descending high starts at chart top")
 	assertions.equal(seven[6].y, 1.0, "descending low ends at chart bottom")
+	assertions.truthy(chart_script.has_method("smooth_points"), "chart exposes deterministic smoothing")
+	if not chart_script.has_method("smooth_points"):
+		return
+	var anchors := PackedVector2Array([
+		Vector2(0.0, 1.0),
+		Vector2(0.5, 0.25),
+		Vector2(1.0, 0.0),
+	])
+	var smooth: PackedVector2Array = chart_script.call("smooth_points", anchors)
+	assertions.truthy(smooth.size() > anchors.size(), "curve adds intermediate points")
+	assertions.equal(smooth[0], anchors[0], "smooth curve preserves first observation")
+	assertions.equal(smooth[-1], anchors[-1], "smooth curve preserves latest observation")
+	assertions.equal(
+		chart_script.call(
+			"smooth_points",
+			PackedVector2Array([Vector2(0.5, 0.5)])
+		),
+		PackedVector2Array([Vector2(0.5, 0.5)]),
+		"single observation stays a point"
+	)
 	await _test_drawn_hover_context(assertions, tree, chart_script)
 
 

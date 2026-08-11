@@ -128,6 +128,7 @@ func _test_loaded_maintenance_refreshes_greenhouse_on_cursor_sync(assertions: Te
 	inventory.add_item("wood", 1)
 	inventory.add_item("stone", 1)
 	assertions.truthy(production.maintain(greenhouse, WalletDouble.new(), inventory), "loaded overdue greenhouse can be maintained")
+	production.advance_repair_time(ProductionSystemScript.REPAIR_DURATION_SECONDS)
 	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "maintenance restores loaded greenhouse coverage")
 
 
@@ -255,6 +256,7 @@ func _test_maintenance_disables_and_restores_daily_coverage(assertions: TestAsse
 	var wallet := WalletDouble.new()
 	assertions.truthy(production.maintain(wheel, wallet, inventory), "overdue waterwheel maintenance succeeds")
 	assertions.truthy(production.maintain(greenhouse, wallet, inventory), "overdue greenhouse maintenance succeeds")
+	production.advance_repair_time(ProductionSystemScript.REPAIR_DURATION_SECONDS)
 	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "maintenance immediately restores greenhouse coverage")
 	production.apply_daily_effects(3)
 	assertions.truthy(irrigated.watered, "maintenance restores waterwheel coverage next day")

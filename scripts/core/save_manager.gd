@@ -7,6 +7,7 @@ signal load_completed(slot: int)
 const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
+const BUILDING_LAYOUT_VERSION := 2
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
@@ -172,6 +173,8 @@ func _gather_save_data() -> Dictionary:
 	var building_system = _get_building_system()
 	if building_system:
 		data["buildings"] = _serialize_buildings(building_system)
+	if grid_system != null or building_system != null:
+		data["building_layout_version"] = BUILDING_LAYOUT_VERSION
 
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
@@ -444,6 +447,14 @@ func _get_inventory_system() -> Node:
 
 
 func _get_building_system() -> Node:
+	if (
+		_state_transition_owner != null
+		and is_instance_valid(_state_transition_owner)
+		and _has_property(_state_transition_owner, "building_system")
+	):
+		var owned_building_system: Variant = _state_transition_owner.get("building_system")
+		if owned_building_system is Node and is_instance_valid(owned_building_system):
+			return owned_building_system
 	if get_tree() == null:
 		return null
 	return get_tree().get_first_node_in_group("building_system")
@@ -557,6 +568,16 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 func _validate_save_data(data: Dictionary) -> bool:
 	if not _validate_economy_save_data(data):
 		return false
+	var has_layout_snapshot := data.has("grid") or data.has("buildings")
+	if has_layout_snapshot:
+		if (
+			not data.has("building_layout_version")
+			or not _is_integer_number(data.get("building_layout_version"))
+			or int(data["building_layout_version"]) != BUILDING_LAYOUT_VERSION
+		):
+			return false
+	elif data.has("building_layout_version"):
+		return false
 	var inventory = _get_inventory_system()
 	var grid_system = _get_grid_system()
 	var building_system = _get_building_system()
@@ -655,7 +676,7 @@ func _validate_economy_building_keys(data: Dictionary) -> bool:
 		if producer.has("storage_quantity_capacity") and int(producer.storage_quantity_capacity) != ProductionSystemScript.expected_storage_quantity_capacity(str(building_record.building_id), int(levels.get("storage", 0))):
 			return false
 	var upkeep := data.production_upkeep as Dictionary
-	for field in ["maintenance", "speed_accumulators"]:
+	for field in ["maintenance", "speed_accumulators", "repairing"]:
 		for value in upkeep.get(field, []):
 			if not valid_keys.has(str((value as Dictionary).get("building_key", ""))):
 				return false

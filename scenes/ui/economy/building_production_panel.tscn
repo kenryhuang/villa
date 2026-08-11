@@ -14,109 +14,172 @@ theme = ExtResource("2_theme")
 theme_override_constants/separation = 12
 script = ExtResource("1")
 
-[node name="ThreeColumns" type="HBoxContainer" parent="."]
+[node name="Sections" type="HBoxContainer" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 12
+theme_override_constants/separation = 16
 
-[node name="RecipeColumn" type="VBoxContainer" parent="ThreeColumns"]
+[node name="RecipeColumn" type="PanelContainer" parent="Sections"]
 custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.32
+size_flags_horizontal = 1
+size_flags_stretch_ratio = 0.25
+theme_type_variation = &"EconomyCompactCard"
 
-[node name="TitleLabel" type="Label" parent="ThreeColumns/RecipeColumn"]
+[node name="Content" type="VBoxContainer" parent="Sections/RecipeColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="Sections/RecipeColumn/Content"]
+layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
+theme_override_font_sizes/font_size = 22
 text = "配方"
 
-[node name="RecipeList" type="VBoxContainer" parent="ThreeColumns/RecipeColumn"]
+[node name="RecipeScroll" type="ScrollContainer" parent="Sections/RecipeColumn/Content"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="QueueColumn" type="VBoxContainer" parent="ThreeColumns"]
-custom_minimum_size = Vector2(320, 0)
+[node name="RecipeList" type="VBoxContainer" parent="Sections/RecipeColumn/Content/RecipeScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.38
+theme_override_constants/separation = 8
 
-[node name="TitleLabel" type="Label" parent="ThreeColumns/QueueColumn"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "生产队列"
-
-[node name="QueueSlots" type="VBoxContainer" parent="ThreeColumns/QueueColumn"]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 10
-
-[node name="StorageColumn" type="VBoxContainer" parent="ThreeColumns"]
-custom_minimum_size = Vector2(250, 0)
+[node name="ProcessColumn" type="PanelContainer" parent="Sections"]
+custom_minimum_size = Vector2(520, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
+size_flags_stretch_ratio = 0.48
+theme_type_variation = &"EconomyCompactCard"
 
-[node name="TitleLabel" type="Label" parent="ThreeColumns/StorageColumn"]
+[node name="Content" type="VBoxContainer" parent="Sections/ProcessColumn"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "成品仓"
+theme_override_constants/separation = 12
 
-[node name="StorageList" type="VBoxContainer" parent="ThreeColumns/StorageColumn"]
+[node name="TitleLabel" type="Label" parent="Sections/ProcessColumn/Content"]
+layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
+theme_override_font_sizes/font_size = 22
+text = "生产"
+
+[node name="Flow" type="HBoxContainer" parent="Sections/ProcessColumn/Content"]
+custom_minimum_size = Vector2(0, 88)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="InputItems" type="VBoxContainer" parent="Sections/ProcessColumn/Content/Flow"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Caption" type="Label" parent="Sections/ProcessColumn/Content/Flow/InputItems"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "投入"
+horizontal_alignment = 1
+
+[node name="InputLabel" type="Label" parent="Sections/ProcessColumn/Content/Flow/InputItems"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "无"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ProcessIcon" type="Label" parent="Sections/ProcessColumn/Content/Flow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.372549, 0.529412, 0.333333, 1)
+theme_override_font_sizes/font_size = 18
+text = "→  加工  →"
+vertical_alignment = 1
+
+[node name="OutputItems" type="VBoxContainer" parent="Sections/ProcessColumn/Content/Flow"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Caption" type="Label" parent="Sections/ProcessColumn/Content/Flow/OutputItems"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "产出"
+horizontal_alignment = 1
+
+[node name="OutputLabel" type="Label" parent="Sections/ProcessColumn/Content/Flow/OutputItems"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "无"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Metrics" type="GridContainer" parent="Sections/ProcessColumn/Content"]
+layout_mode = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="FuelCaption" type="Label" parent="Sections/ProcessColumn/Content/Metrics"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "燃料"
+
+[node name="FuelLabel" type="Label" parent="Sections/ProcessColumn/Content/Metrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "无"
+horizontal_alignment = 2
+
+[node name="DurationCaption" type="Label" parent="Sections/ProcessColumn/Content/Metrics"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "耗时"
+
+[node name="DurationLabel" type="Label" parent="Sections/ProcessColumn/Content/Metrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "0 分钟"
+horizontal_alignment = 2
+
+[node name="PricingCaption" type="Label" parent="Sections/ProcessColumn/Content/Metrics"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482353, 0.403922, 0.345098, 1)
+theme_override_font_sizes/font_size = 18
+text = "估值"
+
+[node name="PricingLabel" type="Label" parent="Sections/ProcessColumn/Content/Metrics"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "投入 0 · 产出 0"
+horizontal_alignment = 2
+autowrap_mode = 2
+
+[node name="MissingLabel" type="Label" parent="Sections/ProcessColumn/Content"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_vertical = 3
-
-[node name="EmptyLabel" type="Label" parent="ThreeColumns/StorageColumn"]
-layout_mode = 2
-text = "暂无可收取产物"
-
-[node name="CapacityLabel" type="Label" parent="ThreeColumns/StorageColumn"]
-layout_mode = 2
-text = "容量 0/0"
-
-[node name="CollectAllButton" type="Button" parent="ThreeColumns/StorageColumn"]
-layout_mode = 2
-text = "全部收取"
-
-[node name="RecipeDetails" type="VBoxContainer" parent="."]
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="InputLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "投入：无"
-
-[node name="OutputLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "产出：无"
-
-[node name="FuelLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "燃料：无"
-
-[node name="DurationLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "耗时：0 分钟"
-
-[node name="PricingLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-text = "投入现值 0　产出参考价 0"
-
-[node name="MissingLabel" type="Label" parent="RecipeDetails"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.71, 0.36, 0.29, 1)
+theme_override_colors/font_color = Color(0.713726, 0.360784, 0.294118, 1)
+theme_override_font_sizes/font_size = 18
 text = "选择左侧配方开始生产"
+autowrap_mode = 2
 
-[node name="BatchControls" type="HBoxContainer" parent="RecipeDetails"]
+[node name="BatchControls" type="HBoxContainer" parent="Sections/ProcessColumn/Content"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="BatchLabel" type="Label" parent="RecipeDetails/BatchControls"]
+[node name="BatchLabel" type="Label" parent="Sections/ProcessColumn/Content/BatchControls"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 text = "批量"
+vertical_alignment = 1
 
-[node name="BatchSpinBox" type="SpinBox" parent="RecipeDetails/BatchControls"]
-custom_minimum_size = Vector2(120, 0)
+[node name="BatchSpinBox" type="SpinBox" parent="Sections/ProcessColumn/Content/BatchControls"]
+custom_minimum_size = Vector2(104, 44)
 layout_mode = 2
 focus_mode = 2
 min_value = 1.0
@@ -125,20 +188,104 @@ value = 1.0
 allow_greater = false
 allow_lesser = false
 
-[node name="MaxButton" type="Button" parent="RecipeDetails/BatchControls"]
+[node name="MaxButton" type="Button" parent="Sections/ProcessColumn/Content/BatchControls"]
+custom_minimum_size = Vector2(72, 44)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 text = "最大"
 
-[node name="Spacer" type="Control" parent="RecipeDetails/BatchControls"]
+[node name="Spacer" type="Control" parent="Sections/ProcessColumn/Content/BatchControls"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="StartButton" type="Button" parent="RecipeDetails/BatchControls"]
-custom_minimum_size = Vector2(180, 48)
+[node name="StartButton" type="Button" parent="Sections/ProcessColumn/Content/BatchControls"]
+custom_minimum_size = Vector2(148, 44)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 text = "开始生产"
 
-[node name="FeedbackLabel" type="Label" parent="."]
+[node name="RightColumn" type="PanelContainer" parent="Sections"]
+custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.71, 0.36, 0.29, 1)
+size_flags_horizontal = 1
+size_flags_stretch_ratio = 0.27
+theme_type_variation = &"EconomyCompactCard"
+
+[node name="Content" type="VBoxContainer" parent="Sections/RightColumn"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="QueueCard" type="VBoxContainer" parent="Sections/RightColumn/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="Sections/RightColumn/Content/QueueCard"]
+layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
+theme_override_font_sizes/font_size = 22
+text = "生产队列"
+
+[node name="QueueScroll" type="ScrollContainer" parent="Sections/RightColumn/Content/QueueCard"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="QueueSlots" type="VBoxContainer" parent="Sections/RightColumn/Content/QueueCard/QueueScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Divider" type="HSeparator" parent="Sections/RightColumn/Content"]
+layout_mode = 2
+
+[node name="StorageCard" type="VBoxContainer" parent="Sections/RightColumn/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="Sections/RightColumn/Content/StorageCard"]
+layout_mode = 2
+theme_type_variation = &"EconomyBlockTitle"
+theme_override_font_sizes/font_size = 22
+text = "成品仓"
+
+[node name="StorageList" type="VBoxContainer" parent="Sections/RightColumn/Content/StorageCard"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="EmptyLabel" type="Label" parent="Sections/RightColumn/Content/StorageCard"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "暂无可收取产物"
+
+[node name="CapacityLabel" type="Label" parent="Sections/RightColumn/Content/StorageCard"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "容量 0/0"
+
+[node name="CollectAllButton" type="Button" parent="Sections/RightColumn/Content/StorageCard"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "全部收取"
+
+[node name="NarrowDetailScroll" type="ScrollContainer" parent="."]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+follow_focus = true
+horizontal_scroll_mode = 0
+
+[node name="NarrowDetailStack" type="VBoxContainer" parent="NarrowDetailScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16
+
+[node name="FeedbackLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.713726, 0.360784, 0.294118, 1)
+theme_override_font_sizes/font_size = 18
 autowrap_mode = 2

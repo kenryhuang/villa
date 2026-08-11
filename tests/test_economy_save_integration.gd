@@ -6,6 +6,7 @@ const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
+const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const TEST_SAVE_DIR := "user://villa_test_saves/economy_task_5/"
 const TEST_SLOT := 3
 const BAD_SLOT := 4
@@ -324,17 +325,36 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	main.save_manager = manager
 	tree.root.add_child(main)
 	var game_state := tree.root.get_node_or_null("GameState")
-	assertions.equal(main.inventory_system.get_item_count("grain_seed"), 12, "new game grants exactly 12 grain seeds")
-	assertions.equal(main.inventory_system.get_item_count("wood"), 30, "new game grants exactly 30 wood")
-	assertions.equal(main.inventory_system.get_item_count("stone"), 20, "new game grants exactly 20 stone")
-	assertions.equal(main.inventory_system.get_item_count("fiber"), 10, "new game grants exactly 10 fiber")
+	var expected_starter_items := {
+		"grain_seed": 99,
+		"wood": 99,
+		"stone": 99,
+		"fiber": 99,
+		"plank": 99,
+		"stone_brick": 99,
+		"brick": 99,
+		"charcoal": 99,
+		"glass": 99,
+		"iron_ingot": 99,
+		"rope": 99,
+		"steel": 99,
+		"wooden_crate": 99,
+		"farm_tools": 99,
+		"machine_parts": 99,
+		"lamp": 99,
+	}
+	for item_id in expected_starter_items:
+		assertions.equal(
+			main.inventory_system.get_item_count(item_id),
+			expected_starter_items[item_id],
+			"new game grants large starter stack for %s" % item_id
+		)
 	assertions.equal(main.inventory_system.get_item_count("iron"), 0, "new game grants no legacy debug iron")
-	assertions.equal(main.inventory_system.get_item_count("glass"), 0, "new game grants no debug glass")
-	assertions.equal(game_state.gold if game_state != null else -1, 150, "new game starts with exactly 150 gold")
+	assertions.equal(game_state.gold if game_state != null else -1, 50_000, "new game starts with debug-friendly gold")
 	main._initial_game_state()
-	assertions.equal(main.inventory_system.get_item_count("grain_seed"), 12, "re-entering new-game lifecycle cannot duplicate seeds")
-	assertions.equal(main.inventory_system.get_item_count("wood"), 30, "re-entering new-game lifecycle cannot duplicate wood")
-	assertions.equal(game_state.gold if game_state != null else -1, 150, "re-entering new-game lifecycle preserves exact gold")
+	assertions.equal(main.inventory_system.get_item_count("grain_seed"), 99, "re-entering new-game lifecycle cannot duplicate seeds")
+	assertions.equal(main.inventory_system.get_item_count("wood"), 99, "re-entering new-game lifecycle cannot duplicate wood")
+	assertions.equal(game_state.gold if game_state != null else -1, 50_000, "re-entering new-game lifecycle preserves exact gold")
 
 	main.season_system.current_season = SeasonSystem.Season.SPRING
 	main.season_system.current_day = 4
@@ -378,6 +398,11 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	var workbench_record := _producer_building_record(main, workbench_location)
 	assertions.equal(main.building_system.restore_buildings([workbench_record]), 1, "round-trip fixture restores queued producer")
 	main.production_system.register_existing_buildings()
+	var saved_workbench := main.building_system.get_all_buildings()[0] as BuildingInstance
+	var saved_workbench_key: String = str(
+		main.production_system.building_key(saved_workbench)
+	)
+	main.production_system.repair_remaining_seconds[saved_workbench_key] = 2.25
 	var depleted_resources: Array[Dictionary] = main.world.to_resource_dicts()
 	depleted_resources[0]["remaining_units"] = 0
 	depleted_resources[0]["respawn_day"] = 7
@@ -390,6 +415,7 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	assertions.truthy(manager.save_game(TEST_SLOT), "Task 13 fixture writes real JSON")
 	var encoded: Dictionary = _read_json(manager._save_path(TEST_SLOT))
 	assertions.equal(encoded.get("economy_version"), 1, "real JSON carries economy version 1")
+	assertions.equal(encoded.get("building_layout_version"), 2, "real JSON carries yard layout version 2")
 	assertions.equal(encoded.get("last_simulated_day"), 4, "real JSON carries last simulated day")
 	assertions.equal(encoded.market.items.wood.history.size(), 2, "real JSON carries complete market history")
 	assertions.equal(int(encoded.market.items.wood.stock), main.market_system.get_stock("wood"), "real JSON carries current market stock")
@@ -399,6 +425,33 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	assertions.equal(str(encoded.economy_state.contracts[0].contract_id), contract.contract_id, "real JSON preserves contract identity")
 	assertions.equal(encoded.buildings[0].producer_state.jobs.size(), 1, "real JSON carries queued producer job")
 	assertions.equal(int(encoded.buildings[0].producer_state.outputs.plank), 2, "real JSON carries staged producer output")
+	assertions.equal(encoded.buildings[0].occupied_cells.size(), 9, "real JSON carries the complete 3x3 yard footprint")
+	assertions.near(
+		float(encoded.production_upkeep.repairing[0].remaining_seconds),
+		2.25,
+		0.001,
+		"real JSON carries in-progress repair time"
+	)
+	assertions.truthy(
+		manager._validate_economy_save_data(encoded),
+		"yard round-trip economy payload validates before runtime mutation"
+	)
+	assertions.truthy(
+		main.grid_system.validate_dict(encoded.grid),
+		"yard round-trip grid payload validates before runtime mutation"
+	)
+	assertions.truthy(
+		main.building_system.validate_restore_buildings(encoded.buildings, encoded.grid),
+		"yard round-trip building payload validates before runtime mutation"
+	)
+	assertions.truthy(
+		manager._validate_economy_building_keys(encoded),
+		"yard round-trip building economy keys validate before runtime mutation"
+	)
+	assertions.truthy(
+		manager._validate_save_data(encoded),
+		"yard round-trip complete payload validates before runtime mutation"
+	)
 	assertions.equal(encoded.resource_nodes[0].remaining_units, 0, "real JSON carries depleted resource")
 	var expected_market: Dictionary = main.market_system.to_dict()
 	var expected_npc: Dictionary = main.npc_economy_system.to_dict()
@@ -423,6 +476,13 @@ func _test_task13_full_json_round_trip_and_starter_lifecycle(
 	var restored := main.building_system.get_all_buildings()[0] as BuildingInstance
 	assertions.equal(restored.producer_state.jobs.size(), 1, "load restores queued producer job")
 	assertions.equal(restored.producer_state.outputs, {"plank": 2}, "load restores staged producer output")
+	assertions.equal(restored.occupied_cells.size(), 9, "load restores every production-yard occupied cell")
+	assertions.near(
+		main.production_system.get_repair_remaining_seconds(restored),
+		2.25,
+		0.001,
+		"load restores in-progress building repair"
+	)
 	assertions.truthy(manager.load_game(TEST_SLOT), "same-day save can be loaded repeatedly")
 	assertions.equal(settlement_observer.calls, 0, "same-day load never settles market again")
 	assertions.equal(main.market_system.to_dict(), expected_market, "same-day load cannot change determined market history")
@@ -602,6 +662,10 @@ func _test_task13_invalid_top_level_and_inventory_schema_is_atomic(
 		"planted_cell_without_crop",
 		"missing_buildings",
 		"orphan_building_cell",
+		"missing_building_layout_version",
+		"negative_building_layout_version",
+		"fractional_building_layout_version",
+		"wrong_building_layout_version",
 	]:
 		_test_task13_invalid_schema_case(assertions, tree, scenario)
 
@@ -659,6 +723,14 @@ func _mutate_invalid_schema_payload(payload: Dictionary, scenario: String) -> vo
 			payload.player.stamina = INF
 		"missing_gold":
 			payload.erase("gold")
+		"missing_building_layout_version":
+			payload.erase("building_layout_version")
+		"negative_building_layout_version":
+			payload.building_layout_version = -1
+		"fractional_building_layout_version":
+			payload.building_layout_version = 2.5
+		"wrong_building_layout_version":
+			payload.building_layout_version = 1
 		"missing_player":
 			payload.erase("player")
 		"inventory_wrong_type":
@@ -903,6 +975,30 @@ func _test_task13_failed_building_load_is_atomic(
 	var before := _capture_atomic_load_state(main, manager, game_state)
 	var incoming: Dictionary = manager._gather_save_data().duplicate(true)
 	_prepare_divergent_atomic_payload(assertions, main, incoming, scenario)
+	assertions.truthy(
+		not incoming.buildings.is_empty(),
+		"%s fixture serializes its queued producer" % scenario
+	)
+	if incoming.buildings.is_empty():
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	assertions.equal(
+		str(incoming.buildings[0].get("building_id", "")),
+		"workbench",
+		"%s fixture serializes the owned building system" % scenario
+	)
+	var incoming_jobs: Array = incoming.buildings[0].get("producer_state", {}).get("jobs", [])
+	assertions.truthy(
+		not incoming_jobs.is_empty(),
+		"%s fixture serializes the queued production job" % scenario
+	)
+	if incoming_jobs.is_empty():
+		main.free()
+		manager.free()
+		_cleanup()
+		return
 	if duplicate_record:
 		incoming.buildings.append((incoming.buildings[0] as Dictionary).duplicate(true))
 	else:
@@ -1460,7 +1556,7 @@ func _producer_building_record(main: Node, location: Vector2i) -> Dictionary:
 	state.enqueue_job({
 		"recipe_id": "plank",
 		"batches": 1,
-		"remaining_minutes": 60,
+		"remaining_minutes": int(RecipeDatabaseScript.get_recipe("plank").duration_minutes),
 		"status": "running",
 	})
 	state.add_outputs({"plank": 2})

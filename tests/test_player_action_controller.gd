@@ -23,6 +23,9 @@ class GridDouble:
 	func clear_highlights() -> void:
 		clear_highlights_calls += 1
 
+	func world_to_grid(_world_x: float, _world_z: float) -> Vector2i:
+		return Vector2i(1, 1)
+
 
 class InventoryDouble:
 	extends RefCounted
@@ -97,6 +100,7 @@ class BuildingDouble:
 	var resource_allowed := true
 	var placement_allowed := true
 	var exhaust_after_place := false
+	var placement_attempts := 0
 
 	func enter_preview_mode(building: Variant) -> bool:
 		var building_id: String = str(building)
@@ -142,6 +146,7 @@ class BuildingDouble:
 		return diagnose_resources(building)
 
 	func try_place_selected_building(gx: int, gz: int) -> Dictionary:
+		placement_attempts += 1
 		if not placement_allowed:
 			return {
 				"placed": false,
@@ -237,6 +242,63 @@ class OreTargetDouble:
 		return allowed and tool_id == required_tool
 
 
+class OutputPileDouble:
+	extends Node3D
+
+	var hovered := false
+	var interactions := 0
+	var rejected_reason := ""
+
+	func _ready() -> void:
+		add_to_group("building_output_pile")
+
+	func set_pointer_hovered(value: bool) -> void:
+		hovered = value
+
+	func show_interaction_rejected(reason: String) -> void:
+		rejected_reason = reason
+
+	func interact(_player: Node) -> void:
+		interactions += 1
+
+
+class InteractionPlayerDouble:
+	extends Node3D
+
+	var interaction_range := 3.0
+
+
+class EconomyBuildingDouble:
+	extends Node3D
+
+	var interactions := 0
+	var openable := true
+
+	func can_open_economy_panel() -> bool:
+		return openable
+
+	func interact(_player: Node) -> void:
+		interactions += 1
+
+
+class PointerControllerDouble:
+	extends PlayerActionController
+
+	var interaction_target: Node
+
+	func _pointer_over_ui() -> bool:
+		return false
+
+	func _raycast_to_ground(_pointer_position: Variant = null) -> Variant:
+		return Vector3(1.0, 0.0, 1.0)
+
+	func _raycast_to_interaction(_pointer_position: Variant = null) -> Dictionary:
+		return {
+			"target": interaction_target,
+			"position": Vector3(1.0, 0.0, 0.0),
+		}
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var controller_path := "res://scripts/actors/player_action_controller.gd"
 	assertions.truthy(
@@ -257,6 +319,108 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_farming_plant_rules(assertions)
 	_test_pointer_contract(assertions, tree, controller_script)
 	_test_gathering_command_routing(assertions, tree, controller_script)
+	_test_output_pile_interaction(assertions, tree, controller_script)
+	_test_completed_building_click_in_build_mode(assertions, tree)
+
+
+func _test_completed_building_click_in_build_mode(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var player := InteractionPlayerDouble.new()
+	var building_system := BuildingDouble.new()
+	var economy_building := EconomyBuildingDouble.new()
+	var controller := PointerControllerDouble.new()
+	controller.interaction_target = economy_building
+	tree.root.add_child(player)
+	tree.root.add_child(economy_building)
+	tree.root.add_child(controller)
+	controller.configure(
+		player,
+		GridDouble.new(),
+		null,
+		building_system,
+		ToolDouble.new(),
+		InventoryDouble.new()
+	)
+	assertions.truthy(
+		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
+		"fixture enters building mode with an active placement preview"
+	)
+	assertions.truthy(
+		controller.call("_perform_pointer_action", Vector2.ZERO),
+		"completed production building consumes click while build mode remains active"
+	)
+	assertions.equal(
+		economy_building.interactions,
+		1,
+		"completed production building click dispatches interaction"
+	)
+	assertions.equal(
+		building_system.placement_attempts,
+		0,
+		"completed production building interaction precedes placement"
+	)
+	economy_building.openable = false
+	assertions.truthy(
+		controller.call("_perform_pointer_action", Vector2.ZERO),
+		"non-economic building click falls through to placement"
+	)
+	assertions.equal(economy_building.interactions, 1, "non-economic building is not opened")
+	assertions.equal(building_system.placement_attempts, 1, "placement priority remains for other targets")
+	controller.queue_free()
+	economy_building.queue_free()
+	player.queue_free()
+
+
+func _test_output_pile_interaction(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var controller = controller_script.new()
+	var player := InteractionPlayerDouble.new()
+	var pile := OutputPileDouble.new()
+	tree.root.add_child(player)
+	tree.root.add_child(pile)
+	tree.root.add_child(controller)
+	controller.configure(
+		player,
+		GridDouble.new(),
+		null,
+		BuildingDouble.new(),
+		ToolDouble.new(),
+		InventoryDouble.new()
+	)
+	controller.switch_mode(PlayerActionController.ActionMode.FARMING)
+	assertions.truthy(
+		not controller.perform_target_interaction(pile),
+		"controller leaves farming-mode output clicks to the pile itself"
+	)
+	assertions.truthy(
+		controller.has_method("_try_interaction_hit"),
+		"controller still exposes generic interaction hit routing"
+	)
+	if controller.has_method("_try_interaction_hit"):
+		assertions.truthy(
+			not controller.call("_try_interaction_hit", pile, Vector3(1.0, 0.0, 0.0)),
+			"controller does not route nearby output clicks"
+		)
+	assertions.equal(pile.interactions, 0, "controller never dispatches output collection")
+	controller.switch_mode(PlayerActionController.ActionMode.BUILDING)
+	assertions.truthy(
+		not controller.perform_target_interaction(pile),
+		"controller leaves building-mode output clicks to the pile itself"
+	)
+	pile.rejected_reason = ""
+	assertions.truthy(
+		not controller.call("_try_interaction_hit", pile, Vector3(20.0, 0.0, 0.0)),
+		"controller does not own distant output clicks in building mode"
+	)
+	assertions.equal(pile.rejected_reason, "", "controller does not mutate direct-pile feedback")
+	pile.queue_free()
+	player.queue_free()
+	controller.queue_free()
 
 
 func _test_gathering_command_routing(

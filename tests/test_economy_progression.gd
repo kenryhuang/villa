@@ -123,6 +123,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var original_level := int(wallet.player_state.level)
 	var original_stamina := int(wallet.player_state.stamina)
 	_test_unlock_gates_and_strict_state(assertions, wallet)
+	_test_debug_gate_unlocks(assertions, wallet)
 	_test_complete_unlock_routes_and_v1_migration(assertions)
 	_test_tool_durability_and_atomic_repair(assertions, wallet)
 	_test_failed_service_transactions_are_signal_atomic(assertions)
@@ -228,6 +229,38 @@ func _test_unlock_gates_and_strict_state(assertions: TestAssert, wallet: Node) -
 	unobtainable_high_tier.unlocked_recipes.append("perfume")
 	assertions.truthy(not restored.from_dict(unobtainable_high_tier), "recipe without its locked station rejects")
 	assertions.equal(restored.to_dict(), before_bad, "unobtainable recipe rejection is atomic")
+
+
+func _test_debug_gate_unlocks(assertions: TestAssert, wallet: Node) -> void:
+	var inventory := _inventory()
+	var tool := _tool(inventory)
+	var production := _production()
+	var day := DaySource.new()
+	var progression = _track(ProgressionScript.new())
+	assertions.truthy(
+		progression.configure(tool, production, inventory, day, wallet),
+		"debug unlock fixture configures progression"
+	)
+	wallet.player_state.level = 2
+	day.total_days = 7
+	var before_gate: Dictionary = progression.debug_unlock_gate_eligible_blueprints()
+	assertions.equal(before_gate.blueprints, [], "debug unlock preserves blueprints before the day gate")
+	assertions.truthy(not progression.is_blueprint_unlocked("barn"), "debug unlock respects the day gate")
+
+	day.total_days = 8
+	var tier_one: Dictionary = progression.debug_unlock_gate_eligible_blueprints()
+	assertions.truthy(bool(tier_one.ok), "debug unlock grants eligible tier-one progression")
+	assertions.equal(tier_one.blueprints.size(), 8, "debug unlock grants every tier-one blueprint")
+	assertions.truthy(progression.is_blueprint_unlocked("barn"), "debug unlock owns the barn blueprint")
+	assertions.truthy(progression.is_recipe_unlocked("flour"), "debug unlock grants blueprint tier recipes")
+	assertions.truthy(not progression.is_blueprint_unlocked("greenhouse"), "debug unlock keeps tier two gated")
+	var repeated: Dictionary = progression.debug_unlock_gate_eligible_blueprints()
+	assertions.equal(repeated.blueprints, [], "debug unlock is idempotent")
+
+	wallet.player_state.level = 1
+	day.total_days = 1
+	progression.debug_unlock_gate_eligible_blueprints()
+	assertions.truthy(progression.is_blueprint_unlocked("barn"), "lower debug values do not relock ownership")
 
 
 func _test_complete_unlock_routes_and_v1_migration(assertions: TestAssert) -> void:
@@ -399,7 +432,7 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.truthy(inventory.add_item("grain", 20), "maintenance fixture adds inputs")
 	production.sync_daily_cursor(1)
 	assertions.truthy(production.set_maintenance_due_day(windmill, 2), "fixture sets stable due day")
-	assertions.truthy(production.start_recipe(windmill, "flour", 1, inventory), "pre-due job starts")
+	assertions.truthy(production.start_recipe(windmill, "flour", 10, inventory), "pre-due long job starts")
 	var remaining_before := int(windmill.producer_state.jobs[0].remaining_minutes)
 	production.sync_daily_cursor(2)
 	production.advance_minutes(120)
@@ -408,14 +441,53 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	var grain_before_blocked := inventory.get_item_count("grain")
 	assertions.truthy(not production.start_recipe(windmill, "flour", 1, inventory), "overdue producer cannot start")
 	assertions.equal(inventory.get_item_count("grain"), grain_before_blocked, "overdue start consumes no inputs")
-	var quote: Dictionary = production.get_maintenance_quote(windmill)
+	var quote: Dictionary = progression.get_maintenance_quote(windmill)
+	assertions.equal(
+		quote,
+		{"gold_cost": 35, "materials": {"wood": 2, "stone": 2}},
+		"medium unupgraded building uses the tiered maintenance quote"
+	)
 	wallet.gold = 1000
 	_give_cost(inventory, quote.materials)
 	var before_maintain := _asset_snapshot(wallet, inventory)
-	assertions.truthy(progression.maintain(windmill), "exact maintenance payment resumes producer")
+	assertions.truthy(progression.maintain(windmill), "exact maintenance payment starts repair")
 	assertions.equal(int(wallet.gold), int(before_maintain.gold) - int(quote.gold_cost), "maintenance deducts exact gold")
 	_assert_material_delta(assertions, before_maintain, inventory, quote.materials, "maintenance")
-	assertions.equal(production.get_maintenance_due_day(windmill), 9, "maintenance schedules next weekly due day")
+	assertions.equal(production.get_maintenance_state(windmill), "repairing", "paid maintenance enters timed repair")
+	assertions.truthy(not progression.maintain(windmill), "repair cannot be started twice")
+	assertions.equal(production.get_maintenance_due_day(windmill), 2, "repair keeps the old deadline until completion")
+	var repairing_saved: Dictionary = production.to_dict()
+	assertions.equal(repairing_saved.get("version"), 2, "active maintenance writes version two")
+	var repairing_records := repairing_saved.get("repairing", []) as Array
+	assertions.equal(repairing_records.size(), 1, "active repair is persisted")
+	if not repairing_records.is_empty():
+		assertions.equal(
+			float((repairing_records[0] as Dictionary).get("remaining_seconds", 0.0)),
+			3.0,
+			"repair persistence keeps remaining real seconds"
+		)
+	var repairing_restored := _production()
+	assertions.truthy(repairing_restored.from_dict(repairing_saved), "active repair state restores")
+	assertions.equal(
+		repairing_restored.get_repair_remaining_seconds(windmill),
+		3.0,
+		"restored repair resumes without another payment"
+	)
+	var version_one := repairing_saved.duplicate(true)
+	version_one["version"] = 1
+	version_one.erase("repairing")
+	var migrated_production := _production()
+	assertions.truthy(migrated_production.from_dict(version_one), "version-one maintenance state migrates")
+	assertions.equal(
+		migrated_production.get_repair_remaining_seconds(windmill),
+		0.0,
+		"version-one migration starts with no paid repair"
+	)
+	production.advance_repair_time(2.9)
+	assertions.equal(production.get_maintenance_state(windmill), "repairing", "repair does not complete early")
+	production.advance_repair_time(0.1)
+	assertions.equal(production.get_maintenance_state(windmill), "normal", "repair completes at three seconds")
+	assertions.equal(production.get_maintenance_due_day(windmill), 16, "completed repair schedules fourteen days")
 	production.advance_minutes(120)
 	assertions.truthy(int(windmill.producer_state.jobs[0].remaining_minutes) < remaining_before, "maintained queue resumes")
 
@@ -432,6 +504,11 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	assertions.equal(windmill.producer_state.max_queue_slots, queue_before + 1, "queue upgrade adds one slot")
 	assertions.equal(windmill.producer_state.output_capacity, capacity_before + 1, "storage upgrade adds one slot")
 	assertions.equal(progression.get_upgrade_level(windmill, "speed"), 1, "speed level is owned by progression")
+	assertions.equal(
+		progression.get_maintenance_quote(windmill),
+		{"gold_cost": 65, "materials": {"wood": 4, "stone": 4}},
+		"three upgrade levels increase maintenance cost"
+	)
 	var hive := _building("beehive", 13, 14)
 	hive.producer_state.outputs = {"honey": 6}
 	assertions.truthy(production.register_building(hive), "passive storage fixture registers hive")
@@ -481,7 +558,7 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	var maintenance_saved: Dictionary = production.to_dict()
 	var restored_production := _production()
 	assertions.truthy(restored_production.from_dict(maintenance_saved), "maintenance due days round trip")
-	assertions.equal(restored_production.get_maintenance_due_day(windmill), 9, "maintenance restores by stable building key")
+	assertions.equal(restored_production.get_maintenance_due_day(windmill), 16, "maintenance restores by stable building key")
 	var before_bad: Dictionary = restored_production.to_dict()
 	var duplicate := maintenance_saved.duplicate(true)
 	duplicate.maintenance.append(duplicate.maintenance[0].duplicate(true))
@@ -724,7 +801,7 @@ func _test_save_json_round_trip_atomic_rejection_and_legacy(
 	for tool_id in tool.get_tool_ids():
 		assertions.equal(tool.get_durability(tool_id).current, tool.get_durability(tool_id).max, "legacy initializes full %s durability" % tool_id)
 	production.register_building(building)
-	assertions.equal(production.get_maintenance_due_day(building), 7, "legacy initializes one weekly maintenance deadline")
+	assertions.equal(production.get_maintenance_due_day(building), 14, "legacy initializes one fourteen-day maintenance deadline")
 
 
 func _building(id: String, gx: int, gz: int) -> BuildingInstance:

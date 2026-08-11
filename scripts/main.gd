@@ -21,6 +21,27 @@ const EconomyNotificationSystemScript := preload(
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
 const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd")
 const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
+const DebugStateEditorScript := preload("res://scripts/debug/debug_state_editor.gd")
+const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
+const NEW_GAME_STARTER_ITEMS := {
+	"grain_seed": 99,
+	"wood": 99,
+	"stone": 99,
+	"fiber": 99,
+	"plank": 99,
+	"stone_brick": 99,
+	"brick": 99,
+	"charcoal": 99,
+	"glass": 99,
+	"iron_ingot": 99,
+	"rope": 99,
+	"steel": 99,
+	"wooden_crate": 99,
+	"farm_tools": 99,
+	"machine_parts": 99,
+	"lamp": 99,
+}
+const NEW_GAME_STARTER_GOLD := 50_000
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -68,6 +89,8 @@ var collectible_system: CollectibleSystem
 var story_system: StorySystem
 var puzzle_system: PuzzleSystem
 var save_manager: Node
+var debug_state_editor: Variant
+var debug_panel: Variant
 var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModalCoordinator
 
 # 建筑容器
@@ -306,6 +329,7 @@ func _connect_save_load_completed() -> void:
 func _on_save_load_completed(_slot: int) -> void:
 	if production_system == null or season_system == null:
 		return
+	_rebind_restored_buildings()
 	if not production_system.sync_daily_cursor(season_system.total_days):
 		push_error("Unable to synchronize production day after load.")
 		return
@@ -313,6 +337,13 @@ func _on_save_load_completed(_slot: int) -> void:
 	_register_resource_navigation()
 	if npc_economy_system != null:
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
+
+
+func _rebind_restored_buildings() -> void:
+	if building_system == null:
+		return
+	for building in building_system.get_all_buildings():
+		_on_building_instance_placed(building)
 
 
 func _setup_player() -> void:
@@ -438,7 +469,7 @@ func _setup_ui() -> void:
 		hud.visible = true
 		hud.configure_season_system(season_system)
 		hud.configure_action_bar(action_controller, inventory_system, economy_system)
-		hud.configure_debug_reset(OS.is_debug_build())
+		hud.configure_debug_tools(OS.is_debug_build())
 		hud.configure_notifications(economy_notification_system)
 		var reset_callback := Callable(self, "_on_debug_reset_requested")
 		if not hud.debug_reset_requested.is_connected(reset_callback):
@@ -452,6 +483,7 @@ func _setup_ui() -> void:
 		var unlock_callback := Callable(self, "_on_building_unlock_requested")
 		if hud.has_signal("building_unlock_requested") and not hud.building_unlock_requested.is_connected(unlock_callback):
 			hud.building_unlock_requested.connect(unlock_callback)
+	_setup_runtime_debug_tools()
 
 	# 背包 UI
 	if inventory_ui:
@@ -501,6 +533,69 @@ func _setup_ui() -> void:
 	# 连接建造系统信号
 	building_system.build_mode_entered.connect(_on_build_mode_entered)
 	building_system.build_mode_exited.connect(_on_build_mode_exited)
+
+
+func _setup_runtime_debug_tools() -> void:
+	if hud != null:
+		hud.configure_debug_tools(OS.is_debug_build())
+	if not OS.is_debug_build():
+		return
+	debug_state_editor = DebugStateEditorScript.new()
+	if not debug_state_editor.configure(
+		get_node_or_null("/root/GameState"),
+		season_system,
+		inventory_system,
+		production_system,
+		market_system,
+		npc_economy_system,
+		daily_simulation_system,
+		world,
+		get_node_or_null("/root/EventBus"),
+		economy_progression_system
+	):
+		debug_state_editor = null
+		push_error("Unable to configure runtime debug state editor.")
+		return
+	debug_panel = DebugPanelScene.instantiate()
+	debug_panel.name = "DebugPanel"
+	add_child(debug_panel)
+	if not debug_panel.configure(debug_state_editor.snapshot()):
+		debug_panel.queue_free()
+		debug_panel = null
+		push_error("Unable to configure runtime debug panel.")
+		return
+	var open_callback := Callable(self, "_on_debug_panel_requested")
+	if not hud.debug_panel_requested.is_connected(open_callback):
+		hud.debug_panel_requested.connect(open_callback)
+	var apply_callback := Callable(self, "_on_debug_panel_apply_requested")
+	if not debug_panel.apply_requested.is_connected(apply_callback):
+		debug_panel.apply_requested.connect(apply_callback)
+	var refresh_callback := Callable(self, "_on_debug_panel_refresh_requested")
+	if not debug_panel.refresh_requested.is_connected(refresh_callback):
+		debug_panel.refresh_requested.connect(refresh_callback)
+
+
+func _on_debug_panel_requested() -> void:
+	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
+		return
+	debug_panel.open(debug_state_editor.snapshot())
+
+
+func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
+	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
+		return
+	var result: Dictionary = debug_state_editor.apply(draft)
+	if bool(result.get("ok", false)):
+		hud.refresh_action_bar()
+		debug_panel.show_apply_result(result, debug_state_editor.snapshot())
+		return
+	debug_panel.show_apply_result(result)
+
+
+func _on_debug_panel_refresh_requested() -> void:
+	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
+		return
+	debug_panel.refresh_from_snapshot(debug_state_editor.snapshot())
 
 
 func _on_market_requested() -> void:
@@ -736,13 +831,11 @@ static func default_crop_definitions() -> Array[CropData]:
 
 func _grant_new_game_items() -> void:
 	inventory_system.clear()
-	inventory_system.add_item("grain_seed", 12)
-	inventory_system.add_item("wood", 30)
-	inventory_system.add_item("stone", 20)
-	inventory_system.add_item("fiber", 10)
+	for item_id in NEW_GAME_STARTER_ITEMS:
+		inventory_system.add_item(item_id, int(NEW_GAME_STARTER_ITEMS[item_id]))
 	var game_state = get_node_or_null("/root/GameState")
 	if game_state != null:
-		game_state.gold = 150
+		game_state.gold = NEW_GAME_STARTER_GOLD
 		var event_bus = get_node_or_null("/root/EventBus")
 		if event_bus != null:
 			event_bus.gold_changed.emit(game_state.gold)
@@ -788,6 +881,15 @@ func _on_economy_building_removed(building: BuildingInstance) -> void:
 		building_economy_ui.close()
 	if building != null and building.interacted.is_connected(_on_building_interacted):
 		building.interacted.disconnect(_on_building_interacted)
+	if (
+		building != null
+		and building.output_collection_requested.is_connected(
+			_on_building_output_collection_requested
+		)
+	):
+		building.output_collection_requested.disconnect(
+			_on_building_output_collection_requested
+		)
 	if economy_progression_system != null:
 		economy_progression_system.clear_building_upgrades(building)
 
@@ -797,6 +899,41 @@ func _on_building_instance_placed(building: BuildingInstance) -> void:
 		return
 	if not building.interacted.is_connected(_on_building_interacted):
 		building.interacted.connect(_on_building_interacted)
+	if not building.output_collection_requested.is_connected(
+		_on_building_output_collection_requested
+	):
+		building.output_collection_requested.connect(
+			_on_building_output_collection_requested
+		)
+
+
+func _on_building_output_collection_requested(
+	building: BuildingInstance,
+	item_id: String
+) -> void:
+	if (
+		building == null
+		or not is_instance_valid(building)
+		or production_system == null
+		or inventory_system == null
+	):
+		return
+	var result := production_system.collect_outputs(
+		building,
+		inventory_system,
+		item_id
+	)
+	if bool(result.get("ok", false)):
+		return
+	var reason := str(result.get("reason", "transaction_failed"))
+	building.show_output_collection_failure(item_id, reason)
+	if hud != null and hud.has_method("show_build_feedback"):
+		var message := (
+			"资产库空间不足"
+			if reason == "inventory_capacity"
+			else "无法收取制品"
+		)
+		hud.call("show_build_feedback", message, result)
 
 
 func _on_building_interacted(building: BuildingInstance, _player: Node) -> void:

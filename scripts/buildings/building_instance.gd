@@ -7,6 +7,7 @@ signal construction_stage_changed(
 	stage: ConstructionStage
 )
 signal construction_completed(building: BuildingInstance)
+signal output_collection_requested(building: BuildingInstance, item_id: String)
 
 enum ConstructionStage {
 	FOUNDATION,
@@ -24,15 +25,24 @@ const ConstructionFeedbackScript = preload(
 const BuildingActivityVisualScript = preload(
 	"res://scripts/buildings/building_activity_visual.gd"
 )
+const BuildingOutputDisplayScript = preload(
+	"res://scripts/buildings/building_output_display.gd"
+)
+const BuildingMaintenanceVisualScript = preload(
+	"res://scripts/buildings/building_maintenance_visual.gd"
+)
+const BuildingProductionYardScript = preload(
+	"res://scripts/buildings/building_production_yard.gd"
+)
 const COLLISION_LAYERS := 16 | 64
 const INTERACTION_LAYERS := 64 | 256
 const CAMERA_OCCLUDER_LAYER := 32
 const OCCLUDED_OPACITY := 0.3
 const CLEAR_OPACITY := 1.0
 const FADE_RATE := 10.0
-const STAGE_FADE_OUT_DURATION := 0.12
-const STAGE_FADE_IN_DURATION := 0.18
-const CONSTRUCTION_SECONDS_PER_STAGE := 10.0
+const STAGE_FADE_OUT_DURATION := 2.0
+const STAGE_FADE_IN_DURATION := 2.0
+const CONSTRUCTION_SECONDS_PER_STAGE := 3.0
 const MAX_SAFE_INTEGER := 9007199254740991
 const MAX_GRID_COORDINATE := 2147483647
 const CONSTRUCTION_TRANSITION_COUNT := (
@@ -55,6 +65,8 @@ var _opacity_target := CLEAR_OPACITY
 var _completion_emitted := false
 var _missing_construction_art_warnings := {}
 var _economy_indicator_kind := ""
+var _maintenance_visual_state := "normal"
+var _output_quantity_capacity := 0
 
 var building_id: String:
 	get:
@@ -196,10 +208,16 @@ func _transition_construction_stage(next_stage: ConstructionStage) -> void:
 
 func _ready() -> void:
 	_ensure_nodes()
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.connect(_on_visibility_changed)
 	if data == null and not authored_building_id.is_empty():
 		var game_data = GameDataScript.new()
 		configure(BuildingData.from_dictionary(game_data.get_building(authored_building_id)), 0, 0, [])
 		game_data.free()
+
+
+func _on_visibility_changed() -> void:
+	_sync_output_display_state()
 
 
 func configure(
@@ -220,12 +238,29 @@ func configure(
 	_ensure_nodes()
 	if data == null or not data.is_valid():
 		return
+	_configure_production_yard()
+	_apply_structure_offset()
+	var output_display: Variant = get_node("BuildingOutputDisplay")
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		output_display.call(
+			"configure_for_yard",
+			production_yard.call("get_output_slots"),
+			data.building_id
+		)
+	else:
+		output_display.call(
+			"configure_for_building",
+			data.footprint,
+			data.building_id
+		)
 	name = data.display_name
 	_configure_visuals()
 	_configure_physics()
 	_apply_construction_stage(false)
 	if not _preview_mode and not is_in_group("building_instance"):
 		add_to_group("building_instance")
+	_sync_output_display_state()
 
 
 func set_preview_mode(value: bool) -> void:
@@ -239,6 +274,7 @@ func set_preview_mode(value: bool) -> void:
 	_apply_visual_color()
 	_sync_construction_feedback()
 	sync_activity_visual()
+	_sync_output_display_state()
 
 
 func deactivate() -> void:
@@ -257,6 +293,14 @@ func deactivate() -> void:
 	remove_from_group("building_instance")
 	visible = false
 	set_economy_indicator("")
+	set_maintenance_visual_state("normal")
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	if output_display != null:
+		output_display.call("clear_immediately")
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_interaction_enabled", false)
+		production_yard.call("clear_immediately")
 	_sync_construction_feedback(false)
 	sync_activity_visual()
 	set_process(false)
@@ -265,6 +309,10 @@ func deactivate() -> void:
 func set_preview_valid(value: bool) -> void:
 	_preview_valid = value
 	_apply_visual_color()
+
+
+func get_structure_footprint() -> Vector2i:
+	return data.structure_footprint() if data != null else Vector2i.ONE
 
 
 func set_camera_occluded(value: bool) -> void:
@@ -294,18 +342,102 @@ func economy_effect_type() -> String:
 
 func can_open_economy_panel() -> bool:
 	return is_construction_complete() and economy_effect_type() in [
-		"crafting", "honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output",
+		"crafting", "honey", "animal", "irrigation", "water_source", "ignore_season", "inventory_expand", "resource_output",
 	]
 
 
 func set_economy_indicator(kind: String) -> void:
-	_economy_indicator_kind = kind if kind in ["collect", "full", "maintenance"] else ""
+	if kind == "maintenance":
+		set_maintenance_visual_state("overdue")
+		kind = ""
+	_economy_indicator_kind = kind if kind == "full" else ""
 	_sync_economy_indicator()
 	sync_activity_visual()
 
 
 func get_economy_indicator() -> String:
 	return _economy_indicator_kind
+
+
+func set_maintenance_visual_state(next_state: String, remaining_seconds: float = 0.0) -> void:
+	var normalized := (
+		next_state
+		if next_state in ["normal", "warning", "overdue", "repairing"]
+		else "normal"
+	)
+	var previous := _maintenance_visual_state
+	_maintenance_visual_state = normalized
+	_ensure_nodes()
+	var maintenance_visual: Variant = get_node_or_null("BuildingMaintenanceVisual")
+	if maintenance_visual != null:
+		maintenance_visual.call("set_state", normalized, remaining_seconds)
+		if previous == "repairing" and normalized == "normal":
+			maintenance_visual.call("play_completion")
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_maintenance_state", normalized)
+	_apply_visual_color()
+	sync_activity_visual()
+
+
+func get_maintenance_visual_state() -> String:
+	return _maintenance_visual_state
+
+
+func sync_output_display(outputs: Dictionary, quantity_capacity: int) -> void:
+	_ensure_nodes()
+	_output_quantity_capacity = maxi(quantity_capacity, 0)
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	if output_display != null:
+		output_display.call(
+			"sync_outputs",
+			outputs,
+			_output_quantity_capacity,
+			_output_display_enabled()
+		)
+
+
+func request_output_collection(item_id: String) -> void:
+	if producer_state != null and producer_state.get_output_count(item_id) > 0:
+		output_collection_requested.emit(self, item_id)
+
+
+func get_output_pile_count() -> int:
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	return int(output_display.call("get_pile_count")) if output_display != null else 0
+
+
+func get_output_pile_item_ids() -> Array[String]:
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	var result: Array[String] = []
+	if output_display != null:
+		result.assign(output_display.call("get_item_ids"))
+	return result
+
+
+func show_output_collection_failure(item_id: String, reason: String) -> void:
+	var output_display: Variant = get_node_or_null("BuildingOutputDisplay")
+	if output_display != null:
+		output_display.call("show_collection_failure", item_id, reason)
+
+
+func _sync_output_display_state() -> void:
+	var outputs := producer_state.outputs if producer_state != null else {}
+	sync_output_display(outputs, _output_quantity_capacity)
+
+
+func _output_display_enabled() -> bool:
+	return (
+		data != null
+		and not _preview_mode
+		and is_construction_complete()
+		and visible
+		and is_in_group("building_instance")
+	)
+
+
+func _on_output_pile_collection_requested(item_id: String) -> void:
+	request_output_collection(item_id)
 
 
 func to_dict() -> Dictionary:
@@ -518,6 +650,10 @@ func _ensure_nodes() -> void:
 		var feedback := ConstructionFeedbackScript.new() as ConstructionFeedback
 		feedback.name = "ConstructionFeedback"
 		add_child(feedback)
+	if get_node_or_null("BuildingMaintenanceVisual") == null:
+		var maintenance_visual := BuildingMaintenanceVisualScript.new()
+		maintenance_visual.name = "BuildingMaintenanceVisual"
+		add_child(maintenance_visual)
 	if get_node_or_null("EconomyIndicator") == null:
 		var indicator := Label3D.new()
 		indicator.name = "EconomyIndicator"
@@ -529,6 +665,14 @@ func _ensure_nodes() -> void:
 		indicator.visible = false
 		indicator.render_priority = 2
 		add_child(indicator)
+	if get_node_or_null("BuildingOutputDisplay") == null:
+		var output_display := BuildingOutputDisplayScript.new()
+		output_display.name = "BuildingOutputDisplay"
+		add_child(output_display)
+	var output_display: Variant = get_node("BuildingOutputDisplay")
+	var output_callback := Callable(self, "_on_output_pile_collection_requested")
+	if not output_display.is_connected("collection_requested", output_callback):
+		output_display.connect("collection_requested", output_callback)
 	_ensure_physics_node("Collision", StaticBody3D)
 	_ensure_physics_node("InteractionArea", Area3D)
 	_ensure_physics_node("CameraOccluder", Area3D)
@@ -544,6 +688,39 @@ func _ensure_physics_node(node_name: String, node_type: Variant) -> void:
 		var collision_shape := CollisionShape3D.new()
 		collision_shape.name = "CollisionShape3D"
 		physics_node.add_child(collision_shape)
+
+
+func _configure_production_yard() -> void:
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if not data.has_production_yard():
+		if production_yard != null:
+			remove_child(production_yard)
+			production_yard.free()
+		return
+	if production_yard == null:
+		production_yard = BuildingProductionYardScript.new()
+		production_yard.name = "ProductionYard"
+		add_child(production_yard)
+	production_yard.call(
+		"configure",
+		data.production_yard_size(),
+		data.production_yard_style(),
+		data.production_yard_offset()
+	)
+	production_yard.call("set_construction_stage", int(construction_stage))
+	production_yard.call("set_preview_state", _preview_mode, _preview_valid)
+	production_yard.call("set_maintenance_state", _maintenance_visual_state)
+
+
+func _apply_structure_offset() -> void:
+	var offset := data.production_yard_offset() if data != null else Vector3.ZERO
+	var visual_root := get_node_or_null("VisualRoot") as Node3D
+	if visual_root != null:
+		visual_root.position = offset
+	for node_name in ["ConstructionFeedback", "BuildingMaintenanceVisual"]:
+		var anchored := get_node_or_null(node_name) as Node3D
+		if anchored != null:
+			anchored.position = offset
 
 
 func _configure_visuals() -> void:
@@ -573,6 +750,9 @@ func _configure_visuals() -> void:
 	_configure_construction_fallback()
 	var feedback := get_node("ConstructionFeedback") as ConstructionFeedback
 	feedback.configure(data.visual_size)
+	var maintenance_visual: Variant = get_node("BuildingMaintenanceVisual")
+	maintenance_visual.call("configure", data.visual_size, data.ground_anchor_uv)
+	maintenance_visual.call("set_state", _maintenance_visual_state, 0.0)
 	_apply_visual_color()
 	sync_activity_visual()
 
@@ -580,7 +760,7 @@ func _configure_visuals() -> void:
 func should_play_activity() -> bool:
 	if data == null or _preview_mode or not is_construction_complete() or not visible:
 		return false
-	if _economy_indicator_kind in ["full", "maintenance"]:
+	if _economy_indicator_kind == "full" or _maintenance_visual_state in ["overdue", "repairing"]:
 		return false
 	if data.effect_type == "crafting":
 		if producer_state == null:
@@ -624,17 +804,10 @@ func _sync_economy_indicator() -> void:
 	if indicator == null:
 		return
 	var visual_size := data.visual_size if data != null else Vector2(1.0, 1.0)
-	indicator.position = Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
-	indicator.text = {
-		"collect": "收",
-		"full": "满",
-		"maintenance": "修",
-	}.get(_economy_indicator_kind, "")
-	indicator.modulate = {
-		"collect": Color("f5e6c8"),
-		"full": Color("ef6767"),
-		"maintenance": Color("f2b84b"),
-	}.get(_economy_indicator_kind, Color.WHITE)
+	var structure_offset := data.production_yard_offset() if data != null else Vector3.ZERO
+	indicator.position = structure_offset + Vector3(visual_size.x * 0.42, visual_size.y + 0.28, 0.08)
+	indicator.text = "满" if _economy_indicator_kind == "full" else ""
+	indicator.modulate = Color("ef6767") if _economy_indicator_kind == "full" else Color.WHITE
 	indicator.visible = (
 		not indicator.text.is_empty()
 		and not _preview_mode
@@ -695,11 +868,12 @@ func _configure_fallback(visible: bool) -> void:
 	roof.visible = visible
 	if not visible:
 		return
+	var structure_size := get_structure_footprint()
 	var body_mesh := BoxMesh.new()
 	body_mesh.size = Vector3(
-		maxf(float(data.footprint.x) * 0.72, 0.45),
+		maxf(float(structure_size.x) * 0.72, 0.45),
 		data.visual_size.y * 0.55,
-		maxf(float(data.footprint.y) * 0.72, 0.45)
+		maxf(float(structure_size.y) * 0.72, 0.45)
 	)
 	body.mesh = body_mesh
 	body.position.y = body_mesh.size.y * 0.5
@@ -727,13 +901,14 @@ func _configure_construction_fallback() -> void:
 	for child in fallback.get_children():
 		child.free()
 
+	var structure_size := get_structure_footprint()
 	var slab := MeshInstance3D.new()
 	slab.name = "Foundation"
 	var slab_mesh := BoxMesh.new()
 	slab_mesh.size = Vector3(
-		maxf(float(data.footprint.x) * 0.82, 0.45),
+		maxf(float(structure_size.x) * 0.82, 0.45),
 		0.12,
-		maxf(float(data.footprint.y) * 0.82, 0.45)
+		maxf(float(structure_size.y) * 0.82, 0.45)
 	)
 	slab.mesh = slab_mesh
 	slab.position.y = 0.06
@@ -743,8 +918,8 @@ func _configure_construction_fallback() -> void:
 	var frame_root := Node3D.new()
 	frame_root.name = "Frame"
 	fallback.add_child(frame_root)
-	var width := maxf(float(data.footprint.x) * 0.72, 0.38)
-	var depth := maxf(float(data.footprint.y) * 0.72, 0.38)
+	var width := maxf(float(structure_size.x) * 0.72, 0.38)
+	var depth := maxf(float(structure_size.y) * 0.72, 0.38)
 	var height := maxf(data.visual_size.y * 0.72, 0.5)
 	for corner in [
 		Vector3(-width * 0.5, height * 0.5, -depth * 0.5),
@@ -782,6 +957,9 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	var construction_layer := visual_root.get_node("ConstructionLayer") as Sprite3D
 	var construction_fallback := visual_root.get_node("ConstructionFallback") as Node3D
 	var completed := is_construction_complete()
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_construction_stage", int(construction_stage))
 
 	if play_effect:
 		_retain_outgoing_construction_visual(construction_layer)
@@ -820,6 +998,7 @@ func _apply_construction_stage(play_effect: bool) -> void:
 	feedback.configure(data.visual_size, construction_layer.texture)
 	_sync_construction_feedback()
 	sync_activity_visual()
+	_sync_output_display_state()
 	_apply_physics_state()
 	if play_effect:
 		_play_construction_effect(construction_stage)
@@ -898,25 +1077,29 @@ func _play_construction_effect(stage: ConstructionStage) -> void:
 
 
 func _configure_physics() -> void:
+	var structure_size := get_structure_footprint()
+	var structure_offset := data.production_yard_offset()
 	var footprint_size := Vector3(
-		maxf(float(data.footprint.x) * 0.78, 0.4),
+		maxf(float(structure_size.x) * 0.78, 0.4),
 		maxf(data.visual_size.y * 0.58, 0.5),
-		maxf(float(data.footprint.y) * 0.78, 0.4)
+		maxf(float(structure_size.y) * 0.78, 0.4)
 	)
-	_set_box_shape("Collision", footprint_size, footprint_size.y * 0.5)
+	_set_box_shape("Collision", footprint_size, footprint_size.y * 0.5, structure_offset)
 	_set_box_shape(
 		"InteractionArea",
 		footprint_size + Vector3(0.55, 0.35, 0.55),
-		(footprint_size.y + 0.35) * 0.5
+		(footprint_size.y + 0.35) * 0.5,
+		structure_offset
 	)
 	_set_box_shape(
 		"CameraOccluder",
 		Vector3(
 			maxf(data.visual_size.x * 0.82, 0.5),
 			maxf(data.visual_size.y * 0.9, 0.6),
-			maxf(float(data.footprint.y) * 0.65, 0.4)
+			maxf(float(structure_size.y) * 0.65, 0.4)
 		),
-		data.visual_size.y * 0.45
+		data.visual_size.y * 0.45,
+		structure_offset
 	)
 	set_preview_mode(_preview_mode)
 
@@ -939,20 +1122,33 @@ func _apply_physics_state() -> void:
 	)
 	camera_occluder.collision_mask = 0
 	camera_occluder.monitoring = false
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_interaction_enabled", active)
+		production_yard.call("set_preview_state", _preview_mode, _preview_valid)
 
 
-func _set_box_shape(node_path: NodePath, size: Vector3, center_y: float) -> void:
+func _set_box_shape(
+	node_path: NodePath,
+	size: Vector3,
+	center_y: float,
+	structure_offset: Vector3 = Vector3.ZERO
+) -> void:
 	var collision_shape := get_node(NodePath("%s/CollisionShape3D" % node_path)) as CollisionShape3D
 	var shape := BoxShape3D.new()
 	shape.size = size
 	collision_shape.shape = shape
-	collision_shape.position.y = center_y
+	collision_shape.position = Vector3(structure_offset.x, center_y, structure_offset.z)
 
 
 func _apply_visual_color() -> void:
 	var tint := Color.WHITE
 	if _preview_mode:
 		tint = Color(0.48, 1.0, 0.52, 0.68) if _preview_valid else Color(1.0, 0.38, 0.38, 0.68)
+	elif _maintenance_visual_state == "warning":
+		tint = Color(0.92, 0.89, 0.78, 1.0)
+	elif _maintenance_visual_state in ["overdue", "repairing"]:
+		tint = Color(0.76, 0.72, 0.66, 1.0)
 	for geometry in _visual_geometry():
 		if geometry is BuildingActivityVisual:
 			(geometry as BuildingActivityVisual).set_external_tint(tint)
@@ -964,6 +1160,10 @@ func _apply_visual_color() -> void:
 			if material:
 				material.albedo_color = Color(tint.r, tint.g, tint.b, 1.0)
 			mesh.transparency = 1.0 - tint.a
+	var production_yard: Variant = get_node_or_null("ProductionYard")
+	if production_yard != null:
+		production_yard.call("set_preview_state", _preview_mode, _preview_valid)
+		production_yard.call("set_maintenance_state", _maintenance_visual_state)
 
 
 func _visual_geometry() -> Array[GeometryInstance3D]:

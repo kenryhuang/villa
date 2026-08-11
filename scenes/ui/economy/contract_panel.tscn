@@ -21,11 +21,12 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 12
 
 [node name="ActiveTitle" type="Label" parent="Content"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
+theme_type_variation = &"EconomyBlockTitle"
+theme_override_font_sizes/font_size = 22
 text = "活跃合同"
 
 [node name="ActiveScroll" type="ScrollContainer" parent="Content"]
@@ -44,7 +45,8 @@ horizontal_alignment = 1
 
 [node name="AvailableTitle" type="Label" parent="Content"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
+theme_type_variation = &"EconomyBlockTitle"
+theme_override_font_sizes/font_size = 22
 text = "可签合同"
 
 [node name="AvailableScroll" type="ScrollContainer" parent="Content"]
@@ -61,13 +63,15 @@ layout_mode = 2
 text = "提高关系或发展产业后会出现长期合同"
 horizontal_alignment = 1
 
-[node name="Details" type="VBoxContainer" parent="Content"]
+[node name="Details" type="GridContainer" parent="Content"]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 4
+columns = 2
 
 [node name="TitleLabel" type="Label" parent="Content/Details"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 28
+theme_override_font_sizes/font_size = 22
 text = "选择合同查看详情"
 autowrap_mode = 2
 
@@ -117,14 +121,14 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="SignButton" type="Button" parent="Content/Details"]
-custom_minimum_size = Vector2(180, 50)
+custom_minimum_size = Vector2(160, 44)
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 disabled = true
 text = "签订合同"
 
 [node name="DeliverButton" type="Button" parent="Content/Details"]
-custom_minimum_size = Vector2(180, 50)
+custom_minimum_size = Vector2(160, 44)
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 disabled = true

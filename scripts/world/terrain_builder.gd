@@ -18,6 +18,7 @@ static func sample_height(image: Image, world_x: float, world_z: float) -> float
 	var pixel_y := clampi(roundi(v * float(image.get_height() - 1)), 0, image.get_height() - 1)
 	return lerpf(MIN_HEIGHT, MAX_HEIGHT, image.get_pixel(pixel_x, pixel_y).r)
 
+
 func build() -> bool:
 	var height_texture := load(HEIGHTMAP_PATH) as Texture2D
 	height_image = height_texture.get_image() if height_texture else null
@@ -74,6 +75,7 @@ func build() -> bool:
 
 func get_height_at(world_x: float, world_z: float) -> float:
 	return sample_height(height_image, world_x, world_z)
+
 
 func _terrain_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

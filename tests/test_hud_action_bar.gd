@@ -86,50 +86,100 @@ class EconomyDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hud = HudScene.instantiate()
 	tree.root.add_child(hud)
-	var debug_reset_button := hud.get_node_or_null("DebugResetButton")
+	var debug_actions := hud.get_node_or_null("DebugActions")
+	var debug_panel_button := hud.get_node_or_null("DebugActions/DebugPanelButton")
+	var debug_reset_button := hud.get_node_or_null("DebugActions/DebugResetButton")
+	var has_debug_tools_api := hud.has_method("configure_debug_tools")
 	var has_debug_reset_api := hud.has_method("configure_debug_reset")
+	var has_debug_panel_signal := hud.has_signal("debug_panel_requested")
 	var has_debug_reset_signal := hud.has_signal("debug_reset_requested")
+	assertions.truthy(
+		debug_actions is HBoxContainer,
+		"HUD groups debug actions"
+	)
+	assertions.truthy(
+		debug_panel_button is Button,
+		"HUD authors the debug panel button"
+	)
 	assertions.truthy(
 		debug_reset_button is Button,
 		"HUD authors the debug reset button"
 	)
 	assertions.truthy(
+		has_debug_tools_api,
+		"HUD exposes debug tool availability configuration"
+	)
+	assertions.truthy(
 		has_debug_reset_api,
-		"HUD exposes debug reset availability configuration"
+		"HUD keeps the debug reset compatibility configuration"
+	)
+	assertions.truthy(
+		has_debug_panel_signal,
+		"HUD exposes the debug panel request signal"
 	)
 	assertions.truthy(
 		has_debug_reset_signal,
 		"HUD exposes the debug reset request signal"
 	)
-	if debug_reset_button is Button and has_debug_reset_api and has_debug_reset_signal:
+	if (
+		debug_actions is HBoxContainer
+		and debug_panel_button is Button
+		and debug_reset_button is Button
+		and has_debug_tools_api
+		and has_debug_panel_signal
+		and has_debug_reset_signal
+	):
+		var debug_panel_requests: Array[bool] = []
 		var debug_reset_requests: Array[bool] = []
+		hud.debug_panel_requested.connect(
+			func() -> void:
+				debug_panel_requests.append(true)
+		)
 		hud.debug_reset_requested.connect(
 			func() -> void:
 				debug_reset_requests.append(true)
 		)
-		hud.configure_debug_reset(false)
+		hud.configure_debug_tools(false)
 		assertions.truthy(
-			not debug_reset_button.visible,
-			"debug reset is hidden when unavailable"
+			not debug_actions.visible,
+			"debug actions are hidden when unavailable"
 		)
-		hud.configure_debug_reset(true)
-		assertions.truthy(
-			debug_reset_button.visible,
-			"debug reset appears when available"
-		)
+		debug_panel_button.pressed.emit()
 		debug_reset_button.pressed.emit()
+		assertions.equal(debug_panel_requests.size(), 0, "hidden debug panel does not emit")
+		assertions.equal(debug_reset_requests.size(), 0, "hidden debug reset does not emit")
+		hud.configure_debug_tools(true)
+		assertions.truthy(
+			debug_actions.visible,
+			"debug actions appear when available"
+		)
+		debug_panel_button.pressed.emit()
+		debug_reset_button.pressed.emit()
+		assertions.equal(
+			debug_panel_requests.size(),
+			1,
+			"available debug panel emits one request"
+		)
 		assertions.equal(
 			debug_reset_requests.size(),
 			1,
 			"available debug reset emits one request"
 		)
-		hud.configure_debug_reset(false)
+		hud.configure_debug_tools(false)
+		debug_panel_button.pressed.emit()
 		debug_reset_button.pressed.emit()
+		assertions.equal(
+			debug_panel_requests.size(),
+			1,
+			"unavailable debug panel does not emit another request"
+		)
 		assertions.equal(
 			debug_reset_requests.size(),
 			1,
 			"unavailable debug reset does not emit a request"
 		)
+		hud.configure_debug_reset(true)
+		assertions.truthy(debug_actions.visible, "compatibility API shows all debug tools")
 	for item_id in ["wood", "stone", "iron", "glass"]:
 		var entry_path := "MaterialsPanel/MaterialsRow/%s" % item_id.capitalize()
 		var entry := hud.get_node_or_null(entry_path)

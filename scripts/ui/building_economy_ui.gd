@@ -7,15 +7,21 @@ const PRODUCTION_BUILDINGS := [
 	"windmill", "workbench", "stone_kiln", "furnace", "food_workshop", "textile_machine",
 ]
 const STATUS_BUILDINGS := [
-	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine",
+	"beehive", "chicken_coop", "waterwheel", "greenhouse", "barn", "lumberyard", "quarry", "mine", "well",
 ]
+const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
+const OPEN_DURATION := 0.16
 
-@onready var modal_layer: ColorRect = $ModalLayer
-@onready var title_label: Label = $ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel
-@onready var state_label: Label = $ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel
-@onready var close_button: Button = $ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton
-@onready var production_panel: BuildingProductionPanel = $ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel
-@onready var status_panel: BuildingStatusPanel = $ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel
+@onready var screen_layer: CanvasLayer = $ScreenLayer
+@onready var modal_layer: ColorRect = $ScreenLayer/ModalLayer
+@onready var building_panel: PanelContainer = $ScreenLayer/ModalLayer/BuildingPanel
+@onready var title_label: Label = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/TitleLabel
+@onready var state_label: Label = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/StateLabel
+@onready var close_button: Button = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Header/CloseButton
+@onready var production_tab: Button = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Tabs/ProductionTab
+@onready var status_tab: Button = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/Tabs/StatusTab
+@onready var production_panel: BuildingProductionPanel = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/ProductionPanel
+@onready var status_panel: BuildingStatusPanel = $ScreenLayer/ModalLayer/BuildingPanel/Margin/Shell/PageHost/StatusPanel
 @onready var range_overlay: WorldRangeOverlay = $WorldRangeOverlay
 
 var _production: ProductionSystem
@@ -25,17 +31,30 @@ var _grid: GridSystem
 var _modal: EconomyModalCoordinator
 var _building_ref: WeakRef
 var _is_open := false
+var animations_enabled := true
+var _panel_tween: Tween
 
 
 func _ready() -> void:
+	add_to_group(EconomyLayoutScript.RESPONSIVE_GROUP)
 	visible = false
+	screen_layer.visible = false
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	if not visibility_changed.is_connected(_sync_screen_layer_visibility):
+		visibility_changed.connect(_sync_screen_layer_visibility)
 	if not close_button.pressed.is_connected(close):
 		close_button.pressed.connect(close)
+	if not production_tab.pressed.is_connected(_on_production_tab_pressed):
+		production_tab.pressed.connect(_on_production_tab_pressed)
+	if not status_tab.pressed.is_connected(_on_status_tab_pressed):
+		status_tab.pressed.connect(_on_status_tab_pressed)
+	if not get_viewport().size_changed.is_connected(_apply_compact_rect):
+		get_viewport().size_changed.connect(_apply_compact_rect)
+	_apply_compact_rect()
 	_connect_panel_signals()
 	if is_configured():
 		production_panel.configure(_production, _inventory, _progression)
-		status_panel.configure(_production, _inventory, _grid, range_overlay)
+		status_panel.configure(_production, _inventory, _progression, _grid, range_overlay)
 
 
 static func panel_kind_for(building_id: String, effect_type: String) -> String:
@@ -63,7 +82,7 @@ func configure(
 	if not is_node_ready():
 		return true
 	_connect_panel_signals()
-	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, grid, range_overlay)
+	return production_panel.configure(production, inventory, progression) and status_panel.configure(production, inventory, progression, grid, range_overlay)
 
 
 func open_for(building: BuildingInstance) -> bool:
@@ -79,20 +98,23 @@ func open_for(building: BuildingInstance) -> bool:
 		_building_ref = weakref(building)
 		if not building.tree_exiting.is_connected(_on_current_building_tree_exiting):
 			building.tree_exiting.connect(_on_current_building_tree_exiting)
-	if not _is_open:
+	var was_closed := not _is_open
+	if was_closed:
 		if not _modal.acquire(self):
 			return false
 		_is_open = true
 		visible = true
+		screen_layer.visible = true
+		_apply_compact_rect()
 	title_label.text = building.data.display_name if building.data != null else building.building_id
-	production_panel.visible = kind == "production"
-	status_panel.visible = kind == "status"
 	if kind == "production":
 		production_panel.show_building(building)
-		state_label.text = _production_state_text()
-	else:
-		status_panel.show_building(building)
-		state_label.text = _status_state_text(status_panel.view_data.state)
+	status_panel.show_building(building)
+	var maintenance_state := _production.get_maintenance_state(building)
+	var page_kind := "status" if maintenance_state != "normal" else kind
+	_apply_page_kind(page_kind)
+	if was_closed:
+		_animate_open(building_panel)
 	_emit_event("building_economy_opened", [building, kind])
 	return true
 
@@ -103,6 +125,8 @@ func close() -> void:
 		return
 	var building := current_building()
 	_is_open = false
+	_stop_transition()
+	screen_layer.visible = false
 	visible = false
 	_disconnect_current_building()
 	if _modal != null:
@@ -133,6 +157,9 @@ func current_building() -> BuildingInstance:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _is_open or not event is InputEventKey or not event.pressed or event.echo or event.keycode != KEY_ESCAPE:
 		return
+	if production_panel.visible and production_panel.handle_top_escape():
+		get_viewport().set_input_as_handled()
+		return
 	close()
 	get_viewport().set_input_as_handled()
 
@@ -154,6 +181,95 @@ func _disconnect_current_building() -> void:
 	if building != null and building.tree_exiting.is_connected(_on_current_building_tree_exiting):
 		building.tree_exiting.disconnect(_on_current_building_tree_exiting)
 	_building_ref = null
+
+
+func _apply_compact_rect() -> void:
+	if not is_node_ready():
+		return
+	var rect := EconomyLayoutScript.panel_rect_for(
+		get_viewport_rect().size,
+		EconomyLayoutScript.BUILDING_PANEL_MAX_SIZE
+	)
+	building_panel.position = rect.position
+	building_panel.size = rect.size
+	production_panel.apply_responsive_layout(
+		EconomyLayoutScript.logical_size_for(rect.size, EconomyLayoutScript.get_ui_scale())
+	)
+
+
+func apply_economy_ui_scale(_ui_scale: float) -> void:
+	_apply_compact_rect()
+
+
+func _sync_screen_layer_visibility() -> void:
+	if is_node_ready():
+		screen_layer.visible = visible
+
+
+func _apply_page_kind(kind: String) -> void:
+	var building := current_building()
+	var supports_production := (
+		building != null
+		and panel_kind_for(building.building_id, building.economy_effect_type()) == "production"
+	)
+	if kind == "production" and not supports_production:
+		kind = "status"
+	production_panel.visible = kind == "production"
+	status_panel.visible = kind == "status"
+	production_tab.button_pressed = kind == "production"
+	status_tab.button_pressed = kind == "status"
+	production_tab.disabled = not supports_production
+	status_tab.disabled = false
+	production_tab.theme_type_variation = (
+		&"EconomyTabSelected" if kind == "production" else &"EconomyTab"
+	)
+	status_tab.theme_type_variation = (
+		&"EconomyTabSelected" if kind == "status" else &"EconomyTab"
+	)
+	state_label.text = (
+		_production_state_text()
+		if kind == "production"
+		else _status_state_text(status_panel.view_data.state)
+	)
+
+
+func _on_production_tab_pressed() -> void:
+	_apply_page_kind("production")
+
+
+func _on_status_tab_pressed() -> void:
+	_apply_page_kind("status")
+
+
+func set_animations_enabled(enabled: bool) -> void:
+	animations_enabled = enabled
+	if not enabled:
+		_stop_transition()
+		if is_node_ready():
+			building_panel.scale = Vector2.ONE
+			building_panel.modulate.a = 1.0
+
+
+func _animate_open(panel: Control) -> void:
+	if not animations_enabled:
+		panel.scale = Vector2.ONE
+		panel.modulate.a = 1.0
+		return
+	_stop_transition()
+	panel.pivot_offset = panel.size * 0.5
+	panel.scale = Vector2(0.985, 0.985)
+	panel.modulate.a = 0.0
+	_panel_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_panel_tween.set_parallel(true)
+	_panel_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel, "scale", Vector2.ONE, OPEN_DURATION)
+	_panel_tween.tween_property(panel, "modulate:a", 1.0, OPEN_DURATION)
+
+
+func _stop_transition() -> void:
+	if _panel_tween != null:
+		_panel_tween.kill()
+		_panel_tween = null
 
 
 func _production_state_text(state: String = "") -> String:

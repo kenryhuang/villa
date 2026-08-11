@@ -9,7 +9,9 @@ const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
-const MAINTENANCE_INTERVAL_DAYS := 7
+const MAINTENANCE_INTERVAL_DAYS := 14
+const MAINTENANCE_WARNING_DAYS := 1
+const REPAIR_DURATION_SECONDS := 3.0
 const MAX_SAFE_INTEGER := EconomyLimitsScript.MAX_SAFE_INTEGER
 const MAX_SAFE_DATE := EconomyLimitsScript.MAX_SAFE_DATE
 
@@ -26,10 +28,16 @@ var _inventory_system: InventorySystem
 var _progression_system: Variant
 var _current_day := 0
 var maintenance_due_days: Dictionary = {}
+var repair_remaining_seconds: Dictionary = {}
 var speed_accumulators: Dictionary = {}
 var _active_maintenance_transactions: Dictionary = {}
 var _feed_shortage_active: Dictionary = {}
 var _passive_output_blocked: Dictionary = {}
+
+
+func _init() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(false)
 
 
 func _ready() -> void:
@@ -65,7 +73,10 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 	var snapshot: Dictionary = state.to_dict()
 	snapshot["building_id"] = building.building_id
 	snapshot["maintenance_due_day"] = get_maintenance_due_day(building)
-	snapshot["maintenance_paused"] = is_maintenance_overdue(building)
+	snapshot["maintenance_state"] = get_maintenance_state(building)
+	snapshot["maintenance_days_remaining"] = get_maintenance_days_remaining(building)
+	snapshot["repair_remaining_seconds"] = get_repair_remaining_seconds(building)
+	snapshot["maintenance_paused"] = is_maintenance_paused(building)
 	snapshot["storage_quantity_capacity"] = _storage_quantity_capacity(building)
 	if bool(snapshot.maintenance_paused) and not snapshot.jobs.is_empty():
 		snapshot.jobs[0].status = "maintenance_paused"
@@ -73,20 +84,27 @@ func get_building_snapshot(building: BuildingInstance) -> Dictionary:
 
 
 func refresh_indicator(building: BuildingInstance) -> String:
-	if building == null or not is_instance_valid(building) or not building.has_method("set_economy_indicator"):
+	if building == null or not is_instance_valid(building):
 		return ""
 	var kind := ""
+	var state := _get_state(building)
 	if _building_is_active(building):
-		if is_maintenance_overdue(building):
-			kind = "maintenance"
-		else:
-			var state := _get_state(building)
-			if state != null:
-				if _is_output_full(building, state):
-					kind = "full"
-				elif not state.outputs.is_empty():
-					kind = "collect"
-	building.call("set_economy_indicator", kind)
+		if not is_maintenance_paused(building) and state != null and _is_output_full(building, state):
+			kind = "full"
+	if building.has_method("set_maintenance_visual_state"):
+		building.call(
+			"set_maintenance_visual_state",
+			get_maintenance_state(building),
+			get_repair_remaining_seconds(building)
+		)
+	if building.has_method("sync_output_display"):
+		building.call(
+			"sync_output_display",
+			state.outputs if state != null else {},
+			_storage_quantity_capacity(building)
+		)
+	if building.has_method("set_economy_indicator"):
+		building.call("set_economy_indicator", kind)
 	return kind
 
 
@@ -103,8 +121,12 @@ func preflight_recipe(
 	if state == null:
 		failure.reason = "not_a_producer"
 		return failure
-	if is_maintenance_overdue(building):
-		failure.reason = "maintenance_overdue"
+	if is_maintenance_paused(building):
+		failure.reason = (
+			"maintenance_in_progress"
+			if get_maintenance_state(building) == "repairing"
+			else "maintenance_overdue"
+		)
 		return failure
 	var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
 	if recipe.is_empty():
@@ -228,18 +250,12 @@ func add_input(
 func advance_minutes(minutes: int) -> void:
 	if minutes <= 0:
 		return
-	var stale: Array[BuildingInstance] = []
-	for building in _registered_buildings:
-		if not is_instance_valid(building):
-			stale.append(building)
-			continue
+	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
 			refresh_indicator(building)
 			continue
 		_advance_building(building, minutes)
 		refresh_indicator(building)
-	for building in stale:
-		_registered_buildings.erase(building)
 
 
 func collect_all(building: BuildingInstance, inventory: InventorySystem) -> bool:
@@ -307,7 +323,7 @@ func apply_daily_effects(total_day: int) -> void:
 		if (
 			not _building_is_active(building)
 			or not _has_effect(building, "irrigation")
-			or is_maintenance_overdue(building)
+			or is_maintenance_paused(building)
 		):
 			continue
 		if not is_water_connected(building):
@@ -345,10 +361,14 @@ func begin_day(total_day: int) -> bool:
 	var previous_day := _current_day
 	_current_day = total_day
 	for building in _valid_registered_buildings():
-		var due_day := get_maintenance_due_day(building)
-		if due_day > previous_day and due_day <= total_day:
-			_emit_event("production_maintenance_changed", [building, due_day])
+		var previous_state := _maintenance_state_at_day(building, previous_day)
+		var current_state := get_maintenance_state(building)
 		refresh_indicator(building)
+		if current_state != previous_state and current_state in ["warning", "overdue"]:
+			_emit_event(
+				"production_maintenance_changed",
+				[building, get_maintenance_due_day(building)]
+			)
 	_refresh_greenhouse_cells()
 	return true
 
@@ -395,10 +415,12 @@ func unregister_building(building: BuildingInstance) -> void:
 			building.call("set_economy_indicator", "")
 		var key := building_key(building)
 		maintenance_due_days.erase(key)
+		repair_remaining_seconds.erase(key)
 		speed_accumulators.erase(key)
 		_feed_shortage_active.erase(key)
 		_passive_output_blocked.erase(key)
 	_refresh_greenhouse_cells()
+	set_process(not repair_remaining_seconds.is_empty())
 
 
 func register_existing_buildings() -> int:
@@ -442,11 +464,12 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 		return false
 	if not _registered_buildings.has(building):
 		return false
-	var previous_due_day := get_maintenance_due_day(building)
+	var previous_state := get_maintenance_state(building)
 	maintenance_due_days[building_key(building)] = due_day
 	_refresh_greenhouse_cells()
 	refresh_indicator(building)
-	if due_day <= _current_day and (previous_due_day < 0 or previous_due_day > _current_day):
+	var current_state := get_maintenance_state(building)
+	if current_state != previous_state and current_state in ["warning", "overdue"]:
 		_emit_event("production_maintenance_changed", [building, due_day])
 	return true
 
@@ -454,6 +477,47 @@ func set_maintenance_due_day(building: BuildingInstance, due_day: int) -> bool:
 func is_maintenance_overdue(building: BuildingInstance) -> bool:
 	var due_day := get_maintenance_due_day(building)
 	return due_day >= 0 and _current_day >= due_day
+
+
+func get_maintenance_days_remaining(building: BuildingInstance) -> int:
+	var due_day := get_maintenance_due_day(building)
+	return maxi(0, due_day - _current_day) if due_day >= 0 else -1
+
+
+func get_repair_remaining_seconds(building: BuildingInstance) -> float:
+	if building == null:
+		return 0.0
+	return float(repair_remaining_seconds.get(building_key(building), 0.0))
+
+
+func get_maintenance_state(building: BuildingInstance) -> String:
+	if building == null or get_maintenance_due_day(building) < 0:
+		return "normal"
+	if get_repair_remaining_seconds(building) > 0.0:
+		return "repairing"
+	var remaining := get_maintenance_due_day(building) - _current_day
+	if remaining <= 0:
+		return "overdue"
+	if remaining <= MAINTENANCE_WARNING_DAYS:
+		return "warning"
+	return "normal"
+
+
+func _maintenance_state_at_day(building: BuildingInstance, total_day: int) -> String:
+	if building == null or get_maintenance_due_day(building) < 0:
+		return "normal"
+	if get_repair_remaining_seconds(building) > 0.0:
+		return "repairing"
+	var remaining := get_maintenance_due_day(building) - total_day
+	if remaining <= 0:
+		return "overdue"
+	if remaining <= MAINTENANCE_WARNING_DAYS:
+		return "warning"
+	return "normal"
+
+
+func is_maintenance_paused(building: BuildingInstance) -> bool:
+	return get_maintenance_state(building) in ["overdue", "repairing"]
 
 
 func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
@@ -465,14 +529,22 @@ func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
 func maintain(
 	building: BuildingInstance,
 	wallet: Variant,
-	inventory: InventorySystem
+	inventory: InventorySystem,
+	quote_override: Dictionary = {}
 ) -> bool:
-	if building == null or wallet == null or inventory == null or not is_maintenance_overdue(building):
+	if (
+		building == null or wallet == null or inventory == null
+		or get_maintenance_state(building) not in ["warning", "overdue"]
+	):
 		return false
 	var key := building_key(building)
 	if _active_maintenance_transactions.has(key):
 		return false
-	var quote := get_maintenance_quote(building)
+	var quote := (
+		quote_override.duplicate(true)
+		if not quote_override.is_empty()
+		else get_maintenance_quote(building)
+	)
 	if quote.is_empty() or int(wallet.gold) < int(quote.gold_cost):
 		return false
 	for item_id in quote.materials:
@@ -485,20 +557,22 @@ func maintain(
 	}
 	var gold_before := int(wallet.gold)
 	var due_before := get_maintenance_due_day(building)
+	var repair_before := repair_remaining_seconds.duplicate(true)
 	var owns_event := _begin_event_bus_transaction()
 	var owns_mapping := inventory.begin_mapping_transaction()
 	for item_id in quote.materials:
 		if not inventory.remove_item(str(item_id), int(quote.materials[item_id])):
-			_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, key, owns_mapping, owns_event)
+			_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, repair_before, key, owns_mapping, owns_event)
 			_active_maintenance_transactions.erase(key)
 			return false
 	if not wallet.spend_gold(int(quote.gold_cost)):
-		_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, key, owns_mapping, owns_event)
+		_rollback_maintenance_transaction(inventory, wallet, snapshot, gold_before, due_before, repair_before, key, owns_mapping, owns_event)
 		_active_maintenance_transactions.erase(key)
 		return false
-	maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
+	repair_remaining_seconds[key] = REPAIR_DURATION_SECONDS
 	_refresh_greenhouse_cells()
 	refresh_indicator(building)
+	set_process(true)
 	if owns_mapping:
 		inventory.end_mapping_transaction(true)
 	_end_inventory_event_transaction(owns_event, true, "item_removed", quote.materials)
@@ -509,12 +583,48 @@ func maintain(
 	return true
 
 
+func advance_repair_time(delta: float) -> void:
+	if delta <= 0.0 or repair_remaining_seconds.is_empty():
+		return
+	var completed_keys: Array[String] = []
+	var keys: Array[String] = []
+	keys.assign(repair_remaining_seconds.keys())
+	keys.sort()
+	for key in keys:
+		var remaining := maxf(0.0, float(repair_remaining_seconds[key]) - delta)
+		if remaining <= 0.0001:
+			completed_keys.append(key)
+		else:
+			repair_remaining_seconds[key] = remaining
+	for key in completed_keys:
+		repair_remaining_seconds.erase(key)
+		maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
+		var building := _building_for_key(key)
+		if building != null:
+			_refresh_greenhouse_cells()
+			refresh_indicator(building)
+			_emit_event("production_maintenance_changed", [building, get_maintenance_due_day(building)])
+	set_process(not repair_remaining_seconds.is_empty())
+
+
+func _process(delta: float) -> void:
+	advance_repair_time(delta)
+
+
+func _building_for_key(key: String) -> BuildingInstance:
+	for building in _valid_registered_buildings():
+		if building_key(building) == key:
+			return building
+	return null
+
+
 func _rollback_maintenance_transaction(
 	inventory: InventorySystem,
 	wallet: Variant,
 	snapshot: Dictionary,
 	gold_before: int,
 	due_before: int,
+	repair_before: Dictionary,
 	key: String,
 	owns_mapping: bool,
 	owns_event: bool
@@ -522,6 +632,7 @@ func _rollback_maintenance_transaction(
 	inventory.restore_state(snapshot.slots, snapshot.mappings)
 	wallet.set("gold", gold_before)
 	maintenance_due_days[key] = due_before
+	repair_remaining_seconds = repair_before.duplicate(true)
 	if owns_mapping:
 		inventory.end_mapping_transaction(false)
 	_end_inventory_event_transaction(owns_event, false, "item_removed", {})
@@ -530,6 +641,7 @@ func _rollback_maintenance_transaction(
 		and inventory.slots == snapshot.slots
 		and inventory.quick_slot_mappings == snapshot.mappings
 		and int(maintenance_due_days.get(key, -1)) == due_before
+		and repair_remaining_seconds == repair_before
 	)
 	if not rollback_ok:
 		push_error("Maintenance transaction rollback failed")
@@ -584,7 +696,21 @@ func to_dict() -> Dictionary:
 	speed_keys.sort()
 	for key in speed_keys:
 		speed_records.append({"building_key": key, "remainder": int(speed_accumulators[key])})
-	return {"version": 1, "maintenance": records, "speed_accumulators": speed_records}
+	var repairing_records: Array[Dictionary] = []
+	var repairing_keys: Array[String] = []
+	repairing_keys.assign(repair_remaining_seconds.keys())
+	repairing_keys.sort()
+	for key in repairing_keys:
+		repairing_records.append({
+			"building_key": key,
+			"remaining_seconds": float(repair_remaining_seconds[key]),
+		})
+	return {
+		"version": 2,
+		"maintenance": records,
+		"speed_accumulators": speed_records,
+		"repairing": repairing_records,
+	}
 
 
 func validate_dict(data: Dictionary) -> bool:
@@ -597,8 +723,10 @@ func from_dict(data: Dictionary) -> bool:
 		return false
 	maintenance_due_days = parsed.maintenance
 	speed_accumulators = parsed.speed
+	repair_remaining_seconds = parsed.repairing
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
+	set_process(not repair_remaining_seconds.is_empty())
 	return true
 
 
@@ -607,11 +735,13 @@ func reset_maintenance(total_day: int = 0) -> bool:
 		return false
 	_current_day = total_day
 	maintenance_due_days.clear()
+	repair_remaining_seconds.clear()
 	speed_accumulators.clear()
 	_feed_shortage_active.clear()
 	_passive_output_blocked.clear()
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
+	set_process(false)
 	return true
 
 
@@ -620,9 +750,14 @@ static func building_key(building: BuildingInstance) -> String:
 
 
 func _parse_maintenance(data: Dictionary) -> Variant:
-	if data.size() != 3 or not _integer_number_in_range(data.get("version"), 1, 1):
+	if not _integer_number_in_range(data.get("version"), 1, 2):
+		return null
+	var version := int(data.version)
+	if data.size() != (3 if version == 1 else 4):
 		return null
 	if not data.get("maintenance") is Array or not data.get("speed_accumulators") is Array:
+		return null
+	if version == 2 and not data.get("repairing") is Array:
 		return null
 	var maintenance := {}
 	for value in data.maintenance:
@@ -650,7 +785,24 @@ func _parse_maintenance(data: Dictionary) -> Variant:
 		if not _integer_number_in_range(record.get("remainder"), 0, 99):
 			return null
 		speed[key] = int(record.remainder)
-	return {"maintenance": maintenance, "speed": speed}
+	var repairing := {}
+	if version == 2:
+		for value in data.repairing:
+			if not value is Dictionary:
+				return null
+			var record := value as Dictionary
+			if record.size() != 2 or not record.get("building_key") is String:
+				return null
+			var key := str(record.building_key)
+			var remaining: Variant = record.get("remaining_seconds")
+			if (
+				not _valid_building_key(key) or repairing.has(key)
+				or not maintenance.has(key)
+				or not _finite_number_in_range(remaining, 0.000001, REPAIR_DURATION_SECONDS)
+			):
+				return null
+			repairing[key] = float(remaining)
+	return {"maintenance": maintenance, "speed": speed, "repairing": repairing}
 
 
 func _valid_building_key(key: String) -> bool:
@@ -664,6 +816,13 @@ static func _integer_number_in_range(value: Variant, minimum: int, maximum: int)
 		typeof(value) == TYPE_FLOAT and is_finite(value)
 		and floorf(value) == value and value >= float(minimum) and value <= float(maximum)
 	)
+
+
+static func _finite_number_in_range(value: Variant, minimum: float, maximum: float) -> bool:
+	if typeof(value) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	var number := float(value)
+	return is_finite(number) and number >= minimum and number <= maximum
 
 
 func passive_output_for(id: String, day: int, flowers: int) -> Dictionary:
@@ -802,7 +961,7 @@ func _is_crop_cell_currently_irrigated(position: Vector2i) -> bool:
 		if (
 			not _building_is_active(waterwheel)
 			or not _has_effect(waterwheel, "irrigation")
-			or is_maintenance_overdue(waterwheel)
+			or is_maintenance_paused(waterwheel)
 			or not is_water_connected(waterwheel)
 		):
 			continue
@@ -816,7 +975,7 @@ func get_covered_greenhouses(waterwheel: BuildingInstance) -> Array[String]:
 	if (
 		not _building_is_active(waterwheel)
 		or not _has_effect(waterwheel, "irrigation")
-		or is_maintenance_overdue(waterwheel)
+		or is_maintenance_paused(waterwheel)
 		or not is_water_connected(waterwheel)
 	):
 		return result
@@ -827,7 +986,7 @@ func get_covered_greenhouses(waterwheel: BuildingInstance) -> Array[String]:
 		if (
 			not _building_is_active(greenhouse)
 			or not _has_effect(greenhouse, "ignore_season")
-			or is_maintenance_overdue(greenhouse)
+			or is_maintenance_paused(greenhouse)
 		):
 			continue
 		for position in get_greenhouse_cells(greenhouse):
@@ -1014,7 +1173,7 @@ func _on_building_completed(building: BuildingInstance) -> void:
 
 
 func _finish_passive_building(building: BuildingInstance, total_day: int) -> void:
-	if is_maintenance_overdue(building):
+	if is_maintenance_paused(building):
 		return
 	var id := building.building_id
 	var state := _get_state(building)
@@ -1222,11 +1381,10 @@ func _building_is_active(building: BuildingInstance) -> bool:
 
 func _valid_registered_buildings() -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []
-	for building in _registered_buildings.duplicate():
-		if building == null or not is_instance_valid(building):
-			_registered_buildings.erase(building)
-		else:
+	for building in _registered_buildings:
+		if building != null and is_instance_valid(building):
 			result.append(building)
+	_registered_buildings = result.duplicate()
 	return result
 
 
@@ -1239,7 +1397,7 @@ func _refresh_greenhouse_cells() -> void:
 		if (
 			not _building_is_active(building)
 			or not _has_effect(building, "ignore_season")
-			or is_maintenance_overdue(building)
+			or is_maintenance_paused(building)
 		):
 			continue
 		for position in get_greenhouse_cells(building):
@@ -1310,7 +1468,7 @@ func _advance_building(building: BuildingInstance, minutes: int) -> void:
 	var state := _get_state(building)
 	if state == null:
 		return
-	if is_maintenance_overdue(building):
+	if is_maintenance_paused(building):
 		return
 	var base_minutes_remaining := minutes
 	while base_minutes_remaining > 0:

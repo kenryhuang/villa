@@ -1,6 +1,8 @@
 extends RefCounted
 
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
+const GameDataScript := preload("res://scripts/core/game_data.gd")
+const TEST_OUTPUT_SAVE_SLOT := 1
 const TEST_SAVE_SLOT := 4
 const TEST_SIBLING_SAVE_SLOT := 2
 const TEST_SAVE_DIR := "user://villa_test_saves/debug_reset/"
@@ -88,10 +90,68 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"HUD debug reset request is connected to Main"
 	)
 	assertions.equal(
-		main.hud.debug_reset_button.visible,
+		main.hud.debug_actions.visible,
 		OS.is_debug_build(),
-		"Main exposes the reset button only in debug builds"
+		"Main exposes debug actions only in debug builds"
 	)
+	assertions.truthy(
+		main.hud.has_signal("debug_panel_requested"),
+		"HUD exposes the runtime debug panel request"
+	)
+	if OS.is_debug_build():
+		assertions.truthy(main.debug_state_editor != null, "Main creates a debug state editor")
+		assertions.truthy(main.debug_panel != null, "Main creates a runtime debug panel")
+		assertions.truthy(
+			main.hud.debug_panel_requested.is_connected(
+				Callable(main, "_on_debug_panel_requested")
+			),
+			"HUD debug panel request is connected to Main"
+		)
+		assertions.truthy(
+			main.debug_panel.apply_requested.is_connected(
+				Callable(main, "_on_debug_panel_apply_requested")
+			),
+			"runtime debug panel apply is connected to Main"
+		)
+		assertions.truthy(not main.debug_panel.visible, "runtime debug panel starts closed")
+		main.hud.debug_panel_requested.emit()
+		assertions.truthy(main.debug_panel.visible, "HUD request opens runtime debug panel")
+		main.debug_panel.close()
+		var progression_before: Dictionary = main.economy_progression_system.to_dict()
+		var debug_state_before: Dictionary = main.debug_state_editor.snapshot()
+		assertions.truthy(
+			not main.economy_progression_system.is_blueprint_unlocked("barn"),
+			"tier-one barn starts locked before a debug progression jump"
+		)
+		var progression_draft := debug_state_before.duplicate(true)
+		progression_draft["level"] = 2
+		progression_draft["elapsed_days"] = 7
+		var progression_result: Dictionary = main.debug_state_editor.apply(progression_draft)
+		assertions.truthy(
+			bool(progression_result.get("ok", false)),
+			"debug progression jump applies"
+		)
+		assertions.truthy(
+			main.economy_progression_system.is_blueprint_unlocked("barn"),
+			"debug progression jump grants gate-eligible blueprints"
+		)
+		assertions.truthy(
+			main.economy_progression_system.is_recipe_unlocked("flour"),
+			"debug blueprint grant includes its tier recipe"
+		)
+		assertions.truthy(
+			str(main.building_system.diagnose_availability("barn").get("code", ""))
+			!= "blueprint_locked",
+			"building availability observes debug-unlocked blueprints"
+		)
+		assertions.truthy(
+			main.economy_progression_system.from_dict(progression_before),
+			"debug progression fixture restores blueprint ownership"
+		)
+		assertions.truthy(
+			bool(main.debug_state_editor.apply(debug_state_before).get("ok", false)),
+			"debug progression fixture restores actor and date state"
+		)
 	var main_source := FileAccess.get_file_as_string("res://scripts/main.gd")
 	var initial_state_source := _get_method_source(main_source, "_initial_game_state")
 	assertions.truthy(
@@ -156,7 +216,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	assertions.equal(
 		main.inventory_system.get_item_count("grain_seed"),
-		12,
+		99,
 		"new game grants grain seed"
 	)
 	assertions.equal(
@@ -164,10 +224,233 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"grain_seed",
 		"new game maps grain seed to slot six"
 	)
-	assertions.equal(main.hud.get_material_count_text("wood"), "30", "HUD shows starting wood")
-	assertions.equal(main.hud.get_material_count_text("stone"), "20", "HUD shows starting stone")
+	assertions.equal(main.hud.get_material_count_text("wood"), "99", "HUD shows starting wood")
+	assertions.equal(main.hud.get_material_count_text("stone"), "99", "HUD shows starting stone")
 	assertions.equal(main.hud.get_material_count_text("iron"), "0", "HUD shows no legacy starter iron")
-	assertions.equal(main.hud.get_material_count_text("glass"), "0", "HUD shows no starter glass")
+	assertions.equal(main.hud.get_material_count_text("glass"), "99", "HUD shows starting glass")
+
+	var inventory_slots_before_output: Array[Dictionary] = []
+	inventory_slots_before_output.assign(main.inventory_system.slots.duplicate(true))
+	var quick_mappings_before_output: Array[int] = []
+	quick_mappings_before_output.assign(main.inventory_system.quick_slot_mappings.duplicate())
+	var kiln_data := BuildingData.from_dictionary(GameDataScript.get_building("stone_kiln"))
+	var kiln := (load(kiln_data.scene_path) as PackedScene).instantiate() as BuildingInstance
+	main.buildings_container.add_child(kiln)
+	kiln.configure(kiln_data, 0, 0, [])
+	kiln.complete_construction()
+	main.call("_on_building_instance_placed", kiln)
+	assertions.truthy(main.production_system.register_building(kiln), "output pickup fixture registers kiln")
+	var maintenance_day_before: int = main.production_system.get_current_day()
+	assertions.truthy(
+		main.production_system.set_maintenance_due_day(kiln, maintenance_day_before + 1),
+		"main maintenance fixture enters the warning window"
+	)
+	assertions.equal(
+		kiln.get_maintenance_visual_state(),
+		"warning",
+		"direct maintenance date change refreshes the building warning visual"
+	)
+	assertions.truthy(
+		main.production_system.sync_daily_cursor(maintenance_day_before + 1),
+		"direct date jump reaches the maintenance deadline"
+	)
+	assertions.equal(
+		kiln.get_maintenance_visual_state(),
+		"overdue",
+		"direct date jump refreshes the building broken visual"
+	)
+	assertions.equal(
+		kiln.get_node("EconomyIndicator").text,
+		"",
+		"broken buildings never render the legacy repair glyph"
+	)
+	main.production_system.set_maintenance_due_day(kiln, maintenance_day_before + 14)
+	main.production_system.sync_daily_cursor(maintenance_day_before)
+	kiln.producer_state.outputs = {"charcoal": 2, "stone_brick": 3}
+	main.production_system.refresh_indicator(kiln)
+	var charcoal_before: int = main.inventory_system.get_item_count("charcoal")
+	var output_display: Variant = kiln.get_node("BuildingOutputDisplay")
+	var charcoal_pile: Variant = output_display.call("get_pile", "charcoal")
+	assertions.truthy(charcoal_pile != null, "finished charcoal creates a clickable painted pile")
+	if charcoal_pile != null:
+		charcoal_pile.set_pointer_hovered(true)
+		assertions.equal(
+			charcoal_pile.tooltip_text(),
+			"木炭 ×2",
+			"charcoal hover exposes the stored quantity"
+		)
+		var charcoal_click := InputEventMouseButton.new()
+		charcoal_click.button_index = MOUSE_BUTTON_LEFT
+		charcoal_click.pressed = true
+		charcoal_pile.handle_direct_pointer_event(charcoal_click, true, false)
+	assertions.equal(
+		main.inventory_system.get_item_count("charcoal"),
+		charcoal_before + 2,
+		"pile request reaches player assets"
+	)
+	assertions.equal(
+		kiln.producer_state.outputs,
+		{"stone_brick": 3},
+		"pile request removes only represented item"
+	)
+	assertions.equal(
+		kiln.get_output_pile_item_ids(),
+		["stone_brick"],
+		"unrequested output pile remains"
+	)
+	for slot_index in range(main.inventory_system.slots.size()):
+		if main.inventory_system.slots[slot_index].is_empty():
+			main.inventory_system.slots[slot_index] = {"item_id": "wood", "quantity": 99}
+	var brick_pile: Variant = output_display.call("get_pile", "stone_brick")
+	assertions.truthy(brick_pile != null, "finished bricks remain a clickable painted pile")
+	if brick_pile != null:
+		var brick_click := InputEventMouseButton.new()
+		brick_click.button_index = MOUSE_BUTTON_LEFT
+		brick_click.pressed = true
+		brick_pile.handle_direct_pointer_event(brick_click, true, false)
+	assertions.equal(
+		kiln.producer_state.outputs,
+		{"stone_brick": 3},
+		"full inventory preserves represented output"
+	)
+	assertions.equal(
+		main.hud.build_feedback_label.text,
+		"资产库空间不足",
+		"full inventory gives explicit pickup feedback"
+	)
+	main.production_system.unregister_building(kiln)
+	main.call("_on_economy_building_removed", kiln)
+	kiln.queue_free()
+	main.inventory_system.restore_state(
+		inventory_slots_before_output,
+		quick_mappings_before_output
+	)
+
+	var load_completed_callback := Callable(main, "_on_save_load_completed")
+	assertions.truthy(
+		isolated_save_manager.load_completed.is_connected(load_completed_callback),
+		"isolated save manager connects load completion to Main"
+	)
+	var restored_output_cell := _find_building_cell(main, "stone_kiln")
+	assertions.truthy(restored_output_cell != null, "save/load fixture finds a valid kiln footprint")
+	var placed_kiln: BuildingInstance
+	var restored_kiln: BuildingInstance
+	var restored_output_snapshots: Array[Dictionary] = []
+	if restored_output_cell != null:
+		placed_kiln = main.building_system.place_building_by_id(
+			"stone_kiln",
+			restored_output_cell.gx,
+			restored_output_cell.gz
+		)
+	assertions.truthy(placed_kiln != null, "save/load fixture places kiln through BuildingSystem")
+	if placed_kiln != null:
+		for snapshot in placed_kiln.occupied_cells:
+			restored_output_snapshots.append({
+				"gx": snapshot.gx,
+				"gz": snapshot.gz,
+				"previous_state": snapshot.previous_state,
+			})
+		placed_kiln.complete_construction()
+		assertions.truthy(
+			main.production_system.get_registered_buildings().has(placed_kiln),
+			"completed save/load kiln is registered for production"
+		)
+		placed_kiln.producer_state.outputs = {"charcoal": 2}
+		main.production_system.refresh_indicator(placed_kiln)
+		var restored_charcoal_before: int = main.inventory_system.get_item_count("charcoal")
+		assertions.truthy(
+			isolated_save_manager.save_game(TEST_OUTPUT_SAVE_SLOT),
+			"output pickup lifecycle saves through isolated SaveManager"
+		)
+		assertions.truthy(
+			isolated_save_manager.load_game(TEST_OUTPUT_SAVE_SLOT),
+			"output pickup lifecycle loads through isolated SaveManager"
+		)
+		for candidate in main.building_system.get_all_buildings():
+			if candidate.building_id == "stone_kiln":
+				restored_kiln = candidate
+				break
+		assertions.truthy(restored_kiln != null, "save/load restores the kiln through BuildingSystem")
+		if restored_kiln != null:
+			assertions.truthy(restored_kiln != placed_kiln, "save/load replaces the original kiln instance")
+			assertions.truthy(
+				main.production_system.get_registered_buildings().has(restored_kiln),
+				"save/load rebuilds production registration for the restored kiln"
+			)
+			var restored_output_display: Variant = restored_kiln.get_node("BuildingOutputDisplay")
+			var restored_charcoal_pile: Variant = restored_output_display.call("get_pile", "charcoal")
+			assertions.truthy(
+				restored_charcoal_pile != null,
+				"restored charcoal creates a clickable painted pile"
+			)
+			if restored_charcoal_pile != null:
+				var restored_charcoal_click := InputEventMouseButton.new()
+				restored_charcoal_click.button_index = MOUSE_BUTTON_LEFT
+				restored_charcoal_click.pressed = true
+				restored_charcoal_pile.handle_direct_pointer_event(
+					restored_charcoal_click,
+					true,
+					false
+				)
+			assertions.equal(
+				main.inventory_system.get_item_count("charcoal"),
+				restored_charcoal_before + 2,
+				"load completion reconnects restored output pickup to player assets"
+			)
+			assertions.equal(
+				restored_kiln.producer_state.outputs,
+				{},
+				"restored output pickup clears collected charcoal"
+			)
+	var active_kiln: BuildingInstance
+	for candidate in main.building_system.get_all_buildings():
+		if candidate.building_id == "stone_kiln":
+			active_kiln = candidate
+			break
+	if active_kiln != null:
+		assertions.truthy(
+			main.building_system.remove_building(active_kiln),
+			"save/load fixture removes the restored kiln and restores its grid"
+		)
+	for snapshot in restored_output_snapshots:
+		assertions.equal(
+			main.grid_system.get_cell(snapshot.gx, snapshot.gz).state,
+			snapshot.previous_state,
+			"save/load fixture restores each kiln footprint cell"
+		)
+	main.save_slot = TEST_SAVE_SLOT
+	assertions.truthy(
+		isolated_save_manager.clear_save(TEST_OUTPUT_SAVE_SLOT),
+		"save/load fixture clears its isolated output slot"
+	)
+	assertions.truthy(
+		not isolated_save_manager.has_save(TEST_OUTPUT_SAVE_SLOT),
+		"save/load fixture leaves no isolated output save"
+	)
+	main.inventory_system.restore_state(
+		inventory_slots_before_output,
+		quick_mappings_before_output
+	)
+	assertions.equal(
+		main.building_system.get_building_count(),
+		0,
+		"save/load fixture leaves no buildings for later integration checks"
+	)
+	assertions.equal(
+		main.inventory_system.slots,
+		inventory_slots_before_output,
+		"save/load fixture restores inventory for later integration checks"
+	)
+	assertions.equal(
+		main.inventory_system.quick_slot_mappings,
+		quick_mappings_before_output,
+		"save/load fixture restores quick mappings for later integration checks"
+	)
+	assertions.equal(
+		isolated_save_manager.current_slot,
+		TEST_SAVE_SLOT,
+		"save/load fixture restores the autosave slot for later integration checks"
+	)
 
 	var farm_cell := _find_farm_cell(main.grid_system)
 	assertions.truthy(farm_cell != null, "main has a buildable farm cell")
@@ -178,7 +461,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player plants grain")
 		assertions.equal(
 			main.inventory_system.get_item_count("grain_seed"),
-			11,
+			98,
 			"main planting consumes one seed"
 		)
 		action_controller.select_slot(1)
@@ -249,6 +532,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var build_cell := _find_build_cell(main)
 	assertions.truthy(build_cell != null, "main has a valid fence cell")
 	if build_cell:
+		var wood_before_fence: int = main.inventory_system.get_item_count("wood")
 		assertions.truthy(
 			main.building_system.enter_preview_mode("fence"),
 			"main enters fence preview"
@@ -267,12 +551,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				})
 			assertions.equal(
 				main.inventory_system.get_item_count("wood"),
-				28,
+				wood_before_fence - 2,
 				"main fence placement spends two wood"
 			)
 			assertions.equal(
 				main.hud.get_material_count_text("wood"),
-				"28",
+				str(wood_before_fence - 2),
 				"HUD immediately reflects building material spend"
 			)
 			assertions.equal(
@@ -280,8 +564,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				BuildingInstance.ConstructionStage.FOUNDATION,
 				"main building starts at foundation"
 			)
+			var wood_to_remove: int = main.inventory_system.get_item_count("wood") - 1
 			assertions.truthy(
-				main.inventory_system.remove_item("wood", 27),
+				main.inventory_system.remove_item("wood", wood_to_remove),
 				"integration fixture drains wood below fence cost"
 			)
 			assertions.truthy(
@@ -407,12 +692,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			)
 	assertions.equal(
 		main.inventory_system.get_item_count("wood"),
-		30,
+		99,
 		"debug reset restores starter wood"
 	)
 	assertions.equal(
 		main.inventory_system.get_item_count("stone"),
-		20,
+		99,
 		"debug reset restores starter stone"
 	)
 	assertions.equal(
@@ -422,12 +707,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	assertions.equal(
 		main.inventory_system.get_item_count("glass"),
-		0,
+		99,
 		"debug reset restores starter glass"
 	)
 	assertions.equal(
 		main.inventory_system.get_item_count("grain_seed"),
-		12,
+		99,
 		"debug reset restores starter grain seed"
 	)
 	assertions.equal(
@@ -436,7 +721,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"debug reset restores the starter quick slot"
 	)
 	if game_state:
-		assertions.equal(game_state.gold, 150, "debug reset restores starter gold")
+		assertions.equal(game_state.gold, 50_000, "debug reset restores starter gold")
 		assertions.equal(
 			game_state.player_state.stamina,
 			100,
@@ -450,7 +735,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(game_state.player_state.level, 1, "debug reset restores level one")
 		assertions.equal(game_state.player_state.exp, 0, "debug reset clears experience")
 		assertions.near(game_state.play_time, 0.0, 0.001, "debug reset clears play time")
-		assertions.equal(main.hud.gold_label.text, "💰 150", "debug reset refreshes HUD gold")
+		assertions.equal(main.hud.gold_label.text, "💰 50000", "debug reset refreshes HUD gold")
 		assertions.near(main.hud.stamina_bar.value, 100.0, 0.001, "debug reset refreshes HUD stamina")
 		assertions.equal(main.hud.level_label.text, "Lv.1", "debug reset refreshes HUD level")
 		assertions.near(main.hud.exp_bar.value, 0.0, 0.001, "debug reset refreshes HUD experience")
@@ -567,7 +852,7 @@ func _snapshot_save_directory(directory: String) -> Dictionary:
 
 
 func _cleanup_test_save_directory() -> void:
-	for slot in [0, TEST_SIBLING_SAVE_SLOT, TEST_SAVE_SLOT]:
+	for slot in [0, TEST_OUTPUT_SAVE_SLOT, TEST_SIBLING_SAVE_SLOT, TEST_SAVE_SLOT]:
 		var path := TEST_SAVE_DIR.path_join("save_%d.json" % slot)
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
@@ -591,4 +876,12 @@ func _find_build_cell(main: Node) -> GridCell:
 	for cell in main.grid_system._cells.values():
 		if main.building_system.can_place("fence", cell.gx, cell.gz):
 			return cell
+	return null
+
+
+func _find_building_cell(main: Node, building_id: String) -> GridCell:
+	for gz in range(GridSystem.GRID_DEPTH):
+		for gx in range(GridSystem.GRID_WIDTH):
+			if main.building_system.can_place_building(building_id, gx, gz):
+				return main.grid_system.get_cell(gx, gz)
 	return null

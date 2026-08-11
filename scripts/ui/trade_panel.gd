@@ -6,18 +6,18 @@ const MAX_UI_QUANTITY := 999
 
 signal snapshot_changed
 
-@onready var player_quantity_label: Label = $Content/PlayerQuantityLabel
-@onready var market_quantity_label: Label = $Content/MarketQuantityLabel
+@onready var player_quantity_label: Label = $Content/SummaryGrid/PlayerQuantityLabel
+@onready var market_quantity_label: Label = $Content/SummaryGrid/MarketQuantityLabel
 @onready var quantity_spin: SpinBox = $Content/QuantityRow/QuantitySpin
 @onready var max_button: Button = $Content/QuantityRow/MaxButton
-@onready var reference_price_label: Label = $Content/ReferencePriceLabel
-@onready var buy_total_label: Label = $Content/BuyTotalLabel
-@onready var sell_total_label: Label = $Content/SellTotalLabel
-@onready var impact_label: Label = $Content/ImpactLabel
-@onready var disabled_reason_label: Label = $Content/DisabledReasonLabel
+@onready var reference_price_label: Label = $Content/SummaryGrid/ReferencePriceLabel
+@onready var buy_total_label: Label = $Content/SummaryGrid/BuyTotalLabel
+@onready var sell_total_label: Label = $Content/SummaryGrid/SellTotalLabel
+@onready var impact_label: Label = $Content/SummaryGrid/ImpactLabel
+@onready var disabled_reason_label: Label = $Content/StatusArea/DisabledReasonLabel
 @onready var buy_button: Button = $Content/Actions/BuyButton
 @onready var sell_button: Button = $Content/Actions/SellButton
-@onready var feedback_label: Label = $Content/FeedbackLabel
+@onready var feedback_label: Label = $Content/StatusArea/FeedbackLabel
 @onready var feedback_timer: Timer = $FeedbackTimer
 @onready var confirmation_layer: ColorRect = $ConfirmationLayer
 @onready var confirmation_confirm_button: Button = $ConfirmationLayer/Content/VBox/Buttons/ConfirmButton
@@ -94,12 +94,12 @@ func refresh_quote() -> void:
 	var buy_total := market_ref.quote_buy(item_id, quantity) if market_ref != null else 0
 	var sell_total := market_ref.quote_sell(item_id, quantity) if market_ref != null else 0
 	quantity_spin.max_value = maxf(1.0, float(maxi(stock, owned)))
-	player_quantity_label.text = "玩家持有：%d" % owned
-	market_quantity_label.text = "市集可买：%d" % stock
-	reference_price_label.text = "参考单价：%d" % mid
-	buy_total_label.text = "买入实际总价：%d" % buy_total
-	sell_total_label.text = "卖出实际总价：%d" % sell_total
-	impact_label.text = "成交影响：%s" % localized_impact(impact_for(quantity, liquidity))
+	player_quantity_label.text = str(owned)
+	market_quantity_label.text = str(stock)
+	reference_price_label.text = str(mid)
+	buy_total_label.text = str(buy_total)
+	sell_total_label.text = str(sell_total)
+	impact_label.text = localized_impact(impact_for(quantity, liquidity))
 	var buy_reason := _buy_disabled_reason(state, quantity, buy_total)
 	var sell_reason := _sell_disabled_reason(state, quantity)
 	buy_button.disabled = not buy_reason.is_empty()
@@ -376,12 +376,12 @@ func _safe_current_quantity(state: Dictionary) -> int:
 
 
 func _set_invalid_quantity_state(stock: int, owned: int) -> void:
-	player_quantity_label.text = "玩家持有：%d" % owned
-	market_quantity_label.text = "市集可买：%d" % stock
-	reference_price_label.text = "参考单价：—"
-	buy_total_label.text = "买入实际总价：0"
-	sell_total_label.text = "卖出实际总价：0"
-	impact_label.text = "成交影响：无明显影响"
+	player_quantity_label.text = str(owned)
+	market_quantity_label.text = str(stock)
+	reference_price_label.text = "—"
+	buy_total_label.text = "0"
+	sell_total_label.text = "0"
+	impact_label.text = "无明显影响"
 	disabled_reason_label.text = "数量无效"
 	buy_button.disabled = true
 	buy_button.tooltip_text = "数量无效"

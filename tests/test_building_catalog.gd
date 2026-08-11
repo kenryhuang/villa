@@ -32,6 +32,10 @@ const EXPECTED_COSTS := {
 	"lamp": {"lamp": 1, "plank": 1},
 	"fence": {"wood": 2},
 }
+const PRODUCTION_YARD_IDS := [
+	"workbench", "stone_kiln", "windmill", "furnace", "food_workshop",
+	"textile_machine", "chicken_coop", "beehive", "lumberyard", "quarry", "mine",
+]
 
 
 func run(assertions: TestAssert) -> void:
@@ -51,6 +55,11 @@ func run(assertions: TestAssert) -> void:
 		assertions.equal(source.get("cost", {}), EXPECTED_COSTS[building_id], "%s uses target cost" % building_id)
 		assertions.truthy(source.has("category"), "%s has category" % building_id)
 		assertions.truthy(source.has("palette_order"), "%s has palette order" % building_id)
+		assertions.equal(
+			source.has("production_yard"),
+			building_id in PRODUCTION_YARD_IDS,
+			"%s has the expected production-yard membership" % building_id
+		)
 		for item_id in source.get("cost", {}):
 			assertions.truthy(
 				GameDataScript.get_item(str(item_id)) != null,

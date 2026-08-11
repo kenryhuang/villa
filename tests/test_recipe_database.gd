@@ -25,6 +25,10 @@ const DURABLE_RECIPE_IDS := [
 	"wooden_crate", "furniture", "farm_tools", "machine_parts", "lamp",
 	"sachet", "candle", "perfume", "bouquet", "jewelry",
 ]
+const MATERIAL_DURATION_MINUTES := 18
+const FOOD_DURATION_MINUTES := 27
+const DURABLE_DURATION_MINUTES := 36
+const GAME_MINUTES_PER_REAL_SECOND := 3.6
 
 
 func run(assertions: TestAssert) -> void:
@@ -90,13 +94,16 @@ func run(assertions: TestAssert) -> void:
 
 	for recipe_id in MATERIAL_RECIPE_IDS:
 		var duration := int(RecipeDatabaseScript.get_recipe(recipe_id).duration_minutes)
-		assertions.truthy(duration >= 120 and duration <= 360, "%s material duration" % recipe_id)
+		assertions.equal(duration, MATERIAL_DURATION_MINUTES, "%s material duration" % recipe_id)
+		assertions.near(float(duration) / GAME_MINUTES_PER_REAL_SECOND, 5.0, 0.01, "%s material real seconds" % recipe_id)
 	for recipe_id in FOOD_RECIPE_IDS:
 		var duration := int(RecipeDatabaseScript.get_recipe(recipe_id).duration_minutes)
-		assertions.truthy(duration >= 360 and duration <= 720, "%s food duration" % recipe_id)
+		assertions.equal(duration, FOOD_DURATION_MINUTES, "%s food duration" % recipe_id)
+		assertions.near(float(duration) / GAME_MINUTES_PER_REAL_SECOND, 7.5, 0.01, "%s food real seconds" % recipe_id)
 	for recipe_id in DURABLE_RECIPE_IDS:
 		var duration := int(RecipeDatabaseScript.get_recipe(recipe_id).duration_minutes)
-		assertions.truthy(duration >= 1080 and duration <= 2160, "%s durable duration" % recipe_id)
+		assertions.equal(duration, DURABLE_DURATION_MINUTES, "%s durable duration" % recipe_id)
+		assertions.near(float(duration) / GAME_MINUTES_PER_REAL_SECOND, 10.0, 0.01, "%s durable real seconds" % recipe_id)
 
 	var mutated := RecipeDatabaseScript.get_recipe("plank")
 	mutated.inputs.wood = 999

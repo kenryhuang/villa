@@ -129,6 +129,45 @@ func is_recipe_unlocked(recipe_id: String) -> bool:
 	return bool(unlocked_recipes.get(recipe_id, false))
 
 
+func debug_unlock_gate_eligible_blueprints() -> Dictionary:
+	if not OS.is_debug_build():
+		return {"ok": false, "reason": "debug_build_required"}
+	if _day_source == null or not _valid_wallet(_wallet):
+		return {"ok": false, "reason": "not_configured"}
+	var service_ids: Array[String] = []
+	for service_id_value in BLUEPRINT_SERVICES:
+		service_ids.append(str(service_id_value))
+	service_ids.sort()
+	var granted_blueprints: Array[String] = []
+	var granted_recipes: Array[String] = []
+	for service_id in service_ids:
+		var definition := BLUEPRINT_SERVICES[service_id] as Dictionary
+		if not _gate_met(int(definition.day_gate), int(definition.level_gate)):
+			continue
+		var target_id := str(definition.target_id)
+		if is_blueprint_unlocked(target_id):
+			continue
+		unlocked_blueprints[target_id] = true
+		granted_blueprints.append(target_id)
+		var tier := int(BLUEPRINT_TIERS.get(target_id, -1))
+		for recipe in RecipeDatabaseScript.get_recipes_for_station(target_id):
+			var recipe_id := str(recipe.id)
+			if (
+				int(recipe.get("unlock_tier", -1)) <= tier
+				and not is_recipe_unlocked(recipe_id)
+			):
+				unlocked_recipes[recipe_id] = true
+				granted_recipes.append(recipe_id)
+	for blueprint_id in granted_blueprints:
+		_emit_event("service_unlocked", ["blueprint", blueprint_id])
+	return {
+		"ok": true,
+		"reason": "",
+		"blueprints": granted_blueprints,
+		"recipes": granted_recipes,
+	}
+
+
 func get_blueprint_service_id(building_id: String) -> String:
 	for service_id in BLUEPRINT_SERVICES:
 		if str((BLUEPRINT_SERVICES[service_id] as Dictionary).target_id) == building_id:
@@ -306,8 +345,41 @@ func upgrade(building: BuildingInstance, upgrade_id: String) -> bool:
 func maintain(building: BuildingInstance) -> bool:
 	return (
 		_production_system != null
-		and _production_system.maintain(building, _wallet, _inventory_system)
+		and _production_system.maintain(
+			building,
+			_wallet,
+			_inventory_system,
+			get_maintenance_quote(building)
+		)
 	)
+
+
+func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
+	if building == null or building.data == null or _production_system == null:
+		return {}
+	if building not in _production_system.get_registered_buildings():
+		return {}
+	var structure_size := building.get_structure_footprint()
+	var area := int(structure_size.x * structure_size.y)
+	var base_gold := 20
+	var base_materials := 1
+	if area >= 5:
+		base_gold = 55
+		base_materials = 3
+	elif area >= 3:
+		base_gold = 35
+		base_materials = 2
+	var upgrade_total := 0
+	for upgrade_id in ["queue_slots", "speed", "storage"]:
+		upgrade_total += get_upgrade_level(building, upgrade_id)
+	var extra_materials := ceili(float(upgrade_total) / 2.0)
+	return {
+		"gold_cost": base_gold + 10 * upgrade_total,
+		"materials": {
+			"wood": base_materials + extra_materials,
+			"stone": base_materials + extra_materials,
+		},
+	}
 
 
 func get_upgrade_level(building: BuildingInstance, upgrade_id: String) -> int:
@@ -473,15 +545,32 @@ func _upgrade_service(building: BuildingInstance, upgrade_id: String) -> Diction
 
 
 func _maintenance_service(building: BuildingInstance) -> Dictionary:
-	var quote := _production_system.get_maintenance_quote(building)
-	var overdue := _production_system.is_maintenance_overdue(building)
+	var quote := get_maintenance_quote(building)
+	var state := _production_system.get_maintenance_state(building)
+	var current_state := "距到期 %d 天" % _production_system.get_maintenance_days_remaining(building)
+	if state == "warning":
+		current_state = "可提前维修"
+	elif state == "overdue":
+		current_state = "破损停产"
+	elif state == "repairing":
+		current_state = "维修中 %.1f 秒" % _production_system.get_repair_remaining_seconds(building)
+	var disabled_reason := ""
+	if state == "normal":
+		disabled_reason = "维护尚未进入预警期"
+	elif state == "repairing":
+		disabled_reason = "维修正在进行"
+	else:
+		disabled_reason = _cost_reason(
+			int(quote.get("gold_cost", 0)),
+			quote.get("materials", {})
+		)
 	return {
 		"id": "maintenance_%s" % building_key(building), "category": "maintenance",
 		"display_name": "%s维护" % GameDataScript.get_building(building.building_id).get("name", building.building_id),
-		"kind": "maintenance", "building": building, "target_id": building_key(building), "gate": "维护到期后支付",
-		"current_state": "已到期" if overdue else "到期日 %d" % _production_system.get_maintenance_due_day(building),
+		"kind": "maintenance", "building": building, "target_id": building_key(building), "gate": "到期前1天可维修",
+		"current_state": current_state,
 		"gold_cost": int(quote.get("gold_cost", 0)), "materials": quote.get("materials", {}),
-		"effect": "恢复生产并延后7天", "disabled_reason": "维护尚未到期" if not overdue else _cost_reason(int(quote.get("gold_cost", 0)), quote.get("materials", {})), "owned": false,
+		"effect": "维修3秒并延后14天", "disabled_reason": disabled_reason, "owned": false,
 	}
 
 

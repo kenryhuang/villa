@@ -21,7 +21,7 @@ const SHORTAGE_RATIO := 0.35
 const KINDS := [
 	"price_up", "price_down", "shortage", "recovery",
 	"caravan_arrived", "caravan_departed",
-	"completed", "full", "feed_shortage", "maintenance_due",
+	"completed", "full", "feed_shortage", "maintenance_warning", "maintenance_due",
 	"order_due", "order_completed", "order_expired",
 	"contract_breached", "contract_completed", "contract_expired",
 	"unlock", "tool_broken",
@@ -471,7 +471,12 @@ func _on_feed_shortage(
 
 
 func _on_maintenance_changed(building: BuildingInstance, due_day: int) -> void:
-	if due_day <= _current_day():
+	var state := ""
+	if building != null and building.has_method("get_maintenance_visual_state"):
+		state = str(building.call("get_maintenance_visual_state"))
+	if state == "warning" or (state.is_empty() and due_day - _current_day() == 1):
+		push("maintenance_warning", "维护预警", "%s明天需要维护" % _building_name(building), _current_day(), "building" if building != null else "", _building_key(building))
+	elif state == "overdue" or (state.is_empty() and due_day <= _current_day()):
 		push("maintenance_due", "维护到期", "%s需要维护" % _building_name(building), _current_day(), "building" if building != null else "", _building_key(building))
 
 

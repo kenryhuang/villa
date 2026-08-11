@@ -3,31 +3,40 @@ extends VBoxContainer
 
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const EconomyLayoutScript = preload("res://scripts/ui/economy_layout.gd")
 const MAX_UI_BATCHES := 9999
 const DEFAULT_INPUT_CAPACITY := 99
+const PROCESS_CARD_WIDTH := 520.0
+const ACTIVITY_CARD_WIDTH := 300.0
 
 signal snapshot_changed(state: String)
 signal unlock_requested(service_id: String)
 
-@onready var recipe_list: VBoxContainer = $ThreeColumns/RecipeColumn/RecipeList
-@onready var queue_slots_container: VBoxContainer = $ThreeColumns/QueueColumn/QueueSlots
-@onready var storage_list: VBoxContainer = $ThreeColumns/StorageColumn/StorageList
-@onready var storage_empty_label: Label = $ThreeColumns/StorageColumn/EmptyLabel
-@onready var storage_capacity_label: Label = $ThreeColumns/StorageColumn/CapacityLabel
-@onready var collect_all_button: Button = $ThreeColumns/StorageColumn/CollectAllButton
-@onready var input_label: Label = $RecipeDetails/InputLabel
-@onready var output_label: Label = $RecipeDetails/OutputLabel
-@onready var fuel_label: Label = $RecipeDetails/FuelLabel
-@onready var duration_label: Label = $RecipeDetails/DurationLabel
-@onready var pricing_label: Label = $RecipeDetails/PricingLabel
-@onready var missing_label: Label = $RecipeDetails/MissingLabel
-@onready var batch_spin_box: SpinBox = $RecipeDetails/BatchControls/BatchSpinBox
-@onready var max_button: Button = $RecipeDetails/BatchControls/MaxButton
-@onready var start_button: Button = $RecipeDetails/BatchControls/StartButton
+@onready var sections: HBoxContainer = $Sections
+@onready var recipe_card: Control = $Sections/RecipeColumn
+@onready var process_card: Control = $Sections/ProcessColumn
+@onready var activity_card: Control = $Sections/RightColumn
+@onready var recipe_list: VBoxContainer = $Sections/RecipeColumn/Content/RecipeScroll/RecipeList
+@onready var queue_slots_container: VBoxContainer = $Sections/RightColumn/Content/QueueCard/QueueScroll/QueueSlots
+@onready var storage_list: VBoxContainer = $Sections/RightColumn/Content/StorageCard/StorageList
+@onready var storage_empty_label: Label = $Sections/RightColumn/Content/StorageCard/EmptyLabel
+@onready var storage_capacity_label: Label = $Sections/RightColumn/Content/StorageCard/CapacityLabel
+@onready var collect_all_button: Button = $Sections/RightColumn/Content/StorageCard/CollectAllButton
+@onready var input_label: Label = $Sections/ProcessColumn/Content/Flow/InputItems/InputLabel
+@onready var output_label: Label = $Sections/ProcessColumn/Content/Flow/OutputItems/OutputLabel
+@onready var fuel_label: Label = $Sections/ProcessColumn/Content/Metrics/FuelLabel
+@onready var duration_label: Label = $Sections/ProcessColumn/Content/Metrics/DurationLabel
+@onready var pricing_label: Label = $Sections/ProcessColumn/Content/Metrics/PricingLabel
+@onready var missing_label: Label = $Sections/ProcessColumn/Content/MissingLabel
+@onready var batch_spin_box: SpinBox = $Sections/ProcessColumn/Content/BatchControls/BatchSpinBox
+@onready var max_button: Button = $Sections/ProcessColumn/Content/BatchControls/MaxButton
+@onready var start_button: Button = $Sections/ProcessColumn/Content/BatchControls/StartButton
+@onready var narrow_detail_scroll: ScrollContainer = $NarrowDetailScroll
+@onready var narrow_detail_stack: VBoxContainer = $NarrowDetailScroll/NarrowDetailStack
 @onready var feedback_label: Label = $FeedbackLabel
 
 var recipe_rows: Array[Dictionary] = []
-var queue_slot_nodes: Array[VBoxContainer] = []
+var queue_slot_nodes: Array[PanelContainer] = []
 var recipe_detail: Dictionary = {}
 var queue_slots: Array[Dictionary] = []
 var storage: Dictionary = {}
@@ -39,6 +48,9 @@ var max_batches := 0
 var disabled_reason := ""
 var failure_reason := ""
 var failure_message := ""
+var _layout_mode := "three_column"
+var _drawer_open := false
+var _logical_layout_size := Vector2.ZERO
 
 var _production: ProductionSystem
 var _inventory: InventorySystem
@@ -99,6 +111,97 @@ func select_recipe(recipe_id: String) -> void:
 	_selected_by_building[_building_key(building)] = recipe_id
 	batches = 1
 	refresh_snapshot()
+	open_details_drawer()
+
+
+func apply_responsive_layout(logical_size: Vector2) -> void:
+	_logical_layout_size = logical_size
+	var next_mode: String = EconomyLayoutScript.mode_for_size(logical_size)
+	if next_mode != _layout_mode:
+		_layout_mode = next_mode
+		if _layout_mode == "three_column":
+			_drawer_open = false
+	_apply_drawer_visibility()
+
+
+func get_layout_mode() -> String:
+	return _layout_mode
+
+
+func open_details_drawer() -> void:
+	if _layout_mode != "drawer":
+		return
+	_drawer_open = true
+	_apply_drawer_visibility()
+	if start_button != null and start_button.is_visible_in_tree():
+		start_button.call_deferred("grab_focus")
+
+
+func handle_top_escape() -> bool:
+	if _layout_mode != "drawer" or not _drawer_open:
+		return false
+	_drawer_open = false
+	_apply_drawer_visibility()
+	return true
+
+
+func _apply_drawer_visibility() -> void:
+	if not is_node_ready():
+		return
+	if _layout_mode == "three_column":
+		_restore_cards_to_sections()
+		recipe_card.visible = true
+		process_card.visible = true
+		activity_card.visible = true
+		return
+	if not _drawer_open:
+		_restore_cards_to_sections()
+		recipe_card.visible = true
+		process_card.visible = false
+		activity_card.visible = false
+		return
+	if _logical_layout_size.x < EconomyLayoutScript.NARROW_STACK_BREAKPOINT:
+		process_card.visible = true
+		activity_card.visible = true
+		_move_card(process_card, narrow_detail_stack)
+		_move_card(activity_card, narrow_detail_stack)
+		var process_height: float = process_card.get_combined_minimum_size().y
+		var activity_height: float = activity_card.get_combined_minimum_size().y
+		process_card.custom_minimum_size.x = 0.0
+		activity_card.custom_minimum_size.x = 0.0
+		process_card.custom_minimum_size.y = process_height
+		activity_card.custom_minimum_size.y = activity_height
+		process_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		activity_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		recipe_card.visible = false
+		sections.visible = false
+		narrow_detail_scroll.visible = true
+	else:
+		_restore_cards_to_sections()
+		recipe_card.visible = false
+		process_card.visible = true
+		activity_card.visible = true
+
+
+func _restore_cards_to_sections() -> void:
+	_move_card(process_card, sections)
+	_move_card(activity_card, sections)
+	sections.move_child(process_card, 1)
+	sections.move_child(activity_card, 2)
+	process_card.custom_minimum_size.x = PROCESS_CARD_WIDTH
+	activity_card.custom_minimum_size.x = ACTIVITY_CARD_WIDTH
+	process_card.custom_minimum_size.y = 0.0
+	activity_card.custom_minimum_size.y = 0.0
+	process_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	activity_card.size_flags_horizontal = Control.SIZE_FILL
+	sections.visible = true
+	narrow_detail_scroll.visible = false
+
+
+func _move_card(card: Control, target: Container) -> void:
+	if card.get_parent() == target:
+		return
+	card.reparent(target, false)
 
 
 func set_batches(next_batches: int) -> void:
@@ -332,7 +435,11 @@ func _render() -> void:
 	for row in recipe_rows:
 		var button := Button.new()
 		button.name = "Recipe_%s" % str(row.recipe_id)
+		button.custom_minimum_size = Vector2(0.0, EconomyLayoutScript.LIST_ROW_HEIGHT)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.text = "%s  %s  %d分钟  %s" % [str(row.display_name), "可生产" if bool(row.materials_sufficient) else "缺材料", int(row.duration_minutes), _margin_status_text(str(row.margin_status))]
+		button.clip_text = true
+		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		button.toggle_mode = true
 		button.button_pressed = str(row.recipe_id) == selected_recipe_id
 		button.disabled = false
@@ -342,20 +449,27 @@ func _render() -> void:
 	_sync_queue_slot_nodes(queue_slots.size())
 	for index in range(queue_slot_nodes.size()):
 		var slot: Dictionary = queue_slots[index] if index < queue_slots.size() else {"state": "idle", "recipe_id": "", "batches": 0, "remaining_minutes": 0, "progress": 0.0}
-		queue_slot_nodes[index].get_node("RecipeLabel").text = "空闲" if str(slot.state) == "idle" else "%s ×%d" % [str(slot.get("display_name", slot.recipe_id)), int(slot.batches)]
-		queue_slot_nodes[index].get_node("StateLabel").text = _queue_state_text(str(slot.state))
-		queue_slot_nodes[index].get_node("RemainingLabel").text = "剩余 %d 分钟" % int(slot.remaining_minutes)
-		queue_slot_nodes[index].get_node("ProgressBar").value = float(slot.progress) * 100.0
+		queue_slot_nodes[index].get_node("Content/Header/RecipeLabel").text = "空闲" if str(slot.state) == "idle" else "%s ×%d" % [str(slot.get("display_name", slot.recipe_id)), int(slot.batches)]
+		queue_slot_nodes[index].get_node("Content/Header/StateLabel").text = _queue_state_text(str(slot.state))
+		queue_slot_nodes[index].get_node("Content/Header/RemainingLabel").text = "剩余 %d 分钟" % int(slot.remaining_minutes)
+		queue_slot_nodes[index].get_node("Content/ProgressBar").value = float(slot.progress) * 100.0
 	_clear_container(storage_list)
 	var ids: Array[String] = []
 	ids.assign(storage.keys())
 	ids.sort()
 	for item_id in ids:
 		var row := HBoxContainer.new()
+		row.name = "Output_%s" % item_id
+		row.custom_minimum_size = Vector2(0.0, EconomyLayoutScript.LIST_ROW_HEIGHT)
 		var label := Label.new()
+		label.name = "OutputLabel"
 		label.text = "%s ×%d" % [_item_name(item_id), int(storage[item_id])]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.clip_text = true
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		var button := Button.new()
+		button.name = "CollectButton"
+		button.custom_minimum_size = Vector2(72.0, EconomyLayoutScript.CONTROL_HEIGHT)
 		button.text = "收取"
 		button.pressed.connect(request_collect_item.bind(item_id))
 		row.add_child(label)
@@ -372,11 +486,11 @@ func _render() -> void:
 		else "产物种类 %d/%d" % [storage.size(), int(snapshot.get("output_capacity", 0))]
 	)
 	collect_all_button.disabled = storage.is_empty()
-	input_label.text = "投入：%s" % _count_text(recipe_detail.get("inputs", {}))
-	output_label.text = "产出：%s" % _count_text(recipe_detail.get("outputs", {}))
-	fuel_label.text = "燃料：无"
-	duration_label.text = "耗时：%d 分钟" % int(recipe_detail.get("duration_minutes", 0))
-	pricing_label.text = "投入现值 %d　产出参考价 %d　预计%s" % [int(recipe_detail.get("input_value", 0)), int(recipe_detail.get("output_value", 0)), _margin_status_text(str(recipe_detail.get("margin_status", "even")))]
+	input_label.text = _count_text(recipe_detail.get("inputs", {}))
+	output_label.text = _count_text(recipe_detail.get("outputs", {}))
+	fuel_label.text = "无"
+	duration_label.text = "%d 分钟" % int(recipe_detail.get("duration_minutes", 0))
+	pricing_label.text = "投入 %d · 产出 %d · %s" % [int(recipe_detail.get("input_value", 0)), int(recipe_detail.get("output_value", 0)), _margin_status_text(str(recipe_detail.get("margin_status", "even")))]
 	missing_label.text = disabled_reason
 	batch_spin_box.max_value = maxi(1, max_batches)
 	batch_spin_box.set_value_no_signal(batches)
@@ -403,35 +517,59 @@ func _margin_status_text(status: String) -> String:
 
 func _sync_queue_slot_nodes(target_count: int) -> void:
 	while queue_slot_nodes.size() > target_count:
-		var stale: VBoxContainer = queue_slot_nodes.pop_back()
+		var stale: PanelContainer = queue_slot_nodes.pop_back()
 		queue_slots_container.remove_child(stale)
 		stale.free()
 	while queue_slot_nodes.size() < target_count:
-		var slot: VBoxContainer = _create_queue_slot_node(queue_slot_nodes.size())
+		var slot: PanelContainer = _create_queue_slot_node(queue_slot_nodes.size())
 		queue_slot_nodes.append(slot)
 		queue_slots_container.add_child(slot)
 
 
-func _create_queue_slot_node(index: int) -> VBoxContainer:
-	var slot := VBoxContainer.new()
+func _create_queue_slot_node(index: int) -> PanelContainer:
+	var slot := PanelContainer.new()
 	slot.name = "Slot%d" % (index + 1)
-	slot.custom_minimum_size = Vector2(0, 120)
+	slot.custom_minimum_size = Vector2(0, EconomyLayoutScript.LIST_ROW_HEIGHT)
+	var slot_style := StyleBoxFlat.new()
+	slot_style.bg_color = Color("#FFF7E6")
+	slot_style.corner_radius_top_left = 10
+	slot_style.corner_radius_top_right = 10
+	slot_style.corner_radius_bottom_left = 10
+	slot_style.corner_radius_bottom_right = 10
+	slot_style.content_margin_left = 10.0
+	slot_style.content_margin_top = 4.0
+	slot_style.content_margin_right = 10.0
+	slot_style.content_margin_bottom = 4.0
+	slot.add_theme_stylebox_override("panel", slot_style)
+	var content := VBoxContainer.new()
+	content.name = "Content"
+	content.add_theme_constant_override("separation", 4)
+	slot.add_child(content)
+	var header := HBoxContainer.new()
+	header.name = "Header"
+	header.add_theme_constant_override("separation", 8)
+	content.add_child(header)
 	var recipe_label := Label.new()
 	recipe_label.name = "RecipeLabel"
 	recipe_label.text = "空闲"
+	recipe_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	recipe_label.clip_text = true
+	recipe_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var state_label := Label.new()
 	state_label.name = "StateLabel"
 	state_label.text = "idle"
+	state_label.add_theme_color_override("font_color", Color("#5F8755"))
 	var remaining_label := Label.new()
 	remaining_label.name = "RemainingLabel"
 	remaining_label.text = "剩余 0 分钟"
 	var progress_bar := ProgressBar.new()
 	progress_bar.name = "ProgressBar"
+	progress_bar.custom_minimum_size = Vector2(0.0, 8.0)
 	progress_bar.show_percentage = false
-	slot.add_child(recipe_label)
-	slot.add_child(state_label)
-	slot.add_child(remaining_label)
-	slot.add_child(progress_bar)
+	header.add_child(recipe_label)
+	header.add_child(state_label)
+	header.add_child(remaining_label)
+	content.add_child(progress_bar)
 	return slot
 
 

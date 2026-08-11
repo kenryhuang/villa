@@ -29,48 +29,50 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"TopBar/GoldLabel",
 		"ScrollContainer/GridContainer",
 		"CloseButton",
-		"ModalLayer",
-		"ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/MarketStatusLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/GoldLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/DateLabel",
-		"ModalLayer/HubPanel/Margin/Shell/Header/CloseButton",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/ContractsTab",
-		"ModalLayer/HubPanel/Margin/Shell/Tabs/ServicesTab",
-		"ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel",
+		"ScreenLayer/ModalLayer",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/TitleLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/MarketStatusLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/GoldLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/DateLabel",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Header/CloseButton",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/MarketTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/OrdersTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/ContractsTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/Tabs/ServicesTab",
+		"ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel",
 	])
 	_check_scene(assertions, MARKET_SCENE_PATH, [
-		"Columns/CatalogColumn/CategoryList/RawMaterials",
-		"Columns/CatalogColumn/CategoryList/Crops",
-		"Columns/CatalogColumn/CategoryList/ProcessedMaterials",
-		"Columns/CatalogColumn/CategoryList/FoodHandicrafts",
-		"Columns/CatalogColumn/CategoryList/RareGoods",
-		"Columns/CatalogColumn/SortMode",
-		"Columns/CatalogColumn/ItemList",
-		"Columns/CatalogColumn/ItemScroll/ItemRows",
-		"Columns/DetailColumn/ItemNameLabel",
-		"Columns/DetailColumn/MidPriceLabel",
-		"Columns/DetailColumn/BuyPriceLabel",
-		"Columns/DetailColumn/SellPriceLabel",
-		"Columns/DetailColumn/StockLabel",
-		"Columns/DetailColumn/TrendLabel",
-		"Columns/DetailColumn/FlowLabel",
-		"Columns/DetailColumn/PriceChart",
-		"Columns/DetailColumn/TagsLabel",
+		"Columns/CatalogColumn/CatalogContent/CategoryTabs/RawMaterials",
+		"Columns/CatalogColumn/CatalogContent/CategoryTabs/Crops",
+		"Columns/CatalogColumn/CatalogContent/CategoryTabs/ProcessedMaterials",
+		"Columns/CatalogColumn/CatalogContent/CategoryTabs/FoodHandicrafts",
+		"Columns/CatalogColumn/CatalogContent/CategoryTabs/RareGoods",
+		"Columns/CatalogColumn/CatalogContent/SortMode",
+		"Columns/CatalogColumn/CatalogContent/ItemList",
+		"Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows",
+		"Columns/DetailColumn/DetailContent/DetailHeader/ItemNameLabel",
+		"Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel",
+		"Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel",
+		"Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel",
+		"Columns/DetailColumn/DetailContent/DetailHeader/TrendLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel",
+		"Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel",
+		"Columns/DetailColumn/DetailContent/PriceChart",
+		"Columns/DetailColumn/DetailContent/TagsLabel",
 		"Columns/TradePanel",
 	])
 	_check_scene(assertions, TRADE_SCENE_PATH, [
-		"Content/PlayerQuantityLabel",
-		"Content/MarketQuantityLabel",
+		"Content/SummaryGrid/PlayerQuantityLabel",
+		"Content/SummaryGrid/MarketQuantityLabel",
 		"Content/QuantityRow/QuantitySpin",
 		"Content/QuantityRow/MaxButton",
-		"Content/ReferencePriceLabel",
-		"Content/BuyTotalLabel",
-		"Content/SellTotalLabel",
-		"Content/ImpactLabel",
-		"Content/DisabledReasonLabel",
+		"Content/SummaryGrid/ReferencePriceLabel",
+		"Content/SummaryGrid/BuyTotalLabel",
+		"Content/SummaryGrid/SellTotalLabel",
+		"Content/SummaryGrid/ImpactLabel",
+		"Content/StatusArea/DisabledReasonLabel",
 		"Content/Actions/BuyButton",
 		"Content/Actions/SellButton",
 		"ConfirmationLayer/Content/VBox/FirstUnitLabel",
@@ -258,23 +260,26 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.equal(shop.get("selected_tab"), "orders", "economy hub preserves selected tab")
 	assertions.truthy(shop.call("select_tab", "market"), "economy hub returns to market tab")
 
-	var market_panel = shop.get_node("ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel")
+	var market_panel = shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/MarketPanel")
+	# This fixture verifies the layered Escape behavior of the compact drawer.
+	# Pin its logical width instead of depending on the headless runner's window.
+	market_panel.call("apply_responsive_layout", Vector2(1000.0, 720.0))
 	market_panel.call("select_category", "raw_materials")
 	market_panel.call("select_item", "wood")
 	market_panel.call("refresh_snapshot")
 	assertions.equal(market_panel.get("selected_category"), "raw_materials", "market preserves selected category")
 	assertions.equal(market_panel.get("selected_item_id"), "wood", "market preserves selected item")
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/ItemNameLabel").text.contains("木材"), "wood selection shows name")
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/MidPriceLabel").text.contains(str(market.get_mid_price("wood"))), "wood selection shows mid price")
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/BuyPriceLabel").text.contains(str(market.quote_buy("wood", 1))), "wood selection shows buy price")
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/SellPriceLabel").text.contains(str(market.quote_sell("wood", 1))), "wood selection shows sell price")
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/StockLabel").text.contains(str(market.get_stock("wood"))), "wood selection shows finite market stock")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/DetailHeader/ItemNameLabel").text.contains("木材"), "wood selection shows name")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/PriceMetrics/MidPriceLabel").text.contains(str(market.get_mid_price("wood"))), "wood selection shows mid price")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/PriceMetrics/BuyPriceLabel").text.contains(str(market.quote_buy("wood", 1))), "wood selection shows buy price")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/PriceMetrics/SellPriceLabel").text.contains(str(market.quote_sell("wood", 1))), "wood selection shows sell price")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel").text.contains(str(market.get_stock("wood"))), "wood selection shows finite market stock")
 	var wood_state := market.get_item_state("wood")
-	var flow_text: String = market_panel.get_node("Columns/DetailColumn/FlowLabel").text
-	for field in ["supply", "demand", "daily_liquidity"]:
-		assertions.truthy(flow_text.contains(str(wood_state[field])), "wood selection shows %s" % field)
-	assertions.truthy(market_panel.get_node("Columns/DetailColumn/TagsLabel").text.contains("essential"), "wood selection shows market tags")
-	var chart = market_panel.get_node("Columns/DetailColumn/PriceChart")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/SupplyLabel").text.contains(str(wood_state.supply)), "wood selection shows supply")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/DemandLabel").text.contains(str(wood_state.demand)), "wood selection shows demand")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/LiquidityLabel").text.contains(str(wood_state.daily_liquidity)), "wood selection shows daily liquidity")
+	assertions.truthy(market_panel.get_node("Columns/DetailColumn/DetailContent/TagsLabel").text.contains("essential"), "wood selection shows market tags")
+	var chart = market_panel.get_node("Columns/DetailColumn/DetailContent/PriceChart")
 	assertions.equal(chart.get("history").size(), market.get_history("wood").size(), "chart uses only observed 1-7 day history")
 	assertions.equal(chart.get("dates").size(), chart.get("history").size(), "market binds one date per observed price")
 	assertions.equal(chart.get("change_reasons").size(), chart.get("history").size(), "market binds one reason per observed price")
@@ -287,10 +292,10 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.truthy(not quantity_spin.allow_greater, "quantity spin rejects values above authoritative maximum")
 	quantity_spin.value = 2
 	trade.call("refresh_quote")
-	assertions.truthy(trade.get_node("Content/PlayerQuantityLabel").text.contains("2"), "trade shows player quantity")
-	assertions.truthy(trade.get_node("Content/MarketQuantityLabel").text.contains(str(market.get_stock("wood"))), "trade shows market quantity")
-	assertions.truthy(trade.get_node("Content/BuyTotalLabel").text.contains(str(market.quote_buy("wood", 2))), "trade shows slippage-adjusted buy total")
-	assertions.truthy(trade.get_node("Content/SellTotalLabel").text.contains(str(market.quote_sell("wood", 2))), "trade shows slippage-adjusted sell total")
+	assertions.truthy(trade.get_node("Content/SummaryGrid/PlayerQuantityLabel").text.contains("2"), "trade shows player quantity")
+	assertions.truthy(trade.get_node("Content/SummaryGrid/MarketQuantityLabel").text.contains(str(market.get_stock("wood"))), "trade shows market quantity")
+	assertions.truthy(trade.get_node("Content/SummaryGrid/BuyTotalLabel").text.contains(str(market.quote_buy("wood", 2))), "trade shows slippage-adjusted buy total")
+	assertions.truthy(trade.get_node("Content/SummaryGrid/SellTotalLabel").text.contains(str(market.quote_sell("wood", 2))), "trade shows slippage-adjusted sell total")
 	_test_stale_confirmation_and_quantity_safety(assertions, market_panel, trade, inventory, market, wallet)
 	_test_market_rows_refresh_after_trade(assertions, market_panel, trade, inventory, market, wallet)
 
@@ -322,10 +327,10 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	assertions.equal(int(wallet.gold), gold_before - buy_total_before, "successful buy refreshes gold in same frame")
 	assertions.equal(inventory.get_item_count("wood"), owned_before + 1, "successful buy refreshes inventory in same frame")
 	assertions.equal(market.get_stock("wood"), stock_before - 1, "successful buy refreshes stock in same frame")
-	assertions.truthy(trade.get_node("Content/PlayerQuantityLabel").text.contains(str(owned_before + 1)), "successful buy redraws player quantity in same frame")
-	assertions.truthy(trade.get_node("Content/MarketQuantityLabel").text.contains(str(stock_before - 1)), "successful buy redraws stock in same frame")
+	assertions.truthy(trade.get_node("Content/SummaryGrid/PlayerQuantityLabel").text.contains(str(owned_before + 1)), "successful buy redraws player quantity in same frame")
+	assertions.truthy(trade.get_node("Content/SummaryGrid/MarketQuantityLabel").text.contains(str(stock_before - 1)), "successful buy redraws stock in same frame")
 	assertions.truthy(
-		market_panel.get_node("Columns/DetailColumn/StockLabel").text.contains(str(stock_before - 1)),
+		market_panel.get_node("Columns/DetailColumn/DetailContent/MarketMetrics/StockLabel").text.contains(str(stock_before - 1)),
 		"successful buy redraws market detail stock in same frame"
 	)
 
@@ -379,7 +384,7 @@ func _test_market_row_affordances(
 	market_panel: Node,
 	market: MarketSystem
 ) -> void:
-	if not market_panel.has_node("Columns/CatalogColumn/ItemScroll/ItemRows"):
+	if not market_panel.has_node("Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows"):
 		return
 	var normal_snapshot := market.to_dict()
 	var shortage_snapshot := normal_snapshot.duplicate(true)
@@ -390,7 +395,7 @@ func _test_market_row_affordances(
 	shortage_snapshot["items"]["wood"] = wood_state
 	assertions.truthy(market.from_dict(shortage_snapshot), "shortage row fixture restores valid finite market state")
 	market_panel.call("select_category", "raw_materials")
-	var rows := market_panel.get_node("Columns/CatalogColumn/ItemScroll/ItemRows")
+	var rows := market_panel.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows")
 	var wood_row := _find_item_row(rows, "wood")
 	var stone_row := _find_item_row(rows, "stone")
 	var fiber_row := _find_item_row(rows, "fiber")
@@ -399,6 +404,16 @@ func _test_market_row_affordances(
 	assertions.truthy(fiber_row != null, "market renders a fallback-icon row")
 	if wood_row != null:
 		assertions.truthy(wood_row.get_node("Content/Icon").texture != null, "wood row renders a product icon")
+		assertions.equal(wood_row.custom_minimum_size.y, 52.0, "market rows use the aligned list-row height")
+		assertions.truthy(
+			(wood_row.get_node("Content/SelectButton") as Button).clip_text,
+			"long shortage rows clip inside the compact catalog column"
+		)
+		assertions.equal(
+			(wood_row.get_node("Content/SelectButton") as Button).text_overrun_behavior,
+			TextServer.OVERRUN_TRIM_ELLIPSIS,
+			"long market rows end with a clean ellipsis"
+		)
 		assertions.equal(wood_row.get_node("Content/StockColorBar").color, Color("#B65C4B"), "finite shortage renders error stock color bar")
 		assertions.truthy(wood_row.get_node("Content/UrgentBadge").visible, "finite shortage and real demand show urgent badge")
 	if stone_row != null:
@@ -458,7 +473,7 @@ func _test_stale_confirmation_and_quantity_safety(
 	var before_wallet_confirm := _asset_snapshot(inventory, market, wallet)
 	trade.call("_confirm_pending_trade")
 	_assert_assets_equal(assertions, before_wallet_confirm, inventory, market, wallet, "wallet-changed confirmation")
-	assertions.truthy(trade.get_node("Content/FeedbackLabel").text.contains("状态已变化"), "wallet change requires a fresh confirmation")
+	assertions.truthy(trade.get_node("Content/StatusArea/FeedbackLabel").text.contains("状态已变化"), "wallet change requires a fresh confirmation")
 	_restore_trade_snapshot(normal_snapshot, inventory, market, wallet)
 	market_panel.call("select_category", "raw_materials")
 	market_panel.call("select_item", "wood")
@@ -495,12 +510,12 @@ func _test_market_rows_refresh_after_trade(
 	market_panel.call("set_sort_mode", "name")
 	market_panel.call("select_category", "raw_materials")
 	market_panel.call("select_item", "wood")
-	var scroll := market_panel.get_node("Columns/CatalogColumn/ItemScroll") as ScrollContainer
+	var scroll := market_panel.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll") as ScrollContainer
 	scroll.scroll_vertical = mini(12, roundi(scroll.get_v_scroll_bar().max_value))
 	var scroll_before := scroll.scroll_vertical
 	var category_before: String = market_panel.get("selected_category")
 	var sort_before: String = market_panel.get("sort_mode")
-	var rows := market_panel.get_node("Columns/CatalogColumn/ItemScroll/ItemRows")
+	var rows := market_panel.get_node("Columns/CatalogColumn/CatalogContent/ItemScroll/ItemRows")
 	var old_row := _find_item_row(rows, "wood")
 	assertions.truthy(old_row != null, "row refresh fixture finds selected row")
 	if old_row != null:
