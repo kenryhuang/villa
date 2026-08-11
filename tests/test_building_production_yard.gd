@@ -75,7 +75,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var large := YardScript.new()
 	tree.root.add_child(large)
-	large.global_position = Vector3(-15.0, 0.0, -5.0)
+	large.global_position = Vector3(-16.0, 0.0, -8.0)
 	assertions.truthy(
 		large.configure(Vector2i(4, 4), "industrial", Vector3(0.0, 0.0, -0.55)),
 		"4x4 industrial ground configures"
@@ -120,6 +120,7 @@ func _assert_ground_contract(
 			var terrain_height := _rendered_terrain_height(terrain_mesh, sample.x, sample.z)
 			assertions.near(sample.y, terrain_height + GROUND_SURFACE_LIFT, 0.001, "ground mesh follows the rendered terrain triangles")
 			assertions.truthy(sample.y > terrain_height + 0.02, "ground mesh stays visibly above the rendered terrain")
+		_assert_ground_triangle_interiors(ground, terrain_mesh, assertions)
 	var material := ground.material_override as StandardMaterial3D
 	assertions.truthy(material != null, "ground mesh has a standard compatibility material")
 	if material != null:
@@ -205,6 +206,36 @@ func _rendered_terrain_height(terrain_mesh: MeshInstance3D, world_x: float, worl
 	if local_x + local_z <= 1.0:
 		return a * (1.0 - local_x - local_z) + b * local_x + c * local_z
 	return b * (1.0 - local_z) + c * (1.0 - local_x) + d * (local_x + local_z - 1.0)
+
+
+func _assert_ground_triangle_interiors(
+	ground: MeshInstance3D,
+	terrain_mesh: MeshInstance3D,
+	assertions: TestAssert
+) -> void:
+	var arrays := (ground.mesh as ArrayMesh).surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+	var worst_error := 0.0
+	var minimum_clearance := INF
+	for triangle_start in range(0, indices.size(), 3):
+		var a := ground.to_global(vertices[indices[triangle_start]])
+		var b := ground.to_global(vertices[indices[triangle_start + 1]])
+		var c := ground.to_global(vertices[indices[triangle_start + 2]])
+		for a_weight in range(7):
+			for b_weight in range(7 - a_weight):
+				var c_weight := 6 - a_weight - b_weight
+				var sample := (
+					a * (float(a_weight) / 6.0)
+					+ b * (float(b_weight) / 6.0)
+					+ c * (float(c_weight) / 6.0)
+				)
+				var terrain_height := _rendered_terrain_height(terrain_mesh, sample.x, sample.z)
+				var clearance := sample.y - terrain_height
+				worst_error = maxf(worst_error, absf(clearance - GROUND_SURFACE_LIFT))
+				minimum_clearance = minf(minimum_clearance, clearance)
+	assertions.truthy(worst_error <= 0.001, "every painted ground triangle follows the rendered terrain surface")
+	assertions.truthy(minimum_clearance > 0.02, "painted ground triangle interiors never enter the terrain")
 
 
 func _decals(root: Node) -> Array[Decal]:

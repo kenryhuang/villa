@@ -5,7 +5,6 @@ const TerrainBuilderScript = preload("res://scripts/world/terrain_builder.gd")
 
 const GROUND_TEXTURE_SIZE := Vector2(1024.0, 1024.0)
 const GROUND_OVERHANG_PER_SIDE := 0.1
-const GROUND_SUBDIVISIONS_PER_CELL := 3
 const GROUND_SURFACE_LIFT := 0.028
 const VALID_STYLES := ["timber", "masonry", "industrial"]
 const TEXTURES := {
@@ -164,44 +163,140 @@ func _rebuild_ground_mesh() -> void:
 	_rebuilding_ground = true
 	var width := float(_yard_size.x) + GROUND_OVERHANG_PER_SIDE * 2.0
 	var depth := float(_yard_size.y) + GROUND_OVERHANG_PER_SIDE * 2.0
-	var columns := _yard_size.x * GROUND_SUBDIVISIONS_PER_CELL
-	var rows := _yard_size.y * GROUND_SUBDIVISIONS_PER_CELL
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var can_sample_world := is_inside_tree()
-	for row in range(rows + 1):
-		var v := float(row) / float(rows)
-		var local_z := lerpf(-depth * 0.5, depth * 0.5, v)
-		for column in range(columns + 1):
-			var u := float(column) / float(columns)
-			var local_x := lerpf(-width * 0.5, width * 0.5, u)
-			var local_ground := Vector3(local_x, GROUND_SURFACE_LIFT, local_z)
-			if can_sample_world:
-				var world_flat := to_global(Vector3(local_x, 0.0, local_z))
-				var height := TerrainBuilderScript.sample_surface_height(
-					_terrain_height_image,
-					world_flat.x,
-					world_flat.z
-				)
-				local_ground = to_local(Vector3(
-					world_flat.x,
-					height + GROUND_SURFACE_LIFT,
-					world_flat.z
-				))
-			surface.set_uv(Vector2(u, v))
-			surface.add_vertex(local_ground)
-	var stride := columns + 1
-	for row in rows:
-		for column in columns:
-			var top_left := row * stride + column
-			var top_right := top_left + 1
-			var bottom_left := top_left + stride
-			var bottom_right := bottom_left + 1
-			for index in [top_left, bottom_left, top_right, top_right, bottom_left, bottom_right]:
-				surface.add_index(index)
+	if is_inside_tree():
+		_build_clipped_terrain_surface(surface, width, depth)
+	else:
+		_build_placeholder_surface(surface, width, depth)
 	surface.generate_normals()
 	_ground_mesh.mesh = surface.commit()
 	_rebuilding_ground = false
+
+
+func _build_placeholder_surface(surface: SurfaceTool, width: float, depth: float) -> void:
+	var points := [
+		Vector3(-width * 0.5, GROUND_SURFACE_LIFT, -depth * 0.5),
+		Vector3(width * 0.5, GROUND_SURFACE_LIFT, -depth * 0.5),
+		Vector3(-width * 0.5, GROUND_SURFACE_LIFT, depth * 0.5),
+		Vector3(width * 0.5, GROUND_SURFACE_LIFT, depth * 0.5),
+	]
+	var uvs := [Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN, Vector2.ONE]
+	for index in points.size():
+		surface.set_uv(uvs[index])
+		surface.add_vertex(points[index])
+	for index in [0, 2, 1, 1, 2, 3]:
+		surface.add_index(index)
+
+
+func _build_clipped_terrain_surface(surface: SurfaceTool, width: float, depth: float) -> void:
+	var corners := [
+		to_global(Vector3(-width * 0.5, 0.0, -depth * 0.5)),
+		to_global(Vector3(width * 0.5, 0.0, -depth * 0.5)),
+		to_global(Vector3(-width * 0.5, 0.0, depth * 0.5)),
+		to_global(Vector3(width * 0.5, 0.0, depth * 0.5)),
+	]
+	var footprint_min_x := INF
+	var footprint_max_x := -INF
+	var footprint_min_z := INF
+	var footprint_max_z := -INF
+	for corner in corners:
+		footprint_min_x = minf(footprint_min_x, corner.x)
+		footprint_max_x = maxf(footprint_max_x, corner.x)
+		footprint_min_z = minf(footprint_min_z, corner.z)
+		footprint_max_z = maxf(footprint_max_z, corner.z)
+	var half_world_x := TerrainBuilderScript.WORLD_SIZE.x * 0.5
+	var half_world_z := TerrainBuilderScript.WORLD_SIZE.y * 0.5
+	var clip_min_x := maxf(footprint_min_x, -half_world_x)
+	var clip_max_x := minf(footprint_max_x, half_world_x)
+	var clip_min_z := maxf(footprint_min_z, -half_world_z)
+	var clip_max_z := minf(footprint_max_z, half_world_z)
+	if clip_min_x >= clip_max_x or clip_min_z >= clip_max_z:
+		_build_placeholder_surface(surface, width, depth)
+		return
+	var start_x := clampi(
+		floori((clip_min_x / TerrainBuilderScript.WORLD_SIZE.x + 0.5) * TerrainBuilderScript.SUBDIVISIONS),
+		0,
+		TerrainBuilderScript.SUBDIVISIONS - 1
+	)
+	var end_x := clampi(
+		floori((clip_max_x / TerrainBuilderScript.WORLD_SIZE.x + 0.5) * TerrainBuilderScript.SUBDIVISIONS),
+		0,
+		TerrainBuilderScript.SUBDIVISIONS - 1
+	)
+	var start_z := clampi(
+		floori((clip_min_z / TerrainBuilderScript.WORLD_SIZE.y + 0.5) * TerrainBuilderScript.SUBDIVISIONS),
+		0,
+		TerrainBuilderScript.SUBDIVISIONS - 1
+	)
+	var end_z := clampi(
+		floori((clip_max_z / TerrainBuilderScript.WORLD_SIZE.y + 0.5) * TerrainBuilderScript.SUBDIVISIONS),
+		0,
+		TerrainBuilderScript.SUBDIVISIONS - 1
+	)
+	var pending_indices := PackedInt32Array()
+	var vertex_count := 0
+	for cell_z in range(start_z, end_z + 1):
+		var z0 := (float(cell_z) / float(TerrainBuilderScript.SUBDIVISIONS) - 0.5) * TerrainBuilderScript.WORLD_SIZE.y
+		var z1 := (float(cell_z + 1) / float(TerrainBuilderScript.SUBDIVISIONS) - 0.5) * TerrainBuilderScript.WORLD_SIZE.y
+		for cell_x in range(start_x, end_x + 1):
+			var x0 := (float(cell_x) / float(TerrainBuilderScript.SUBDIVISIONS) - 0.5) * TerrainBuilderScript.WORLD_SIZE.x
+			var x1 := (float(cell_x + 1) / float(TerrainBuilderScript.SUBDIVISIONS) - 0.5) * TerrainBuilderScript.WORLD_SIZE.x
+			var a := Vector3(x0, TerrainBuilderScript.sample_height(_terrain_height_image, x0, z0), z0)
+			var b := Vector3(x1, TerrainBuilderScript.sample_height(_terrain_height_image, x1, z0), z0)
+			var c := Vector3(x0, TerrainBuilderScript.sample_height(_terrain_height_image, x0, z1), z1)
+			var d := Vector3(x1, TerrainBuilderScript.sample_height(_terrain_height_image, x1, z1), z1)
+			for triangle in [[a, c, b], [b, c, d]]:
+				var polygon: Array[Vector3] = []
+				polygon.assign(triangle)
+				polygon = _clip_world_polygon(polygon, 0, clip_min_x, true)
+				polygon = _clip_world_polygon(polygon, 0, clip_max_x, false)
+				polygon = _clip_world_polygon(polygon, 2, clip_min_z, true)
+				polygon = _clip_world_polygon(polygon, 2, clip_max_z, false)
+				if polygon.size() < 3:
+					continue
+				var polygon_start := vertex_count
+				for point in polygon:
+					var u := clampf((point.x - footprint_min_x) / width, 0.0, 1.0)
+					var v := clampf((point.z - footprint_min_z) / depth, 0.0, 1.0)
+					surface.set_uv(Vector2(u, v))
+					surface.add_vertex(to_local(point + Vector3.UP * GROUND_SURFACE_LIFT))
+					vertex_count += 1
+				for index in range(1, polygon.size() - 1):
+					pending_indices.append(polygon_start)
+					pending_indices.append(polygon_start + index)
+					pending_indices.append(polygon_start + index + 1)
+	for index in pending_indices:
+		surface.add_index(index)
+
+
+func _clip_world_polygon(
+	polygon: Array[Vector3],
+	axis: int,
+	boundary: float,
+	keep_greater: bool
+) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	if polygon.is_empty():
+		return result
+	var previous := polygon[polygon.size() - 1]
+	var previous_value := previous[axis]
+	var previous_inside := previous_value >= boundary if keep_greater else previous_value <= boundary
+	for current in polygon:
+		var current_value := current[axis]
+		var current_inside := current_value >= boundary if keep_greater else current_value <= boundary
+		if current_inside != previous_inside:
+			var denominator := current_value - previous_value
+			var ratio := 0.0 if is_zero_approx(denominator) else (boundary - previous_value) / denominator
+			var intersection := previous.lerp(current, clampf(ratio, 0.0, 1.0))
+			intersection[axis] = boundary
+			result.append(intersection)
+		if current_inside:
+			result.append(current)
+		previous = current
+		previous_value = current_value
+		previous_inside = current_inside
+	return result
 
 
 func _slots_for_size(size: Vector2i) -> Array[Vector3]:

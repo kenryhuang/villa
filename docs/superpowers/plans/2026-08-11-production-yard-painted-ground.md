@@ -4,7 +4,7 @@
 
 **Goal:** Replace every production-yard fence and its collision with one walkable, hand-painted, semi-transparent terrain-following ground patch while preserving output-slot and save compatibility.
 
-**Architecture:** Keep `BuildingProductionYard` and the `ProductionYard` node/API as the compatibility boundary. Internally, replace fence `Sprite3D` segments, construction atlases, transitions, and `StaticBody3D` perimeter collisions with a single subdivided `ArrayMesh`. Its vertices use the same triangle-interpolated surface height as the rendered terrain, which works with the project's `gl_compatibility` renderer and affects no other geometry; building bodies remain the only physical obstruction. Three 1024×1024 RGBA textures cover timber, masonry, and industrial production-yard families.
+**Architecture:** Keep `BuildingProductionYard` and the `ProductionYard` node/API as the compatibility boundary. Internally, replace fence `Sprite3D` segments, construction atlases, transitions, and `StaticBody3D` perimeter collisions with a single `ArrayMesh` clipped from the rendered terrain's own triangles. Sharing the terrain tessellation works with the project's `gl_compatibility` renderer, prevents between-vertex intersections, and affects no other geometry; building bodies remain the only physical obstruction. Three 1024×1024 RGBA textures cover timber, masonry, and industrial production-yard families.
 
 **Tech Stack:** Godot 4.7 GDScript, `SurfaceTool`, `ArrayMesh`, transparent `StandardMaterial3D`, PNG RGBA assets, the existing headless GDScript test harness, and the built-in image generation tool.
 
@@ -26,7 +26,7 @@ Replace fence-atlas assertions with these contracts:
 - Transparent corners and feathered perimeter pixels exist.
 - The image contains a meaningful semi-transparent painted region, with a majority of painted samples below full opacity and at least some emphasized detail samples above the main-surface opacity.
 - Configuring a 3×3 or 4×4 yard creates exactly one Compatibility-renderable `MeshInstance3D`, sized to the footprint plus at most 0.2 world units total overhang per axis.
-- The mesh contains enough subdivisions to follow the terrain heightmap and rebuilds after transform changes.
+- The mesh clips the same triangles as the rendered terrain and rebuilds after transform changes.
 - No `Sprite3D`, `StaticBody3D`, or enabled yard collision remains.
 - Output slot counts remain six for 3×3 and eight for 4×4, and every slot remains inside the footprint.
 - `set_construction_stage()` stores the requested stage but leaves the same ground mesh and texture in place with no transition visuals.
@@ -130,7 +130,7 @@ git commit -m "art: add painted production ground textures"
 
 **Step 1: Preserve the Compatibility renderer contract**
 
-Do not switch the renderer or introduce `Decal`; the project targets `gl_compatibility`. Keep `TerrainMesh.layers == 1` and add `TerrainBuilder.sample_surface_height()` to reproduce the rendered mesh's two-triangle interpolation from its sampled vertices.
+Do not switch the renderer or introduce `Decal`; the project targets `gl_compatibility`. Keep `TerrainMesh.layers == 1` and use its existing world size, subdivisions, diagonal orientation, and sampled vertex heights as the clipping source.
 
 **Step 2: Simplify `BuildingProductionYard` state**
 
@@ -138,7 +138,7 @@ Replace atlas/fence constants and state with:
 
 - `GROUND_TEXTURE_SIZE := Vector2(1024.0, 1024.0)`
 - `GROUND_OVERHANG := 0.1` per side
-- a small surface lift and three subdivisions per occupied cell
+- a small surface lift and footprint clipping against the rendered terrain triangles
 - `GROUND_TEXTURES` pointing to the three new PNGs
 - one `_ground_mesh: MeshInstance3D` and transparent `StandardMaterial3D`
 - preserved `_yard_size`, `_style`, `_structure_offset`, `_construction_stage`, preview state, output slots, and warn-once tracking
@@ -153,7 +153,7 @@ During `configure()`:
 2. Clear prior derived state.
 3. Load and validate the 1024×1024 ground texture.
 4. Create one named `GroundMesh` if the texture is valid.
-5. Generate UV-mapped triangles through `SurfaceTool`, sampling `TerrainBuilder.sample_surface_height()` for each world-space vertex.
+5. Clip each overlapping rendered-terrain triangle to the footprint, preserve its height plane, and generate continuous UVs through `SurfaceTool`.
 6. Use smooth alpha blending, unshaded hand-painted color, double-sided culling, no shadow, and no collision. Rebuild after entering the tree and global transform changes.
 7. Rebuild the existing output slots unchanged.
 

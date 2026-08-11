@@ -19,27 +19,6 @@ static func sample_height(image: Image, world_x: float, world_z: float) -> float
 	return lerpf(MIN_HEIGHT, MAX_HEIGHT, image.get_pixel(pixel_x, pixel_y).r)
 
 
-static func sample_surface_height(image: Image, world_x: float, world_z: float) -> float:
-	if image == null or image.is_empty():
-		return 0.0
-	var grid_x := clampf(world_x / WORLD_SIZE.x + 0.5, 0.0, 1.0) * SUBDIVISIONS
-	var grid_z := clampf(world_z / WORLD_SIZE.y + 0.5, 0.0, 1.0) * SUBDIVISIONS
-	var cell_x := mini(floori(grid_x), SUBDIVISIONS - 1)
-	var cell_z := mini(floori(grid_z), SUBDIVISIONS - 1)
-	var local_x := grid_x - float(cell_x)
-	var local_z := grid_z - float(cell_z)
-	var x0 := (float(cell_x) / float(SUBDIVISIONS) - 0.5) * WORLD_SIZE.x
-	var x1 := (float(cell_x + 1) / float(SUBDIVISIONS) - 0.5) * WORLD_SIZE.x
-	var z0 := (float(cell_z) / float(SUBDIVISIONS) - 0.5) * WORLD_SIZE.y
-	var z1 := (float(cell_z + 1) / float(SUBDIVISIONS) - 0.5) * WORLD_SIZE.y
-	var a := sample_height(image, x0, z0)
-	var b := sample_height(image, x1, z0)
-	var c := sample_height(image, x0, z1)
-	var d := sample_height(image, x1, z1)
-	if local_x + local_z <= 1.0:
-		return a * (1.0 - local_x - local_z) + b * local_x + c * local_z
-	return b * (1.0 - local_z) + c * (1.0 - local_x) + d * (local_x + local_z - 1.0)
-
 func build() -> bool:
 	var height_texture := load(HEIGHTMAP_PATH) as Texture2D
 	height_image = height_texture.get_image() if height_texture else null
@@ -97,9 +76,6 @@ func build() -> bool:
 func get_height_at(world_x: float, world_z: float) -> float:
 	return sample_height(height_image, world_x, world_z)
 
-
-func get_surface_height_at(world_x: float, world_z: float) -> float:
-	return sample_surface_height(height_image, world_x, world_z)
 
 func _terrain_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
