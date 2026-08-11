@@ -44,7 +44,7 @@ The existing `BuildingProductionYard` class and `ProductionYard` node name remai
 - it retains the existing output-slot calculation and public accessors;
 - it no longer creates fence segments, fence construction transitions, or perimeter collision bodies.
 
-The project uses Godot's `gl_compatibility` renderer, where `Decal` is unsupported. The ground therefore uses one subdivided `ArrayMesh` with a transparent `StandardMaterial3D`. Its vertices sample the authoritative terrain heightmap in world space, so the surface follows slopes instead of floating above or cutting into the grass. Because the art is drawn only on its own mesh, it cannot project onto buildings, products, actors, crops, or UI feedback and does not require a special terrain render layer.
+The project uses Godot's `gl_compatibility` renderer, where `Decal` is unsupported. The ground therefore uses one subdivided `ArrayMesh` with a transparent `StandardMaterial3D`. Its vertices call `TerrainBuilder.sample_surface_height()`, which reproduces the same triangle interpolation used by the rendered 96×96 terrain mesh, so the surface follows slopes without floating above or cutting into the grass. Because the art is drawn only on its own mesh, it cannot project onto buildings, products, actors, crops, or UI feedback and does not require a special terrain render layer.
 
 The mesh is centered on the production footprint. Its X/Z size equals the configured 3×3 or 4×4 yard size plus only the small allowance required by the painted feathered edge. It is rebuilt after entering the scene tree and when its global transform changes, allowing build previews and restored buildings to follow the correct terrain samples. It has no collision shape, physics layer, input ray-pickability, or interaction callback.
 
@@ -76,6 +76,7 @@ Automated checks must verify:
 - every configured production yard owns exactly one ground visual and no fence sprites;
 - the ground uses a Compatibility-renderable mesh rather than an unsupported `Decal`;
 - the subdivided mesh samples the heightmap again after its transform changes;
+- every ground vertex stays above and aligned with the actual rendered terrain triangles;
 - 3×3 and 4×4 visuals use the expected footprint dimensions and family texture;
 - the ground has no collision body, physics layer, pointer input, or interaction callback;
 - building structure collision remains enabled after construction;

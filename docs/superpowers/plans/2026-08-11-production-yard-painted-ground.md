@@ -4,7 +4,7 @@
 
 **Goal:** Replace every production-yard fence and its collision with one walkable, hand-painted, semi-transparent terrain-following ground patch while preserving output-slot and save compatibility.
 
-**Architecture:** Keep `BuildingProductionYard` and the `ProductionYard` node/API as the compatibility boundary. Internally, replace fence `Sprite3D` segments, construction atlases, transitions, and `StaticBody3D` perimeter collisions with a single subdivided `ArrayMesh`. Its vertices sample the terrain heightmap in world space, which works with the project's `gl_compatibility` renderer and affects no other geometry; building bodies remain the only physical obstruction. Three 1024×1024 RGBA textures cover timber, masonry, and industrial production-yard families.
+**Architecture:** Keep `BuildingProductionYard` and the `ProductionYard` node/API as the compatibility boundary. Internally, replace fence `Sprite3D` segments, construction atlases, transitions, and `StaticBody3D` perimeter collisions with a single subdivided `ArrayMesh`. Its vertices use the same triangle-interpolated surface height as the rendered terrain, which works with the project's `gl_compatibility` renderer and affects no other geometry; building bodies remain the only physical obstruction. Three 1024×1024 RGBA textures cover timber, masonry, and industrial production-yard families.
 
 **Tech Stack:** Godot 4.7 GDScript, `SurfaceTool`, `ArrayMesh`, transparent `StandardMaterial3D`, PNG RGBA assets, the existing headless GDScript test harness, and the built-in image generation tool.
 
@@ -130,7 +130,7 @@ git commit -m "art: add painted production ground textures"
 
 **Step 1: Preserve the Compatibility renderer contract**
 
-Do not switch the renderer or introduce `Decal`; the project targets `gl_compatibility`. Keep `TerrainMesh.layers == 1` and reuse `TerrainBuilder.sample_height()` as the authoritative height function.
+Do not switch the renderer or introduce `Decal`; the project targets `gl_compatibility`. Keep `TerrainMesh.layers == 1` and add `TerrainBuilder.sample_surface_height()` to reproduce the rendered mesh's two-triangle interpolation from its sampled vertices.
 
 **Step 2: Simplify `BuildingProductionYard` state**
 
@@ -153,7 +153,7 @@ During `configure()`:
 2. Clear prior derived state.
 3. Load and validate the 1024×1024 ground texture.
 4. Create one named `GroundMesh` if the texture is valid.
-5. Generate UV-mapped triangles through `SurfaceTool`, sampling `TerrainBuilder.sample_height()` for each world-space vertex.
+5. Generate UV-mapped triangles through `SurfaceTool`, sampling `TerrainBuilder.sample_surface_height()` for each world-space vertex.
 6. Use smooth alpha blending, unshaded hand-painted color, double-sided culling, no shadow, and no collision. Rebuild after entering the tree and global transform changes.
 7. Rebuild the existing output slots unchanged.
 

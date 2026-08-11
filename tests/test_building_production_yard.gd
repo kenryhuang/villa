@@ -11,6 +11,10 @@ const GROUND_SURFACE_LIFT := 0.028
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	var terrain := TerrainBuilder.new()
+	tree.root.add_child(terrain)
+	assertions.truthy(terrain.build(), "terrain builds for painted-ground surface comparison")
+	var terrain_mesh := terrain.get_node_or_null("TerrainMesh") as MeshInstance3D
 	var missing_loader := YardScript.new()
 	assertions.equal(
 		missing_loader.call("_load_ground_texture", "missing_test_family"),
@@ -44,10 +48,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(yard.get_style(), "timber", "yard preserves its style")
 	assertions.truthy(not yard.has_enabled_collisions(), "painted ground is always walkable")
 	assertions.equal(yard.get_collision_layers(), [], "painted ground owns no physics layer")
-	_assert_ground_contract(yard, Vector2i(3, 3), assertions)
+	_assert_ground_contract(yard, Vector2i(3, 3), assertions, terrain_mesh)
 	yard.global_position = Vector3(12.0, 0.0, 8.0)
 	yard.force_update_transform()
-	_assert_ground_contract(yard, Vector2i(3, 3), assertions)
+	_assert_ground_contract(yard, Vector2i(3, 3), assertions, terrain_mesh)
 
 	var original_ground := _first_ground_mesh(yard)
 	var original_texture := _ground_texture(original_ground)
@@ -71,6 +75,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var large := YardScript.new()
 	tree.root.add_child(large)
+	large.global_position = Vector3(-15.0, 0.0, -5.0)
 	assertions.truthy(
 		large.configure(Vector2i(4, 4), "industrial", Vector3(0.0, 0.0, -0.55)),
 		"4x4 industrial ground configures"
@@ -78,19 +83,21 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(_ground_meshes(large).size(), 1, "4x4 yard still uses one seamless ground mesh")
 	assertions.equal(large.get_output_slots().size(), 8, "4x4 yard preserves eight collection slots")
 	assertions.truthy(large.all_output_slots_inside_bounds(), "4x4 collection slots stay inside the ground area")
-	_assert_ground_contract(large, Vector2i(4, 4), assertions)
+	_assert_ground_contract(large, Vector2i(4, 4), assertions, terrain_mesh)
 	assertions.truthy(not large.configure(Vector2i(2, 2), "timber", Vector3.ZERO), "unsupported yard size rejects")
 	assertions.truthy(not large.configure(Vector2i(4, 4), "plastic", Vector3.ZERO), "unknown yard style rejects")
 	large.clear_immediately()
 	assertions.equal(_ground_meshes(large).size(), 0, "yard cleanup removes the painted ground immediately")
 	assertions.equal(large.get_output_slots().size(), 0, "yard cleanup clears derived output slots")
 	large.free()
+	terrain.free()
 
 
 func _assert_ground_contract(
 	yard: Node3D,
 	size: Vector2i,
-	assertions: TestAssert
+	assertions: TestAssert,
+	terrain_mesh: MeshInstance3D
 ) -> void:
 	var ground := _first_ground_mesh(yard)
 	if ground == null:
@@ -107,11 +114,12 @@ func _assert_ground_contract(
 	)
 	var vertices := _ground_vertices(ground)
 	assertions.truthy(vertices.size() >= 100, "ground mesh is subdivided enough to follow terrain")
-	var heightmap := load(TerrainBuilder.HEIGHTMAP_PATH) as Texture2D
-	if heightmap != null and not vertices.is_empty():
-		var sample := ground.to_global(vertices[vertices.size() / 3])
-		var expected_height := TerrainBuilder.sample_height(heightmap.get_image(), sample.x, sample.z) + GROUND_SURFACE_LIFT
-		assertions.near(sample.y, expected_height, 0.001, "ground mesh samples the terrain heightmap")
+	if terrain_mesh != null:
+		for vertex in vertices:
+			var sample := ground.to_global(vertex)
+			var terrain_height := _rendered_terrain_height(terrain_mesh, sample.x, sample.z)
+			assertions.near(sample.y, terrain_height + GROUND_SURFACE_LIFT, 0.001, "ground mesh follows the rendered terrain triangles")
+			assertions.truthy(sample.y > terrain_height + 0.02, "ground mesh stays visibly above the rendered terrain")
 	var material := ground.material_override as StandardMaterial3D
 	assertions.truthy(material != null, "ground mesh has a standard compatibility material")
 	if material != null:
@@ -178,6 +186,25 @@ func _ground_vertices(ground: MeshInstance3D) -> PackedVector3Array:
 		return PackedVector3Array()
 	var arrays := (ground.mesh as ArrayMesh).surface_get_arrays(0)
 	return arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+
+
+func _rendered_terrain_height(terrain_mesh: MeshInstance3D, world_x: float, world_z: float) -> float:
+	var arrays := (terrain_mesh.mesh as ArrayMesh).surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var grid_x := clampf(world_x / TerrainBuilder.WORLD_SIZE.x + 0.5, 0.0, 1.0) * TerrainBuilder.SUBDIVISIONS
+	var grid_z := clampf(world_z / TerrainBuilder.WORLD_SIZE.y + 0.5, 0.0, 1.0) * TerrainBuilder.SUBDIVISIONS
+	var cell_x := mini(floori(grid_x), TerrainBuilder.SUBDIVISIONS - 1)
+	var cell_z := mini(floori(grid_z), TerrainBuilder.SUBDIVISIONS - 1)
+	var local_x := grid_x - float(cell_x)
+	var local_z := grid_z - float(cell_z)
+	var stride := TerrainBuilder.SUBDIVISIONS + 1
+	var a := vertices[cell_z * stride + cell_x].y
+	var b := vertices[cell_z * stride + cell_x + 1].y
+	var c := vertices[(cell_z + 1) * stride + cell_x].y
+	var d := vertices[(cell_z + 1) * stride + cell_x + 1].y
+	if local_x + local_z <= 1.0:
+		return a * (1.0 - local_x - local_z) + b * local_x + c * local_z
+	return b * (1.0 - local_z) + c * (1.0 - local_x) + d * (local_x + local_z - 1.0)
 
 
 func _decals(root: Node) -> Array[Decal]:

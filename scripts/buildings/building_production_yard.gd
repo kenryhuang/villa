@@ -178,7 +178,7 @@ func _rebuild_ground_mesh() -> void:
 			var local_ground := Vector3(local_x, GROUND_SURFACE_LIFT, local_z)
 			if can_sample_world:
 				var world_flat := to_global(Vector3(local_x, 0.0, local_z))
-				var height := TerrainBuilderScript.sample_height(
+				var height := TerrainBuilderScript.sample_surface_height(
 					_terrain_height_image,
 					world_flat.x,
 					world_flat.z
