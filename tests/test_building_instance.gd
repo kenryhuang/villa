@@ -127,7 +127,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			assertions.truthy(not instance.get_node("ProductionYard").has_enabled_collisions(), "%s leaving preview keeps ground walkable" % id)
 			instance.set_preview_valid(false)
 			instance.set_preview_mode(true)
-			assertions.equal(instance.get_node("ProductionYard").get_visual_tint(), Color(1.0, 0.38, 0.38, 0.68), "%s invalid preview tints ground red" % id)
+			assertions.equal(instance.get_node("ProductionYard").get_visual_tint(), Color(1.0, 0.38, 0.38, 1.0), "%s invalid preview tints ground red without reducing painted alpha" % id)
 			instance.set_preview_mode(false)
 		instance.deactivate()
 		assertions.equal(instance.get_node("Collision").collision_layer, 0, "%s removal disables collision immediately" % id)
@@ -136,7 +136,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.equal(instance.is_in_group("building_instance"), false, "%s removal leaves building group immediately" % id)
 		if id == "workbench":
 			assertions.equal(instance.call("get_output_pile_count"), 0, "removal clears derived output piles")
-			assertions.equal(instance.get_node("ProductionYard").get_fence_segment_count(), 0, "removal clears derived yard visuals")
+			assertions.equal(instance.get_node("ProductionYard").get_ground_visual_count(), 0, "removal clears the painted ground visual")
 		instance.queue_free()
 
 	game_data.free()

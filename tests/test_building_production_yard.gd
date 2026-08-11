@@ -7,10 +7,17 @@ const GROUND_ASSETS := {
 	"industrial": "res://assets/buildings/yards/industrial_yard_ground.png",
 }
 const GROUND_TEXTURE_SIZE := Vector2(1024.0, 1024.0)
-const TERRAIN_ONLY_CULL_MASK := 1 << 7
+const GROUND_SURFACE_LIFT := 0.028
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	var missing_loader := YardScript.new()
+	assertions.equal(
+		missing_loader.call("_load_ground_texture", "missing_test_family"),
+		null,
+		"missing ground texture returns no visual resource without a fallback"
+	)
+	missing_loader.free()
 	for style in GROUND_ASSETS:
 		var path := str(GROUND_ASSETS[style])
 		assertions.truthy(ResourceLoader.exists(path), "%s painted ground exists" % style)
@@ -27,7 +34,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		yard.configure(Vector2i(3, 3), "timber", Vector3(0.0, 0.0, -0.35)),
 		"3x3 timber ground configures"
 	)
-	assertions.equal(_decals(yard).size(), 1, "yard creates one seamless ground decal")
+	assertions.equal(_ground_meshes(yard).size(), 1, "yard creates one seamless compatibility ground mesh")
+	assertions.equal(_decals(yard).size(), 0, "compatibility renderer yard creates no unsupported Decal")
 	assertions.equal(_sprites(yard).size(), 0, "yard creates no fence sprite cards")
 	assertions.equal(_static_bodies(yard).size(), 0, "yard creates no perimeter physics body")
 	assertions.equal(yard.get_fence_segment_count(), 0, "legacy fence query reports no fence segments")
@@ -37,21 +45,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(not yard.has_enabled_collisions(), "painted ground is always walkable")
 	assertions.equal(yard.get_collision_layers(), [], "painted ground owns no physics layer")
 	_assert_ground_contract(yard, Vector2i(3, 3), assertions)
+	yard.global_position = Vector3(12.0, 0.0, 8.0)
+	yard.force_update_transform()
+	_assert_ground_contract(yard, Vector2i(3, 3), assertions)
 
-	var original_decal: Decal = _first_decal(yard)
-	var original_texture: Texture2D = original_decal.texture_albedo if original_decal != null else null
+	var original_ground := _first_ground_mesh(yard)
+	var original_texture := _ground_texture(original_ground)
 	for stage in 4:
 		yard.set_construction_stage(stage)
 		assertions.equal(yard.get_construction_stage(), stage, "yard stores construction stage %d" % stage)
-		assertions.equal(_first_decal(yard), original_decal, "construction stage keeps the same ground decal")
-		if original_decal != null:
-			assertions.equal(original_decal.texture_albedo, original_texture, "construction stage keeps the ground texture")
+		assertions.equal(_first_ground_mesh(yard), original_ground, "construction stage keeps the same ground mesh")
+		assertions.equal(_ground_texture(original_ground), original_texture, "construction stage keeps the ground texture")
 		assertions.equal(yard.get_transition_sprite_count(), 0, "ground has no construction crossfade sprites")
 
 	yard.set_preview_state(true, false)
-	assertions.equal(yard.get_visual_tint(), Color(1.0, 0.38, 0.38, 0.68), "invalid preview tints ground red")
+	assertions.equal(yard.get_visual_tint(), Color(1.0, 0.38, 0.38, 1.0), "invalid preview tints ground red without reducing texture alpha")
 	yard.set_preview_state(true, true)
-	assertions.equal(yard.get_visual_tint(), Color(0.48, 1.0, 0.52, 0.68), "valid preview tints ground green")
+	assertions.equal(yard.get_visual_tint(), Color(0.48, 1.0, 0.52, 1.0), "valid preview tints ground green without reducing texture alpha")
 	yard.set_preview_state(false, true)
 	yard.set_maintenance_state("overdue")
 	assertions.equal(yard.get_visual_tint(), Color.WHITE, "maintenance does not tint the painted ground")
@@ -65,14 +75,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		large.configure(Vector2i(4, 4), "industrial", Vector3(0.0, 0.0, -0.55)),
 		"4x4 industrial ground configures"
 	)
-	assertions.equal(_decals(large).size(), 1, "4x4 yard still uses one seamless decal")
+	assertions.equal(_ground_meshes(large).size(), 1, "4x4 yard still uses one seamless ground mesh")
 	assertions.equal(large.get_output_slots().size(), 8, "4x4 yard preserves eight collection slots")
 	assertions.truthy(large.all_output_slots_inside_bounds(), "4x4 collection slots stay inside the ground area")
 	_assert_ground_contract(large, Vector2i(4, 4), assertions)
 	assertions.truthy(not large.configure(Vector2i(2, 2), "timber", Vector3.ZERO), "unsupported yard size rejects")
 	assertions.truthy(not large.configure(Vector2i(4, 4), "plastic", Vector3.ZERO), "unknown yard style rejects")
 	large.clear_immediately()
-	assertions.equal(_decals(large).size(), 0, "yard cleanup removes the painted ground immediately")
+	assertions.equal(_ground_meshes(large).size(), 0, "yard cleanup removes the painted ground immediately")
 	assertions.equal(large.get_output_slots().size(), 0, "yard cleanup clears derived output slots")
 	large.free()
 
@@ -82,20 +92,31 @@ func _assert_ground_contract(
 	size: Vector2i,
 	assertions: TestAssert
 ) -> void:
-	var decal := _first_decal(yard)
-	if decal == null:
+	var ground := _first_ground_mesh(yard)
+	if ground == null:
 		return
-	assertions.equal(decal.cull_mask, TERRAIN_ONLY_CULL_MASK, "ground projects only onto terrain receiver layer")
+	assertions.truthy(ground.mesh is ArrayMesh, "ground uses a compatibility-renderable array mesh")
+	var bounds := ground.get_aabb()
 	assertions.truthy(
-		decal.size.x >= float(size.x) and decal.size.x <= float(size.x) + 0.2001,
+		bounds.size.x >= float(size.x) and bounds.size.x <= float(size.x) + 0.2001,
 		"ground width covers footprint with at most 0.1-cell overhang per side"
 	)
 	assertions.truthy(
-		decal.size.z >= float(size.y) and decal.size.z <= float(size.y) + 0.2001,
+		bounds.size.z >= float(size.y) and bounds.size.z <= float(size.y) + 0.2001,
 		"ground depth covers footprint with at most 0.1-cell overhang per side"
 	)
-	assertions.truthy(decal.size.y > 0.0, "ground decal has a terrain projection depth")
-	assertions.equal(decal.texture_albedo.get_size(), GROUND_TEXTURE_SIZE, "ground decal uses a 1024px texture")
+	var vertices := _ground_vertices(ground)
+	assertions.truthy(vertices.size() >= 100, "ground mesh is subdivided enough to follow terrain")
+	var heightmap := load(TerrainBuilder.HEIGHTMAP_PATH) as Texture2D
+	if heightmap != null and not vertices.is_empty():
+		var sample := ground.to_global(vertices[vertices.size() / 3])
+		var expected_height := TerrainBuilder.sample_height(heightmap.get_image(), sample.x, sample.z) + GROUND_SURFACE_LIFT
+		assertions.near(sample.y, expected_height, 0.001, "ground mesh samples the terrain heightmap")
+	var material := ground.material_override as StandardMaterial3D
+	assertions.truthy(material != null, "ground mesh has a standard compatibility material")
+	if material != null:
+		assertions.equal(material.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA, "ground material preserves smooth painted alpha")
+		assertions.equal(material.albedo_texture.get_size(), GROUND_TEXTURE_SIZE, "ground mesh uses a 1024px texture")
 
 
 func _validate_painted_ground(style: String, path: String, assertions: TestAssert) -> void:
@@ -131,9 +152,32 @@ func _validate_painted_ground(style: String, path: String, assertions: TestAsser
 	assertions.truthy(edge_painted > 0, "%s irregular ground edge reaches the feather zone" % style)
 
 
-func _first_decal(root: Node) -> Decal:
-	var found := _decals(root)
+func _first_ground_mesh(root: Node) -> MeshInstance3D:
+	var found := _ground_meshes(root)
 	return found[0] if not found.is_empty() else null
+
+
+func _ground_meshes(root: Node) -> Array[MeshInstance3D]:
+	var result: Array[MeshInstance3D] = []
+	for child in root.get_children():
+		if child is MeshInstance3D and child.name == "GroundMesh":
+			result.append(child as MeshInstance3D)
+		result.append_array(_ground_meshes(child))
+	return result
+
+
+func _ground_texture(ground: MeshInstance3D) -> Texture2D:
+	if ground == null:
+		return null
+	var material := ground.material_override as StandardMaterial3D
+	return material.albedo_texture if material != null else null
+
+
+func _ground_vertices(ground: MeshInstance3D) -> PackedVector3Array:
+	if ground == null or not ground.mesh is ArrayMesh or ground.mesh.get_surface_count() == 0:
+		return PackedVector3Array()
+	var arrays := (ground.mesh as ArrayMesh).surface_get_arrays(0)
+	return arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 
 
 func _decals(root: Node) -> Array[Decal]:

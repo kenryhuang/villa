@@ -18,9 +18,14 @@ func run(assertions) -> void:
 	var terrain_mesh := terrain.get_node_or_null("TerrainMesh") as MeshInstance3D
 	assertions.truthy(terrain_mesh != null, "terrain exposes its visual mesh")
 	if terrain_mesh != null:
-		assertions.equal(terrain_mesh.layers, 1 | (1 << 7), "terrain receives normal rendering and production ground decals")
+		assertions.equal(terrain_mesh.layers, 1, "painted ground mesh requires no special terrain receiver layer")
+	assertions.equal(
+		ProjectSettings.get_setting("rendering/renderer/rendering_method"),
+		"gl_compatibility",
+		"production ground tests exercise the configured Compatibility renderer"
+	)
 	var terrain_body := terrain.get_node_or_null("TerrainBody") as StaticBody3D
 	assertions.truthy(terrain_body != null, "terrain keeps its physical body")
 	if terrain_body != null:
-		assertions.equal(terrain_body.collision_layer, 1, "production decal layer does not alter terrain physics")
+		assertions.equal(terrain_body.collision_layer, 1, "painted ground visuals do not alter terrain physics")
 	terrain.free()

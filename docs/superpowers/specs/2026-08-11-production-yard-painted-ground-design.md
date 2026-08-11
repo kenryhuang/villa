@@ -44,9 +44,9 @@ The existing `BuildingProductionYard` class and `ProductionYard` node name remai
 - it retains the existing output-slot calculation and public accessors;
 - it no longer creates fence segments, fence construction transitions, or perimeter collision bodies.
 
-The ground uses a terrain-projected decal so the painted surface follows the current heightmap instead of floating above slopes or cutting into the grass mesh. The terrain mesh receives a dedicated visual layer in addition to its existing render layer, and the decal cull mask targets only that terrain layer. This prevents the ground art from projecting onto the building, products, actors, crops, or UI feedback.
+The project uses Godot's `gl_compatibility` renderer, where `Decal` is unsupported. The ground therefore uses one subdivided `ArrayMesh` with a transparent `StandardMaterial3D`. Its vertices sample the authoritative terrain heightmap in world space, so the surface follows slopes instead of floating above or cutting into the grass. Because the art is drawn only on its own mesh, it cannot project onto buildings, products, actors, crops, or UI feedback and does not require a special terrain render layer.
 
-The decal is centered on the production footprint. Its X/Z size equals the configured 3×3 or 4×4 yard size plus only the small allowance required by the painted feathered edge. Its projection depth is shallow and centered around the local ground plane. It has no collision shape, physics layer, input ray-pickability, or interaction callback.
+The mesh is centered on the production footprint. Its X/Z size equals the configured 3×3 or 4×4 yard size plus only the small allowance required by the painted feathered edge. It is rebuilt after entering the scene tree and when its global transform changes, allowing build previews and restored buildings to follow the correct terrain samples. It has no collision shape, physics layer, input ray-pickability, or interaction callback.
 
 ## Lifecycle and State
 
@@ -54,7 +54,7 @@ The complete ground appears during `configure`, including building preview and t
 
 Preview state applies a restrained green or red color multiplication to the ground while preserving its source alpha. After placement, the texture returns to its original color. Maintenance warning, overdue, broken, and repairing states do not tint the ground; maintenance feedback remains on the building entity.
 
-Building activation creates the ground and output slots. Deactivation and immediate cleanup release the decal without waiting for a tween. The existing structure collision remains authoritative, so only the painted building body is impassable; the surrounding production ground is walkable.
+Building activation creates the ground and output slots. Deactivation and immediate cleanup release the ground mesh without waiting for a tween. The existing structure collision remains authoritative, so only the painted building body is impassable; the surrounding production ground is walkable.
 
 Output pile positions remain inside the footprint, in the front collection zone. Piles keep their independent hover labels, pointer detection, collection animation, and inventory transfer behavior.
 
@@ -74,6 +74,8 @@ Automated checks must verify:
 - every asset is exactly `1024×1024`, preserves alpha, has transparent corners, and has a feathered outer edge;
 - the main painted region contains semi-transparent pixels in the selected opacity range rather than being fully opaque;
 - every configured production yard owns exactly one ground visual and no fence sprites;
+- the ground uses a Compatibility-renderable mesh rather than an unsupported `Decal`;
+- the subdivided mesh samples the heightmap again after its transform changes;
 - 3×3 and 4×4 visuals use the expected footprint dimensions and family texture;
 - the ground has no collision body, physics layer, pointer input, or interaction callback;
 - building structure collision remains enabled after construction;
