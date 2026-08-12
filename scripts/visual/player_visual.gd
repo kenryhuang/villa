@@ -139,6 +139,7 @@ func _atlas_frame(
 ) -> AtlasTexture:
 	var frame := AtlasTexture.new()
 	frame.atlas = atlas
+	frame.filter_clip = true
 	frame.region = Rect2(
 		Vector2(column * cell_size.x, row * cell_size.y),
 		Vector2(cell_size)

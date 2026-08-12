@@ -66,6 +66,13 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		assertions.truthy(visual.sprite_frames.has_animation(walk_name), "%s walk animation exists" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(idle_name), 2, "%s idle has two frames" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(walk_name), 6, "%s walk has six frames" % direction)
+		for animation_name in [idle_name, walk_name]:
+			for frame_index in visual.sprite_frames.get_frame_count(animation_name):
+				var frame_texture := visual.sprite_frames.get_frame_texture(animation_name, frame_index) as AtlasTexture
+				assertions.truthy(
+					frame_texture != null and frame_texture.filter_clip,
+					"%s frame %d clips texture filtering to its atlas cell" % [animation_name, frame_index]
+				)
 	assertions.equal(visual.get_last_direction(), "s", "player visual defaults to south")
 	visual.sync_motion(Vector2(1.0, 0.0), false, true)
 	assertions.equal(visual.animation, &"walk_e", "walking east selects east animation")
