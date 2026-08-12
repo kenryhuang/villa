@@ -44,6 +44,18 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 	assertions.near(PlayerVisualScript.IDLE_FPS, 2.0, 0.001, "idle animation uses two fps")
 	assertions.near(PlayerVisualScript.WALK_FPS, 8.0, 0.001, "walk animation uses eight fps")
 	assertions.near(PlayerVisualScript.RUN_FPS, 12.0, 0.001, "run animation uses twelve fps")
+	var just_inside_south := Vector2(sin(deg_to_rad(22.4)), cos(deg_to_rad(22.4)))
+	var just_inside_southeast := Vector2(sin(deg_to_rad(22.6)), cos(deg_to_rad(22.6)))
+	assertions.equal(
+		PlayerVisualScript.direction_from_velocity(just_inside_south, "n"),
+		"s",
+		"direction quantization retains south immediately before its sector edge"
+	)
+	assertions.equal(
+		PlayerVisualScript.direction_from_velocity(just_inside_southeast, "n"),
+		"se",
+		"direction quantization enters southeast immediately after its sector edge"
+	)
 
 
 func _assert_animation_contract(assertions: TestAssert) -> void:
@@ -85,6 +97,8 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	visual.sync_motion(Vector2(0.0, -1.0), false, false)
 	assertions.equal(visual.animation, &"walk_n", "jumping preserves the current directional walk pose")
 	assertions.truthy(not visual.is_playing(), "jumping pauses the directional animation")
+	visual.sync_motion(Vector2(0.0, -1.0), false, true)
+	assertions.truthy(visual.is_playing(), "landing resumes the current directional walk animation")
 	visual.free()
 
 
@@ -102,6 +116,11 @@ func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
 			assertions.truthy(bounds.position.y >= 6, "%s keeps a top gutter" % frame_label)
 			assertions.truthy(bounds.end.x <= cell_size.x - 6, "%s keeps a right gutter" % frame_label)
 			assertions.truthy(bounds.end.y <= cell_size.y - 6, "%s keeps a bottom gutter" % frame_label)
+			assertions.equal(
+				_count_visible_components(image, cell_size, row, column),
+				1,
+				"%s contains one connected painted character without fragments" % frame_label
+			)
 			baselines.append(bounds.end.y)
 	if not baselines.is_empty():
 		var minimum_baseline: int = baselines.min()
@@ -116,6 +135,43 @@ func _frame_used_rect(image: Image, cell_size: Vector2i, row: int, column: int) 
 	var origin := Vector2i(column * cell_size.x, row * cell_size.y)
 	var frame_image := image.get_region(Rect2i(origin, cell_size))
 	return frame_image.get_used_rect()
+
+
+func _count_visible_components(
+	image: Image,
+	cell_size: Vector2i,
+	row: int,
+	column: int
+) -> int:
+	var origin := Vector2i(column * cell_size.x, row * cell_size.y)
+	var frame_image := image.get_region(Rect2i(origin, cell_size))
+	frame_image.resize(48, 48, Image.INTERPOLATE_NEAREST)
+	var visited := PackedByteArray()
+	visited.resize(48 * 48)
+	var component_count := 0
+	for y in 48:
+		for x in 48:
+			var start_index := y * 48 + x
+			if visited[start_index] == 1 or frame_image.get_pixel(x, y).a <= 0.10:
+				continue
+			component_count += 1
+			var queue := PackedInt32Array([start_index])
+			visited[start_index] = 1
+			var cursor := 0
+			while cursor < queue.size():
+				var current_index := queue[cursor]
+				cursor += 1
+				var current := Vector2i(current_index % 48, current_index / 48)
+				for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+					var next: Vector2i = current + offset
+					if next.x < 0 or next.y < 0 or next.x >= 48 or next.y >= 48:
+						continue
+					var next_index: int = next.y * 48 + next.x
+					if visited[next_index] == 1 or frame_image.get_pixelv(next).a <= 0.10:
+						continue
+					visited[next_index] = 1
+					queue.append(next_index)
+	return component_count
 
 
 func _assert_scene_contract(assertions: TestAssert) -> void:
@@ -137,4 +193,7 @@ func _assert_scene_contract(assertions: TestAssert) -> void:
 	assertions.equal(player.collision_mask, 21, "player collision mask is unchanged")
 	assertions.truthy(player.get_node_or_null("ActionController") != null, "player action controller path is preserved")
 	assertions.truthy(player.get_node_or_null("ToolSwingVisual") != null, "player tool visual path is preserved")
+	var controller_source := FileAccess.get_file_as_string("res://scripts/actors/player.gd")
+	assertions.truthy(not "rotation.y" in controller_source, "player movement never rotates the root node")
+	assertions.truthy("player_visual.sync_motion" in controller_source, "player movement drives its visual from resolved velocity")
 	player.free()
