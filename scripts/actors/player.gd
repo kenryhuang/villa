@@ -32,6 +32,7 @@ var _auto_path: Array[Vector3] = []
 var _auto_path_index := 0
 var _auto_stall_elapsed := 0.0
 var _auto_last_distance := INF
+@onready var player_visual: PlayerVisual = $PlayerVisual
 
 
 func configure(new_camera_rig: Node, new_world: Node, tools: ToolSystem, grid: GridSystem) -> void:
@@ -72,11 +73,14 @@ func _physics_process(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, direction.x * current_speed, current_speed * 8.0 * delta)
 	velocity.z = move_toward(velocity.z, direction.z * current_speed, current_speed * 8.0 * delta)
 
-	if direction.length_squared() > 0.01:
-		rotation.y = lerp_angle(rotation.y, atan2(direction.x, direction.z), 1.0 - exp(-12.0 * delta))
-
 	move_and_slide()
 	_clamp_to_world()
+	if player_visual != null:
+		player_visual.sync_motion(
+			Vector2(velocity.x, velocity.z),
+			_is_sprinting,
+			is_on_floor()
+		)
 
 	# 奔跑消耗体力
 	if _is_sprinting and direction.length_squared() > 0.01:
