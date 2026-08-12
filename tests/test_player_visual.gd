@@ -57,6 +57,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	assertions.truthy(image != null and not image.is_empty(), "player atlas exposes imported pixels")
 	if image != null and not image.is_empty():
 		assertions.truthy(image.get_pixel(0, 0).a < 0.05, "player atlas has transparent corners")
+		_assert_frame_art_contract(image, assertions)
 	var visual := PlayerVisualScript.new()
 	assertions.truthy(visual.configure(atlas), "valid player atlas configures")
 	for direction in DIRECTIONS:
@@ -85,6 +86,36 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	assertions.equal(visual.animation, &"walk_n", "jumping preserves the current directional walk pose")
 	assertions.truthy(not visual.is_playing(), "jumping pauses the directional animation")
 	visual.free()
+
+
+func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
+	var cell_size := Vector2i(image.get_width() / 8, image.get_height() / 8)
+	var baselines: Array[int] = []
+	for row in 8:
+		for column in 8:
+			var bounds := _frame_used_rect(image, cell_size, row, column)
+			var frame_label := "player atlas frame %d,%d" % [row, column]
+			assertions.truthy(bounds.size.x > 0 and bounds.size.y > 0, "%s contains painted pixels" % frame_label)
+			if bounds.size.x <= 0 or bounds.size.y <= 0:
+				continue
+			assertions.truthy(bounds.position.x >= 6, "%s keeps a left gutter" % frame_label)
+			assertions.truthy(bounds.position.y >= 6, "%s keeps a top gutter" % frame_label)
+			assertions.truthy(bounds.end.x <= cell_size.x - 6, "%s keeps a right gutter" % frame_label)
+			assertions.truthy(bounds.end.y <= cell_size.y - 6, "%s keeps a bottom gutter" % frame_label)
+			baselines.append(bounds.end.y)
+	if not baselines.is_empty():
+		var minimum_baseline: int = baselines.min()
+		var maximum_baseline: int = baselines.max()
+		assertions.truthy(
+			maximum_baseline - minimum_baseline <= 3,
+			"player atlas keeps every frame on a stable foot baseline"
+		)
+
+
+func _frame_used_rect(image: Image, cell_size: Vector2i, row: int, column: int) -> Rect2i:
+	var origin := Vector2i(column * cell_size.x, row * cell_size.y)
+	var frame_image := image.get_region(Rect2i(origin, cell_size))
+	return frame_image.get_used_rect()
 
 
 func _assert_scene_contract(assertions: TestAssert) -> void:
