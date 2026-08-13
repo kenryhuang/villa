@@ -96,6 +96,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		assertions.truthy(visual.sprite_frames.has_animation(walk_name), "%s walk animation exists" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(idle_name), 2, "%s idle has two frames" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(walk_name), 6, "%s walk has six frames" % direction)
+		_assert_walk_leg_alternation(visual.sprite_frames, walk_name, direction, assertions)
 		for animation_name in [idle_name, walk_name]:
 			for frame_index in visual.sprite_frames.get_frame_count(animation_name):
 				var frame_texture := visual.sprite_frames.get_frame_texture(animation_name, frame_index) as AtlasTexture
@@ -189,6 +190,46 @@ func _count_visible_components(
 					visited[next_index] = 1
 					queue.append(next_index)
 	return component_count
+
+
+func _assert_walk_leg_alternation(
+	frames: SpriteFrames,
+	animation_name: String,
+	direction: String,
+	assertions: TestAssert
+) -> void:
+	var silhouettes: Array[Image] = []
+	for frame_index in 6:
+		var atlas_frame := frames.get_frame_texture(animation_name, frame_index) as AtlasTexture
+		var atlas_image := atlas_frame.atlas.get_image()
+		var frame_image := atlas_image.get_region(Rect2i(atlas_frame.region))
+		frame_image.resize(48, 48, Image.INTERPOLATE_LANCZOS)
+		silhouettes.append(frame_image)
+	var first_half_difference := _lower_body_silhouette_difference(silhouettes[0], silhouettes[3])
+	var left_stride_difference := _lower_body_silhouette_difference(silhouettes[0], silhouettes[2])
+	var right_stride_difference := _lower_body_silhouette_difference(silhouettes[3], silhouettes[5])
+	assertions.truthy(
+		first_half_difference >= 20,
+		"%s walk alternates to a visibly different opposite-leg stride" % direction
+	)
+	assertions.truthy(
+		left_stride_difference >= 15 and right_stride_difference >= 15,
+		"%s walk contains weight-transfer poses between leg contacts (%d/%d)"
+		% [direction, left_stride_difference, right_stride_difference]
+	)
+
+
+func _lower_body_silhouette_difference(first: Image, second: Image) -> int:
+	var difference := 0
+	for y in range(27, 47):
+		for x in range(8, 40):
+			var first_color := first.get_pixel(x, y)
+			var second_color := second.get_pixel(x, y)
+			var first_opaque := first_color.a > 0.10
+			var second_opaque := second_color.a > 0.10
+			if first_opaque != second_opaque:
+				difference += 1
+	return difference
 
 
 func _assert_scene_contract(assertions: TestAssert) -> void:
