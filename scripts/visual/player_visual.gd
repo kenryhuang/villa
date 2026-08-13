@@ -9,10 +9,10 @@ const GRID_SIZE := Vector2i(8, 8)
 const IDLE_FRAME_COUNT := 2
 const WALK_FRAME_COUNT := 6
 const IDLE_FPS := 2.0
-const WALK_FPS := 8.0
-const RUN_FPS := 12.0
+const WALK_FPS := 6.0
+const RUN_FPS := 9.0
 const MOVEMENT_THRESHOLD_SQUARED := 0.0025
-const PIXEL_SIZE := 0.008
+const PIXEL_SIZE := 0.0068
 
 var _configured := false
 var _last_direction := DEFAULT_DIRECTION
@@ -125,6 +125,17 @@ static func direction_from_velocity(
 	var angle := atan2(planar_velocity.x, planar_velocity.y)
 	var sector := wrapi(roundi(angle / (PI / 4.0)), 0, 8)
 	return ["s", "se", "e", "ne", "n", "nw", "w", "sw"][sector]
+
+
+static func facing_velocity_from_world(
+	world_velocity: Vector3,
+	camera_forward: Vector3,
+	camera_right: Vector3
+) -> Vector2:
+	return Vector2(
+		world_velocity.dot(camera_right),
+		-world_velocity.dot(camera_forward)
+	)
 
 
 static func _valid_direction(direction: String) -> String:

@@ -42,8 +42,9 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 	assertions.equal(PlayerVisualScript.idle_animation_name("ne"), "idle_ne", "idle animation names are stable")
 	assertions.equal(PlayerVisualScript.walk_animation_name("sw"), "walk_sw", "walk animation names are stable")
 	assertions.near(PlayerVisualScript.IDLE_FPS, 2.0, 0.001, "idle animation uses two fps")
-	assertions.near(PlayerVisualScript.WALK_FPS, 8.0, 0.001, "walk animation uses eight fps")
-	assertions.near(PlayerVisualScript.RUN_FPS, 12.0, 0.001, "run animation uses twelve fps")
+	assertions.near(PlayerVisualScript.WALK_FPS, 6.0, 0.001, "walk animation uses six fps")
+	assertions.near(PlayerVisualScript.RUN_FPS, 9.0, 0.001, "run animation uses nine fps")
+	assertions.near(PlayerVisualScript.PIXEL_SIZE, 0.0068, 0.0001, "player art is scaled below building proportions")
 	var just_inside_south := Vector2(sin(deg_to_rad(22.4)), cos(deg_to_rad(22.4)))
 	var just_inside_southeast := Vector2(sin(deg_to_rad(22.6)), cos(deg_to_rad(22.6)))
 	assertions.equal(
@@ -55,6 +56,22 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 		PlayerVisualScript.direction_from_velocity(just_inside_southeast, "n"),
 		"se",
 		"direction quantization enters southeast immediately after its sector edge"
+	)
+	var camera_forward := Vector3(0.7071068, 0.0, -0.7071068)
+	var camera_right := Vector3(0.7071068, 0.0, 0.7071068)
+	assertions.equal(
+		PlayerVisualScript.direction_from_velocity(
+			PlayerVisualScript.facing_velocity_from_world(camera_forward, camera_forward, camera_right)
+		),
+		"n",
+		"camera-forward movement selects the screen-up animation"
+	)
+	assertions.equal(
+		PlayerVisualScript.direction_from_velocity(
+			PlayerVisualScript.facing_velocity_from_world(camera_right, camera_forward, camera_right)
+		),
+		"e",
+		"camera-right movement selects the screen-right animation"
 	)
 
 
@@ -91,7 +108,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	assertions.equal(visual.animation, &"walk_e", "walking east selects east animation")
 	assertions.near(visual.speed_scale, 1.0, 0.001, "walking uses base animation speed")
 	visual.sync_motion(Vector2(1.0, 0.0), true, true)
-	assertions.near(visual.speed_scale, 1.5, 0.001, "sprinting reuses walk frames at twelve fps")
+	assertions.near(visual.speed_scale, 1.5, 0.001, "sprinting reuses walk frames at nine fps")
 	visual.sync_motion(Vector2.ZERO, false, true)
 	assertions.equal(visual.animation, &"idle_e", "stopping retains the last facing direction")
 	visual.sync_motion(Vector2(0.0, -1.0), false, false)
@@ -193,6 +210,14 @@ func _assert_scene_contract(assertions: TestAssert) -> void:
 	assertions.equal(player.collision_mask, 21, "player collision mask is unchanged")
 	assertions.truthy(player.get_node_or_null("ActionController") != null, "player action controller path is preserved")
 	assertions.truthy(player.get_node_or_null("ToolSwingVisual") != null, "player tool visual path is preserved")
+	assertions.near(player.speed, 3.0, 0.001, "player walking speed matches the painted stride")
+	assertions.near(player.sprint_speed, 5.0, 0.001, "player sprint remains faster without outrunning the animation")
+	assertions.near(
+		(player.get_node("PlayerVisual") as AnimatedSprite3D).position.y,
+		0.60,
+		0.001,
+		"smaller player art keeps its boots on the ground"
+	)
 	var controller_source := FileAccess.get_file_as_string("res://scripts/actors/player.gd")
 	assertions.truthy(not "rotation.y" in controller_source, "player movement never rotates the root node")
 	assertions.truthy("player_visual.sync_motion" in controller_source, "player movement drives its visual from resolved velocity")

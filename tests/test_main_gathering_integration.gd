@@ -142,7 +142,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				"automatic path does not cross a decorative tree cell"
 			)
 		var movement_frames := 0
-		while main.gathering_controller.get_state_name() == "MOVING" and movement_frames < 480:
+		var physical_path_length := 0.0
+		var previous_path_point: Vector3 = main.player.global_position
+		for path_point in physical_path:
+			physical_path_length += previous_path_point.distance_to(path_point)
+			previous_path_point = path_point
+		var movement_frame_limit := ceili((physical_path_length / main.player.speed + 2.0) * 60.0)
+		while (
+			main.gathering_controller.get_state_name() == "MOVING"
+			and movement_frames < movement_frame_limit
+		):
 			await tree.physics_frame
 			movement_frames += 1
 		assertions.truthy(movement_frames > 1, "integration exercises physical auto movement instead of teleporting")

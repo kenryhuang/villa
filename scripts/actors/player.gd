@@ -10,8 +10,8 @@ signal manual_movement_requested
 signal auto_path_finished
 signal auto_path_blocked
 
-@export var speed := 4.5
-@export var sprint_speed := 7.0
+@export var speed := 3.0
+@export var sprint_speed := 5.0
 @export var jump_velocity := 5.2
 @export var interaction_range := 2.5
 
@@ -76,8 +76,15 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_clamp_to_world()
 	if player_visual != null:
+		var facing_velocity := Vector2(velocity.x, velocity.z)
+		if camera_rig != null:
+			facing_velocity = PlayerVisual.facing_velocity_from_world(
+				Vector3(velocity.x, 0.0, velocity.z),
+				camera_rig.get_planar_forward(),
+				camera_rig.get_planar_right()
+			)
 		player_visual.sync_motion(
-			Vector2(velocity.x, velocity.z),
+			facing_velocity,
 			_is_sprinting,
 			is_on_floor()
 		)
