@@ -3,7 +3,7 @@ extends RefCounted
 const PlayerVisualScript = preload("res://scripts/visual/player_visual.gd")
 const PlayerScene = preload("res://scenes/actors/player.tscn")
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
-const SIDE_MIDPOINTS_PATH := "res://assets/characters/player/player_farmer_side_midpoints.png"
+const SIDE_WALK_PATH := "res://assets/characters/player/player_farmer_side_walk.png"
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
@@ -44,6 +44,7 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 	assertions.equal(PlayerVisualScript.walk_animation_name("sw"), "walk_sw", "walk animation names are stable")
 	assertions.near(PlayerVisualScript.IDLE_FPS, 2.0, 0.001, "idle animation uses two fps")
 	assertions.near(PlayerVisualScript.WALK_FPS, 6.0, 0.001, "walk animation uses six fps")
+	assertions.near(PlayerVisualScript.SIDE_WALK_FPS, 7.0, 0.001, "seven-pose side walk completes in one second")
 	assertions.near(PlayerVisualScript.RUN_FPS, 9.0, 0.001, "run animation uses nine fps")
 	assertions.near(PlayerVisualScript.PIXEL_SIZE, 0.0068, 0.0001, "player art is scaled below building proportions")
 	var just_inside_south := Vector2(sin(deg_to_rad(22.4)), cos(deg_to_rad(22.4)))
@@ -88,7 +89,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	if image != null and not image.is_empty():
 		assertions.truthy(image.get_pixel(0, 0).a < 0.05, "player atlas has transparent corners")
 		_assert_frame_art_contract(image, assertions)
-	_assert_side_midpoint_art_contract(assertions)
+	_assert_side_walk_art_contract(assertions)
 	var visual := PlayerVisualScript.new()
 	assertions.truthy(visual.configure(atlas), "valid player atlas configures")
 	for direction in DIRECTIONS:
@@ -97,11 +98,17 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		assertions.truthy(visual.sprite_frames.has_animation(idle_name), "%s idle animation exists" % direction)
 		assertions.truthy(visual.sprite_frames.has_animation(walk_name), "%s walk animation exists" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(idle_name), 2, "%s idle has two frames" % direction)
-		var expected_walk_frames := 12 if direction in ["e", "w"] else 6
+		var expected_walk_frames := 7 if direction in ["e", "w"] else 6
 		assertions.equal(
 			visual.sprite_frames.get_frame_count(walk_name),
 			expected_walk_frames,
 			"%s walk has enough frames for its viewing angle" % direction
+		)
+		assertions.near(
+			visual.sprite_frames.get_animation_speed(walk_name),
+			7.0 if direction in ["e", "w"] else 6.0,
+			0.001,
+			"%s walk preserves a one-second loop" % direction
 		)
 		_assert_walk_leg_alternation(visual.sprite_frames, walk_name, direction, assertions)
 		if direction in ["e", "w"]:
@@ -118,7 +125,12 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	assertions.equal(visual.animation, &"walk_e", "walking east selects east animation")
 	assertions.near(visual.speed_scale, 1.0, 0.001, "walking uses base animation speed")
 	visual.sync_motion(Vector2(1.0, 0.0), true, true)
-	assertions.near(visual.speed_scale, 1.5, 0.001, "sprinting reuses walk frames at nine fps")
+	assertions.near(
+		visual.speed_scale,
+		PlayerVisualScript.RUN_FPS / PlayerVisualScript.SIDE_WALK_FPS,
+		0.001,
+		"side sprinting plays the seven poses at nine fps"
+	)
 	visual.sync_motion(Vector2.ZERO, false, true)
 	assertions.equal(visual.animation, &"idle_e", "stopping retains the last facing direction")
 	visual.sync_motion(Vector2(0.0, -1.0), false, false)
@@ -158,21 +170,40 @@ func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
 		)
 
 
-func _assert_side_midpoint_art_contract(assertions: TestAssert) -> void:
-	var texture := load(SIDE_MIDPOINTS_PATH) as Texture2D
-	assertions.truthy(texture != null, "side-walk midpoint atlas imports")
+func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
+	var texture := load(SIDE_WALK_PATH) as Texture2D
+	assertions.truthy(texture != null, "seven-pose side-walk atlas imports")
 	if texture == null:
 		return
 	var image := texture.get_image()
-	var cell_size := Vector2i(image.get_width() / 6, image.get_height() / 2)
+	assertions.equal(image.get_width() % 7, 0, "side-walk atlas divides into seven poses")
+	var cell_size := Vector2i(image.get_width() / 7, image.get_height() / 2)
+	var base_atlas := Image.load_from_file(ProjectSettings.globalize_path(ATLAS_PATH))
+	var expected_start := base_atlas.get_region(Rect2i(Vector2i(0, 2 * cell_size.y), cell_size))
+	var actual_start := image.get_region(Rect2i(Vector2i.ZERO, cell_size))
+	assertions.truthy(
+		_images_equal(expected_start, actual_start),
+		"east side walk starts from the exact row3/col1 standing pose"
+	)
+	for mapping in [{"side": 2, "atlas": 3}, {"side": 3, "atlas": 4}, {"side": 5, "atlas": 5}]:
+		var actual_key := image.get_region(
+			Rect2i(Vector2i(int(mapping.side) * cell_size.x, 0), cell_size)
+		)
+		var expected_key := base_atlas.get_region(
+			Rect2i(Vector2i(int(mapping.atlas) * cell_size.x, 2 * cell_size.y), cell_size)
+		)
+		assertions.truthy(
+			_images_equal(actual_key, expected_key),
+			"side pose %d exactly uses row3/col%d reference" % [int(mapping.side) + 1, int(mapping.atlas) + 1]
+		)
 	for row in 2:
-		for column in 6:
+		for column in 7:
 			var frame := image.get_region(Rect2i(Vector2i(column, row) * cell_size, cell_size))
 			var bounds := _frame_used_rect(frame, cell_size, 0, 0)
 			assertions.equal(
 				bounds.end.y,
 				184,
-				"side midpoint %d/%d keeps the planted baseline" % [row, column]
+				"side pose %d/%d keeps the planted baseline" % [row, column]
 			)
 			var translucent_pixels := 0
 			for y in cell_size.y:
@@ -181,10 +212,45 @@ func _assert_side_midpoint_art_contract(assertions: TestAssert) -> void:
 					if alpha > 0.08 and alpha < 0.85:
 						translucent_pixels += 1
 			assertions.truthy(
-				translucent_pixels <= 120,
-				"side midpoint %d/%d avoids translucent limb ghosts (%d)"
+				translucent_pixels <= (600 if column in [0, 2, 3, 5] else 120),
+				"side pose %d/%d avoids translucent limb ghosts (%d)"
 				% [row, column, translucent_pixels]
 			)
+	for column in 7:
+		var east := image.get_region(Rect2i(Vector2i(column * cell_size.x, 0), cell_size))
+		var west := image.get_region(
+			Rect2i(Vector2i(column * cell_size.x, cell_size.y), cell_size)
+		)
+		east.flip_x()
+		assertions.truthy(_images_equal(east, west), "west pose %d exactly mirrors east" % column)
+	var pose_images: Array[Image] = []
+	for column in 7:
+		var pose := image.get_region(Rect2i(Vector2i(column * cell_size.x, 0), cell_size))
+		pose.resize(48, 48, Image.INTERPOLATE_LANCZOS)
+		pose_images.append(pose)
+	var preparation_change := _lower_body_silhouette_difference(pose_images[0], pose_images[1])
+	var stride_change := _lower_body_silhouette_difference(pose_images[1], pose_images[2])
+	assertions.truthy(
+		preparation_change < stride_change,
+		"pose 2 is a subtler preparation step than the transition into the full stride (%d/%d)"
+		% [preparation_change, stride_change]
+	)
+
+
+func _images_equal(first: Image, second: Image) -> bool:
+	if first.get_size() != second.get_size():
+		return false
+	for y in first.get_height():
+		for x in first.get_width():
+			var first_color := first.get_pixel(x, y)
+			var second_color := second.get_pixel(x, y)
+			if absf(first_color.a - second_color.a) > 0.01:
+				return false
+			if first_color.a > 0.05 and Vector3(first_color.r, first_color.g, first_color.b).distance_squared_to(
+				Vector3(second_color.r, second_color.g, second_color.b)
+			) > 0.0005:
+				return false
+	return true
 
 
 func _frame_used_rect(image: Image, cell_size: Vector2i, row: int, column: int) -> Rect2i:
@@ -296,7 +362,7 @@ func _assert_side_walk_temporal_continuity(
 	var minimum_difference: int = differences.min()
 	var maximum_difference: int = differences.max()
 	assertions.truthy(
-		minimum_difference >= 8 and maximum_difference <= 60,
+		minimum_difference >= 30 and maximum_difference <= 120,
 		"%s walk distributes motion evenly across adjacent frames: %s" % [direction, differences]
 	)
 

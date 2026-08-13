@@ -2,16 +2,17 @@ class_name PlayerVisual
 extends AnimatedSprite3D
 
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
-const SIDE_MIDPOINTS_PATH := "res://assets/characters/player/player_farmer_side_midpoints.png"
+const SIDE_WALK_PATH := "res://assets/characters/player/player_farmer_side_walk.png"
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 const ROW_DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 const DEFAULT_DIRECTION := "s"
 const GRID_SIZE := Vector2i(8, 8)
 const IDLE_FRAME_COUNT := 2
 const WALK_FRAME_COUNT := 6
-const SIDE_WALK_FRAME_COUNT := 12
+const SIDE_WALK_FRAME_COUNT := 7
 const IDLE_FPS := 2.0
 const WALK_FPS := 6.0
+const SIDE_WALK_FPS := 7.0
 const RUN_FPS := 9.0
 const MOVEMENT_THRESHOLD_SQUARED := 0.0025
 const PIXEL_SIZE := 0.0068
@@ -48,9 +49,9 @@ func configure(atlas: Texture2D) -> bool:
 		atlas.get_width() / GRID_SIZE.x,
 		atlas.get_height() / GRID_SIZE.y
 	)
-	var side_midpoints := load(SIDE_MIDPOINTS_PATH) as Texture2D
-	if side_midpoints == null or side_midpoints.get_size() != Vector2(6 * cell_size.x, 2 * cell_size.y):
-		push_error("PlayerVisual requires valid side-walk midpoints '%s'." % SIDE_MIDPOINTS_PATH)
+	var side_walk := load(SIDE_WALK_PATH) as Texture2D
+	if side_walk == null or side_walk.get_size() != Vector2(7 * cell_size.x, 2 * cell_size.y):
+		push_error("PlayerVisual requires valid seven-pose side walk '%s'." % SIDE_WALK_PATH)
 		return false
 	for row in ROW_DIRECTIONS.size():
 		var direction := str(ROW_DIRECTIONS[row])
@@ -63,23 +64,23 @@ func configure(atlas: Texture2D) -> bool:
 			sprite_frames.add_frame(idle_name, _atlas_frame(atlas, cell_size, row, column))
 		sprite_frames.add_animation(walk_name)
 		sprite_frames.set_animation_loop(walk_name, true)
-		sprite_frames.set_animation_speed(walk_name, WALK_FPS)
+		sprite_frames.set_animation_speed(
+			walk_name,
+			SIDE_WALK_FPS if direction in ["e", "w"] else WALK_FPS
+		)
 		var source_frames: Array[AtlasTexture] = []
 		for walk_frame in WALK_FRAME_COUNT:
 			source_frames.append(_atlas_frame(atlas, cell_size, row, IDLE_FRAME_COUNT + walk_frame))
 		if direction in ["e", "w"]:
-			for walk_frame in WALK_FRAME_COUNT:
-				var current := source_frames[walk_frame]
-				sprite_frames.add_frame(walk_name, current, 0.5)
+			for walk_frame in SIDE_WALK_FRAME_COUNT:
 				sprite_frames.add_frame(
 					walk_name,
 					_atlas_frame(
-						side_midpoints,
+						side_walk,
 						cell_size,
 						0 if direction == "e" else 1,
 						walk_frame
-					),
-					0.5
+					)
 				)
 		else:
 			for source_frame in source_frames:
@@ -115,7 +116,8 @@ func sync_motion(planar_velocity: Vector2, sprinting: bool, on_floor: bool) -> v
 		return
 	if moving:
 		var movement_animation := StringName(walk_animation_name(_last_direction))
-		var movement_speed := RUN_FPS / WALK_FPS if sprinting else 1.0
+		var base_fps := SIDE_WALK_FPS if _last_direction in ["e", "w"] else WALK_FPS
+		var movement_speed := RUN_FPS / base_fps if sprinting else 1.0
 		_play_if_needed(movement_animation, movement_speed)
 		return
 	_play_if_needed(StringName(idle_animation_name(_last_direction)), 1.0)
