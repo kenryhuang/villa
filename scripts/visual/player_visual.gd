@@ -2,12 +2,14 @@ class_name PlayerVisual
 extends AnimatedSprite3D
 
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
+const SIDE_MIDPOINTS_PATH := "res://assets/characters/player/player_farmer_side_midpoints.png"
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 const ROW_DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 const DEFAULT_DIRECTION := "s"
 const GRID_SIZE := Vector2i(8, 8)
 const IDLE_FRAME_COUNT := 2
 const WALK_FRAME_COUNT := 6
+const SIDE_WALK_FRAME_COUNT := 12
 const IDLE_FPS := 2.0
 const WALK_FPS := 6.0
 const RUN_FPS := 9.0
@@ -46,6 +48,10 @@ func configure(atlas: Texture2D) -> bool:
 		atlas.get_width() / GRID_SIZE.x,
 		atlas.get_height() / GRID_SIZE.y
 	)
+	var side_midpoints := load(SIDE_MIDPOINTS_PATH) as Texture2D
+	if side_midpoints == null or side_midpoints.get_size() != Vector2(6 * cell_size.x, 2 * cell_size.y):
+		push_error("PlayerVisual requires valid side-walk midpoints '%s'." % SIDE_MIDPOINTS_PATH)
+		return false
 	for row in ROW_DIRECTIONS.size():
 		var direction := str(ROW_DIRECTIONS[row])
 		var idle_name := StringName(idle_animation_name(direction))
@@ -58,11 +64,26 @@ func configure(atlas: Texture2D) -> bool:
 		sprite_frames.add_animation(walk_name)
 		sprite_frames.set_animation_loop(walk_name, true)
 		sprite_frames.set_animation_speed(walk_name, WALK_FPS)
+		var source_frames: Array[AtlasTexture] = []
 		for walk_frame in WALK_FRAME_COUNT:
-			sprite_frames.add_frame(
-				walk_name,
-				_atlas_frame(atlas, cell_size, row, IDLE_FRAME_COUNT + walk_frame)
-			)
+			source_frames.append(_atlas_frame(atlas, cell_size, row, IDLE_FRAME_COUNT + walk_frame))
+		if direction in ["e", "w"]:
+			for walk_frame in WALK_FRAME_COUNT:
+				var current := source_frames[walk_frame]
+				sprite_frames.add_frame(walk_name, current, 0.5)
+				sprite_frames.add_frame(
+					walk_name,
+					_atlas_frame(
+						side_midpoints,
+						cell_size,
+						0 if direction == "e" else 1,
+						walk_frame
+					),
+					0.5
+				)
+		else:
+			for source_frame in source_frames:
+				sprite_frames.add_frame(walk_name, source_frame)
 
 	if not _validate_animations():
 		sprite_frames = null
@@ -171,8 +192,12 @@ func _validate_animations() -> bool:
 		if not sprite_frames.has_animation(walk_name):
 			push_error("PlayerVisual is missing animation '%s'." % walk_name)
 			return false
-		if sprite_frames.get_frame_count(walk_name) != WALK_FRAME_COUNT:
-			push_error("PlayerVisual animation '%s' must contain six frames." % walk_name)
+		var expected_walk_frames := SIDE_WALK_FRAME_COUNT if direction in ["e", "w"] else WALK_FRAME_COUNT
+		if sprite_frames.get_frame_count(walk_name) != expected_walk_frames:
+			push_error(
+				"PlayerVisual animation '%s' must contain %d frames."
+				% [walk_name, expected_walk_frames]
+			)
 			return false
 	return true
 

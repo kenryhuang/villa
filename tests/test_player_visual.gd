@@ -3,6 +3,7 @@ extends RefCounted
 const PlayerVisualScript = preload("res://scripts/visual/player_visual.gd")
 const PlayerScene = preload("res://scenes/actors/player.tscn")
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
+const SIDE_MIDPOINTS_PATH := "res://assets/characters/player/player_farmer_side_midpoints.png"
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
@@ -87,6 +88,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	if image != null and not image.is_empty():
 		assertions.truthy(image.get_pixel(0, 0).a < 0.05, "player atlas has transparent corners")
 		_assert_frame_art_contract(image, assertions)
+	_assert_side_midpoint_art_contract(assertions)
 	var visual := PlayerVisualScript.new()
 	assertions.truthy(visual.configure(atlas), "valid player atlas configures")
 	for direction in DIRECTIONS:
@@ -95,8 +97,15 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		assertions.truthy(visual.sprite_frames.has_animation(idle_name), "%s idle animation exists" % direction)
 		assertions.truthy(visual.sprite_frames.has_animation(walk_name), "%s walk animation exists" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(idle_name), 2, "%s idle has two frames" % direction)
-		assertions.equal(visual.sprite_frames.get_frame_count(walk_name), 6, "%s walk has six frames" % direction)
+		var expected_walk_frames := 12 if direction in ["e", "w"] else 6
+		assertions.equal(
+			visual.sprite_frames.get_frame_count(walk_name),
+			expected_walk_frames,
+			"%s walk has enough frames for its viewing angle" % direction
+		)
 		_assert_walk_leg_alternation(visual.sprite_frames, walk_name, direction, assertions)
+		if direction in ["e", "w"]:
+			_assert_side_walk_temporal_continuity(visual.sprite_frames, walk_name, direction, assertions)
 		for animation_name in [idle_name, walk_name]:
 			for frame_index in visual.sprite_frames.get_frame_count(animation_name):
 				var frame_texture := visual.sprite_frames.get_frame_texture(animation_name, frame_index) as AtlasTexture
@@ -149,6 +158,35 @@ func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
 		)
 
 
+func _assert_side_midpoint_art_contract(assertions: TestAssert) -> void:
+	var texture := load(SIDE_MIDPOINTS_PATH) as Texture2D
+	assertions.truthy(texture != null, "side-walk midpoint atlas imports")
+	if texture == null:
+		return
+	var image := texture.get_image()
+	var cell_size := Vector2i(image.get_width() / 6, image.get_height() / 2)
+	for row in 2:
+		for column in 6:
+			var frame := image.get_region(Rect2i(Vector2i(column, row) * cell_size, cell_size))
+			var bounds := _frame_used_rect(frame, cell_size, 0, 0)
+			assertions.equal(
+				bounds.end.y,
+				184,
+				"side midpoint %d/%d keeps the planted baseline" % [row, column]
+			)
+			var translucent_pixels := 0
+			for y in cell_size.y:
+				for x in cell_size.x:
+					var alpha := frame.get_pixel(x, y).a
+					if alpha > 0.08 and alpha < 0.85:
+						translucent_pixels += 1
+			assertions.truthy(
+				translucent_pixels <= 120,
+				"side midpoint %d/%d avoids translucent limb ghosts (%d)"
+				% [row, column, translucent_pixels]
+			)
+
+
 func _frame_used_rect(image: Image, cell_size: Vector2i, row: int, column: int) -> Rect2i:
 	var origin := Vector2i(column * cell_size.x, row * cell_size.y)
 	var frame_image := image.get_region(Rect2i(origin, cell_size))
@@ -199,15 +237,18 @@ func _assert_walk_leg_alternation(
 	assertions: TestAssert
 ) -> void:
 	var silhouettes: Array[Image] = []
-	for frame_index in 6:
-		var atlas_frame := frames.get_frame_texture(animation_name, frame_index) as AtlasTexture
-		var atlas_image := atlas_frame.atlas.get_image()
-		var frame_image := atlas_image.get_region(Rect2i(atlas_frame.region))
+	var frame_count := frames.get_frame_count(animation_name)
+	for frame_index in frame_count:
+		var frame_texture := frames.get_frame_texture(animation_name, frame_index)
+		var frame_image := _frame_image(frame_texture)
 		frame_image.resize(48, 48, Image.INTERPOLATE_LANCZOS)
 		silhouettes.append(frame_image)
-	var first_half_difference := _lower_body_silhouette_difference(silhouettes[0], silhouettes[3])
-	var left_stride_difference := _lower_body_silhouette_difference(silhouettes[0], silhouettes[2])
-	var right_stride_difference := _lower_body_silhouette_difference(silhouettes[3], silhouettes[5])
+	var half_cycle := frame_count / 2
+	var first_half_difference := _lower_body_silhouette_difference(silhouettes[0], silhouettes[half_cycle])
+	var left_stride_difference := _lower_body_silhouette_difference(silhouettes[0], silhouettes[half_cycle - 1])
+	var right_stride_difference := _lower_body_silhouette_difference(
+		silhouettes[half_cycle], silhouettes[frame_count - 1]
+	)
 	assertions.truthy(
 		first_half_difference >= 20,
 		"%s walk alternates to a visibly different opposite-leg stride" % direction
@@ -230,6 +271,40 @@ func _lower_body_silhouette_difference(first: Image, second: Image) -> int:
 			if first_opaque != second_opaque:
 				difference += 1
 	return difference
+
+
+func _assert_side_walk_temporal_continuity(
+	frames: SpriteFrames,
+	animation_name: String,
+	direction: String,
+	assertions: TestAssert
+) -> void:
+	var silhouettes: Array[Image] = []
+	var frame_count := frames.get_frame_count(animation_name)
+	for frame_index in frame_count:
+		var frame_texture := frames.get_frame_texture(animation_name, frame_index)
+		var frame_image := _frame_image(frame_texture)
+		frame_image.resize(48, 48, Image.INTERPOLATE_LANCZOS)
+		silhouettes.append(frame_image)
+	var differences: Array[int] = []
+	for frame_index in frame_count:
+		differences.append(
+			_lower_body_silhouette_difference(
+				silhouettes[frame_index], silhouettes[(frame_index + 1) % frame_count]
+			)
+		)
+	var minimum_difference: int = differences.min()
+	var maximum_difference: int = differences.max()
+	assertions.truthy(
+		minimum_difference >= 8 and maximum_difference <= 60,
+		"%s walk distributes motion evenly across adjacent frames: %s" % [direction, differences]
+	)
+
+
+func _frame_image(texture: Texture2D) -> Image:
+	if texture is AtlasTexture:
+		return texture.atlas.get_image().get_region(Rect2i(texture.region))
+	return texture.get_image()
 
 
 func _assert_scene_contract(assertions: TestAssert) -> void:
