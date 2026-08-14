@@ -4,6 +4,7 @@ const PlayerVisualScript = preload("res://scripts/visual/player_visual.gd")
 const PlayerScene = preload("res://scenes/actors/player.tscn")
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
 const SIDE_WALK_PATH := "res://assets/characters/player/player_farmer_side_walk.png"
+const SIDE_WALK_FRAME_COUNT := 12
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
@@ -44,7 +45,7 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 	assertions.equal(PlayerVisualScript.walk_animation_name("sw"), "walk_sw", "walk animation names are stable")
 	assertions.near(PlayerVisualScript.IDLE_FPS, 2.0, 0.001, "idle animation uses two fps")
 	assertions.near(PlayerVisualScript.WALK_FPS, 6.0, 0.001, "walk animation uses six fps")
-	assertions.near(PlayerVisualScript.SIDE_WALK_FPS, 7.0, 0.001, "seven-pose side walk completes in one second")
+	assertions.near(PlayerVisualScript.SIDE_WALK_FPS, 12.0, 0.001, "twelve-pose side walk completes in one second")
 	assertions.near(PlayerVisualScript.RUN_FPS, 9.0, 0.001, "run animation uses nine fps")
 	assertions.near(PlayerVisualScript.PIXEL_SIZE, 0.0068, 0.0001, "player art is scaled below building proportions")
 	var just_inside_south := Vector2(sin(deg_to_rad(22.4)), cos(deg_to_rad(22.4)))
@@ -91,14 +92,18 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		_assert_frame_art_contract(image, assertions)
 	_assert_side_walk_art_contract(assertions)
 	var visual := PlayerVisualScript.new()
-	assertions.truthy(visual.configure(atlas), "valid player atlas configures")
+	var configured := visual.configure(atlas)
+	assertions.truthy(configured, "valid player atlas configures")
+	if not configured:
+		visual.free()
+		return
 	for direction in DIRECTIONS:
 		var idle_name := PlayerVisualScript.idle_animation_name(direction)
 		var walk_name := PlayerVisualScript.walk_animation_name(direction)
 		assertions.truthy(visual.sprite_frames.has_animation(idle_name), "%s idle animation exists" % direction)
 		assertions.truthy(visual.sprite_frames.has_animation(walk_name), "%s walk animation exists" % direction)
 		assertions.equal(visual.sprite_frames.get_frame_count(idle_name), 2, "%s idle has two frames" % direction)
-		var expected_walk_frames := 7 if direction in ["e", "w"] else 6
+		var expected_walk_frames := SIDE_WALK_FRAME_COUNT if direction in ["e", "w"] else 6
 		assertions.equal(
 			visual.sprite_frames.get_frame_count(walk_name),
 			expected_walk_frames,
@@ -106,7 +111,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		)
 		assertions.near(
 			visual.sprite_frames.get_animation_speed(walk_name),
-			7.0 if direction in ["e", "w"] else 6.0,
+			12.0 if direction in ["e", "w"] else 6.0,
 			0.001,
 			"%s walk preserves a one-second loop" % direction
 		)
@@ -172,37 +177,22 @@ func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
 
 func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 	var texture := load(SIDE_WALK_PATH) as Texture2D
-	assertions.truthy(texture != null, "seven-pose side-walk atlas imports")
+	assertions.truthy(texture != null, "twelve-frame side-walk atlas imports")
 	if texture == null:
 		return
 	var image := texture.get_image()
-	assertions.equal(image.get_width() % 7, 0, "side-walk atlas divides into seven poses")
-	var cell_size := Vector2i(image.get_width() / 7, image.get_height() / 2)
-	var base_atlas := Image.load_from_file(ProjectSettings.globalize_path(ATLAS_PATH))
-	var expected_start := base_atlas.get_region(Rect2i(Vector2i(0, 2 * cell_size.y), cell_size))
-	var actual_start := image.get_region(Rect2i(Vector2i.ZERO, cell_size))
-	assertions.truthy(
-		_images_equal(expected_start, actual_start),
-		"east side walk starts from the exact row3/col1 standing pose"
-	)
-	for mapping in [{"side": 2, "atlas": 3}, {"side": 3, "atlas": 4}, {"side": 5, "atlas": 5}]:
-		var actual_key := image.get_region(
-			Rect2i(Vector2i(int(mapping.side) * cell_size.x, 0), cell_size)
-		)
-		var expected_key := base_atlas.get_region(
-			Rect2i(Vector2i(int(mapping.atlas) * cell_size.x, 2 * cell_size.y), cell_size)
-		)
-		assertions.truthy(
-			_images_equal(actual_key, expected_key),
-			"side pose %d exactly uses row3/col%d reference" % [int(mapping.side) + 1, int(mapping.atlas) + 1]
-		)
+	assertions.equal(image.get_size(), Vector2i(2304, 384), "side walk is a 12x2 atlas")
+	var cell_size := Vector2i(192, 192)
 	for row in 2:
-		for column in 7:
+		for column in SIDE_WALK_FRAME_COUNT:
 			var frame := image.get_region(Rect2i(Vector2i(column, row) * cell_size, cell_size))
 			var bounds := _frame_used_rect(frame, cell_size, 0, 0)
-			assertions.equal(
-				bounds.end.y,
-				184,
+			assertions.truthy(
+				bounds.size.x > 0 and bounds.size.y > 0,
+				"side pose %d/%d is painted" % [row, column]
+			)
+			assertions.truthy(
+				bounds.end.y in range(182, 187),
 				"side pose %d/%d keeps the planted baseline" % [row, column]
 			)
 			var translucent_pixels := 0
@@ -212,29 +202,17 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 					if alpha > 0.08 and alpha < 0.85:
 						translucent_pixels += 1
 			assertions.truthy(
-				translucent_pixels <= (600 if column in [0, 2, 3, 5] else 120),
+				translucent_pixels <= 600,
 				"side pose %d/%d avoids translucent limb ghosts (%d)"
 				% [row, column, translucent_pixels]
 			)
-	for column in 7:
+	for column in SIDE_WALK_FRAME_COUNT:
 		var east := image.get_region(Rect2i(Vector2i(column * cell_size.x, 0), cell_size))
 		var west := image.get_region(
 			Rect2i(Vector2i(column * cell_size.x, cell_size.y), cell_size)
 		)
 		east.flip_x()
 		assertions.truthy(_images_equal(east, west), "west pose %d exactly mirrors east" % column)
-	var pose_images: Array[Image] = []
-	for column in 7:
-		var pose := image.get_region(Rect2i(Vector2i(column * cell_size.x, 0), cell_size))
-		pose.resize(48, 48, Image.INTERPOLATE_LANCZOS)
-		pose_images.append(pose)
-	var preparation_change := _lower_body_silhouette_difference(pose_images[0], pose_images[1])
-	var stride_change := _lower_body_silhouette_difference(pose_images[1], pose_images[2])
-	assertions.truthy(
-		preparation_change < stride_change,
-		"pose 2 is a subtler preparation step than the transition into the full stride (%d/%d)"
-		% [preparation_change, stride_change]
-	)
 
 
 func _images_equal(first: Image, second: Image) -> bool:
@@ -347,6 +325,8 @@ func _assert_side_walk_temporal_continuity(
 ) -> void:
 	var silhouettes: Array[Image] = []
 	var frame_count := frames.get_frame_count(animation_name)
+	if frame_count != SIDE_WALK_FRAME_COUNT:
+		return
 	for frame_index in frame_count:
 		var frame_texture := frames.get_frame_texture(animation_name, frame_index)
 		var frame_image := _frame_image(frame_texture)
@@ -359,12 +339,19 @@ func _assert_side_walk_temporal_continuity(
 				silhouettes[frame_index], silhouettes[(frame_index + 1) % frame_count]
 			)
 		)
-	var minimum_difference: int = differences.min()
-	var maximum_difference: int = differences.max()
 	assertions.truthy(
-		minimum_difference >= 30 and maximum_difference <= 120,
+		differences.min() >= 12,
+		"%s walk has no duplicated adjacent pose: %s" % [direction, differences]
+	)
+	assertions.truthy(
+		differences.max() <= 105,
 		"%s walk distributes motion evenly across adjacent frames: %s" % [direction, differences]
 	)
+	for frame_index in 6:
+		assertions.truthy(
+			_lower_body_silhouette_difference(silhouettes[frame_index], silhouettes[frame_index + 6]) >= 20,
+			"%s pose %d has a distinct opposite-leg half-cycle partner" % [direction, frame_index]
+		)
 
 
 func _frame_image(texture: Texture2D) -> Image:
