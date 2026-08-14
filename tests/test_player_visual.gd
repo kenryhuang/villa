@@ -132,9 +132,9 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	visual.sync_motion(Vector2(1.0, 0.0), true, true)
 	assertions.near(
 		visual.speed_scale,
-		PlayerVisualScript.RUN_FPS / PlayerVisualScript.SIDE_WALK_FPS,
+		1.5,
 		0.001,
-		"side sprinting plays the seven poses at nine fps"
+		"side sprinting plays twelve poses at eighteen fps"
 	)
 	visual.sync_motion(Vector2.ZERO, false, true)
 	assertions.equal(visual.animation, &"idle_e", "stopping retains the last facing direction")

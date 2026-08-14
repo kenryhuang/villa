@@ -14,6 +14,7 @@ const IDLE_FPS := 2.0
 const WALK_FPS := 6.0
 const SIDE_WALK_FPS := 12.0
 const RUN_FPS := 9.0
+const SIDE_RUN_FPS := 18.0
 const MOVEMENT_THRESHOLD_SQUARED := 0.0025
 const PIXEL_SIZE := 0.0068
 
@@ -119,8 +120,10 @@ func sync_motion(planar_velocity: Vector2, sprinting: bool, on_floor: bool) -> v
 		return
 	if moving:
 		var movement_animation := StringName(walk_animation_name(_last_direction))
-		var base_fps := SIDE_WALK_FPS if _last_direction in ["e", "w"] else WALK_FPS
-		var movement_speed := RUN_FPS / base_fps if sprinting else 1.0
+		var is_side_direction := _last_direction in ["e", "w"]
+		var base_fps := SIDE_WALK_FPS if is_side_direction else WALK_FPS
+		var run_fps := SIDE_RUN_FPS if is_side_direction else RUN_FPS
+		var movement_speed := run_fps / base_fps if sprinting else 1.0
 		_play_if_needed(movement_animation, movement_speed)
 		return
 	_play_if_needed(StringName(idle_animation_name(_last_direction)), 1.0)
