@@ -317,6 +317,17 @@ func _lower_body_silhouette_difference(first: Image, second: Image) -> int:
 	return difference
 
 
+func _boot_silhouette_difference(first: Image, second: Image) -> int:
+	var difference := 0
+	for y in range(37, 48):
+		for x in range(5, 43):
+			var first_opaque := first.get_pixel(x, y).a > 0.10
+			var second_opaque := second.get_pixel(x, y).a > 0.10
+			if first_opaque != second_opaque:
+				difference += 1
+	return difference
+
+
 func _assert_side_walk_temporal_continuity(
 	frames: SpriteFrames,
 	animation_name: String,
@@ -351,6 +362,37 @@ func _assert_side_walk_temporal_continuity(
 		assertions.truthy(
 			_lower_body_silhouette_difference(silhouettes[frame_index], silhouettes[frame_index + 6]) >= 20,
 			"%s pose %d has a distinct opposite-leg half-cycle partner" % [direction, frame_index]
+		)
+	var boot_differences: Array[int] = []
+	for frame_index in SIDE_WALK_FRAME_COUNT:
+		boot_differences.append(
+			_boot_silhouette_difference(
+				silhouettes[frame_index],
+				silhouettes[(frame_index + 1) % SIDE_WALK_FRAME_COUNT]
+			)
+		)
+	assertions.truthy(
+		boot_differences.min() >= 18,
+		"%s every side-walk frame advances a boot: %s" % [direction, boot_differences]
+	)
+	assertions.truthy(
+		boot_differences.max() <= 80,
+		"%s side-walk boots never jump across a missing phase: %s" % [direction, boot_differences]
+	)
+	for transition in [
+		{"from": 1, "to": 2, "name": "left boot leaves the ground"},
+		{"from": 3, "to": 4, "name": "left boot crosses the right support leg"},
+		{"from": 5, "to": 6, "name": "left boot changes from extension to contact"},
+		{"from": 6, "to": 7, "name": "left boot loads after contact"},
+		{"from": 7, "to": 8, "name": "right boot leaves the ground"},
+		{"from": 9, "to": 10, "name": "right boot crosses the left support leg"},
+	]:
+		var from_frame := int(transition["from"])
+		var to_frame := int(transition["to"])
+		var change := _boot_silhouette_difference(silhouettes[from_frame], silhouettes[to_frame])
+		assertions.truthy(
+			change >= 18,
+			"%s %s (%d)" % [direction, str(transition["name"]), change]
 		)
 
 
