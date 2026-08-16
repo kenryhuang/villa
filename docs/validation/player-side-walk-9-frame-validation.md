@@ -13,7 +13,11 @@ Revalidated on 2026-08-16 in the `feature/painted-production-buildings` worktree
 - Removed source indices: `[01, 03, 07]`
 - Side walk playback: 9 FPS, completing the nine-frame cycle in 1 second
 - Side sprint playback: 13.5 FPS through `speed_scale = 1.5`, completing the cycle in 2/3 second
-- Side and non-side directions now exchange supporting legs at the same cycle rate and travel the same distance per gait cycle.
+- Side and non-side directions exchange supporting legs at the same cycle rate.
+- Pure camera-lateral walk speed: `2.01` world units per second (`3.0 * 0.67`)
+- Pure camera-lateral sprint speed: `3.35` world units per second (`5.0 * 0.67`)
+- Pure camera-forward/back speed remains `3.0` walking and `5.0` sprinting; diagonal movement interpolates continuously between the forward and lateral scales.
+- Manual and automatic movement use the same camera-relative speed scale so lateral screen travel no longer outruns forward/back screen travel.
 
 The deterministic assembler selects the approved non-contiguous east sources, independently normalizes each pose, applies the existing reference-derived denim correction, and mirrors each result into the west row. No pose was repainted for this reduction.
 
@@ -36,7 +40,7 @@ The retained sequence removes the two early intermediate poses and the redundant
 
 ## Automated checks
 
-- PASS: 2,012 focused player checks
+- PASS: 2,018 focused player checks
 - PASS: 1,273 main gameplay integration checks
 - PASS: 106 grid system checks
 - PASS: 578 farming system checks
@@ -44,7 +48,7 @@ The retained sequence removes the two early intermediate poses and the redundant
 - PASS: 129 economy UI integration checks
 - `git diff --check`: PASS
 
-The focused suite verifies nine east/west frames, equal directional walk/run cycle durations, 1.5 sprint scaling, exact dimensions, 151-pixel height, y=184 baseline, denim alignment, exact source-PNG west mirroring, distinct adjacent silhouettes, and the four reviewed opposite-leg phase pairs.
+The focused suite verifies nine east/west frames, equal directional walk/run cycle durations, 1.5 sprint animation scaling, the `0.67` pure lateral movement scale, interpolated diagonal scaling, exact dimensions, 151-pixel height, y=184 baseline, denim alignment, exact source-PNG west mirroring, distinct adjacent silhouettes, and the four reviewed opposite-leg phase pairs. The main gameplay integration suite also exercises physical automatic movement using a timeout derived from the minimum effective lateral speed.
 
 `PlayerVisual` now explicitly uses `BaseMaterial3D.TEXTURE_FILTER_LINEAR` instead of the inherited mipmap filter value. Both the main and side texture imports use `process/fix_alpha_border=true`, while mipmap generation remains disabled. The raw PNG retains exact mirrors; Godot's alpha-border post-process changes one translucent RGB sample in imported west frame 01 while preserving an identical alpha silhouette. This is intentionally tested at the correct boundaries: exact source pixels and processed runtime edges.
 
