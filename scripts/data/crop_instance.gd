@@ -8,9 +8,14 @@ enum LifecycleState { GROWING, MATURE, DORMANT, WITHERED }
 
 var crop_data
 var is_watered_today := false
-var harvest_count := 0
+var _harvest_count := 0
 var _growth_progress := 0.0
 var _lifecycle_state: LifecycleState = LifecycleState.GROWING
+var harvest_count: int:
+	get:
+		return _harvest_count
+	set(value):
+		set_harvest_count(value)
 var growth_progress: float:
 	get:
 		return _growth_progress
@@ -81,12 +86,21 @@ func from_dict(data: Dictionary) -> bool:
 		or state_number > float(LifecycleState.WITHERED)
 	):
 		return false
-	var next_state := int(state_number)
-	if not set_growth_state(progress, next_state):
+	var previous_count := _harvest_count
+	if not set_harvest_count(int(count_number)):
+		return false
+	if not set_growth_state(progress, int(state_number)):
+		_harvest_count = previous_count
 		return false
 
 	is_watered_today = data.is_watered_today
-	harvest_count = int(count_number)
+	return true
+
+
+func set_harvest_count(next_count: int) -> bool:
+	if next_count < 0 or next_count > EconomyLimitsScript.MAX_SAFE_INTEGER:
+		return false
+	_harvest_count = next_count
 	return true
 
 

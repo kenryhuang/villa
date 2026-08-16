@@ -59,11 +59,33 @@ class QuickMappingRecorder:
 		events.append({"quick_index": quick_index, "item_id": item_id})
 
 
+class CropEventRecorder:
+	extends Node
+
+	signal crop_planted(gx: int, gz: int, crop_id: String)
+	signal crop_harvested(gx: int, gz: int, crop_id: String)
+	signal cell_state_changed(gx: int, gz: int, state: int)
+
+	var planted_events: Array[Dictionary] = []
+	var harvested_events: Array[Dictionary] = []
+
+	func _init() -> void:
+		crop_planted.connect(_on_crop_planted)
+		crop_harvested.connect(_on_crop_harvested)
+
+	func _on_crop_planted(gx: int, gz: int, crop_id: String) -> void:
+		planted_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
+
+	func _on_crop_harvested(gx: int, gz: int, crop_id: String) -> void:
+		harvested_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_crop_lifecycle_growth(assertions)
 	_test_crop_lifecycle_round_trip(assertions)
 	_test_crop_lifecycle_validation_is_atomic(assertions)
 	_test_runtime_growth_state_invariants(assertions)
+	_test_harvest_count_runtime_boundary(assertions, tree)
 	_test_harvest_returns_item_quantities(assertions)
 	_test_deterministic_tomato_yield_and_regrowth(assertions)
 	_test_carrot_yield_and_removal(assertions)
@@ -284,6 +306,124 @@ func _test_runtime_growth_state_invariants(assertions: TestAssert) -> void:
 	assertions.equal(planted.lifecycle_state, CropInstance.LifecycleState.GROWING, "early harvest fixture remains growing")
 	assertions.near(planted.growth_progress, 0.0, 0.001, "early harvest fixture retains valid progress")
 	grid.free()
+
+
+func _test_harvest_count_runtime_boundary(assertions: TestAssert, tree: SceneTree) -> void:
+	var crop_data = CropDataScript.new()
+	crop_data.crop_id = "harvest_count_boundary"
+	_set_property_if_present(crop_data, "plant_item_id", "harvest_count_boundary_seed")
+	_set_property_if_present(crop_data, "lifecycle_type", "annual_regrow")
+	crop_data.growth_days = 4
+	crop_data.regrow_days = 2
+	crop_data.yield_min = 1
+	crop_data.yield_max = 1
+	var game_data = tree.root.get_node_or_null("GameData")
+	assertions.truthy(game_data != null, "harvest boundary fixture has GameData")
+	if game_data == null:
+		return
+	if game_data.get_crop(crop_data.crop_id) == null:
+		assertions.truthy(game_data.register_crop(crop_data), "harvest boundary crop registers")
+
+	var count_probe = CropInstance.new()
+	count_probe.crop_data = crop_data
+	assertions.truthy(count_probe.has_method("set_harvest_count"), "crop exposes validated harvest-count setter")
+	count_probe.harvest_count = EconomyLimitsScript.MAX_SAFE_INTEGER - 1
+	count_probe.harvest_count = EconomyLimitsScript.MAX_SAFE_INTEGER + 1
+	assertions.equal(count_probe.harvest_count, EconomyLimitsScript.MAX_SAFE_INTEGER - 1, "unsafe direct count increase rejects")
+	count_probe.harvest_count = -1
+	assertions.equal(count_probe.harvest_count, EconomyLimitsScript.MAX_SAFE_INTEGER - 1, "negative direct count rejects")
+
+	var max_grid = GridSystemScript.new()
+	tree.root.add_child(max_grid)
+	var max_events := CropEventRecorder.new()
+	max_grid.set_cell_state(7, 7, FARMLAND)
+	max_grid._event_bus = max_events
+	var max_instance = max_grid.plant_crop(7, 7, crop_data)
+	max_events.harvested_events.clear()
+	max_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	max_instance.harvest_count = EconomyLimitsScript.MAX_SAFE_INTEGER
+	max_instance.is_watered_today = true
+	var max_cell = max_grid.get_cell(7, 7)
+	max_cell.watered = true
+	var max_crop_before := max_instance.to_dict().duplicate(true)
+	assertions.truthy(max_grid.preview_harvest(7, 7).is_empty(), "max-count crop cannot preview harvest")
+	assertions.truthy(max_grid.harvest_crop(7, 7).is_empty(), "max-count crop harvest rejects")
+	assertions.equal(max_instance.to_dict(), max_crop_before, "max-count rejection preserves exact crop")
+	assertions.truthy(max_cell.crop_instance == max_instance, "max-count rejection preserves crop instance")
+	assertions.equal(max_cell.state, PLANTED, "max-count rejection preserves planted cell")
+	assertions.truthy(max_cell.watered, "max-count rejection preserves cell water")
+	assertions.equal(max_events.harvested_events, [], "max-count rejection emits no harvest event")
+
+	var once_grid = GridSystemScript.new()
+	tree.root.add_child(once_grid)
+	var once_events := CropEventRecorder.new()
+	once_grid.set_cell_state(8, 8, FARMLAND)
+	once_grid._event_bus = once_events
+	var once_instance = once_grid.plant_crop(8, 8, crop_data)
+	once_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	once_instance.harvest_count = EconomyLimitsScript.MAX_SAFE_INTEGER - 1
+	assertions.truthy(not once_grid.harvest_crop(8, 8).is_empty(), "max-minus-one crop harvests once")
+	assertions.equal(once_instance.harvest_count, EconomyLimitsScript.MAX_SAFE_INTEGER, "last valid harvest reaches max count")
+	assertions.equal(once_events.harvested_events.size(), 1, "last valid harvest emits one event")
+	var max_saved: Variant = JSON.parse_string(JSON.stringify(once_grid.to_dict()))
+	var restored = GridSystemScript.new()
+	tree.root.add_child(restored)
+	assertions.truthy(restored.from_dict(max_saved), "max-count crop saves and restores")
+	var restored_instance = restored.get_cell(8, 8).crop_instance
+	assertions.equal(restored_instance.harvest_count, EconomyLimitsScript.MAX_SAFE_INTEGER, "restored crop retains max count")
+	restored_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	var restored_events := CropEventRecorder.new()
+	restored._event_bus = restored_events
+	var restored_before: Dictionary = restored_instance.to_dict().duplicate(true)
+	assertions.truthy(restored.harvest_crop(8, 8).is_empty(), "restored max-count crop rejects next harvest")
+	assertions.equal(restored_instance.to_dict(), restored_before, "restored max-count rejection is atomic")
+	assertions.equal(restored_events.harvested_events, [], "restored max-count rejection emits no event")
+
+	var invalid_grid = GridSystemScript.new()
+	var invalid_events := CropEventRecorder.new()
+	invalid_grid.set_cell_state(9, 9, FARMLAND)
+	invalid_grid._event_bus = invalid_events
+	var invalid_crop = CropDataScript.new()
+	invalid_crop.crop_id = "invalid_growth_timeline"
+	invalid_crop.growth_days = 0
+	assertions.truthy(invalid_grid.plant_crop(9, 9, invalid_crop) == null, "invalid initial growth state rejects planting")
+	assertions.equal(invalid_grid.get_cell(9, 9).state, FARMLAND, "failed planting preserves farmland")
+	assertions.truthy(invalid_grid.get_cell(9, 9).crop_instance == null, "failed planting stores no crop")
+	assertions.equal(invalid_events.planted_events, [], "failed planting emits no planted event")
+
+	var transition_grid = GridSystemScript.new()
+	var transition_events := CropEventRecorder.new()
+	transition_grid.set_cell_state(10, 10, FARMLAND)
+	transition_grid._event_bus = transition_events
+	var transition_crop = CropDataScript.new()
+	transition_crop.crop_id = "failed_regrow_transition"
+	transition_crop.growth_days = 4
+	transition_crop.regrow_days = 2
+	var transition_instance = transition_grid.plant_crop(10, 10, transition_crop)
+	transition_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	transition_instance.is_watered_today = true
+	var transition_cell = transition_grid.get_cell(10, 10)
+	transition_cell.watered = true
+	transition_events.harvested_events.clear()
+	transition_crop.growth_days = 0
+	var transition_before := transition_instance.to_dict().duplicate(true)
+	assertions.truthy(transition_grid.harvest_crop(10, 10).is_empty(), "failed regrow transition rejects harvest")
+	assertions.equal(transition_instance.to_dict(), transition_before, "failed regrow transition preserves exact crop")
+	assertions.truthy(transition_cell.crop_instance == transition_instance, "failed regrow transition preserves instance")
+	assertions.equal(transition_cell.state, PLANTED, "failed regrow transition preserves cell")
+	assertions.truthy(transition_cell.watered, "failed regrow transition preserves cell water")
+	assertions.equal(transition_events.harvested_events, [], "failed regrow transition emits no event")
+
+	max_events.free()
+	once_events.free()
+	restored_events.free()
+	invalid_events.free()
+	transition_events.free()
+	max_grid.free()
+	once_grid.free()
+	restored.free()
+	invalid_grid.free()
+	transition_grid.free()
 
 
 func _crop_payload(

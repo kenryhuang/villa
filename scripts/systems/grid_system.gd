@@ -285,7 +285,8 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 	var cell := get_cell(gx, gz)
 	var instance := CropInstance.new()
 	instance.crop_data = crop_data
-	instance.set_growth_state(0.0, CropInstance.LifecycleState.GROWING)
+	if not instance.set_growth_state(0.0, CropInstance.LifecycleState.GROWING):
+		return null
 	cell.crop_instance = instance
 	cell.state = GridCell.State.PLANTED
 	_sync_farmland_visual(cell)
@@ -300,19 +301,27 @@ func harvest_crop(gx: int, gz: int) -> Dictionary:
 	if result.is_empty():
 		return {}
 	var cell := get_cell(gx, gz)
-	var crop_id: String = cell.crop_instance.crop_data.crop_id
-	if _event_bus:
-		_event_bus.crop_harvested.emit(gx, gz, crop_id)
+	var instance: CropInstance = cell.crop_instance
+	var crop_id: String = instance.crop_data.crop_id
 	var regrowing := bool(result.regrowing)
-	cell.crop_instance.harvest_count += 1
+	var old_progress := instance.growth_progress
+	var old_state := instance.lifecycle_state
 	if regrowing:
-		var regrow_days: int = maxi(1, int(cell.crop_instance.crop_data.regrow_days))
+		var regrow_days: int = maxi(1, int(instance.crop_data.regrow_days))
 		var regrow_progress := maxf(
 			0.0,
-			float(cell.crop_instance.crop_data.growth_days - regrow_days)
+			float(instance.crop_data.growth_days - regrow_days)
 		)
-		cell.crop_instance.set_growth_state(regrow_progress, CropInstance.LifecycleState.GROWING)
-		cell.crop_instance.is_watered_today = false
+		if not instance.set_growth_state(regrow_progress, CropInstance.LifecycleState.GROWING):
+			return {}
+	if not instance.set_harvest_count(instance.harvest_count + 1):
+		if regrowing:
+			instance.set_growth_state(old_progress, old_state)
+		return {}
+	if _event_bus:
+		_event_bus.crop_harvested.emit(gx, gz, crop_id)
+	if regrowing:
+		instance.is_watered_today = false
 	else:
 		cell.crop_instance = null
 		cell.state = GridCell.State.FARMLAND
@@ -327,6 +336,8 @@ func preview_harvest(gx: int, gz: int) -> Dictionary:
 	if cell == null or cell.state != GridCell.State.PLANTED or cell.crop_instance == null:
 		return {}
 	if not cell.crop_instance.is_mature():
+		return {}
+	if cell.crop_instance.harvest_count >= EconomyLimitsScript.MAX_SAFE_INTEGER:
 		return {}
 	var data = cell.crop_instance.crop_data
 	if data == null:
