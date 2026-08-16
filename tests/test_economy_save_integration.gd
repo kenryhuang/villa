@@ -111,6 +111,7 @@ class StateTransitionOwnerDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_harvest_seed_round_trip_migration_and_atomic_rejection(assertions, tree)
 	_test_save_round_trip_and_legacy_load(assertions, tree)
 	_test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(assertions, tree)
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
@@ -123,6 +124,49 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_legacy_inventory_repack_preserves_quick_items(assertions, tree)
 	_test_task13_building_load_signals_are_transactional(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
+
+
+func _test_harvest_seed_round_trip_migration_and_atomic_rejection(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "harvest seed save fixture has GameState")
+	if game_state == null:
+		return
+	assertions.truthy(game_state.has_method("set_harvest_seed"), "GameState owns a validated harvest seed")
+	if not game_state.has_method("set_harvest_seed"):
+		return
+	var original_seed := int(game_state.get("harvest_seed"))
+	assertions.truthy(original_seed > 0, "new game starts with a valid harvest seed")
+	var manager := SaveManagerScript.new()
+	manager.name = "HarvestSeedSaveManagerFixture"
+	tree.root.add_child(manager)
+
+	assertions.truthy(game_state.call("set_harvest_seed", 123456789), "fixture accepts a valid harvest seed")
+	var gathered: Dictionary = manager._gather_save_data()
+	assertions.equal(gathered.get("harvest_seed"), 123456789, "save gathering includes harvest seed")
+	var json_value: Variant = JSON.parse_string(JSON.stringify(gathered))
+	assertions.truthy(json_value is Dictionary, "harvest seed crosses a JSON boundary")
+	assertions.truthy(game_state.call("set_harvest_seed", 987654321), "runtime seed can diverge before load")
+	assertions.truthy(manager._apply_save_data(json_value), "valid save reapplies harvest seed")
+	assertions.equal(game_state.get("harvest_seed"), 123456789, "round trip preserves harvest seed")
+
+	var gold_before := int(game_state.gold)
+	for invalid_seed in [0, -1, 1.5, 2147483648]:
+		var invalid_payload: Dictionary = gathered.duplicate(true)
+		invalid_payload["harvest_seed"] = invalid_seed
+		invalid_payload["gold"] = gold_before + 10
+		assertions.truthy(not manager._apply_save_data(invalid_payload), "invalid harvest seed rejects save atomically: %s" % invalid_seed)
+		assertions.equal(game_state.get("harvest_seed"), 123456789, "invalid seed preserves prior harvest seed: %s" % invalid_seed)
+		assertions.equal(game_state.gold, gold_before, "invalid seed applies no earlier gold field: %s" % invalid_seed)
+
+	var legacy_payload: Dictionary = gathered.duplicate(true)
+	legacy_payload.erase("harvest_seed")
+	assertions.truthy(manager._apply_save_data(legacy_payload), "legacy save missing harvest seed migrates")
+	assertions.equal(game_state.get("harvest_seed"), 42, "legacy save receives deterministic harvest seed default")
+	assertions.truthy(game_state.call("set_harvest_seed", original_seed), "harvest seed fixture restores original state")
+	manager.free()
 
 
 func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTree) -> void:
@@ -1459,6 +1503,7 @@ func _prepare_divergent_atomic_payload(
 func _capture_atomic_load_state(main: Node, manager: Node, game_state: Node) -> Dictionary:
 	return {
 		"gold": game_state.gold,
+		"harvest_seed": game_state.harvest_seed,
 		"player": {
 			"stamina": game_state.player_state.stamina,
 			"max_stamina": game_state.player_state.max_stamina,
@@ -1496,6 +1541,7 @@ func _assert_atomic_load_state(
 	var actual := _capture_atomic_load_state(main, manager, game_state)
 	for field in [
 		"gold",
+		"harvest_seed",
 		"player",
 		"calendar",
 		"inventory_slots",

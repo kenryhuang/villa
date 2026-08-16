@@ -724,6 +724,7 @@ func from_dict(data: Dictionary) -> bool:
 	maintenance_due_days = parsed.maintenance
 	speed_accumulators = parsed.speed
 	repair_remaining_seconds = parsed.repairing
+	_refresh_greenhouse_cells()
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
 	set_process(not repair_remaining_seconds.is_empty())
@@ -739,6 +740,7 @@ func reset_maintenance(total_day: int = 0) -> bool:
 	speed_accumulators.clear()
 	_feed_shortage_active.clear()
 	_passive_output_blocked.clear()
+	_refresh_greenhouse_cells()
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
 	set_process(false)

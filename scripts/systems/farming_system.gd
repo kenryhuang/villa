@@ -3,6 +3,7 @@ extends Node
 
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+const GameStateScript = preload("res://scripts/core/game_state.gd")
 
 var grid_system
 var season_system
@@ -55,9 +56,7 @@ func is_paused_greenhouse_cell(cell: GridCell) -> bool:
 
 func preview_plant(cell: GridCell, plant_item_id: String) -> Dictionary:
 	var result := {"ok": false, "reason": "invalid_seed_mapping", "crop_data": null}
-	var data_source = _game_data
-	if data_source == null and is_inside_tree():
-		data_source = get_node_or_null("/root/GameData")
+	var data_source = _resolve_game_data()
 	var crop_data: CropData = (
 		data_source.get_crop_for_plant_item(plant_item_id)
 		if data_source != null and data_source.has_method("get_crop_for_plant_item")
@@ -79,6 +78,15 @@ func preview_plant(cell: GridCell, plant_item_id: String) -> Dictionary:
 	result.ok = true
 	result.reason = ""
 	return result
+
+
+func _resolve_game_data() -> Node:
+	if _game_data != null and is_instance_valid(_game_data):
+		return _game_data
+	var main_loop := Engine.get_main_loop() as SceneTree
+	if main_loop != null:
+		_game_data = main_loop.root.get_node_or_null("GameData")
+	return _game_data
 
 
 func can_plant(cell: GridCell, crop_data: CropData) -> bool:
@@ -129,10 +137,11 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 		return {}
 	var regrowing := data.lifecycle_type in ["annual_regrow", "bush", "tree", "vine"]
 	var post_progress := 0.0
-	var post_lifecycle := CropInstance.LifecycleState.GROWING
+	var post_lifecycle: Variant = null
 	var post_cell_state := GridCell.State.FARMLAND
 	var post_crop: Variant = null
 	if regrowing:
+		post_lifecycle = CropInstance.LifecycleState.GROWING
 		post_progress = maxf(0.0, float(data.growth_days - data.regrow_days))
 		if post_progress >= float(data.growth_days):
 			return {}
@@ -142,9 +151,11 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 		post_crop.lifecycle_state = post_lifecycle
 		post_crop.harvest_count = instance.harvest_count + 1
 		post_crop.is_watered_today = false
+	var harvest_seed := _harvest_seed()
 	return {
-		"items": {str(data.crop_id): instance.calculate_yield(cell.gx, cell.gz, 42)},
+		"items": {str(data.crop_id): instance.calculate_yield(cell.gx, cell.gz, harvest_seed)},
 		"exp": int(data.exp_reward),
+		"harvest_seed": harvest_seed,
 		"regrowing": regrowing,
 		"post_growth_progress": post_progress,
 		"post_lifecycle_state": post_lifecycle,
@@ -153,6 +164,18 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 		"post_crop": post_crop,
 		"before": before,
 	}
+
+
+func _harvest_seed() -> int:
+	if game_state != null:
+		for property in game_state.get_property_list():
+			if str(property.get("name", "")) != "harvest_seed":
+				continue
+			var value: Variant = game_state.get("harvest_seed")
+			if GameStateScript.is_valid_harvest_seed(value):
+				return int(value)
+			break
+	return GameStateScript.LEGACY_HARVEST_SEED
 
 
 func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:

@@ -9,6 +9,7 @@ const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
 const BUILDING_LAYOUT_VERSION := 2
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const GameStateScript = preload("res://scripts/core/game_state.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
@@ -140,6 +141,7 @@ func _gather_save_data() -> Dictionary:
 	var game_state = get_node_or_null("/root/GameState")
 	if game_state:
 		data["gold"] = game_state.gold
+		data["harvest_seed"] = game_state.harvest_seed
 		data["player"] = {
 			"stamina": game_state.player_state.stamina,
 			"max_stamina": game_state.player_state.max_stamina,
@@ -300,6 +302,9 @@ func _apply_migrated_save_data(data: Dictionary) -> bool:
 
 	# 游戏状态
 	var game_state = get_node_or_null("/root/GameState")
+	if game_state and data.has("harvest_seed"):
+		if not game_state.set_harvest_seed(int(data.harvest_seed)):
+			return false
 	if game_state and data.has("gold"):
 		game_state.gold = data.gold
 		if data.has("player"):
@@ -601,6 +606,12 @@ func _validate_save_data(data: Dictionary) -> bool:
 		not _is_integer_number(data.gold) or int(data.gold) < 0
 	):
 		return false
+	if (
+		not data.has("harvest_seed")
+		or not _is_integer_number(data.harvest_seed)
+		or not GameStateScript.is_valid_harvest_seed(int(data.harvest_seed))
+	):
+		return false
 	if data.has("player") and not _validate_player_save_data(data.player):
 		return false
 	if data.has("inventory"):
@@ -841,6 +852,8 @@ func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> bool:
 
 func _migrate_save_data(data: Dictionary) -> Variant:
 	var migrated := data.duplicate(true)
+	if not migrated.has("harvest_seed"):
+		migrated["harvest_seed"] = GameStateScript.LEGACY_HARVEST_SEED
 	var inventory_value: Variant = migrated.get("inventory")
 	if inventory_value == null:
 		return migrated

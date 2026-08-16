@@ -86,6 +86,7 @@ var _hovered_tree: Node
 var _hovered_tree_allowed := false
 var _hovered_gather_slot := -1
 var _hovered_output_pile: Node
+var _last_plant_failure_details: Dictionary = {}
 
 
 static func resolve_action(
@@ -825,21 +826,7 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 			else INVALID_COLOR
 		)
 	if _selected_slot == SEED_SLOT:
-		var plant_item_id := _get_active_plant_item_id()
-		var crop_data := _get_crop_data(plant_item_id)
-		var has_seed: bool = (
-			inventory_system != null
-			and not plant_item_id.is_empty()
-			and inventory_system.has_item(plant_item_id, 1)
-		)
-		return (
-			VALID_COLOR
-			if has_seed
-			and crop_data != null
-			and farming_system != null
-			and farming_system.can_plant(cell, crop_data)
-			else INVALID_COLOR
-		)
+		return VALID_COLOR if bool(preview_plant_action(cell).get("ok", false)) else INVALID_COLOR
 	if _selected_slot == 0:
 		return (
 			VALID_COLOR
@@ -850,12 +837,12 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 
 
 func _plant(cell: GridCell) -> bool:
-	if farming_system == null or inventory_system == null:
+	var preview := preview_plant_action(cell)
+	if not bool(preview.get("ok", false)):
+		_last_plant_failure_details = preview.duplicate(true)
 		return false
-	var plant_item_id := _get_active_plant_item_id()
-	var crop_data := _get_crop_data(plant_item_id)
-	if crop_data == null or not farming_system.can_plant(cell, crop_data):
-		return false
+	var plant_item_id := str(preview.get("plant_item_id", ""))
+	var crop_data := preview.get("crop_data") as CropData
 	var inventory_snapshot := {
 		"slots": inventory_system.slots.duplicate(true),
 		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
@@ -864,16 +851,54 @@ func _plant(cell: GridCell) -> bool:
 	if not inventory_system.remove_item(plant_item_id, 1):
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+		_last_plant_failure_details = preview.duplicate(true)
+		_last_plant_failure_details.ok = false
+		_last_plant_failure_details.reason = "no_seed"
 		return false
 	var planted = farming_system.plant(cell, crop_data)
 	if planted == null:
 		inventory_system.add_item(plant_item_id, 1)
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+		_last_plant_failure_details = preview.duplicate(true)
+		_last_plant_failure_details.ok = false
+		_last_plant_failure_details.reason = "plot_unavailable"
 		return false
 	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
+	_last_plant_failure_details.clear()
 	inventory_changed.emit()
 	return true
+
+
+func preview_plant_action(cell: GridCell) -> Dictionary:
+	var plant_item_id := get_selected_plant_item_id()
+	var result := {
+		"ok": false,
+		"reason": "invalid_seed_mapping",
+		"crop_data": null,
+		"plant_item_id": plant_item_id,
+	}
+	if farming_system == null or not farming_system.has_method("preview_plant"):
+		return result
+	var farming_preview: Variant = farming_system.call("preview_plant", cell, plant_item_id)
+	if not farming_preview is Dictionary:
+		return result
+	result.merge(farming_preview as Dictionary, true)
+	result["plant_item_id"] = plant_item_id
+	if not bool(result.get("ok", false)):
+		return result
+	if (
+		inventory_system == null
+		or not inventory_system.has_method("has_item")
+		or not bool(inventory_system.call("has_item", plant_item_id, 1))
+	):
+		result.ok = false
+		result.reason = "no_seed"
+	return result
+
+
+func get_last_plant_failure_details() -> Dictionary:
+	return _last_plant_failure_details.duplicate(true)
 
 
 func _harvest(cell: GridCell) -> bool:
@@ -982,10 +1007,14 @@ func _is_mature(cell: GridCell) -> bool:
 
 
 func _get_active_plant_item_id() -> String:
+	var item_id := get_selected_plant_item_id()
+	return item_id if _get_crop_data(item_id) != null else ""
+
+
+func get_selected_plant_item_id() -> String:
 	if inventory_system == null or not inventory_system.has_method("get_quick_item"):
 		return ""
-	var item_id := str(inventory_system.get_quick_item(SEED_SLOT))
-	return item_id if _get_crop_data(item_id) != null else ""
+	return str(inventory_system.call("get_quick_item", SEED_SLOT))
 
 
 func _get_crop_data(plant_item_id: String = "") -> CropData:

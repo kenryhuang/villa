@@ -1,5 +1,7 @@
 extends RefCounted
 
+const MainScript = preload("res://scripts/main.gd")
+
 
 class ToolDouble:
 	extends RefCounted
@@ -69,6 +71,18 @@ class FarmingDouble:
 	var allow_plant := true
 	var crop_data: CropData
 	var harvest_calls := 0
+	var preview_reason := ""
+	var preview_plant_calls: Array[Dictionary] = []
+
+	func preview_plant(cell: GridCell, plant_item_id: String) -> Dictionary:
+		preview_plant_calls.append({"cell": cell, "plant_item_id": plant_item_id})
+		if not preview_reason.is_empty():
+			return {"ok": false, "reason": preview_reason, "crop_data": crop_data}
+		if crop_data == null or plant_item_id != crop_data.plant_item_id:
+			return {"ok": false, "reason": "invalid_seed_mapping", "crop_data": null}
+		if not allow_plant or cell == null or cell.state != GridCell.State.FARMLAND:
+			return {"ok": false, "reason": "plot_unavailable", "crop_data": crop_data}
+		return {"ok": true, "reason": "", "crop_data": crop_data}
 
 	func can_plant(cell: GridCell, data: CropData) -> bool:
 		return allow_plant and cell.state == GridCell.State.FARMLAND and data == crop_data
@@ -322,6 +336,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_action_modes(assertions, tree, controller_script)
 	_test_build_feedback_and_exhaustion(assertions, tree, controller_script)
 	_test_farming_plant_rules(assertions)
+	_test_plant_preview_failure_reasons(assertions, tree, controller_script)
 	_test_pointer_contract(assertions, tree, controller_script)
 	_test_gathering_command_routing(assertions, tree, controller_script)
 	_test_output_pile_interaction(assertions, tree, controller_script)
@@ -521,11 +536,14 @@ func _test_selection_and_transactions(
 	tree: SceneTree,
 	controller_script: Script
 ) -> void:
-	var crop := CropData.new()
-	crop.crop_id = "grain"
-	crop.plant_item_id = "grain_seed"
-	crop.growth_days = 3
-	crop.seasons.assign([0])
+	var crop: CropData
+	for definition in MainScript.default_crop_definitions():
+		if definition.crop_id == "grain":
+			crop = definition
+			break
+	assertions.truthy(crop != null, "controller fixture resolves authoritative grain definition")
+	if crop == null:
+		return
 	var game_data = tree.root.get_node_or_null("GameData")
 	assertions.truthy(game_data != null, "controller fixture has authoritative GameData")
 	if game_data == null:
@@ -627,6 +645,58 @@ func _test_selection_and_transactions(
 	assertions.equal(inventory.get_item_count("grain"), 1, "harvest adds grain")
 	assertions.equal(mature.state, GridCell.State.FARMLAND, "harvest restores farmland")
 
+	controller.free()
+
+
+func _test_plant_preview_failure_reasons(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var game_data := tree.root.get_node_or_null("GameData")
+	assertions.truthy(game_data != null, "plant action preview fixture has GameData")
+	if game_data == null:
+		return
+	var crop: CropData = game_data.get_crop_for_plant_item("grain_seed")
+	assertions.truthy(crop != null, "plant action preview fixture resolves grain seed")
+	if crop == null:
+		return
+	var inventory := InventoryDouble.new()
+	var farming := FarmingDouble.new()
+	farming.crop_data = crop
+	var controller = controller_script.new()
+	tree.root.add_child(controller)
+	controller.configure(
+		null,
+		GridDouble.new(),
+		farming,
+		BuildingDouble.new(),
+		ToolDouble.new(),
+		inventory
+	)
+	var cell := GridCell.new()
+	cell.state = GridCell.State.FARMLAND
+	assertions.truthy(controller.has_method("preview_plant_action"), "controller exposes planting action preview")
+	if not controller.has_method("preview_plant_action"):
+		controller.free()
+		return
+
+	inventory.counts["grain_seed"] = 0
+	var no_seed: Dictionary = controller.call("preview_plant_action", cell)
+	assertions.equal(no_seed.get("reason"), "no_seed", "valid planting item with zero quantity has stable no_seed reason")
+	assertions.equal(farming.preview_plant_calls[-1].plant_item_id, "grain_seed", "controller asks FarmingSystem before quantity rejection")
+
+	inventory.counts["grain_seed"] = 1
+	for reason in ["invalid_seed_mapping", "plot_unavailable", "wrong_season", "greenhouse_required"]:
+		farming.preview_reason = reason
+		var rejected: Dictionary = controller.call("preview_plant_action", cell)
+		assertions.equal(rejected.get("reason"), reason, "controller preserves farming reason %s" % reason)
+
+	farming.preview_reason = "invalid_seed_mapping"
+	inventory.active_quick_item = "unknown_seed"
+	var invalid_mapping: Dictionary = controller.call("preview_plant_action", cell)
+	assertions.equal(invalid_mapping.get("reason"), "invalid_seed_mapping", "raw selected item reaches authoritative mapping preview")
+	assertions.equal(farming.preview_plant_calls[-1].plant_item_id, "unknown_seed", "controller does not infer seed mapping from id suffix")
 	controller.free()
 
 

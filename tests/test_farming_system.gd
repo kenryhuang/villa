@@ -4,6 +4,7 @@ const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
 const SeasonSystemScript = preload("res://scripts/systems/season_system.gd")
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
+const FarmStorageSystemScript = preload("res://scripts/systems/farm_storage_system.gd")
 
 const FARMLAND = 1
 const PLANTED = 2
@@ -27,6 +28,40 @@ class CropEventBus:
 
 	func _on_crop_matured(gx: int, gz: int) -> void:
 		matured_events.append(Vector2i(gx, gz))
+
+
+class HarvestEventBus:
+	extends Node
+
+	signal cell_state_changed(gx: int, gz: int, new_state: int)
+	signal crop_planted(gx: int, gz: int, crop_id: String)
+	signal crop_harvested(gx: int, gz: int, crop_id: String)
+
+	var cell_events: Array[Dictionary] = []
+	var harvest_events: Array[Dictionary] = []
+
+	func _init() -> void:
+		cell_state_changed.connect(_on_cell_state_changed)
+		crop_harvested.connect(_on_crop_harvested)
+
+	func _on_cell_state_changed(gx: int, gz: int, new_state: int) -> void:
+		cell_events.append({"gx": gx, "gz": gz, "state": new_state})
+
+	func _on_crop_harvested(gx: int, gz: int, crop_id: String) -> void:
+		harvest_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
+
+
+class HarvestSeedState:
+	extends RefCounted
+
+	var harvest_seed := 1
+
+
+class ZeroCapacity:
+	extends RefCounted
+
+	func provide() -> int:
+		return 0
 
 
 func _make_crop_data(
@@ -115,6 +150,8 @@ func run(assertions: TestAssert) -> void:
 
 	_test_stage_only_growth_change(assertions)
 	_test_environment_lifecycle_transitions(assertions)
+	_test_save_seed_controls_deterministic_yield(assertions)
+	_test_exact_harvest_post_states(assertions)
 	_test_deterministic_harvest_transaction(assertions)
 
 
@@ -204,6 +241,11 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	var dormant_visual := farming.get_crop_visual(bush_cell)
 	assertions.equal(dormant_visual.get_meta("crop_stage", -1), 2, "dormant visual uses stage two")
 	assertions.equal(dormant_visual.get_meta("lifecycle_state", -1), CropInstance.LifecycleState.DORMANT, "dormant visual records state treatment")
+	assertions.equal(
+		_fallback_color(dormant_visual),
+		Color(0.6, 0.8, 0.2) * Color(0.68, 0.72, 0.65, 1.0),
+		"dormant fallback material is visibly desaturated and dimmed"
+	)
 	season.current_season = SeasonSystemScript.Season.SUMMER
 	farming.on_day_changed(4)
 	assertions.equal(bush_instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "in-season dormant bush restores active state")
@@ -244,6 +286,11 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	farming.set_greenhouse_cells([])
 	assertions.equal(lemon_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "greenhouse demolition immediately withers greenhouse-only crop")
 	assertions.equal(farming.get_crop_visual(lemon_cell).get_meta("lifecycle_state", -1), CropInstance.LifecycleState.WITHERED, "withered visual records dry state treatment")
+	assertions.equal(
+		_fallback_color(farming.get_crop_visual(lemon_cell)),
+		Color(0.2, 0.7, 0.2) * Color(0.82, 0.68, 0.38, 1.0),
+		"withered fallback material uses the dry yellow modulation"
+	)
 	assertions.truthy(farming.clear_withered(lemon_cell), "withered crop clears without harvest")
 	assertions.equal(lemon_cell.state, GridCell.State.FARMLAND, "withered clearing restores farmland")
 	assertions.truthy(lemon_cell.crop_instance == null, "withered clearing removes crop instance")
@@ -273,39 +320,152 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	grid.free()
 
 
+func _test_save_seed_controls_deterministic_yield(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var farming = FarmingSystemScript.new()
+	var state := HarvestSeedState.new()
+	farming.configure(grid, null, state)
+	grid.set_cell_state(15, 15, FARMLAND)
+	var crop: CropData = _make_crop_data("tomato", 4, "annual_regrow", "outdoor_or_greenhouse", 2)
+	crop.yield_min = 1
+	crop.yield_max = 20
+	var cell := grid.get_cell(15, 15)
+	var instance: CropInstance = farming.plant(cell, crop)
+	instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+
+	state.harvest_seed = 1
+	var first_seed_preview: Dictionary = farming.preview_harvest(cell)
+	var repeated_preview: Dictionary = farming.preview_harvest(cell)
+	assertions.equal(first_seed_preview, repeated_preview, "same save seed repeats an exact preview")
+	assertions.equal(first_seed_preview.get("harvest_seed", 0), 1, "preview records the authoritative save seed")
+	assertions.equal(
+		first_seed_preview.get("items", {}),
+		{"tomato": instance.calculate_yield(15, 15, 1)},
+		"farming yield uses the configured save seed"
+	)
+
+	state.harvest_seed = 2
+	var second_seed_preview: Dictionary = farming.preview_harvest(cell)
+	assertions.equal(second_seed_preview.get("harvest_seed", 0), 2, "changed save seed changes the preview token")
+	assertions.equal(
+		second_seed_preview.get("items", {}),
+		{"tomato": instance.calculate_yield(15, 15, 2)},
+		"changed save seed reaches deterministic yield input"
+	)
+	assertions.truthy(
+		first_seed_preview.items != second_seed_preview.items,
+		"chosen seed fixture produces different deterministic yields"
+	)
+
+	farming.free()
+	grid.free()
+
+
+func _test_exact_harvest_post_states(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var farming = FarmingSystemScript.new()
+	farming.configure(grid, null, HarvestSeedState.new())
+
+	grid.set_cell_state(20, 20, FARMLAND)
+	var annual := _make_crop_data("grain", 3)
+	var annual_cell := grid.get_cell(20, 20)
+	var annual_instance: CropInstance = farming.plant(annual_cell, annual)
+	annual_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+	var annual_preview: Dictionary = farming.preview_harvest(annual_cell)
+	assertions.equal(annual_preview.get("post_crop", "missing"), null, "annual preview removes the crop")
+	assertions.equal(annual_preview.get("post_lifecycle_state", "missing"), null, "annual preview explicitly has no post lifecycle")
+	assertions.equal(annual_preview.get("post_cell_state", -1), GridCell.State.FARMLAND, "annual preview returns farmland")
+	assertions.equal(annual_preview.get("post_growth_progress", -1.0), 0.0, "annual preview has zero post progress")
+
+	grid.set_cell_state(21, 20, FARMLAND)
+	var regrow := _make_crop_data("tomato", 4, "annual_regrow", "outdoor_or_greenhouse", 2)
+	var regrow_cell := grid.get_cell(21, 20)
+	var regrow_instance: CropInstance = farming.plant(regrow_cell, regrow)
+	regrow_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	var regrow_preview: Dictionary = farming.preview_harvest(regrow_cell)
+	assertions.truthy(regrow_preview.get("post_crop") is Dictionary, "regrow preview retains a crop snapshot")
+	assertions.equal(regrow_preview.get("post_lifecycle_state", -1), CropInstance.LifecycleState.GROWING, "regrow preview explicitly returns to growing")
+	assertions.equal(regrow_preview.get("post_cell_state", -1), GridCell.State.PLANTED, "regrow preview keeps planted state")
+	assertions.equal(regrow_preview.get("post_growth_progress", -1.0), 2.0, "regrow preview resumes at authored progress")
+
+	farming.free()
+	grid.free()
+
+
 func _test_deterministic_harvest_transaction(assertions: TestAssert) -> void:
 	var grid = GridSystemScript.new()
 	var farming = FarmingSystemScript.new()
-	farming.configure(grid, null, null)
+	var event_bus := HarvestEventBus.new()
+	grid._event_bus = event_bus
+	farming.configure(grid, null, HarvestSeedState.new())
 	grid.set_cell_state(15, 15, FARMLAND)
-	var crop: CropData = _make_crop_data("preview_tomato", 4, "annual_regrow", "outdoor_or_greenhouse", 2)
+	var crop: CropData = _make_crop_data("tomato", 4, "annual_regrow", "outdoor_or_greenhouse", 2)
 	crop.yield_min = 2
 	crop.yield_max = 3
 	var cell := grid.get_cell(15, 15)
 	var instance: CropInstance = farming.plant(cell, crop)
 	instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	farming.call("_update_visual", cell, instance)
+	event_bus.cell_events.clear()
+	event_bus.harvest_events.clear()
 	var first: Dictionary = farming.preview_harvest(cell)
+	var capacity := ZeroCapacity.new()
+	var storage = FarmStorageSystemScript.new()
+	assertions.truthy(storage.configure(capacity.provide), "capacity rejection fixture configures real farm storage")
+	assertions.truthy(not storage.can_add(first.items), "real farm storage preflight rejects harvest output")
+	assertions.truthy(not storage.add_items(first.items), "real farm storage capacity preflight rejects harvest output")
+	assertions.equal(storage.get_used_capacity(), 0, "capacity rejection leaves farm storage unchanged")
 	var second: Dictionary = farming.preview_harvest(cell)
-	assertions.equal(first, second, "unchanged harvest previews are exactly deterministic")
-	assertions.equal(instance.harvest_count, 0, "preview and capacity-like rejection do not change harvest count")
+	assertions.equal(first, second, "preview remains byte-for-byte equal after capacity rejection")
+	assertions.equal(instance.harvest_count, 0, "real capacity rejection does not change harvest count")
 	assertions.equal(first.get("post_growth_progress", -1.0), 2.0, "preview includes regrowth progress")
 	assertions.equal(first.get("post_lifecycle_state", -1), CropInstance.LifecycleState.GROWING, "preview includes post lifecycle")
 	assertions.equal(first.get("post_cell_state", -1), GridCell.State.PLANTED, "preview includes post cell state")
 	assertions.truthy(first.get("before", {}).get("crop", null) is Dictionary, "preview includes a stable before snapshot")
+	var mature_visual := farming.get_crop_visual(cell)
+	var mature_color := _fallback_color(mature_visual)
+	assertions.equal(mature_visual.get_meta("lifecycle_state", -1), CropInstance.LifecycleState.MATURE, "caller-rejected mature crop keeps mature visual state")
+	assertions.equal(mature_color, Color(1.0, 0.84, 0.0), "caller-rejected crop keeps the normal mature material")
 
 	var altered := first.duplicate(true)
 	altered.exp = int(altered.exp) + 1
 	var before_altered: Dictionary = grid.get_crop_snapshot(15, 15)
 	assertions.truthy(farming.commit_harvest(cell, altered).is_empty(), "altered preview is rejected")
 	assertions.equal(grid.get_crop_snapshot(15, 15), before_altered, "altered preview rejection is atomic")
+	assertions.equal(event_bus.harvest_events, [], "altered preview emits no harvest event")
+	assertions.equal(event_bus.cell_events, [], "altered preview emits no cell event")
+	assertions.truthy(farming.get_crop_visual(cell) == mature_visual, "altered preview does not replace the visual")
+	assertions.equal(_fallback_color(mature_visual), mature_color, "altered preview does not mutate visual color")
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.MATURE, "altered preview leaves lifecycle mature")
+	assertions.equal(instance.harvest_count, 0, "altered preview leaves harvest count unchanged")
 	var committed: Dictionary = farming.commit_harvest(cell, first)
 	assertions.equal(committed.get("items", {}), first.items, "commit returns previewed items")
 	assertions.equal(instance.harvest_count, 1, "successful commit increments harvest count")
 	assertions.near(instance.growth_progress, 2.0, 0.001, "successful regrow commit applies previewed progress")
 	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "successful regrow commit applies previewed lifecycle")
+	assertions.equal(event_bus.harvest_events.size(), 1, "successful commit emits one harvest event")
+	assertions.equal(event_bus.cell_events.size(), 1, "successful commit emits one cell event")
+	var after_commit := grid.get_crop_snapshot(15, 15)
+	var visual_after_commit := farming.get_crop_visual(cell)
+	var color_after_commit := _fallback_color(visual_after_commit)
 	assertions.truthy(farming.commit_harvest(cell, first).is_empty(), "stale preview is rejected after state changes")
+	assertions.equal(grid.get_crop_snapshot(15, 15), after_commit, "stale preview leaves crop snapshot unchanged")
+	assertions.equal(event_bus.harvest_events.size(), 1, "stale preview emits no extra harvest event")
+	assertions.equal(event_bus.cell_events.size(), 1, "stale preview emits no extra cell event")
+	assertions.truthy(farming.get_crop_visual(cell) == visual_after_commit, "stale preview does not replace the visual")
+	assertions.equal(_fallback_color(visual_after_commit), color_after_commit, "stale preview does not mutate visual color")
 	assertions.truthy(not grid.has_method("preview_harvest"), "GridSystem exposes no harvest preview domain API")
 	assertions.truthy(not grid.has_method("harvest_crop"), "GridSystem exposes no harvest commit domain API")
 
+	storage.free()
+	event_bus.free()
 	farming.free()
 	grid.free()
+
+
+func _fallback_color(visual: Node3D) -> Color:
+	if visual is MeshInstance3D:
+		var material := (visual as MeshInstance3D).material_override as StandardMaterial3D
+		if material != null:
+			return material.albedo_color
+	return Color.TRANSPARENT
