@@ -2,14 +2,25 @@ class_name CropInstance
 extends RefCounted
 
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 enum LifecycleState { GROWING, MATURE, DORMANT, WITHERED }
 
 var crop_data
-var growth_progress := 0.0
 var is_watered_today := false
 var harvest_count := 0
-var lifecycle_state: LifecycleState = LifecycleState.GROWING
+var _growth_progress := 0.0
+var _lifecycle_state: LifecycleState = LifecycleState.GROWING
+var growth_progress: float:
+	get:
+		return _growth_progress
+	set(value):
+		set_growth_state(value, _lifecycle_state)
+var lifecycle_state: LifecycleState:
+	get:
+		return _lifecycle_state
+	set(value):
+		set_growth_state(_growth_progress, value)
 
 
 func calculate_yield(gx: int, gz: int, world_seed: int = 42) -> int:
@@ -37,7 +48,7 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(data: Dictionary) -> bool:
-	if crop_data == null:
+	if crop_data == null or data.size() != 5:
 		return false
 	for field in ["crop_id", "growth_progress", "is_watered_today", "harvest_count", "lifecycle_state"]:
 		if not data.has(field):
@@ -56,30 +67,46 @@ func from_dict(data: Dictionary) -> bool:
 	var maturity_progress := float(crop_data.growth_days)
 	if not is_finite(progress) or progress < 0.0 or progress > maturity_progress:
 		return false
-	if not is_finite(count_number) or count_number < 0.0 or count_number != floorf(count_number):
+	if (
+		not is_finite(count_number)
+		or count_number < 0.0
+		or count_number > float(EconomyLimitsScript.MAX_SAFE_INTEGER)
+		or count_number != floorf(count_number)
+	):
 		return false
-	if not is_finite(state_number) or state_number != floorf(state_number):
+	if (
+		not is_finite(state_number)
+		or state_number != floorf(state_number)
+		or state_number < float(LifecycleState.GROWING)
+		or state_number > float(LifecycleState.WITHERED)
+	):
 		return false
 	var next_state := int(state_number)
-	if not _is_valid_lifecycle_state(next_state):
-		return false
-	if next_state == LifecycleState.GROWING and progress >= maturity_progress:
-		return false
-	if next_state == LifecycleState.MATURE and progress != maturity_progress:
+	if not set_growth_state(progress, next_state):
 		return false
 
-	growth_progress = progress
 	is_watered_today = data.is_watered_today
 	harvest_count = int(count_number)
-	lifecycle_state = next_state as LifecycleState
+	return true
+
+
+func set_growth_state(next_progress: float, next_state: int) -> bool:
+	if crop_data == null or not is_finite(next_progress) or not _is_valid_lifecycle_state(next_state):
+		return false
+	var maturity_progress := float(crop_data.growth_days)
+	if next_progress < 0.0 or next_progress > maturity_progress:
+		return false
+	if next_state == LifecycleState.GROWING and next_progress >= maturity_progress:
+		return false
+	if next_state == LifecycleState.MATURE and next_progress != maturity_progress:
+		return false
+	_growth_progress = next_progress
+	_lifecycle_state = next_state as LifecycleState
 	return true
 
 
 func set_lifecycle_state(next_state: int) -> bool:
-	if not _is_valid_lifecycle_state(next_state):
-		return false
-	lifecycle_state = next_state as LifecycleState
-	return true
+	return set_growth_state(_growth_progress, next_state)
 
 
 func derive_active_state() -> int:
@@ -89,18 +116,22 @@ func derive_active_state() -> int:
 
 
 func advance_growth() -> bool:
-	if crop_data == null or lifecycle_state != LifecycleState.GROWING:
+	if crop_data == null or _lifecycle_state != LifecycleState.GROWING:
 		return false
 	var old_stage := get_current_stage()
-	var old_state := lifecycle_state
+	var old_state := _lifecycle_state
 	var advance := 1.0
 	if is_watered_today:
 		advance = 1.5
-	growth_progress = minf(growth_progress + advance, float(crop_data.growth_days))
-	is_watered_today = false
-	if growth_progress >= float(crop_data.growth_days):
-		lifecycle_state = LifecycleState.MATURE
-	return old_stage != get_current_stage() or old_state != lifecycle_state
+	var next_progress := minf(_growth_progress + advance, float(crop_data.growth_days))
+	var next_state := (
+		LifecycleState.MATURE
+		if next_progress >= float(crop_data.growth_days)
+		else LifecycleState.GROWING
+	)
+	if not set_growth_state(next_progress, next_state):
+		return false
+	return old_stage != get_current_stage() or old_state != _lifecycle_state
 
 
 func is_mature() -> bool:

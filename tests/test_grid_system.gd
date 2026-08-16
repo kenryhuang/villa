@@ -3,6 +3,7 @@ extends RefCounted
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const TerrainBuilderScript = preload("res://scripts/world/terrain_builder.gd")
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 
 func run(assertions: TestAssert) -> void:
@@ -72,5 +73,33 @@ func _test_lifecycle_serialization_version(assertions: TestAssert) -> void:
 		not grid.validate_dict({"version": 1, "cells": []}),
 		"version one grid data is rejected for deferred SaveManager migration"
 	)
+	for invalid_version in [
+		true,
+		2.5,
+		EconomyLimitsScript.MAX_SAFE_INTEGER + 1,
+		-EconomyLimitsScript.MAX_SAFE_INTEGER - 1,
+		EconomyLimitsScript.MAX_SAFE_INTEGER + 1.0,
+		-float(EconomyLimitsScript.MAX_SAFE_INTEGER) - 1.0,
+	]:
+		assertions.truthy(
+			not grid.validate_dict({"version": invalid_version, "cells": []}),
+			"unsafe or non-integral grid version rejects"
+		)
+	var base_entry := {"gx": 0, "gz": 0, "state": GridCell.State.FARMLAND, "watered": false}
+	for field in ["gx", "gz", "state"]:
+		for invalid_integer in [
+			true,
+			1.5,
+			EconomyLimitsScript.MAX_SAFE_INTEGER + 1,
+			-EconomyLimitsScript.MAX_SAFE_INTEGER - 1,
+			EconomyLimitsScript.MAX_SAFE_INTEGER + 1.0,
+			-float(EconomyLimitsScript.MAX_SAFE_INTEGER) - 1.0,
+		]:
+			var invalid_entry: Dictionary = base_entry.duplicate(true)
+			invalid_entry[field] = invalid_integer
+			assertions.truthy(
+				not grid.validate_dict({"version": 2, "cells": [invalid_entry]}),
+				"unsafe or non-integral grid %s rejects" % field
+			)
 	assertions.truthy(instance != null, "lifecycle serialization fixture plants")
 	grid.free()

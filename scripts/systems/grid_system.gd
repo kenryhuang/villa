@@ -12,6 +12,7 @@ const SLOPE_THRESHOLD := 0.35
 const GRID_LINE_LIFT := 0.035
 const HIGHLIGHT_LIFT := 0.045
 const SERIALIZATION_VERSION := 2
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const FarmlandTileScript = preload("res://scripts/visual/farmland_tile.gd")
 
 var terrain: TerrainBuilder
@@ -284,7 +285,7 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 	var cell := get_cell(gx, gz)
 	var instance := CropInstance.new()
 	instance.crop_data = crop_data
-	instance.set_lifecycle_state(CropInstance.LifecycleState.GROWING)
+	instance.set_growth_state(0.0, CropInstance.LifecycleState.GROWING)
 	cell.crop_instance = instance
 	cell.state = GridCell.State.PLANTED
 	_sync_farmland_visual(cell)
@@ -306,11 +307,11 @@ func harvest_crop(gx: int, gz: int) -> Dictionary:
 	cell.crop_instance.harvest_count += 1
 	if regrowing:
 		var regrow_days: int = maxi(1, int(cell.crop_instance.crop_data.regrow_days))
-		cell.crop_instance.growth_progress = maxf(
+		var regrow_progress := maxf(
 			0.0,
 			float(cell.crop_instance.crop_data.growth_days - regrow_days)
 		)
-		cell.crop_instance.set_lifecycle_state(CropInstance.LifecycleState.GROWING)
+		cell.crop_instance.set_growth_state(regrow_progress, CropInstance.LifecycleState.GROWING)
 		cell.crop_instance.is_watered_today = false
 	else:
 		cell.crop_instance = null
@@ -625,8 +626,15 @@ func from_dict(data: Dictionary) -> bool:
 
 
 func _is_integer_number(value: Variant) -> bool:
+	if typeof(value) == TYPE_INT:
+		return (
+			int(value) >= -EconomyLimitsScript.MAX_SAFE_INTEGER
+			and int(value) <= EconomyLimitsScript.MAX_SAFE_INTEGER
+		)
+	if typeof(value) != TYPE_FLOAT:
+		return false
 	return (
-		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
-		and is_finite(float(value))
-		and floorf(float(value)) == float(value)
+		is_finite(value)
+		and absf(value) <= float(EconomyLimitsScript.MAX_SAFE_INTEGER)
+		and floorf(value) == value
 	)

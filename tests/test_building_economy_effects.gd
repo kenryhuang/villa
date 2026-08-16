@@ -597,8 +597,7 @@ func _add_mature_flower(grid: GridSystem, position: Vector2i) -> void:
 	flower.growth_days = 1
 	var instance := CropInstance.new()
 	instance.crop_data = flower
-	instance.growth_progress = 1.0
-	instance.set_lifecycle_state(CropInstance.LifecycleState.MATURE)
+	instance.set_growth_state(1.0, CropInstance.LifecycleState.MATURE)
 	var cell := grid.get_cell(position.x, position.y)
 	cell.state = GridCell.State.PLANTED
 	cell.crop_instance = instance

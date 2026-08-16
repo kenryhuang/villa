@@ -113,8 +113,7 @@ func run(assertions: TestAssert) -> void:
 				farmland_visual,
 				"planted cell retains its farmland visual"
 			)
-			farm_cell.crop_instance.growth_progress = 1.0
-			farm_cell.crop_instance.set_lifecycle_state(CropInstance.LifecycleState.MATURE)
+			farm_cell.crop_instance.set_growth_state(1.0, CropInstance.LifecycleState.MATURE)
 			grid.harvest_crop(farm_cell.gx, farm_cell.gz)
 			assertions.truthy(
 				grid.call("get_farmland_visual", farm_cell.gx, farm_cell.gz) != null,

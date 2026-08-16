@@ -57,8 +57,7 @@ func run(assertions: TestAssert) -> void:
 
 	# Harvest mature crop
 	if grid.get_cell(2, 2).crop_instance:
-		grid.get_cell(2, 2).crop_instance.growth_progress = 3.0
-		grid.get_cell(2, 2).crop_instance.set_lifecycle_state(CropInstance.LifecycleState.MATURE)
+		grid.get_cell(2, 2).crop_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
 		result = grid.harvest_crop(2, 2)
 		assertions.truthy(not result.is_empty(), "harvest mature crop succeeds")
 		assertions.equal(result.exp, 10, "harvest returns exp")

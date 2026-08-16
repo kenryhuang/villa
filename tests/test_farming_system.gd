@@ -118,6 +118,9 @@ func _test_stage_only_growth_change(assertions: TestAssert) -> void:
 		"stage-only growth remains growing"
 	)
 	assertions.truthy(not direct_instance.is_mature(), "stage-only growth is not mature")
+	direct_instance.is_watered_today = true
+	direct_instance.advance_growth()
+	assertions.truthy(direct_instance.is_watered_today, "isolated growth preserves water for coordinator")
 
 	var grid = GridSystemScript.new()
 	var farming = FarmingSystemScript.new()
@@ -138,6 +141,18 @@ func _test_stage_only_growth_change(assertions: TestAssert) -> void:
 		"stage-only day change keeps crop_grew event"
 	)
 	assertions.equal(event_bus.matured_events, [], "stage-only day change emits no crop_matured")
+	assertions.truthy(not cell.crop_instance.is_watered_today, "daily coordinator clears crop water")
+	cell.crop_instance = null
+	cell.state = GridCell.State.FARMLAND
+
+	var mature_crop = _make_crop_data("mature_event", 1)
+	grid.set_cell_state(6, 6, FARMLAND)
+	var mature_cell = grid.get_cell(6, 6)
+	farming.plant(mature_cell, mature_crop)
+	farming.on_day_changed(3)
+	assertions.equal(event_bus.matured_events, [Vector2i(6, 6)], "growing to mature emits crop_matured once")
+	farming.on_day_changed(4)
+	assertions.equal(event_bus.matured_events, [Vector2i(6, 6)], "mature crop emits no duplicate crop_matured")
 	event_bus.free()
 	farming.free()
 	season.free()

@@ -612,8 +612,7 @@ func _test_selection_and_transactions(
 	mature.state = GridCell.State.PLANTED
 	mature.crop_instance = CropInstance.new()
 	mature.crop_instance.crop_data = crop
-	mature.crop_instance.growth_progress = 3.0
-	mature.crop_instance.set_lifecycle_state(CropInstance.LifecycleState.MATURE)
+	mature.crop_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
 	inventory.accepts_harvest = false
 	assertions.truthy(not controller.perform_cell_action(mature), "full inventory blocks harvest")
 	assertions.equal(farming.harvest_calls, 0, "blocked harvest preserves crop")

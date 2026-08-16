@@ -50,6 +50,18 @@ func _run() -> void:
 	await process_frame
 	var cells: Array = instance.get("_cells")
 	var farming_system := instance.get_node("FarmingSystem") as FarmingSystem
+	for index in cells.size():
+		var crop: CropInstance = cells[index].crop_instance
+		var expected_state := (
+			CropInstance.LifecycleState.MATURE
+			if index % constants.STAGE_NAMES.size() == constants.STAGE_NAMES.size() - 1
+			else CropInstance.LifecycleState.GROWING
+		)
+		if crop == null or crop.lifecycle_state != expected_state:
+			push_error("growth stage %d has non-canonical lifecycle state" % (index % constants.STAGE_NAMES.size()))
+			instance.free()
+			quit(1)
+			return
 	for stage in constants.STAGE_NAMES.size():
 		var variants := {}
 		for index in range(stage, cells.size(), constants.STAGE_NAMES.size()):

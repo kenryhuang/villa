@@ -66,7 +66,13 @@ func _reset_verification() -> void:
 		if cell and grid_system.set_cell_state(cell.gx, cell.gz, GridCell.State.FARMLAND):
 			var crop := farming_system.plant(cell, _crop_data)
 			if crop:
-				crop.growth_progress = float(index % STAGE_NAMES.size())
+				var progress := float(index % STAGE_NAMES.size())
+				var lifecycle := (
+					CropInstance.LifecycleState.MATURE
+					if progress >= float(_crop_data.growth_days)
+					else CropInstance.LifecycleState.GROWING
+				)
+				crop.set_growth_state(progress, lifecycle)
 				_cells.append(cell)
 	farming_system.rebuild_visuals()
 	_selected_index = 0
