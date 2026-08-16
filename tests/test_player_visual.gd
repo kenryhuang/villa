@@ -4,7 +4,7 @@ const PlayerVisualScript = preload("res://scripts/visual/player_visual.gd")
 const PlayerScene = preload("res://scenes/actors/player.tscn")
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
 const SIDE_WALK_PATH := "res://assets/characters/player/player_farmer_side_walk.png"
-const SIDE_WALK_FRAME_COUNT := 12
+const SIDE_WALK_FRAME_COUNT := 9
 const FRAME_SIZE := Vector2i(192, 192)
 const TARGET_CHARACTER_HEIGHT := 151
 const REFERENCE_EAST_ROW := 2
@@ -13,6 +13,7 @@ const REFERENCE_WALK_FRAME_COUNT := 6
 const DENIM_LUMINANCE_TOLERANCE := 4.0 / 255.0
 const DENIM_CHANNEL_TOLERANCE := 10.0 / 255.0
 const SIDE_BOOT_MIN_DIFFERENCE := 14
+const SIDE_PHASE_PAIRS := [[0, 4], [1, 5], [2, 7], [3, 8]]
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
@@ -53,8 +54,19 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 	assertions.equal(PlayerVisualScript.walk_animation_name("sw"), "walk_sw", "walk animation names are stable")
 	assertions.near(PlayerVisualScript.IDLE_FPS, 2.0, 0.001, "idle animation uses two fps")
 	assertions.near(PlayerVisualScript.WALK_FPS, 6.0, 0.001, "walk animation uses six fps")
-	assertions.near(PlayerVisualScript.SIDE_WALK_FPS, 12.0, 0.001, "twelve-pose side walk completes in one second")
+	assertions.near(
+		PlayerVisualScript.SIDE_WALK_FPS,
+		PlayerVisualScript.WALK_FPS,
+		0.001,
+		"side walk uses the same base fps as every direction"
+	)
 	assertions.near(PlayerVisualScript.RUN_FPS, 9.0, 0.001, "run animation uses nine fps")
+	assertions.near(
+		PlayerVisualScript.SIDE_RUN_FPS,
+		PlayerVisualScript.RUN_FPS,
+		0.001,
+		"side sprint uses the same fps as every direction"
+	)
 	assertions.near(PlayerVisualScript.PIXEL_SIZE, 0.0068, 0.0001, "player art is scaled below building proportions")
 	var just_inside_south := Vector2(sin(deg_to_rad(22.4)), cos(deg_to_rad(22.4)))
 	var just_inside_southeast := Vector2(sin(deg_to_rad(22.6)), cos(deg_to_rad(22.6)))
@@ -119,9 +131,9 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		)
 		assertions.near(
 			visual.sprite_frames.get_animation_speed(walk_name),
-			12.0 if direction in ["e", "w"] else 6.0,
+			6.0,
 			0.001,
-			"%s walk preserves a one-second loop" % direction
+			"%s walk uses the shared directional fps" % direction
 		)
 		_assert_walk_leg_alternation(visual.sprite_frames, walk_name, direction, assertions)
 		if direction in ["e", "w"]:
@@ -142,7 +154,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		visual.speed_scale,
 		1.5,
 		0.001,
-		"side sprinting plays twelve poses at eighteen fps"
+		"side sprinting plays nine poses at nine fps"
 	)
 	visual.sync_motion(Vector2.ZERO, false, true)
 	assertions.equal(visual.animation, &"idle_e", "stopping retains the last facing direction")
@@ -185,7 +197,7 @@ func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
 
 func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 	var texture := load(SIDE_WALK_PATH) as Texture2D
-	assertions.truthy(texture != null, "twelve-frame side-walk atlas imports")
+	assertions.truthy(texture != null, "nine-frame side-walk atlas imports")
 	if texture == null:
 		return
 	var reference_texture := load(ATLAS_PATH) as Texture2D
@@ -193,7 +205,7 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 	if reference_texture == null:
 		return
 	var image := texture.get_image()
-	assertions.equal(image.get_size(), Vector2i(2304, 384), "side walk is a 12x2 atlas")
+	assertions.equal(image.get_size(), Vector2i(1728, 384), "side walk is a 9x2 atlas")
 	var cell_size := FRAME_SIZE
 	var reference_regions: Array[Rect2i] = []
 	for column in REFERENCE_WALK_FRAME_COUNT:
@@ -427,16 +439,21 @@ func _assert_side_walk_temporal_continuity(
 		"%s walk has no duplicated adjacent pose: %s" % [direction, differences]
 	)
 	for frame_index in differences.size():
-		var maximum_difference := 160 if frame_index == 8 else 115
+		var maximum_difference := 160
 		assertions.truthy(
 			differences[frame_index] <= maximum_difference,
 			"%s walk transition %d distributes motion within its phase (%d <= %d)"
 			% [direction, frame_index, differences[frame_index], maximum_difference]
 		)
-	for frame_index in 6:
+	for pair in SIDE_PHASE_PAIRS:
+		var first_frame := int(pair[0])
+		var second_frame := int(pair[1])
 		assertions.truthy(
-			_lower_body_silhouette_difference(silhouettes[frame_index], silhouettes[frame_index + 6]) >= 20,
-			"%s pose %d has a distinct opposite-leg half-cycle partner" % [direction, frame_index]
+			_lower_body_silhouette_difference(
+				silhouettes[first_frame], silhouettes[second_frame]
+			) >= 20,
+			"%s poses %d/%d preserve opposite-leg phases"
+			% [direction, first_frame, second_frame]
 		)
 	var boot_differences: Array[int] = []
 	for frame_index in SIDE_WALK_FRAME_COUNT:
@@ -451,21 +468,20 @@ func _assert_side_walk_temporal_continuity(
 		"%s every side-walk frame advances a boot: %s" % [direction, boot_differences]
 	)
 	for frame_index in boot_differences.size():
-		var maximum_boot_difference := 120 if frame_index == 8 else 80
+		var maximum_boot_difference := 120
 		assertions.truthy(
 			boot_differences[frame_index] <= maximum_boot_difference,
 			"%s boot transition %d stays within its phase (%d <= %d)"
 			% [direction, frame_index, boot_differences[frame_index], maximum_boot_difference]
 		)
 	for transition in [
-		{"from": 1, "to": 2, "name": "left boot leaves the ground"},
-		{"from": 3, "to": 4, "name": "left boot crosses the right support leg"},
-		{"from": 5, "to": 6, "name": "left boot extends after crossing"},
-		{"from": 6, "to": 7, "name": "left boot reaches contact"},
-		{"from": 7, "to": 8, "name": "left boot loads after contact"},
-		{"from": 8, "to": 9, "name": "right boot leaves the ground"},
-		{"from": 9, "to": 10, "name": "right boot crosses the left support leg"},
-		{"from": 10, "to": 11, "name": "right boot extends after crossing"},
+		{"from": 0, "to": 1, "name": "left boot leaves the opening stride"},
+		{"from": 1, "to": 2, "name": "left boot crosses the right support leg"},
+		{"from": 3, "to": 4, "name": "left boot extends after crossing"},
+		{"from": 4, "to": 5, "name": "left boot loads after contact"},
+		{"from": 5, "to": 6, "name": "right boot leaves the ground"},
+		{"from": 6, "to": 7, "name": "right boot crosses the left support leg"},
+		{"from": 7, "to": 8, "name": "right boot extends after crossing"},
 	]:
 		var from_frame := int(transition["from"])
 		var to_frame := int(transition["to"])
