@@ -222,6 +222,11 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 	if reference_texture == null:
 		return
 	var image := texture.get_image()
+	var source_image := Image.load_from_file(ProjectSettings.globalize_path(SIDE_WALK_PATH))
+	assertions.truthy(
+		source_image != null and not source_image.is_empty(),
+		"side-walk source PNG exposes exact mirror pixels"
+	)
 	assertions.equal(image.get_size(), Vector2i(1728, 384), "side walk is a 9x2 atlas")
 	var cell_size := FRAME_SIZE
 	var reference_regions: Array[Rect2i] = []
@@ -266,12 +271,12 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 				% [row, column, translucent_pixels]
 			)
 	for column in SIDE_WALK_FRAME_COUNT:
-		var east := image.get_region(Rect2i(Vector2i(column * cell_size.x, 0), cell_size))
-		var west := image.get_region(
+		var east := source_image.get_region(Rect2i(Vector2i(column * cell_size.x, 0), cell_size))
+		var west := source_image.get_region(
 			Rect2i(Vector2i(column * cell_size.x, cell_size.y), cell_size)
 		)
 		east.flip_x()
-		assertions.truthy(_images_equal(east, west), "west pose %d exactly mirrors east" % column)
+		assertions.truthy(_images_equal(east, west), "west source pose %d exactly mirrors east" % column)
 	var reference_denim := _denim_mean(reference_texture.get_image(), reference_regions)
 	var side_denim := _denim_mean(image, side_regions)
 	assertions.near(

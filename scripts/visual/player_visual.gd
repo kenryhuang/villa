@@ -12,9 +12,9 @@ const WALK_FRAME_COUNT := 6
 const SIDE_WALK_FRAME_COUNT := 9
 const IDLE_FPS := 2.0
 const WALK_FPS := 6.0
-const SIDE_WALK_FPS := WALK_FPS
+const SIDE_WALK_FPS := 9.0
 const RUN_FPS := 9.0
-const SIDE_RUN_FPS := RUN_FPS
+const SIDE_RUN_FPS := 13.5
 const MOVEMENT_THRESHOLD_SQUARED := 0.0025
 const PIXEL_SIZE := 0.0068
 
@@ -97,6 +97,7 @@ func configure(atlas: Texture2D) -> bool:
 	alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	shaded = false
+	texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	pixel_size = PIXEL_SIZE
 	centered = true
 	_last_direction = DEFAULT_DIRECTION
