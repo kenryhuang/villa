@@ -34,7 +34,8 @@ func run(assertions: TestAssert) -> void:
 	var crop = CropInstanceScript.new()
 	crop.crop_data = _make_crop(3, 4)
 	crop.is_watered_today = true
-	assertions.truthy(not crop.advance_growth(), "first growth is not mature")
+	assertions.truthy(crop.advance_growth(), "first growth changes stage")
+	assertions.truthy(not crop.is_mature(), "first growth remains immature")
 	assertions.near(crop.growth_progress, 1.5, 0.001, "watered growth advances one and a half days")
 	assertions.equal(crop.get_current_stage(), 1, "stage follows progress")
 

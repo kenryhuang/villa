@@ -91,6 +91,8 @@ func derive_active_state() -> int:
 func advance_growth() -> bool:
 	if crop_data == null or lifecycle_state != LifecycleState.GROWING:
 		return false
+	var old_stage := get_current_stage()
+	var old_state := lifecycle_state
 	var advance := 1.0
 	if is_watered_today:
 		advance = 1.5
@@ -98,8 +100,7 @@ func advance_growth() -> bool:
 	is_watered_today = false
 	if growth_progress >= float(crop_data.growth_days):
 		lifecycle_state = LifecycleState.MATURE
-		return true
-	return false
+	return old_stage != get_current_stage() or old_state != lifecycle_state
 
 
 func is_mature() -> bool:

@@ -101,14 +101,19 @@ func on_day_changed(_day: int) -> void:
 			_clear_water(cell)
 			continue
 		var old_stage: int = instance.get_current_stage()
-		var became_mature: bool = instance.advance_growth()
+		var old_lifecycle: int = instance.lifecycle_state
+		instance.advance_growth()
 		_clear_water(cell)
 		var new_stage: int = instance.get_current_stage()
 		if new_stage != old_stage:
 			_update_visual(cell, instance)
 			if _event_bus:
 				_event_bus.crop_grew.emit(cell.gx, cell.gz, new_stage)
-		if became_mature and _event_bus:
+		if (
+			old_lifecycle == CropInstance.LifecycleState.GROWING
+			and instance.lifecycle_state == CropInstance.LifecycleState.MATURE
+			and _event_bus
+		):
 			_event_bus.crop_matured.emit(cell.gx, cell.gz)
 
 
