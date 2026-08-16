@@ -1000,13 +1000,8 @@ func _get_active_plant_item_id() -> String:
 func _get_crop_data(plant_item_id: String = "") -> CropData:
 	if plant_item_id.is_empty():
 		return null
-	if crop_data_override != null:
-		if crop_data_override.plant_item_id == plant_item_id:
-			return crop_data_override
-		if crop_data_override.plant_item_id.is_empty():
-			var item_data = GameDataScript.get_item(plant_item_id)
-			if item_data != null and str(item_data.get("category", "")) == "seed":
-				return crop_data_override
+	if crop_data_override != null and crop_data_override.plant_item_id == plant_item_id:
+		return crop_data_override
 	var game_data := get_node_or_null("/root/GameData")
 	var registered_crop: CropData = game_data.get_crop_for_plant_item(plant_item_id) if game_data else null
 	if crop_data_override != null:

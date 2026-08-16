@@ -518,6 +518,7 @@ func _test_selection_and_transactions(
 ) -> void:
 	var crop := CropData.new()
 	crop.crop_id = "grain"
+	crop.plant_item_id = "grain_seed"
 	crop.growth_days = 3
 	crop.seasons.assign([0])
 
@@ -537,6 +538,18 @@ func _test_selection_and_transactions(
 		tools,
 		inventory
 	)
+	assertions.truthy(
+		controller._get_crop_data("carrot_seed") == null,
+		"carrot seed cannot resolve an explicit grain override"
+	)
+	var unmapped_grain := CropData.new()
+	unmapped_grain.crop_id = "grain"
+	controller.crop_data_override = unmapped_grain
+	assertions.truthy(
+		controller._get_crop_data("carrot_seed") == null,
+		"carrot seed cannot resolve a grain override without planting metadata"
+	)
+	controller.crop_data_override = crop
 
 	assertions.truthy(controller.select_slot(5), "seed slot can be selected")
 	assertions.equal(controller.get_selected_slot(), 5, "seed selection is retained")

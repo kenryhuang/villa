@@ -478,6 +478,7 @@ func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 			var original = game_data.call("get_crop_for_plant_item", "grain_seed")
 			assertions.truthy(not game_data.register_crop(duplicate), "duplicate planting item registration is rejected")
 			assertions.truthy(game_data.call("get_crop_for_plant_item", "grain_seed") == original, "duplicate registration preserves original planting mapping")
+			assertions.truthy(game_data.get_crop("grain") == original, "duplicate registration preserves original crop id mapping")
 			assertions.truthy(game_data.get_crop("duplicate_grain") == null, "duplicate registration does not add crop id")
 		game_data.free()
 	main.free()
