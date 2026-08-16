@@ -1,7 +1,8 @@
 extends SceneTree
 
 const FRAME_SIZE := Vector2i(192, 192)
-const FRAME_COUNT := 12
+const SOURCE_FRAME_INDICES := [0, 2, 4, 5, 6, 8, 9, 10, 11]
+const FRAME_COUNT := 9
 const BASELINE_Y := 184
 const TARGET_CHARACTER_HEIGHT := 151
 const INPUT_DIR := "res://tmp/player-side-walk/revision/frames"
@@ -12,7 +13,7 @@ const REFERENCE_WALK_START_COLUMN := 2
 const REFERENCE_WALK_FRAME_COUNT := 6
 const MIN_DENIM_GAIN := 0.45
 const MAX_DENIM_GAIN := 1.20
-const FRAME_X_OFFSETS := [0, -6, 0, 0, 0, -3, 0, 0, 0, 2, 0, 0]
+const FRAME_X_OFFSETS := [0, 0, 0, -3, 0, 0, 2, 0, 0]
 
 
 func _init() -> void:
@@ -22,15 +23,16 @@ func _init() -> void:
 		return
 	var reference_denim := _reference_denim_mean(reference_atlas)
 	var sources: Array[Image] = []
-	for index in FRAME_COUNT:
-		var source_path := INPUT_DIR.path_join("east-%02d.png" % index)
+	for output_index in FRAME_COUNT:
+		var source_index: int = SOURCE_FRAME_INDICES[output_index]
+		var source_path := INPUT_DIR.path_join("east-%02d.png" % source_index)
 		var source := Image.load_from_file(ProjectSettings.globalize_path(source_path))
 		if source == null or source.is_empty() or not _has_transparent_corners(source):
-			_fail("Missing or invalid east frame %02d." % index)
+			_fail("Missing or invalid east source frame %02d." % source_index)
 			return
 		var used := source.get_used_rect()
 		if used.size.x <= 0 or used.size.y <= 0:
-			_fail("East frame %02d is empty." % index)
+			_fail("East source frame %02d is empty." % source_index)
 			return
 		source = source.duplicate()
 		_match_denim(source, reference_denim)

@@ -9,12 +9,12 @@ const DEFAULT_DIRECTION := "s"
 const GRID_SIZE := Vector2i(8, 8)
 const IDLE_FRAME_COUNT := 2
 const WALK_FRAME_COUNT := 6
-const SIDE_WALK_FRAME_COUNT := 12
+const SIDE_WALK_FRAME_COUNT := 9
 const IDLE_FPS := 2.0
 const WALK_FPS := 6.0
-const SIDE_WALK_FPS := 12.0
+const SIDE_WALK_FPS := WALK_FPS
 const RUN_FPS := 9.0
-const SIDE_RUN_FPS := 18.0
+const SIDE_RUN_FPS := RUN_FPS
 const MOVEMENT_THRESHOLD_SQUARED := 0.0025
 const PIXEL_SIZE := 0.0068
 
@@ -55,7 +55,7 @@ func configure(atlas: Texture2D) -> bool:
 		SIDE_WALK_FRAME_COUNT * cell_size.x,
 		2 * cell_size.y
 	):
-		push_error("PlayerVisual requires valid twelve-frame side walk '%s'." % SIDE_WALK_PATH)
+		push_error("PlayerVisual requires valid nine-frame side walk '%s'." % SIDE_WALK_PATH)
 		return false
 	for row in ROW_DIRECTIONS.size():
 		var direction := str(ROW_DIRECTIONS[row])
