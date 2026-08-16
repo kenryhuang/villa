@@ -38,6 +38,7 @@ const TOOL_RANGE := {
 var grid_system_ref
 var inventory_ref
 var player_ref
+var farming_system_ref
 var _event_bus
 var _active_repair_transactions: Dictionary = {}
 var _active_gather_transactions: Dictionary = {}
@@ -51,10 +52,11 @@ func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
 
 
-func configure(grid_sys, inv, player) -> void:
+func configure(grid_sys, inv, player, farming_sys = null) -> void:
 	grid_system_ref = grid_sys
 	inventory_ref = inv
 	player_ref = player
+	farming_system_ref = farming_sys
 
 
 func switch_tool(tool_type: ToolType) -> void:
@@ -317,6 +319,12 @@ func _use_hoe(target: Variant) -> bool:
 	if target is GridCell:
 		if target.state == GridCell.State.WASTELAND:
 			return grid_system_ref.set_cell_state(target.gx, target.gz, GridCell.State.FARMLAND)
+		if (
+			target.state == GridCell.State.PLANTED
+			and farming_system_ref != null
+			and farming_system_ref.has_method("clear_withered")
+		):
+			return farming_system_ref.clear_withered(target)
 	return false
 
 

@@ -90,6 +90,11 @@ class FarmingDouble:
 		cell.state = GridCell.State.FARMLAND
 		return {"items": ["grain"], "exp": 5}
 
+	func preview_harvest(cell: GridCell) -> Dictionary:
+		if cell.crop_instance == null or not cell.crop_instance.is_mature():
+			return {}
+		return {"items": {"grain": 1}, "exp": 5}
+
 
 class BuildingDouble:
 	extends RefCounted

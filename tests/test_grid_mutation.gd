@@ -3,6 +3,7 @@ extends RefCounted
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const GridCellScript = preload("res://scripts/data/grid_cell.gd")
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
+const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
 
 # GridCell.State enum values
 const WASTELAND = 0
@@ -26,6 +27,8 @@ func _make_crop_data(id: String, growth_days: int):
 
 func run(assertions: TestAssert) -> void:
 	var grid = GridSystemScript.new()
+	var farming = FarmingSystemScript.new()
+	farming.configure(grid, null, null)
 	var crop_data = _make_crop_data("turnip", 3)
 
 	# State transitions
@@ -52,13 +55,13 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(not grid.set_cell_state(2, 2, BUILDING), "planted cannot go to building")
 
 	# Harvest not mature
-	var result = grid.harvest_crop(2, 2)
+	var result: Dictionary = farming.harvest(grid.get_cell(2, 2))
 	assertions.truthy(result.is_empty(), "cannot harvest immature crop")
 
 	# Harvest mature crop
 	if grid.get_cell(2, 2).crop_instance:
 		grid.get_cell(2, 2).crop_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
-		result = grid.harvest_crop(2, 2)
+		result = farming.harvest(grid.get_cell(2, 2))
 		assertions.truthy(not result.is_empty(), "harvest mature crop succeeds")
 		assertions.equal(result.exp, 10, "harvest returns exp")
 		assertions.equal(result.items, {"turnip": 1}, "harvest returns crop quantity")
@@ -68,4 +71,5 @@ func run(assertions: TestAssert) -> void:
 	# Water farmland
 	assertions.truthy(grid.water_cell(2, 2), "farmland can be watered")
 	assertions.truthy(not grid.water_cell(5, 5), "wasteland cannot be watered")
+	farming.free()
 	grid.free()

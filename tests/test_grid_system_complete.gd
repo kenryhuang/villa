@@ -2,6 +2,7 @@ extends RefCounted
 
 const TerrainBuilderScript = preload("res://scripts/world/terrain_builder.gd")
 const RoadBuilderScript = preload("res://scripts/world/road_builder.gd")
+const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
 
 
 func run(assertions: TestAssert) -> void:
@@ -15,6 +16,8 @@ func run(assertions: TestAssert) -> void:
 	var terrain = TerrainBuilderScript.new()
 	assertions.truthy(terrain.build(), "real terrain builds for grid contract")
 	var grid = load("res://scenes/systems/grid_system.tscn").instantiate()
+	var farming = FarmingSystemScript.new()
+	farming.configure(grid, null, null)
 	var road_route: Array[Dictionary] = []
 	for point in RoadBuilderScript.MAIN_ROUTE:
 		road_route.append(point.duplicate())
@@ -114,7 +117,7 @@ func run(assertions: TestAssert) -> void:
 				"planted cell retains its farmland visual"
 			)
 			farm_cell.crop_instance.set_growth_state(1.0, CropInstance.LifecycleState.MATURE)
-			grid.harvest_crop(farm_cell.gx, farm_cell.gz)
+			farming.harvest(farm_cell)
 			assertions.truthy(
 				grid.call("get_farmland_visual", farm_cell.gx, farm_cell.gz) != null,
 				"harvested farmland retains its visual"
@@ -203,6 +206,7 @@ func run(assertions: TestAssert) -> void:
 
 	steep_grid.free()
 	steep_terrain.free()
+	farming.free()
 	grid.free()
 	restored.free()
 	terrain.free()

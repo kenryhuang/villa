@@ -4,6 +4,9 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
 const ResourceNodeScript = preload("res://scripts/world/resource_node.gd")
 const TreeInstanceScript = preload("res://scripts/world/tree_instance.gd")
+const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
+const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
+const CropDataScript = preload("res://scripts/data/crop_data.gd")
 
 
 class GridDouble:
@@ -95,6 +98,28 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		95,
 		"successful hoe action consumes stamina"
 	)
+
+	var crop_grid := GridSystemScript.new()
+	var farming := FarmingSystemScript.new()
+	farming.configure(crop_grid, null, null)
+	crop_grid.set_cell_state(4, 4, GridCell.State.FARMLAND)
+	var withered_crop := CropDataScript.new()
+	withered_crop.crop_id = "withered_tool_crop"
+	withered_crop.growth_days = 3
+	var withered_cell := crop_grid.get_cell(4, 4)
+	var withered_instance: CropInstance = farming.plant(withered_cell, withered_crop)
+	withered_instance.set_lifecycle_state(CropInstance.LifecycleState.WITHERED)
+	tool.configure(crop_grid, null, null, farming)
+	tool.switch_tool(ToolSystem.ToolType.HOE)
+	game_state.player_state.stamina = 100
+	var hoe_durability_before := int(tool.get_durability("hoe").current)
+	assertions.truthy(tool.use_tool_on(withered_cell), "hoe clears a withered planted crop")
+	assertions.equal(withered_cell.state, GridCell.State.FARMLAND, "hoe clearing restores farmland")
+	assertions.truthy(withered_cell.crop_instance == null, "hoe clearing removes withered crop")
+	assertions.equal(game_state.player_state.stamina, 95, "successful withered clearing consumes normal hoe stamina")
+	assertions.equal(int(tool.get_durability("hoe").current), hoe_durability_before - 1, "successful withered clearing consumes one hoe durability")
+	farming.free()
+	crop_grid.free()
 
 	var inventory := InventorySystemScript.new()
 	tree.root.add_child(inventory)

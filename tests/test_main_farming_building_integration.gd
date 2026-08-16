@@ -512,7 +512,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(farm_cell.crop_instance.is_mature(), "main grain reaches maturity")
 		var grain_before: int = main.inventory_system.get_item_count("grain")
 		var expected_grain: int = int(
-			main.grid_system.preview_harvest(farm_cell.gx, farm_cell.gz).items.grain
+			main.farming_system.preview_harvest(farm_cell).items.grain
 		)
 		assertions.truthy(expected_grain >= 2 and expected_grain <= 4, "main grain uses authored yield range")
 		action_controller.select_slot(0)

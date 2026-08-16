@@ -260,7 +260,7 @@ func _connect_systems() -> bool:
 		return false
 
 	# Tool and progression share the same authoritative wallet and inventory.
-	tool_system.configure(grid_system, inventory_system, player)
+	tool_system.configure(grid_system, inventory_system, player, farming_system)
 	if not economy_progression_system.configure(
 		tool_system,
 		production_system,

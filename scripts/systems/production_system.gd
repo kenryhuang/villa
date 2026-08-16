@@ -1391,20 +1391,30 @@ func _valid_registered_buildings() -> Array[BuildingInstance]:
 func _refresh_greenhouse_cells() -> void:
 	if _farming_system == null:
 		return
-	var cells: Array = []
-	var seen := {}
+	var active_cells: Array = []
+	var paused_cells: Array = []
+	var active_seen := {}
+	var paused_seen := {}
 	for building in _valid_registered_buildings():
 		if (
 			not _building_is_active(building)
 			or not _has_effect(building, "ignore_season")
-			or is_maintenance_paused(building)
 		):
 			continue
+		var maintenance_paused := is_maintenance_paused(building)
 		for position in get_greenhouse_cells(building):
-			if not seen.has(position):
-				seen[position] = true
-				cells.append(position)
-	_farming_system.set_greenhouse_cells(cells)
+			if maintenance_paused:
+				if not paused_seen.has(position):
+					paused_seen[position] = true
+					paused_cells.append(position)
+			elif not active_seen.has(position):
+				active_seen[position] = true
+				active_cells.append(position)
+	var effective_paused: Array = []
+	for position in paused_cells:
+		if not active_seen.has(position):
+			effective_paused.append(position)
+	_farming_system.set_greenhouse_cells(active_cells, effective_paused)
 
 
 func _crop_has_flower_tag(crop_data: Variant) -> bool:

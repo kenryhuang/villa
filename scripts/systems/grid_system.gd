@@ -296,58 +296,78 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 	return instance
 
 
-func harvest_crop(gx: int, gz: int) -> Dictionary:
-	var result := preview_harvest(gx, gz)
-	if result.is_empty():
-		return {}
-	var cell := get_cell(gx, gz)
-	var instance: CropInstance = cell.crop_instance
-	var crop_id: String = instance.crop_data.crop_id
-	var regrowing := bool(result.regrowing)
-	var old_progress := instance.growth_progress
-	var old_state := instance.lifecycle_state
-	if regrowing:
-		var regrow_days: int = maxi(1, int(instance.crop_data.regrow_days))
-		var regrow_progress := maxf(
-			0.0,
-			float(instance.crop_data.growth_days - regrow_days)
-		)
-		if not instance.set_growth_state(regrow_progress, CropInstance.LifecycleState.GROWING):
-			return {}
-	if not instance.set_harvest_count(instance.harvest_count + 1):
-		if regrowing:
-			instance.set_growth_state(old_progress, old_state)
-		return {}
-	if _event_bus:
-		_event_bus.crop_harvested.emit(gx, gz, crop_id)
-	if regrowing:
-		instance.is_watered_today = false
-	else:
-		cell.crop_instance = null
-		cell.state = GridCell.State.FARMLAND
-	cell.watered = false
-	_sync_farmland_visual(cell)
-	_emit_cell_state_changed(cell)
-	return result
-
-
-func preview_harvest(gx: int, gz: int) -> Dictionary:
+func get_crop_snapshot(gx: int, gz: int) -> Dictionary:
 	var cell := get_cell(gx, gz)
 	if cell == null or cell.state != GridCell.State.PLANTED or cell.crop_instance == null:
 		return {}
-	if not cell.crop_instance.is_mature():
+	if cell.crop_instance.crop_data == null:
 		return {}
-	if cell.crop_instance.harvest_count >= EconomyLimitsScript.MAX_SAFE_INTEGER:
-		return {}
-	var data = cell.crop_instance.crop_data
-	if data == null:
-		return {}
-	var regrowing: bool = int(data.regrow_days) > 0 or str(data.growth_form) != "annual"
 	return {
-		"items": {str(data.crop_id): cell.crop_instance.calculate_yield(gx, gz, 42)},
-		"exp": int(data.exp_reward),
-		"regrowing": regrowing,
+		"gx": gx,
+		"gz": gz,
+		"cell_state": cell.state,
+		"watered": cell.watered,
+		"crop": cell.crop_instance.to_dict().duplicate(true),
 	}
+
+
+func apply_crop_harvest(before: Dictionary, after: Dictionary) -> bool:
+	return _apply_crop_mutation(before, after, true)
+
+
+func apply_crop_clear(before: Dictionary, after: Dictionary) -> bool:
+	return _apply_crop_mutation(before, after, false)
+
+
+func _apply_crop_mutation(before: Dictionary, after: Dictionary, emit_harvest: bool) -> bool:
+	if not _valid_crop_mutation_payload(before) or not _valid_crop_mutation_payload(after, true):
+		return false
+	var gx := int(before.gx)
+	var gz := int(before.gz)
+	if int(after.gx) != gx or int(after.gz) != gz or get_crop_snapshot(gx, gz) != before:
+		return false
+	var cell := get_cell(gx, gz)
+	var current: CropInstance = cell.crop_instance
+	var next_crop: Variant = after.crop
+	var validated_instance: CropInstance
+	if next_crop is Dictionary:
+		if current == null or str(next_crop.get("crop_id", "")) != str(current.crop_data.crop_id):
+			return false
+		validated_instance = CropInstance.new()
+		validated_instance.crop_data = current.crop_data
+		if not validated_instance.from_dict(next_crop):
+			return false
+		if int(after.cell_state) != GridCell.State.PLANTED:
+			return false
+	elif int(after.cell_state) != GridCell.State.FARMLAND:
+		return false
+	var crop_id := str(before.crop.get("crop_id", ""))
+	if validated_instance != null:
+		if not current.from_dict(validated_instance.to_dict()):
+			return false
+		cell.crop_instance = current
+	else:
+		cell.crop_instance = null
+	cell.state = int(after.cell_state) as GridCell.State
+	cell.watered = bool(after.watered)
+	_sync_farmland_visual(cell)
+	_emit_cell_state_changed(cell)
+	if emit_harvest and _event_bus:
+		_event_bus.crop_harvested.emit(gx, gz, crop_id)
+	return true
+
+
+func _valid_crop_mutation_payload(payload: Dictionary, allow_empty_crop: bool = false) -> bool:
+	if payload.size() != 5:
+		return false
+	for field in ["gx", "gz", "cell_state", "watered", "crop"]:
+		if not payload.has(field):
+			return false
+	if typeof(payload.gx) != TYPE_INT or typeof(payload.gz) != TYPE_INT:
+		return false
+	if typeof(payload.cell_state) != TYPE_INT or typeof(payload.watered) != TYPE_BOOL:
+		return false
+	return payload.crop is Dictionary or (allow_empty_crop and payload.crop == null)
 
 
 func water_cell(gx: int, gz: int) -> bool:

@@ -70,6 +70,16 @@ class EconomyDouble:
 		return true
 
 
+class GreenhouseFarmingRecorder:
+	extends FarmingSystem
+	var active_cells: Array = []
+	var paused_cells: Array = []
+
+	func set_greenhouse_cells(cells: Array, maintenance_paused_cells: Array = []) -> void:
+		active_cells = cells.duplicate()
+		paused_cells = maintenance_paused_cells.duplicate()
+
+
 class InventorySignalRecorder:
 	extends RefCounted
 
@@ -137,6 +147,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_building_system_restore(assertions, tree)
 	_test_clock(assertions, tree)
 	_test_maintenance_lifecycle(assertions)
+	_test_greenhouse_maintenance_coverage(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
@@ -186,6 +197,28 @@ func _test_maintenance_lifecycle(assertions: TestAssert) -> void:
 		production.is_maintenance_paused(building),
 		"overdue maintenance pauses production"
 	)
+
+
+func _test_greenhouse_maintenance_coverage(assertions: TestAssert) -> void:
+	var production := _production()
+	var grid = GridSystem.new()
+	var farming := GreenhouseFarmingRecorder.new()
+	assertions.truthy(production.configure(grid, farming), "greenhouse coverage fixture configures")
+	var greenhouse := _building("greenhouse")
+	greenhouse.grid_x = 10
+	greenhouse.grid_z = 10
+	assertions.truthy(production.register_building(greenhouse), "greenhouse coverage fixture registers")
+	var expected: Array = production.get_greenhouse_cells(greenhouse)
+	assertions.equal(farming.active_cells, expected, "completed maintained greenhouse sends active coverage")
+	assertions.equal(farming.paused_cells, [], "active greenhouse sends no paused coverage")
+	assertions.truthy(production.set_maintenance_due_day(greenhouse, 0), "greenhouse can become maintenance overdue")
+	assertions.equal(farming.active_cells, [], "overdue greenhouse leaves active coverage")
+	assertions.equal(farming.paused_cells, expected, "overdue greenhouse sends maintenance-paused coverage")
+	production.unregister_building(greenhouse)
+	assertions.equal(farming.active_cells, [], "demolished greenhouse clears active coverage")
+	assertions.equal(farming.paused_cells, [], "demolished greenhouse clears paused coverage")
+	farming.free()
+	grid.free()
 
 
 func _test_state_round_trip(assertions: TestAssert) -> void:

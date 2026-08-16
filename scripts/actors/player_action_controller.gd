@@ -912,18 +912,9 @@ func _harvest(cell: GridCell) -> bool:
 
 
 func _preview_harvest(cell: GridCell) -> Dictionary:
-	if grid_system != null and grid_system.has_method("preview_harvest"):
-		return grid_system.preview_harvest(cell.gx, cell.gz)
-	if cell == null or cell.crop_instance == null or not cell.crop_instance.is_mature():
+	if farming_system == null or cell == null:
 		return {}
-	var data = cell.crop_instance.crop_data
-	if data == null:
-		return {}
-	return {
-		"items": {str(data.crop_id): cell.crop_instance.calculate_yield(cell.gx, cell.gz, 42)},
-		"exp": int(data.exp_reward),
-		"regrowing": int(data.regrow_days) > 0 or str(data.growth_form) != "annual",
-	}
+	return farming_system.preview_harvest(cell)
 
 
 func _normalized_harvest_items(value: Variant) -> Dictionary:
