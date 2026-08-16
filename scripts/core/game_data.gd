@@ -7,6 +7,7 @@ const CropDataScript = preload("res://scripts/data/crop_data.gd")
 const DEFAULT_MAX_STACK := 99
 
 var _crops = {}
+var _crops_by_plant_item = {}
 
 # ============================================================
 # 作物注册（保留已有功能）
@@ -18,13 +19,18 @@ func register_crop(data) -> bool:
 		or not data.has_method("is_valid")
 		or not data.is_valid()
 		or _crops.has(data.crop_id)
+		or _crops_by_plant_item.has(data.plant_item_id)
 	):
 		return false
 	_crops[data.crop_id] = data
+	_crops_by_plant_item[data.plant_item_id] = data
 	return true
 
 func get_crop(id: String):
 	return _crops.get(id, null)
+
+func get_crop_for_plant_item(item_id: String) -> CropData:
+	return _crops_by_plant_item.get(item_id, null) as CropData
 
 func get_all_crops() -> Array:
 	var result := []

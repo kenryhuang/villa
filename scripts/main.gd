@@ -786,35 +786,38 @@ func _register_default_crops() -> void:
 
 static func default_crop_definitions() -> Array[CropData]:
 	var rows := [
-		{"id": "grain", "name": "谷物", "days": 3, "yield": [2, 4], "seasons": [0, 1, 2], "exp": 5},
-		{"id": "carrot", "name": "胡萝卜", "days": 3, "yield": [2, 3], "seasons": [0, 2], "exp": 4},
-		{"id": "potato", "name": "土豆", "days": 4, "yield": [3, 5], "seasons": [0, 2], "exp": 6},
-		{"id": "tomato", "name": "番茄", "days": 4, "yield": [2, 3], "regrow": 2, "seasons": [0, 1], "exp": 5},
-		{"id": "strawberry", "name": "草莓", "days": 4, "yield": [2, 3], "regrow": 2, "seasons": [0], "form": "bush", "exp": 5},
-		{"id": "blueberry", "name": "蓝莓", "days": 5, "yield": [2, 3], "regrow": 2, "seasons": [1], "form": "bush", "exp": 6},
-		{"id": "watermelon", "name": "西瓜", "days": 5, "yield": [1, 2], "seasons": [1], "exp": 7},
-		{"id": "sunflower", "name": "向日葵", "days": 4, "yield": [2, 3], "seasons": [1, 2], "tags": ["flower"], "category": "flower", "exp": 5},
-		{"id": "lavender", "name": "薰衣草", "days": 4, "yield": [2, 3], "seasons": [1, 2], "tags": ["flower"], "category": "flower", "exp": 5},
-		{"id": "pumpkin", "name": "南瓜", "days": 5, "yield": [1, 2], "seasons": [2], "exp": 7},
-		{"id": "rose", "name": "玫瑰", "days": 4, "yield": [2, 3], "seasons": [0, 1], "tags": ["flower"], "category": "flower", "exp": 5},
-		{"id": "apple", "name": "苹果", "days": 5, "yield": [2, 4], "regrow": 3, "seasons": [2], "form": "tree", "tags": ["fruit"], "category": "fruit", "exp": 8},
-		{"id": "peach", "name": "桃子", "days": 5, "yield": [2, 3], "regrow": 3, "seasons": [1], "form": "tree", "tags": ["fruit"], "category": "fruit", "exp": 8},
-		{"id": "grape", "name": "葡萄", "days": 4, "yield": [2, 4], "regrow": 2, "seasons": [1, 2], "form": "vine", "tags": ["fruit"], "category": "fruit", "exp": 7},
-		{"id": "lemon", "name": "柠檬", "days": 5, "yield": [2, 3], "regrow": 3, "seasons": [], "form": "tree", "tags": ["fruit", "greenhouse_only"], "category": "fruit", "exp": 8},
+		{"id": "grain", "plant_item_id": "grain_seed", "name": "谷物", "days": 3, "yield": [2, 4], "regrow": 0, "seasons": [0, 1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "exp": 5},
+		{"id": "carrot", "plant_item_id": "carrot_seed", "name": "胡萝卜", "days": 3, "yield": [2, 3], "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "exp": 4},
+		{"id": "potato", "plant_item_id": "potato_seed", "name": "土豆", "days": 4, "yield": [3, 5], "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "exp": 6},
+		{"id": "tomato", "plant_item_id": "tomato_seed", "name": "番茄", "days": 4, "yield": [2, 3], "regrow": 2, "seasons": [0, 1], "lifecycle_type": "annual_regrow", "environment": "outdoor_or_greenhouse", "exp": 5},
+		{"id": "strawberry", "plant_item_id": "strawberry_seed", "name": "草莓", "days": 4, "yield": [2, 3], "regrow": 2, "seasons": [0], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse", "exp": 5},
+		{"id": "blueberry", "plant_item_id": "blueberry_seed", "name": "蓝莓", "days": 5, "yield": [2, 3], "regrow": 2, "seasons": [1], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse", "exp": 6},
+		{"id": "watermelon", "plant_item_id": "watermelon_seed", "name": "西瓜", "days": 5, "yield": [1, 2], "regrow": 0, "seasons": [1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "exp": 7},
+		{"id": "sunflower", "plant_item_id": "sunflower_seed", "name": "向日葵", "days": 4, "yield": [2, 3], "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "tags": ["flower"], "category": "flower", "exp": 5},
+		{"id": "lavender", "plant_item_id": "lavender_seed", "name": "薰衣草", "days": 4, "yield": [2, 3], "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "tags": ["flower"], "category": "flower", "exp": 5},
+		{"id": "pumpkin", "plant_item_id": "pumpkin_seed", "name": "南瓜", "days": 5, "yield": [1, 2], "regrow": 0, "seasons": [2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "exp": 7},
+		{"id": "rose", "plant_item_id": "rose_seed", "name": "玫瑰", "days": 4, "yield": [2, 3], "regrow": 0, "seasons": [0, 1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse", "tags": ["flower"], "category": "flower", "exp": 5},
+		{"id": "apple", "plant_item_id": "apple_sapling", "name": "苹果", "days": 5, "yield": [2, 4], "regrow": 3, "seasons": [2], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse", "tags": ["fruit"], "category": "fruit", "exp": 8},
+		{"id": "peach", "plant_item_id": "peach_sapling", "name": "桃子", "days": 5, "yield": [2, 3], "regrow": 3, "seasons": [1], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse", "tags": ["fruit"], "category": "fruit", "exp": 8},
+		{"id": "grape", "plant_item_id": "grape_seed", "name": "葡萄", "days": 4, "yield": [2, 4], "regrow": 2, "seasons": [1, 2], "lifecycle_type": "vine", "environment": "outdoor_or_greenhouse", "tags": ["fruit"], "category": "fruit", "exp": 7},
+		{"id": "lemon", "plant_item_id": "lemon_sapling", "name": "柠檬", "days": 5, "yield": [2, 3], "regrow": 3, "seasons": [], "lifecycle_type": "tree", "environment": "greenhouse_only", "tags": ["fruit", "greenhouse_only"], "category": "fruit", "exp": 8},
 	]
 	var definitions: Array[CropData] = []
 	for row in rows:
 		var crop := CropData.new()
 		crop.crop_id = str(row.id)
+		crop.plant_item_id = str(row.plant_item_id)
 		crop.name = str(row.name)
 		crop.crop_name = str(row.name)
 		crop.category = str(row.get("category", "crop"))
+		crop.environment = str(row.environment)
+		crop.lifecycle_type = str(row.lifecycle_type)
 		crop.growth_days = int(row.days)
 		crop.yield_min = int(row.yield[0])
 		crop.yield_max = int(row.yield[1])
 		crop.regrow_days = int(row.get("regrow", 0))
 		crop.seasons.assign(row.seasons)
-		crop.growth_form = str(row.get("form", "annual"))
+		crop.growth_form = "annual" if crop.lifecycle_type == "annual_regrow" else crop.lifecycle_type
 		crop.tags.assign(row.get("tags", []))
 		crop.exp_reward = int(row.exp)
 		crop.stage_textures.assign(["seed", "sprout", "growing", "mature"])

@@ -150,6 +150,8 @@ func _test_carrot_yield_and_removal(assertions: TestAssert) -> void:
 func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree) -> void:
 	var crop = CropDataScript.new()
 	crop.crop_id = "save_tomato"
+	_set_property_if_present(crop, "plant_item_id", "save_tomato_seed")
+	_set_property_if_present(crop, "lifecycle_type", "annual_regrow")
 	crop.growth_days = 4
 	crop.yield_min = 2
 	crop.yield_max = 3
@@ -269,6 +271,7 @@ func _test_controller_plant_mapping_signal_is_atomic(
 ) -> void:
 	var crop = CropDataScript.new()
 	crop.crop_id = "grain"
+	_set_property_if_present(crop, "plant_item_id", "grain_seed")
 	crop.growth_days = 3
 	var grid = GridSystemScript.new()
 	grid.set_cell_state(2, 2, FARMLAND)
@@ -376,41 +379,62 @@ func _test_crop_data_validation(assertions: TestAssert) -> void:
 	assertions.equal(crop.regrow_days, 0, "crop regrowth defaults disabled")
 	assertions.equal(crop.tags, [], "crop tags default empty")
 	assertions.equal(crop.growth_form, "annual", "crop form defaults annual")
+	var has_plant_item_id := _has_property(crop, "plant_item_id")
+	var has_environment := _has_property(crop, "environment")
+	var has_lifecycle_type := _has_property(crop, "lifecycle_type")
+	assertions.truthy(has_plant_item_id, "CropData exposes explicit planting item id")
+	assertions.truthy(has_environment, "CropData exposes explicit planting environment")
+	assertions.truthy(has_lifecycle_type, "CropData exposes explicit lifecycle type")
 	assertions.truthy(crop.has_method("is_valid"), "CropData exposes strict validation")
-	if not crop.has_method("is_valid"):
+	if not crop.has_method("is_valid") or not has_plant_item_id or not has_environment or not has_lifecycle_type:
 		return
 	crop.crop_id = "invalid_range"
+	crop.plant_item_id = "invalid_range_seed"
 	crop.yield_min = 3
 	crop.yield_max = 2
 	assertions.truthy(not crop.is_valid(), "yield maximum cannot be below minimum")
 	crop.yield_max = 3
-	crop.growth_form = "tree"
-	assertions.truthy(not crop.is_valid(), "persistent form requires authored regrowth")
+	crop.lifecycle_type = "tree"
+	assertions.truthy(not crop.is_valid(), "persistent lifecycle requires authored regrowth")
 	crop.regrow_days = 2
 	assertions.truthy(crop.is_valid(), "well-formed persistent crop validates")
 	crop.regrow_days = 4
 	crop.growth_days = 3
 	assertions.truthy(not crop.is_valid(), "regrowth cannot exceed the crop growth timeline")
+	crop.growth_days = 4
+	crop.regrow_days = 2
+	crop.lifecycle_type = "annual"
+	assertions.truthy(not crop.is_valid(), "annual lifecycle rejects authored regrowth")
+	crop.lifecycle_type = "annual_regrow"
+	assertions.truthy(crop.is_valid(), "annual regrow lifecycle accepts authored regrowth")
+	crop.environment = "indoors"
+	assertions.truthy(not crop.is_valid(), "unknown planting environment is rejected")
+	crop.environment = "outdoor_or_greenhouse"
+	crop.lifecycle_type = "perennial"
+	assertions.truthy(not crop.is_valid(), "unknown lifecycle type is rejected")
+	crop.lifecycle_type = "annual_regrow"
+	crop.plant_item_id = "   "
+	assertions.truthy(not crop.is_valid(), "blank planting item id is rejected")
 
 
 func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
-	var expected := {
-		"grain": {"days": 3, "yield": Vector2i(2, 4), "regrow": 0, "seasons": [0, 1, 2], "form": "annual", "tags": []},
-		"carrot": {"days": 3, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [0, 2], "form": "annual", "tags": []},
-		"potato": {"days": 4, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [0, 2], "form": "annual", "tags": []},
-		"tomato": {"days": 4, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [0, 1], "form": "annual", "tags": []},
-		"strawberry": {"days": 4, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [0], "form": "bush", "tags": []},
-		"blueberry": {"days": 5, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [1], "form": "bush", "tags": []},
-		"watermelon": {"days": 5, "yield": Vector2i(1, 2), "regrow": 0, "seasons": [1], "form": "annual", "tags": []},
-		"sunflower": {"days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [1, 2], "form": "annual", "tags": ["flower"]},
-		"lavender": {"days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [1, 2], "form": "annual", "tags": ["flower"]},
-		"pumpkin": {"days": 5, "yield": Vector2i(1, 2), "regrow": 0, "seasons": [2], "form": "annual", "tags": []},
-		"rose": {"days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [0, 1], "form": "annual", "tags": ["flower"]},
-		"apple": {"days": 5, "yield": Vector2i(2, 4), "regrow": 3, "seasons": [2], "form": "tree", "tags": ["fruit"]},
-		"peach": {"days": 5, "yield": Vector2i(2, 3), "regrow": 3, "seasons": [1], "form": "tree", "tags": ["fruit"]},
-		"grape": {"days": 4, "yield": Vector2i(2, 4), "regrow": 2, "seasons": [1, 2], "form": "vine", "tags": ["fruit"]},
-		"lemon": {"days": 5, "yield": Vector2i(2, 3), "regrow": 3, "seasons": [], "form": "tree", "tags": ["fruit", "greenhouse_only"]},
-	}
+	var expected := [
+		{"crop_id": "grain", "plant_item_id": "grain_seed", "days": 3, "yield": Vector2i(2, 4), "regrow": 0, "seasons": [0, 1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "carrot", "plant_item_id": "carrot_seed", "days": 3, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "potato", "plant_item_id": "potato_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "tomato", "plant_item_id": "tomato_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [0, 1], "lifecycle_type": "annual_regrow", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "strawberry", "plant_item_id": "strawberry_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [0], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "blueberry", "plant_item_id": "blueberry_seed", "days": 5, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [1], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "watermelon", "plant_item_id": "watermelon_seed", "days": 5, "yield": Vector2i(1, 2), "regrow": 0, "seasons": [1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "sunflower", "plant_item_id": "sunflower_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "lavender", "plant_item_id": "lavender_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "pumpkin", "plant_item_id": "pumpkin_seed", "days": 5, "yield": Vector2i(1, 2), "regrow": 0, "seasons": [2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "rose", "plant_item_id": "rose_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [0, 1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "apple", "plant_item_id": "apple_sapling", "days": 5, "yield": Vector2i(2, 4), "regrow": 3, "seasons": [2], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "peach", "plant_item_id": "peach_sapling", "days": 5, "yield": Vector2i(2, 3), "regrow": 3, "seasons": [1], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "grape", "plant_item_id": "grape_seed", "days": 4, "yield": Vector2i(2, 4), "regrow": 2, "seasons": [1, 2], "lifecycle_type": "vine", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "lemon", "plant_item_id": "lemon_sapling", "days": 5, "yield": Vector2i(2, 3), "regrow": 3, "seasons": [], "lifecycle_type": "tree", "environment": "greenhouse_only"},
+	]
 	var main = MainScript.new()
 	assertions.truthy(main.has_method("default_crop_definitions"), "Main exposes deterministic default crop roster")
 	if main.has_method("default_crop_definitions"):
@@ -419,19 +443,43 @@ func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 		for crop in definitions:
 			by_id[crop.crop_id] = crop
 		assertions.equal(by_id.size(), expected.size(), "default roster contains every crop exactly once")
-		for crop_id in expected:
+		var game_data = GameDataScript.new()
+		var has_plant_lookup := game_data.has_method("get_crop_for_plant_item")
+		assertions.truthy(has_plant_lookup, "GameData exposes explicit planting-item lookup")
+		for authored in expected:
+			var crop_id := str(authored.crop_id)
 			assertions.truthy(by_id.has(crop_id), "%s is registered in default roster" % crop_id)
 			if not by_id.has(crop_id):
 				continue
 			var crop = by_id[crop_id]
-			var authored: Dictionary = expected[crop_id]
 			assertions.equal(crop.growth_days, authored.days, "%s growth days match design" % crop_id)
 			assertions.equal(Vector2i(crop.yield_min, crop.yield_max), authored.yield, "%s yield matches design" % crop_id)
 			assertions.equal(crop.regrow_days, authored.regrow, "%s regrowth matches design" % crop_id)
 			assertions.equal(crop.seasons, authored.seasons, "%s seasons match design" % crop_id)
-			assertions.equal(crop.growth_form, authored.form, "%s growth form matches design" % crop_id)
-			assertions.equal(crop.tags, authored.tags, "%s tags match design" % crop_id)
+			assertions.equal(_property_value(crop, "plant_item_id"), authored.plant_item_id, "%s planting item matches design" % crop_id)
+			assertions.equal(_property_value(crop, "lifecycle_type"), authored.lifecycle_type, "%s lifecycle matches design" % crop_id)
+			assertions.equal(_property_value(crop, "environment"), authored.environment, "%s environment matches design" % crop_id)
 			assertions.truthy(crop.is_valid(), "%s default definition validates" % crop_id)
+			assertions.truthy(game_data.register_crop(crop), "%s registers in explicit crop catalog" % crop_id)
+			var plant_item = GameDataScript.get_item(str(authored.plant_item_id))
+			var crop_product = GameDataScript.get_item(crop_id)
+			assertions.equal(str(plant_item.get("category", "")) if plant_item else "", "seed", "%s planting item category is seed" % crop_id)
+			assertions.equal(str(crop_product.get("category", "")) if crop_product else "", "crop", "%s product category is crop" % crop_id)
+			if has_plant_lookup:
+				assertions.truthy(game_data.call("get_crop_for_plant_item", authored.plant_item_id) == crop, "%s planting lookup returns exact crop" % crop_id)
+		if has_plant_lookup:
+			assertions.truthy(game_data.call("get_crop_for_plant_item", "unknown_seed") == null, "unknown planting item has no crop mapping")
+			var duplicate = CropDataScript.new()
+			duplicate.crop_id = "duplicate_grain"
+			duplicate.plant_item_id = "grain_seed"
+			duplicate.growth_days = 1
+			duplicate.environment = "outdoor_or_greenhouse"
+			duplicate.lifecycle_type = "annual"
+			var original = game_data.call("get_crop_for_plant_item", "grain_seed")
+			assertions.truthy(not game_data.register_crop(duplicate), "duplicate planting item registration is rejected")
+			assertions.truthy(game_data.call("get_crop_for_plant_item", "grain_seed") == original, "duplicate registration preserves original planting mapping")
+			assertions.truthy(game_data.get_crop("duplicate_grain") == null, "duplicate registration does not add crop id")
+		game_data.free()
 	main.free()
 
 	var inventory_ids := [
@@ -444,6 +492,22 @@ func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 	]
 	for item_id in inventory_ids:
 		assertions.truthy(GameDataScript.get_item(item_id) != null, "%s exists in production inventory catalog" % item_id)
+
+
+func _has_property(object: Object, property_name: String) -> bool:
+	for property in object.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
+
+
+func _property_value(object: Object, property_name: String) -> Variant:
+	return object.get(property_name) if _has_property(object, property_name) else null
+
+
+func _set_property_if_present(object: Object, property_name: String, value: Variant) -> void:
+	if _has_property(object, property_name):
+		object.set(property_name, value)
 
 
 func _test_perennial_harvest_and_greenhouse_rules(assertions: TestAssert) -> void:

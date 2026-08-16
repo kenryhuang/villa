@@ -994,22 +994,21 @@ func _get_active_plant_item_id() -> String:
 	if inventory_system == null or not inventory_system.has_method("get_quick_item"):
 		return ""
 	var item_id := str(inventory_system.get_quick_item(SEED_SLOT))
-	return item_id if not crop_id_for_plant_item(item_id).is_empty() else ""
-
-
-static func crop_id_for_plant_item(item_id: String) -> String:
-	if item_id.ends_with("_sapling"):
-		return item_id.trim_suffix("_sapling")
-	if item_id.ends_with("_seed"):
-		return item_id.trim_suffix("_seed")
-	return ""
+	return item_id if _get_crop_data(item_id) != null else ""
 
 
 func _get_crop_data(plant_item_id: String = "") -> CropData:
-	var crop_id := crop_id_for_plant_item(plant_item_id)
-	if crop_id.is_empty():
+	if plant_item_id.is_empty():
 		return null
 	if crop_data_override != null:
-		return crop_data_override if crop_data_override.crop_id == crop_id else null
+		if crop_data_override.plant_item_id == plant_item_id:
+			return crop_data_override
+		if crop_data_override.plant_item_id.is_empty():
+			var item_data = GameDataScript.get_item(plant_item_id)
+			if item_data != null and str(item_data.get("category", "")) == "seed":
+				return crop_data_override
 	var game_data := get_node_or_null("/root/GameData")
-	return game_data.get_crop(crop_id) if game_data else null
+	var registered_crop: CropData = game_data.get_crop_for_plant_item(plant_item_id) if game_data else null
+	if crop_data_override != null:
+		return crop_data_override if registered_crop != null and crop_data_override.crop_id == registered_crop.crop_id else null
+	return registered_crop
