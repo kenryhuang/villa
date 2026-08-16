@@ -512,7 +512,13 @@ func _apply_visual_state(visual: Node, lifecycle_state: int) -> void:
 			sprite.set_meta("crop_state_base_modulate", sprite.modulate)
 		sprite.modulate = (sprite.get_meta("crop_state_base_modulate") as Color) * tint
 	elif visual is MeshInstance3D:
-		_apply_mesh_visual_state(visual as MeshInstance3D, tint)
+		var mesh_visual := visual as MeshInstance3D
+		var has_tint_state := (
+			mesh_visual.has_meta("crop_state_base_override_color")
+			or mesh_visual.has_meta("crop_state_base_surface_colors")
+		)
+		if has_tint_state or (mesh_visual.visible and tint != Color.WHITE):
+			_apply_mesh_visual_state(mesh_visual, tint)
 	for child in visual.get_children():
 		_apply_visual_state(child, lifecycle_state)
 

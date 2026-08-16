@@ -260,6 +260,17 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	bush.seasons.assign([SeasonSystemScript.Season.SUMMER])
 	var bush_cell := grid.get_cell(12, 12)
 	var bush_instance: CropInstance = farming.plant(bush_cell, bush)
+	var normal_bush_visual := farming.get_crop_visual(bush_cell) as MeshInstance3D
+	var normal_bush_material := normal_bush_visual.material_override
+	assertions.truthy(
+		not normal_bush_visual.has_meta("crop_state_base_override_color"),
+		"normal procedural fallback creates no tint metadata"
+	)
+	farming.call("_apply_visual_state", normal_bush_visual, CropInstance.LifecycleState.GROWING)
+	assertions.truthy(
+		normal_bush_visual.material_override == normal_bush_material,
+		"normal procedural fallback keeps its existing material"
+	)
 	bush_instance.set_growth_state(1.0, CropInstance.LifecycleState.GROWING)
 	farming.on_day_changed(3)
 	assertions.equal(bush_instance.lifecycle_state, CropInstance.LifecycleState.DORMANT, "wrong-season bush becomes dormant")
@@ -271,6 +282,10 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 		_fallback_color(dormant_visual),
 		Color(0.6, 0.8, 0.2) * Color(0.68, 0.72, 0.65, 1.0),
 		"dormant fallback material is visibly desaturated and dimmed"
+	)
+	assertions.truthy(
+		dormant_visual.has_meta("crop_state_base_override_color"),
+		"dormant procedural fallback owns tint metadata"
 	)
 	season.current_season = SeasonSystemScript.Season.SUMMER
 	farming.on_day_changed(4)
