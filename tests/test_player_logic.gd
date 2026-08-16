@@ -13,8 +13,44 @@ func run(assertions) -> void:
 		0.000001,
 		"diagonal movement is normalized"
 	)
-
 	var player = PlayerScript.new()
+	var has_speed_scale := player.has_method("movement_speed_scale")
+	assertions.truthy(has_speed_scale, "player exposes camera-relative movement speed scaling")
+	if has_speed_scale:
+		assertions.near(
+			float(player.call("movement_speed_scale", Vector3.RIGHT, Vector3.RIGHT)),
+			0.67,
+			0.000001,
+			"pure lateral movement uses the approved reduced speed"
+		)
+		assertions.near(
+			float(player.call("movement_speed_scale", Vector3.FORWARD, Vector3.RIGHT)),
+			1.0,
+			0.000001,
+			"pure forward movement keeps full speed"
+		)
+		var diagonal_scale := float(player.call(
+			"movement_speed_scale",
+			Vector3(1.0, 0.0, -1.0).normalized(),
+			Vector3.RIGHT
+		))
+		assertions.truthy(
+			diagonal_scale > 0.67 and diagonal_scale < 1.0,
+			"diagonal movement blends lateral and forward speed"
+		)
+		assertions.near(
+			float(player.call("movement_speed_scale", Vector3.ZERO, Vector3.RIGHT)),
+			1.0,
+			0.000001,
+			"stationary input keeps a neutral speed scale"
+		)
+		assertions.near(
+			float(player.call("movement_speed_scale", Vector3.RIGHT, Vector3.ZERO)),
+			1.0,
+			0.000001,
+			"missing camera-right data keeps a neutral speed scale"
+		)
+
 	var finished := []
 	var blocked := []
 	var manual := []
