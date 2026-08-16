@@ -38,8 +38,10 @@ func _capture_all() -> void:
 		captures += 1
 	if await _capture_runtime_states(visual):
 		captures += 1
+	if await _capture_direction_comparison(visual):
+		captures += 1
 	visual.free()
-	if captures != 4:
+	if captures != 5:
 		_fail("player side-walk capture count mismatch: %d" % captures)
 		return
 	print("PASS: %d deterministic player side-walk captures in %s" % [captures, output_path])
@@ -157,6 +159,47 @@ func _capture_runtime_states(visual: PlayerVisual) -> bool:
 		_fail("runtime capture did not distinguish 12 FPS walk from 18 FPS sprint")
 		return false
 	return await _save_canvas(canvas, size, "runtime-walk-sprint.png")
+
+
+func _capture_direction_comparison(visual: PlayerVisual) -> bool:
+	const SAMPLE_COUNT := 6
+	const ROW_HEIGHT := 230
+	var size := Vector2i(FRAME_SIZE.x * SAMPLE_COUNT, ROW_HEIGHT * 3)
+	var canvas := _new_canvas(size)
+	var atlas := load(ATLAS_PATH) as Texture2D
+	var labels := ["SOUTH WALK", "ORIGINAL EAST REFERENCE", "REVISED EAST WALK"]
+	var revised_indices := [0, 2, 4, 6, 8, 10]
+	for row in 3:
+		_add_label(
+			canvas,
+			labels[row],
+			Rect2(10, row * ROW_HEIGHT + 4, size.x - 20, 30),
+			20,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		for column in SAMPLE_COUNT:
+			var texture: Texture2D
+			if row == 0:
+				texture = visual.sprite_frames.get_frame_texture(&"walk_s", column)
+			elif row == 1:
+				texture = _atlas_frame(atlas, FRAME_SIZE, 2, 2 + column)
+			else:
+				texture = visual.sprite_frames.get_frame_texture(&"walk_e", revised_indices[column])
+			_add_frame(
+				canvas,
+				texture,
+				Vector2(column * FRAME_SIZE.x, row * ROW_HEIGHT + 38),
+				FRAME_SIZE
+			)
+	return await _save_canvas(canvas, size, "direction-scale-color.png")
+
+
+func _atlas_frame(atlas: Texture2D, cell_size: Vector2i, row: int, column: int) -> AtlasTexture:
+	var frame := AtlasTexture.new()
+	frame.atlas = atlas
+	frame.region = Rect2(Vector2i(column, row) * cell_size, cell_size)
+	frame.filter_clip = true
+	return frame
 
 
 func _new_canvas(size: Vector2i) -> Control:
