@@ -54,18 +54,20 @@ func _assert_direction_mapping(assertions: TestAssert) -> void:
 	assertions.equal(PlayerVisualScript.walk_animation_name("sw"), "walk_sw", "walk animation names are stable")
 	assertions.near(PlayerVisualScript.IDLE_FPS, 2.0, 0.001, "idle animation uses two fps")
 	assertions.near(PlayerVisualScript.WALK_FPS, 6.0, 0.001, "walk animation uses six fps")
-	assertions.near(
-		PlayerVisualScript.SIDE_WALK_FPS,
-		PlayerVisualScript.WALK_FPS,
-		0.001,
-		"side walk uses the same base fps as every direction"
-	)
+	assertions.near(PlayerVisualScript.SIDE_WALK_FPS, 9.0, 0.001, "nine side poses complete a one-second walk cycle")
 	assertions.near(PlayerVisualScript.RUN_FPS, 9.0, 0.001, "run animation uses nine fps")
+	assertions.near(PlayerVisualScript.SIDE_RUN_FPS, 13.5, 0.001, "nine side poses preserve the sprint cycle duration")
 	assertions.near(
-		PlayerVisualScript.SIDE_RUN_FPS,
-		PlayerVisualScript.RUN_FPS,
+		float(PlayerVisualScript.SIDE_WALK_FRAME_COUNT) / PlayerVisualScript.SIDE_WALK_FPS,
+		float(PlayerVisualScript.WALK_FRAME_COUNT) / PlayerVisualScript.WALK_FPS,
 		0.001,
-		"side sprint uses the same fps as every direction"
+		"side and non-side walking exchange supporting legs at the same cycle rate"
+	)
+	assertions.near(
+		float(PlayerVisualScript.SIDE_WALK_FRAME_COUNT) / PlayerVisualScript.SIDE_RUN_FPS,
+		float(PlayerVisualScript.WALK_FRAME_COUNT) / PlayerVisualScript.RUN_FPS,
+		0.001,
+		"side and non-side sprinting exchange supporting legs at the same cycle rate"
 	)
 	assertions.near(PlayerVisualScript.PIXEL_SIZE, 0.0068, 0.0001, "player art is scaled below building proportions")
 	var just_inside_south := Vector2(sin(deg_to_rad(22.4)), cos(deg_to_rad(22.4)))
@@ -117,6 +119,11 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 	if not configured:
 		visual.free()
 		return
+	assertions.equal(
+		visual.texture_filter,
+		BaseMaterial3D.TEXTURE_FILTER_LINEAR,
+		"player art uses explicit linear filtering without mipmaps"
+	)
 	for direction in DIRECTIONS:
 		var idle_name := PlayerVisualScript.idle_animation_name(direction)
 		var walk_name := PlayerVisualScript.walk_animation_name(direction)
@@ -131,9 +138,9 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		)
 		assertions.near(
 			visual.sprite_frames.get_animation_speed(walk_name),
-			6.0,
+			PlayerVisualScript.SIDE_WALK_FPS if direction in ["e", "w"] else PlayerVisualScript.WALK_FPS,
 			0.001,
-			"%s walk uses the shared directional fps" % direction
+			"%s walk preserves its approved gait cycle" % direction
 		)
 		_assert_walk_leg_alternation(visual.sprite_frames, walk_name, direction, assertions)
 		if direction in ["e", "w"]:
@@ -154,7 +161,7 @@ func _assert_animation_contract(assertions: TestAssert) -> void:
 		visual.speed_scale,
 		1.5,
 		0.001,
-		"side sprinting plays nine poses at nine fps"
+		"side sprinting plays nine poses at 13.5 fps"
 	)
 	visual.sync_motion(Vector2.ZERO, false, true)
 	assertions.equal(visual.animation, &"idle_e", "stopping retains the last facing direction")
@@ -196,6 +203,16 @@ func _assert_frame_art_contract(image: Image, assertions: TestAssert) -> void:
 
 
 func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
+	var side_import := FileAccess.get_file_as_string(SIDE_WALK_PATH + ".import")
+	var main_import := FileAccess.get_file_as_string(ATLAS_PATH + ".import")
+	assertions.truthy(
+		"process/fix_alpha_border=true" in side_import,
+		"side-walk import prepares transparent edge colors"
+	)
+	assertions.truthy(
+		"process/fix_alpha_border=true" in main_import,
+		"main player import prepares transparent edge colors"
+	)
 	var texture := load(SIDE_WALK_PATH) as Texture2D
 	assertions.truthy(texture != null, "nine-frame side-walk atlas imports")
 	if texture == null:
