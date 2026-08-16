@@ -5,32 +5,46 @@ Revalidated on 2026-08-16 in the `feature/painted-production-buildings` worktree
 ## Shipped asset and runtime
 
 - Final atlas: `assets/characters/player/player_farmer_side_walk.png`
-- Atlas size: `2304×384`
-- Cell size: `192×192`
+- Atlas size: `2304x384`
+- Cell size: `192x192`
 - Row 0: twelve east-facing frames (`walk_e`)
 - Row 1: twelve deterministic horizontal mirrors (`walk_w`)
 - Walk playback: 12 FPS (`speed_scale = 1.0`)
 - Side sprint playback: 18 FPS (`speed_scale = 1.5`)
 - Idle remains in the original player atlas and is not part of the side-walk loop.
 
-The final atlas is assembled by `scripts/tools/assemble_player_side_walk.gd`. It validates twelve independent transparent east-facing inputs, preserves p0 pixel-for-pixel without rescaling, applies a common scale with deterministic per-frame alignment corrections to the generated poses, aligns all feet to baseline y=184, and mirrors the east row pixel-for-pixel into the west row. User frame 6 (`east-05`) uses the restored `east-05-left-behind-v1.png`; the later knee composites are intentionally excluded. User frames 7-12 use the separately reviewed continuation poses.
+The final atlas is assembled by `scripts/tools/assemble_player_side_walk.gd`. Each approved east-facing source is independently normalized to an exact 151-pixel painted height, aligned to baseline y=184, and given a bounded denim-only RGB correction derived from the six original east walk frames. The west row is then generated as an exact pixel mirror. The p0 pose and gait meaning are unchanged, but p0 is resampled with the rest of the sequence to satisfy the shared 151-pixel contract; it is no longer byte-identical to the earlier anchor file.
+
+## Scale and color measurements
+
+The final deterministic metrics report produced:
+
+- East heights: `[151, 151, 151, 151, 151, 151, 151, 151, 151, 151, 151, 151]`
+- East baselines: `[184, 184, 184, 184, 184, 184, 184, 184, 184, 184, 184, 184]`
+- Original east denim mean RGB: `(40.91, 65.52, 98.50)`
+- Revised east denim mean RGB: `(43.88, 68.64, 101.94)`
+- Original east denim luminance: `62.67/255`
+- Revised east denim luminance: `65.78/255`
+- Luminance difference: `3.11/255`, inside the `4/255` contract tolerance
+
+The revised side walk now uses the same 151-pixel painted height as the established directional walk art. Its denim remains within `10/255` of the original east reference on every RGB channel.
 
 ## Automated gait checks
 
-`godot --path . --headless -s res://tests/run_tests.gd`
+`godot --headless --path . -s res://tests/run_tests.gd`
 
-- PASS: 2,027 checks
+- PASS: 2,056 checks
+- Confirmed exact 151-pixel height and y=184 baseline for all 24 side cells
+- Confirmed reference-aligned denim luminance and RGB channels
 - Confirmed 12 frames for `walk_e` and `walk_w`
 - Confirmed exact east/west mirroring
-- Confirmed stable baseline and transparent frame gutters
-- Confirmed one connected painted character per cell
-- Confirmed distinct adjacent silhouettes, including frame 11→0
-- Confirmed distinct opposite-leg half-cycle pairs 0/6 through 5/11
+- Confirmed one connected painted character per cell and transparent frame gutters
+- Confirmed distinct adjacent silhouettes, frame 11-to-0 closure, and opposite-leg half-cycle pairs
 - Confirmed east/west walk speed scale 1.0 and sprint speed scale 1.5
 
-Final east and west adjacent lower-body differences are `[90, 102, 97, 49, 60, 108, 52, 80, 153, 105, 88, 112]`. Boot-only differences are `[73, 71, 61, 18, 38, 68, 38, 63, 112, 65, 54, 55]` in both rows. Opposite half-cycle differences are `[122, 148, 114, 102, 106, 146]`. General lower-body transitions remain inside 12-115 and boot transitions remain inside 18-80. The reviewed left-support-to-right-lift transition at frame 8->9 has separate limits of 160 and 120 because it includes the deliberate weight drop and leg release. Opposite half-cycle differences remain 20 or greater. A separate pixel comparison confirms final p0 is byte-for-byte identical to its locked anchor image.
+Final east and west adjacent lower-body differences are `[70, 88, 83, 32, 52, 85, 41, 55, 112, 96, 73, 97]`. Boot-only differences are `[55, 51, 52, 15, 33, 59, 34, 40, 82, 56, 38, 43]`. Opposite half-cycle differences are `[96, 107, 98, 83, 87, 124]`. These measurements retain a distinct transition at every frame after the scale reduction.
 
-`godot --path . --headless -s res://tests/run_main_gameplay_integration_tests.gd`
+`godot --headless --path . -s res://tests/run_main_gameplay_integration_tests.gd`
 
 - PASS: 1,273 main gameplay integration checks
 
@@ -42,16 +56,17 @@ Generated with:
 godot --path . --display-driver windows --rendering-method gl_compatibility -s res://tests/capture_player_side_walk.gd
 ```
 
-Outputs (generated locally and intentionally not committed):
+Outputs are generated locally and intentionally not committed:
 
-- `.godot/player-side-walk-validation/east-strip.png` — `2304×240`
-- `.godot/player-side-walk-validation/west-strip.png` — `2304×240`
-- `.godot/player-side-walk-validation/half-cycle-pairs.png` — `1152×438`
-- `.godot/player-side-walk-validation/runtime-walk-sprint.png` — `1152×920`
+- `.godot/player-side-walk-validation/east-strip.png` - `2304x240`
+- `.godot/player-side-walk-validation/west-strip.png` - `2304x240`
+- `.godot/player-side-walk-validation/half-cycle-pairs.png` - `1152x438`
+- `.godot/player-side-walk-validation/runtime-walk-sprint.png` - `1152x920`
+- `.godot/player-side-walk-validation/direction-scale-color.png` - `1152x690`
 
-Original-resolution review accepted the final semantic chain: p4 anchors the foreground right leg as the support leg; restored p5 keeps that right foot planted while the background left leg crosses; p6 extends the left leg; p7 reaches left-foot contact; p8 transfers weight to the left leg; p9 releases the right foot; p10 carries the foreground right leg past the left support leg; and p11 extends the right leg before the loop closes at p0. The accepted sheet keeps a common character scale and baseline, preserves anatomical leg identity through both half-cycles, limits soft-alpha edge pixels, and retains the hand-painted farmer identity. The west strip is the exact mirror of the east strip.
+The direction comparison places south walk, original east reference, and revised east samples in identical 192-pixel cells. Inspection confirms matching character height and a dark-denim character consistent with the original art while retaining the approved leg and arm sequence. The east and west strips confirm the complete 12-frame gait and exact mirror behavior.
 
-The runtime sheet samples the live `PlayerVisual` every 1/6 second instead of selecting predetermined frame indices. The captured east/west walk sequence is `0, 2, 4, 6, 8, 10` at 12 FPS; the sprint sequence is `0, 2, 5, 8, 11, 2` at 18 FPS. The differing sequences, together with runtime `speed_scale` assertions of 1.0 and 1.5, verify both cadence paths.
+The runtime sheet samples live `PlayerVisual` playback every 1/6 second. The captured east/west walk sequence is `0, 2, 4, 6, 8, 10` at 12 FPS; the sprint sequence is `0, 2, 5, 8, 11, 2` at 18 FPS. The differing sequences and runtime speed assertions verify both cadence paths.
 
 ## Wider regression results
 
@@ -62,6 +77,4 @@ The runtime sheet samples the live `PlayerVisual` every 1/6 second instead of se
 - PASS: 1,273 main gameplay integration checks
 - `git diff --check`: PASS
 
-The full economy runner reports four existing hive/flower failures out of 64,700 checks. The same four failures reproduce in an isolated `BuildingEconomyEffectsTest` run (4 of 229): mature-flower radius count, boosted hive output, same-day hive settlement, and full-storage pausing. The side-walk change set contains no economy, hive, flower, crop, or production files, so this regression is recorded separately and was not modified as part of the player animation work.
-
-Godot also emits the existing shutdown message `1 resources still in use at exit` after several otherwise-passing headless suites. No new script error is present.
+Godot emits the existing focused-suite shutdown messages about four leaked `ObjectDB` instances and one resource still in use. The building suite also exercises expected missing-art fallback warnings. All six test runners exit 0 with no assertion or script failure.

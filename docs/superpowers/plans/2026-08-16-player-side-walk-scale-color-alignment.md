@@ -17,7 +17,7 @@
 - Test: `assets/characters/player/player_farmer_atlas.png`
 - Test: `assets/characters/player/player_farmer_side_walk.png`
 
-- [ ] **Step 1: Add shared visual reference constants**
+- [x] **Step 1: Add shared visual reference constants**
 
 Add these constants beside `SIDE_WALK_FRAME_COUNT`:
 
@@ -31,7 +31,7 @@ const DENIM_LUMINANCE_TOLERANCE := 4.0 / 255.0
 const DENIM_CHANNEL_TOLERANCE := 10.0 / 255.0
 ```
 
-- [ ] **Step 2: Add denim measurement helpers**
+- [x] **Step 2: Add denim measurement helpers**
 
 Add deterministic helpers after `_frame_used_rect`:
 
@@ -63,7 +63,7 @@ func _luminance(color: Vector3) -> float:
 	return color.x * 0.2126 + color.y * 0.7152 + color.z * 0.0722
 ```
 
-- [ ] **Step 3: Assert exact height and reference denim alignment**
+- [x] **Step 3: Assert exact height and reference denim alignment**
 
 Inside `_assert_side_walk_art_contract`, load the original atlas image before iterating side frames. Build six original east reference regions and twelve side regions:
 
@@ -119,7 +119,7 @@ for channel in 3:
 	)
 ```
 
-- [ ] **Step 4: Run the focused suite and verify RED**
+- [x] **Step 4: Run the focused suite and verify RED**
 
 Run:
 
@@ -129,7 +129,7 @@ godot --headless --path . --log-file .godot\side-scale-color-red.log -s res://te
 
 Expected: FAIL because current side frames are 177-182 pixels tall instead of 151, and their denim luminance is about 103.3 instead of 63.2.
 
-- [ ] **Step 5: Commit the failing contract**
+- [x] **Step 5: Commit the failing contract**
 
 ```powershell
 git add tests/test_player_visual.gd
@@ -143,7 +143,7 @@ git commit -m "test: require aligned side-walk scale and denim"
 - Modify: `assets/characters/player/player_farmer_side_walk.png`
 - Test: `tests/test_player_visual.gd`
 
-- [ ] **Step 1: Replace common maximum scaling with the fixed target contract**
+- [x] **Step 1: Replace common maximum scaling with the fixed target contract**
 
 Replace `MAX_CHARACTER_SIZE`, `ANCHOR_FRAMES`, and `FRAME_SCALE_ADJUSTMENTS` with:
 
@@ -170,7 +170,7 @@ var reference_denim := _reference_denim_mean(reference_atlas)
 
 Remove `maximum_bounds` and the special anchor-size branch. Every source must only be nonempty and have transparent corners.
 
-- [ ] **Step 2: Add deterministic denim selection and measurement**
+- [x] **Step 2: Add deterministic denim selection and measurement**
 
 Add:
 
@@ -216,7 +216,7 @@ func _reference_denim_mean(atlas: Image) -> Vector3:
 	return total / float(maxi(1, count))
 ```
 
-- [ ] **Step 3: Add bounded per-frame color transfer**
+- [x] **Step 3: Add bounded per-frame color transfer**
 
 Add:
 
@@ -241,7 +241,7 @@ func _match_denim(source: Image, target: Vector3) -> void:
 
 Call `_match_denim(source, reference_denim)` on a duplicate of each loaded source before resizing.
 
-- [ ] **Step 4: Normalize every pose independently to 151 pixels**
+- [x] **Step 4: Normalize every pose independently to 151 pixels**
 
 Replace `_fit_into_cell(source, common_scale)` with:
 
@@ -267,7 +267,7 @@ func _fit_into_cell(source: Image) -> Image:
 
 Build every frame with `_fit_into_cell(sources[index])`, then apply the recalibrated horizontal offset and mirror it.
 
-- [ ] **Step 5: Assemble, import, and run the focused suite**
+- [x] **Step 5: Assemble, import, and run the focused suite**
 
 Run:
 
@@ -279,7 +279,7 @@ godot --headless --path . --log-file .godot\side-scale-color-green.log -s res://
 
 Expected: assembly PASS, imported atlas remains 2304 by 384, and the focused suite passes all scale, color, mirror, baseline, gait, and runtime assertions.
 
-- [ ] **Step 6: Commit the deterministic correction**
+- [x] **Step 6: Commit the deterministic correction**
 
 ```powershell
 git add scripts/tools/assemble_player_side_walk.gd assets/characters/player/player_farmer_side_walk.png
@@ -292,7 +292,7 @@ git commit -m "fix: align side-walk scale and denim"
 - Modify: `tests/capture_player_side_walk.gd:1-220`
 - Generated: `.godot/player-side-walk-validation/direction-scale-color.png`
 
-- [ ] **Step 1: Add the fifth capture to `_capture_all`**
+- [x] **Step 1: Add the fifth capture to `_capture_all`**
 
 After the existing runtime capture, add:
 
@@ -303,7 +303,7 @@ if await _capture_direction_comparison(visual):
 
 Change the expected capture count from four to five.
 
-- [ ] **Step 2: Render south, original east, and revised east at identical cell scale**
+- [x] **Step 2: Render south, original east, and revised east at identical cell scale**
 
 Add `_capture_direction_comparison`. Use six columns and three labeled rows. Row one uses `walk_s` frames 0-5, row two reads original east cells from the main atlas at row 2 and columns 2-7, and row three uses revised `walk_e` frames `[0, 2, 4, 6, 8, 10]`. Save the result as `direction-scale-color.png` at 1152 by 690:
 
@@ -332,7 +332,7 @@ func _capture_direction_comparison(visual: PlayerVisual) -> bool:
 
 Add a local `_atlas_frame` helper matching `PlayerVisual._atlas_frame`, setting `filter_clip = true`.
 
-- [ ] **Step 3: Generate and inspect all captures**
+- [x] **Step 3: Generate and inspect all captures**
 
 Run:
 
@@ -342,7 +342,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility --lo
 
 Expected: five captures pass. Inspect `direction-scale-color.png` and `east-strip.png`. Revised east frames must match south/original-east height and dark-denim character while retaining the approved gait.
 
-- [ ] **Step 4: Commit capture coverage**
+- [x] **Step 4: Commit capture coverage**
 
 ```powershell
 git add tests/capture_player_side_walk.gd
@@ -355,7 +355,7 @@ git commit -m "test: capture side-walk visual alignment"
 - Modify: `docs/validation/player-side-walk-12-frame-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-16-player-side-walk-scale-color-alignment.md`
 
-- [ ] **Step 1: Run focused and integration verification**
+- [x] **Step 1: Run focused and integration verification**
 
 Run:
 
@@ -366,7 +366,7 @@ godot --headless --path . --log-file .godot\side-scale-color-main-final.log -s r
 
 Expected: both runners print PASS with no assertion failures.
 
-- [ ] **Step 2: Run wider regressions**
+- [x] **Step 2: Run wider regressions**
 
 Run:
 
@@ -380,7 +380,7 @@ git diff --check
 
 Expected: 106 grid, 578 farming, 3456 building, 129 economy UI, and no whitespace errors.
 
-- [ ] **Step 3: Record final measurements and evidence**
+- [x] **Step 3: Record final measurements and evidence**
 
 Update the validation document with:
 
@@ -390,13 +390,13 @@ Update the validation document with:
 - five capture names and dimensions;
 - focused, integration, and wider test counts.
 
-- [ ] **Step 4: Commit validation evidence**
+- [x] **Step 4: Commit validation evidence**
 
 ```powershell
 git add docs/validation/player-side-walk-12-frame-validation.md docs/superpowers/plans/2026-08-16-player-side-walk-scale-color-alignment.md
 git commit -m "docs: validate side-walk visual alignment"
 ```
 
-- [ ] **Step 5: Preserve the worktree for continued development**
+- [x] **Step 5: Preserve the worktree for continued development**
 
 Confirm `git status --short` contains only intentional untracked `tmp/` material, leave the branch and worktree in place, and do not push or merge.
