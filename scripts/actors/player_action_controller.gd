@@ -1000,10 +1000,15 @@ func _get_active_plant_item_id() -> String:
 func _get_crop_data(plant_item_id: String = "") -> CropData:
 	if plant_item_id.is_empty():
 		return null
-	if crop_data_override != null and crop_data_override.plant_item_id == plant_item_id:
-		return crop_data_override
 	var game_data := get_node_or_null("/root/GameData")
 	var registered_crop: CropData = game_data.get_crop_for_plant_item(plant_item_id) if game_data else null
+	if registered_crop == null:
+		return null
 	if crop_data_override != null:
-		return crop_data_override if registered_crop != null and crop_data_override.crop_id == registered_crop.crop_id else null
+		return (
+			crop_data_override
+			if crop_data_override.crop_id == registered_crop.crop_id
+			and crop_data_override.plant_item_id == registered_crop.plant_item_id
+			else null
+		)
 	return registered_crop

@@ -521,6 +521,12 @@ func _test_selection_and_transactions(
 	crop.plant_item_id = "grain_seed"
 	crop.growth_days = 3
 	crop.seasons.assign([0])
+	var game_data = tree.root.get_node_or_null("GameData")
+	assertions.truthy(game_data != null, "controller fixture has authoritative GameData")
+	if game_data == null:
+		return
+	if game_data.get_crop_for_plant_item(crop.plant_item_id) == null:
+		assertions.truthy(game_data.register_crop(crop), "controller fixture crop registers")
 
 	var inventory := InventoryDouble.new()
 	var farming := FarmingDouble.new()
@@ -538,6 +544,25 @@ func _test_selection_and_transactions(
 		tools,
 		inventory
 	)
+	var unregistered_grain := CropData.new()
+	unregistered_grain.crop_id = "unregistered_grain"
+	unregistered_grain.plant_item_id = "unregistered_grain_seed"
+	unregistered_grain.growth_days = 3
+	controller.crop_data_override = unregistered_grain
+	assertions.truthy(
+		controller._get_crop_data("unregistered_grain_seed") == null,
+		"matching but unregistered override is rejected"
+	)
+	var wrong_plant_item := CropData.new()
+	wrong_plant_item.crop_id = "grain"
+	wrong_plant_item.plant_item_id = "carrot_seed"
+	wrong_plant_item.growth_days = 3
+	controller.crop_data_override = wrong_plant_item
+	assertions.truthy(
+		controller._get_crop_data("grain_seed") == null,
+		"registered crop id cannot authorize a mismatched planting item override"
+	)
+	controller.crop_data_override = crop
 	assertions.truthy(
 		controller._get_crop_data("carrot_seed") == null,
 		"carrot seed cannot resolve an explicit grain override"

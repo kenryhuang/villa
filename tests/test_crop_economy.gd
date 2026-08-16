@@ -280,9 +280,13 @@ func _test_controller_plant_mapping_signal_is_atomic(
 	var inventory = InventorySystemScript.new()
 	inventory.add_item("grain_seed", 1)
 	inventory.set_quick_slot(0, 5)
+	var game_data = tree.root.get_node("GameData")
+	if game_data.get_crop_for_plant_item(crop.plant_item_id) == null:
+		assertions.truthy(game_data.register_crop(crop), "atomic planting fixture crop registers")
 	var recorder := QuickMappingRecorder.new()
 	inventory.quick_slot_mapping_changed.connect(recorder.on_mapping_changed)
 	var controller = PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
 	controller.crop_data_override = crop
 	controller.configure(null, grid, farming, null, null, inventory)
 	assertions.truthy(
@@ -397,6 +401,7 @@ func _test_crop_data_validation(assertions: TestAssert) -> void:
 	crop.lifecycle_type = "tree"
 	assertions.truthy(not crop.is_valid(), "persistent lifecycle requires authored regrowth")
 	crop.regrow_days = 2
+	crop.growth_form = "tree"
 	assertions.truthy(crop.is_valid(), "well-formed persistent crop validates")
 	crop.regrow_days = 4
 	crop.growth_days = 3
@@ -406,6 +411,7 @@ func _test_crop_data_validation(assertions: TestAssert) -> void:
 	crop.lifecycle_type = "annual"
 	assertions.truthy(not crop.is_valid(), "annual lifecycle rejects authored regrowth")
 	crop.lifecycle_type = "annual_regrow"
+	crop.growth_form = "annual"
 	assertions.truthy(crop.is_valid(), "annual regrow lifecycle accepts authored regrowth")
 	crop.environment = "indoors"
 	assertions.truthy(not crop.is_valid(), "unknown planting environment is rejected")
@@ -415,6 +421,33 @@ func _test_crop_data_validation(assertions: TestAssert) -> void:
 	crop.lifecycle_type = "annual_regrow"
 	crop.plant_item_id = "   "
 	assertions.truthy(not crop.is_valid(), "blank planting item id is rejected")
+
+	var mirror_crop = CropDataScript.new()
+	mirror_crop.crop_id = "mirror_crop"
+	mirror_crop.plant_item_id = "mirror_crop_seed"
+	assertions.truthy(mirror_crop.is_valid(), "matching default compatibility mirrors validate")
+	mirror_crop.environment = "greenhouse_only"
+	assertions.truthy(not mirror_crop.is_valid(), "greenhouse environment requires compatibility tag")
+	mirror_crop.tags.assign(["greenhouse_only"])
+	assertions.truthy(mirror_crop.is_valid(), "greenhouse environment and tag agree")
+	mirror_crop.environment = "outdoor_or_greenhouse"
+	assertions.truthy(not mirror_crop.is_valid(), "greenhouse tag rejects outdoor environment")
+	mirror_crop.tags.assign(["fruit", "flower"])
+	assertions.truthy(mirror_crop.is_valid(), "unrelated fruit and flower tags remain valid")
+	for lifecycle in ["annual", "annual_regrow"]:
+		mirror_crop.lifecycle_type = lifecycle
+		mirror_crop.regrow_days = 0 if lifecycle == "annual" else 1
+		mirror_crop.growth_form = "tree"
+		assertions.truthy(not mirror_crop.is_valid(), "%s lifecycle rejects persistent growth form" % lifecycle)
+		mirror_crop.growth_form = "annual"
+		assertions.truthy(mirror_crop.is_valid(), "%s lifecycle accepts annual growth form" % lifecycle)
+	for lifecycle in ["bush", "tree", "vine"]:
+		mirror_crop.lifecycle_type = lifecycle
+		mirror_crop.regrow_days = 1
+		mirror_crop.growth_form = "annual"
+		assertions.truthy(not mirror_crop.is_valid(), "%s lifecycle rejects annual growth form" % lifecycle)
+		mirror_crop.growth_form = lifecycle
+		assertions.truthy(mirror_crop.is_valid(), "%s lifecycle accepts matching growth form" % lifecycle)
 
 
 func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
@@ -480,6 +513,14 @@ func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 			assertions.truthy(game_data.call("get_crop_for_plant_item", "grain_seed") == original, "duplicate registration preserves original planting mapping")
 			assertions.truthy(game_data.get_crop("grain") == original, "duplicate registration preserves original crop id mapping")
 			assertions.truthy(game_data.get_crop("duplicate_grain") == null, "duplicate registration does not add crop id")
+			var duplicate_crop_id = CropDataScript.new()
+			duplicate_crop_id.crop_id = "grain"
+			duplicate_crop_id.plant_item_id = "alternate_grain_seed"
+			duplicate_crop_id.growth_days = 1
+			assertions.truthy(not game_data.register_crop(duplicate_crop_id), "duplicate crop id registration is rejected")
+			assertions.truthy(game_data.get_crop("grain") == original, "crop id collision preserves original crop registry")
+			assertions.truthy(game_data.call("get_crop_for_plant_item", "grain_seed") == original, "crop id collision preserves original planting lookup")
+			assertions.truthy(game_data.call("get_crop_for_plant_item", "alternate_grain_seed") == null, "crop id collision does not add unique planting lookup")
 		game_data.free()
 	main.free()
 

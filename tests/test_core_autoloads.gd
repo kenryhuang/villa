@@ -8,7 +8,12 @@ const CropDataScript = preload("res://scripts/data/crop_data.gd")
 func _make_crop_data(id: String):
 	var crop = CropDataScript.new()
 	crop.crop_id = id
+	crop.plant_item_id = "%s_seed" % id
 	crop.crop_name = id.capitalize()
+	crop.environment = "outdoor_or_greenhouse"
+	crop.lifecycle_type = "annual"
+	crop.growth_form = "annual"
+	crop.tags.assign([])
 	crop.growth_days = 3
 	crop.seed_price = 5
 	crop.sell_price = 10
@@ -18,9 +23,13 @@ func _make_crop_data(id: String):
 func run(assertions: TestAssert) -> void:
 	# GameData register and lookup
 	var data = GameDataScript.new()
-	assertions.truthy(data.register_crop(_make_crop_data("turnip")), "first ID registers")
+	var first_registered := data.register_crop(_make_crop_data("turnip"))
+	assertions.truthy(first_registered, "first ID registers")
 	assertions.truthy(not data.register_crop(_make_crop_data("turnip")), "duplicate rejected")
-	assertions.equal(data.get_crop("turnip").crop_name, "Turnip", "lookup returns authored crop")
+	var registered_crop = data.get_crop("turnip")
+	assertions.truthy(registered_crop != null, "registered crop remains available")
+	if registered_crop != null:
+		assertions.equal(registered_crop.crop_name, "Turnip", "lookup returns authored crop")
 	assertions.truthy(data.get_crop("nonexistent") == null, "unknown ID returns null")
 
 	# GameState gold

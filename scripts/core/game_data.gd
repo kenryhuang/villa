@@ -13,10 +13,9 @@ var _crops_by_plant_item = {}
 # 作物注册（保留已有功能）
 # ============================================================
 
-func register_crop(data) -> bool:
+func register_crop(data: CropData) -> bool:
 	if (
 		data == null
-		or not data.has_method("is_valid")
 		or not data.is_valid()
 		or _crops.has(data.crop_id)
 		or _crops_by_plant_item.has(data.plant_item_id)

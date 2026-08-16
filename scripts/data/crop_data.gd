@@ -40,6 +40,13 @@ func is_valid() -> bool:
 		return false
 	if lifecycle_type != "annual" and regrow_days <= 0:
 		return false
+	if (environment == "greenhouse_only") != ("greenhouse_only" in tags):
+		return false
+	if lifecycle_type in ["annual", "annual_regrow"]:
+		if growth_form != "annual":
+			return false
+	elif growth_form != lifecycle_type:
+		return false
 	var seen_seasons := {}
 	for season in seasons:
 		if season < 0 or season > 3 or seen_seasons.has(season):
