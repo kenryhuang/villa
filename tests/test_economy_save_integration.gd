@@ -84,6 +84,8 @@ class RejectingResourceWorld:
 	extends RefCounted
 	var records: Array[Dictionary] = [{"resource_id": "rock", "hits_remaining": 3}]
 	var reject_next_restore := false
+	var game_state: Node
+	var observed_harvest_seeds: Array[int] = []
 
 	func to_resource_dicts() -> Array[Dictionary]:
 		return records.duplicate(true)
@@ -94,6 +96,9 @@ class RejectingResourceWorld:
 	func restore_resource_dicts(value: Variant, _loaded_day: int) -> bool:
 		if reject_next_restore:
 			reject_next_restore = false
+			observed_harvest_seeds.append(
+				int(game_state.harvest_seed) if game_state != null else -1
+			)
 			return false
 		records.assign((value as Array).duplicate(true))
 		return true
@@ -599,6 +604,16 @@ func _test_task13_resource_apply_failure_rolls_back_economy(
 	tree.root.add_child(manager)
 	assertions.truthy(market.configure([_wood_definition()]), "atomic resource fixture configures market")
 	assertions.truthy(manager.configure_economy(market, daily, null, resources), "atomic resource fixture configures save manager")
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "atomic resource fixture has GameState")
+	if game_state == null:
+		manager.free()
+		daily.free()
+		market.free()
+		return
+	var original_seed := int(game_state.harvest_seed)
+	assertions.truthy(game_state.set_harvest_seed(111), "atomic resource fixture sets prior harvest seed")
+	resources.game_state = game_state
 	assertions.truthy(market.settle_day(2), "atomic resource fixture creates target market")
 	daily.last_simulated_day = 2
 	var target_market: Dictionary = market.to_dict()
@@ -607,6 +622,7 @@ func _test_task13_resource_apply_failure_rolls_back_economy(
 		"market": target_market,
 		"last_simulated_day": 2,
 		"total_days": 2,
+		"harvest_seed": 222,
 		"resource_nodes": [{"resource_id": "rock", "hits_remaining": 0}],
 	}
 	assertions.truthy(market.configure([_wood_definition()]), "atomic resource fixture rewinds market")
@@ -615,9 +631,18 @@ func _test_task13_resource_apply_failure_rolls_back_economy(
 	var resources_before: Array = resources.to_resource_dicts()
 	resources.reject_next_restore = true
 	assertions.truthy(not manager._apply_save_data(target), "resource apply failure rejects whole economy snapshot")
+	assertions.equal(
+		resources.observed_harvest_seeds[0]
+		if not resources.observed_harvest_seeds.is_empty()
+		else -1,
+		222,
+		"downstream resource failure occurs after incoming harvest seed applies"
+	)
+	assertions.equal(game_state.harvest_seed, 111, "resource apply failure restores prior harvest seed")
 	assertions.equal(market.to_dict(), market_before, "resource apply failure rolls market back")
 	assertions.equal(daily.last_simulated_day, 0, "resource apply failure rolls daily cursor back")
 	assertions.equal(resources.to_resource_dicts(), resources_before, "resource apply failure preserves resources")
+	assertions.truthy(game_state.set_harvest_seed(original_seed), "atomic resource fixture restores original harvest seed")
 	manager.free()
 	daily.free()
 	market.free()

@@ -297,14 +297,14 @@ func _cancel_transient_actions_for_restore() -> void:
 
 
 func _apply_migrated_save_data(data: Dictionary) -> bool:
-	if not _apply_economy_save_data(data):
-		return false
-
-	# 游戏状态
 	var game_state = get_node_or_null("/root/GameState")
 	if game_state and data.has("harvest_seed"):
 		if not game_state.set_harvest_seed(int(data.harvest_seed)):
 			return false
+	if not _apply_economy_save_data(data):
+		return false
+
+	# 游戏状态
 	if game_state and data.has("gold"):
 		game_state.gold = data.gold
 		if data.has("player"):

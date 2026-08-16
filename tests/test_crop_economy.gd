@@ -68,16 +68,64 @@ class CropEventRecorder:
 
 	var planted_events: Array[Dictionary] = []
 	var harvested_events: Array[Dictionary] = []
+	var cell_events: Array[Dictionary] = []
 
 	func _init() -> void:
 		crop_planted.connect(_on_crop_planted)
 		crop_harvested.connect(_on_crop_harvested)
+		cell_state_changed.connect(_on_cell_state_changed)
 
 	func _on_crop_planted(gx: int, gz: int, crop_id: String) -> void:
 		planted_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
 
 	func _on_crop_harvested(gx: int, gz: int, crop_id: String) -> void:
 		harvested_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
+
+	func _on_cell_state_changed(gx: int, gz: int, state: int) -> void:
+		cell_events.append({"gx": gx, "gz": gz, "state": state})
+
+
+class HarvestGameState:
+	extends RefCounted
+	var harvest_seed := 101
+	var exp_calls := 0
+	var exp_total := 0
+
+	func add_exp(amount: int) -> bool:
+		exp_calls += 1
+		exp_total += amount
+		return true
+
+
+class SeedChangingHarvestGateway:
+	extends RefCounted
+	var farming: FarmingSystem
+	var state: HarvestGameState
+	var next_seed := 202
+	var mutate_before_commit := true
+
+	func _init(target: FarmingSystem, game_state: HarvestGameState) -> void:
+		farming = target
+		state = game_state
+
+	func preview_harvest(cell: GridCell) -> Dictionary:
+		return farming.preview_harvest(cell)
+
+	func harvest(cell: GridCell, expected_preview: Dictionary = {}) -> Dictionary:
+		if mutate_before_commit:
+			mutate_before_commit = false
+			state.harvest_seed = next_seed
+		if expected_preview.is_empty():
+			return farming.harvest(cell)
+		return farming.call("harvest", cell, expected_preview)
+
+
+class ControllerHarvestEventRecorder:
+	extends RefCounted
+	var inventory_changed_calls := 0
+
+	func on_inventory_changed() -> void:
+		inventory_changed_calls += 1
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -91,6 +139,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_carrot_yield_and_removal(assertions)
 	_test_harvest_count_save_round_trip(assertions, tree)
 	_test_controller_harvest_is_atomic(assertions, tree)
+	_test_controller_commits_exact_harvest_preview(assertions, tree)
+	_test_controller_harvest_awards_exp_once(assertions)
 	_test_controller_plant_mapping_signal_is_atomic(assertions, tree)
 	_test_crop_data_validation(assertions)
 	_test_default_roster_and_item_catalog(assertions)
@@ -654,6 +704,109 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	grid.free()
 
 
+func _test_controller_commits_exact_harvest_preview(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var crop := CropDataScript.new()
+	crop.crop_id = "tomato"
+	crop.growth_days = 4
+	crop.yield_min = 3
+	crop.yield_max = 3
+	crop.regrow_days = 2
+	crop.lifecycle_type = "annual_regrow"
+	var grid = GridSystemScript.new()
+	var crop_events := CropEventRecorder.new()
+	grid._event_bus = crop_events
+	var state := HarvestGameState.new()
+	var farming = FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	grid.set_cell_state(3, 3, FARMLAND)
+	var cell := grid.get_cell(3, 3)
+	var instance: CropInstance = farming.plant(cell, crop)
+	_set_mature(instance, 4.0)
+	farming.call("_update_visual", cell, instance)
+	var visual_before := farming.get_crop_visual(cell)
+	var visual_color_before := _visual_color(visual_before)
+	var crop_before := grid.get_crop_snapshot(3, 3)
+	crop_events.planted_events.clear()
+	crop_events.harvested_events.clear()
+	crop_events.cell_events.clear()
+
+	var inventory = InventorySystemScript.new()
+	inventory.max_slots = 2
+	inventory.reset_slots()
+	tree.root.add_child(inventory)
+	var gateway := SeedChangingHarvestGateway.new(farming, state)
+	var controller = PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, gateway, null, null, inventory)
+	var controller_events := ControllerHarvestEventRecorder.new()
+	controller.inventory_changed.connect(controller_events.on_inventory_changed)
+	var inventory_events := InventorySignalRecorder.new()
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.set_block_signals(false)
+	event_bus.item_added.connect(inventory_events.on_added)
+	event_bus.item_removed.connect(inventory_events.on_removed)
+
+	assertions.truthy(
+		not controller._harvest(cell),
+		"controller rejects a harvest whose exact preview became stale"
+	)
+	assertions.equal(inventory.get_item_count("tomato"), 0, "stale exact preview restores inventory")
+	assertions.equal(grid.get_crop_snapshot(3, 3), crop_before, "stale exact preview preserves complete crop snapshot")
+	assertions.equal(instance.harvest_count, 0, "stale exact preview preserves harvest count")
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.MATURE, "stale exact preview preserves mature lifecycle")
+	assertions.equal(state.exp_calls, 0, "stale exact preview awards no experience")
+	assertions.equal(inventory_events.events, [], "stale exact preview emits no inventory event")
+	assertions.equal(crop_events.harvested_events, [], "stale exact preview emits no harvest event")
+	assertions.equal(crop_events.cell_events, [], "stale exact preview emits no cell event")
+	assertions.equal(controller_events.inventory_changed_calls, 0, "stale exact preview emits no controller inventory event")
+	assertions.truthy(farming.get_crop_visual(cell) == visual_before, "stale exact preview keeps the same visual")
+	assertions.equal(_visual_color(visual_before), visual_color_before, "stale exact preview leaves visual material unchanged")
+
+	event_bus.item_added.disconnect(inventory_events.on_added)
+	event_bus.item_removed.disconnect(inventory_events.on_removed)
+	controller.free()
+	inventory.free()
+	crop_events.free()
+	farming.free()
+	grid.free()
+
+
+func _test_controller_harvest_awards_exp_once(assertions: TestAssert) -> void:
+	var crop := CropDataScript.new()
+	crop.crop_id = "tomato"
+	crop.growth_days = 4
+	crop.yield_min = 1
+	crop.yield_max = 1
+	crop.regrow_days = 2
+	crop.lifecycle_type = "annual_regrow"
+	crop.exp_reward = 7
+	var grid = GridSystemScript.new()
+	var state := HarvestGameState.new()
+	var farming = FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	grid.set_cell_state(4, 3, FARMLAND)
+	var cell := grid.get_cell(4, 3)
+	var instance: CropInstance = farming.plant(cell, crop)
+	_set_mature(instance, 4.0)
+	var inventory = InventorySystemScript.new()
+	inventory.max_slots = 2
+	inventory.reset_slots()
+	var controller = PlayerActionControllerScript.new()
+	controller.configure(null, grid, farming, null, null, inventory)
+
+	assertions.truthy(controller._harvest(cell), "normal controller harvest commits")
+	assertions.equal(state.exp_calls, 1, "normal controller harvest awards experience exactly once")
+	assertions.equal(state.exp_total, 7, "normal controller harvest awards previewed experience")
+
+	controller.free()
+	inventory.free()
+	farming.free()
+	grid.free()
+
+
 func _test_controller_plant_mapping_signal_is_atomic(
 	assertions: TestAssert,
 	tree: SceneTree
@@ -943,6 +1096,14 @@ func _set_property_if_present(object: Object, property_name: String, value: Vari
 
 func _set_mature(instance: CropInstance, progress: float) -> void:
 	instance.set_growth_state(progress, CropInstance.LifecycleState.MATURE)
+
+
+func _visual_color(visual: Node3D) -> Color:
+	if visual is MeshInstance3D:
+		var material := (visual as MeshInstance3D).material_override as StandardMaterial3D
+		if material != null:
+			return material.albedo_color
+	return Color.TRANSPARENT
 
 
 func _test_perennial_harvest_and_greenhouse_rules(assertions: TestAssert) -> void:

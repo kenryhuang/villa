@@ -925,7 +925,7 @@ func _harvest(cell: GridCell) -> bool:
 			_end_inventory_event_transaction(owns_event_transaction)
 			return false
 	_end_inventory_event_transaction(owns_event_transaction)
-	var result: Dictionary = farming_system.harvest(cell)
+	var result: Dictionary = farming_system.harvest(cell, preview)
 	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)

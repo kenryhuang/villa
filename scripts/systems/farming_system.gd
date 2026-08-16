@@ -110,10 +110,14 @@ func plant(grid_cell, crop_data) -> CropInstance:
 	return instance
 
 
-func harvest(grid_cell) -> Dictionary:
+func harvest(grid_cell, expected_preview: Dictionary = {}) -> Dictionary:
 	if grid_system == null or grid_cell == null:
 		return {}
-	var preview := preview_harvest(grid_cell)
+	var preview := (
+		expected_preview
+		if not expected_preview.is_empty()
+		else preview_harvest(grid_cell)
+	)
 	var result := commit_harvest(grid_cell, preview)
 	if not result.is_empty():
 		if game_state:

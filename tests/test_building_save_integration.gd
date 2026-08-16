@@ -51,6 +51,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"world saves declare the production-yard layout version"
 	)
 	var complete_payload := {
+		"harvest_seed": gathered.harvest_seed,
 		"building_layout_version": 2,
 		"grid": grid.to_dict(),
 		"buildings": records,

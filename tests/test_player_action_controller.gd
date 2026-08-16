@@ -96,8 +96,10 @@ class FarmingDouble:
 		cell.state = GridCell.State.PLANTED
 		return instance
 
-	func harvest(cell: GridCell) -> Dictionary:
+	func harvest(cell: GridCell, expected_preview: Dictionary = {}) -> Dictionary:
 		if cell.crop_instance == null or not cell.crop_instance.is_mature():
+			return {}
+		if not expected_preview.is_empty() and preview_harvest(cell) != expected_preview:
 			return {}
 		harvest_calls += 1
 		cell.crop_instance = null
