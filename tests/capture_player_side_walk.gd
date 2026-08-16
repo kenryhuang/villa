@@ -4,7 +4,8 @@ const PlayerVisualScript = preload("res://scripts/visual/player_visual.gd")
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
 const OUTPUT_DIR := "res://.godot/player-side-walk-validation"
 const FRAME_SIZE := Vector2i(192, 192)
-const FRAME_COUNT := 12
+const FRAME_COUNT := 9
+const SIDE_PHASE_PAIRS := [[0, 4], [1, 5], [2, 7], [3, 8]]
 const BACKGROUND := Color("26303d")
 const PANEL_BACKGROUND := Color("17202b")
 
@@ -30,7 +31,7 @@ func _capture_all() -> void:
 	visual.position = Vector3(-1000, -1000, -1000)
 	root.add_child(visual)
 	var captures := 0
-	if await _capture_strip(visual.sprite_frames, &"walk_e", "EAST - 12 sequential walk frames", "east-strip.png"):
+	if await _capture_strip(visual.sprite_frames, &"walk_e", "EAST - 9 sequential walk frames", "east-strip.png"):
 		captures += 1
 	if await _capture_strip(visual.sprite_frames, &"walk_w", "WEST - exact horizontal mirrors", "west-strip.png"):
 		captures += 1
@@ -75,7 +76,7 @@ func _capture_strip(
 
 
 func _capture_half_cycle_pairs(frames: SpriteFrames) -> bool:
-	var size := Vector2i(FRAME_SIZE.x * 6, FRAME_SIZE.y * 2 + 54)
+	var size := Vector2i(FRAME_SIZE.x * SIDE_PHASE_PAIRS.size(), FRAME_SIZE.y * 2 + 54)
 	var canvas := _new_canvas(size)
 	_add_label(
 		canvas,
@@ -84,9 +85,9 @@ func _capture_half_cycle_pairs(frames: SpriteFrames) -> bool:
 		22,
 		HORIZONTAL_ALIGNMENT_CENTER
 	)
-	for pair_index in 6:
+	for pair_index in SIDE_PHASE_PAIRS.size():
 		for row in 2:
-			var frame_index := pair_index + row * 6
+			var frame_index := int(SIDE_PHASE_PAIRS[pair_index][row])
 			var origin := Vector2(pair_index * FRAME_SIZE.x, 54 + row * FRAME_SIZE.y)
 			_add_frame(
 				canvas,
@@ -108,10 +109,10 @@ func _capture_runtime_states(visual: PlayerVisual) -> bool:
 	const SAMPLE_COUNT := 6
 	const SAMPLE_INTERVAL := 1.0 / 6.0
 	var states := [
-		{"direction": Vector2.RIGHT, "sprinting": false, "label": "EAST WALK - walk_e - 12 FPS"},
-		{"direction": Vector2.RIGHT, "sprinting": true, "label": "EAST SPRINT - walk_e - 18 FPS"},
-		{"direction": Vector2.LEFT, "sprinting": false, "label": "WEST WALK - walk_w - 12 FPS"},
-		{"direction": Vector2.LEFT, "sprinting": true, "label": "WEST SPRINT - walk_w - 18 FPS"},
+		{"direction": Vector2.RIGHT, "sprinting": false, "label": "EAST WALK - walk_e - 6 FPS"},
+		{"direction": Vector2.RIGHT, "sprinting": true, "label": "EAST SPRINT - walk_e - 9 FPS"},
+		{"direction": Vector2.LEFT, "sprinting": false, "label": "WEST WALK - walk_w - 6 FPS"},
+		{"direction": Vector2.LEFT, "sprinting": true, "label": "WEST SPRINT - walk_w - 9 FPS"},
 	]
 	var row_height := FRAME_SIZE.y + 38
 	var size := Vector2i(FRAME_SIZE.x * SAMPLE_COUNT, row_height * states.size())
@@ -156,7 +157,7 @@ func _capture_runtime_states(visual: PlayerVisual) -> bool:
 		captured_sequences.append(sequence)
 	if captured_sequences[0] == captured_sequences[1] or captured_sequences[2] == captured_sequences[3]:
 		canvas.queue_free()
-		_fail("runtime capture did not distinguish 12 FPS walk from 18 FPS sprint")
+		_fail("runtime capture did not distinguish 6 FPS walk from 9 FPS sprint")
 		return false
 	return await _save_canvas(canvas, size, "runtime-walk-sprint.png")
 
@@ -168,7 +169,7 @@ func _capture_direction_comparison(visual: PlayerVisual) -> bool:
 	var canvas := _new_canvas(size)
 	var atlas := load(ATLAS_PATH) as Texture2D
 	var labels := ["SOUTH WALK", "ORIGINAL EAST REFERENCE", "REVISED EAST WALK"]
-	var revised_indices := [0, 2, 4, 6, 8, 10]
+	var revised_indices := [0, 2, 3, 4, 6, 8]
 	for row in 3:
 		_add_label(
 			canvas,
