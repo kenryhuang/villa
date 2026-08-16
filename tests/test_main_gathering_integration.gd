@@ -147,7 +147,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		for path_point in physical_path:
 			physical_path_length += previous_path_point.distance_to(path_point)
 			previous_path_point = path_point
-		var movement_frame_limit := ceili((physical_path_length / main.player.speed + 2.0) * 60.0)
+		var minimum_auto_speed: float = (
+			main.player.speed * main.player.LATERAL_MOVEMENT_SPEED_SCALE
+		)
+		var movement_frame_limit := ceili(
+			(physical_path_length / minimum_auto_speed + 2.0) * 60.0
+		)
 		while (
 			main.gathering_controller.get_state_name() == "MOVING"
 			and movement_frames < movement_frame_limit
