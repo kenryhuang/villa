@@ -15,6 +15,17 @@ class MutableCapacity:
 		return value
 
 
+class DisposableCapacity:
+	extends Object
+	var value: Variant
+
+	func _init(initial_value: Variant) -> void:
+		value = initial_value
+
+	func provide() -> Variant:
+		return value
+
+
 class SignalRecorder:
 	extends RefCounted
 	var storage: Node
@@ -42,6 +53,85 @@ class SignalRecorder:
 		bus_capacities.append({"used": used, "total": total})
 
 
+class ReentrantContentsRecorder:
+	extends RefCounted
+	var storage: Node
+	var nested_add_attempted := false
+	var nested_add_results: Array[bool] = []
+	var local_contents: Array[Dictionary] = []
+	var bus_contents: Array[Dictionary] = []
+	var local_capacities: Array[Dictionary] = []
+	var bus_capacities: Array[Dictionary] = []
+	var timeline: Array[String] = []
+
+	func _init(target: Node) -> void:
+		storage = target
+
+	func on_contents(changes: Dictionary) -> void:
+		local_contents.append(changes)
+		timeline.append("local_contents:%s" % str(changes.keys()[0]))
+		if not nested_add_attempted:
+			nested_add_attempted = true
+			nested_add_results.append(bool(storage.call("add_items", {"tomato": 1})))
+
+	func on_bus_contents(changes: Dictionary) -> void:
+		bus_contents.append(changes)
+		timeline.append("bus_contents:%s" % str(changes.keys()[0]))
+
+	func on_capacity(used: int, total: int) -> void:
+		local_capacities.append({"used": used, "total": total})
+		timeline.append("local_capacity:%d:%d" % [used, total])
+
+	func on_bus_capacity(used: int, total: int) -> void:
+		bus_capacities.append({"used": used, "total": total})
+		timeline.append("bus_capacity:%d:%d" % [used, total])
+
+
+class ReentrantCapacityRecorder:
+	extends RefCounted
+	var storage: Node
+	var capacity: Variant
+	var nested_refresh_attempted := false
+	var local_capacities: Array[Dictionary] = []
+	var bus_capacities: Array[Dictionary] = []
+	var timeline: Array[String] = []
+
+	func _init(target: Node, provider: Variant) -> void:
+		storage = target
+		capacity = provider
+
+	func on_capacity(used: int, total: int) -> void:
+		local_capacities.append({"used": used, "total": total})
+		timeline.append("local:%d" % total)
+		if not nested_refresh_attempted:
+			nested_refresh_attempted = true
+			capacity.value = 7
+			storage.call("refresh_capacity")
+
+	func on_bus_capacity(used: int, total: int) -> void:
+		bus_capacities.append({"used": used, "total": total})
+		timeline.append("bus:%d" % total)
+
+
+class ReadOnlyPayloadRecorder:
+	extends RefCounted
+	var read_only_results: Array[bool] = []
+	var payloads: Array[Dictionary] = []
+
+	func on_first(changes: Dictionary) -> void:
+		_record(changes)
+
+	func on_second(changes: Dictionary) -> void:
+		_record(changes)
+
+	func on_bus(changes: Dictionary) -> void:
+		_record(changes)
+
+	func _record(changes: Dictionary) -> void:
+		read_only_results.append(changes.is_read_only())
+		payloads.append(changes)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_empty_state_and_capacity_provider(assertions)
 	_test_atomic_add_remove_and_capacity(assertions)
@@ -50,6 +140,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_strict_request_validation(assertions)
 	_test_failed_restore_validation_is_atomic(assertions)
 	_test_committed_signal_payloads(assertions, tree)
+	_test_contents_reentrancy_preserves_notification_order(assertions, tree)
+	_test_capacity_reentrancy_preserves_notification_order(assertions, tree)
+	_test_change_payload_is_read_only_for_all_listeners(assertions, tree)
+	_test_rejected_operations_and_freed_provider_are_silent(assertions, tree)
 
 
 func _test_empty_state_and_capacity_provider(assertions: TestAssert) -> void:
@@ -319,6 +413,129 @@ func _test_committed_signal_payloads(assertions: TestAssert, tree: SceneTree) ->
 		{"grain": -1},
 		{"grain": -1, "tomato": -1, "potato": 2},
 	], "EventBus contents payloads match committed local payloads")
+
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	event_bus.farm_storage_changed.disconnect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_bus_capacity)
+	storage.free()
+
+
+func _test_contents_reentrancy_preserves_notification_order(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := MutableCapacity.new(4)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	var recorder := ReentrantContentsRecorder.new(storage)
+	var event_bus = tree.root.get_node("EventBus")
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	event_bus.farm_storage_changed.connect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(recorder.on_bus_capacity)
+
+	assertions.truthy(storage.add_items({"grain": 1}), "outer add succeeds during contents reentrancy test")
+	assertions.equal(recorder.nested_add_results, [true], "contents listener nested add succeeds once")
+	assertions.equal(recorder.local_contents, [{"grain": 1}, {"tomato": 1}], "local content deltas stay in commit order")
+	assertions.equal(recorder.bus_contents, [{"grain": 1}, {"tomato": 1}], "EventBus content deltas stay in commit order")
+	assertions.equal(recorder.timeline, [
+		"local_contents:grain",
+		"bus_contents:grain",
+		"local_capacity:1:4",
+		"bus_capacity:1:4",
+		"local_contents:tomato",
+		"bus_contents:tomato",
+		"local_capacity:2:4",
+		"bus_capacity:2:4",
+	], "nested mutation notifications drain as complete FIFO batches")
+	var expected_final := {"used": storage.get_used_capacity(), "total": storage.get_total_capacity()}
+	assertions.equal(recorder.local_capacities.back(), expected_final, "final local capacity matches nested committed state")
+	assertions.equal(recorder.bus_capacities.back(), expected_final, "final EventBus capacity matches nested committed state")
+	assertions.equal(storage.get_items(), {"grain": 1, "tomato": 1}, "both reentrant mutations remain committed")
+
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	event_bus.farm_storage_changed.disconnect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_bus_capacity)
+	storage.free()
+
+
+func _test_capacity_reentrancy_preserves_notification_order(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := MutableCapacity.new(4)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	var recorder := ReentrantCapacityRecorder.new(storage, capacity)
+	var event_bus = tree.root.get_node("EventBus")
+	storage.capacity_changed.connect(recorder.on_capacity)
+	event_bus.farm_storage_capacity_changed.connect(recorder.on_bus_capacity)
+
+	capacity.value = 5
+	storage.refresh_capacity()
+	assertions.equal(recorder.timeline, ["local:5", "bus:5", "local:7", "bus:7"], "nested refresh notifications stay in commit order")
+	var expected_final := {"used": storage.get_used_capacity(), "total": storage.get_total_capacity()}
+	assertions.equal(recorder.local_capacities.back(), expected_final, "final local payload matches refreshed provider total")
+	assertions.equal(recorder.bus_capacities.back(), expected_final, "final EventBus payload matches refreshed provider total")
+	assertions.equal(storage.get_total_capacity(), 7, "nested provider refresh commits the latest total")
+
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_bus_capacity)
+	storage.free()
+
+
+func _test_change_payload_is_read_only_for_all_listeners(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var recorder := ReadOnlyPayloadRecorder.new()
+	var event_bus = tree.root.get_node("EventBus")
+	storage.contents_changed.connect(recorder.on_first)
+	storage.contents_changed.connect(recorder.on_second)
+	event_bus.farm_storage_changed.connect(recorder.on_bus)
+
+	assertions.truthy(storage.add_items({"grain": 2}), "read-only payload fixture add succeeds")
+	assertions.equal(recorder.read_only_results, [true, true, true], "all local and EventBus listeners receive read-only changes")
+	assertions.equal(recorder.payloads, [{"grain": 2}, {"grain": 2}, {"grain": 2}], "shared read-only payload remains unchanged across listeners")
+
+	storage.contents_changed.disconnect(recorder.on_first)
+	storage.contents_changed.disconnect(recorder.on_second)
+	event_bus.farm_storage_changed.disconnect(recorder.on_bus)
+	storage.free()
+
+
+func _test_rejected_operations_and_freed_provider_are_silent(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := DisposableCapacity.new(4)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	var recorder := SignalRecorder.new(storage)
+	var event_bus = tree.root.get_node("EventBus")
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	event_bus.farm_storage_changed.connect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(recorder.on_bus_capacity)
+
+	assertions.truthy(not storage.from_dict({"items": {"wood": 1}}), "invalid from_dict is rejected")
+	assertions.truthy(not storage.restore_items_unchecked({"grain": 1, "wood": 1}), "invalid unchecked restore is rejected")
+	var invalid_provider := MutableCapacity.new(4.0)
+	assertions.truthy(not storage.configure(invalid_provider.provide), "invalid provider configure is rejected")
+	capacity.free()
+	storage.refresh_capacity()
+	assertions.equal(storage.get_total_capacity(), 4, "freed provider target preserves last valid total")
+	assertions.equal(recorder.contents, [], "rejected restore operations emit no local contents signals")
+	assertions.equal(recorder.bus_contents, [], "rejected restore operations emit no EventBus contents signals")
+	assertions.equal(recorder.capacities, [], "failed configure and freed provider emit no local capacity signals")
+	assertions.equal(recorder.bus_capacities, [], "failed configure and freed provider emit no EventBus capacity signals")
 
 	storage.contents_changed.disconnect(recorder.on_contents)
 	storage.capacity_changed.disconnect(recorder.on_capacity)

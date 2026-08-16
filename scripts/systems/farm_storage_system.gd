@@ -11,6 +11,8 @@ signal capacity_changed(used: int, total: int)
 var _items: Dictionary = {}
 var _capacity_provider: Callable = Callable()
 var _total_capacity := DEFAULT_CAPACITY
+var _notification_queue: Array[Dictionary] = []
+var _is_dispatching_notifications := false
 
 
 func configure(capacity_provider: Callable = Callable()) -> bool:
@@ -116,6 +118,7 @@ func from_dict(data: Dictionary) -> bool:
 	return restore_items_unchecked(data.items as Dictionary)
 
 
+## Bypasses capacity enforcement only; crop IDs and quantities are still fully validated.
 func restore_items_unchecked(items: Dictionary) -> bool:
 	var normalized_value: Variant = _normalize_items(items, true)
 	if normalized_value == null:
@@ -164,23 +167,50 @@ func _replace_items(next_items: Dictionary) -> void:
 	var next_used := _sum_quantities(next_items)
 	var changes := _changes_between(previous_items, next_items)
 	_items = next_items.duplicate(true)
-	if not changes.is_empty():
-		contents_changed.emit(changes.duplicate(true))
-		_emit_event(&"farm_storage_changed", [changes.duplicate(true)])
-	if previous_used != next_used:
-		_emit_capacity_changed(next_used, _total_capacity)
+	_queue_notification_batch(changes, previous_used != next_used, next_used, _total_capacity)
 
 
 func _commit_capacity(next_total: int) -> void:
 	if next_total == _total_capacity:
 		return
 	_total_capacity = next_total
-	_emit_capacity_changed(get_used_capacity(), _total_capacity)
+	_queue_notification_batch({}, true, get_used_capacity(), _total_capacity)
 
 
-func _emit_capacity_changed(used: int, total: int) -> void:
-	capacity_changed.emit(used, total)
-	_emit_event(&"farm_storage_capacity_changed", [used, total])
+func _queue_notification_batch(
+	changes: Dictionary,
+	did_capacity_change: bool,
+	used: int,
+	total: int
+) -> void:
+	if changes.is_empty() and not did_capacity_change:
+		return
+	var change_snapshot := changes.duplicate(true)
+	change_snapshot.make_read_only()
+	_notification_queue.append({
+		"changes": change_snapshot,
+		"capacity_changed": did_capacity_change,
+		"used": used,
+		"total": total,
+	})
+	if _is_dispatching_notifications:
+		return
+	_is_dispatching_notifications = true
+	while not _notification_queue.is_empty():
+		_dispatch_notification_batch(_notification_queue.pop_front())
+	_is_dispatching_notifications = false
+
+
+func _dispatch_notification_batch(batch: Dictionary) -> void:
+	var changes: Dictionary = batch.changes
+	if not changes.is_empty():
+		contents_changed.emit(changes)
+		_emit_event(&"farm_storage_changed", [changes])
+	if bool(batch.capacity_changed):
+		var used := int(batch.used)
+		var total := int(batch.total)
+		capacity_changed.emit(used, total)
+		_emit_event(&"farm_storage_capacity_changed", [used, total])
 
 
 func _emit_event(signal_name: StringName, arguments: Array) -> void:
