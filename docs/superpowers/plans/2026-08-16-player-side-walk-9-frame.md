@@ -17,7 +17,7 @@
 - Test: `scripts/visual/player_visual.gd`
 - Test: `assets/characters/player/player_farmer_side_walk.png`
 
-- [ ] **Step 1: Change the expected side frame count and timing**
+- [x] **Step 1: Change the expected side frame count and timing**
 
 Set the side contract to nine frames and require side timing to match the shared walk/run constants:
 
@@ -45,7 +45,7 @@ assertions.near(
 
 Inside the direction loop, expect `6.0` for every walk animation. Update the sprint assertion message to describe nine poses at 9 FPS.
 
-- [ ] **Step 2: Change the expected raster size**
+- [x] **Step 2: Change the expected raster size**
 
 Inside `_assert_side_walk_art_contract`, retain all height, baseline, denim, component, gutter, and mirror checks but change the import and size expectations to:
 
@@ -54,7 +54,7 @@ assertions.truthy(texture != null, "nine-frame side-walk atlas imports")
 assertions.equal(image.get_size(), Vector2i(1728, 384), "side walk is a 9x2 atlas")
 ```
 
-- [ ] **Step 3: Replace twelve-frame temporal assumptions**
+- [x] **Step 3: Replace twelve-frame temporal assumptions**
 
 In `_assert_side_walk_temporal_continuity`, keep adjacent lower-body and boot differences over the full loop, use broad reviewed upper bounds of 160 lower-body pixels and 120 boot pixels, and replace `frame + 6` with:
 
@@ -85,7 +85,7 @@ Use these retained named transitions:
 ]
 ```
 
-- [ ] **Step 4: Run the focused suite and verify RED**
+- [x] **Step 4: Run the focused suite and verify RED**
 
 Run:
 
@@ -95,7 +95,7 @@ godot --headless --path . --log-file .godot\side-nine-red.log -s res://tests/run
 
 Expected: FAIL because `PlayerVisual` still exposes twelve side frames at 12/18 FPS and the current atlas remains `2304x384`.
 
-- [ ] **Step 5: Commit the failing contract**
+- [x] **Step 5: Commit the failing contract**
 
 ```powershell
 git add -- tests/test_player_visual.gd
@@ -110,7 +110,7 @@ git commit -m "test: require nine-frame side walk"
 - Modify: `assets/characters/player/player_farmer_side_walk.png`
 - Test: `tests/test_player_visual.gd`
 
-- [ ] **Step 1: Make the assembler select approved source indices**
+- [x] **Step 1: Make the assembler select approved source indices**
 
 Replace the fixed twelve-frame loop and offsets with:
 
@@ -141,7 +141,7 @@ for output_index in FRAME_COUNT:
 
 Keep the existing independent 151-pixel fit, y=184 baseline, denim transfer, offset, and exact mirror code.
 
-- [ ] **Step 2: Make `PlayerVisual` consume nine frames at shared FPS**
+- [x] **Step 2: Make `PlayerVisual` consume nine frames at shared FPS**
 
 In `scripts/visual/player_visual.gd`, set:
 
@@ -153,7 +153,7 @@ const SIDE_RUN_FPS := RUN_FPS
 
 Change the invalid-raster error to `PlayerVisual requires valid nine-frame side walk` and leave the existing side direction registration and `speed_scale` calculation intact.
 
-- [ ] **Step 3: Assemble and import the smaller atlas**
+- [x] **Step 3: Assemble and import the smaller atlas**
 
 Run:
 
@@ -164,7 +164,7 @@ godot --headless --path . --log-file .godot\import-side-nine.log --import
 
 Expected: assembler reports nine east and nine mirrored west frames; import completes with a `1728x384` atlas.
 
-- [ ] **Step 4: Run the focused suite and verify GREEN**
+- [x] **Step 4: Run the focused suite and verify GREEN**
 
 Run:
 
@@ -174,7 +174,7 @@ godot --headless --path . --log-file .godot\side-nine-green.log -s res://tests/r
 
 Expected: all nine-frame count, timing, raster, color, scale, mirror, gait, and runtime assertions pass.
 
-- [ ] **Step 5: Commit the implementation**
+- [x] **Step 5: Commit the implementation**
 
 ```powershell
 git add -- scripts/tools/assemble_player_side_walk.gd scripts/visual/player_visual.gd assets/characters/player/player_farmer_side_walk.png
@@ -191,15 +191,15 @@ git commit -m "fix: reduce side walk to nine frames"
 - Generated: `.godot/player-side-walk-validation/runtime-walk-sprint.png`
 - Generated: `.godot/player-side-walk-validation/direction-scale-color.png`
 
-- [ ] **Step 1: Resize and relabel the strips**
+- [x] **Step 1: Resize and relabel the strips**
 
 Set `FRAME_COUNT := 9` and label the east strip `EAST - 9 sequential walk frames`. The strip output becomes `1728x240` for both directions.
 
-- [ ] **Step 2: Capture explicit odd-cycle phase pairs**
+- [x] **Step 2: Capture explicit odd-cycle phase pairs**
 
 Add `const SIDE_PHASE_PAIRS := [[0, 4], [1, 5], [2, 7], [3, 8]]`. Render four columns and two rows in `_capture_half_cycle_pairs`, with each column taking its two frame indices from the corresponding pair. The output becomes `768x438`.
 
-- [ ] **Step 3: Update runtime and direction samples**
+- [x] **Step 3: Update runtime and direction samples**
 
 Change runtime labels to 6 FPS walk and 9 FPS sprint, and change the failure text to `6 FPS walk from 9 FPS sprint`. Keep live 1/6-second sampling and speed-scale checks.
 
@@ -209,7 +209,7 @@ For the six-column direction comparison, sample revised frames:
 var revised_indices := [0, 2, 3, 4, 6, 8]
 ```
 
-- [ ] **Step 4: Generate and inspect all five captures**
+- [x] **Step 4: Generate and inspect all five captures**
 
 Run:
 
@@ -219,7 +219,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility --lo
 
 Expected: five captures pass. Inspect the east strip, half-cycle pairs, runtime sheet, and direction comparison. Confirm the sequence has no repeated contact pose and still alternates supporting legs.
 
-- [ ] **Step 5: Commit capture coverage**
+- [x] **Step 5: Commit capture coverage**
 
 ```powershell
 git add -- tests/capture_player_side_walk.gd
@@ -233,7 +233,7 @@ git commit -m "test: capture nine-frame side walk"
 - Create: `docs/validation/player-side-walk-9-frame-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-16-player-side-walk-9-frame.md`
 
-- [ ] **Step 1: Run focused and integration verification**
+- [x] **Step 1: Run focused and integration verification**
 
 ```powershell
 godot --headless --path . --log-file .godot\side-nine-focused-final.log -s res://tests/run_tests.gd
@@ -242,7 +242,7 @@ godot --headless --path . --log-file .godot\side-nine-main-final.log -s res://te
 
 Expected: both runners print PASS with no assertion failure.
 
-- [ ] **Step 2: Run wider regressions**
+- [x] **Step 2: Run wider regressions**
 
 ```powershell
 godot --headless --path . --log-file .godot\side-nine-grid.log -s res://tests/run_grid_system_tests.gd
@@ -254,18 +254,17 @@ git diff --check
 
 Expected: 106 grid, 578 farming, 3456 building, 129 economy UI, and no whitespace errors.
 
-- [ ] **Step 3: Record final evidence**
+- [x] **Step 3: Record final evidence**
 
 Create `docs/validation/player-side-walk-9-frame-validation.md` with the retained source mapping, `1728x384` raster, 151-pixel height, y=184 baseline, denim measurements, 6/9 FPS timing, five capture dimensions, focused/main/wider test counts, and visual inspection outcome. Remove the superseded twelve-frame validation file.
 
-- [ ] **Step 4: Commit validation evidence**
+- [x] **Step 4: Commit validation evidence**
 
 ```powershell
 git add -- docs/validation/player-side-walk-12-frame-validation.md docs/validation/player-side-walk-9-frame-validation.md docs/superpowers/plans/2026-08-16-player-side-walk-9-frame.md
 git commit -m "docs: validate nine-frame side walk"
 ```
 
-- [ ] **Step 5: Preserve the current development workspace**
+- [x] **Step 5: Preserve the current development workspace**
 
 Confirm `git status --short` contains only intentional untracked `tmp/` material. Keep `feature/painted-production-buildings` and its current worktree in place; do not merge, push, or remove it.
-
