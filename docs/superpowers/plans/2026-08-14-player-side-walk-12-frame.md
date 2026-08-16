@@ -16,7 +16,7 @@
 - Modify: `tests/test_player_visual.gd:5-365`
 - Modify: `scripts/visual/player_visual.gd:1-115`
 
-- [ ] **Step 1: Replace seven-pose assertions with failing 12-frame assertions**
+- [x] **Step 1: Replace seven-pose assertions with failing 12-frame assertions**
 
 Change the side-walk contract to require 12 columns, 2 rows, exact mirroring, stable baseline, and 12 frames in both side animations:
 
@@ -52,7 +52,7 @@ for direction in ["e", "w"]:
 	assertions.near(visual.sprite_frames.get_animation_speed(animation_name), 12.0, 0.001, "%s walks at 12 FPS" % direction)
 ```
 
-- [ ] **Step 2: Add half-cycle and loop-boundary continuity assertions**
+- [x] **Step 2: Add half-cycle and loop-boundary continuity assertions**
 
 Replace the old seven-frame alternation assumptions with symmetric pairs and include frame 11→0:
 
@@ -75,7 +75,7 @@ func _assert_twelve_frame_side_gait(frames: SpriteFrames, animation_name: String
 		)
 ```
 
-- [ ] **Step 3: Run the player visual suite and verify RED**
+- [x] **Step 3: Run the player visual suite and verify RED**
 
 Run:
 
@@ -85,7 +85,7 @@ godot --path . --headless -s res://tests/run_tests.gd
 
 Expected: FAIL because the current image is `1344×384`, the side animations contain 7 frames, and the atlas does not satisfy the 12-frame contract.
 
-- [ ] **Step 4: Change only the playback constants needed for the new contract**
+- [x] **Step 4: Change only the playback constants needed for the new contract**
 
 In `player_visual.gd` use:
 
@@ -107,7 +107,7 @@ if side_walk == null or side_walk.get_size() != Vector2(
 
 Expected: tests still fail only on the old raster dimensions/art contract.
 
-- [ ] **Step 5: Commit the executable contract**
+- [x] **Step 5: Commit the executable contract**
 
 ```powershell
 git add scripts/visual/player_visual.gd tests/test_player_visual.gd
@@ -124,7 +124,7 @@ git commit -m "test: require twelve-frame lateral gait"
 - Temporary: `tmp/player-side-walk/east-contact-sheet.png`
 - Temporary: `tmp/player-side-walk/east-00.png` through `east-11.png`
 
-- [ ] **Step 1: Generate a single coherent 4×3 east-facing contact sheet**
+- [x] **Step 1: Generate a single coherent 4×3 east-facing contact sheet**
 
 Use the built-in image generation edit flow with the current side-walk PNG as the edit/style target. The prompt must preserve identity while requesting the exact gait:
 
@@ -139,7 +139,7 @@ Scene/backdrop: perfectly flat solid #ff00ff chroma-key background, identical in
 Avoid: standing pose, duplicated pose, extra limbs, ghost limbs, cropped hat or boots, panel dividers touching the character, labels, text, watermark.
 ```
 
-- [ ] **Step 2: Inspect the generated sheet before extracting frames**
+- [x] **Step 2: Inspect the generated sheet before extracting frames**
 
 Use `view_image` at original detail. Reject and regenerate if any of these are visible:
 
@@ -150,7 +150,7 @@ Use `view_image` at original detail. Reject and regenerate if any of these are v
 - face, hat, torso width, boot design, scale, or baseline changes;
 - any cell contains multiple characters, fragments, text, or a nonuniform background.
 
-- [ ] **Step 3: Remove the chroma key and split the approved 4×3 source**
+- [x] **Step 3: Remove the chroma key and split the approved 4×3 source**
 
 Copy the approved output to `tmp/player-side-walk/east-contact-sheet.png`, run the installed chroma removal helper, then split its 4×3 cells into `east-00.png`…`east-11.png`. Each extracted frame must retain alpha and contain exactly one character. Inspect all twelve extracted images at original detail. Do not commit `tmp/` inputs.
 
@@ -164,7 +164,7 @@ Copy the approved output to `tmp/player-side-walk/east-contact-sheet.png`, run t
 - Modify: `assets/characters/player/player_farmer_side_walk.png`
 - Test: `tests/test_player_visual.gd`
 
-- [ ] **Step 1: Add the deterministic assembly tool**
+- [x] **Step 1: Add the deterministic assembly tool**
 
 Create a `SceneTree` script that reads exactly twelve transparent east frames, normalizes each into a `192×192` cell without stretching, writes row 0, horizontally flips each cell into row 1, and saves the `2304×384` atlas:
 
@@ -225,7 +225,7 @@ func _has_transparent_corners(source: Image) -> bool:
 
 The implementation must reject an empty/opaque-corner frame and must not overwrite the output unless all 12 inputs validate.
 
-- [ ] **Step 2: Assemble the final atlas**
+- [x] **Step 2: Assemble the final atlas**
 
 Run:
 
@@ -235,7 +235,7 @@ godot --path . --headless -s res://scripts/tools/assemble_player_side_walk.gd
 
 Expected: exit 0 and `player_farmer_side_walk.png` becomes exactly `2304×384` with 12 east frames and 12 deterministic west mirrors.
 
-- [ ] **Step 3: Run the player visual tests and iterate on art, not thresholds**
+- [x] **Step 3: Run the player visual tests and iterate on art, not thresholds**
 
 Run:
 
@@ -245,7 +245,7 @@ godot --path . --headless -s res://tests/run_tests.gd
 
 Expected: the 12-frame dimensions, mirror, connected-component, alpha, baseline, half-cycle, and adjacency checks pass. If continuity fails, correct the offending painted pose; do not weaken the agreed thresholds merely to accept a jump.
 
-- [ ] **Step 4: Commit the assembled art and reproducible tool**
+- [x] **Step 4: Commit the assembled art and reproducible tool**
 
 ```powershell
 git add assets/characters/player/player_farmer_side_walk.png assets/characters/player/player_farmer_side_walk.png.import scripts/tools/assemble_player_side_walk.gd scripts/tools/assemble_player_side_walk.gd.uid tests/test_player_visual.gd
@@ -260,7 +260,7 @@ git commit -m "feat: rebuild lateral walk as twelve poses"
 - Modify: `tests/test_player_visual.gd`
 - Modify: `scripts/visual/player_visual.gd`
 
-- [ ] **Step 1: Add a failing runtime sprint-speed test**
+- [x] **Step 1: Add a failing runtime sprint-speed test**
 
 ```gdscript
 visual.sync_motion(Vector2.RIGHT * 3.0, false, true)
@@ -272,7 +272,7 @@ visual.sync_motion(Vector2.ZERO, false, true)
 assertions.truthy(str(visual.animation).begins_with("idle_"), "stopping returns to separate idle art")
 ```
 
-- [ ] **Step 2: Run the test and verify RED if side sprint still uses generic `RUN_FPS`**
+- [x] **Step 2: Run the test and verify RED if side sprint still uses generic `RUN_FPS`**
 
 Run:
 
@@ -282,7 +282,7 @@ godot --path . --headless -s res://tests/run_tests.gd
 
 Expected before final playback implementation: FAIL with side sprint speed `0.75` or another non-`1.5` value.
 
-- [ ] **Step 3: Complete side-specific runtime speed selection**
+- [x] **Step 3: Complete side-specific runtime speed selection**
 
 Use `SIDE_RUN_FPS / SIDE_WALK_FPS` only for east/west and preserve `RUN_FPS / WALK_FPS` for the other six directions. Do not change `PlayerController.speed`, sprint speed, collision, or movement math.
 
@@ -301,7 +301,7 @@ func sync_motion(planar_velocity: Vector2, sprinting: bool, on_floor: bool) -> v
 		return
 ```
 
-- [ ] **Step 4: Run focused and integration suites**
+- [x] **Step 4: Run focused and integration suites**
 
 Run:
 
@@ -312,7 +312,7 @@ godot --path . --headless -s res://tests/run_main_gameplay_integration_tests.gd
 
 Expected: both exit 0 with no new script errors or player-scene regressions.
 
-- [ ] **Step 5: Commit runtime playback**
+- [x] **Step 5: Commit runtime playback**
 
 ```powershell
 git add scripts/visual/player_visual.gd tests/test_player_visual.gd
@@ -329,7 +329,7 @@ git commit -m "feat: play twelve-frame side gait"
 - Create: `docs/validation/player-side-walk-12-frame-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-14-player-side-walk-12-frame.md`
 
-- [ ] **Step 1: Create a deterministic capture runner**
+- [x] **Step 1: Create a deterministic capture runner**
 
 The runner must render:
 
@@ -342,7 +342,7 @@ The runner must render:
 
 Write PNG outputs under `res://.godot/player-side-walk-validation/`; do not commit generated captures.
 
-- [ ] **Step 2: Run deterministic captures**
+- [x] **Step 2: Run deterministic captures**
 
 ```powershell
 godot --path . --display-driver windows --rendering-method gl_compatibility -s res://tests/capture_player_side_walk.gd
@@ -350,11 +350,11 @@ godot --path . --display-driver windows --rendering-method gl_compatibility -s r
 
 Expected: exit 0 and all required images are present at their declared dimensions.
 
-- [ ] **Step 3: Review every transition at original resolution**
+- [x] **Step 3: Review every transition at original resolution**
 
 Inspect the strip and gameplay images with `view_image`. Explicitly verify `0→1→2`, `2→3→4→5`, `5→6→7`, `8→9→10→11`, and `11→0`. Reject any leg identity swap, foot sliding, baseline jump, duplicate pose, scale change, ghost limb, or broken mirror.
 
-- [ ] **Step 4: Run the full project regression suite**
+- [x] **Step 4: Run the full project regression suite**
 
 ```powershell
 godot --path . --headless -s res://tests/run_tests.gd
@@ -382,9 +382,9 @@ git commit -m "docs: validate twelve-frame side walk"
 
 ## Completion checklist
 
-- [ ] The side walk atlas is `2304×384` and contains no idle pose.
-- [ ] East has 12 distinct, sequential gait poses; west is its exact mirror.
-- [ ] Limb identities remain stable through all adjacent frames and the loop boundary.
-- [ ] Walk plays at 12 FPS and side sprint at 18 FPS without changing movement physics.
-- [ ] Character identity, baseline, scale, transparency, and hand-painted style remain stable.
-- [ ] Focused, integration, full regression, and visual-capture checks all pass.
+- [x] The side walk atlas is `2304×384` and contains no idle pose.
+- [x] East has 12 distinct, sequential gait poses; west is its exact mirror.
+- [x] Limb identities remain stable through all adjacent frames and the loop boundary.
+- [x] Walk plays at 12 FPS and side sprint at 18 FPS without changing movement physics.
+- [x] Character identity, baseline, scale, transparency, and hand-painted style remain stable.
+- [x] Focused, integration, full regression, and visual-capture checks all pass.

@@ -4,7 +4,7 @@
 
 **Goal:** Replace the visually duplicated and discontinuous poses in the existing 12-frame side walk while preserving its atlas format, farmer identity, exact west mirrors, and 12/18 FPS runtime integration.
 
-**Architecture:** Keep p0 and p6 as opposite contact anchors, author the remaining poses as five explicit opposite-phase pairs, and assemble twelve independent east-facing frame files before deriving west by deterministic mirroring. Automated tests inspect only the boot/lower-shin region for duplicate and jump detection; numbered visual strips remain the authority for left/right leg identity and the approach→crossing→extension semantics.
+**Architecture:** Keep p0 as the exact contact anchor and assemble twelve independent east-facing frame files before deriving west by deterministic mirroring. The first five generated poses remain approved; p6-p11 are authored as a sequential chain so p6 continues the same moving leg from p5. Automated tests inspect only the boot/lower-shin region for duplicate and jump detection; numbered visual strips remain the authority for left/right leg identity and the approach→crossing→extension semantics.
 
 **Tech Stack:** Godot 4.7 GDScript, `Image`/`SpriteFrames`, built-in image generation precise edits, PNG alpha assets, existing custom test runners.
 
@@ -16,7 +16,7 @@
 - Modify: `tests/test_player_visual.gd:300-365`
 - Test: `assets/characters/player/player_farmer_side_walk.png`
 
-- [ ] **Step 1: Add a boot-only silhouette difference helper**
+- [x] **Step 1: Add a boot-only silhouette difference helper**
 
 Add a helper that ignores hats, arms, torso texture, and upper trouser changes:
 
@@ -32,7 +32,7 @@ func _boot_silhouette_difference(first: Image, second: Image) -> int:
 	return difference
 ```
 
-- [ ] **Step 2: Add named phase-progression assertions**
+- [x] **Step 2: Add named phase-progression assertions**
 
 After building the twelve 48×48 east silhouettes, assert boot motion for every transition and call out the reported failures by name:
 
@@ -56,7 +56,7 @@ for transition in [
 	assertions.truthy(change >= 18, "%s (%d)" % [transition.name, change])
 ```
 
-- [ ] **Step 3: Run the focused suite and verify RED**
+- [x] **Step 3: Run the focused suite and verify RED**
 
 Run:
 
@@ -66,7 +66,7 @@ godot --path . --headless -s res://tests/run_tests.gd
 
 Expected: FAIL on at least p1→p2 or p3→p4 boot progression and on the p4→p5/p5→p6 region; no parser or out-of-bounds error.
 
-- [ ] **Step 4: Commit the failing semantic contract**
+- [x] **Step 4: Commit the failing semantic contract**
 
 ```powershell
 git add tests/test_player_visual.gd
@@ -84,31 +84,31 @@ git commit -m "test: detect repeated side-walk boot phases"
 - Temporary: `tmp/player-side-walk/revision/pair-01-07.png` through `pair-05-11.png`
 - Temporary: `tmp/player-side-walk/revision/frames/east-00.png` through `east-11.png`
 
-- [ ] **Step 1: Extract and lock contact anchors p0 and p6**
+- [x] **Step 1: Extract and lock contact anchors p0 and p6**
 
 Extract the current east p0 and p6 cells without rescaling. Inspect them at original resolution and retain them only if p0 has right foot forward/left toe behind and p6 has left foot forward/right toe behind. Copy them to `anchor-00.png`, `anchor-06.png`, and revision frame slots 00/06.
 
-- [ ] **Step 2: Generate phase pair p1/p7 — loading response**
+- [x] **Step 2: Generate phase pair p1/p7 — loading response**
 
 Use the current farmer atlas plus both anchors as edit/style references. Generate exactly two right-facing full-body panels on solid `#ff00ff`: p1 keeps the right foot planted while the left heel lifts; p7 keeps the left foot planted while the right heel lifts. Feet remain separated. Reject neutral standing or identical panels.
 
-- [ ] **Step 3: Generate phase pair p2/p8 — opposite boot fully airborne**
+- [x] **Step 3: Generate phase pair p2/p8 — opposite boot fully airborne**
 
 Generate p2 with the right leg nearly vertical as support and the entire left boot airborne behind it; generate p8 with the left leg as support and the entire right boot airborne behind it. These must visibly advance beyond p1/p7 without approaching the body center yet.
 
-- [ ] **Step 4: Generate phase pair p3/p9 — boot approaches the support ankle**
+- [x] **Step 4: Generate phase pair p3/p9 — boot approaches the support ankle**
 
 Generate p3 with the left boot moving close behind the right ankle and p9 with the right boot moving close behind the left ankle. The moving boot is low and behind; it has not crossed the support leg.
 
-- [ ] **Step 5: Generate phase pair p4/p10 — crossing under the hips**
+- [x] **Step 5: Generate phase pair p4/p10 — crossing under the hips**
 
 Generate p4 with the left boot passing behind the right support leg directly under the hips, and p10 with the right boot passing behind the left support leg. This phase must differ visibly from the approach phase but must not form a forward stride.
 
-- [ ] **Step 6: Generate phase pair p5/p11 — short forward extension**
+- [x] **Step 6: Generate phase pair p5/p11 — short forward extension**
 
 Generate p5 with the left boot only slightly ahead of the right support leg and p11 with the right boot only slightly ahead of the left support leg. Avoid the previous full split-stride jump; these poses lead into p6/p0 contact.
 
-- [ ] **Step 7: Chroma-key and inspect each extracted panel immediately**
+- [x] **Step 7: Chroma-key and inspect each extracted panel immediately**
 
 For every approved pair, run the installed chroma-key helper with border auto-detection, soft matte, thresholds 12/220, and despill. Split into the declared frame slots. Compare each new frame with its preceding frame, following frame, and opposite-phase partner before moving to the next pair. Do not commit `tmp/` inputs.
 
@@ -121,7 +121,7 @@ For every approved pair, run the installed chroma-key helper with border auto-de
 - Modify: `assets/characters/player/player_farmer_side_walk.png`
 - Test: `tests/test_player_visual.gd`
 
-- [ ] **Step 1: Change the assembler input boundary**
+- [x] **Step 1: Change the assembler input boundary**
 
 Replace the 4×3 contact-sheet reader with exactly twelve validated files under `res://tmp/player-side-walk/revision/frames`. Keep the existing common-scale calculation, y=184 baseline, transparent-corner rejection, row-0 assembly, and exact row-1 mirroring:
 
@@ -143,7 +143,7 @@ for index in FRAME_COUNT:
 	sources.append(source)
 ```
 
-- [ ] **Step 2: Assemble and import the revised atlas**
+- [x] **Step 2: Assemble and import the revised atlas**
 
 Run:
 
@@ -154,7 +154,7 @@ godot --path . --headless --import
 
 Expected: the atlas remains exactly `2304×384`; east contains twelve revised frames and west contains their exact mirrors.
 
-- [ ] **Step 3: Run the focused suite and correct art frame-by-frame**
+- [x] **Step 3: Run the focused suite and correct art frame-by-frame**
 
 Run:
 
@@ -180,7 +180,7 @@ git commit -m "fix: add missing side-walk crossing poses"
 - Modify: `docs/validation/player-side-walk-12-frame-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-14-player-side-walk-transition-revision.md`
 
-- [ ] **Step 1: Regenerate deterministic strips**
+- [x] **Step 1: Regenerate deterministic strips**
 
 Run:
 
@@ -190,7 +190,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility -s r
 
 Expected: numbered east/west strips, half-cycle pairs, and runtime 12/18 FPS samples are regenerated under `.godot/player-side-walk-validation/`.
 
-- [ ] **Step 2: Perform the semantic review that automation cannot prove**
+- [x] **Step 2: Perform the semantic review that automation cannot prove**
 
 Inspect at original resolution and explicitly accept or reject each chain:
 
@@ -199,7 +199,7 @@ Inspect at original resolution and explicitly accept or reject each chain:
 - p5→p6→p7→p8: left extension → contact → loading while right boot becomes airborne;
 - p8→p9→p10→p11→p0: exact opposite-leg progression and clean loop closure.
 
-- [ ] **Step 3: Run focused and main integration regression**
+- [x] **Step 3: Run focused and main integration regression**
 
 ```powershell
 godot --path . --headless -s res://tests/run_tests.gd
@@ -222,9 +222,16 @@ git commit -m "docs: validate revised side-walk transitions"
 
 ## Completion checklist
 
-- [ ] p1/p2 and p3/p4 have visibly different boot positions.
-- [ ] p4→p5 contains the crossing-to-short-extension transition instead of a split-stride jump.
-- [ ] p5/p6/p7/p8 are four distinct stages.
-- [ ] The opposite half-cycle has the same transition granularity.
-- [ ] Boot-only automated checks and numbered-strip semantic review both pass.
-- [ ] The game still uses the `2304×384` atlas at 12 FPS walk and 18 FPS sprint.
+- [x] p1/p2 and p3/p4 have visibly different boot positions.
+- [x] p4→p5 contains the crossing-to-short-extension transition instead of a split-stride jump.
+- [x] p5/p6/p7/p8 are four distinct stages.
+- [x] The opposite half-cycle has the same transition granularity.
+- [x] Boot-only automated checks and numbered-strip semantic review both pass.
+- [x] The game still uses the `2304×384` atlas at 12 FPS walk and 18 FPS sprint.
+
+## 2026-08-16 leg-identity correction
+
+- [x] Preserve approved p0-p5 instead of retaining the previous p6 anchor.
+- [x] Regenerate p6 with the right foot still planted while the left leg crosses; land the left foot in p7.
+- [x] Regenerate p7-p11 from adjacent endpoint poses, keeping the moving leg close to the ground.
+- [x] Recheck both mirrored rows and the p11-to-p0 loop against the original motion thresholds.

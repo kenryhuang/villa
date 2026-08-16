@@ -2,44 +2,34 @@ extends SceneTree
 
 const FRAME_SIZE := Vector2i(192, 192)
 const FRAME_COUNT := 12
-const SOURCE_COLUMNS := 4
-const SOURCE_ROWS := 3
 const BASELINE_Y := 184
 const MAX_CHARACTER_SIZE := Vector2i(178, 178)
-const CONTACT_SHEET_PATH := "res://tmp/player-side-walk/east-contact-sheet-transparent.png"
-const EXTRACTED_FRAME_DIR := "res://tmp/player-side-walk/frames"
+const INPUT_DIR := "res://tmp/player-side-walk/revision/frames"
 const OUTPUT_PATH := "res://assets/characters/player/player_farmer_side_walk.png"
+const ANCHOR_FRAMES := [0]
+const FRAME_SCALE_ADJUSTMENTS := [1.0, 1.0, 1.0, 1.0, 1.0, 1.02, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+const FRAME_X_OFFSETS := [0, -7, 0, 0, 0, -4, 0, 0, 0, 2, 0, 0]
 
 
 func _init() -> void:
-	var contact_sheet := Image.load_from_file(ProjectSettings.globalize_path(CONTACT_SHEET_PATH))
-	if contact_sheet == null or contact_sheet.is_empty():
-		_fail("Missing transparent contact sheet '%s'." % CONTACT_SHEET_PATH)
-		return
-	if contact_sheet.get_width() % SOURCE_COLUMNS != 0 or contact_sheet.get_height() % SOURCE_ROWS != 0:
-		_fail(
-			"Contact sheet must divide into a %dx%d grid; got %dx%d."
-			% [SOURCE_COLUMNS, SOURCE_ROWS, contact_sheet.get_width(), contact_sheet.get_height()]
-		)
-		return
-
 	var sources: Array[Image] = []
 	var maximum_bounds := Vector2i.ZERO
-	var source_cell_size := Vector2i(
-		contact_sheet.get_width() / SOURCE_COLUMNS,
-		contact_sheet.get_height() / SOURCE_ROWS
-	)
 	for index in FRAME_COUNT:
-		var source_origin := Vector2i(index % SOURCE_COLUMNS, index / SOURCE_COLUMNS) * source_cell_size
-		var source := contact_sheet.get_region(Rect2i(source_origin, source_cell_size))
+		var source_path := INPUT_DIR.path_join("east-%02d.png" % index)
+		var source := Image.load_from_file(ProjectSettings.globalize_path(source_path))
+		if source == null or source.is_empty() or not _has_transparent_corners(source):
+			_fail("Missing or invalid east frame %02d." % index)
+			return
 		var used := source.get_used_rect()
 		if used.size.x <= 0 or used.size.y <= 0:
-			_fail("Contact-sheet frame %02d is empty." % index)
+			_fail("East frame %02d is empty." % index)
 			return
-		if not _has_transparent_corners(source):
-			_fail("Contact-sheet frame %02d does not have transparent corners." % index)
-			return
-		maximum_bounds = maximum_bounds.max(used.size)
+		if index in ANCHOR_FRAMES:
+			if source.get_size() != FRAME_SIZE:
+				_fail("Anchor frame %02d must remain an exact %s cell." % [index, FRAME_SIZE])
+				return
+		else:
+			maximum_bounds = maximum_bounds.max(used.size)
 		sources.append(source)
 
 	var common_scale := minf(
@@ -53,20 +43,12 @@ func _init() -> void:
 		Image.FORMAT_RGBA8
 	)
 	output.fill(Color.TRANSPARENT)
-	var frame_dir_error := DirAccess.make_dir_recursive_absolute(
-		ProjectSettings.globalize_path(EXTRACTED_FRAME_DIR)
-	)
-	if frame_dir_error != OK:
-		_fail("Could not create extracted-frame directory (%d)." % frame_dir_error)
-		return
 	for index in FRAME_COUNT:
-		var frame := _fit_into_cell(sources[index], common_scale)
-		var frame_error := frame.save_png(ProjectSettings.globalize_path(
-			EXTRACTED_FRAME_DIR.path_join("east-%02d.png" % index)
-		))
-		if frame_error != OK:
-			_fail("Could not save extracted frame %02d (%d)." % [index, frame_error])
-			return
+		var frame := sources[index].duplicate() if index in ANCHOR_FRAMES else _fit_into_cell(
+			sources[index],
+			common_scale * FRAME_SCALE_ADJUSTMENTS[index]
+		)
+		frame = _shift_frame(frame, FRAME_X_OFFSETS[index])
 		output.blit_rect(
 			frame,
 			Rect2i(Vector2i.ZERO, FRAME_SIZE),
@@ -107,6 +89,22 @@ func _fit_into_cell(source: Image, common_scale: float) -> Image:
 	)
 	cell.blit_rect(crop, Rect2i(Vector2i.ZERO, crop.get_size()), origin)
 	return cell
+
+
+func _shift_frame(source: Image, offset_x: int) -> Image:
+	if offset_x == 0:
+		return source
+	var shifted := Image.create_empty(FRAME_SIZE.x, FRAME_SIZE.y, false, Image.FORMAT_RGBA8)
+	shifted.fill(Color.TRANSPARENT)
+	var source_x := maxi(0, -offset_x)
+	var destination_x := maxi(0, offset_x)
+	var width := FRAME_SIZE.x - absi(offset_x)
+	shifted.blit_rect(
+		source,
+		Rect2i(Vector2i(source_x, 0), Vector2i(width, FRAME_SIZE.y)),
+		Vector2i(destination_x, 0)
+	)
+	return shifted
 
 
 func _has_transparent_corners(source: Image) -> bool:
