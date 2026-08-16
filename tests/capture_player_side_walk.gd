@@ -109,10 +109,10 @@ func _capture_runtime_states(visual: PlayerVisual) -> bool:
 	const SAMPLE_COUNT := 6
 	const SAMPLE_INTERVAL := 1.0 / 6.0
 	var states := [
-		{"direction": Vector2.RIGHT, "sprinting": false, "label": "EAST WALK - walk_e - 6 FPS"},
-		{"direction": Vector2.RIGHT, "sprinting": true, "label": "EAST SPRINT - walk_e - 9 FPS"},
-		{"direction": Vector2.LEFT, "sprinting": false, "label": "WEST WALK - walk_w - 6 FPS"},
-		{"direction": Vector2.LEFT, "sprinting": true, "label": "WEST SPRINT - walk_w - 9 FPS"},
+		{"direction": Vector2.RIGHT, "sprinting": false, "label": "EAST WALK - walk_e - 9 FPS"},
+		{"direction": Vector2.RIGHT, "sprinting": true, "label": "EAST SPRINT - walk_e - 13.5 FPS"},
+		{"direction": Vector2.LEFT, "sprinting": false, "label": "WEST WALK - walk_w - 9 FPS"},
+		{"direction": Vector2.LEFT, "sprinting": true, "label": "WEST SPRINT - walk_w - 13.5 FPS"},
 	]
 	var row_height := FRAME_SIZE.y + 38
 	var size := Vector2i(FRAME_SIZE.x * SAMPLE_COUNT, row_height * states.size())
@@ -157,7 +157,7 @@ func _capture_runtime_states(visual: PlayerVisual) -> bool:
 		captured_sequences.append(sequence)
 	if captured_sequences[0] == captured_sequences[1] or captured_sequences[2] == captured_sequences[3]:
 		canvas.queue_free()
-		_fail("runtime capture did not distinguish 6 FPS walk from 9 FPS sprint")
+		_fail("runtime capture did not distinguish 9 FPS walk from 13.5 FPS sprint")
 		return false
 	return await _save_canvas(canvas, size, "runtime-walk-sprint.png")
 

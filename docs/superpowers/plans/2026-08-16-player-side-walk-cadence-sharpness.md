@@ -17,7 +17,7 @@
 - Test: `scripts/visual/player_visual.gd`
 - Test: `assets/characters/player/player_farmer_side_walk.png.import`
 
-- [ ] **Step 1: Require the approved side timing**
+- [x] **Step 1: Require the approved side timing**
 
 Replace the shared-numeric-FPS assertions with:
 
@@ -40,7 +40,7 @@ assertions.near(
 
 Inside the direction animation loop, expect `SIDE_WALK_FPS` for east/west and `WALK_FPS` for all other directions. Keep the runtime sprint `speed_scale = 1.5` assertion and update its message to nine poses at 13.5 FPS.
 
-- [ ] **Step 2: Require explicit runtime filtering**
+- [x] **Step 2: Require explicit runtime filtering**
 
 After a valid `PlayerVisual.configure`, add:
 
@@ -52,7 +52,7 @@ assertions.equal(
 )
 ```
 
-- [ ] **Step 3: Require matching alpha-border import processing**
+- [x] **Step 3: Require matching alpha-border import processing**
 
 Inside `_assert_side_walk_art_contract`, read both import files and assert:
 
@@ -69,7 +69,7 @@ assertions.truthy(
 )
 ```
 
-- [ ] **Step 4: Run the focused suite and verify RED**
+- [x] **Step 4: Run the focused suite and verify RED**
 
 ```powershell
 godot --headless --path . --log-file .godot\side-cadence-sharpness-red.log -s res://tests/run_tests.gd
@@ -77,7 +77,7 @@ godot --headless --path . --log-file .godot\side-cadence-sharpness-red.log -s re
 
 Expected: FAIL on old 6/9 side timing, unequal 1.5-second side cycle, inherited texture filtering, and `fix_alpha_border=false`.
 
-- [ ] **Step 5: Commit the failing contract**
+- [x] **Step 5: Commit the failing contract**
 
 ```powershell
 git add -- tests/test_player_visual.gd
@@ -91,7 +91,7 @@ git commit -m "test: require matched side gait cadence"
 - Modify: `assets/characters/player/player_farmer_side_walk.png.import`
 - Test: `tests/test_player_visual.gd`
 
-- [ ] **Step 1: Restore one-second side gait timing**
+- [x] **Step 1: Restore one-second side gait timing**
 
 Set:
 
@@ -102,7 +102,7 @@ const SIDE_RUN_FPS := 13.5
 
 Keep `SIDE_WALK_FRAME_COUNT := 9`, `WALK_FPS := 6.0`, and `RUN_FPS := 9.0` unchanged.
 
-- [ ] **Step 2: Select non-mipmap linear filtering explicitly**
+- [x] **Step 2: Select non-mipmap linear filtering explicitly**
 
 In `PlayerVisual.configure`, set:
 
@@ -112,7 +112,7 @@ texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 
 Set it with the other configured rendering properties before making the sprite visible.
 
-- [ ] **Step 3: Prepare side-atlas transparent border colors**
+- [x] **Step 3: Prepare side-atlas transparent border colors**
 
 In `assets/characters/player/player_farmer_side_walk.png.import`, change only:
 
@@ -126,7 +126,7 @@ Keep lossless compression and mipmap generation disabled, then run:
 godot --headless --path . --log-file .godot\import-side-sharpness.log --import
 ```
 
-- [ ] **Step 4: Run the focused suite and verify GREEN**
+- [x] **Step 4: Run the focused suite and verify GREEN**
 
 ```powershell
 godot --headless --path . --log-file .godot\side-cadence-sharpness-green.log -s res://tests/run_tests.gd
@@ -134,7 +134,7 @@ godot --headless --path . --log-file .godot\side-cadence-sharpness-green.log -s 
 
 Expected: all cadence, filter, import, scale, color, mirror, and gait checks pass.
 
-- [ ] **Step 5: Commit the implementation**
+- [x] **Step 5: Commit the implementation**
 
 ```powershell
 git add -- scripts/visual/player_visual.gd assets/characters/player/player_farmer_side_walk.png.import
@@ -148,11 +148,11 @@ git commit -m "fix: match side gait cadence and filtering"
 - Modify: `docs/validation/player-side-walk-9-frame-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-16-player-side-walk-cadence-sharpness.md`
 
-- [ ] **Step 1: Update runtime capture timing labels**
+- [x] **Step 1: Update runtime capture timing labels**
 
 Change the runtime sheet labels from 6/9 FPS to 9/13.5 FPS and change the distinction failure text accordingly. Keep the live timer sampling and speed-scale checks.
 
-- [ ] **Step 2: Generate and inspect all five captures**
+- [x] **Step 2: Generate and inspect all five captures**
 
 ```powershell
 godot --path . --display-driver windows --rendering-method gl_compatibility --log-file .godot\capture-side-cadence-sharpness.log -s res://tests/capture_player_side_walk.gd
@@ -160,7 +160,7 @@ godot --path . --display-driver windows --rendering-method gl_compatibility --lo
 
 Expected: five captures pass. Inspect the runtime sheet for faster leg exchange and inspect native-size painted edges for dark/soft transparent fringes.
 
-- [ ] **Step 3: Run focused and integration verification**
+- [x] **Step 3: Run focused and integration verification**
 
 ```powershell
 godot --headless --path . --log-file .godot\side-cadence-focused-final.log -s res://tests/run_tests.gd
@@ -169,7 +169,7 @@ godot --headless --path . --log-file .godot\side-cadence-main-final.log -s res:/
 
 Expected: both runners print PASS.
 
-- [ ] **Step 4: Run wider regressions and whitespace checks**
+- [x] **Step 4: Run wider regressions and whitespace checks**
 
 ```powershell
 godot --headless --path . --log-file .godot\side-cadence-grid.log -s res://tests/run_grid_system_tests.gd
@@ -181,7 +181,7 @@ git diff --check
 
 Expected: 106 grid, 578 farming, 3456 building, 129 economy UI, and no whitespace errors.
 
-- [ ] **Step 5: Document and commit final evidence**
+- [x] **Step 5: Document and commit final evidence**
 
 Update the validation document with 9/13.5 FPS, equal cycle durations, explicit linear filtering, matching alpha-border imports, capture results, and test counts. Mark this plan complete and commit:
 
@@ -191,4 +191,3 @@ git commit -m "docs: validate side cadence and sharpness"
 ```
 
 Preserve the current branch and worktree; do not merge, push, or remove them.
-
