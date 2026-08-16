@@ -24,6 +24,7 @@ var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9
 var _is_sprinting := false
 var _stamina_regen_timer := 0.0
 const STAMINA_REGEN_RATE := 1.0  # 每秒恢复 1 点体力
+const LATERAL_MOVEMENT_SPEED_SCALE := 0.67
 const AUTO_WAYPOINT_TOLERANCE := 0.15
 const AUTO_STALL_SECONDS := 0.5
 const AUTO_PROGRESS_EPSILON := 0.01
@@ -70,6 +71,8 @@ func _physics_process(delta: float) -> void:
 		direction = _update_auto_movement(delta)
 
 	var current_speed = speed if using_auto_movement else (sprint_speed if _is_sprinting else speed)
+	if camera_rig != null:
+		current_speed *= movement_speed_scale(direction, camera_rig.get_planar_right())
 	velocity.x = move_toward(velocity.x, direction.x * current_speed, current_speed * 8.0 * delta)
 	velocity.z = move_toward(velocity.z, direction.z * current_speed, current_speed * 8.0 * delta)
 
@@ -183,6 +186,15 @@ static func movement_from_input(input_vector: Vector2, forward: Vector3, right: 
 	var direction = right * input_vector.x + forward * -input_vector.y
 	direction.y = 0.0
 	return direction.normalized() if direction.length_squared() > 1.0 else direction
+
+
+static func movement_speed_scale(direction: Vector3, camera_right: Vector3) -> float:
+	var planar_direction := Vector3(direction.x, 0.0, direction.z)
+	var planar_right := Vector3(camera_right.x, 0.0, camera_right.z)
+	if planar_direction.length_squared() <= 0.000001 or planar_right.length_squared() <= 0.000001:
+		return 1.0
+	var lateral_weight := absf(planar_direction.normalized().dot(planar_right.normalized()))
+	return lerpf(1.0, LATERAL_MOVEMENT_SPEED_SCALE, clampf(lateral_weight, 0.0, 1.0))
 
 
 static func find_interaction_target(node: Node) -> Node:
