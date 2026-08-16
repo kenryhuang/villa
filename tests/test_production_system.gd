@@ -74,10 +74,16 @@ class GreenhouseFarmingRecorder:
 	extends FarmingSystem
 	var active_cells: Array = []
 	var paused_cells: Array = []
+	var coverage_calls := 0
+	var rebuild_calls := 0
 
 	func set_greenhouse_cells(cells: Array, maintenance_paused_cells: Array = []) -> void:
+		coverage_calls += 1
 		active_cells = cells.duplicate()
 		paused_cells = maintenance_paused_cells.duplicate()
+
+	func rebuild_visuals() -> void:
+		rebuild_calls += 1
 
 
 class InventorySignalRecorder:
@@ -148,6 +154,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_clock(assertions, tree)
 	_test_maintenance_lifecycle(assertions)
 	_test_greenhouse_maintenance_coverage(assertions)
+	_test_greenhouse_restore_transaction(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
@@ -229,6 +236,42 @@ func _test_greenhouse_maintenance_coverage(assertions: TestAssert) -> void:
 	production.unregister_building(greenhouse)
 	assertions.equal(farming.active_cells, [], "demolished greenhouse clears active coverage")
 	assertions.equal(farming.paused_cells, [], "demolished greenhouse clears paused coverage")
+	farming.free()
+	grid.free()
+
+
+func _test_greenhouse_restore_transaction(assertions: TestAssert) -> void:
+	var production := _production()
+	var grid = GridSystem.new()
+	var farming := GreenhouseFarmingRecorder.new()
+	var building_system := _track(BuildingSystem.new()) as BuildingSystem
+	assertions.truthy(production.configure(grid, farming, building_system), "restore coverage fixture configures")
+	var greenhouse := _building("greenhouse")
+	greenhouse.grid_x = 15
+	greenhouse.grid_z = 15
+	building_system._buildings.append(greenhouse)
+	assertions.truthy(production.register_building(greenhouse), "restore coverage fixture registers greenhouse")
+	var expected: Array = production.get_greenhouse_cells(greenhouse)
+	farming.coverage_calls = 0
+	farming.rebuild_calls = 0
+	var has_restore_api := (
+		production.has_method("begin_restore_transaction")
+		and production.has_method("end_restore_transaction")
+	)
+	assertions.truthy(has_restore_api, "production exposes a scoped greenhouse restore transaction")
+	if not has_restore_api:
+		farming.free()
+		grid.free()
+		return
+	production.call("begin_restore_transaction")
+	assertions.truthy(production.set_maintenance_due_day(greenhouse, 0), "restore transaction changes maintenance state")
+	assertions.equal(farming.coverage_calls, 0, "restore transaction defers intermediate coverage refresh")
+	assertions.equal(farming.active_cells, expected, "deferred refresh keeps prior active coverage visible")
+	production.call("end_restore_transaction")
+	assertions.equal(farming.coverage_calls, 1, "restore finalization publishes coverage exactly once")
+	assertions.equal(farming.active_cells, [], "restore finalization removes stale active coverage")
+	assertions.equal(farming.paused_cells, expected, "restore finalization publishes paused coverage")
+	assertions.equal(farming.rebuild_calls, 1, "restore finalization rebuilds crop visuals once")
 	farming.free()
 	grid.free()
 

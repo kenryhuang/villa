@@ -280,6 +280,17 @@ func _transition_allowed(current: int, next: int) -> bool:
 
 
 func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
+	var instance := apply_crop_plant(gx, gz, crop_data)
+	if instance == null:
+		return null
+	var cell := get_cell(gx, gz)
+	_emit_cell_state_changed(cell)
+	if _event_bus:
+		_event_bus.crop_planted.emit(gx, gz, crop_data.crop_id)
+	return instance
+
+
+func apply_crop_plant(gx: int, gz: int, crop_data) -> CropInstance:
 	if crop_data == null or not is_cell_available(gx, gz, GridCell.State.FARMLAND):
 		return null
 	var cell := get_cell(gx, gz)
@@ -290,9 +301,6 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 	cell.crop_instance = instance
 	cell.state = GridCell.State.PLANTED
 	_sync_farmland_visual(cell)
-	_emit_cell_state_changed(cell)
-	if _event_bus:
-		_event_bus.crop_planted.emit(gx, gz, crop_data.crop_id)
 	return instance
 
 
@@ -312,14 +320,14 @@ func get_crop_snapshot(gx: int, gz: int) -> Dictionary:
 
 
 func apply_crop_harvest(before: Dictionary, after: Dictionary) -> bool:
-	return _apply_crop_mutation(before, after, true)
+	return _apply_crop_mutation(before, after)
 
 
 func apply_crop_clear(before: Dictionary, after: Dictionary) -> bool:
-	return _apply_crop_mutation(before, after, false)
+	return _apply_crop_mutation(before, after)
 
 
-func _apply_crop_mutation(before: Dictionary, after: Dictionary, emit_harvest: bool) -> bool:
+func _apply_crop_mutation(before: Dictionary, after: Dictionary) -> bool:
 	if not _valid_crop_mutation_payload(before) or not _valid_crop_mutation_payload(after, true):
 		return false
 	var gx := int(before.gx)
@@ -341,7 +349,6 @@ func _apply_crop_mutation(before: Dictionary, after: Dictionary, emit_harvest: b
 			return false
 	elif int(after.cell_state) != GridCell.State.FARMLAND:
 		return false
-	var crop_id := str(before.crop.get("crop_id", ""))
 	if validated_instance != null:
 		if not current.from_dict(validated_instance.to_dict()):
 			return false
@@ -351,9 +358,6 @@ func _apply_crop_mutation(before: Dictionary, after: Dictionary, emit_harvest: b
 	cell.state = int(after.cell_state) as GridCell.State
 	cell.watered = bool(after.watered)
 	_sync_farmland_visual(cell)
-	_emit_cell_state_changed(cell)
-	if emit_harvest and _event_bus:
-		_event_bus.crop_harvested.emit(gx, gz, crop_id)
 	return true
 
 

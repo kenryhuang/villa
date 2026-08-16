@@ -122,6 +122,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
 	_test_task13_legacy_iron_migration_and_missing_economy_idempotence(assertions, tree)
 	_test_task13_resource_apply_failure_rolls_back_economy(assertions, tree)
+	_test_greenhouse_restore_finalizes_coverage_and_visuals(assertions, tree)
 	_test_load_cancels_transient_gathering_before_commit(assertions, tree)
 	_test_task13_corrupt_producer_load_is_atomic(assertions, tree)
 	_test_task13_short_building_restore_is_atomic(assertions, tree)
@@ -646,6 +647,94 @@ func _test_task13_resource_apply_failure_rolls_back_economy(
 	manager.free()
 	daily.free()
 	market.free()
+
+
+func _test_greenhouse_restore_finalizes_coverage_and_visuals(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "GreenhouseRestoreSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var location := _find_restore_location(main, "greenhouse")
+	assertions.truthy(location.x >= 0, "greenhouse restore fixture finds a valid location")
+	if location.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	assertions.equal(
+		main.building_system.restore_buildings([_plain_building_record(main, "greenhouse", location)]),
+		1,
+		"greenhouse restore fixture restores one greenhouse"
+	)
+	main.production_system.rebuild_registered_buildings()
+	var greenhouse := main.building_system.get_all_buildings()[0] as BuildingInstance
+	var crop_position := Vector2i(-1, -1)
+	for candidate in main.production_system.get_greenhouse_cells(greenhouse):
+		if main.grid_system.get_cell(candidate.x, candidate.y) != null:
+			crop_position = candidate
+			break
+	assertions.truthy(crop_position.x >= 0, "greenhouse restore fixture finds a covered crop cell")
+	if crop_position.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	main.grid_system.set_cell_state(crop_position.x, crop_position.y, GridCell.State.FARMLAND)
+	var crop: CropData = tree.root.get_node("GameData").get_crop("lemon")
+	assertions.truthy(crop != null and crop.environment == "greenhouse_only", "greenhouse restore fixture uses a greenhouse-only crop")
+	var crop_cell: GridCell = main.grid_system.get_cell(crop_position.x, crop_position.y)
+	var crop_instance: CropInstance = main.farming_system.plant(crop_cell, crop)
+	assertions.truthy(crop_instance != null, "greenhouse restore fixture plants covered crop")
+	crop_instance.set_growth_state(1.0, CropInstance.LifecycleState.GROWING)
+	main.farming_system.call("_update_visual", crop_cell, crop_instance)
+	var saved: Dictionary = manager._gather_save_data().duplicate(true)
+	_write_json(manager._save_path(TEST_SLOT), saved)
+	main.farming_system.clear_visuals()
+	assertions.equal(main.farming_system.get_visual_count(), 0, "runtime load fixture starts without crop visuals")
+	assertions.truthy(manager.load_game(TEST_SLOT), "runtime greenhouse load succeeds")
+	crop_cell = main.grid_system.get_cell(crop_position.x, crop_position.y)
+	var loaded_visual: Node3D = main.farming_system.get_crop_visual(crop_cell)
+	assertions.truthy(loaded_visual != null, "successful runtime load rebuilds greenhouse crop visuals")
+	if loaded_visual == null:
+		main.farming_system.rebuild_visuals()
+		loaded_visual = main.farming_system.get_crop_visual(crop_cell)
+	assertions.equal(loaded_visual.get_meta("crop_id", ""), "lemon", "runtime load rebuilds the correct crop visual")
+	assertions.equal(loaded_visual.get_meta("lifecycle_state", -1), CropInstance.LifecycleState.GROWING, "runtime load visual matches restored lifecycle")
+	assertions.truthy(main.farming_system.is_greenhouse_cell(crop_cell), "runtime load finalizes active greenhouse coverage")
+
+	var before_snapshot: Dictionary = main.grid_system.get_crop_snapshot(crop_position.x, crop_position.y)
+	var before_visual: Node3D = loaded_visual
+	var rejected: Dictionary = manager._gather_save_data().duplicate(true)
+	for maintenance_value in rejected.production_upkeep.maintenance:
+		var maintenance := maintenance_value as Dictionary
+		maintenance["due_day"] = 0
+	var resources := RejectingResourceWorld.new()
+	resources.game_state = tree.root.get_node("GameState")
+	resources.reject_next_restore = true
+	manager._resource_world = resources
+	rejected["resource_nodes"] = [{"resource_id": "rock", "hits_remaining": 0}]
+	assertions.truthy(not manager._apply_save_data(rejected), "downstream failure rolls greenhouse restore back")
+	crop_cell = main.grid_system.get_cell(crop_position.x, crop_position.y)
+	assertions.equal(main.grid_system.get_crop_snapshot(crop_position.x, crop_position.y), before_snapshot, "failed restore preserves complete greenhouse crop data")
+	assertions.equal(crop_cell.crop_instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "failed restore preserves greenhouse crop lifecycle")
+	assertions.truthy(main.farming_system.is_greenhouse_cell(crop_cell), "failed restore restores active greenhouse coverage")
+	assertions.truthy(not main.farming_system.is_paused_greenhouse_cell(crop_cell), "failed restore removes intermediate paused coverage")
+	var rolled_back_visual: Node3D = main.farming_system.get_crop_visual(crop_cell)
+	assertions.truthy(rolled_back_visual != null, "failed restore rebuilds the rolled-back crop visual")
+	assertions.truthy(rolled_back_visual != before_visual, "failed restore replaces any intermediate crop visual")
+	assertions.equal(rolled_back_visual.get_meta("crop_id", ""), "lemon", "failed restore visual matches rolled-back crop identity")
+	assertions.equal(rolled_back_visual.get_meta("lifecycle_state", -1), CropInstance.LifecycleState.GROWING, "failed restore visual matches rolled-back lifecycle")
+	main.free()
+	manager.free()
+	_cleanup()
 
 
 func _test_load_cancels_transient_gathering_before_commit(

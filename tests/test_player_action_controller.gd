@@ -96,6 +96,15 @@ class FarmingDouble:
 		cell.state = GridCell.State.PLANTED
 		return instance
 
+	func commit_plant(
+		cell: GridCell,
+		plant_item_id: String,
+		expected_preview: Dictionary
+	) -> CropInstance:
+		if preview_plant(cell, plant_item_id) != expected_preview:
+			return null
+		return plant(cell, expected_preview.get("crop_data") as CropData)
+
 	func harvest(cell: GridCell, expected_preview: Dictionary = {}) -> Dictionary:
 		if cell.crop_instance == null or not cell.crop_instance.is_mature():
 			return {}

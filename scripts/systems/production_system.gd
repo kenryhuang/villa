@@ -31,6 +31,10 @@ var maintenance_due_days: Dictionary = {}
 var repair_remaining_seconds: Dictionary = {}
 var speed_accumulators: Dictionary = {}
 var _active_maintenance_transactions: Dictionary = {}
+var _restore_transaction_depth := 0
+var _greenhouse_coverage_initialized := false
+var _last_active_greenhouse_cells: Array = []
+var _last_paused_greenhouse_cells: Array = []
 var _feed_shortage_active: Dictionary = {}
 var _passive_output_blocked: Dictionary = {}
 
@@ -60,9 +64,34 @@ func configure(
 	_farming_system = farming_system
 	_building_system = building_system
 	_inventory_system = inventory_system
+	_greenhouse_coverage_initialized = false
+	_last_active_greenhouse_cells.clear()
+	_last_paused_greenhouse_cells.clear()
 	_connect_building_system()
 	register_existing_buildings()
 	_refresh_greenhouse_cells()
+	return true
+
+
+func begin_restore_transaction() -> void:
+	_restore_transaction_depth += 1
+
+
+func end_restore_transaction() -> bool:
+	if _restore_transaction_depth <= 0:
+		return false
+	if _restore_transaction_depth > 1:
+		_restore_transaction_depth -= 1
+		return true
+	# Keep refreshes deferred while the registry adopts restored building instances.
+	rebuild_registered_buildings()
+	_restore_transaction_depth = 0
+	_greenhouse_coverage_initialized = false
+	_refresh_greenhouse_cells()
+	if _farming_system != null and _farming_system.has_method("finalize_environment_restore"):
+		_farming_system.call("finalize_environment_restore")
+	elif _farming_system != null and _farming_system.has_method("rebuild_visuals"):
+		_farming_system.rebuild_visuals()
 	return true
 
 
@@ -1393,6 +1422,8 @@ func _valid_registered_buildings() -> Array[BuildingInstance]:
 func _refresh_greenhouse_cells() -> void:
 	if _farming_system == null:
 		return
+	if _restore_transaction_depth > 0:
+		return
 	var active_cells: Array = []
 	var paused_cells: Array = []
 	var active_seen := {}
@@ -1416,6 +1447,19 @@ func _refresh_greenhouse_cells() -> void:
 	for position in paused_cells:
 		if not active_seen.has(position):
 			effective_paused.append(position)
+	var active_signature := active_cells.duplicate()
+	var paused_signature := effective_paused.duplicate()
+	active_signature.sort()
+	paused_signature.sort()
+	if (
+		_greenhouse_coverage_initialized
+		and active_signature == _last_active_greenhouse_cells
+		and paused_signature == _last_paused_greenhouse_cells
+	):
+		return
+	_greenhouse_coverage_initialized = true
+	_last_active_greenhouse_cells = active_signature
+	_last_paused_greenhouse_cells = paused_signature
 	_farming_system.set_greenhouse_cells(active_cells, effective_paused)
 
 

@@ -33,11 +33,15 @@ class FailingPlantFarming:
 	extends FarmingSystem
 	var fail_next_plant := true
 
-	func plant(cell: GridCell, crop_data: CropData) -> CropInstance:
+	func commit_plant(
+		cell: GridCell,
+		plant_item_id: String,
+		expected_preview: Dictionary
+	) -> CropInstance:
 		if fail_next_plant:
 			fail_next_plant = false
 			return null
-		return super.plant(cell, crop_data)
+		return super.commit_plant(cell, plant_item_id, expected_preview)
 
 
 class InventorySignalRecorder:
@@ -120,6 +124,51 @@ class SeedChangingHarvestGateway:
 		return farming.call("harvest", cell, expected_preview)
 
 
+class PlantChangingGateway:
+	extends RefCounted
+	var farming: FarmingSystem
+	var season: SeasonSystem
+	var mutation := "season"
+
+	func preview_plant(cell: GridCell, plant_item_id: String) -> Dictionary:
+		return farming.preview_plant(cell, plant_item_id)
+
+	func commit_plant(
+		cell: GridCell,
+		plant_item_id: String,
+		expected_preview: Dictionary
+	) -> CropInstance:
+		if mutation == "season":
+			season.current_season = SeasonSystem.Season.WINTER
+		elif mutation == "cell":
+			cell.state = GridCell.State.WASTELAND
+		return farming.commit_plant(cell, plant_item_id, expected_preview)
+
+
+class PlantRemovalObserver:
+	extends RefCounted
+	var farming: FarmingSystem
+	var inventory: InventorySystem
+	var cell: GridCell
+	var crop_events: CropEventRecorder
+	var calls := 0
+	var saw_final_crop := false
+	var saw_final_visual := false
+	var saw_published_crop_events := false
+
+	func on_removed(item_id: String, _quantity: int) -> void:
+		calls += 1
+		saw_final_crop = (
+			cell.state == GridCell.State.PLANTED
+			and cell.crop_instance != null
+			and cell.crop_instance.crop_data != null
+		)
+		var visual := farming.get_crop_visual(cell)
+		saw_final_visual = visual != null and str(visual.get_meta("crop_id", "")) == cell.crop_instance.crop_data.crop_id
+		saw_published_crop_events = crop_events.planted_events.size() == 1 and crop_events.cell_events.size() == 1
+		inventory.add_item(item_id, 2)
+
+
 class ControllerHarvestEventRecorder:
 	extends RefCounted
 	var inventory_changed_calls := 0
@@ -142,6 +191,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_controller_commits_exact_harvest_preview(assertions, tree)
 	_test_controller_harvest_awards_exp_once(assertions)
 	_test_controller_plant_mapping_signal_is_atomic(assertions, tree)
+	_test_controller_plant_exact_preview_and_notifications(assertions, tree)
 	_test_crop_data_validation(assertions)
 	_test_default_roster_and_item_catalog(assertions)
 	_test_perennial_harvest_and_greenhouse_rules(assertions)
@@ -846,6 +896,103 @@ func _test_controller_plant_mapping_signal_is_atomic(
 	controller.free()
 	inventory.free()
 	farming.free()
+	grid.free()
+
+
+func _test_controller_plant_exact_preview_and_notifications(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_data := tree.root.get_node("GameData")
+	var crop: CropData = game_data.get_crop_for_plant_item("grain_seed")
+	assertions.truthy(crop != null, "exact planting fixture resolves authoritative grain mapping")
+	if crop == null:
+		return
+	var original_seasons: Array[int] = crop.seasons.duplicate()
+	crop.seasons.assign([SeasonSystem.Season.SPRING])
+	var event_bus := tree.root.get_node("EventBus")
+	var grid = GridSystemScript.new()
+	grid._event_bus = event_bus
+	var season = SeasonSystem.new()
+	season.current_season = SeasonSystem.Season.SPRING
+	var farming = FarmingSystemScript.new()
+	farming.configure(grid, season, null)
+	farming._event_bus = event_bus
+	var inventory = InventorySystemScript.new()
+	inventory.add_item("grain_seed", 1)
+	inventory.set_quick_slot(0, PlayerActionControllerScript.SEED_SLOT)
+	var crop_events := CropEventRecorder.new()
+	event_bus.crop_planted.connect(crop_events._on_crop_planted)
+	event_bus.cell_state_changed.connect(crop_events._on_cell_state_changed)
+	var inventory_events := InventorySignalRecorder.new()
+	event_bus.item_added.connect(inventory_events.on_added)
+	event_bus.item_removed.connect(inventory_events.on_removed)
+	var mapping_events := QuickMappingRecorder.new()
+	inventory.quick_slot_mapping_changed.connect(mapping_events.on_mapping_changed)
+
+	grid.set_cell_state(6, 8, FARMLAND)
+	crop_events.cell_events.clear()
+	var season_gateway := PlantChangingGateway.new()
+	season_gateway.farming = farming
+	season_gateway.season = season
+	var controller = PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, season_gateway, null, null, inventory)
+	var removal_observer := PlantRemovalObserver.new()
+	removal_observer.farming = farming
+	removal_observer.inventory = inventory
+	removal_observer.cell = grid.get_cell(6, 8)
+	removal_observer.crop_events = crop_events
+	event_bus.item_removed.connect(removal_observer.on_removed)
+	assertions.truthy(not controller._plant(removal_observer.cell), "season change rejects the exact planting preview")
+	assertions.equal(inventory.get_item_count("grain_seed"), 1, "stale season planting restores only the consumed seed")
+	assertions.equal(removal_observer.calls, 0, "failed season commit publishes no seed removal")
+	assertions.equal(inventory_events.events, [], "failed season commit publishes no transient inventory events")
+	assertions.equal(mapping_events.events, [], "failed season commit publishes no quick mapping change")
+	assertions.equal(crop_events.planted_events, [], "failed season commit publishes no crop event")
+	assertions.equal(crop_events.cell_events, [], "failed season commit publishes no cell event")
+	assertions.equal(removal_observer.cell.state, GridCell.State.FARMLAND, "season rejection preserves the plot")
+
+	season.current_season = SeasonSystem.Season.SPRING
+	season_gateway.mutation = "cell"
+	grid.set_cell_state(7, 8, FARMLAND)
+	crop_events.cell_events.clear()
+	removal_observer.cell = grid.get_cell(7, 8)
+	assertions.truthy(not controller._plant(removal_observer.cell), "cell change rejects the exact planting preview")
+	assertions.equal(inventory.get_item_count("grain_seed"), 1, "stale cell planting restores the consumed seed")
+	assertions.equal(removal_observer.calls, 0, "failed cell commit publishes no seed removal")
+	assertions.equal(inventory_events.events, [], "failed cell commit emits no compensation add")
+	assertions.equal(removal_observer.cell.state, GridCell.State.WASTELAND, "failed planting does not overwrite the adversarial cell change")
+
+	grid.set_cell_state(8, 8, FARMLAND)
+	crop_events.cell_events.clear()
+	removal_observer.cell = grid.get_cell(8, 8)
+	controller.farming_system = farming
+	assertions.truthy(controller._plant(removal_observer.cell), "unchanged exact planting preview commits")
+	assertions.equal(removal_observer.calls, 1, "successful planting publishes one exact seed removal")
+	assertions.truthy(removal_observer.saw_final_crop, "seed removal listener sees the final crop")
+	assertions.truthy(removal_observer.saw_final_visual, "seed removal listener sees the final crop visual")
+	assertions.truthy(removal_observer.saw_published_crop_events, "seed removal follows committed crop and cell events")
+	assertions.equal(inventory.get_item_count("grain_seed"), 2, "successful listener inventory mutation is retained")
+	assertions.equal(
+		mapping_events.events,
+		[
+			{"quick_index": PlayerActionControllerScript.SEED_SLOT, "item_id": ""},
+			{"quick_index": PlayerActionControllerScript.SEED_SLOT, "item_id": "grain_seed"},
+		],
+		"successful planting publishes the committed removal before the listener's retained mapping change"
+	)
+
+	event_bus.item_removed.disconnect(removal_observer.on_removed)
+	event_bus.item_added.disconnect(inventory_events.on_added)
+	event_bus.item_removed.disconnect(inventory_events.on_removed)
+	event_bus.crop_planted.disconnect(crop_events._on_crop_planted)
+	event_bus.cell_state_changed.disconnect(crop_events._on_cell_state_changed)
+	crop.seasons.assign(original_seasons)
+	controller.free()
+	inventory.free()
+	farming.free()
+	season.free()
 	grid.free()
 
 

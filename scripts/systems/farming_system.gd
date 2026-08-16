@@ -28,21 +28,27 @@ func configure(gs, ss, gs_state) -> bool:
 	season_system = ss
 	game_state = gs_state
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if _event_bus == null and gs is GridSystem:
+		_event_bus = (gs as GridSystem)._event_bus
 	_game_data = get_node_or_null("/root/GameData") if is_inside_tree() else null
 	return true
 
 
 func set_greenhouse_cells(cells: Array, paused_cells: Array = []) -> void:
-	_greenhouse_cells.clear()
-	_paused_greenhouse_cells.clear()
+	var active := {}
+	var paused := {}
 	for position in cells:
 		if position is Vector2i:
-			_greenhouse_cells[GridSystemScript.cell_key(position.x, position.y)] = true
+			active[GridSystemScript.cell_key(position.x, position.y)] = true
 	for position in paused_cells:
 		if position is Vector2i:
 			var key := GridSystemScript.cell_key(position.x, position.y)
-			if not _greenhouse_cells.has(key):
-				_paused_greenhouse_cells[key] = true
+			if not active.has(key):
+				paused[key] = true
+	if active == _greenhouse_cells and paused == _paused_greenhouse_cells:
+		return
+	_greenhouse_cells = active
+	_paused_greenhouse_cells = paused
 	_reassess_all_environments()
 
 
@@ -104,9 +110,30 @@ func can_plant(cell: GridCell, crop_data: CropData) -> bool:
 func plant(grid_cell, crop_data) -> CropInstance:
 	if grid_system == null or grid_cell == null or crop_data == null:
 		return null
-	var instance = grid_system.plant_crop(grid_cell.gx, grid_cell.gz, crop_data)
-	if instance:
-		_create_visual(grid_cell, instance)
+	return _commit_plant_data(grid_cell, crop_data)
+
+
+func commit_plant(
+	cell: GridCell,
+	plant_item_id: String,
+	expected_preview: Dictionary
+) -> CropInstance:
+	if grid_system == null or cell == null or expected_preview.is_empty():
+		return null
+	var current := preview_plant(cell, plant_item_id)
+	if current != expected_preview or not bool(current.get("ok", false)):
+		return null
+	return _commit_plant_data(cell, current.get("crop_data") as CropData)
+
+
+func _commit_plant_data(cell: GridCell, crop_data: CropData) -> CropInstance:
+	var instance: CropInstance = grid_system.apply_crop_plant(cell.gx, cell.gz, crop_data)
+	if instance == null:
+		return null
+	_create_visual(cell, instance)
+	_emit_cell_state(cell)
+	if _event_bus and _event_bus.has_signal("crop_planted"):
+		_event_bus.emit_signal("crop_planted", cell.gx, cell.gz, crop_data.crop_id)
 	return instance
 
 
@@ -119,9 +146,6 @@ func harvest(grid_cell, expected_preview: Dictionary = {}) -> Dictionary:
 		else preview_harvest(grid_cell)
 	)
 	var result := commit_harvest(grid_cell, preview)
-	if not result.is_empty():
-		if game_state:
-			game_state.add_exp(result.exp)
 	return result
 
 
@@ -201,6 +225,16 @@ func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:
 		_update_visual(cell, cell.crop_instance)
 	else:
 		_remove_visual(cell)
+	if game_state:
+		game_state.add_exp(int(preview.exp))
+	_emit_cell_state(cell)
+	if _event_bus and _event_bus.has_signal("crop_harvested"):
+		_event_bus.emit_signal(
+			"crop_harvested",
+			cell.gx,
+			cell.gz,
+			str((preview.before.crop as Dictionary).get("crop_id", ""))
+		)
 	return preview.duplicate(true)
 
 
@@ -223,7 +257,13 @@ func clear_withered(cell: GridCell) -> bool:
 	if not grid_system.apply_crop_clear(before, after):
 		return false
 	_remove_visual(cell)
+	_emit_cell_state(cell)
 	return true
+
+
+func _emit_cell_state(cell: GridCell) -> void:
+	if _event_bus and cell != null and _event_bus.has_signal("cell_state_changed"):
+		_event_bus.emit_signal("cell_state_changed", cell.gx, cell.gz, cell.state)
 
 
 func water(grid_cell) -> bool:
@@ -407,6 +447,7 @@ func _instantiate_fallback_visual(cell: GridCell, instance: CropInstance) -> Mes
 	box.size = _visual_size_for_stage(stage, total_stages)
 	visual.position.y = cell.terrain_height + box.size.y * 0.5 + 0.035
 	_update_visual_color(visual, stage, total_stages, instance.lifecycle_state)
+	_apply_visual_state(visual, instance.lifecycle_state)
 	return visual
 
 
@@ -440,7 +481,7 @@ func _update_visual_color(
 	visual: MeshInstance3D,
 	stage: int,
 	total_stages: int,
-	lifecycle_state: int = CropInstance.LifecycleState.GROWING
+	_lifecycle_state: int = CropInstance.LifecycleState.GROWING
 ) -> void:
 	var mat := StandardMaterial3D.new()
 	if stage == 0:
@@ -451,12 +492,9 @@ func _update_visual_color(
 		mat.albedo_color = Color(1.0, 0.84, 0.0)
 	else:
 		mat.albedo_color = Color(0.6, 0.8, 0.2)
-	if lifecycle_state == CropInstance.LifecycleState.DORMANT:
-		mat.albedo_color *= Color(0.68, 0.72, 0.65, 1.0)
-	elif lifecycle_state == CropInstance.LifecycleState.WITHERED:
-		mat.albedo_color *= Color(0.82, 0.68, 0.38, 1.0)
 	mat.roughness = 0.82
 	visual.material_override = mat
+	visual.remove_meta("crop_state_base_override_color")
 
 
 func _apply_visual_state(visual: Node, lifecycle_state: int) -> void:
@@ -473,8 +511,43 @@ func _apply_visual_state(visual: Node, lifecycle_state: int) -> void:
 		if not sprite.has_meta("crop_state_base_modulate"):
 			sprite.set_meta("crop_state_base_modulate", sprite.modulate)
 		sprite.modulate = (sprite.get_meta("crop_state_base_modulate") as Color) * tint
+	elif visual is MeshInstance3D:
+		_apply_mesh_visual_state(visual as MeshInstance3D, tint)
 	for child in visual.get_children():
 		_apply_visual_state(child, lifecycle_state)
+
+
+func _apply_mesh_visual_state(visual: MeshInstance3D, tint: Color) -> void:
+	if visual.material_override is StandardMaterial3D:
+		if not visual.has_meta("crop_state_base_override_color"):
+			var owned_override := visual.material_override.duplicate() as StandardMaterial3D
+			visual.material_override = owned_override
+			visual.set_meta("crop_state_base_override_color", owned_override.albedo_color)
+		var override := visual.material_override as StandardMaterial3D
+		override.albedo_color = (
+			visual.get_meta("crop_state_base_override_color") as Color
+		) * tint
+		return
+	if visual.mesh == null:
+		return
+	if not visual.has_meta("crop_state_base_surface_colors"):
+		var owned_mesh := visual.mesh.duplicate() as Mesh
+		var base_colors: Array[Color] = []
+		for surface in range(owned_mesh.get_surface_count()):
+			var source := owned_mesh.surface_get_material(surface)
+			if source is StandardMaterial3D:
+				var owned_material := source.duplicate() as StandardMaterial3D
+				owned_mesh.surface_set_material(surface, owned_material)
+				base_colors.append(owned_material.albedo_color)
+			else:
+				base_colors.append(Color.TRANSPARENT)
+		visual.mesh = owned_mesh
+		visual.set_meta("crop_state_base_surface_colors", base_colors)
+	var colors := visual.get_meta("crop_state_base_surface_colors") as Array
+	for surface in range(visual.mesh.get_surface_count()):
+		var material := visual.mesh.surface_get_material(surface) as StandardMaterial3D
+		if material != null and surface < colors.size():
+			material.albedo_color = (colors[surface] as Color) * tint
 
 
 func get_crop_visual(cell: GridCell) -> Node3D:
@@ -498,6 +571,11 @@ func rebuild_visuals() -> void:
 	clear_visuals()
 	for cell in get_all_planted_cells():
 		_create_visual(cell, cell.crop_instance)
+
+
+func finalize_environment_restore() -> void:
+	_reassess_all_environments()
+	rebuild_visuals()
 
 
 func _visual_parent() -> Node3D:

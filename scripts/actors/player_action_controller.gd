@@ -842,29 +842,42 @@ func _plant(cell: GridCell) -> bool:
 		_last_plant_failure_details = preview.duplicate(true)
 		return false
 	var plant_item_id := str(preview.get("plant_item_id", ""))
-	var crop_data := preview.get("crop_data") as CropData
 	var inventory_snapshot := {
 		"slots": inventory_system.slots.duplicate(true),
 		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
 	}
+	var owns_event_transaction := _begin_inventory_event_transaction()
 	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
 	if not inventory_system.remove_item(plant_item_id, 1):
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+		_end_inventory_event_transaction(owns_event_transaction)
 		_last_plant_failure_details = preview.duplicate(true)
 		_last_plant_failure_details.ok = false
 		_last_plant_failure_details.reason = "no_seed"
 		return false
-	var planted = farming_system.plant(cell, crop_data)
+	_end_inventory_event_transaction(owns_event_transaction)
+	var planted: CropInstance = farming_system.call(
+		"commit_plant",
+		cell,
+		plant_item_id,
+		{
+			"ok": bool(preview.get("ok", false)),
+			"reason": str(preview.get("reason", "")),
+			"crop_data": preview.get("crop_data"),
+		}
+	)
 	if planted == null:
-		inventory_system.add_item(plant_item_id, 1)
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
-		_last_plant_failure_details = preview.duplicate(true)
-		_last_plant_failure_details.ok = false
-		_last_plant_failure_details.reason = "plot_unavailable"
+		_last_plant_failure_details = _current_plant_commit_failure(
+			cell,
+			plant_item_id,
+			preview
+		)
 		return false
 	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
+	_emit_committed_inventory_removals({plant_item_id: 1}, owns_event_transaction)
 	_last_plant_failure_details.clear()
 	inventory_changed.emit()
 	return true
@@ -901,6 +914,21 @@ func get_last_plant_failure_details() -> Dictionary:
 	return _last_plant_failure_details.duplicate(true)
 
 
+func _current_plant_commit_failure(
+	cell: GridCell,
+	plant_item_id: String,
+	original_preview: Dictionary
+) -> Dictionary:
+	var result := original_preview.duplicate(true)
+	result.ok = false
+	result.reason = "plot_unavailable"
+	var current: Variant = farming_system.call("preview_plant", cell, plant_item_id)
+	if current is Dictionary and not bool((current as Dictionary).get("ok", false)):
+		result.merge(current as Dictionary, true)
+	result.plant_item_id = plant_item_id
+	return result
+
+
 func _harvest(cell: GridCell) -> bool:
 	if farming_system == null or inventory_system == null:
 		return false
@@ -924,6 +952,8 @@ func _harvest(cell: GridCell) -> bool:
 			_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 			_end_inventory_event_transaction(owns_event_transaction)
 			return false
+	# Task 5 storage mutation belongs above this boundary so its notifications
+	# remain deferred until the exact farming commit can proceed.
 	_end_inventory_event_transaction(owns_event_transaction)
 	var result: Dictionary = farming_system.harvest(cell, preview)
 	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
@@ -996,6 +1026,13 @@ func _emit_committed_inventory_adds(items: Dictionary, owns_transaction: bool) -
 		return
 	for item_id in items:
 		_event_bus.item_added.emit(str(item_id), int(items[item_id]))
+
+
+func _emit_committed_inventory_removals(items: Dictionary, owns_transaction: bool) -> void:
+	if not owns_transaction or _event_bus == null:
+		return
+	for item_id in items:
+		_event_bus.item_removed.emit(str(item_id), int(items[item_id]))
 
 
 func _is_mature(cell: GridCell) -> bool:

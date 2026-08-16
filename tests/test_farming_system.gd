@@ -55,6 +55,31 @@ class HarvestSeedState:
 	extends RefCounted
 
 	var harvest_seed := 1
+	var exp_total := 0
+
+	func add_exp(amount: int) -> bool:
+		exp_total += amount
+		return true
+
+
+class ReentrantHarvestObserver:
+	extends RefCounted
+
+	var farming: FarmingSystem
+	var cell: GridCell
+	var replacement: CropData
+	var state: HarvestSeedState
+	var observed_exp := -1
+	var observed_cell_state := -1
+	var observed_visual_state := -1
+	var replanted: CropInstance
+
+	func on_harvested(_gx: int, _gz: int, _crop_id: String) -> void:
+		observed_exp = state.exp_total
+		observed_cell_state = cell.state
+		var visual := farming.get_crop_visual(cell)
+		observed_visual_state = int(visual.get_meta("lifecycle_state", -1)) if visual else -1
+		replanted = farming.plant(cell, replacement)
 
 
 class ZeroCapacity:
@@ -153,6 +178,7 @@ func run(assertions: TestAssert) -> void:
 	_test_save_seed_controls_deterministic_yield(assertions)
 	_test_exact_harvest_post_states(assertions)
 	_test_deterministic_harvest_transaction(assertions)
+	_test_reentrant_harvest_observes_final_state(assertions)
 
 
 func _test_stage_only_growth_change(assertions: TestAssert) -> void:
@@ -469,3 +495,64 @@ func _fallback_color(visual: Node3D) -> Color:
 		if material != null:
 			return material.albedo_color
 	return Color.TRANSPARENT
+
+
+func _test_reentrant_harvest_observes_final_state(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var farming = FarmingSystemScript.new()
+	var event_bus := HarvestEventBus.new()
+	var state := HarvestSeedState.new()
+	grid._event_bus = event_bus
+	farming.configure(grid, null, state)
+	farming._event_bus = event_bus
+
+	grid.set_cell_state(24, 20, FARMLAND)
+	var annual := _make_crop_data("grain", 3)
+	var replacement := _make_crop_data("turnip", 2)
+	var annual_cell := grid.get_cell(24, 20)
+	var annual_instance: CropInstance = farming.plant(annual_cell, annual)
+	annual_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+	farming.call("_update_visual", annual_cell, annual_instance)
+	var annual_observer := ReentrantHarvestObserver.new()
+	annual_observer.farming = farming
+	annual_observer.cell = annual_cell
+	annual_observer.replacement = replacement
+	annual_observer.state = state
+	event_bus.crop_harvested.connect(annual_observer.on_harvested)
+
+	assertions.truthy(not farming.harvest(annual_cell).is_empty(), "annual harvest commits before reentrant notification")
+	assertions.equal(annual_observer.observed_exp, annual.exp_reward, "annual harvest listener observes committed experience")
+	assertions.equal(annual_observer.observed_cell_state, GridCell.State.FARMLAND, "annual harvest listener observes committed farmland")
+	assertions.truthy(annual_observer.replanted != null, "annual harvest listener can replant the committed farmland")
+	assertions.equal(annual_cell.state, GridCell.State.PLANTED, "reentrant annual replant remains planted")
+	assertions.equal(annual_cell.crop_instance.crop_data.crop_id, "turnip", "reentrant annual replant owns the final crop")
+	var replacement_visual := farming.get_crop_visual(annual_cell)
+	assertions.truthy(replacement_visual != null, "reentrant annual replant keeps its visual")
+	if replacement_visual != null:
+		assertions.equal(replacement_visual.get_meta("crop_id", ""), "turnip", "reentrant annual replant keeps the replacement visual")
+	event_bus.crop_harvested.disconnect(annual_observer.on_harvested)
+
+	grid.set_cell_state(25, 20, FARMLAND)
+	var regrow := _make_crop_data("tomato", 4, "annual_regrow", "outdoor_or_greenhouse", 2)
+	var regrow_cell := grid.get_cell(25, 20)
+	var regrow_instance: CropInstance = farming.plant(regrow_cell, regrow)
+	regrow_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
+	farming.call("_update_visual", regrow_cell, regrow_instance)
+	var regrow_observer := ReentrantHarvestObserver.new()
+	regrow_observer.farming = farming
+	regrow_observer.cell = regrow_cell
+	regrow_observer.replacement = replacement
+	regrow_observer.state = state
+	event_bus.crop_harvested.connect(regrow_observer.on_harvested)
+
+	assertions.truthy(not farming.harvest(regrow_cell).is_empty(), "regrow harvest commits before notification")
+	assertions.equal(regrow_observer.observed_exp, annual.exp_reward + regrow.exp_reward, "regrow listener observes committed experience")
+	assertions.equal(regrow_observer.observed_cell_state, GridCell.State.PLANTED, "regrow listener observes planted post-state")
+	assertions.equal(regrow_observer.observed_visual_state, CropInstance.LifecycleState.GROWING, "regrow listener observes updated growing visual")
+	assertions.truthy(regrow_observer.replanted == null, "regrow listener cannot replace the retained crop")
+	assertions.truthy(farming.get_crop_visual(regrow_cell) != null, "regrow crop keeps its visual after reentrant callback")
+	assertions.equal(regrow_cell.crop_instance.harvest_count, 1, "regrow crop keeps committed harvest count")
+
+	event_bus.free()
+	farming.free()
+	grid.free()

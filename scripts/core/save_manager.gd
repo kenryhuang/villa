@@ -280,11 +280,30 @@ func _apply_save_data(data: Dictionary) -> bool:
 		return false
 	_cancel_transient_actions_for_restore()
 	var previous_state := _gather_save_data().duplicate(true)
-	if _apply_migrated_save_data(migrated_data):
-		return true
-	if not _apply_migrated_save_data(previous_state):
+	_begin_restore_transaction()
+	var applied := _apply_migrated_save_data(migrated_data)
+	if not applied and not _apply_migrated_save_data(previous_state):
 		push_error("Failed to roll back rejected save data")
-	return false
+	_end_restore_transaction()
+	return applied
+
+
+func _begin_restore_transaction() -> void:
+	if (
+		_production_system != null
+		and is_instance_valid(_production_system)
+		and _production_system.has_method("begin_restore_transaction")
+	):
+		_production_system.call("begin_restore_transaction")
+
+
+func _end_restore_transaction() -> void:
+	if (
+		_production_system != null
+		and is_instance_valid(_production_system)
+		and _production_system.has_method("end_restore_transaction")
+	):
+		_production_system.call("end_restore_transaction")
 
 
 func _cancel_transient_actions_for_restore() -> void:
@@ -698,6 +717,11 @@ func _finalize_committed_load() -> void:
 	if get_tree() == null:
 		return
 	for production_system in get_tree().get_nodes_in_group("production_system"):
+		if (
+			production_system == _production_system
+			and production_system.has_method("end_restore_transaction")
+		):
+			continue
 		if production_system.has_method("rebuild_registered_buildings"):
 			production_system.rebuild_registered_buildings()
 
