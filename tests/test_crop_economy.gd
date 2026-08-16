@@ -59,6 +59,9 @@ class QuickMappingRecorder:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_crop_lifecycle_growth(assertions)
+	_test_crop_lifecycle_round_trip(assertions)
+	_test_crop_lifecycle_validation_is_atomic(assertions)
 	_test_harvest_returns_item_quantities(assertions)
 	_test_deterministic_tomato_yield_and_regrowth(assertions)
 	_test_carrot_yield_and_removal(assertions)
@@ -72,6 +75,146 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_roster_planting_uses_active_quick_item(assertions, tree)
 
 
+func _test_crop_lifecycle_growth(assertions: TestAssert) -> void:
+	var crop_data = CropDataScript.new()
+	crop_data.crop_id = "lifecycle_growth"
+	crop_data.growth_days = 3
+	var instance = CropInstance.new()
+	instance.crop_data = crop_data
+	var has_lifecycle_property := _has_property(instance, "lifecycle_state")
+	var has_lifecycle_api := (
+		instance.has_method("set_lifecycle_state")
+		and instance.has_method("derive_active_state")
+	)
+	assertions.truthy(has_lifecycle_property, "new crops expose persisted lifecycle state")
+	assertions.truthy(has_lifecycle_api, "crop lifecycle exposes state and active-state APIs")
+	if not has_lifecycle_property or not has_lifecycle_api:
+		return
+
+	assertions.equal(instance.get("lifecycle_state"), 0, "new crop starts growing")
+	instance.growth_progress = 3.0
+	assertions.truthy(not instance.is_mature(), "maturity does not derive from progress alone")
+	instance.growth_progress = 0.0
+	assertions.truthy(not instance.advance_growth(), "dry growth below maturity does not transition")
+	assertions.near(instance.growth_progress, 1.0, 0.001, "dry crop advances one day")
+	instance.is_watered_today = true
+	assertions.truthy(not instance.advance_growth(), "watered growth below maturity does not transition")
+	assertions.near(instance.growth_progress, 2.5, 0.001, "watered crop advances one and a half days")
+	instance.is_watered_today = true
+	assertions.truthy(instance.advance_growth(), "watered growth crossing threshold transitions")
+	assertions.near(instance.growth_progress, 3.0, 0.001, "growth clamps at maturity")
+	assertions.equal(instance.get("lifecycle_state"), 1, "threshold transition sets mature state")
+	assertions.truthy(instance.is_mature(), "maturity reads lifecycle state")
+	assertions.truthy(not instance.advance_growth(), "mature crop does not advance")
+	assertions.near(instance.growth_progress, 3.0, 0.001, "mature progress remains stable")
+	var dry_transition = CropInstance.new()
+	dry_transition.crop_data = crop_data
+	dry_transition.growth_progress = 2.0
+	assertions.truthy(dry_transition.advance_growth(), "dry growth crossing threshold transitions")
+	assertions.equal(dry_transition.lifecycle_state, CropInstance.LifecycleState.MATURE, "dry threshold sets mature state")
+
+	instance.growth_progress = 1.25
+	assertions.truthy(instance.call("set_lifecycle_state", 2), "dormant state is accepted")
+	instance.is_watered_today = true
+	assertions.truthy(not instance.advance_growth(), "dormant crop does not advance")
+	assertions.near(instance.growth_progress, 1.25, 0.001, "dormant progress remains stable")
+	assertions.equal(instance.call("derive_active_state"), 0, "retained partial progress derives growing")
+
+	instance.growth_progress = 3.0
+	assertions.truthy(instance.call("set_lifecycle_state", 3), "withered state is accepted")
+	assertions.truthy(not instance.advance_growth(), "withered crop does not advance")
+	assertions.near(instance.growth_progress, 3.0, 0.001, "withered progress remains stable")
+	assertions.equal(instance.call("derive_active_state"), 1, "retained mature progress derives mature")
+	assertions.truthy(instance.call("set_lifecycle_state", 3), "valid lifecycle no-op succeeds")
+	assertions.truthy(not instance.call("set_lifecycle_state", -1), "negative lifecycle enum rejects")
+	assertions.truthy(not instance.call("set_lifecycle_state", 4), "out-of-range lifecycle enum rejects")
+	assertions.equal(instance.get("lifecycle_state"), 3, "invalid lifecycle request preserves state")
+
+
+func _test_crop_lifecycle_round_trip(assertions: TestAssert) -> void:
+	var crop_data = CropDataScript.new()
+	crop_data.crop_id = "lifecycle_round_trip"
+	crop_data.growth_days = 3
+	var states := [0, 1, 2, 3]
+	var progress_values := [0.5, 3.0, 1.25, 2.0]
+	var probe = CropInstance.new()
+	if not _has_property(probe, "lifecycle_state") or not probe.has_method("set_lifecycle_state"):
+		assertions.truthy(false, "crop lifecycle round-trip API exists")
+		return
+	for index in states.size():
+		var original = CropInstance.new()
+		original.crop_data = crop_data
+		original.growth_progress = progress_values[index]
+		original.is_watered_today = index % 2 == 0
+		original.harvest_count = index
+		assertions.truthy(original.call("set_lifecycle_state", states[index]), "lifecycle state %d prepares" % states[index])
+		var payload: Variant = JSON.parse_string(JSON.stringify(original.to_dict()))
+		var restored = CropInstance.new()
+		restored.crop_data = crop_data
+		assertions.truthy(restored.from_dict(payload), "lifecycle state %d restores from JSON" % states[index])
+		assertions.equal(restored.get("lifecycle_state"), states[index], "lifecycle state %d round trips" % states[index])
+		assertions.near(restored.growth_progress, progress_values[index], 0.001, "lifecycle progress %d round trips" % states[index])
+		assertions.equal(restored.harvest_count, index, "lifecycle harvest count %d round trips" % states[index])
+
+
+func _test_crop_lifecycle_validation_is_atomic(assertions: TestAssert) -> void:
+	var crop_data = CropDataScript.new()
+	crop_data.crop_id = "lifecycle_atomic"
+	crop_data.growth_days = 3
+	var instance = CropInstance.new()
+	instance.crop_data = crop_data
+	if not _has_property(instance, "lifecycle_state") or not instance.has_method("set_lifecycle_state"):
+		assertions.truthy(false, "crop lifecycle atomic validation API exists")
+		return
+	instance.growth_progress = 1.25
+	instance.is_watered_today = true
+	instance.harvest_count = 2
+	instance.call("set_lifecycle_state", 2)
+	var baseline: Dictionary = instance.to_dict().duplicate(true)
+	var invalid_payloads: Array[Dictionary] = [
+		{"name": "missing lifecycle", "data": {"crop_id": crop_data.crop_id, "growth_progress": 1.0, "is_watered_today": false, "harvest_count": 0}},
+		{"name": "negative lifecycle", "data": _crop_payload(crop_data.crop_id, 1.0, -1)},
+		{"name": "high lifecycle", "data": _crop_payload(crop_data.crop_id, 1.0, 4)},
+		{"name": "boolean lifecycle", "data": _crop_payload(crop_data.crop_id, 1.0, true)},
+		{"name": "fractional lifecycle", "data": _crop_payload(crop_data.crop_id, 1.0, 1.5)},
+		{"name": "NaN lifecycle", "data": _crop_payload(crop_data.crop_id, 1.0, NAN)},
+		{"name": "infinite lifecycle", "data": _crop_payload(crop_data.crop_id, 1.0, INF)},
+		{"name": "negative progress", "data": _crop_payload(crop_data.crop_id, -0.1, 2)},
+		{"name": "NaN progress", "data": _crop_payload(crop_data.crop_id, NAN, 2)},
+		{"name": "infinite progress", "data": _crop_payload(crop_data.crop_id, INF, 2)},
+		{"name": "boolean progress", "data": _crop_payload(crop_data.crop_id, true, 2)},
+		{"name": "fractional harvest count", "data": _crop_payload(crop_data.crop_id, 1.0, 2, 1.5)},
+		{"name": "negative harvest count", "data": _crop_payload(crop_data.crop_id, 1.0, 2, -1)},
+		{"name": "NaN harvest count", "data": _crop_payload(crop_data.crop_id, 1.0, 2, NAN)},
+		{"name": "infinite harvest count", "data": _crop_payload(crop_data.crop_id, 1.0, 2, INF)},
+		{"name": "boolean harvest count", "data": _crop_payload(crop_data.crop_id, 1.0, 2, true)},
+		{"name": "non-boolean water", "data": _crop_payload(crop_data.crop_id, 1.0, 2, 0, 1)},
+		{"name": "wrong crop id", "data": _crop_payload("other_crop", 1.0, 2)},
+		{"name": "growing at maturity", "data": _crop_payload(crop_data.crop_id, 3.0, 0)},
+		{"name": "mature below maturity", "data": _crop_payload(crop_data.crop_id, 2.0, 1)},
+		{"name": "progress above maturity", "data": _crop_payload(crop_data.crop_id, 3.1, 2)},
+	]
+	for fixture in invalid_payloads:
+		assertions.truthy(not instance.from_dict(fixture.data), "%s rejects" % fixture.name)
+		assertions.equal(instance.to_dict(), baseline, "%s rejection is atomic" % fixture.name)
+
+
+func _crop_payload(
+	crop_id: String,
+	progress: Variant,
+	lifecycle: Variant,
+	count: Variant = 0,
+	watered: Variant = false
+) -> Dictionary:
+	return {
+		"crop_id": crop_id,
+		"growth_progress": progress,
+		"is_watered_today": watered,
+		"harvest_count": count,
+		"lifecycle_state": lifecycle,
+	}
+
+
 func _test_harvest_returns_item_quantities(assertions: TestAssert) -> void:
 	var grid = GridSystemScript.new()
 	var crop = CropDataScript.new()
@@ -80,7 +223,7 @@ func _test_harvest_returns_item_quantities(assertions: TestAssert) -> void:
 	crop.exp_reward = 5
 	grid.set_cell_state(1, 1, FARMLAND)
 	var instance = grid.plant_crop(1, 1, crop)
-	instance.growth_progress = 4.0
+	_set_mature(instance, 4.0)
 
 	var result: Dictionary = grid.harvest_crop(1, 1)
 
@@ -104,14 +247,14 @@ func _test_deterministic_tomato_yield_and_regrowth(assertions: TestAssert) -> vo
 	var grid = GridSystemScript.new()
 	grid.set_cell_state(1, 1, FARMLAND)
 	var instance = grid.plant_crop(1, 1, crop)
-	instance.growth_progress = 4.0
+	_set_mature(instance, 4.0)
 	var result: Dictionary = grid.harvest_crop(1, 1)
 	assertions.equal(result, {"items": {"tomato": 3}, "exp": 5, "regrowing": true}, "tomato harvest has exact deterministic result shape")
 	seed(42)
 	var repeat_grid = GridSystemScript.new()
 	repeat_grid.set_cell_state(1, 1, FARMLAND)
 	var repeat_instance = repeat_grid.plant_crop(1, 1, crop)
-	repeat_instance.growth_progress = 4.0
+	_set_mature(repeat_instance, 4.0)
 	assertions.equal(repeat_grid.harvest_crop(1, 1), result, "seed 42 yield repeats after recreating the crop")
 	repeat_grid.free()
 	var cell = grid.get_cell(1, 1)
@@ -119,6 +262,8 @@ func _test_deterministic_tomato_yield_and_regrowth(assertions: TestAssert) -> vo
 	assertions.truthy(cell.crop_instance == instance, "regrowth preserves the crop instance")
 	assertions.equal(instance.harvest_count, 1, "harvest increments persisted counter")
 	assertions.near(instance.growth_progress, 2.0, 0.001, "tomato resets to two-day regrowth phase")
+	if _has_property(instance, "lifecycle_state"):
+		assertions.equal(instance.get("lifecycle_state"), 0, "regrowing harvest returns crop to growing")
 	instance.advance_growth()
 	assertions.truthy(not instance.is_mature(), "tomato is not mature after one regrowth day")
 	instance.advance_growth()
@@ -137,7 +282,7 @@ func _test_carrot_yield_and_removal(assertions: TestAssert) -> void:
 	var grid = GridSystemScript.new()
 	grid.set_cell_state(2, 2, FARMLAND)
 	var instance = grid.plant_crop(2, 2, crop)
-	instance.growth_progress = 3.0
+	_set_mature(instance, 3.0)
 	var result: Dictionary = grid.harvest_crop(2, 2)
 	var quantity := int(result.get("items", {}).get("carrot", 0))
 	assertions.truthy(quantity >= 2 and quantity <= 3, "carrot harvest stays within authored yield range")
@@ -167,10 +312,12 @@ func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree
 	tree.root.add_child(grid)
 	grid.set_cell_state(4, 4, FARMLAND)
 	var instance = grid.plant_crop(4, 4, crop)
-	instance.growth_progress = 4.0
+	_set_mature(instance, 4.0)
 	grid.harvest_crop(4, 4)
 	var saved: Dictionary = grid.to_dict()
+	assertions.equal(saved.get("version", -1), 2, "crop grid save uses version two")
 	assertions.equal(saved.cells[0].crop.get("harvest_count", -1), 1, "grid save persists harvest count")
+	assertions.equal(saved.cells[0].crop.get("lifecycle_state", -1), 0, "grid save persists regrowing lifecycle")
 	var json_saved: Variant = JSON.parse_string(JSON.stringify(saved))
 	var restored = GridSystemScript.new()
 	tree.root.add_child(restored)
@@ -180,16 +327,26 @@ func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree
 	if restored_instance:
 		assertions.equal(restored_instance.harvest_count, 1, "JSON integral float restores as harvest count")
 		assertions.near(restored_instance.growth_progress, 2.0, 0.001, "JSON regrowth progress restores")
+		assertions.equal(restored_instance.get("lifecycle_state"), 0, "JSON grid restore preserves lifecycle state")
 
-	var legacy: Dictionary = saved.duplicate(true)
-	legacy.cells[0].crop.erase("harvest_count")
-	var legacy_restored = GridSystemScript.new()
-	tree.root.add_child(legacy_restored)
-	assertions.truthy(legacy_restored.from_dict(legacy), "legacy crop save without harvest count restores")
-	assertions.equal(legacy_restored.get_cell(4, 4).crop_instance.harvest_count, 0, "legacy crop save defaults harvest count safely")
+	var missing_lifecycle: Dictionary = saved.duplicate(true)
+	missing_lifecycle.cells[0].crop.erase("lifecycle_state")
+	assertions.truthy(not restored.from_dict(missing_lifecycle), "current grid save missing lifecycle rejects")
+	assertions.truthy(restored.get_cell(4, 4).crop_instance == restored_instance, "failed grid restore is atomic")
+	var missing_harvest_count: Dictionary = saved.duplicate(true)
+	missing_harvest_count.cells[0].crop.erase("harvest_count")
+	assertions.truthy(not restored.from_dict(missing_harvest_count), "current grid save missing harvest count rejects")
+	var invalid_lifecycle: Dictionary = saved.duplicate(true)
+	invalid_lifecycle.cells[0].crop.lifecycle_state = 4
+	assertions.truthy(not restored.from_dict(invalid_lifecycle), "grid rejects invalid crop lifecycle enum")
+	var contradictory_lifecycle: Dictionary = saved.duplicate(true)
+	contradictory_lifecycle.cells[0].crop.growth_progress = 4.0
+	assertions.truthy(not restored.from_dict(contradictory_lifecycle), "grid rejects growing crop at maturity")
+	var old_version: Dictionary = saved.duplicate(true)
+	old_version.version = 1
+	assertions.truthy(not restored.from_dict(old_version), "version one grid save rejects before deferred migration")
 	grid.free()
 	restored.free()
-	legacy_restored.free()
 
 
 func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree) -> void:
@@ -204,7 +361,7 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	farming.configure(grid, null, null)
 	grid.set_cell_state(1, 1, FARMLAND)
 	var instance = farming.plant(grid.get_cell(1, 1), crop)
-	instance.growth_progress = 4.0
+	_set_mature(instance, 4.0)
 	var inventory = InventorySystemScript.new()
 	inventory.max_slots = 2
 	inventory.reset_slots()
@@ -552,6 +709,11 @@ func _set_property_if_present(object: Object, property_name: String, value: Vari
 		object.set(property_name, value)
 
 
+func _set_mature(instance: CropInstance, progress: float) -> void:
+	instance.growth_progress = progress
+	instance.set_lifecycle_state(CropInstance.LifecycleState.MATURE)
+
+
 func _test_perennial_harvest_and_greenhouse_rules(assertions: TestAssert) -> void:
 	for crop_id in ["apple", "peach", "grape", "lemon"]:
 		var crop = CropDataScript.new()
@@ -564,7 +726,7 @@ func _test_perennial_harvest_and_greenhouse_rules(assertions: TestAssert) -> voi
 		var grid = GridSystemScript.new()
 		grid.set_cell_state(5, 5, FARMLAND)
 		var instance = grid.plant_crop(5, 5, crop)
-		instance.growth_progress = 5.0
+		_set_mature(instance, 5.0)
 		var result := grid.harvest_crop(5, 5)
 		assertions.truthy(bool(result.get("regrowing", false)), "%s harvest reports persistent regrowth" % crop_id)
 		assertions.equal(grid.get_cell(5, 5).state, PLANTED, "%s remains planted after harvest" % crop_id)
@@ -608,7 +770,7 @@ func _test_regrowing_crop_visual_remains(assertions: TestAssert) -> void:
 	grid.set_cell_state(9, 9, FARMLAND)
 	var cell = grid.get_cell(9, 9)
 	var instance = farming.plant(cell, crop)
-	instance.growth_progress = 4.0
+	_set_mature(instance, 4.0)
 	assertions.truthy(farming.get_crop_visual(cell) != null, "regrowth fixture starts with a crop visual")
 	var result := farming.harvest(cell)
 	assertions.truthy(bool(result.get("regrowing", false)), "visual fixture harvest regrows")

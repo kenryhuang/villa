@@ -821,6 +821,7 @@ func _valid_crop_grid_entry() -> Dictionary:
 			"growth_progress": 1,
 			"is_watered_today": true,
 			"harvest_count": 0,
+			"lifecycle_state": CropInstance.LifecycleState.GROWING,
 		},
 	}
 

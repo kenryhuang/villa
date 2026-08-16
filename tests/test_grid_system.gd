@@ -2,6 +2,7 @@ extends RefCounted
 
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const TerrainBuilderScript = preload("res://scripts/world/terrain_builder.gd")
+const CropDataScript = preload("res://scripts/data/crop_data.gd")
 
 
 func run(assertions: TestAssert) -> void:
@@ -33,4 +34,43 @@ func run(assertions: TestAssert) -> void:
 	assertions.equal(rect_cells.size(), 4, "2x2 rect has 4 cells")
 	assertions.equal(rect_cells[0].gz, 0, "first row first")
 	assertions.equal(rect_cells[2].gz, 1, "second row after first")
+	grid.free()
+
+	_test_lifecycle_serialization_version(assertions)
+
+
+func _test_lifecycle_serialization_version(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var crop = CropDataScript.new()
+	crop.crop_id = "grid_lifecycle_crop"
+	crop.growth_days = 3
+	grid.set_cell_state(2, 2, GridCell.State.FARMLAND)
+	var instance = grid.plant_crop(2, 2, crop)
+	var saved: Dictionary = grid.to_dict()
+
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "new grid plant is explicitly growing")
+	assertions.equal(saved.get("version", -1), 2, "grid serialization uses canonical version two")
+	assertions.equal(
+		saved.cells[0].crop.get("lifecycle_state", -1),
+		0,
+		"grid serialization includes growing lifecycle state"
+	)
+	var json_saved: Variant = JSON.parse_string(JSON.stringify(saved))
+	assertions.equal(
+		json_saved.cells[0].crop.get("lifecycle_state", -1),
+		0.0,
+		"grid JSON round trip preserves lifecycle state"
+	)
+
+	var missing_lifecycle: Dictionary = saved.duplicate(true)
+	missing_lifecycle.cells[0].crop.erase("lifecycle_state")
+	assertions.truthy(
+		not grid.validate_dict(missing_lifecycle),
+		"current grid data missing lifecycle state is rejected"
+	)
+	assertions.truthy(
+		not grid.validate_dict({"version": 1, "cells": []}),
+		"version one grid data is rejected for deferred SaveManager migration"
+	)
+	assertions.truthy(instance != null, "lifecycle serialization fixture plants")
 	grid.free()

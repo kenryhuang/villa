@@ -44,6 +44,8 @@ func _capture() -> void:
 			_fail("cannot plant crop stage %d" % index)
 			return
 		crop_instance.growth_progress = CROP_PROGRESS[index]
+		if crop_instance.growth_progress >= float(grain.growth_days):
+			crop_instance.set_lifecycle_state(CropInstance.LifecycleState.MATURE)
 	main.farming_system.rebuild_visuals()
 
 	var barn_cell := _nearest_build_cell(main, "barn")

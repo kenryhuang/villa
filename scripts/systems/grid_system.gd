@@ -11,6 +11,7 @@ const WORLD_ORIGIN_Z := -14.0
 const SLOPE_THRESHOLD := 0.35
 const GRID_LINE_LIFT := 0.035
 const HIGHLIGHT_LIFT := 0.045
+const SERIALIZATION_VERSION := 2
 const FarmlandTileScript = preload("res://scripts/visual/farmland_tile.gd")
 
 var terrain: TerrainBuilder
@@ -283,6 +284,7 @@ func plant_crop(gx: int, gz: int, crop_data) -> CropInstance:
 	var cell := get_cell(gx, gz)
 	var instance := CropInstance.new()
 	instance.crop_data = crop_data
+	instance.set_lifecycle_state(CropInstance.LifecycleState.GROWING)
 	cell.crop_instance = instance
 	cell.state = GridCell.State.PLANTED
 	_sync_farmland_visual(cell)
@@ -308,6 +310,7 @@ func harvest_crop(gx: int, gz: int) -> Dictionary:
 			0.0,
 			float(cell.crop_instance.crop_data.growth_days - regrow_days)
 		)
+		cell.crop_instance.set_lifecycle_state(CropInstance.LifecycleState.GROWING)
 		cell.crop_instance.is_watered_today = false
 	else:
 		cell.crop_instance = null
@@ -498,7 +501,7 @@ func to_dict() -> Dictionary:
 		if cell.crop_instance and cell.crop_instance.crop_data:
 			entry["crop"] = cell.crop_instance.to_dict()
 		changed_cells.append(entry)
-	return {"version": 1, "cells": changed_cells}
+	return {"version": SERIALIZATION_VERSION, "cells": changed_cells}
 
 
 func reset_state() -> void:
@@ -528,7 +531,7 @@ func validate_dict(data: Dictionary) -> bool:
 		data.size() != 2
 		or not data.has("version")
 		or not _is_integer_number(data.version)
-		or int(data.version) != 1
+		or int(data.version) != SERIALIZATION_VERSION
 		or not data.get("cells", null) is Array
 	):
 		return false
@@ -567,11 +570,11 @@ func validate_dict(data: Dictionary) -> bool:
 			if state != GridCell.State.PLANTED or not entry.crop is Dictionary or game_data == null:
 				return false
 			var crop_entry := entry.crop as Dictionary
-			for field in ["crop_id", "growth_progress", "is_watered_today"]:
+			for field in ["crop_id", "growth_progress", "is_watered_today", "harvest_count", "lifecycle_state"]:
 				if not crop_entry.has(field):
 					return false
 			for field in crop_entry.keys():
-				if field not in ["crop_id", "growth_progress", "is_watered_today", "harvest_count"]:
+				if field not in ["crop_id", "growth_progress", "is_watered_today", "harvest_count", "lifecycle_state"]:
 					return false
 			if (
 				typeof(crop_entry.crop_id) != TYPE_STRING
@@ -583,10 +586,7 @@ func validate_dict(data: Dictionary) -> bool:
 				return false
 			var instance := CropInstance.new()
 			instance.crop_data = crop_data
-			if (
-				not instance.from_dict(crop_entry)
-				or float(crop_entry.growth_progress) > float(crop_data.growth_days)
-			):
+			if not instance.from_dict(crop_entry):
 				return false
 		elif state == GridCell.State.PLANTED:
 			return false
