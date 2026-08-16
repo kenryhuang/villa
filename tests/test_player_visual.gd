@@ -5,6 +5,13 @@ const PlayerScene = preload("res://scenes/actors/player.tscn")
 const ATLAS_PATH := "res://assets/characters/player/player_farmer_atlas.png"
 const SIDE_WALK_PATH := "res://assets/characters/player/player_farmer_side_walk.png"
 const SIDE_WALK_FRAME_COUNT := 12
+const FRAME_SIZE := Vector2i(192, 192)
+const TARGET_CHARACTER_HEIGHT := 151
+const REFERENCE_EAST_ROW := 2
+const REFERENCE_WALK_START_COLUMN := 2
+const REFERENCE_WALK_FRAME_COUNT := 6
+const DENIM_LUMINANCE_TOLERANCE := 4.0 / 255.0
+const DENIM_CHANNEL_TOLERANCE := 10.0 / 255.0
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
@@ -180,9 +187,25 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 	assertions.truthy(texture != null, "twelve-frame side-walk atlas imports")
 	if texture == null:
 		return
+	var reference_texture := load(ATLAS_PATH) as Texture2D
+	assertions.truthy(reference_texture != null, "original player atlas imports for side-walk reference")
+	if reference_texture == null:
+		return
 	var image := texture.get_image()
 	assertions.equal(image.get_size(), Vector2i(2304, 384), "side walk is a 12x2 atlas")
-	var cell_size := Vector2i(192, 192)
+	var cell_size := FRAME_SIZE
+	var reference_regions: Array[Rect2i] = []
+	for column in REFERENCE_WALK_FRAME_COUNT:
+		reference_regions.append(Rect2i(
+			Vector2i(
+				(REFERENCE_WALK_START_COLUMN + column) * FRAME_SIZE.x,
+				REFERENCE_EAST_ROW * FRAME_SIZE.y
+			),
+			FRAME_SIZE
+		))
+	var side_regions: Array[Rect2i] = []
+	for column in SIDE_WALK_FRAME_COUNT:
+		side_regions.append(Rect2i(Vector2i(column * FRAME_SIZE.x, 0), FRAME_SIZE))
 	for row in 2:
 		for column in SIDE_WALK_FRAME_COUNT:
 			var frame := image.get_region(Rect2i(Vector2i(column, row) * cell_size, cell_size))
@@ -191,8 +214,14 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 				bounds.size.x > 0 and bounds.size.y > 0,
 				"side pose %d/%d is painted" % [row, column]
 			)
-			assertions.truthy(
-				bounds.end.y in range(182, 187),
+			assertions.equal(
+				bounds.size.y,
+				TARGET_CHARACTER_HEIGHT,
+				"side pose %d/%d matches the established player height" % [row, column]
+			)
+			assertions.equal(
+				bounds.end.y,
+				184,
 				"side pose %d/%d keeps the planted baseline" % [row, column]
 			)
 			var translucent_pixels := 0
@@ -213,6 +242,21 @@ func _assert_side_walk_art_contract(assertions: TestAssert) -> void:
 		)
 		east.flip_x()
 		assertions.truthy(_images_equal(east, west), "west pose %d exactly mirrors east" % column)
+	var reference_denim := _denim_mean(reference_texture.get_image(), reference_regions)
+	var side_denim := _denim_mean(image, side_regions)
+	assertions.near(
+		_luminance(side_denim),
+		_luminance(reference_denim),
+		DENIM_LUMINANCE_TOLERANCE,
+		"side-walk denim matches original east luminance"
+	)
+	for channel in 3:
+		assertions.near(
+			side_denim[channel],
+			reference_denim[channel],
+			DENIM_CHANNEL_TOLERANCE,
+			"side-walk denim channel %d matches original east" % channel
+		)
 
 
 func _images_equal(first: Image, second: Image) -> bool:
@@ -235,6 +279,33 @@ func _frame_used_rect(image: Image, cell_size: Vector2i, row: int, column: int) 
 	var origin := Vector2i(column * cell_size.x, row * cell_size.y)
 	var frame_image := image.get_region(Rect2i(origin, cell_size))
 	return frame_image.get_used_rect()
+
+
+func _is_denim_pixel(color: Color) -> bool:
+	return (
+		color.a > 0.10
+		and color.b > 45.0 / 255.0
+		and color.b - color.r > 15.0 / 255.0
+		and color.g - color.r > 5.0 / 255.0
+	)
+
+
+func _denim_mean(image: Image, regions: Array[Rect2i]) -> Vector3:
+	var total := Vector3.ZERO
+	var count := 0
+	for region in regions:
+		for y in range(region.position.y, region.end.y):
+			for x in range(region.position.x, region.end.x):
+				var color := image.get_pixel(x, y)
+				if not _is_denim_pixel(color):
+					continue
+				total += Vector3(color.r, color.g, color.b)
+				count += 1
+	return total / float(maxi(1, count))
+
+
+func _luminance(color: Vector3) -> float:
+	return color.x * 0.2126 + color.y * 0.7152 + color.z * 0.0722
 
 
 func _count_visible_components(
