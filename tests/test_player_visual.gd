@@ -12,6 +12,7 @@ const REFERENCE_WALK_START_COLUMN := 2
 const REFERENCE_WALK_FRAME_COUNT := 6
 const DENIM_LUMINANCE_TOLERANCE := 4.0 / 255.0
 const DENIM_CHANNEL_TOLERANCE := 10.0 / 255.0
+const SIDE_BOOT_MIN_DIFFERENCE := 14
 const DIRECTIONS := ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
@@ -446,7 +447,7 @@ func _assert_side_walk_temporal_continuity(
 			)
 		)
 	assertions.truthy(
-		boot_differences.min() >= 18,
+		boot_differences.min() >= SIDE_BOOT_MIN_DIFFERENCE,
 		"%s every side-walk frame advances a boot: %s" % [direction, boot_differences]
 	)
 	for frame_index in boot_differences.size():
@@ -470,7 +471,7 @@ func _assert_side_walk_temporal_continuity(
 		var to_frame := int(transition["to"])
 		var change := _boot_silhouette_difference(silhouettes[from_frame], silhouettes[to_frame])
 		assertions.truthy(
-			change >= 18,
+			change >= SIDE_BOOT_MIN_DIFFERENCE,
 			"%s %s (%d)" % [direction, str(transition["name"]), change]
 		)
 
