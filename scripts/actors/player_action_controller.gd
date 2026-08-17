@@ -997,24 +997,25 @@ func _harvest(cell: GridCell) -> bool:
 		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
 		return false
 	var farming_publication: Variant = farming_system.call(
-		"finalize_prepared_harvest",
+		"seal_prepared_harvest",
 		farming_token
 	)
 	if farming_publication == null:
 		farming_system.call("rollback_prepared_harvest", farming_token)
-		farm_storage_system.call("rollback_sealed_transaction", storage_publication)
+		farm_storage_system.call("cancel_sealed_transaction", storage_publication)
 		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
 		return false
-	if not bool(farm_storage_system.call("publish_sealed_transaction", storage_publication)):
+	if (
+		not bool(farm_storage_system.call("owns_sealed_transaction", storage_publication))
+		or not bool(farming_system.call("owns_harvest_publication", farming_publication))
+	):
+		farming_system.call("cancel_harvest_publication", farming_publication)
+		farm_storage_system.call("cancel_sealed_transaction", storage_publication)
 		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
 		return false
-	var result: Dictionary = farming_system.call(
-		"publish_prepared_harvest",
-		farming_publication
-	)
-	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+	farming_system.call("stage_harvest_publication", farming_publication)
+	farm_storage_system.call("publish_sealed_transaction", storage_publication)
+	farming_system.call("publish_harvest_publication", farming_publication)
 	_last_action_failure_details.clear()
 	return true
 

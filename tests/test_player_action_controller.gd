@@ -155,32 +155,131 @@ class FarmingDouble:
 		prepared_harvest.clear()
 		return true
 
-	func finalize_prepared_harvest(token: Variant) -> RefCounted:
+	func seal_prepared_harvest(token: Variant) -> RefCounted:
 		if token != prepared_harvest_token or not bool(prepared_harvest.applied):
 			return null
 		var publication := RefCounted.new()
 		harvest_publications[publication.get_instance_id()] = {
 			"token": publication,
 			"preview": prepared_harvest.preview.duplicate(true),
+			"cell": prepared_harvest.cell,
+			"instance": prepared_harvest.instance,
+			"staged": false,
 		}
 		prepared_harvest_token = null
 		prepared_harvest.clear()
 		return publication
 
-	func publish_prepared_harvest(publication: Variant) -> Dictionary:
+	func owns_harvest_publication(publication: Variant) -> bool:
 		if not publication is RefCounted:
-			return {}
+			return false
 		var publication_id := (publication as RefCounted).get_instance_id()
 		var pending: Dictionary = harvest_publications.get(publication_id, {})
-		if pending.is_empty() or pending.token != publication:
-			return {}
+		return not pending.is_empty() and pending.token == publication
+
+	func cancel_harvest_publication(publication: Variant) -> bool:
+		if not owns_harvest_publication(publication):
+			return false
+		var publication_id := (publication as RefCounted).get_instance_id()
+		var pending: Dictionary = harvest_publications[publication_id]
+		var cell: GridCell = pending.cell
+		cell.crop_instance = pending.instance
+		cell.state = GridCell.State.PLANTED
 		harvest_publications.erase(publication_id)
-		return pending.preview.duplicate(true)
+		return true
+
+	func stage_harvest_publication(publication: Variant) -> void:
+		if owns_harvest_publication(publication):
+			harvest_publications[(publication as RefCounted).get_instance_id()].staged = true
+
+	func publish_harvest_publication(publication: Variant) -> void:
+		if owns_harvest_publication(publication):
+			harvest_publications.erase((publication as RefCounted).get_instance_id())
+
+	func finalize_prepared_harvest(token: Variant) -> RefCounted:
+		var publication := seal_prepared_harvest(token)
+		if publication != null:
+			stage_harvest_publication(publication)
+		return publication
+
+	func publish_prepared_harvest(publication: Variant) -> Dictionary:
+		if not owns_harvest_publication(publication):
+			return {}
+		var pending: Dictionary = harvest_publications[(publication as RefCounted).get_instance_id()]
+		var preview: Dictionary = pending.preview.duplicate(true)
+		publish_harvest_publication(publication)
+		return preview
 
 	func preview_harvest(cell: GridCell) -> Dictionary:
 		if cell.crop_instance == null or not cell.crop_instance.is_mature():
 			return {}
 		return {"items": {"grain": 1}, "exp": 5}
+
+
+class FalseReturningPublishStorage:
+	extends RefCounted
+	var items: Dictionary = {}
+	var transaction_token: RefCounted
+	var transaction_before: Dictionary = {}
+	var publication_token: RefCounted
+	var publish_calls := 0
+
+	func get_missing_capacity(_items: Dictionary) -> int:
+		return 0
+
+	func get_total_capacity() -> int:
+		return 200
+
+	func get_used_capacity() -> int:
+		var used := 0
+		for quantity in items.values():
+			used += int(quantity)
+		return used
+
+	func begin_atomic_transaction() -> RefCounted:
+		if transaction_token != null or publication_token != null:
+			return null
+		transaction_token = RefCounted.new()
+		transaction_before = items.duplicate(true)
+		return transaction_token
+
+	func stage_add_items(token: Variant, requested: Dictionary) -> bool:
+		if token != transaction_token:
+			return false
+		for item_id in requested:
+			items[item_id] = int(items.get(item_id, 0)) + int(requested[item_id])
+		return true
+
+	func rollback_atomic_transaction(token: Variant) -> bool:
+		if token != transaction_token:
+			return false
+		items = transaction_before.duplicate(true)
+		transaction_token = null
+		return true
+
+	func seal_atomic_transaction(token: Variant) -> RefCounted:
+		if token != transaction_token:
+			return null
+		publication_token = RefCounted.new()
+		transaction_token = null
+		return publication_token
+
+	func owns_sealed_transaction(publication: Variant) -> bool:
+		return publication != null and publication == publication_token
+
+	func cancel_sealed_transaction(publication: Variant) -> bool:
+		if not owns_sealed_transaction(publication):
+			return false
+		items = transaction_before.duplicate(true)
+		publication_token = null
+		return true
+
+	func publish_sealed_transaction(publication: Variant) -> bool:
+		if not owns_sealed_transaction(publication):
+			return false
+		publish_calls += 1
+		publication_token = null
+		return false
 
 
 class BuildingDouble:
@@ -406,6 +505,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	_test_action_priority(assertions, controller_script)
 	_test_selection_and_transactions(assertions, tree, controller_script)
+	_test_post_commit_false_is_not_reported_as_failure(assertions, tree, controller_script)
 	_test_action_modes(assertions, tree, controller_script)
 	_test_build_feedback_and_exhaustion(assertions, tree, controller_script)
 	_test_farming_plant_rules(assertions)
@@ -414,6 +514,36 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_gathering_command_routing(assertions, tree, controller_script)
 	_test_output_pile_interaction(assertions, tree, controller_script)
 	_test_completed_building_click_in_build_mode(assertions, tree)
+
+
+func _test_post_commit_false_is_not_reported_as_failure(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var crop := CropData.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 2
+	var cell := GridCell.new()
+	cell.gx = 4
+	cell.gz = 5
+	cell.state = GridCell.State.PLANTED
+	cell.crop_instance = CropInstance.new()
+	cell.crop_instance.crop_data = crop
+	cell.crop_instance.set_growth_state(2.0, CropInstance.LifecycleState.MATURE)
+	var farming := FarmingDouble.new()
+	farming.crop_data = crop
+	var storage := FalseReturningPublishStorage.new()
+	var controller = controller_script.new()
+	tree.root.add_child(controller)
+	controller.configure(null, null, farming, null, null, InventoryDouble.new(), storage)
+
+	assertions.truthy(controller._harvest(cell), "post-commit false return cannot turn success into failure")
+	assertions.equal(storage.publish_calls, 1, "storage publication executes exactly once")
+	assertions.equal(storage.items, {"grain": 1}, "post-commit storage state remains committed")
+	assertions.equal(cell.state, GridCell.State.FARMLAND, "post-commit crop state remains committed")
+	assertions.equal(controller.get_last_action_failure_details(), {}, "no failure is reported after irreversible commit")
+	controller.queue_free()
 
 
 func _test_completed_building_click_in_build_mode(

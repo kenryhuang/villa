@@ -345,6 +345,11 @@ func rollback_crop_harvest(
 	var crop_data: Dictionary = before.crop
 	if str(crop_data.get("crop_id", "")) != original_instance.crop_data.crop_id:
 		return false
+	if expected_after.crop is Dictionary:
+		if cell.crop_instance != original_instance or original_instance.to_dict() != expected_after.crop:
+			return false
+	elif cell.crop_instance != null or original_instance.to_dict() != before.crop:
+		return false
 	if not original_instance.from_dict(crop_data):
 		return false
 	cell.crop_instance = original_instance
@@ -402,7 +407,13 @@ func _valid_crop_mutation_payload(payload: Dictionary, allow_empty_crop: bool = 
 		return false
 	if typeof(payload.cell_state) != TYPE_INT or typeof(payload.watered) != TYPE_BOOL:
 		return false
-	return payload.crop is Dictionary or (allow_empty_crop and payload.crop == null)
+	var state := int(payload.cell_state)
+	var has_crop := payload.crop is Dictionary
+	if state not in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
+		return false
+	if has_crop != (state == GridCell.State.PLANTED):
+		return false
+	return has_crop or (allow_empty_crop and payload.crop == null)
 
 
 func _crop_state_matches(cell: GridCell, snapshot: Dictionary) -> bool:

@@ -9,6 +9,7 @@ const PlayerActionControllerScript = preload("res://scripts/actors/player_action
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const MainScript = preload("res://scripts/main.gd")
+const GameStateScript = preload("res://scripts/core/game_state.gd")
 const FARMLAND := 1
 const PLANTED := 2
 
@@ -106,24 +107,47 @@ class CropEventRecorder:
 	signal crop_planted(gx: int, gz: int, crop_id: String)
 	signal crop_harvested(gx: int, gz: int, crop_id: String)
 	signal cell_state_changed(gx: int, gz: int, state: int)
+	signal exp_gained(amount: int)
+	signal level_changed(level: int)
 
 	var planted_events: Array[Dictionary] = []
 	var harvested_events: Array[Dictionary] = []
 	var cell_events: Array[Dictionary] = []
+	var exp_events: Array[int] = []
+	var timeline: Array[String] = []
 
 	func _init() -> void:
 		crop_planted.connect(_on_crop_planted)
 		crop_harvested.connect(_on_crop_harvested)
 		cell_state_changed.connect(_on_cell_state_changed)
+		exp_gained.connect(_on_exp_gained)
 
 	func _on_crop_planted(gx: int, gz: int, crop_id: String) -> void:
 		planted_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
+		timeline.append("plant:%s" % crop_id)
 
 	func _on_crop_harvested(gx: int, gz: int, crop_id: String) -> void:
 		harvested_events.append({"gx": gx, "gz": gz, "crop_id": crop_id})
+		timeline.append("harvest:%s" % crop_id)
 
 	func _on_cell_state_changed(gx: int, gz: int, state: int) -> void:
 		cell_events.append({"gx": gx, "gz": gz, "state": state})
+		timeline.append("cell:%d" % state)
+
+	func _on_exp_gained(amount: int) -> void:
+		exp_events.append(amount)
+		timeline.append("exp:%d" % amount)
+
+
+class ExpReplantObserver:
+	extends RefCounted
+	var farming: FarmingSystem
+	var cell: GridCell
+	var replacement: CropData
+	var replanted: CropInstance
+
+	func on_exp_gained(_amount: int) -> void:
+		replanted = farming.plant(cell, replacement)
 
 
 class HarvestGameState:
@@ -137,10 +161,75 @@ class HarvestGameState:
 	var storage_write_results: Array[bool] = []
 	var saw_final_crop := false
 	var saw_final_visual := false
+	var exp_transaction_token: RefCounted
+	var exp_transaction: Dictionary = {}
+	var exp_publication_token: RefCounted
+	var exp_publication: Dictionary = {}
 
 	func add_exp(amount: int) -> bool:
 		exp_calls += 1
 		exp_total += amount
+		_publish_exp_callback()
+		return true
+
+	func prepare_exp_transaction(amount: int) -> RefCounted:
+		if amount <= 0 or exp_transaction_token != null or exp_publication_token != null:
+			return null
+		exp_transaction_token = RefCounted.new()
+		exp_transaction = {
+			"amount": amount,
+			"before_calls": exp_calls,
+			"before_total": exp_total,
+			"applied": false,
+		}
+		return exp_transaction_token
+
+	func apply_exp_transaction(token: Variant) -> bool:
+		if token != exp_transaction_token or bool(exp_transaction.applied):
+			return false
+		exp_calls += 1
+		exp_total += int(exp_transaction.amount)
+		exp_transaction.applied = true
+		return true
+
+	func cancel_exp_transaction(token: Variant) -> bool:
+		if token != exp_transaction_token:
+			return false
+		exp_calls = int(exp_transaction.before_calls)
+		exp_total = int(exp_transaction.before_total)
+		exp_transaction_token = null
+		exp_transaction.clear()
+		return true
+
+	func seal_exp_transaction(token: Variant) -> RefCounted:
+		if token != exp_transaction_token or not bool(exp_transaction.applied):
+			return null
+		exp_publication_token = RefCounted.new()
+		exp_publication = exp_transaction.duplicate(true)
+		exp_transaction_token = null
+		exp_transaction.clear()
+		return exp_publication_token
+
+	func owns_exp_publication(publication: Variant) -> bool:
+		return publication != null and publication == exp_publication_token
+
+	func cancel_exp_publication(publication: Variant) -> bool:
+		if not owns_exp_publication(publication):
+			return false
+		exp_calls = int(exp_publication.before_calls)
+		exp_total = int(exp_publication.before_total)
+		exp_publication_token = null
+		exp_publication.clear()
+		return true
+
+	func publish_exp_publication(publication: Variant) -> void:
+		if not owns_exp_publication(publication):
+			return
+		exp_publication_token = null
+		exp_publication.clear()
+		_publish_exp_callback()
+
+	func _publish_exp_callback() -> void:
 		if storage != null:
 			saw_final_crop = (
 				cell != null
@@ -160,7 +249,6 @@ class HarvestGameState:
 				and storage.commit_atomic_transaction(token)
 			)
 			storage_write_results.append(committed)
-		return true
 
 
 class PlantChangingGateway:
@@ -306,6 +394,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_carrot_yield_and_removal(assertions)
 	_test_harvest_count_save_round_trip(assertions, tree)
 	_test_controller_harvest_is_atomic(assertions, tree)
+	_test_game_state_exp_transaction_lifecycle(assertions, tree)
+	_test_exp_replant_preserves_harvest_event_order(assertions, tree)
 	_test_controller_seal_failure_rolls_back_silent_apply(assertions, tree)
 	_test_controller_commits_exact_harvest_preview(assertions, tree)
 	_test_controller_harvest_awards_exp_once(assertions)
@@ -918,8 +1008,8 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "successful regrow harvest returns to growing")
 	assertions.equal(state.exp_calls, 1, "successful regrow harvest awards experience once")
 	assertions.equal(state.exp_total, 7, "successful regrow harvest awards exact experience")
-	assertions.equal(failing_recorder.local_contents, [{"tomato": 3}, {"potato": 1}, {"grain": 1}], "base storage notification precedes exp and crop reentrant notifications")
-	assertions.equal(failing_recorder.bus_contents, [{"tomato": 3}, {"potato": 1}, {"grain": 1}], "EventBus preserves base then reentrant order")
+	assertions.equal(failing_recorder.local_contents, [{"tomato": 3}, {"grain": 1}, {"potato": 1}], "base storage notification precedes crop and exp reentrant notifications")
+	assertions.equal(failing_recorder.bus_contents, [{"tomato": 3}, {"grain": 1}, {"potato": 1}], "EventBus preserves base then reentrant order")
 	assertions.equal(failing_recorder.local_contents_read_only, [true, true, true], "local storage payloads remain immutable")
 	assertions.equal(failing_recorder.bus_contents_read_only, [true, true, true], "EventBus storage payloads remain immutable")
 	assertions.equal(
@@ -927,10 +1017,10 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 		[
 			{"used": 4, "total": 200},
 			{"used": 5, "total": 200},
-			{"used": 6, "total": 200},
+			{"used": 5, "total": 205},
 			{"used": 6, "total": 205},
 		],
-		"base, exp, crop, and capacity notifications remain FIFO"
+		"base, crop, capacity, and exp notifications remain FIFO"
 	)
 	assertions.equal(crop_events.harvested_events.size(), 1, "successful harvest emits one crop event")
 	assertions.equal(crop_events.cell_events.size(), 1, "successful harvest emits one cell event")
@@ -961,6 +1051,145 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	failing_storage.queue_free()
 	inventory.queue_free()
 	crop_events.free()
+	farming.free()
+	grid.free()
+
+
+func _test_game_state_exp_transaction_lifecycle(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var events := CropEventRecorder.new()
+	var state := GameStateScript.new()
+	tree.root.add_child(state)
+	state._event_bus = events
+	for method_name in [
+		"prepare_exp_transaction",
+		"apply_exp_transaction",
+		"seal_exp_transaction",
+		"owns_exp_publication",
+		"cancel_exp_transaction",
+		"cancel_exp_publication",
+		"publish_exp_publication",
+	]:
+		assertions.truthy(state.has_method(method_name), "game state exposes %s" % method_name)
+	if not state.has_method("prepare_exp_transaction"):
+		state.free()
+		events.free()
+		return
+
+	var cancel_token: Variant = state.call("prepare_exp_transaction", 20)
+	assertions.truthy(cancel_token is RefCounted, "experience transaction has unforgeable ownership")
+	assertions.truthy(state.call("apply_exp_transaction", cancel_token), "experience applies silently")
+	assertions.equal(state.player_state.exp, 20, "silent experience apply updates authoritative state")
+	assertions.equal(events.exp_events, [], "silent experience apply emits no event")
+	assertions.truthy(state.call("cancel_exp_transaction", cancel_token), "active experience transaction cancels")
+	assertions.equal(state.player_state.exp, 0, "active experience cancellation restores exact state")
+
+	var sealed_token: Variant = state.call("prepare_exp_transaction", 130)
+	assertions.truthy(state.call("apply_exp_transaction", sealed_token), "sealed fixture applies experience")
+	assertions.equal(state.player_state.level, 2, "silent experience apply can cross a level boundary")
+	var sealed_owner: Variant = state.call("seal_exp_transaction", sealed_token)
+	assertions.truthy(sealed_owner is RefCounted, "experience seal returns publication ownership")
+	assertions.truthy(state.call("owns_exp_publication", sealed_owner), "experience publication owner validates")
+	assertions.equal(state.call("prepare_exp_transaction", 1), null, "pending experience publication is bounded to one")
+	assertions.truthy(state.call("cancel_exp_publication", sealed_owner), "sealed experience publication cancels")
+	assertions.equal(state.player_state.exp, 0, "sealed cancellation restores experience")
+	assertions.equal(state.player_state.level, 1, "sealed cancellation restores level")
+	assertions.equal(events.exp_events, [], "sealed cancellation remains silent")
+
+	var abandoned_token: Variant = state.call("prepare_exp_transaction", 40)
+	assertions.truthy(state.call("apply_exp_transaction", abandoned_token), "abandoned fixture applies experience")
+	var abandoned_owner: Variant = state.call("seal_exp_transaction", abandoned_token)
+	abandoned_owner = null
+	var recovered_token: Variant = state.call("prepare_exp_transaction", 5)
+	assertions.truthy(recovered_token is RefCounted, "new transaction recovers abandoned experience publication")
+	assertions.equal(state.player_state.exp, 0, "abandoned experience publication rolls back before recovery")
+	assertions.truthy(state.call("cancel_exp_transaction", recovered_token), "recovered transaction can cancel")
+
+	var publish_token: Variant = state.call("prepare_exp_transaction", 50)
+	assertions.truthy(state.call("apply_exp_transaction", publish_token), "published fixture applies experience")
+	var publish_owner: Variant = state.call("seal_exp_transaction", publish_token)
+	state.call("publish_exp_publication", publish_owner)
+	assertions.equal(state.player_state.exp, 50, "published experience remains committed")
+	assertions.equal(events.exp_events, [50], "published experience emits exactly once")
+	assertions.truthy(not state.call("owns_exp_publication", publish_owner), "published experience owner is consumed")
+	state.free()
+	events.free()
+
+
+func _test_exp_replant_preserves_harvest_event_order(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var events := CropEventRecorder.new()
+	var state := GameStateScript.new()
+	tree.root.add_child(state)
+	state._event_bus = events
+	state.harvest_seed = 303
+	var grid := GridSystemScript.new()
+	grid._event_bus = events
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	farming._event_bus = events
+	var annual := CropDataScript.new()
+	annual.crop_id = "grain"
+	annual.growth_days = 3
+	annual.yield_min = 2
+	annual.yield_max = 2
+	annual.exp_reward = 4
+	annual.lifecycle_type = "annual"
+	var replacement := CropDataScript.new()
+	replacement.crop_id = "turnip"
+	replacement.growth_days = 2
+	replacement.lifecycle_type = "annual"
+	grid.set_cell_state(8, 9, FARMLAND)
+	var cell := grid.get_cell(8, 9)
+	var instance: CropInstance = farming.plant(cell, annual)
+	_set_mature(instance, 3.0)
+	farming.call("_update_visual", cell, instance)
+	var unapplied_preview := farming.preview_harvest(cell)
+	var unapplied_token: Variant = farming.prepare_harvest(cell, unapplied_preview)
+	assertions.truthy(unapplied_token is RefCounted, "farming prepares transactional experience before apply")
+	assertions.truthy(farming.rollback_prepared_harvest(unapplied_token), "unapplied harvest preparation cancels")
+	var exp_probe: Variant = state.prepare_exp_transaction(1)
+	assertions.truthy(exp_probe is RefCounted, "unapplied harvest cancellation releases GameState ownership")
+	assertions.truthy(state.cancel_exp_transaction(exp_probe), "released GameState accepts and cancels next transaction")
+	events.planted_events.clear()
+	events.harvested_events.clear()
+	events.cell_events.clear()
+	events.exp_events.clear()
+	events.timeline.clear()
+	var replan := ExpReplantObserver.new()
+	replan.farming = farming
+	replan.cell = cell
+	replan.replacement = replacement
+	events.exp_gained.connect(replan.on_exp_gained)
+	var storage := FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var inventory := InventorySystemScript.new()
+	var controller := PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
+
+	assertions.truthy(controller._harvest(cell), "annual harvest succeeds with reentrant experience listener")
+	assertions.truthy(replan.replanted != null, "experience listener replants the harvested annual cell")
+	assertions.equal(
+		events.timeline,
+		["cell:%d" % FARMLAND, "harvest:grain", "exp:4", "cell:%d" % PLANTED, "plant:turnip"],
+		"old harvest transition publishes before experience-driven replant transition"
+	)
+	assertions.equal(cell.state, GridCell.State.PLANTED, "reentrant replacement owns final cell state")
+	assertions.equal(cell.crop_instance.crop_data.crop_id, "turnip", "reentrant replacement owns final crop")
+	assertions.equal(state.player_state.exp, 4, "experience is committed exactly once")
+	assertions.equal(storage.get_items(), {"grain": 2}, "harvest output remains committed")
+
+	events.exp_gained.disconnect(replan.on_exp_gained)
+	controller.queue_free()
+	storage.queue_free()
+	state.free()
+	events.free()
+	inventory.free()
 	farming.free()
 	grid.free()
 

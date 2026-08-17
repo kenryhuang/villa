@@ -485,6 +485,35 @@ func _test_deterministic_harvest_transaction(assertions: TestAssert) -> void:
 	assertions.truthy(not farming.apply_prepared_harvest(RefCounted.new()), "forged harvest apply ownership is rejected")
 	assertions.truthy(not farming.rollback_prepared_harvest(RefCounted.new()), "forged harvest rollback ownership is rejected")
 	assertions.truthy(farming.rollback_prepared_harvest(owned_token), "owned unapplied harvest can be cancelled silently")
+	for method_name in [
+		"seal_prepared_harvest",
+		"owns_harvest_publication",
+		"cancel_harvest_publication",
+		"stage_harvest_publication",
+		"publish_harvest_publication",
+	]:
+		assertions.truthy(farming.has_method(method_name), "farming exposes %s" % method_name)
+	if farming.has_method("seal_prepared_harvest"):
+		var sealed_token: Variant = farming.prepare_harvest(cell, first)
+		assertions.truthy(farming.apply_prepared_harvest(sealed_token), "publication fixture silently applies harvest")
+		var sealed_owner: Variant = farming.call("seal_prepared_harvest", sealed_token)
+		assertions.truthy(sealed_owner is RefCounted, "harvest seal returns unforgeable publication ownership")
+		assertions.truthy(farming.call("owns_harvest_publication", sealed_owner), "harvest publication owner validates")
+		assertions.equal(farming.prepare_harvest(cell, first), null, "pending harvest publication is bounded to one")
+		assertions.truthy(farming.call("cancel_harvest_publication", sealed_owner), "sealed harvest publication cancels")
+		assertions.equal(grid.get_crop_snapshot(15, 15), before_altered, "sealed harvest cancellation restores exact crop")
+		assertions.truthy(cell.crop_instance == instance, "sealed harvest cancellation restores original instance")
+		assertions.truthy(farming.get_crop_visual(cell) == mature_visual, "sealed cancellation preserves original visual")
+		assertions.equal(event_bus.harvest_events, [], "sealed cancellation emits no harvest event")
+
+		var abandoned_token: Variant = farming.prepare_harvest(cell, first)
+		assertions.truthy(farming.apply_prepared_harvest(abandoned_token), "abandoned harvest fixture silently applies")
+		var abandoned_owner: Variant = farming.call("seal_prepared_harvest", abandoned_token)
+		abandoned_owner = null
+		var recovered_token: Variant = farming.prepare_harvest(cell, first)
+		assertions.truthy(recovered_token is RefCounted, "new prepare recovers abandoned harvest publication")
+		assertions.equal(grid.get_crop_snapshot(15, 15), before_altered, "abandoned harvest rolls back before recovery")
+		assertions.truthy(farming.rollback_prepared_harvest(recovered_token), "recovered harvest can cancel")
 	var committed: Dictionary = farming.commit_harvest(cell, first)
 	assertions.equal(committed.get("items", {}), first.items, "commit returns previewed items")
 	assertions.equal(instance.harvest_count, 1, "successful commit increments harvest count")
