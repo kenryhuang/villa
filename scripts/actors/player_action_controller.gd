@@ -1006,14 +1006,16 @@ func _harvest(cell: GridCell) -> bool:
 		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
 		return false
 	if (
-		not bool(farm_storage_system.call("owns_sealed_transaction", storage_publication))
-		or not bool(farming_system.call("owns_harvest_publication", farming_publication))
+		not bool(farm_storage_system.call("can_arm_sealed_transaction", storage_publication))
+		or not bool(farming_system.call("can_arm_harvest_publication", farming_publication))
 	):
 		farming_system.call("cancel_harvest_publication", farming_publication)
 		farm_storage_system.call("cancel_sealed_transaction", storage_publication)
 		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
 		return false
-	farming_system.call("stage_harvest_publication", farming_publication)
+	# No callback is allowed between these two infallible ownership transitions.
+	farm_storage_system.call("arm_sealed_transaction", storage_publication)
+	farming_system.call("arm_harvest_publication", farming_publication)
 	farm_storage_system.call("publish_sealed_transaction", storage_publication)
 	farming_system.call("publish_harvest_publication", farming_publication)
 	_last_action_failure_details.clear()

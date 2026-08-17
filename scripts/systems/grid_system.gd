@@ -23,6 +23,8 @@ var _road_route: Array[Dictionary] = []
 var _blocked_regions: Array[Dictionary] = []
 var _navigation_blockers: Dictionary = {}
 var _navigation_revision := 0
+var _crop_harvest_receipt_owner: WeakRef
+var _crop_harvest_receipt: Dictionary = {}
 
 
 static func cell_key(gx: int, gz: int) -> int:
@@ -320,25 +322,64 @@ func get_crop_snapshot(gx: int, gz: int) -> Dictionary:
 
 
 func apply_crop_harvest(before: Dictionary, after: Dictionary) -> bool:
-	return _apply_crop_mutation(before, after)
+	var receipt := apply_crop_harvest_transaction(before, after)
+	if receipt == null:
+		return false
+	return finalize_crop_harvest_transaction(receipt)
 
 
-func rollback_crop_harvest(
-	expected_after: Dictionary,
-	before: Dictionary,
+func apply_crop_harvest_transaction(before: Dictionary, after: Dictionary) -> RefCounted:
+	_recover_abandoned_crop_harvest_receipt()
+	if _has_crop_harvest_receipt():
+		return null
+	if not _valid_crop_mutation_payload(before) or not _valid_crop_mutation_payload(after, true):
+		return null
+	var cell := get_cell(int(before.gx), int(before.gz))
+	if cell == null or cell.crop_instance == null:
+		return null
+	var original_instance: CropInstance = cell.crop_instance
+	if not _apply_crop_mutation(before, after):
+		return null
+	var receipt := RefCounted.new()
+	_crop_harvest_receipt_owner = weakref(receipt)
+	_crop_harvest_receipt = {
+		"before": before.duplicate(true),
+		"after": after.duplicate(true),
+		"original_instance": original_instance,
+	}
+	call_deferred("_recover_abandoned_crop_harvest_receipt")
+	return receipt
+
+
+func owns_crop_harvest_transaction(receipt: Variant) -> bool:
+	_recover_abandoned_crop_harvest_receipt()
+	return _is_crop_harvest_receipt_owner(receipt) and _crop_harvest_receipt_state_matches()
+
+
+func rollback_crop_harvest_transaction(
+	receipt: Variant,
 	original_instance: CropInstance
 ) -> bool:
-	if (
-		not _valid_crop_mutation_payload(expected_after, true)
-		or not _valid_crop_mutation_payload(before)
-		or original_instance == null
-		or original_instance.crop_data == null
-	):
+	if not owns_crop_harvest_transaction(receipt):
 		return false
+	if original_instance == null or original_instance != _crop_harvest_receipt.original_instance:
+		return false
+	return _rollback_crop_harvest_receipt()
+
+
+func finalize_crop_harvest_transaction(receipt: Variant) -> bool:
+	if not owns_crop_harvest_transaction(receipt):
+		return false
+	_clear_crop_harvest_receipt()
+	return true
+
+
+func _rollback_crop_harvest_receipt() -> bool:
+	var expected_after: Dictionary = _crop_harvest_receipt.after
+	var before: Dictionary = _crop_harvest_receipt.before
+	var original_instance: CropInstance = _crop_harvest_receipt.original_instance
 	var gx := int(before.gx)
 	var gz := int(before.gz)
-	if int(expected_after.gx) != gx or int(expected_after.gz) != gz:
-		return false
 	var cell := get_cell(gx, gz)
 	if cell == null or not _crop_state_matches(cell, expected_after):
 		return false
@@ -356,7 +397,44 @@ func rollback_crop_harvest(
 	cell.state = int(before.cell_state) as GridCell.State
 	cell.watered = bool(before.watered)
 	_sync_farmland_visual(cell)
+	_clear_crop_harvest_receipt()
 	return true
+
+
+func _crop_harvest_receipt_state_matches() -> bool:
+	if _crop_harvest_receipt.is_empty():
+		return false
+	var after: Dictionary = _crop_harvest_receipt.after
+	var cell := get_cell(int(after.gx), int(after.gz))
+	if cell == null or not _crop_state_matches(cell, after):
+		return false
+	if after.crop is Dictionary:
+		return cell.crop_instance == _crop_harvest_receipt.original_instance
+	return cell.crop_instance == null
+
+
+func _has_crop_harvest_receipt() -> bool:
+	return _crop_harvest_receipt_owner != null and _crop_harvest_receipt_owner.get_ref() != null
+
+
+func _is_crop_harvest_receipt_owner(receipt: Variant) -> bool:
+	return (
+		receipt is RefCounted
+		and _crop_harvest_receipt_owner != null
+		and _crop_harvest_receipt_owner.get_ref() == receipt
+	)
+
+
+func _clear_crop_harvest_receipt() -> void:
+	_crop_harvest_receipt_owner = null
+	_crop_harvest_receipt.clear()
+
+
+func _recover_abandoned_crop_harvest_receipt() -> void:
+	if _crop_harvest_receipt_owner == null or _crop_harvest_receipt_owner.get_ref() != null:
+		return
+	if not _rollback_crop_harvest_receipt():
+		_clear_crop_harvest_receipt()
 
 
 func apply_crop_clear(before: Dictionary, after: Dictionary) -> bool:

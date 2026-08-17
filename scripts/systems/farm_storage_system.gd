@@ -13,19 +13,21 @@ var _capacity_provider: Callable = Callable()
 var _total_capacity := DEFAULT_CAPACITY
 var _notification_queue: Array[Dictionary] = []
 var _is_dispatching_notifications := false
-var _transaction_token: RefCounted
+var _transaction_owner: WeakRef
 var _transaction_items: Dictionary = {}
 var _transaction_capacity := DEFAULT_CAPACITY
 var _sealed_publication_owner: WeakRef
 var _sealed_before_items: Dictionary = {}
 var _sealed_before_capacity := DEFAULT_CAPACITY
 var _sealed_batch_marker: RefCounted
+var _sealed_armed := false
 var _notification_dispatch_suspended := false
 
 
 func configure(capacity_provider: Callable = Callable()) -> bool:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _transaction_token != null or _has_sealed_transaction():
+	if _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	var next_total := DEFAULT_CAPACITY
 	if not capacity_provider.is_null():
@@ -71,17 +73,20 @@ func can_add(requested: Dictionary) -> bool:
 
 
 func begin_atomic_transaction() -> RefCounted:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _transaction_token != null or _has_sealed_transaction():
+	if _has_atomic_transaction() or _has_sealed_transaction():
 		return null
-	_transaction_token = RefCounted.new()
+	var token := RefCounted.new()
+	_transaction_owner = weakref(token)
 	_transaction_items = _items.duplicate(true)
 	_transaction_capacity = _total_capacity
-	return _transaction_token
+	call_deferred("_recover_abandoned_transaction")
+	return token
 
 
 func commit_atomic_transaction(token: Variant) -> bool:
-	if token == null or token != _transaction_token:
+	if not _owns_atomic_transaction(token):
 		return false
 	var publication := seal_atomic_transaction(token)
 	if publication == null:
@@ -91,8 +96,9 @@ func commit_atomic_transaction(token: Variant) -> bool:
 
 
 func seal_atomic_transaction(token: Variant) -> RefCounted:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if token == null or token != _transaction_token or _has_sealed_transaction():
+	if not _owns_atomic_transaction(token) or _has_sealed_transaction():
 		return null
 	var previous_items := _transaction_items.duplicate(true)
 	var previous_capacity := _transaction_capacity
@@ -106,8 +112,10 @@ func seal_atomic_transaction(token: Variant) -> RefCounted:
 	_sealed_before_capacity = previous_capacity
 	_sealed_batch_marker = marker
 	_notification_dispatch_suspended = true
-	_transaction_token = null
+	_transaction_owner = null
 	_transaction_items.clear()
+	_transaction_capacity = _total_capacity
+	_sealed_armed = false
 	var batch := _make_notification_batch(
 		changes,
 		previous_used != current_used or previous_capacity != _total_capacity,
@@ -125,6 +133,23 @@ func publish_sealed_transaction(publication: Variant) -> void:
 	if not owns_sealed_transaction(publication):
 		push_error("Invalid storage publication ownership")
 		return
+	if not _sealed_armed:
+		arm_sealed_transaction(publication)
+	_publish_sealed_transaction()
+
+
+func can_arm_sealed_transaction(publication: Variant) -> bool:
+	return owns_sealed_transaction(publication) and not _sealed_armed
+
+
+func arm_sealed_transaction(publication: Variant) -> void:
+	if not _is_sealed_transaction_owner(publication):
+		push_error("Invalid storage publication ownership at commit point")
+		return
+	_sealed_armed = true
+
+
+func _publish_sealed_transaction() -> void:
 	_clear_sealed_transaction()
 	_notification_dispatch_suspended = false
 	_drain_notification_queue()
@@ -140,7 +165,7 @@ func owns_sealed_transaction(publication: Variant) -> bool:
 
 
 func cancel_sealed_transaction(publication: Variant) -> bool:
-	if not owns_sealed_transaction(publication):
+	if not owns_sealed_transaction(publication) or _sealed_armed:
 		return false
 	_cancel_sealed_transaction()
 	return true
@@ -160,24 +185,27 @@ func _cancel_sealed_transaction() -> void:
 
 
 func rollback_atomic_transaction(token: Variant) -> bool:
-	if token == null or token != _transaction_token:
+	_recover_abandoned_transaction()
+	if not _owns_atomic_transaction(token):
 		return false
 	_items = _transaction_items.duplicate(true)
 	_total_capacity = _transaction_capacity
-	_transaction_token = null
+	_transaction_owner = null
 	_transaction_items.clear()
+	_transaction_capacity = _total_capacity
 	return true
 
 
 func add_items(requested: Dictionary) -> bool:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _transaction_token != null or _has_sealed_transaction():
+	if _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	return _add_items(requested)
 
 
 func stage_add_items(token: Variant, requested: Dictionary) -> bool:
-	if token == null or token != _transaction_token:
+	if not _owns_atomic_transaction(token):
 		return false
 	return _add_items(requested)
 
@@ -207,14 +235,15 @@ func can_remove(requested: Dictionary) -> bool:
 
 
 func remove_items(requested: Dictionary) -> bool:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _transaction_token != null or _has_sealed_transaction():
+	if _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	return _remove_items(requested)
 
 
 func stage_remove_items(token: Variant, requested: Dictionary) -> bool:
-	if token == null or token != _transaction_token:
+	if not _owns_atomic_transaction(token):
 		return false
 	return _remove_items(requested)
 
@@ -256,8 +285,9 @@ func from_dict(data: Dictionary) -> bool:
 
 ## Bypasses capacity enforcement only; crop IDs and quantities are still fully validated.
 func restore_items_unchecked(items: Dictionary) -> bool:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _transaction_token != null or _has_sealed_transaction():
+	if _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	var normalized_value: Variant = _normalize_items(items, true)
 	if normalized_value == null:
@@ -267,14 +297,15 @@ func restore_items_unchecked(items: Dictionary) -> bool:
 
 
 func refresh_capacity() -> void:
+	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _transaction_token != null or _has_sealed_transaction():
+	if _has_atomic_transaction() or _has_sealed_transaction():
 		return
 	_refresh_capacity()
 
 
 func stage_refresh_capacity(token: Variant) -> bool:
-	if token == null or token != _transaction_token:
+	if not _owns_atomic_transaction(token):
 		return false
 	return _refresh_capacity()
 
@@ -320,7 +351,7 @@ func _replace_items(next_items: Dictionary) -> void:
 	var next_used := _sum_quantities(next_items)
 	var changes := _changes_between(previous_items, next_items)
 	_items = next_items.duplicate(true)
-	if _transaction_token != null:
+	if _has_atomic_transaction():
 		return
 	_queue_notification_batch(changes, previous_used != next_used, next_used, _total_capacity)
 
@@ -329,7 +360,7 @@ func _commit_capacity(next_total: int) -> void:
 	if next_total == _total_capacity:
 		return
 	_total_capacity = next_total
-	if _transaction_token != null:
+	if _has_atomic_transaction():
 		return
 	_queue_notification_batch({}, true, get_used_capacity(), _total_capacity)
 
@@ -388,6 +419,7 @@ func _clear_sealed_transaction() -> void:
 	_sealed_before_items.clear()
 	_sealed_before_capacity = _total_capacity
 	_sealed_batch_marker = null
+	_sealed_armed = false
 
 
 func _has_sealed_transaction() -> bool:
@@ -396,7 +428,40 @@ func _has_sealed_transaction() -> bool:
 
 func _recover_abandoned_seal() -> void:
 	if _sealed_publication_owner != null and _sealed_publication_owner.get_ref() == null:
-		_cancel_sealed_transaction()
+		if _sealed_armed:
+			_publish_sealed_transaction()
+		else:
+			_cancel_sealed_transaction()
+
+
+func _has_atomic_transaction() -> bool:
+	return _transaction_owner != null and _transaction_owner.get_ref() != null
+
+
+func _owns_atomic_transaction(token: Variant) -> bool:
+	return (
+		token is RefCounted
+		and _transaction_owner != null
+		and _transaction_owner.get_ref() == token
+	)
+
+
+func _recover_abandoned_transaction() -> void:
+	if _transaction_owner == null or _transaction_owner.get_ref() != null:
+		return
+	_items = _transaction_items.duplicate(true)
+	_total_capacity = _transaction_capacity
+	_transaction_owner = null
+	_transaction_items.clear()
+	_transaction_capacity = _total_capacity
+
+
+func _is_sealed_transaction_owner(publication: Variant) -> bool:
+	return (
+		publication is RefCounted
+		and _sealed_publication_owner != null
+		and _sealed_publication_owner.get_ref() == publication
+	)
 
 
 func _dispatch_notification_batch(batch: Dictionary) -> void:

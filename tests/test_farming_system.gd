@@ -56,10 +56,71 @@ class HarvestSeedState:
 
 	var harvest_seed := 1
 	var exp_total := 0
+	var exp_token: RefCounted
+	var exp_publication: RefCounted
+	var exp_before := 0
+	var exp_amount := 0
+	var exp_applied := false
 
 	func add_exp(amount: int) -> bool:
 		exp_total += amount
 		return true
+
+	func prepare_exp_transaction(amount: int) -> RefCounted:
+		if amount <= 0 or exp_token != null or exp_publication != null:
+			return null
+		exp_token = RefCounted.new()
+		exp_before = exp_total
+		exp_amount = amount
+		exp_applied = false
+		return exp_token
+
+	func apply_exp_transaction(token: Variant) -> bool:
+		if token != exp_token or exp_applied:
+			return false
+		exp_total += exp_amount
+		exp_applied = true
+		return true
+
+	func owns_exp_transaction(token: Variant) -> bool:
+		return token != null and token == exp_token
+
+	func seal_exp_transaction(token: Variant) -> RefCounted:
+		if token != exp_token or not exp_applied:
+			return null
+		exp_publication = RefCounted.new()
+		exp_token = null
+		return exp_publication
+
+	func owns_exp_publication(publication: Variant) -> bool:
+		return publication != null and publication == exp_publication
+
+	func can_arm_exp_publication(publication: Variant, _require_new_barrier: bool = false) -> bool:
+		return owns_exp_publication(publication)
+
+	func arm_exp_publication(publication: Variant) -> RefCounted:
+		if owns_exp_publication(publication):
+			exp_publication = null
+			return RefCounted.new()
+		return null
+
+	func cancel_exp_transaction(token: Variant) -> bool:
+		if token != exp_token:
+			return false
+		if exp_applied:
+			exp_total = exp_before
+		exp_token = null
+		return true
+
+	func cancel_exp_publication(publication: Variant) -> bool:
+		if not owns_exp_publication(publication):
+			return false
+		exp_total = exp_before
+		exp_publication = null
+		return true
+
+	func release_exp_event_barrier(_barrier: Variant) -> void:
+		pass
 
 
 class ReentrantHarvestObserver:

@@ -177,6 +177,13 @@ class FarmingDouble:
 		var pending: Dictionary = harvest_publications.get(publication_id, {})
 		return not pending.is_empty() and pending.token == publication
 
+	func can_arm_harvest_publication(publication: Variant) -> bool:
+		return owns_harvest_publication(publication)
+
+	func arm_harvest_publication(publication: Variant) -> void:
+		if owns_harvest_publication(publication):
+			harvest_publications[(publication as RefCounted).get_instance_id()].staged = true
+
 	func cancel_harvest_publication(publication: Variant) -> bool:
 		if not owns_harvest_publication(publication):
 			return false
@@ -189,8 +196,7 @@ class FarmingDouble:
 		return true
 
 	func stage_harvest_publication(publication: Variant) -> void:
-		if owns_harvest_publication(publication):
-			harvest_publications[(publication as RefCounted).get_instance_id()].staged = true
+		arm_harvest_publication(publication)
 
 	func publish_harvest_publication(publication: Variant) -> void:
 		if owns_harvest_publication(publication):
@@ -266,6 +272,12 @@ class FalseReturningPublishStorage:
 
 	func owns_sealed_transaction(publication: Variant) -> bool:
 		return publication != null and publication == publication_token
+
+	func can_arm_sealed_transaction(publication: Variant) -> bool:
+		return owns_sealed_transaction(publication)
+
+	func arm_sealed_transaction(_publication: Variant) -> void:
+		pass
 
 	func cancel_sealed_transaction(publication: Variant) -> bool:
 		if not owns_sealed_transaction(publication):

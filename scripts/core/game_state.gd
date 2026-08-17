@@ -10,10 +10,14 @@ var play_time := 0.0
 var harvest_seed := LEGACY_HARVEST_SEED
 
 var _event_bus
-var _exp_transaction_token: RefCounted
+var _exp_transaction_owner: WeakRef
 var _exp_transaction: Dictionary = {}
 var _exp_publication_owner: WeakRef
 var _exp_publication: Dictionary = {}
+var _exp_event_queue: Array[Dictionary] = []
+var _exp_event_dispatch_suspended := false
+var _is_dispatching_exp_events := false
+var _exp_event_barrier_owner: WeakRef
 
 
 func _init() -> void:
@@ -62,26 +66,30 @@ func add_exp(amount: int) -> bool:
 
 
 func prepare_exp_transaction(amount: int) -> RefCounted:
+	_recover_abandoned_exp_event_barrier()
+	_recover_abandoned_exp_transaction()
 	_recover_abandoned_exp_publication()
 	if (
 		amount <= 0
 		or player_state == null
-		or _exp_transaction_token != null
+		or _has_exp_transaction()
 		or _has_exp_publication()
 	):
 		return null
-	_exp_transaction_token = RefCounted.new()
+	var token := RefCounted.new()
+	_exp_transaction_owner = weakref(token)
 	_exp_transaction = {
 		"amount": amount,
 		"before_exp": int(player_state.exp),
 		"before_level": int(player_state.level),
 		"applied": false,
 	}
-	return _exp_transaction_token
+	call_deferred("_recover_abandoned_exp_transaction")
+	return token
 
 
 func apply_exp_transaction(token: Variant) -> bool:
-	if token == null or token != _exp_transaction_token or bool(_exp_transaction.applied):
+	if not _owns_exp_transaction(token) or bool(_exp_transaction.applied):
 		return false
 	var leveled: bool = player_state.add_exp(int(_exp_transaction.amount))
 	_exp_transaction.after_exp = int(player_state.exp)
@@ -91,10 +99,15 @@ func apply_exp_transaction(token: Variant) -> bool:
 	return true
 
 
+func owns_exp_transaction(token: Variant) -> bool:
+	if not _owns_exp_transaction(token):
+		return false
+	return not bool(_exp_transaction.applied) or _exp_state_matches(_exp_transaction)
+
+
 func seal_exp_transaction(token: Variant) -> RefCounted:
 	if (
-		token == null
-		or token != _exp_transaction_token
+		not _owns_exp_transaction(token)
 		or not bool(_exp_transaction.applied)
 		or _has_exp_publication()
 		or not _exp_state_matches(_exp_transaction)
@@ -114,7 +127,8 @@ func owns_exp_publication(publication: Variant) -> bool:
 
 
 func cancel_exp_transaction(token: Variant) -> bool:
-	if token == null or token != _exp_transaction_token:
+	_recover_abandoned_exp_transaction()
+	if not _owns_exp_transaction(token):
 		return false
 	if bool(_exp_transaction.get("applied", false)):
 		_restore_exp_snapshot(_exp_transaction)
@@ -131,15 +145,54 @@ func cancel_exp_publication(publication: Variant) -> bool:
 
 
 func publish_exp_publication(publication: Variant) -> void:
-	if not _is_exp_publication_owner(publication):
+	if not can_arm_exp_publication(publication):
 		push_error("Invalid experience publication ownership")
 		return
+	var already_suspended := _exp_event_dispatch_suspended
+	var barrier := arm_exp_publication(publication)
+	if not already_suspended:
+		release_exp_event_barrier(barrier)
+
+
+func can_arm_exp_publication(
+	publication: Variant,
+	require_new_barrier: bool = false
+) -> bool:
+	return (
+		owns_exp_publication(publication)
+		and (not require_new_barrier or not _exp_event_dispatch_suspended)
+	)
+
+
+func arm_exp_publication(publication: Variant) -> RefCounted:
+	if not _is_exp_publication_owner(publication):
+		push_error("Invalid experience publication ownership at commit point")
+		return null
 	var committed := _exp_publication.duplicate(true)
 	_clear_exp_publication()
-	if _event_bus:
-		_event_bus.exp_gained.emit(int(committed.amount))
-		if bool(committed.leveled):
-			_event_bus.level_changed.emit(int(committed.after_level))
+	var event := {
+		"amount": int(committed.amount),
+		"leveled": bool(committed.leveled),
+		"after_level": int(committed.after_level),
+	}
+	event.make_read_only()
+	_exp_event_queue.append(event)
+	if _exp_event_dispatch_suspended:
+		return null
+	var barrier := RefCounted.new()
+	_exp_event_barrier_owner = weakref(barrier)
+	_exp_event_dispatch_suspended = true
+	call_deferred("_recover_abandoned_exp_event_barrier")
+	return barrier
+
+
+func release_exp_event_barrier(barrier: Variant) -> void:
+	if not _is_exp_event_barrier_owner(barrier):
+		push_error("Invalid experience event barrier ownership")
+		return
+	_exp_event_barrier_owner = null
+	_exp_event_dispatch_suspended = false
+	_drain_exp_event_queue()
 
 
 func _exp_state_matches(transaction: Dictionary) -> bool:
@@ -156,7 +209,7 @@ func _restore_exp_snapshot(transaction: Dictionary) -> void:
 
 
 func _clear_exp_transaction() -> void:
-	_exp_transaction_token = null
+	_exp_transaction_owner = null
 	_exp_transaction.clear()
 
 
@@ -181,6 +234,55 @@ func _recover_abandoned_exp_publication() -> void:
 	if _exp_publication_owner != null and _exp_publication_owner.get_ref() == null:
 		_restore_exp_snapshot(_exp_publication)
 		_clear_exp_publication()
+
+
+func _has_exp_transaction() -> bool:
+	return _exp_transaction_owner != null and _exp_transaction_owner.get_ref() != null
+
+
+func _owns_exp_transaction(token: Variant) -> bool:
+	return (
+		token is RefCounted
+		and _exp_transaction_owner != null
+		and _exp_transaction_owner.get_ref() == token
+	)
+
+
+func _recover_abandoned_exp_transaction() -> void:
+	if _exp_transaction_owner == null or _exp_transaction_owner.get_ref() != null:
+		return
+	if bool(_exp_transaction.get("applied", false)):
+		_restore_exp_snapshot(_exp_transaction)
+	_clear_exp_transaction()
+
+
+func _is_exp_event_barrier_owner(barrier: Variant) -> bool:
+	return (
+		barrier is RefCounted
+		and _exp_event_barrier_owner != null
+		and _exp_event_barrier_owner.get_ref() == barrier
+	)
+
+
+func _recover_abandoned_exp_event_barrier() -> void:
+	if _exp_event_barrier_owner == null or _exp_event_barrier_owner.get_ref() != null:
+		return
+	_exp_event_barrier_owner = null
+	_exp_event_dispatch_suspended = false
+	_drain_exp_event_queue()
+
+
+func _drain_exp_event_queue() -> void:
+	if _is_dispatching_exp_events or _exp_event_dispatch_suspended:
+		return
+	_is_dispatching_exp_events = true
+	while not _exp_event_queue.is_empty() and not _exp_event_dispatch_suspended:
+		var event: Dictionary = _exp_event_queue.pop_front()
+		if _event_bus:
+			_event_bus.exp_gained.emit(int(event.amount))
+			if bool(event.leveled):
+				_event_bus.level_changed.emit(int(event.after_level))
+	_is_dispatching_exp_events = false
 
 
 func set_harvest_seed(value: int) -> bool:

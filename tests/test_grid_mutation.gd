@@ -74,24 +74,19 @@ func run(assertions: TestAssert) -> void:
 	farming.free()
 	grid.free()
 	_test_harvest_rollback_invariants(assertions)
+	_test_harvest_mutation_receipt_identity(assertions)
 
 
 func _test_harvest_rollback_invariants(assertions: TestAssert) -> void:
-	var malformed_fixture := _make_regrow_rollback_fixture()
-	var malformed_grid: GridSystem = malformed_fixture.grid
-	var malformed_before: Dictionary = malformed_fixture.before.duplicate(true)
-	malformed_before.cell_state = FARMLAND
+	var forged_fixture := _make_regrow_rollback_fixture()
+	var forged_grid: GridSystem = forged_fixture.grid
 	assertions.truthy(
-		not malformed_grid.rollback_crop_harvest(
-			malformed_fixture.after,
-			malformed_before,
-			malformed_fixture.original
-		),
-		"rollback rejects non-null crop paired with non-planted before state"
+		not forged_grid.rollback_crop_harvest_transaction(RefCounted.new(), forged_fixture.original),
+		"rollback rejects a forged mutation receipt"
 	)
-	assertions.equal(malformed_grid.get_crop_snapshot(6, 6), malformed_fixture.committed, "malformed before rejection is atomic")
-	assertions.truthy(malformed_fixture.cell.crop_instance == malformed_fixture.original, "malformed before keeps current regrow instance")
-	malformed_grid.free()
+	assertions.equal(forged_grid.get_crop_snapshot(6, 6), forged_fixture.committed, "forged receipt rejection is atomic")
+	assertions.truthy(forged_fixture.cell.crop_instance == forged_fixture.original, "forged receipt keeps current regrow instance")
+	forged_grid.free()
 
 	var identity_fixture := _make_regrow_rollback_fixture()
 	var identity_grid: GridSystem = identity_fixture.grid
@@ -99,7 +94,7 @@ func _test_harvest_rollback_invariants(assertions: TestAssert) -> void:
 	impostor.crop_data = identity_fixture.data
 	assertions.truthy(impostor.from_dict(identity_fixture.before.crop), "rollback impostor fixture restores crop data")
 	assertions.truthy(
-		not identity_grid.rollback_crop_harvest(identity_fixture.after, identity_fixture.before, impostor),
+		not identity_grid.rollback_crop_harvest_transaction(identity_fixture.receipt, impostor),
 		"regrow rollback rejects a different crop instance"
 	)
 	assertions.equal(identity_grid.get_crop_snapshot(6, 6), identity_fixture.committed, "instance identity rejection is atomic")
@@ -109,7 +104,7 @@ func _test_harvest_rollback_invariants(assertions: TestAssert) -> void:
 	var valid_fixture := _make_regrow_rollback_fixture()
 	var valid_grid: GridSystem = valid_fixture.grid
 	assertions.truthy(
-		valid_grid.rollback_crop_harvest(valid_fixture.after, valid_fixture.before, valid_fixture.original),
+		valid_grid.rollback_crop_harvest_transaction(valid_fixture.receipt, valid_fixture.original),
 		"valid regrow rollback restores"
 	)
 	assertions.equal(valid_grid.get_crop_snapshot(6, 6), valid_fixture.before, "valid regrow rollback restores exact snapshot")
@@ -128,18 +123,67 @@ func _test_harvest_rollback_invariants(assertions: TestAssert) -> void:
 		"watered": false,
 		"crop": null,
 	}
-	assertions.truthy(annual_grid.apply_crop_harvest(annual_before, annual_after), "annual rollback fixture applies harvest")
+	var annual_receipt := annual_grid.apply_crop_harvest_transaction(annual_before, annual_after)
+	assertions.truthy(annual_receipt is RefCounted, "annual rollback fixture applies harvest")
 	var annual_committed := annual_grid.get_crop_snapshot(7, 7)
-	var malformed_annual_before: Dictionary = annual_before.duplicate(true)
-	malformed_annual_before.cell_state = FARMLAND
 	assertions.truthy(
-		not annual_grid.rollback_crop_harvest(annual_after, malformed_annual_before, annual_original),
-		"annual rollback rejects malformed before state/crop pairing"
+		not annual_grid.rollback_crop_harvest_transaction(RefCounted.new(), annual_original),
+		"annual rollback rejects a forged receipt"
 	)
 	assertions.equal(annual_grid.get_crop_snapshot(7, 7), annual_committed, "malformed annual rollback is atomic")
 	assertions.truthy(annual_grid.get_cell(7, 7).crop_instance == null, "malformed annual rollback keeps crop removed")
 
 	annual_grid.free()
+
+
+func _test_harvest_mutation_receipt_identity(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var data = _make_crop_data("grain", 3)
+	grid.set_cell_state(8, 8, FARMLAND)
+	var original: CropInstance = grid.plant_crop(8, 8, data)
+	original.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+	var before := grid.get_crop_snapshot(8, 8)
+	var after := {
+		"gx": 8,
+		"gz": 8,
+		"cell_state": FARMLAND,
+		"watered": false,
+		"crop": null,
+	}
+	assertions.truthy(
+		grid.has_method("apply_crop_harvest_transaction"),
+		"grid exposes receipt-based harvest mutation"
+	)
+	if not grid.has_method("apply_crop_harvest_transaction"):
+		grid.free()
+		return
+	var receipt: Variant = grid.call("apply_crop_harvest_transaction", before, after)
+	assertions.truthy(receipt is RefCounted, "harvest apply returns an unforgeable receipt")
+	var impostor := CropInstance.new()
+	impostor.crop_data = data
+	assertions.truthy(impostor.from_dict(before.crop), "annual impostor has serialized-identical state")
+	assertions.truthy(
+		not grid.call("rollback_crop_harvest_transaction", receipt, impostor),
+		"annual rollback rejects serialized-identical impostor identity"
+	)
+	assertions.equal(grid.get_cell(8, 8).crop_instance, null, "impostor rejection leaves annual mutation unchanged")
+	assertions.truthy(
+		grid.call("rollback_crop_harvest_transaction", receipt, original),
+		"exact receipt and original instance restore annual crop"
+	)
+	assertions.truthy(grid.get_cell(8, 8).crop_instance == original, "valid receipt restores original identity")
+	assertions.equal(grid.get_crop_snapshot(8, 8), before, "valid receipt restores exact snapshot")
+	var abandoned_receipt: Variant = grid.apply_crop_harvest_transaction(before, after)
+	assertions.truthy(abandoned_receipt is RefCounted, "abandoned receipt fixture applies")
+	abandoned_receipt = null
+	var recovered_receipt: Variant = grid.apply_crop_harvest_transaction(before, after)
+	assertions.truthy(recovered_receipt is RefCounted, "next mutation recovers an abandoned receipt")
+	assertions.truthy(
+		grid.rollback_crop_harvest_transaction(recovered_receipt, original),
+		"transaction after receipt recovery rolls back"
+	)
+	assertions.equal(grid.get_crop_snapshot(8, 8), before, "receipt recovery restores exact annual snapshot")
+	grid.free()
 
 
 func _make_regrow_rollback_fixture() -> Dictionary:
@@ -163,7 +207,7 @@ func _make_regrow_rollback_fixture() -> Dictionary:
 		"watered": false,
 		"crop": post_crop,
 	}
-	grid.apply_crop_harvest(before, after)
+	var receipt := grid.apply_crop_harvest_transaction(before, after)
 	return {
 		"grid": grid,
 		"data": data,
@@ -171,5 +215,6 @@ func _make_regrow_rollback_fixture() -> Dictionary:
 		"original": original,
 		"before": before,
 		"after": after,
+		"receipt": receipt,
 		"committed": grid.get_crop_snapshot(6, 6),
 	}

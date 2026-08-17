@@ -143,6 +143,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_committed_signal_payloads(assertions, tree)
 	_test_atomic_notification_transaction(assertions, tree)
 	_test_sealed_transaction_defers_fifo_notifications(assertions, tree)
+	_test_abandoned_active_and_armed_transactions(assertions, tree)
 	_test_contents_reentrancy_preserves_notification_order(assertions, tree)
 	_test_capacity_reentrancy_preserves_notification_order(assertions, tree)
 	_test_change_payload_is_read_only_for_all_listeners(assertions, tree)
@@ -312,6 +313,64 @@ func _test_sealed_transaction_defers_fifo_notifications(
 	storage.capacity_changed.disconnect(recorder.on_capacity)
 	event_bus.farm_storage_changed.disconnect(recorder.on_bus_contents)
 	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_bus_capacity)
+	storage.queue_free()
+
+
+func _test_abandoned_active_and_armed_transactions(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var recorder := SignalRecorder.new(storage)
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+
+	var empty_owner: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(empty_owner is RefCounted, "abandoned empty transaction starts")
+	empty_owner = null
+	var recovered_empty: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(recovered_empty is RefCounted, "lost empty transaction releases ownership")
+	assertions.truthy(storage.rollback_atomic_transaction(recovered_empty), "recovered empty transaction can roll back")
+
+	var staged_owner: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(staged_owner, {"grain": 2}), "abandoned active transaction stages")
+	staged_owner = null
+	var recovered_staged: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(recovered_staged is RefCounted, "lost staged transaction releases ownership")
+	assertions.equal(storage.get_items(), {}, "lost staged transaction restores exact contents")
+	assertions.equal(recorder.contents, [], "lost staged transaction remains silent")
+	assertions.truthy(storage.rollback_atomic_transaction(recovered_staged), "transaction after staged recovery succeeds")
+
+	for method_name in [
+		"can_arm_sealed_transaction",
+		"arm_sealed_transaction",
+	]:
+		assertions.truthy(storage.has_method(method_name), "storage exposes %s" % method_name)
+	if not storage.has_method("arm_sealed_transaction"):
+		storage.queue_free()
+		return
+
+	var commit_owner: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(commit_owner, {"grain": 1}), "armed fixture stages")
+	var publication: Variant = storage.seal_atomic_transaction(commit_owner)
+	assertions.truthy(storage.call("can_arm_sealed_transaction", publication), "sealed publication prevalidates")
+	storage.call("arm_sealed_transaction", publication)
+	assertions.truthy(
+		not storage.cancel_sealed_transaction(publication),
+		"cancellation is illegal after the commit point"
+	)
+	publication = null
+	assertions.truthy(storage.add_items({"tomato": 1}), "lost armed publication auto-commits and unlocks")
+	assertions.equal(storage.get_items(), {"grain": 1, "tomato": 1}, "armed abandonment keeps staged state")
+	assertions.equal(
+		recorder.contents.map(func(entry: Dictionary) -> Dictionary: return entry.changes),
+		[{"grain": 1}, {"tomato": 1}],
+		"armed base notification precedes the next write"
+	)
+
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
 	storage.queue_free()
 
 

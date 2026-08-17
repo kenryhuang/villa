@@ -13,7 +13,7 @@ var _crop_visuals := {}
 var _greenhouse_cells := {}
 var _paused_greenhouse_cells := {}
 var _game_data
-var _prepared_harvest_token: RefCounted
+var _prepared_harvest_owner: WeakRef
 var _prepared_harvest: Dictionary = {}
 var _harvest_publication_owner: WeakRef
 var _harvest_publication: Dictionary = {}
@@ -225,18 +225,22 @@ func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:
 	if publication == null:
 		rollback_prepared_harvest(token)
 		return {}
-	stage_harvest_publication(publication)
+	if not can_arm_harvest_publication(publication):
+		cancel_harvest_publication(publication)
+		return {}
+	arm_harvest_publication(publication)
 	publish_harvest_publication(publication)
 	return preview.duplicate(true)
 
 
 func prepare_harvest(cell: GridCell, preview: Dictionary) -> RefCounted:
+	_recover_abandoned_prepared_harvest()
 	_recover_abandoned_harvest_publication()
 	if (
 		grid_system == null
 		or cell == null
 		or preview.is_empty()
-		or _prepared_harvest_token != null
+		or _has_prepared_harvest()
 		or _has_harvest_publication()
 	):
 		return null
@@ -251,13 +255,15 @@ func prepare_harvest(cell: GridCell, preview: Dictionary) -> RefCounted:
 		"crop": preview.post_crop.duplicate(true) if preview.post_crop is Dictionary else null,
 	}
 	var exp_token: Variant = null
-	var transactional_exp := _supports_exp_transactions()
+	var transactional_exp := game_state != null
+	if transactional_exp and not _supports_exp_transactions():
+		return null
 	if transactional_exp:
 		exp_token = game_state.call("prepare_exp_transaction", int(preview.exp))
 		if exp_token == null:
 			return null
 	var token := RefCounted.new()
-	_prepared_harvest_token = token
+	_prepared_harvest_owner = weakref(token)
 	_prepared_harvest = {
 		"cell": cell,
 		"preview": preview.duplicate(true),
@@ -267,26 +273,33 @@ func prepare_harvest(cell: GridCell, preview: Dictionary) -> RefCounted:
 		"exp_token": exp_token,
 		"exp_applied": false,
 		"transactional_exp": transactional_exp,
+		"grid_receipt": null,
 	}
+	call_deferred("_recover_abandoned_prepared_harvest")
 	return token
 
 
 func apply_prepared_harvest(token: Variant) -> bool:
-	if token == null or token != _prepared_harvest_token:
+	if not _owns_prepared_harvest(token):
 		return false
 	if bool(_prepared_harvest.get("applied", false)):
 		return false
 	var preview: Dictionary = _prepared_harvest.preview
-	if not grid_system.apply_crop_harvest(preview.before, _prepared_harvest.after):
+	var receipt: Variant = grid_system.apply_crop_harvest_transaction(
+		preview.before,
+		_prepared_harvest.after
+	)
+	if receipt == null:
 		return false
+	_prepared_harvest.grid_receipt = receipt
 	_prepared_harvest.applied = true
 	if bool(_prepared_harvest.transactional_exp):
 		if not bool(game_state.call("apply_exp_transaction", _prepared_harvest.exp_token)):
-			grid_system.rollback_crop_harvest(
-				_prepared_harvest.after,
-				preview.before,
+			grid_system.rollback_crop_harvest_transaction(
+				receipt,
 				_prepared_harvest.original_instance
 			)
+			_prepared_harvest.grid_receipt = null
 			_prepared_harvest.applied = false
 			return false
 		_prepared_harvest.exp_applied = true
@@ -294,18 +307,30 @@ func apply_prepared_harvest(token: Variant) -> bool:
 
 
 func rollback_prepared_harvest(token: Variant) -> bool:
-	if token == null or token != _prepared_harvest_token:
+	if not _owns_prepared_harvest(token):
 		return false
-	if bool(_prepared_harvest.get("transactional_exp", false)):
-		if not bool(game_state.call("cancel_exp_transaction", _prepared_harvest.exp_token)):
-			return false
+	return _rollback_prepared_harvest()
+
+
+func _rollback_prepared_harvest() -> bool:
+	if (
+		bool(_prepared_harvest.get("applied", false))
+		and not grid_system.owns_crop_harvest_transaction(_prepared_harvest.grid_receipt)
+	):
+		return false
+	if (
+		bool(_prepared_harvest.get("transactional_exp", false))
+		and not bool(game_state.call("owns_exp_transaction", _prepared_harvest.exp_token))
+	):
+		return false
 	if bool(_prepared_harvest.get("applied", false)):
-		var preview: Dictionary = _prepared_harvest.preview
-		if not grid_system.rollback_crop_harvest(
-			_prepared_harvest.after,
-			preview.before,
+		if not grid_system.rollback_crop_harvest_transaction(
+			_prepared_harvest.grid_receipt,
 			_prepared_harvest.original_instance
 		):
+			return false
+	if bool(_prepared_harvest.get("transactional_exp", false)):
+		if not bool(game_state.call("cancel_exp_transaction", _prepared_harvest.exp_token)):
 			return false
 	_clear_prepared_harvest()
 	return true
@@ -313,8 +338,7 @@ func rollback_prepared_harvest(token: Variant) -> bool:
 
 func seal_prepared_harvest(token: Variant) -> RefCounted:
 	if (
-		token == null
-		or token != _prepared_harvest_token
+		not _owns_prepared_harvest(token)
 		or not bool(_prepared_harvest.get("applied", false))
 		or _has_harvest_publication()
 	):
@@ -328,7 +352,7 @@ func seal_prepared_harvest(token: Variant) -> RefCounted:
 	_harvest_publication_owner = weakref(publication)
 	_harvest_publication = _prepared_harvest.duplicate(true)
 	_harvest_publication.exp_publication = exp_publication
-	_harvest_publication.staged = false
+	_harvest_publication.armed = false
 	_clear_prepared_harvest()
 	call_deferred("_recover_abandoned_harvest_publication")
 	return publication
@@ -340,20 +364,42 @@ func owns_harvest_publication(publication: Variant) -> bool:
 		_is_harvest_publication_owner(publication)
 		and _harvest_publication_state_matches()
 		and _exp_publication_is_owned()
+		and _grid_receipt_is_owned()
 	)
 
 
 func cancel_harvest_publication(publication: Variant) -> bool:
-	if not owns_harvest_publication(publication) or bool(_harvest_publication.staged):
+	if not owns_harvest_publication(publication) or bool(_harvest_publication.armed):
 		return false
 	_cancel_harvest_publication()
 	return true
 
 
-func stage_harvest_publication(publication: Variant) -> void:
-	if not owns_harvest_publication(publication) or bool(_harvest_publication.staged):
-		push_error("Invalid harvest publication ownership")
+func can_arm_harvest_publication(publication: Variant) -> bool:
+	return (
+		owns_harvest_publication(publication)
+		and not bool(_harvest_publication.armed)
+		and (
+			not bool(_harvest_publication.transactional_exp)
+			or bool(game_state.call(
+				"can_arm_exp_publication",
+				_harvest_publication.exp_publication,
+				true
+			))
+		)
+	)
+
+
+func arm_harvest_publication(publication: Variant) -> void:
+	if not _is_harvest_publication_owner(publication) or bool(_harvest_publication.armed):
+		push_error("Invalid harvest publication ownership at commit point")
 		return
+	grid_system.finalize_crop_harvest_transaction(_harvest_publication.grid_receipt)
+	if bool(_harvest_publication.transactional_exp):
+		_harvest_publication.exp_barrier = game_state.call(
+			"arm_exp_publication",
+			_harvest_publication.exp_publication
+		)
 	var cell: GridCell = _harvest_publication.cell
 	var preview: Dictionary = _harvest_publication.preview
 	if bool(preview.regrowing) and cell.crop_instance != null:
@@ -375,22 +421,27 @@ func stage_harvest_publication(publication: Variant) -> void:
 			],
 		},
 	])
-	if not bool(_harvest_publication.transactional_exp) and game_state != null:
-		game_state.add_exp(int(preview.exp))
-	_harvest_publication.staged = true
+	_harvest_publication.armed = true
+
+
+func stage_harvest_publication(publication: Variant) -> void:
+	if not can_arm_harvest_publication(publication):
+		push_error("Invalid harvest publication ownership")
+		return
+	arm_harvest_publication(publication)
 
 
 func publish_harvest_publication(publication: Variant) -> void:
-	if not _is_harvest_publication_owner(publication) or not bool(_harvest_publication.staged):
+	if not _is_harvest_publication_owner(publication) or not bool(_harvest_publication.armed):
 		push_error("Invalid staged harvest publication ownership")
 		return
-	var exp_publication: Variant = _harvest_publication.exp_publication
 	var transactional_exp := bool(_harvest_publication.transactional_exp)
+	var exp_barrier: Variant = _harvest_publication.get("exp_barrier")
 	_clear_harvest_publication()
 	_farming_event_dispatch_suspended = false
 	_drain_farming_event_queue()
 	if transactional_exp:
-		game_state.call("publish_exp_publication", exp_publication)
+		game_state.call("release_exp_event_barrier", exp_barrier)
 
 
 func finalize_prepared_harvest(token: Variant) -> RefCounted:
@@ -401,7 +452,7 @@ func finalize_prepared_harvest(token: Variant) -> RefCounted:
 
 
 func publish_prepared_harvest(publication: Variant) -> Dictionary:
-	if not _is_harvest_publication_owner(publication) or not bool(_harvest_publication.staged):
+	if not _is_harvest_publication_owner(publication) or not bool(_harvest_publication.armed):
 		return {}
 	var preview: Dictionary = _harvest_publication.preview.duplicate(true)
 	publish_harvest_publication(publication)
@@ -409,7 +460,7 @@ func publish_prepared_harvest(publication: Variant) -> Dictionary:
 
 
 func _clear_prepared_harvest() -> void:
-	_prepared_harvest_token = null
+	_prepared_harvest_owner = null
 	_prepared_harvest.clear()
 
 
@@ -419,11 +470,14 @@ func _supports_exp_transactions() -> bool:
 	for method_name in [
 		"prepare_exp_transaction",
 		"apply_exp_transaction",
+		"owns_exp_transaction",
 		"seal_exp_transaction",
 		"owns_exp_publication",
+		"can_arm_exp_publication",
+		"arm_exp_publication",
 		"cancel_exp_transaction",
 		"cancel_exp_publication",
-		"publish_exp_publication",
+		"release_exp_event_barrier",
 	]:
 		if not game_state.has_method(method_name):
 			return false
@@ -436,6 +490,13 @@ func _exp_publication_is_owned() -> bool:
 	return bool(game_state.call(
 		"owns_exp_publication",
 		_harvest_publication.get("exp_publication")
+	))
+
+
+func _grid_receipt_is_owned() -> bool:
+	return bool(grid_system.call(
+		"owns_crop_harvest_transaction",
+		_harvest_publication.get("grid_receipt")
 	))
 
 
@@ -452,14 +513,12 @@ func _harvest_publication_state_matches() -> bool:
 
 
 func _cancel_harvest_publication() -> void:
-	if bool(_harvest_publication.get("transactional_exp", false)):
-		game_state.call("cancel_exp_publication", _harvest_publication.exp_publication)
-	var preview: Dictionary = _harvest_publication.preview
-	grid_system.rollback_crop_harvest(
-		_harvest_publication.after,
-		preview.before,
+	grid_system.rollback_crop_harvest_transaction(
+		_harvest_publication.grid_receipt,
 		_harvest_publication.original_instance
 	)
+	if bool(_harvest_publication.get("transactional_exp", false)):
+		game_state.call("cancel_exp_publication", _harvest_publication.exp_publication)
 	_clear_harvest_publication()
 
 
@@ -483,16 +542,35 @@ func _is_harvest_publication_owner(publication: Variant) -> bool:
 func _recover_abandoned_harvest_publication() -> void:
 	if _harvest_publication_owner == null or _harvest_publication_owner.get_ref() != null:
 		return
-	if bool(_harvest_publication.get("staged", false)):
-		var exp_publication: Variant = _harvest_publication.get("exp_publication")
+	if bool(_harvest_publication.get("armed", false)):
 		var transactional_exp := bool(_harvest_publication.get("transactional_exp", false))
+		var exp_barrier: Variant = _harvest_publication.get("exp_barrier")
 		_clear_harvest_publication()
 		_farming_event_dispatch_suspended = false
 		_drain_farming_event_queue()
 		if transactional_exp:
-			game_state.call("publish_exp_publication", exp_publication)
+			game_state.call("release_exp_event_barrier", exp_barrier)
 	else:
 		_cancel_harvest_publication()
+
+
+func _has_prepared_harvest() -> bool:
+	return _prepared_harvest_owner != null and _prepared_harvest_owner.get_ref() != null
+
+
+func _owns_prepared_harvest(token: Variant) -> bool:
+	return (
+		token is RefCounted
+		and _prepared_harvest_owner != null
+		and _prepared_harvest_owner.get_ref() == token
+	)
+
+
+func _recover_abandoned_prepared_harvest() -> void:
+	if _prepared_harvest_owner == null or _prepared_harvest_owner.get_ref() != null:
+		return
+	if not _rollback_prepared_harvest():
+		_clear_prepared_harvest()
 
 
 func clear_withered(cell: GridCell) -> bool:
