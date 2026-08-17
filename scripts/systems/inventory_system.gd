@@ -17,6 +17,9 @@ var quick_slot_mappings: Array[int] = [-1, -1, -1, -1, -1, -1]  # 快捷栏 → 
 var _event_bus
 var _mapping_transaction_active := false
 var _mapping_transaction_items: Array[String] = []
+var _restore_notification_transaction_active := false
+var _restore_notification_items: Array[String] = []
+var _restore_notification_item_deltas: Dictionary = {}
 
 
 func _init() -> void:
@@ -55,8 +58,7 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 			if can_add > 0:
 				slot.quantity += can_add
 				quantity -= can_add
-				if _event_bus:
-					_event_bus.item_added.emit(item_id, can_add)
+				_emit_or_queue_item_change(item_id, can_add)
 
 	# 2. 放入空槽位
 	for i in range(slots.size()):
@@ -66,8 +68,7 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 			var add_qty = mini(quantity, max_stack)
 			slots[i] = {"item_id": item_id, "quantity": add_qty}
 			quantity -= add_qty
-			if _event_bus:
-				_event_bus.item_added.emit(item_id, add_qty)
+			_emit_or_queue_item_change(item_id, add_qty)
 
 	var added_all := quantity <= 0
 	_emit_changed_quick_items(previous_items)
@@ -94,8 +95,7 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 			var remove_qty = mini(remaining, slots[i].quantity)
 			slots[i].quantity -= remove_qty
 			remaining -= remove_qty
-			if _event_bus:
-				_event_bus.item_removed.emit(item_id, remove_qty)
+			_emit_or_queue_item_change(item_id, -remove_qty)
 			if slots[i].quantity <= 0:
 				slots[i] = {}
 		i += 1
@@ -270,7 +270,7 @@ func get_quick_item(quick_index: int) -> String:
 
 
 func begin_mapping_transaction() -> bool:
-	if _mapping_transaction_active:
+	if _mapping_transaction_active or _restore_notification_transaction_active:
 		return false
 	_mapping_transaction_items = _snapshot_quick_items()
 	_mapping_transaction_active = true
@@ -285,6 +285,30 @@ func end_mapping_transaction(commit_changes: bool) -> bool:
 	_mapping_transaction_active = false
 	if commit_changes:
 		_emit_changed_quick_items(previous_items)
+	return true
+
+
+func begin_restore_notification_transaction() -> bool:
+	if _restore_notification_transaction_active or _mapping_transaction_active:
+		return false
+	_restore_notification_items = _snapshot_quick_items()
+	_restore_notification_item_deltas.clear()
+	_restore_notification_transaction_active = true
+	return true
+
+
+func end_restore_notification_transaction(commit_changes: bool) -> bool:
+	if not _restore_notification_transaction_active:
+		return false
+	var previous_items := _restore_notification_items.duplicate()
+	var item_deltas := _restore_notification_item_deltas.duplicate(true)
+	var quick_changes := _quick_item_changes(previous_items)
+	_restore_notification_items.clear()
+	_restore_notification_item_deltas.clear()
+	_restore_notification_transaction_active = false
+	if commit_changes:
+		_emit_item_deltas(item_deltas)
+		_emit_quick_item_changes(quick_changes)
 	return true
 
 
@@ -305,8 +329,7 @@ func use_item(slot_index: int) -> bool:
 			if not slots[index].is_empty() and slots[index].get("item_id", "") == item_id:
 				affected_indices.append(index)
 		slot.quantity -= 1
-		if _event_bus:
-			_event_bus.item_removed.emit(item_id, 1)
+		_emit_or_queue_item_change(item_id, -1)
 		if slot.quantity <= 0:
 			slots[slot_index] = {}
 		_compact_item_stacks(item_id, affected_indices)
@@ -477,8 +500,13 @@ func _snapshot_quick_items() -> Array[String]:
 
 
 func _emit_changed_quick_items(previous_items: Array[String]) -> void:
-	if _mapping_transaction_active:
+	if _mapping_transaction_active or _restore_notification_transaction_active:
 		return
+	_emit_quick_item_changes(_quick_item_changes(previous_items))
+
+
+func _quick_item_changes(previous_items: Array[String]) -> Array[Dictionary]:
+	var changes: Array[Dictionary] = []
 	for quick_index in range(6):
 		var previous_item := (
 			previous_items[quick_index]
@@ -487,7 +515,42 @@ func _emit_changed_quick_items(previous_items: Array[String]) -> void:
 		)
 		var current_item := get_quick_item(quick_index)
 		if previous_item != current_item:
-			quick_slot_mapping_changed.emit(quick_index, current_item)
+			changes.append({"quick_index": quick_index, "item_id": current_item})
+	return changes
+
+
+func _emit_quick_item_changes(changes: Array[Dictionary]) -> void:
+	for change in changes:
+		quick_slot_mapping_changed.emit(int(change.quick_index), str(change.item_id))
+
+
+func _emit_or_queue_item_change(item_id: String, quantity_delta: int) -> void:
+	if quantity_delta == 0:
+		return
+	if _restore_notification_transaction_active:
+		_restore_notification_item_deltas[item_id] = (
+			int(_restore_notification_item_deltas.get(item_id, 0)) + quantity_delta
+		)
+		return
+	_emit_item_change(item_id, quantity_delta)
+
+
+func _emit_item_deltas(item_deltas: Dictionary) -> void:
+	var item_ids: Array[String] = []
+	for item_id_value in item_deltas:
+		item_ids.append(str(item_id_value))
+	item_ids.sort()
+	for item_id in item_ids:
+		_emit_item_change(item_id, int(item_deltas.get(item_id, 0)))
+
+
+func _emit_item_change(item_id: String, quantity_delta: int) -> void:
+	if _event_bus == null or quantity_delta == 0:
+		return
+	if quantity_delta > 0:
+		_event_bus.item_added.emit(item_id, quantity_delta)
+	else:
+		_event_bus.item_removed.emit(item_id, -quantity_delta)
 
 
 func _is_integer_number(value: Variant) -> bool:

@@ -126,6 +126,48 @@ class EmptyBuildingRestore:
 		return records.size()
 
 
+class RestoreNotificationObserver:
+	extends RefCounted
+	var game_state: Node
+	var inventory: InventorySystem
+	var grid: GridSystem
+	var mutate_game_state := false
+	var manager: Node
+	var reentrant_slot := 0
+	var attempt_reentrant_load := false
+	var reentrant_attempted := false
+	var reentrant_results: Array[bool] = []
+	var quick_events: Array[Dictionary] = []
+	var navigation_events: Array[Dictionary] = []
+
+	func on_quick_changed(index: int, item_id: String) -> void:
+		quick_events.append(_snapshot({"index": index, "item_id": item_id}))
+		_mutate_if_requested()
+
+	func on_navigation_changed(revision: int) -> void:
+		navigation_events.append(_snapshot({"revision": revision}))
+		_mutate_if_requested()
+		if attempt_reentrant_load and not reentrant_attempted:
+			reentrant_attempted = true
+			reentrant_results.append(manager.load_game(reentrant_slot))
+
+	func _snapshot(event: Dictionary) -> Dictionary:
+		var snapshot := event.duplicate(true)
+		snapshot["gold"] = int(game_state.gold)
+		snapshot["exp"] = int(game_state.player_state.exp)
+		snapshot["level"] = int(game_state.player_state.level)
+		snapshot["quick_item"] = inventory.get_quick_item(0)
+		snapshot["cell_state"] = int(grid.get_cell(2, 2).state)
+		return snapshot
+
+	func _mutate_if_requested() -> void:
+		if not mutate_game_state:
+			return
+		game_state.reset_to_new_game()
+		game_state.add_gold(7)
+		game_state.add_exp(2)
+
+
 class BuildingSignalObserver:
 	extends RefCounted
 	var local_removed := 0
@@ -193,6 +235,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_harvest_storage_callback_load_invalidates_exp(assertions, tree)
 	_test_failed_load_preserves_committed_harvest_exp_barrier(assertions, tree)
 	_test_failed_load_preserves_prearm_harvest_exp_publication(assertions, tree)
+	_test_failed_load_isolates_inventory_grid_restore_notifications(assertions, tree)
+	_test_successful_load_publishes_final_inventory_grid_notifications(assertions, tree)
 	_test_successful_load_from_leveling_exp_callback_suppresses_stale_level(assertions, tree)
 	_test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(assertions, tree)
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
@@ -602,6 +646,165 @@ func _test_failed_load_preserves_pending_harvest_exp(
 	_free_pending_harvest(fixture)
 	buildings.free()
 	rejecting_grid.free()
+	manager.free()
+	_restore_game_state_scalars(game_state, original)
+	_cleanup()
+
+
+func _test_failed_load_isolates_inventory_grid_restore_notifications(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var game_state := tree.root.get_node_or_null("GameState")
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(game_state != null and event_bus != null, "restore isolation failure fixture has core autoloads")
+	if game_state == null or event_bus == null:
+		return
+	var original := _capture_game_state_scalars(game_state)
+	var manager := SaveManagerScript.new()
+	manager.save_directory = TEST_SAVE_DIR
+	var inventory := InventorySystemScript.new()
+	var rejecting_grid := RejectingGridRestore.new()
+	var buildings := EmptyBuildingRestore.new()
+	tree.root.add_child(manager)
+	tree.root.add_child(inventory)
+	tree.root.add_child(rejecting_grid)
+	rejecting_grid.add_to_group("grid_system")
+	tree.root.add_child(buildings)
+	buildings.add_to_group("building_system")
+	inventory.restore_state(
+		[{"item_id": "carrot_seed", "quantity": 3}],
+		[0, -1, -1, -1, -1, -1]
+	)
+	game_state.gold = 654
+	game_state.harvest_seed = 909
+	game_state.player_state.level = 3
+	game_state.player_state.exp = 250
+	assertions.truthy(manager.save_game(BAD_SLOT), "restore isolation fixture writes a valid later-rejected save")
+	inventory.restore_state(
+		[{"item_id": "grain_seed", "quantity": 2}],
+		[0, -1, -1, -1, -1, -1]
+	)
+	game_state.gold = 111
+	game_state.harvest_seed = 707
+	game_state.player_state.level = 1
+	game_state.player_state.exp = 0
+	var inventory_before := {
+		"slots": inventory.slots.duplicate(true),
+		"quick_mappings": inventory.quick_slot_mappings.duplicate(),
+	}
+	var fixture := _prepare_pending_harvest(game_state, event_bus)
+	var farming: FarmingSystem = fixture.farming
+	var publication: Variant = fixture.publication
+	assertions.truthy(farming.can_arm_harvest_publication(publication), "restore isolation fixture prevalidates harvest publication")
+	farming.arm_harvest_publication(publication)
+	var observer := RestoreNotificationObserver.new()
+	observer.game_state = game_state
+	observer.inventory = inventory
+	observer.grid = rejecting_grid
+	observer.mutate_game_state = true
+	var exp_recorder := ExpSignalRecorder.new()
+	inventory.quick_slot_mapping_changed.connect(observer.on_quick_changed)
+	rejecting_grid.navigation_changed.connect(observer.on_navigation_changed)
+	event_bus.exp_gained.connect(exp_recorder.on_exp_gained)
+	rejecting_grid.reject_next_restore = true
+
+	assertions.truthy(not manager.load_game(BAD_SLOT), "late Grid rejection fails after tentative Inventory restore")
+	assertions.equal(observer.quick_events, [], "failed load invokes no tentative or rollback Inventory listener")
+	assertions.equal(observer.navigation_events, [], "failed load invokes no tentative or rollback Grid listener")
+	assertions.equal(game_state.gold, 111, "failed notification-isolated load preserves gold")
+	assertions.equal(game_state.harvest_seed, 707, "failed notification-isolated load restores harvest seed")
+	assertions.equal(game_state.player_state.exp, 4, "failed notification-isolated load preserves pending harvest EXP")
+	assertions.equal(game_state.player_state.level, 1, "failed notification-isolated load preserves pending harvest level")
+	assertions.equal(inventory.slots, inventory_before.slots, "failed load restores exact Inventory slots")
+	assertions.equal(inventory.quick_slot_mappings, inventory_before.quick_mappings, "failed load restores exact quick mappings")
+	assertions.equal(inventory.get_quick_item(0), "grain_seed", "failed load restores the original effective quick item")
+	farming.publish_harvest_publication(publication)
+	assertions.equal(exp_recorder.amounts, [4], "surviving harvest barrier publishes exactly one EXP notification")
+
+	inventory.quick_slot_mapping_changed.disconnect(observer.on_quick_changed)
+	rejecting_grid.navigation_changed.disconnect(observer.on_navigation_changed)
+	event_bus.exp_gained.disconnect(exp_recorder.on_exp_gained)
+	_free_pending_harvest(fixture)
+	buildings.free()
+	rejecting_grid.free()
+	inventory.free()
+	manager.free()
+	_restore_game_state_scalars(game_state, original)
+	_cleanup()
+
+
+func _test_successful_load_publishes_final_inventory_grid_notifications(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var game_state := tree.root.get_node_or_null("GameState")
+	assertions.truthy(game_state != null, "successful restore notification fixture has GameState")
+	if game_state == null:
+		return
+	var original := _capture_game_state_scalars(game_state)
+	var manager := SaveManagerScript.new()
+	manager.save_directory = TEST_SAVE_DIR
+	var inventory := InventorySystemScript.new()
+	var grid := RejectingGridRestore.new()
+	var buildings := EmptyBuildingRestore.new()
+	tree.root.add_child(manager)
+	tree.root.add_child(inventory)
+	tree.root.add_child(grid)
+	grid.add_to_group("grid_system")
+	tree.root.add_child(buildings)
+	buildings.add_to_group("building_system")
+	inventory.restore_state(
+		[{"item_id": "carrot_seed", "quantity": 3}],
+		[0, -1, -1, -1, -1, -1]
+	)
+	grid.set_cell_state(2, 2, GridCell.State.FARMLAND)
+	game_state.gold = 654
+	game_state.harvest_seed = 909
+	game_state.player_state.level = 3
+	game_state.player_state.exp = 250
+	assertions.truthy(manager.save_game(TEST_SLOT), "successful restore notification fixture saves final state")
+	inventory.restore_state(
+		[{"item_id": "grain_seed", "quantity": 2}],
+		[0, -1, -1, -1, -1, -1]
+	)
+	grid.reset_state()
+	game_state.gold = 111
+	game_state.harvest_seed = 707
+	game_state.player_state.level = 1
+	game_state.player_state.exp = 0
+	var observer := RestoreNotificationObserver.new()
+	observer.game_state = game_state
+	observer.inventory = inventory
+	observer.grid = grid
+	observer.manager = manager
+	observer.reentrant_slot = TEST_SLOT
+	observer.attempt_reentrant_load = true
+	inventory.quick_slot_mapping_changed.connect(observer.on_quick_changed)
+	grid.navigation_changed.connect(observer.on_navigation_changed)
+
+	assertions.truthy(manager.load_game(TEST_SLOT), "successful load commits final Inventory and Grid state")
+	assertions.equal(observer.quick_events.size(), 1, "successful load emits one coalesced quick-slot notification")
+	assertions.equal(observer.navigation_events.size(), 1, "successful load emits one coalesced navigation notification")
+	assertions.equal(observer.reentrant_results, [false], "restore publication rejects a nested SaveManager owner")
+	for event in observer.quick_events + observer.navigation_events:
+		assertions.equal(event.gold, 654, "restore notification sees authoritative loaded gold")
+		assertions.equal(event.exp, 250, "restore notification sees authoritative loaded EXP")
+		assertions.equal(event.level, 3, "restore notification sees authoritative loaded level")
+		assertions.equal(event.quick_item, "carrot_seed", "restore notification sees final quick item")
+		assertions.equal(event.cell_state, GridCell.State.FARMLAND, "restore notification sees final Grid state")
+	assertions.equal(observer.quick_events[0].item_id, "carrot_seed", "coalesced quick notification carries final item")
+	assertions.equal(observer.navigation_events[0].revision, grid.get_navigation_revision(), "coalesced navigation carries final revision")
+
+	inventory.quick_slot_mapping_changed.disconnect(observer.on_quick_changed)
+	grid.navigation_changed.disconnect(observer.on_navigation_changed)
+	observer.attempt_reentrant_load = false
+	assertions.truthy(manager.load_game(TEST_SLOT), "SaveManager accepts the next load after publication closes")
+	buildings.free()
+	grid.free()
+	inventory.free()
 	manager.free()
 	_restore_game_state_scalars(game_state, original)
 	_cleanup()

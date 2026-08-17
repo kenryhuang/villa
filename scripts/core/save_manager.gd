@@ -28,6 +28,8 @@ var _tool_system: Variant
 var _production_system: Variant
 var _notification_system: Variant
 var _state_transition_owner: Variant
+var _restore_transaction_active := false
+var _restore_notification_participants: Array[Node] = []
 
 
 func configure_economy(
@@ -272,6 +274,8 @@ func load_game(slot: int = 0) -> bool:
 
 
 func _apply_save_data(data: Dictionary) -> bool:
+	if _restore_transaction_active:
+		return false
 	var migrated_value: Variant = _migrate_save_data(data)
 	if not migrated_value is Dictionary:
 		return false
@@ -280,30 +284,57 @@ func _apply_save_data(data: Dictionary) -> bool:
 		return false
 	_cancel_transient_actions_for_restore()
 	var previous_state := _gather_save_data().duplicate(true)
-	_begin_restore_transaction()
+	if not _begin_restore_transaction():
+		return false
 	var applied := _apply_migrated_save_data(migrated_data)
 	if not applied and not _apply_migrated_save_data(previous_state, false):
 		push_error("Failed to roll back rejected save data")
-	_end_restore_transaction()
+	_end_restore_transaction(applied)
 	return applied
 
 
-func _begin_restore_transaction() -> void:
+func _begin_restore_transaction() -> bool:
+	if _restore_transaction_active:
+		return false
+	_restore_transaction_active = true
+	_restore_notification_participants.clear()
+	for participant in [_get_inventory_system(), _get_grid_system()]:
+		if (
+			participant == null
+			or not participant.has_method("begin_restore_notification_transaction")
+			or not participant.has_method("end_restore_notification_transaction")
+		):
+			continue
+		if not bool(participant.call("begin_restore_notification_transaction")):
+			for begun_participant in _restore_notification_participants:
+				begun_participant.call("end_restore_notification_transaction", false)
+			_restore_notification_participants.clear()
+			_restore_transaction_active = false
+			return false
+		_restore_notification_participants.append(participant)
 	if (
 		_production_system != null
 		and is_instance_valid(_production_system)
 		and _production_system.has_method("begin_restore_transaction")
 	):
 		_production_system.call("begin_restore_transaction")
+	return true
 
 
-func _end_restore_transaction() -> void:
+func _end_restore_transaction(commit_changes: bool) -> void:
+	if not _restore_transaction_active:
+		return
 	if (
 		_production_system != null
 		and is_instance_valid(_production_system)
 		and _production_system.has_method("end_restore_transaction")
 	):
 		_production_system.call("end_restore_transaction")
+	for participant in _restore_notification_participants:
+		if is_instance_valid(participant):
+			participant.call("end_restore_notification_transaction", commit_changes)
+	_restore_notification_participants.clear()
+	_restore_transaction_active = false
 
 
 func _cancel_transient_actions_for_restore() -> void:

@@ -12,6 +12,14 @@ const PLANTED = 2
 const BUILDING = 3
 
 
+class NavigationRecorder:
+	extends RefCounted
+	var revisions: Array[int] = []
+
+	func on_navigation_changed(revision: int) -> void:
+		revisions.append(revision)
+
+
 func _make_crop_data(id: String, growth_days: int):
 	var crop = CropDataScript.new()
 	crop.crop_id = id
@@ -76,6 +84,7 @@ func run(assertions: TestAssert) -> void:
 	_test_harvest_rollback_invariants(assertions)
 	_test_harvest_mutation_receipt_identity(assertions)
 	_test_state_replacement_settles_harvest_receipt(assertions)
+	_test_restore_notification_transaction(assertions)
 
 
 func _test_harvest_rollback_invariants(assertions: TestAssert) -> void:
@@ -236,6 +245,46 @@ func _test_state_replacement_settles_harvest_receipt(assertions: TestAssert) -> 
 				"%s replacement leaves receipt lifecycle usable" % replacement
 			)
 		grid.free()
+
+
+func _test_restore_notification_transaction(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var recorder := NavigationRecorder.new()
+	grid.navigation_changed.connect(recorder.on_navigation_changed)
+	var farmland_state := {
+		"version": GridSystemScript.SERIALIZATION_VERSION,
+		"cells": [{
+			"gx": 3,
+			"gz": 4,
+			"state": FARMLAND,
+			"watered": false,
+		}],
+	}
+	assertions.truthy(
+		grid.has_method("begin_restore_notification_transaction")
+		and grid.has_method("end_restore_notification_transaction"),
+		"grid exposes scoped restore notification isolation"
+	)
+	if not grid.has_method("begin_restore_notification_transaction"):
+		grid.free()
+		return
+	assertions.truthy(grid.begin_restore_notification_transaction(), "grid begins one restore notification transaction")
+	assertions.truthy(not grid.begin_restore_notification_transaction(), "grid rejects nested restore notification ownership")
+	grid.reset_state()
+	assertions.truthy(grid.from_dict(farmland_state), "grid applies candidate state inside notification transaction")
+	assertions.equal(recorder.revisions, [], "grid navigation remains silent while restore is tentative")
+	grid.reset_state()
+	assertions.truthy(grid.from_dict({"version": GridSystemScript.SERIALIZATION_VERSION, "cells": []}), "grid reapplies previous state inside rollback")
+	assertions.truthy(grid.end_restore_notification_transaction(false), "grid discards rollback notifications")
+	assertions.equal(recorder.revisions, [], "grid rollback emits no tentative or compensating navigation")
+	assertions.truthy(grid.begin_restore_notification_transaction(), "grid transaction is reusable after rollback")
+	grid.reset_state()
+	assertions.truthy(grid.from_dict(farmland_state), "grid applies successful candidate while notifications remain isolated")
+	assertions.equal(recorder.revisions, [], "successful grid restore remains silent before commit")
+	assertions.truthy(grid.end_restore_notification_transaction(true), "grid commits restore notifications")
+	assertions.equal(recorder.revisions.size(), 1, "grid commit emits one coalesced navigation notification")
+	assertions.equal(recorder.revisions[0], grid.get_navigation_revision(), "grid publishes the final navigation revision")
+	grid.free()
 
 
 func _make_regrow_rollback_fixture() -> Dictionary:

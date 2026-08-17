@@ -25,6 +25,8 @@ var _navigation_blockers: Dictionary = {}
 var _navigation_revision := 0
 var _crop_harvest_receipt_owner: WeakRef
 var _crop_harvest_receipt: Dictionary = {}
+var _restore_notification_transaction_active := false
+var _restore_navigation_changed := false
 
 
 static func cell_key(gx: int, gz: int) -> int:
@@ -255,7 +257,30 @@ func is_navigation_cell_walkable(cell: Vector2i) -> bool:
 
 func notify_navigation_state_changed() -> void:
 	_navigation_revision += 1
+	if _restore_notification_transaction_active:
+		_restore_navigation_changed = true
+		return
 	navigation_changed.emit(_navigation_revision)
+
+
+func begin_restore_notification_transaction() -> bool:
+	if _restore_notification_transaction_active:
+		return false
+	_restore_navigation_changed = false
+	_restore_notification_transaction_active = true
+	return true
+
+
+func end_restore_notification_transaction(commit_changes: bool) -> bool:
+	if not _restore_notification_transaction_active:
+		return false
+	var publish_navigation := commit_changes and _restore_navigation_changed
+	var final_revision := _navigation_revision
+	_restore_navigation_changed = false
+	_restore_notification_transaction_active = false
+	if publish_navigation:
+		navigation_changed.emit(final_revision)
+	return true
 
 
 func _state_is_navigation_walkable(state: int) -> bool:
