@@ -50,7 +50,7 @@ func _test_lifecycle_serialization_version(assertions: TestAssert) -> void:
 	var saved: Dictionary = grid.to_dict()
 
 	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "new grid plant is explicitly growing")
-	assertions.equal(saved.get("version", -1), 2, "grid serialization uses canonical version two")
+	assertions.equal(saved.get("version", -1), 3, "grid serialization uses canonical version three")
 	assertions.equal(
 		saved.cells[0].crop.get("lifecycle_state", -1),
 		0,

@@ -11,7 +11,7 @@ const WORLD_ORIGIN_Z := -14.0
 const SLOPE_THRESHOLD := 0.35
 const GRID_LINE_LIFT := 0.035
 const HIGHLIGHT_LIFT := 0.045
-const SERIALIZATION_VERSION := 2
+const SERIALIZATION_VERSION := 3
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const FarmlandTileScript = preload("res://scripts/visual/farmland_tile.gd")
 

@@ -23,12 +23,15 @@ var _sealed_batch_marker: RefCounted
 var _sealed_armed := false
 var _notification_dispatch_suspended := false
 var _capacity_refresh_pending := false
+var _restore_notification_transaction_active := false
+var _restore_before_items: Dictionary = {}
+var _restore_before_capacity := DEFAULT_CAPACITY
 
 
 func configure(capacity_provider: Callable = Callable()) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	var next_total := DEFAULT_CAPACITY
 	if not capacity_provider.is_null():
@@ -76,7 +79,7 @@ func can_add(requested: Dictionary) -> bool:
 func begin_atomic_transaction() -> RefCounted:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
 		return null
 	var token := RefCounted.new()
 	_transaction_owner = weakref(token)
@@ -203,7 +206,7 @@ func rollback_atomic_transaction(token: Variant) -> bool:
 func add_items(requested: Dictionary) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	return _add_items(requested)
 
@@ -241,7 +244,7 @@ func can_remove(requested: Dictionary) -> bool:
 func remove_items(requested: Dictionary) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
 		return false
 	return _remove_items(requested)
 
@@ -297,6 +300,40 @@ func restore_items_unchecked(items: Dictionary) -> bool:
 	if normalized_value == null:
 		return false
 	_replace_items(normalized_value as Dictionary)
+	return true
+
+
+func begin_restore_notification_transaction() -> bool:
+	_recover_abandoned_transaction()
+	_recover_abandoned_seal()
+	if (
+		_restore_notification_transaction_active
+		or _has_atomic_transaction()
+		or _has_sealed_transaction()
+	):
+		return false
+	_restore_notification_transaction_active = true
+	_restore_before_items = _items.duplicate(true)
+	_restore_before_capacity = _total_capacity
+	return true
+
+
+func end_restore_notification_transaction(commit_changes: bool) -> bool:
+	if not _restore_notification_transaction_active:
+		return false
+	var previous_items := _restore_before_items
+	var previous_capacity := _restore_before_capacity
+	_restore_notification_transaction_active = false
+	_restore_before_items = {}
+	_restore_before_capacity = _total_capacity
+	if commit_changes:
+		_queue_notification_batch(
+			_changes_between(previous_items, _items),
+			previous_capacity != _total_capacity
+				or _sum_quantities(previous_items) != get_used_capacity(),
+			get_used_capacity(),
+			_total_capacity
+		)
 	return true
 
 
@@ -367,7 +404,7 @@ func _replace_items(next_items: Dictionary) -> void:
 	var next_used := _sum_quantities(next_items)
 	var changes := _changes_between(previous_items, next_items)
 	_items = next_items.duplicate(true)
-	if _has_atomic_transaction():
+	if _has_atomic_transaction() or _restore_notification_transaction_active:
 		return
 	_queue_notification_batch(changes, previous_used != next_used, next_used, _total_capacity)
 
@@ -376,7 +413,7 @@ func _commit_capacity(next_total: int) -> void:
 	if next_total == _total_capacity:
 		return
 	_total_capacity = next_total
-	if _has_atomic_transaction():
+	if _has_atomic_transaction() or _restore_notification_transaction_active:
 		return
 	_queue_notification_batch({}, true, get_used_capacity(), _total_capacity)
 

@@ -47,20 +47,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var gathered: Dictionary = manager._gather_save_data()
 	assertions.equal(
 		gathered.get("building_layout_version"),
-		2,
-		"world saves declare the production-yard layout version"
+		3,
+		"world saves declare the lifecycle layout version"
 	)
 	var complete_payload := {
 		"harvest_seed": gathered.harvest_seed,
-		"building_layout_version": 2,
+		"building_layout_version": 3,
 		"grid": grid.to_dict(),
 		"buildings": records,
 	}
 	assertions.truthy(
 		manager._validate_save_data(complete_payload),
-		"layout version two validates with a complete world snapshot"
+		"layout version three validates with a complete world snapshot"
 	)
-	for invalid_version in [null, -1, 1, 1.5, 3]:
+	for invalid_version in [null, -1, 1, 1.5, 2, 4]:
 		var invalid_payload: Dictionary = complete_payload.duplicate(true)
 		if invalid_version == null:
 			invalid_payload.erase("building_layout_version")
@@ -73,7 +73,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var saved_grid: Dictionary = grid.to_dict()
 	manager._apply_save_data({
-		"building_layout_version": 2,
+		"harvest_seed": gathered.harvest_seed,
+		"building_layout_version": 3,
 		"grid": saved_grid,
 		"buildings": records,
 	})
@@ -94,7 +95,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	short_duration_record.construction_elapsed = 2.7
 	short_duration_record.construction_duration = 4.0
 	manager._apply_save_data({
-		"building_layout_version": 2,
+		"harvest_seed": gathered.harvest_seed,
+		"building_layout_version": 3,
 		"grid": saved_grid,
 		"buildings": [short_duration_record],
 	})
@@ -107,7 +109,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	legacy_record.erase("construction_elapsed")
 	legacy_record.erase("construction_duration")
 	manager._apply_save_data({
-		"building_layout_version": 2,
+		"harvest_seed": gathered.harvest_seed,
+		"building_layout_version": 3,
 		"grid": saved_grid,
 		"buildings": [legacy_record],
 	})

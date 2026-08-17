@@ -7,7 +7,9 @@ signal load_completed(slot: int)
 const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
 const SAVE_EXT = ".json"
-const BUILDING_LAYOUT_VERSION := 2
+const BUILDING_LAYOUT_VERSION := 3
+const LEGACY_BUILDING_LAYOUT_VERSIONS := [1, 2]
+const LEGACY_GRID_VERSIONS := [1, 2]
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const GameStateScript = preload("res://scripts/core/game_state.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
@@ -28,6 +30,7 @@ var _tool_system: Variant
 var _production_system: Variant
 var _notification_system: Variant
 var _state_transition_owner: Variant
+var _farm_storage_system: Variant
 var _restore_transaction_active := false
 var _restore_notification_participants: Array[Node] = []
 
@@ -43,7 +46,8 @@ func configure_economy(
 	tool_system: Variant = null,
 	production_system: Variant = null,
 	notification_system: Variant = null,
-	state_transition_owner: Variant = null
+	state_transition_owner: Variant = null,
+	farm_storage_system: Variant = null
 ) -> bool:
 	var upkeep_dependency_count := 0
 	for dependency in [progression_system, tool_system, production_system]:
@@ -97,6 +101,12 @@ func configure_economy(
 		["cancel_transient_actions"]
 	):
 		return false
+	if farm_storage_system != null and not _has_methods(farm_storage_system, [
+		"to_dict", "validate_dict", "restore_items_unchecked",
+		"begin_restore_notification_transaction", "end_restore_notification_transaction",
+		"refresh_capacity",
+	]):
+		return false
 	_market_system = market_system
 	_daily_simulation_system = daily_simulation_system
 	_season_system = season_system
@@ -108,6 +118,7 @@ func configure_economy(
 	_production_system = production_system
 	_notification_system = notification_system
 	_state_transition_owner = state_transition_owner
+	_farm_storage_system = farm_storage_system
 	return true
 
 
@@ -167,6 +178,8 @@ func _gather_save_data() -> Dictionary:
 			"slots": inventory.slots,
 			"quick_mappings": inventory.quick_slot_mappings,
 		}
+	if _has_valid_farm_storage_configuration():
+		data["farm_storage"] = _farm_storage_system.call("to_dict")
 
 	# 网格状态
 	var grid_system = _get_grid_system()
@@ -289,6 +302,8 @@ func _apply_save_data(data: Dictionary) -> bool:
 	var applied := _apply_migrated_save_data(migrated_data)
 	if not applied and not _apply_migrated_save_data(previous_state, false):
 		push_error("Failed to roll back rejected save data")
+	if applied and _has_valid_farm_storage_configuration():
+		_farm_storage_system.call("refresh_capacity")
 	_end_restore_transaction(applied)
 	return applied
 
@@ -298,7 +313,7 @@ func _begin_restore_transaction() -> bool:
 		return false
 	_restore_transaction_active = true
 	_restore_notification_participants.clear()
-	for participant in [_get_inventory_system(), _get_grid_system()]:
+	for participant in [_get_inventory_system(), _get_grid_system(), _farm_storage_system]:
 		if (
 			participant == null
 			or not participant.has_method("begin_restore_notification_transaction")
@@ -353,6 +368,15 @@ func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> 
 			return false
 	if not _apply_economy_save_data(data):
 		return false
+	if data.has("farm_storage"):
+		if (
+			not _has_valid_farm_storage_configuration()
+			or not bool(_farm_storage_system.call(
+				"restore_items_unchecked",
+				(data["farm_storage"] as Dictionary)["items"]
+			))
+		):
+			return false
 
 	# 季节/时间
 	var season_system = _get_season_system()
@@ -399,7 +423,6 @@ func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> 
 			"reconcile_placed_buildings",
 			building_system.get_all_buildings()
 		)
-
 	# 故事
 	var story_system = get_node_or_null("/root/StorySystem")
 	if story_system and data.has("story_fragments"):
@@ -640,7 +663,14 @@ func _validate_save_data(data: Dictionary) -> bool:
 	var building_system = _get_building_system()
 	var has_world_snapshot_runtime := (
 		inventory != null or grid_system != null or building_system != null
+		or _has_valid_farm_storage_configuration()
 	)
+	if (
+		has_layout_snapshot
+		and _has_valid_farm_storage_configuration()
+		and not data.has("farm_storage")
+	):
+		return false
 	if data.has("economy_version") and has_world_snapshot_runtime:
 		if get_node_or_null("/root/GameState") != null and (
 			not data.has("gold") or not data.has("player")
@@ -651,6 +681,8 @@ func _validate_save_data(data: Dictionary) -> bool:
 		if grid_system != null and not data.has("grid"):
 			return false
 		if building_system != null and not data.has("buildings"):
+			return false
+		if _has_valid_farm_storage_configuration() and not data.has("farm_storage"):
 			return false
 	if data.has("grid") != data.has("buildings"):
 		return false
@@ -677,6 +709,30 @@ func _validate_save_data(data: Dictionary) -> bool:
 			inventory_data.quick_mappings
 		) == null:
 			return false
+		for slot_value in inventory_data.slots:
+			if not slot_value is Dictionary or (slot_value as Dictionary).is_empty():
+				continue
+			var item_id := str((slot_value as Dictionary).get("item_id", ""))
+			var definition: Variant = GameDataScript.get_item(item_id)
+			if not definition is Dictionary:
+				return false
+			var category := str((definition as Dictionary).get("category", ""))
+			if category == "crop":
+				return false
+			if category == "seed" and not _is_registered_plant_item(item_id):
+				return false
+	if data.has("farm_storage"):
+		if (
+			not _has_valid_farm_storage_configuration()
+			or not data["farm_storage"] is Dictionary
+			or not bool(_farm_storage_system.call("validate_dict", data["farm_storage"]))
+		):
+			return false
+		for item_id in (data["farm_storage"] as Dictionary)["items"]:
+			if not _is_registered_crop_id(str(item_id)):
+				return false
+	elif _has_valid_farm_storage_configuration() and data.has("economy_version"):
+		return false
 	if data.has("grid"):
 		if (
 			not data.grid is Dictionary
@@ -685,6 +741,15 @@ func _validate_save_data(data: Dictionary) -> bool:
 			or not bool(grid_system.validate_dict(data.grid))
 		):
 			return false
+		for entry_value in (data.grid as Dictionary).get("cells", []):
+			if (
+				entry_value is Dictionary
+				and (entry_value as Dictionary).has("crop")
+				and not _is_registered_crop_id(str(
+					((entry_value as Dictionary).crop as Dictionary).get("crop_id", "")
+				))
+			):
+				return false
 	if data.has("buildings"):
 		if not data.buildings is Array or not data.get("grid", null) is Dictionary:
 			return false
@@ -909,8 +974,21 @@ func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> bool:
 
 func _migrate_save_data(data: Dictionary) -> Variant:
 	var migrated := data.duplicate(true)
+	var layout_version_value: Variant = migrated.get("building_layout_version")
+	var is_legacy_layout := false
+	if layout_version_value != null:
+		if not _is_integer_number(layout_version_value):
+			return null
+		var layout_version := int(layout_version_value)
+		if layout_version == BUILDING_LAYOUT_VERSION:
+			return migrated
+		if layout_version not in LEGACY_BUILDING_LAYOUT_VERSIONS:
+			return null
+		is_legacy_layout = true
 	if not migrated.has("harvest_seed"):
 		migrated["harvest_seed"] = GameStateScript.LEGACY_HARVEST_SEED
+	if is_legacy_layout:
+		return _migrate_legacy_lifecycle_save(migrated)
 	var inventory_value: Variant = migrated.get("inventory")
 	if inventory_value == null:
 		return migrated
@@ -930,6 +1008,349 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 		return null
 	migrated["inventory"] = normalized
 	return migrated
+
+
+func _migrate_legacy_lifecycle_save(migrated: Dictionary) -> Variant:
+	if (
+		migrated.has("farm_storage")
+		or not migrated.get("inventory") is Dictionary
+		or not migrated.get("grid") is Dictionary
+		or not migrated.get("buildings") is Array
+	):
+		return null
+	var canonical_buildings: Variant = _canonicalize_legacy_buildings(
+		migrated["buildings"]
+	)
+	if not canonical_buildings is Array:
+		return null
+	var has_legacy_progression := migrated.has("progression")
+	var canonical_progression: Variant = {}
+	if has_legacy_progression:
+		canonical_progression = _canonicalize_legacy_progression(migrated["progression"])
+		if not canonical_progression is Dictionary:
+			return null
+	var grid_data := migrated["grid"] as Dictionary
+	if (
+		grid_data.size() != 2
+		or not _is_integer_number(grid_data.get("version"))
+		or int(grid_data["version"]) not in LEGACY_GRID_VERSIONS
+		or not grid_data.get("cells") is Array
+	):
+		return null
+	var capacity_context: Variant = _legacy_farm_storage_capacity(
+		canonical_buildings,
+		canonical_progression if canonical_progression is Dictionary else {}
+	)
+	if capacity_context == null:
+		return null
+	var inventory_result: Variant = _migrate_legacy_inventory(migrated["inventory"])
+	if not inventory_result is Dictionary:
+		return null
+	var canonical_grid: Variant = _migrate_legacy_grid(
+		grid_data,
+		canonical_buildings,
+		migrated.get("production_upkeep", {}),
+		int(migrated.get("season", 0))
+	)
+	if not canonical_grid is Dictionary:
+		return null
+	migrated["inventory"] = (inventory_result as Dictionary)["inventory"]
+	migrated["buildings"] = canonical_buildings
+	if has_legacy_progression:
+		migrated["progression"] = canonical_progression
+	migrated["farm_storage"] = {
+		"items": (inventory_result as Dictionary)["farm_storage_items"],
+	}
+	migrated["grid"] = canonical_grid
+	migrated["building_layout_version"] = BUILDING_LAYOUT_VERSION
+	return migrated
+
+
+func _canonicalize_legacy_buildings(value: Variant) -> Variant:
+	if not value is Array:
+		return null
+	var canonical: Array = (value as Array).duplicate(true)
+	for record_value in canonical:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var construction_fields := [
+			"construction_stage", "construction_elapsed", "construction_duration",
+		]
+		var field_count := 0
+		for field in construction_fields:
+			if record.has(field):
+				field_count += 1
+		if field_count == 0:
+			var definition: Dictionary = GameDataScript.get_building(
+				str(record.get("building_id", ""))
+			)
+			if definition.is_empty():
+				return null
+			var footprint := Vector2i(
+				int(definition.get("footprint_x", 1)),
+				int(definition.get("footprint_z", 1))
+			)
+			var duration := BuildingInstance.construction_duration_for(footprint)
+			record["construction_stage"] = int(BuildingInstance.ConstructionStage.COMPLETE)
+			record["construction_elapsed"] = duration
+			record["construction_duration"] = duration
+		elif field_count != construction_fields.size():
+			return null
+	return canonical
+
+
+func _canonicalize_legacy_progression(value: Variant) -> Variant:
+	if not value is Dictionary:
+		return null
+	var temporary := EconomyProgressionScript.new()
+	if not temporary.from_dict(value):
+		temporary.free()
+		return null
+	var canonical: Dictionary = temporary.to_dict()
+	temporary.free()
+	return canonical
+
+
+func _migrate_legacy_inventory(value: Variant) -> Variant:
+	if not value is Dictionary:
+		return null
+	var source := value as Dictionary
+	if (
+		source.size() != 2
+		or not source.get("slots") is Array
+		or not source.get("quick_mappings") is Array
+	):
+		return null
+	var inventory = _get_inventory_system()
+	if inventory == null or not inventory.has_method("normalize_saved_state"):
+		return null
+	var slots := (source["slots"] as Array).duplicate(true)
+	var mappings_source := source["quick_mappings"] as Array
+	if slots.size() > int(inventory.get("max_slots")) or mappings_source.size() != 6:
+		return null
+	var farm_items: Dictionary = {}
+	var removed_indices := {}
+	for index in range(slots.size()):
+		var slot_value: Variant = slots[index]
+		if not slot_value is Dictionary:
+			return null
+		var slot := slot_value as Dictionary
+		if slot.is_empty():
+			continue
+		if slot.size() != 2 or typeof(slot.get("item_id")) != TYPE_STRING:
+			return null
+		var item_id := str(slot["item_id"])
+		var definition: Variant = GameDataScript.get_item(item_id)
+		if not definition is Dictionary:
+			return null
+		if (definition as Dictionary).get("category") != "crop":
+			continue
+		if typeof(slot.get("quantity")) != TYPE_INT:
+			return null
+		var quantity := int(slot["quantity"])
+		if quantity <= 0 or quantity > EconomyLimitsScript.MAX_SAFE_INTEGER:
+			return null
+		if not _is_registered_crop_id(item_id):
+			return null
+		var previous := int(farm_items.get(item_id, 0))
+		if quantity > EconomyLimitsScript.MAX_SAFE_INTEGER - previous:
+			return null
+		farm_items[item_id] = previous + quantity
+		slots[index] = {}
+		removed_indices[index] = true
+	var mappings: Array[int] = []
+	for mapping_value in mappings_source:
+		if not _is_integer_number(mapping_value):
+			return null
+		var mapped_index := int(mapping_value)
+		if (
+			mapped_index < 0
+			or mapped_index >= slots.size()
+			or removed_indices.has(mapped_index)
+			or not slots[mapped_index] is Dictionary
+			or (slots[mapped_index] as Dictionary).is_empty()
+		):
+			mappings.append(-1)
+		else:
+			mappings.append(mapped_index)
+	var normalized: Variant = inventory.call("normalize_saved_state", slots, mappings)
+	if not normalized is Dictionary:
+		return null
+	return {"inventory": normalized, "farm_storage_items": farm_items}
+
+
+func _migrate_legacy_grid(
+	grid_data: Dictionary,
+	building_values: Variant,
+	production_upkeep: Variant,
+	season: int
+) -> Variant:
+	var greenhouse_context: Variant = _legacy_greenhouse_cells(
+		building_values,
+		production_upkeep
+	)
+	if not greenhouse_context is Dictionary:
+		return null
+	var canonical := {"version": 3, "cells": (grid_data["cells"] as Array).duplicate(true)}
+	for entry_value in canonical.cells:
+		if not entry_value is Dictionary:
+			return null
+		var entry := entry_value as Dictionary
+		if not entry.has("crop"):
+			continue
+		if not entry.crop is Dictionary:
+			return null
+		var crop := entry.crop as Dictionary
+		for field in ["crop_id", "growth_progress", "is_watered_today", "harvest_count"]:
+			if not crop.has(field):
+				return null
+		if typeof(crop.crop_id) != TYPE_STRING:
+			return null
+		var crop_data = _registered_crop(str(crop.crop_id))
+		if crop_data == null:
+			return null
+		var progress_value: Variant = crop.growth_progress
+		if (
+			not _is_number(progress_value)
+			or not is_finite(float(progress_value))
+			or float(progress_value) < 0.0
+			or float(progress_value) > float(crop_data.growth_days)
+		):
+			return null
+		var location := Vector2i(int(entry.get("gx", -1)), int(entry.get("gz", -1)))
+		var lifecycle := CropInstance.LifecycleState.GROWING
+		if (greenhouse_context as Dictionary).has(location):
+			lifecycle = (
+				CropInstance.LifecycleState.MATURE
+				if float(progress_value) >= float(crop_data.growth_days)
+				else CropInstance.LifecycleState.GROWING
+			)
+		elif str(crop_data.environment) == "greenhouse_only":
+			lifecycle = CropInstance.LifecycleState.WITHERED
+		elif (crop_data.seasons as Array).is_empty() or season in crop_data.seasons:
+			lifecycle = (
+				CropInstance.LifecycleState.MATURE
+				if float(progress_value) >= float(crop_data.growth_days)
+				else CropInstance.LifecycleState.GROWING
+			)
+		elif str(crop_data.lifecycle_type) in ["annual", "annual_regrow"]:
+			lifecycle = CropInstance.LifecycleState.WITHERED
+		else:
+			lifecycle = CropInstance.LifecycleState.DORMANT
+		crop["lifecycle_state"] = lifecycle
+	return canonical
+
+
+func _legacy_greenhouse_cells(building_values: Variant, production_upkeep: Variant) -> Variant:
+	if not building_values is Array or not production_upkeep is Dictionary:
+		return null
+	var maintenance_records: Variant = (production_upkeep as Dictionary).get("maintenance", [])
+	if not maintenance_records is Array:
+		return null
+	var result := {}
+	for value in building_values:
+		if not value is Dictionary:
+			return null
+		var record := value as Dictionary
+		if str(record.get("building_id", "")) != "greenhouse":
+			continue
+		var stage_value: Variant = record.get("construction_stage", 3)
+		if not _is_integer_number(stage_value) or int(stage_value) != 3:
+			continue
+		if not _is_integer_number(record.get("gx")) or not _is_integer_number(record.get("gz")):
+			return null
+		var definition := GameDataScript.get_building("greenhouse")
+		var gx := int(record.gx)
+		var gz := int(record.gz)
+		var width := int(definition.get("footprint_x", 3))
+		var depth := int(definition.get("footprint_z", 3))
+		for x in range(gx, gx + width):
+			result[Vector2i(x, gz - 1)] = true
+			result[Vector2i(x, gz + depth)] = true
+		result[Vector2i(gx - 1, gz + depth / 2)] = true
+		result[Vector2i(gx + width, gz + depth / 2)] = true
+	return result
+
+
+func _legacy_farm_storage_capacity(building_values: Variant, progression: Variant) -> Variant:
+	if not building_values is Array or not progression is Dictionary:
+		return null
+	var levels_by_key := {}
+	var upgrade_values: Variant = (progression as Dictionary).get("upgrade_levels", [])
+	if not upgrade_values is Array:
+		return null
+	for value in upgrade_values:
+		if not value is Dictionary:
+			return null
+		var record := value as Dictionary
+		var levels := {}
+		if not record.get("levels", []) is Array:
+			return null
+		for level_value in record.get("levels", []):
+			if not level_value is Dictionary:
+				return null
+			levels[str((level_value as Dictionary).get("upgrade_id", ""))] = int((level_value as Dictionary).get("level", 0))
+		levels_by_key[str(record.get("building_key", ""))] = levels
+	var capacity := 200
+	for value in building_values:
+		if not value is Dictionary:
+			return null
+		var building := value as Dictionary
+		if str(building.get("building_id", "")) != "barn":
+			continue
+		if not _is_integer_number(building.get("construction_stage", 3)):
+			return null
+		if int(building.get("construction_stage", 3)) != 3:
+			continue
+		var key := "barn:%d:%d" % [int(building.get("gx", 0)), int(building.get("gz", 0))]
+		capacity += 200 + clampi(int((levels_by_key.get(key, {}) as Dictionary).get("storage", 0)), 0, 3) * 100
+	return capacity
+
+
+func _registered_crop(crop_id: String) -> Variant:
+	var game_data = get_node_or_null("/root/GameData")
+	return game_data.get_crop(crop_id) if game_data != null else null
+
+
+func _is_registered_crop_id(crop_id: String) -> bool:
+	var crop = _registered_crop(crop_id)
+	if crop == null or str(crop.crop_id) != crop_id:
+		return false
+	var game_data = get_node_or_null("/root/GameData")
+	return game_data.get_crop_for_plant_item(str(crop.plant_item_id)) == crop
+
+
+func _is_registered_plant_item(item_id: String) -> bool:
+	var game_data = get_node_or_null("/root/GameData")
+	if game_data == null:
+		return false
+	var crop = game_data.get_crop_for_plant_item(item_id)
+	return (
+		crop != null
+		and str(crop.plant_item_id) == item_id
+		and game_data.get_crop(str(crop.crop_id)) == crop
+	)
+
+
+func _is_number(value: Variant) -> bool:
+	return typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT
+
+
+func _has_valid_farm_storage_configuration() -> bool:
+	return (
+		_farm_storage_system != null
+		and is_instance_valid(_farm_storage_system)
+		and _has_methods(_farm_storage_system, [
+			"to_dict", "validate_dict", "restore_items_unchecked",
+			"begin_restore_notification_transaction", "end_restore_notification_transaction",
+			"refresh_capacity",
+		])
+	)
+
+
+func manages_farm_storage(storage: Variant) -> bool:
+	return _has_valid_farm_storage_configuration() and _farm_storage_system == storage
 
 
 func _has_valid_economy_configuration() -> bool:

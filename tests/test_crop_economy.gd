@@ -1000,7 +1000,7 @@ func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree
 	_set_mature(instance, 4.0)
 	_harvest(grid, 4, 4)
 	var saved: Dictionary = grid.to_dict()
-	assertions.equal(saved.get("version", -1), 2, "crop grid save uses version two")
+	assertions.equal(saved.get("version", -1), 3, "crop grid save uses version three")
 	assertions.equal(saved.cells[0].crop.get("harvest_count", -1), 1, "grid save persists harvest count")
 	assertions.equal(saved.cells[0].crop.get("lifecycle_state", -1), 0, "grid save persists regrowing lifecycle")
 	var json_saved: Variant = JSON.parse_string(JSON.stringify(saved))

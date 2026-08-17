@@ -317,7 +317,8 @@ func _connect_systems() -> bool:
 		tool_system,
 		production_system,
 		economy_notification_system,
-		self
+		self,
+		farm_storage_system
 	))
 	if not save_manager_configured:
 		return false
@@ -352,7 +353,14 @@ func _connect_save_load_completed() -> void:
 
 
 func _on_save_load_completed(_slot: int) -> void:
-	if farm_storage_system != null:
+	if (
+		farm_storage_system != null
+		and (
+			save_manager == null
+			or not save_manager.has_method("manages_farm_storage")
+			or not bool(save_manager.call("manages_farm_storage", farm_storage_system))
+		)
+	):
 		farm_storage_system.refresh_capacity()
 	if production_system == null or season_system == null:
 		return
