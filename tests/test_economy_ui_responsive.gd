@@ -366,7 +366,7 @@ func _test_building_palette_viewport_contract(assertions: TestAssert, tree: Scen
 		building.inventory = inventory
 		var controller := PlayerActionController.new()
 		host.add_child(controller)
-		controller.configure(null, null, null, building, HudToolDouble.new(), inventory)
+		controller.configure(null, null, null, building, HudToolDouble.new(), inventory, null)
 		var hud := (load("res://scenes/ui/hud.tscn") as PackedScene).instantiate()
 		host.add_child(hud)
 		hud.configure_action_bar(controller, inventory, HudEconomyDouble.new())

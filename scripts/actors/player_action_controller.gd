@@ -72,6 +72,7 @@ var farming_system: Variant
 var building_system: Variant
 var tool_system: Variant
 var inventory_system: Variant
+var farm_storage_system: Variant
 var gathering_controller: Variant
 var crop_data_override: CropData
 var _event_bus: Node
@@ -87,6 +88,8 @@ var _hovered_tree_allowed := false
 var _hovered_gather_slot := -1
 var _hovered_output_pile: Node
 var _last_plant_failure_details: Dictionary = {}
+var _last_action_failure_details: Dictionary = {}
+var _selected_plant_item_id := ""
 
 
 static func resolve_action(
@@ -117,7 +120,8 @@ func configure(
 	farming: Variant,
 	building: Variant,
 	tools: Variant,
-	inventory: Variant
+	inventory: Variant,
+	farm_storage: Variant
 ) -> void:
 	player_ref = player
 	grid_system = grid
@@ -125,6 +129,7 @@ func configure(
 	building_system = building
 	tool_system = tools
 	inventory_system = inventory
+	farm_storage_system = farm_storage
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	select_mode_slot(_selected_slot)
 
@@ -839,7 +844,7 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 func _plant(cell: GridCell) -> bool:
 	var preview := preview_plant_action(cell)
 	if not bool(preview.get("ok", false)):
-		_last_plant_failure_details = preview.duplicate(true)
+		_set_last_action_failure(preview, true)
 		return false
 	var plant_item_id := str(preview.get("plant_item_id", ""))
 	var inventory_snapshot := {
@@ -852,9 +857,10 @@ func _plant(cell: GridCell) -> bool:
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
 		_end_inventory_event_transaction(owns_event_transaction)
-		_last_plant_failure_details = preview.duplicate(true)
-		_last_plant_failure_details.ok = false
-		_last_plant_failure_details.reason = "no_seed"
+		var failure := preview.duplicate(true)
+		failure.ok = false
+		failure.reason = "no_seed"
+		_set_last_action_failure(failure, true)
 		return false
 	_end_inventory_event_transaction(owns_event_transaction)
 	var planted: CropInstance = farming_system.call(
@@ -870,15 +876,16 @@ func _plant(cell: GridCell) -> bool:
 	if planted == null:
 		_restore_inventory_snapshot(inventory_snapshot)
 		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
-		_last_plant_failure_details = _current_plant_commit_failure(
+		_set_last_action_failure(_current_plant_commit_failure(
 			cell,
 			plant_item_id,
 			preview
-		)
+		), true)
 		return false
 	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
 	_emit_committed_inventory_removals({plant_item_id: 1}, owns_event_transaction)
 	_last_plant_failure_details.clear()
+	_last_action_failure_details.clear()
 	inventory_changed.emit()
 	return true
 
@@ -914,6 +921,16 @@ func get_last_plant_failure_details() -> Dictionary:
 	return _last_plant_failure_details.duplicate(true)
 
 
+func get_last_action_failure_details() -> Dictionary:
+	return _last_action_failure_details.duplicate(true)
+
+
+func _set_last_action_failure(details: Dictionary, is_plant_failure: bool = false) -> void:
+	_last_action_failure_details = details.duplicate(true)
+	if is_plant_failure:
+		_last_plant_failure_details = details.duplicate(true)
+
+
 func _current_plant_commit_failure(
 	cell: GridCell,
 	plant_item_id: String,
@@ -930,39 +947,45 @@ func _current_plant_commit_failure(
 
 
 func _harvest(cell: GridCell) -> bool:
-	if farming_system == null or inventory_system == null:
+	if farming_system == null or farm_storage_system == null:
+		_set_last_action_failure({"ok": false, "reason": "transaction_failed"})
 		return false
 	var preview := _preview_harvest(cell)
 	var items := _normalized_harvest_items(preview.get("items", {}))
 	if preview.is_empty() or items.is_empty():
+		_set_last_action_failure({"ok": false, "reason": "harvest_unavailable"})
 		return false
-	for item_id in items:
-		var quantity := int(items[item_id])
-		if not inventory_system.can_add_item(str(item_id), quantity):
-			return false
-	var inventory_snapshot := {
-		"slots": inventory_system.slots.duplicate(true),
-		"quick_slot_mappings": inventory_system.quick_slot_mappings.duplicate(),
-	}
-	var owns_event_transaction := _begin_inventory_event_transaction()
-	var owns_mapping_transaction := _begin_inventory_mapping_transaction()
-	for item_id in items:
-		if not inventory_system.add_item(str(item_id), int(items[item_id])):
-			_restore_inventory_snapshot(inventory_snapshot)
-			_end_inventory_mapping_transaction(owns_mapping_transaction, false)
-			_end_inventory_event_transaction(owns_event_transaction)
-			return false
-	# Task 5 storage mutation belongs above this boundary so its notifications
-	# remain deferred until the exact farming commit can proceed.
-	_end_inventory_event_transaction(owns_event_transaction)
-	var result: Dictionary = farming_system.harvest(cell, preview)
+	var missing_capacity := int(farm_storage_system.call("get_missing_capacity", items))
+	if missing_capacity < 0:
+		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
+		return false
+	if missing_capacity > 0:
+		_set_last_action_failure({
+			"ok": false,
+			"reason": "storage_capacity",
+			"storage_capacity": int(farm_storage_system.call("get_total_capacity")),
+			"storage_used": int(farm_storage_system.call("get_used_capacity")),
+			"missing_capacity": missing_capacity,
+			"items": items.duplicate(true),
+		})
+		return false
+	var transaction_token: Variant = farm_storage_system.call("begin_atomic_transaction")
+	if transaction_token == null:
+		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
+		return false
+	if not bool(farm_storage_system.call("stage_add_items", transaction_token, items)):
+		farm_storage_system.call("rollback_atomic_transaction", transaction_token)
+		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
+		return false
+	var result: Dictionary = farming_system.call("commit_harvest", cell, preview)
 	if result.is_empty() or _normalized_harvest_items(result.get("items", {})) != items:
-		_restore_inventory_snapshot(inventory_snapshot)
-		_end_inventory_mapping_transaction(owns_mapping_transaction, false)
+		farm_storage_system.call("rollback_atomic_transaction", transaction_token)
+		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
 		return false
-	_end_inventory_mapping_transaction(owns_mapping_transaction, true)
-	_emit_committed_inventory_adds(items, owns_event_transaction)
-	inventory_changed.emit()
+	if not bool(farm_storage_system.call("commit_atomic_transaction", transaction_token)):
+		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
+		return false
+	_last_action_failure_details.clear()
 	return true
 
 
@@ -1021,13 +1044,6 @@ func _begin_inventory_mapping_transaction() -> bool:
 	)
 
 
-func _emit_committed_inventory_adds(items: Dictionary, owns_transaction: bool) -> void:
-	if not owns_transaction or _event_bus == null:
-		return
-	for item_id in items:
-		_event_bus.item_added.emit(str(item_id), int(items[item_id]))
-
-
 func _emit_committed_inventory_removals(items: Dictionary, owns_transaction: bool) -> void:
 	if not owns_transaction or _event_bus == null:
 		return
@@ -1049,9 +1065,26 @@ func _get_active_plant_item_id() -> String:
 
 
 func get_selected_plant_item_id() -> String:
+	if not _selected_plant_item_id.is_empty():
+		return _selected_plant_item_id
 	if inventory_system == null or not inventory_system.has_method("get_quick_item"):
 		return ""
 	return str(inventory_system.call("get_quick_item", SEED_SLOT))
+
+
+func set_selected_plant_item_id(plant_item_id: String) -> bool:
+	if plant_item_id.is_empty():
+		_selected_plant_item_id = ""
+		return true
+	var definition: Variant = GameDataScript.get_item(plant_item_id)
+	if (
+		not definition is Dictionary
+		or str((definition as Dictionary).get("category", "")) != "seed"
+		or _get_crop_data(plant_item_id) == null
+	):
+		return false
+	_selected_plant_item_id = plant_item_id
+	return true
 
 
 func _get_crop_data(plant_item_id: String = "") -> CropData:

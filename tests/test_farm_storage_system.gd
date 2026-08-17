@@ -41,6 +41,7 @@ class SignalRecorder:
 		contents.append({
 			"changes": changes.duplicate(true),
 			"state": storage.call("get_items"),
+			"read_only": changes.is_read_only(),
 		})
 
 	func on_capacity(used: int, total: int) -> void:
@@ -140,10 +141,87 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_strict_request_validation(assertions)
 	_test_failed_restore_validation_is_atomic(assertions)
 	_test_committed_signal_payloads(assertions, tree)
+	_test_atomic_notification_transaction(assertions, tree)
 	_test_contents_reentrancy_preserves_notification_order(assertions, tree)
 	_test_capacity_reentrancy_preserves_notification_order(assertions, tree)
 	_test_change_payload_is_read_only_for_all_listeners(assertions, tree)
 	_test_rejected_operations_and_freed_provider_are_silent(assertions, tree)
+
+
+func _test_atomic_notification_transaction(assertions: TestAssert, tree: SceneTree) -> void:
+	var capacity := MutableCapacity.new(6)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	assertions.truthy(storage.add_items({"grain": 1}), "transaction fixture starts with grain")
+	var recorder := SignalRecorder.new(storage)
+	var event_bus = tree.root.get_node("EventBus")
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	event_bus.farm_storage_changed.connect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(recorder.on_bus_capacity)
+
+	assertions.truthy(storage.has_method("begin_atomic_transaction"), "storage exposes atomic transaction begin")
+	assertions.truthy(storage.has_method("commit_atomic_transaction"), "storage exposes atomic transaction commit")
+	assertions.truthy(storage.has_method("rollback_atomic_transaction"), "storage exposes atomic transaction rollback")
+	assertions.truthy(storage.has_method("stage_add_items"), "storage exposes owned staged additions")
+	assertions.truthy(storage.has_method("stage_remove_items"), "storage exposes owned staged removals")
+	assertions.truthy(storage.has_method("stage_refresh_capacity"), "storage exposes owned staged capacity refresh")
+	if (
+		not storage.has_method("begin_atomic_transaction")
+		or not storage.has_method("stage_add_items")
+		or not storage.has_method("stage_remove_items")
+		or not storage.has_method("stage_refresh_capacity")
+	):
+		storage.queue_free()
+		return
+
+	var rollback_token: Variant = storage.call("begin_atomic_transaction")
+	assertions.truthy(rollback_token != null, "storage begins one owned transaction")
+	assertions.truthy(rollback_token is RefCounted, "transaction ownership uses an unforgeable object handle")
+	assertions.equal(storage.call("begin_atomic_transaction"), null, "nested transaction ownership is rejected")
+	if rollback_token is RefCounted:
+		assertions.truthy(not storage.call("rollback_atomic_transaction", RefCounted.new()), "forged transaction ownership is rejected")
+	assertions.truthy(not storage.add_items({"potato": 1}), "unowned add cannot join an active transaction")
+	assertions.truthy(not storage.remove_items({"grain": 1}), "unowned remove cannot join an active transaction")
+	assertions.truthy(storage.call("stage_add_items", rollback_token, {"tomato": 2}), "owned transaction stages crop writes")
+	capacity.value = 4
+	storage.refresh_capacity()
+	assertions.equal(storage.get_total_capacity(), 6, "unowned capacity refresh cannot join an active transaction")
+	assertions.truthy(storage.call("stage_refresh_capacity", rollback_token), "owned transaction stages capacity refresh")
+	assertions.equal(storage.get_items(), {"grain": 1, "tomato": 2}, "staged contents are visible to coherent listeners")
+	assertions.equal(storage.get_total_capacity(), 4, "staged capacity is visible")
+	assertions.equal(recorder.contents, [], "staged write emits no local contents signal")
+	assertions.equal(recorder.bus_contents, [], "staged write emits no EventBus contents signal")
+	assertions.equal(recorder.capacities, [], "staged write emits no local capacity signal")
+	assertions.equal(recorder.bus_capacities, [], "staged write emits no EventBus capacity signal")
+	assertions.truthy(storage.call("rollback_atomic_transaction", rollback_token), "owned transaction rolls back")
+	assertions.equal(storage.get_items(), {"grain": 1}, "rollback restores exact item snapshot")
+	assertions.equal(storage.get_total_capacity(), 6, "rollback restores exact capacity snapshot")
+	assertions.equal(recorder.contents, [], "rollback emits no local contents signal")
+	assertions.equal(recorder.bus_contents, [], "rollback emits no EventBus contents signal")
+	assertions.truthy(not storage.call("rollback_atomic_transaction", rollback_token), "stale rollback token is rejected")
+
+	var commit_token: Variant = storage.call("begin_atomic_transaction")
+	assertions.truthy(storage.call("stage_add_items", commit_token, {"tomato": 2}), "commit transaction stages first write")
+	assertions.truthy(storage.call("stage_add_items", commit_token, {"grain": 1}), "commit transaction stages second write")
+	assertions.truthy(storage.call("stage_remove_items", commit_token, {"tomato": 1}), "commit transaction stages a removal")
+	assertions.equal(recorder.contents, [], "all commit writes remain silent until commit")
+	assertions.truthy(storage.call("commit_atomic_transaction", commit_token), "owned transaction commits")
+	assertions.equal(storage.get_items(), {"grain": 2, "tomato": 1}, "commit retains final staged contents")
+	assertions.equal(recorder.contents.size(), 1, "commit emits one local net contents event")
+	assertions.equal(recorder.bus_contents.size(), 1, "commit emits one EventBus net contents event")
+	assertions.equal(recorder.contents[0].changes, {"grain": 1, "tomato": 1}, "commit publishes only net deltas")
+	assertions.truthy(recorder.contents[0].read_only, "transaction payload is immutable")
+	assertions.equal(recorder.capacities, [{"used": 3, "total": 6}], "commit publishes one final capacity event")
+	assertions.equal(recorder.bus_capacities, [{"used": 3, "total": 6}], "EventBus sees one final capacity event")
+	assertions.truthy(not storage.call("commit_atomic_transaction", commit_token), "stale commit token is rejected")
+
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	event_bus.farm_storage_changed.disconnect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_bus_capacity)
+	storage.queue_free()
 
 
 func _test_empty_state_and_capacity_provider(assertions: TestAssert) -> void:

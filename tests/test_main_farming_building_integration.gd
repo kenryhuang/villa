@@ -196,6 +196,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.inventory_system,
 		"controller shares inventory"
 	)
+	assertions.truthy(_has_property(main, "farm_storage_system"), "main exposes central farm storage")
+	if _has_property(main, "farm_storage_system"):
+		assertions.truthy(main.farm_storage_system != null, "main instantiates central farm storage")
+		assertions.equal(main.farm_storage_system.name, "FarmStorageSystem", "main names central farm storage")
+		assertions.truthy(main.farm_storage_system.is_in_group("farm_storage_system"), "central storage joins discovery group")
+		assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "main starts with default storage capacity")
+		assertions.equal(action_controller.farm_storage_system, main.farm_storage_system, "controller shares central farm storage")
 	assertions.truthy(
 		_has_property(main.build_ui, "keyboard_shortcut_enabled"),
 		"legacy build UI exposes shortcut ownership"
@@ -510,7 +517,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"day change never falls back to isolated slot zero"
 		)
 		assertions.truthy(farm_cell.crop_instance.is_mature(), "main grain reaches maturity")
-		var grain_before: int = main.inventory_system.get_item_count("grain")
+		var backpack_grain_before: int = main.inventory_system.get_item_count("grain")
+		var storage_grain_before: int = main.farm_storage_system.get_count("grain")
 		var expected_grain: int = int(
 			main.farming_system.preview_harvest(farm_cell).items.grain
 		)
@@ -518,9 +526,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		action_controller.select_slot(0)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player harvests grain")
 		assertions.equal(
+			main.farm_storage_system.get_count("grain"),
+			storage_grain_before + expected_grain,
+			"main harvest adds grain to central storage"
+		)
+		assertions.equal(
 			main.inventory_system.get_item_count("grain"),
-			grain_before + expected_grain,
-			"main harvest adds grain"
+			backpack_grain_before,
+			"main harvest leaves backpack grain unchanged"
 		)
 		assertions.equal(
 			farm_cell.state,

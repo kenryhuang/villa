@@ -13,9 +13,14 @@ var _capacity_provider: Callable = Callable()
 var _total_capacity := DEFAULT_CAPACITY
 var _notification_queue: Array[Dictionary] = []
 var _is_dispatching_notifications := false
+var _transaction_token: RefCounted
+var _transaction_items: Dictionary = {}
+var _transaction_capacity := DEFAULT_CAPACITY
 
 
 func configure(capacity_provider: Callable = Callable()) -> bool:
+	if _transaction_token != null:
+		return false
 	var next_total := DEFAULT_CAPACITY
 	if not capacity_provider.is_null():
 		if not capacity_provider.is_valid():
@@ -59,7 +64,56 @@ func can_add(requested: Dictionary) -> bool:
 	return get_missing_capacity(requested) == 0
 
 
+func begin_atomic_transaction() -> RefCounted:
+	if _transaction_token != null:
+		return null
+	_transaction_token = RefCounted.new()
+	_transaction_items = _items.duplicate(true)
+	_transaction_capacity = _total_capacity
+	return _transaction_token
+
+
+func commit_atomic_transaction(token: Variant) -> bool:
+	if token == null or token != _transaction_token:
+		return false
+	var previous_items := _transaction_items
+	var previous_used := _sum_quantities(previous_items)
+	var current_used := get_used_capacity()
+	var changes := _changes_between(previous_items, _items)
+	_transaction_token = null
+	_transaction_items.clear()
+	_queue_notification_batch(
+		changes,
+		previous_used != current_used or _transaction_capacity != _total_capacity,
+		current_used,
+		_total_capacity
+	)
+	return true
+
+
+func rollback_atomic_transaction(token: Variant) -> bool:
+	if token == null or token != _transaction_token:
+		return false
+	_items = _transaction_items.duplicate(true)
+	_total_capacity = _transaction_capacity
+	_transaction_token = null
+	_transaction_items.clear()
+	return true
+
+
 func add_items(requested: Dictionary) -> bool:
+	if _transaction_token != null:
+		return false
+	return _add_items(requested)
+
+
+func stage_add_items(token: Variant, requested: Dictionary) -> bool:
+	if token == null or token != _transaction_token:
+		return false
+	return _add_items(requested)
+
+
+func _add_items(requested: Dictionary) -> bool:
 	var normalized_value: Variant = _normalize_items(requested, false)
 	if normalized_value == null:
 		return false
@@ -84,6 +138,18 @@ func can_remove(requested: Dictionary) -> bool:
 
 
 func remove_items(requested: Dictionary) -> bool:
+	if _transaction_token != null:
+		return false
+	return _remove_items(requested)
+
+
+func stage_remove_items(token: Variant, requested: Dictionary) -> bool:
+	if token == null or token != _transaction_token:
+		return false
+	return _remove_items(requested)
+
+
+func _remove_items(requested: Dictionary) -> bool:
 	var normalized_value: Variant = _normalize_items(requested, false)
 	if normalized_value == null:
 		return false
@@ -120,6 +186,8 @@ func from_dict(data: Dictionary) -> bool:
 
 ## Bypasses capacity enforcement only; crop IDs and quantities are still fully validated.
 func restore_items_unchecked(items: Dictionary) -> bool:
+	if _transaction_token != null:
+		return false
 	var normalized_value: Variant = _normalize_items(items, true)
 	if normalized_value == null:
 		return false
@@ -128,12 +196,25 @@ func restore_items_unchecked(items: Dictionary) -> bool:
 
 
 func refresh_capacity() -> void:
-	if _capacity_provider.is_null() or not _capacity_provider.is_valid():
+	if _transaction_token != null:
 		return
+	_refresh_capacity()
+
+
+func stage_refresh_capacity(token: Variant) -> bool:
+	if token == null or token != _transaction_token:
+		return false
+	return _refresh_capacity()
+
+
+func _refresh_capacity() -> bool:
+	if _capacity_provider.is_null() or not _capacity_provider.is_valid():
+		return false
 	var provided: Variant = _capacity_provider.call()
 	if not _is_valid_capacity(provided):
-		return
+		return false
 	_commit_capacity(int(provided))
+	return true
 
 
 func _normalize_items(values: Dictionary, allow_empty: bool) -> Variant:
@@ -167,6 +248,8 @@ func _replace_items(next_items: Dictionary) -> void:
 	var next_used := _sum_quantities(next_items)
 	var changes := _changes_between(previous_items, next_items)
 	_items = next_items.duplicate(true)
+	if _transaction_token != null:
+		return
 	_queue_notification_batch(changes, previous_used != next_used, next_used, _total_capacity)
 
 
@@ -174,6 +257,8 @@ func _commit_capacity(next_total: int) -> void:
 	if next_total == _total_capacity:
 		return
 	_total_capacity = next_total
+	if _transaction_token != null:
+		return
 	_queue_notification_batch({}, true, get_used_capacity(), _total_capacity)
 
 

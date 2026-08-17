@@ -664,7 +664,7 @@ func _test_player_target_routing(assertions: TestAssert, tree: SceneTree) -> voi
 	var building := BuildingDouble.new()
 	var controller := PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
-	controller.configure(null, GridDouble.new(), null, building, tools, null)
+	controller.configure(null, GridDouble.new(), null, building, tools, null, null)
 	var gathering := GatheringDouble.new()
 	assertions.truthy(controller.configure_gathering(gathering), "controller accepts gathering routing")
 	var target := GatherTarget.new()

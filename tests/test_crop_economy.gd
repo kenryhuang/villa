@@ -4,6 +4,7 @@ const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
 const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const FarmStorageSystemScript = preload("res://scripts/systems/farm_storage_system.gd")
 const PlayerActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
@@ -12,21 +13,41 @@ const FARMLAND := 1
 const PLANTED := 2
 
 
-class FailingAfterMutationInventory:
-	extends InventorySystem
-	var restore_calls := 0
+class StorageCapacity:
+	extends RefCounted
+	var value := 200
+
+	func _init(initial_value: int) -> void:
+		value = initial_value
+
+	func provide() -> int:
+		return value
+
+
+class FailingFarmStorage:
+	extends FarmStorageSystem
 	var fail_next_add := true
 
-	func add_item(item_id: String, quantity: int = 1) -> bool:
-		var result := super.add_item(item_id, quantity)
+	func stage_add_items(token: Variant, requested: Dictionary) -> bool:
+		var added := super.stage_add_items(token, requested)
 		if fail_next_add:
 			fail_next_add = false
 			return false
-		return result
+		return added
 
-	func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
-		restore_calls += 1
-		super.restore_state(saved_slots, saved_quick_mappings)
+
+class SeedChangingFarmStorage:
+	extends FarmStorageSystem
+	var state: Variant
+	var next_seed := 202
+	var mutate_after_add := true
+
+	func stage_add_items(token: Variant, requested: Dictionary) -> bool:
+		var added := super.stage_add_items(token, requested)
+		if added and mutate_after_add:
+			mutate_after_add = false
+			state.harvest_seed = next_seed
+		return added
 
 
 class FailingPlantFarming:
@@ -101,29 +122,6 @@ class HarvestGameState:
 		return true
 
 
-class SeedChangingHarvestGateway:
-	extends RefCounted
-	var farming: FarmingSystem
-	var state: HarvestGameState
-	var next_seed := 202
-	var mutate_before_commit := true
-
-	func _init(target: FarmingSystem, game_state: HarvestGameState) -> void:
-		farming = target
-		state = game_state
-
-	func preview_harvest(cell: GridCell) -> Dictionary:
-		return farming.preview_harvest(cell)
-
-	func harvest(cell: GridCell, expected_preview: Dictionary = {}) -> Dictionary:
-		if mutate_before_commit:
-			mutate_before_commit = false
-			state.harvest_seed = next_seed
-		if expected_preview.is_empty():
-			return farming.harvest(cell)
-		return farming.call("harvest", cell, expected_preview)
-
-
 class PlantChangingGateway:
 	extends RefCounted
 	var farming: FarmingSystem
@@ -177,6 +175,56 @@ class ControllerHarvestEventRecorder:
 		inventory_changed_calls += 1
 
 
+class StorageSignalRecorder:
+	extends RefCounted
+	var local_contents: Array[Dictionary] = []
+	var bus_contents: Array[Dictionary] = []
+	var local_capacities: Array[Dictionary] = []
+	var bus_capacities: Array[Dictionary] = []
+
+	func on_contents(changes: Dictionary) -> void:
+		local_contents.append(changes.duplicate(true))
+
+	func on_bus_contents(changes: Dictionary) -> void:
+		bus_contents.append(changes.duplicate(true))
+
+	func on_capacity(used: int, total: int) -> void:
+		local_capacities.append({"used": used, "total": total})
+
+	func on_bus_capacity(used: int, total: int) -> void:
+		bus_capacities.append({"used": used, "total": total})
+
+
+class CoherentHarvestObserver:
+	extends RefCounted
+	var storage: FarmStorageSystem
+	var cell: GridCell
+	var expected_quantity := 0
+	var calls := 0
+	var storage_calls := 0
+	var saw_final_storage := false
+	var saw_final_crop := false
+	var storage_listener_saw_final_crop := false
+	var reentrant_storage_write_results: Array[bool] = []
+
+	func on_harvested(_gx: int, _gz: int, _crop_id: String) -> void:
+		calls += 1
+		saw_final_storage = storage.get_count("tomato") == expected_quantity
+		saw_final_crop = (
+			cell.crop_instance != null
+			and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.GROWING
+		)
+		reentrant_storage_write_results.append(storage.add_items({"grain": 1}))
+
+	func on_storage_changed(_changes: Dictionary) -> void:
+		storage_calls += 1
+		storage_listener_saw_final_crop = (
+			storage.get_count("tomato") == expected_quantity
+			and cell.crop_instance != null
+			and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.GROWING
+		)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_crop_lifecycle_growth(assertions)
 	_test_crop_lifecycle_round_trip(assertions)
@@ -190,6 +238,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_controller_harvest_is_atomic(assertions, tree)
 	_test_controller_commits_exact_harvest_preview(assertions, tree)
 	_test_controller_harvest_awards_exp_once(assertions)
+	_test_controller_annual_harvest_uses_storage(assertions)
 	_test_controller_plant_mapping_signal_is_atomic(assertions, tree)
 	_test_controller_plant_exact_preview_and_notifications(assertions, tree)
 	_test_crop_data_validation(assertions)
@@ -681,75 +730,138 @@ func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree
 
 
 func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree) -> void:
-	var crop = CropDataScript.new()
+	var crop := CropDataScript.new()
 	crop.crop_id = "tomato"
 	crop.growth_days = 4
 	crop.yield_min = 3
 	crop.yield_max = 3
 	crop.regrow_days = 2
 	crop.lifecycle_type = "annual_regrow"
-	var grid = GridSystemScript.new()
-	var farming = FarmingSystemScript.new()
-	farming.configure(grid, null, null)
+	crop.exp_reward = 7
+	var grid := GridSystemScript.new()
+	var crop_events := CropEventRecorder.new()
+	grid._event_bus = crop_events
+	var state := HarvestGameState.new()
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	farming._event_bus = crop_events
 	grid.set_cell_state(1, 1, FARMLAND)
-	var instance = farming.plant(grid.get_cell(1, 1), crop)
+	var cell := grid.get_cell(1, 1)
+	var instance: CropInstance = farming.plant(cell, crop)
 	_set_mature(instance, 4.0)
-	var inventory = InventorySystemScript.new()
+	farming.call("_update_visual", cell, instance)
+	var visual_before := farming.get_crop_visual(cell)
+	var visual_color_before := _visual_color(visual_before)
+	crop_events.harvested_events.clear()
+	crop_events.cell_events.clear()
+
+	var inventory := InventorySystemScript.new()
 	inventory.max_slots = 2
 	inventory.reset_slots()
-	inventory.slots[0] = {"item_id": "tomato", "quantity": 97}
-	inventory.slots[1] = {"item_id": "grain", "quantity": 98}
-	var controller = PlayerActionControllerScript.new()
-	controller.configure(null, grid, farming, null, null, inventory)
-	assertions.truthy(not controller._harvest(grid.get_cell(1, 1)), "full multi-quantity result blocks before harvest")
-	assertions.equal(inventory.get_item_count("tomato"), 97, "capacity rejection preserves crop inventory")
-	assertions.equal(inventory.get_item_count("grain"), 98, "capacity rejection preserves unrelated stack")
-	assertions.truthy(grid.get_cell(1, 1).crop_instance == instance, "capacity rejection preserves mature crop")
+	tree.root.add_child(inventory)
+	var capacity := StorageCapacity.new(2)
+	var full_storage := FarmStorageSystemScript.new()
+	tree.root.add_child(full_storage)
+	full_storage.configure(capacity.provide)
+	var full_recorder := StorageSignalRecorder.new()
+	var event_bus := tree.root.get_node("EventBus")
+	full_storage.contents_changed.connect(full_recorder.on_contents)
+	full_storage.capacity_changed.connect(full_recorder.on_capacity)
+	event_bus.farm_storage_changed.connect(full_recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(full_recorder.on_bus_capacity)
+	var controller := PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, farming, null, null, inventory, full_storage)
+	var controller_events := ControllerHarvestEventRecorder.new()
+	controller.inventory_changed.connect(controller_events.on_inventory_changed)
+	assertions.truthy(not controller._harvest(cell), "full storage blocks before harvest commit")
+	var capacity_failure: Dictionary = controller.get_last_action_failure_details()
+	assertions.equal(capacity_failure.get("reason"), "storage_capacity", "capacity rejection has stable reason")
+	assertions.equal(capacity_failure.get("storage_capacity"), 2, "capacity rejection reports total capacity")
+	assertions.equal(capacity_failure.get("storage_used"), 0, "capacity rejection reports used capacity")
+	assertions.equal(capacity_failure.get("missing_capacity"), 1, "capacity rejection reports exact missing capacity")
+	assertions.equal(capacity_failure.get("items"), {"tomato": 3}, "capacity rejection reports complete output")
+	assertions.equal(full_storage.get_items(), {}, "capacity rejection preserves storage")
+	assertions.equal(inventory.get_item_count("tomato"), 0, "capacity rejection never writes backpack")
+	assertions.truthy(cell.crop_instance == instance, "capacity rejection preserves mature crop")
 	assertions.equal(instance.harvest_count, 0, "capacity rejection does not advance harvest counter")
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.MATURE, "capacity rejection keeps mature lifecycle")
+	assertions.equal(state.exp_calls, 0, "capacity rejection awards no experience")
+	assertions.equal(crop_events.harvested_events, [], "capacity rejection emits no harvest event")
+	assertions.equal(crop_events.cell_events, [], "capacity rejection emits no cell event")
+	assertions.equal(full_recorder.local_contents, [], "capacity rejection emits no local storage event")
+	assertions.equal(full_recorder.bus_contents, [], "capacity rejection emits no EventBus storage event")
+	assertions.truthy(farming.get_crop_visual(cell) == visual_before, "capacity rejection preserves mature visual")
+	assertions.equal(_visual_color(visual_before), visual_color_before, "capacity rejection preserves visual material")
+	assertions.equal(controller_events.inventory_changed_calls, 0, "capacity rejection emits no controller inventory event")
 
-	var failing_inventory = FailingAfterMutationInventory.new()
-	failing_inventory.max_slots = 2
-	failing_inventory.reset_slots()
-	failing_inventory.slots[0] = {"item_id": "tomato", "quantity": 99}
-	failing_inventory.slots[1] = {}
-	failing_inventory.set_quick_slot(1, 5)
-	var slots_before: Array[Dictionary] = failing_inventory.slots.duplicate(true)
-	var mappings_before: Array[int] = failing_inventory.quick_slot_mappings.duplicate()
-	tree.root.add_child(failing_inventory)
-	var failing_controller = PlayerActionControllerScript.new()
+	full_storage.contents_changed.disconnect(full_recorder.on_contents)
+	full_storage.capacity_changed.disconnect(full_recorder.on_capacity)
+	event_bus.farm_storage_changed.disconnect(full_recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(full_recorder.on_bus_capacity)
+	controller.queue_free()
+	full_storage.queue_free()
+
+	var failing_storage := FailingFarmStorage.new()
+	tree.root.add_child(failing_storage)
+	failing_storage.fail_next_add = false
+	assertions.truthy(failing_storage.add_items({"grain": 1}), "failure fixture keeps unrelated stored crop")
+	failing_storage.fail_next_add = true
+	var failing_recorder := StorageSignalRecorder.new()
+	failing_storage.contents_changed.connect(failing_recorder.on_contents)
+	failing_storage.capacity_changed.connect(failing_recorder.on_capacity)
+	event_bus.farm_storage_changed.connect(failing_recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(failing_recorder.on_bus_capacity)
+	var failing_controller := PlayerActionControllerScript.new()
 	tree.root.add_child(failing_controller)
-	failing_controller.configure(null, grid, farming, null, null, failing_inventory)
-	var event_bus = tree.root.get_node("EventBus")
-	event_bus.set_block_signals(false)
-	var recorder := InventorySignalRecorder.new()
-	var mapping_recorder := QuickMappingRecorder.new()
-	event_bus.item_added.connect(recorder.on_added)
-	event_bus.item_removed.connect(recorder.on_removed)
-	failing_inventory.quick_slot_mapping_changed.connect(mapping_recorder.on_mapping_changed)
-	assertions.truthy(not failing_controller._harvest(grid.get_cell(1, 1)), "injected add failure rejects harvest")
-	assertions.equal(failing_inventory.slots, slots_before, "injected failure restores exact slot layout")
-	assertions.equal(failing_inventory.quick_slot_mappings, mappings_before, "injected failure restores exact quick mappings")
-	assertions.equal(failing_inventory.restore_calls, 1, "rollback uses InventorySystem restore_state")
-	assertions.equal(recorder.events, [], "rolled-back harvest emits no partial inventory events")
-	assertions.equal(
-		mapping_recorder.events,
-		[],
-		"rolled-back harvest emits no transient quick-mapping notifications"
-	)
-	assertions.truthy(grid.get_cell(1, 1).crop_instance == instance, "injected add failure preserves crop")
+	failing_controller.configure(null, grid, farming, null, null, inventory, failing_storage)
+	failing_controller.inventory_changed.connect(controller_events.on_inventory_changed)
+	assertions.truthy(not failing_controller._harvest(cell), "injected storage add failure rejects harvest")
+	assertions.equal(failing_controller.get_last_action_failure_details().get("reason"), "transaction_failed", "add failure has stable transaction reason")
+	assertions.equal(failing_storage.get_items(), {"grain": 1}, "add failure rolls storage back to exact prior contents")
+	assertions.equal(failing_recorder.local_contents, [], "add failure emits no local storage notification")
+	assertions.equal(failing_recorder.bus_contents, [], "add failure emits no EventBus storage notification")
+	assertions.truthy(cell.crop_instance == instance, "injected add failure preserves crop")
 	assertions.equal(instance.harvest_count, 0, "injected add failure preserves harvest counter")
-	assertions.truthy(failing_controller._harvest(grid.get_cell(1, 1)), "successful harvest follows rollback")
-	assertions.equal(
-		mapping_recorder.events,
-		[{"quick_index": 5, "item_id": "tomato"}],
-		"successful harvest emits one committed quick-mapping notification"
-	)
-	event_bus.item_added.disconnect(recorder.on_added)
-	event_bus.item_removed.disconnect(recorder.on_removed)
-	controller.free()
-	failing_controller.free()
-	inventory.free()
-	failing_inventory.free()
+	assertions.equal(state.exp_calls, 0, "injected add failure awards no experience")
+
+	var coherent := CoherentHarvestObserver.new()
+	coherent.storage = failing_storage
+	coherent.cell = cell
+	coherent.expected_quantity = 3
+	crop_events.crop_harvested.connect(coherent.on_harvested)
+	failing_storage.contents_changed.connect(coherent.on_storage_changed)
+	assertions.truthy(failing_controller._harvest(cell), "regrowing harvest succeeds after injected rollback")
+	assertions.equal(failing_storage.get_items(), {"grain": 1, "tomato": 3}, "successful regrow harvest writes exact storage quantity")
+	assertions.equal(inventory.get_item_count("tomato"), 0, "successful regrow harvest leaves backpack unchanged")
+	assertions.equal(instance.harvest_count, 1, "successful regrow harvest advances count once")
+	assertions.near(instance.growth_progress, 2.0, 0.001, "successful regrow harvest resets progress")
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "successful regrow harvest returns to growing")
+	assertions.equal(state.exp_calls, 1, "successful regrow harvest awards experience once")
+	assertions.equal(state.exp_total, 7, "successful regrow harvest awards exact experience")
+	assertions.equal(failing_recorder.local_contents, [{"tomato": 3}], "successful harvest emits one local storage delta")
+	assertions.equal(failing_recorder.bus_contents, [{"tomato": 3}], "successful harvest emits one EventBus storage delta")
+	assertions.equal(crop_events.harvested_events.size(), 1, "successful harvest emits one crop event")
+	assertions.equal(crop_events.cell_events.size(), 1, "successful harvest emits one cell event")
+	assertions.equal(coherent.calls, 1, "crop listener runs exactly once")
+	assertions.truthy(coherent.saw_final_storage, "crop listener observes final staged storage")
+	assertions.truthy(coherent.saw_final_crop, "crop listener observes final regrow state")
+	assertions.equal(coherent.reentrant_storage_write_results, [false], "crop listener cannot join the owned storage transaction")
+	assertions.equal(coherent.storage_calls, 1, "storage listener runs exactly once")
+	assertions.truthy(coherent.storage_listener_saw_final_crop, "storage listener observes final storage and crop")
+	assertions.equal(controller_events.inventory_changed_calls, 0, "successful storage harvest emits no inventory change")
+	assertions.equal(failing_controller.get_last_action_failure_details(), {}, "successful harvest clears failure details")
+
+	crop_events.crop_harvested.disconnect(coherent.on_harvested)
+	failing_storage.contents_changed.disconnect(coherent.on_storage_changed)
+	failing_storage.contents_changed.disconnect(failing_recorder.on_contents)
+	failing_storage.capacity_changed.disconnect(failing_recorder.on_capacity)
+	event_bus.farm_storage_changed.disconnect(failing_recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(failing_recorder.on_bus_capacity)
+	failing_controller.queue_free()
+	failing_storage.queue_free()
+	inventory.queue_free()
+	crop_events.free()
 	farming.free()
 	grid.free()
 
@@ -787,14 +899,21 @@ func _test_controller_commits_exact_harvest_preview(
 	inventory.max_slots = 2
 	inventory.reset_slots()
 	tree.root.add_child(inventory)
-	var gateway := SeedChangingHarvestGateway.new(farming, state)
+	var storage := SeedChangingFarmStorage.new()
+	storage.state = state
+	tree.root.add_child(storage)
+	var storage_events := StorageSignalRecorder.new()
+	storage.contents_changed.connect(storage_events.on_contents)
+	storage.capacity_changed.connect(storage_events.on_capacity)
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.farm_storage_changed.connect(storage_events.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(storage_events.on_bus_capacity)
 	var controller = PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
-	controller.configure(null, grid, gateway, null, null, inventory)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
 	var controller_events := ControllerHarvestEventRecorder.new()
 	controller.inventory_changed.connect(controller_events.on_inventory_changed)
 	var inventory_events := InventorySignalRecorder.new()
-	var event_bus := tree.root.get_node("EventBus")
 	event_bus.set_block_signals(false)
 	event_bus.item_added.connect(inventory_events.on_added)
 	event_bus.item_removed.connect(inventory_events.on_removed)
@@ -803,7 +922,8 @@ func _test_controller_commits_exact_harvest_preview(
 		not controller._harvest(cell),
 		"controller rejects a harvest whose exact preview became stale"
 	)
-	assertions.equal(inventory.get_item_count("tomato"), 0, "stale exact preview restores inventory")
+	assertions.equal(storage.get_items(), {}, "stale exact preview rolls storage back exactly")
+	assertions.equal(inventory.get_item_count("tomato"), 0, "stale exact preview never writes inventory")
 	assertions.equal(grid.get_crop_snapshot(3, 3), crop_before, "stale exact preview preserves complete crop snapshot")
 	assertions.equal(instance.harvest_count, 0, "stale exact preview preserves harvest count")
 	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.MATURE, "stale exact preview preserves mature lifecycle")
@@ -812,13 +932,21 @@ func _test_controller_commits_exact_harvest_preview(
 	assertions.equal(crop_events.harvested_events, [], "stale exact preview emits no harvest event")
 	assertions.equal(crop_events.cell_events, [], "stale exact preview emits no cell event")
 	assertions.equal(controller_events.inventory_changed_calls, 0, "stale exact preview emits no controller inventory event")
+	assertions.equal(storage_events.local_contents, [], "stale exact preview emits no local storage event")
+	assertions.equal(storage_events.bus_contents, [], "stale exact preview emits no EventBus storage event")
+	assertions.equal(controller.get_last_action_failure_details().get("reason"), "transaction_failed", "stale exact preview has stable transaction reason")
 	assertions.truthy(farming.get_crop_visual(cell) == visual_before, "stale exact preview keeps the same visual")
 	assertions.equal(_visual_color(visual_before), visual_color_before, "stale exact preview leaves visual material unchanged")
 
 	event_bus.item_added.disconnect(inventory_events.on_added)
 	event_bus.item_removed.disconnect(inventory_events.on_removed)
-	controller.free()
-	inventory.free()
+	storage.contents_changed.disconnect(storage_events.on_contents)
+	storage.capacity_changed.disconnect(storage_events.on_capacity)
+	event_bus.farm_storage_changed.disconnect(storage_events.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(storage_events.on_bus_capacity)
+	controller.queue_free()
+	storage.queue_free()
+	inventory.queue_free()
 	crop_events.free()
 	farming.free()
 	grid.free()
@@ -844,15 +972,63 @@ func _test_controller_harvest_awards_exp_once(assertions: TestAssert) -> void:
 	var inventory = InventorySystemScript.new()
 	inventory.max_slots = 2
 	inventory.reset_slots()
+	var storage := FarmStorageSystemScript.new()
 	var controller = PlayerActionControllerScript.new()
-	controller.configure(null, grid, farming, null, null, inventory)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
 
 	assertions.truthy(controller._harvest(cell), "normal controller harvest commits")
 	assertions.equal(state.exp_calls, 1, "normal controller harvest awards experience exactly once")
 	assertions.equal(state.exp_total, 7, "normal controller harvest awards previewed experience")
+	assertions.equal(storage.get_items(), {"tomato": 1}, "normal controller harvest writes central storage")
+	assertions.equal(inventory.get_item_count("tomato"), 0, "normal controller harvest leaves backpack unchanged")
 
 	controller.free()
+	storage.free()
 	inventory.free()
+	farming.free()
+	grid.free()
+
+
+func _test_controller_annual_harvest_uses_storage(assertions: TestAssert) -> void:
+	var crop := CropDataScript.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 3
+	crop.yield_min = 2
+	crop.yield_max = 2
+	crop.lifecycle_type = "annual"
+	crop.exp_reward = 4
+	var grid := GridSystemScript.new()
+	var crop_events := CropEventRecorder.new()
+	grid._event_bus = crop_events
+	var state := HarvestGameState.new()
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	farming._event_bus = crop_events
+	grid.set_cell_state(5, 3, FARMLAND)
+	var cell := grid.get_cell(5, 3)
+	var instance: CropInstance = farming.plant(cell, crop)
+	_set_mature(instance, 3.0)
+	crop_events.harvested_events.clear()
+	crop_events.cell_events.clear()
+	var inventory := InventorySystemScript.new()
+	var storage := FarmStorageSystemScript.new()
+	var controller := PlayerActionControllerScript.new()
+	controller.configure(null, grid, farming, null, null, inventory, storage)
+
+	assertions.truthy(controller._harvest(cell), "annual controller harvest commits to storage")
+	assertions.equal(storage.get_items(), {"grain": 2}, "annual harvest stores exact output")
+	assertions.equal(inventory.get_item_count("grain"), 0, "annual harvest never writes backpack")
+	assertions.equal(cell.state, GridCell.State.FARMLAND, "annual harvest restores farmland")
+	assertions.truthy(cell.crop_instance == null, "annual harvest removes crop instance")
+	assertions.equal(state.exp_calls, 1, "annual harvest awards experience once")
+	assertions.equal(state.exp_total, 4, "annual harvest awards exact experience")
+	assertions.equal(crop_events.harvested_events.size(), 1, "annual harvest emits one crop event")
+	assertions.equal(crop_events.cell_events.size(), 1, "annual harvest emits one cell event")
+
+	controller.free()
+	storage.free()
+	inventory.free()
+	crop_events.free()
 	farming.free()
 	grid.free()
 
@@ -880,7 +1056,7 @@ func _test_controller_plant_mapping_signal_is_atomic(
 	var controller = PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
 	controller.crop_data_override = crop
-	controller.configure(null, grid, farming, null, null, inventory)
+	controller.configure(null, grid, farming, null, null, inventory, null)
 	assertions.truthy(
 		not controller._plant(grid.get_cell(2, 2)),
 		"injected plant failure rolls inventory back"
@@ -937,7 +1113,7 @@ func _test_controller_plant_exact_preview_and_notifications(
 	season_gateway.season = season
 	var controller = PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
-	controller.configure(null, grid, season_gateway, null, null, inventory)
+	controller.configure(null, grid, season_gateway, null, null, inventory, null)
 	var removal_observer := PlantRemovalObserver.new()
 	removal_observer.farming = farming
 	removal_observer.inventory = inventory
@@ -1021,7 +1197,7 @@ func _test_roster_planting_uses_active_quick_item(assertions: TestAssert, tree: 
 		inventory.set_quick_slot(0, PlayerActionControllerScript.SEED_SLOT)
 		var controller = PlayerActionControllerScript.new()
 		tree.root.add_child(controller)
-		controller.configure(null, grid, farming, null, null, inventory)
+		controller.configure(null, grid, farming, null, null, inventory, null)
 		controller.select_slot(PlayerActionControllerScript.SEED_SLOT)
 		var planted := controller.perform_cell_action(grid.get_cell(10, 10))
 		assertions.truthy(planted, "%s plants from active quick slot" % fixture.item)
@@ -1049,7 +1225,7 @@ func _test_roster_planting_uses_active_quick_item(assertions: TestAssert, tree: 
 	lemon_inventory.set_quick_slot(0, PlayerActionControllerScript.SEED_SLOT)
 	var lemon_controller = PlayerActionControllerScript.new()
 	tree.root.add_child(lemon_controller)
-	lemon_controller.configure(null, lemon_grid, lemon_farming, null, null, lemon_inventory)
+	lemon_controller.configure(null, lemon_grid, lemon_farming, null, null, lemon_inventory, null)
 	lemon_controller.select_slot(PlayerActionControllerScript.SEED_SLOT)
 	assertions.truthy(not lemon_controller.perform_cell_action(lemon_grid.get_cell(12, 10)), "selected lemon sapling rejects outdoor planting")
 	assertions.equal(lemon_inventory.get_item_count("lemon_sapling"), 2, "outdoor rejection preserves lemon sapling")

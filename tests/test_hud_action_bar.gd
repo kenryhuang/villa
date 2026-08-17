@@ -289,7 +289,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		null,
 		building,
 		ToolDouble.new(),
-		inventory
+		inventory,
+		null
 	)
 	hud.configure_action_bar(controller, inventory, EconomyDouble.new())
 	var mapping_handler := Callable(hud, "_on_quick_slot_mapping_changed")
@@ -603,7 +604,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		null,
 		replacement_building,
 		ToolDouble.new(),
-		replacement_inventory
+		replacement_inventory,
+		null
 	)
 	hud.configure_action_bar(
 		replacement_controller,

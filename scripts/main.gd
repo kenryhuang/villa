@@ -11,6 +11,7 @@ const DailySimulationSystemScript := preload(
 	"res://scripts/systems/daily_simulation_system.gd"
 )
 const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
+const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_system.gd")
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 const EconomyProgressionSystemScript := preload(
 	"res://scripts/systems/economy_progression_system.gd"
@@ -79,6 +80,7 @@ var npc_economy_system: NpcEconomySystem
 var economy_notification_system: EconomyNotificationSystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
+var farm_storage_system: FarmStorageSystem
 var building_system: BuildingSystem
 var tool_system: ToolSystem
 var grid_pathfinder: GridPathfinder
@@ -165,6 +167,12 @@ func _initialize_systems() -> void:
 	inventory_system = InventorySystem.new()
 	inventory_system.name = "InventorySystem"
 	add_child(inventory_system)
+
+	farm_storage_system = FarmStorageSystemScript.new() as FarmStorageSystem
+	farm_storage_system.name = "FarmStorageSystem"
+	farm_storage_system.add_to_group("farm_storage_system")
+	add_child(farm_storage_system)
+	farm_storage_system.configure()
 
 	building_system = BUILDING_SYSTEM_SCENE.instantiate() as BuildingSystem
 	add_child(building_system)
@@ -371,7 +379,8 @@ func _setup_player() -> void:
 		farming_system,
 		building_system,
 		tool_system,
-		inventory_system
+		inventory_system,
+		farm_storage_system
 	)
 	if not action_controller.configure_gathering(gathering_controller):
 		push_error("Unable to configure player gathering actions.")

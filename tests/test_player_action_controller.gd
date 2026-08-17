@@ -1,6 +1,7 @@
 extends RefCounted
 
 const MainScript = preload("res://scripts/main.gd")
+const FarmStorageSystemScript = preload("res://scripts/systems/farm_storage_system.gd")
 
 
 class ToolDouble:
@@ -106,9 +107,12 @@ class FarmingDouble:
 		return plant(cell, expected_preview.get("crop_data") as CropData)
 
 	func harvest(cell: GridCell, expected_preview: Dictionary = {}) -> Dictionary:
+		return commit_harvest(cell, expected_preview if not expected_preview.is_empty() else preview_harvest(cell))
+
+	func commit_harvest(cell: GridCell, expected_preview: Dictionary) -> Dictionary:
 		if cell.crop_instance == null or not cell.crop_instance.is_mature():
 			return {}
-		if not expected_preview.is_empty() and preview_harvest(cell) != expected_preview:
+		if preview_harvest(cell) != expected_preview:
 			return {}
 		harvest_calls += 1
 		cell.crop_instance = null
@@ -372,7 +376,8 @@ func _test_completed_building_click_in_build_mode(
 		null,
 		building_system,
 		ToolDouble.new(),
-		InventoryDouble.new()
+		InventoryDouble.new(),
+		null
 	)
 	assertions.truthy(
 		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
@@ -421,7 +426,8 @@ func _test_output_pile_interaction(
 		null,
 		BuildingDouble.new(),
 		ToolDouble.new(),
-		InventoryDouble.new()
+		InventoryDouble.new(),
+		null
 	)
 	controller.switch_mode(PlayerActionController.ActionMode.FARMING)
 	assertions.truthy(
@@ -470,7 +476,8 @@ func _test_gathering_command_routing(
 		null,
 		BuildingDouble.new(),
 		ToolDouble.new(),
-		InventoryDouble.new()
+		InventoryDouble.new(),
+		null
 	)
 	assertions.truthy(
 		controller.has_method("configure_gathering"),
@@ -569,6 +576,8 @@ func _test_selection_and_transactions(
 	var grid := GridDouble.new()
 	var controller = controller_script.new()
 	tree.root.add_child(controller)
+	var farm_storage = FarmStorageSystemScript.new()
+	tree.root.add_child(farm_storage)
 	controller.crop_data_override = crop
 	controller.configure(
 		null,
@@ -576,8 +585,24 @@ func _test_selection_and_transactions(
 		farming,
 		BuildingDouble.new(),
 		tools,
-		inventory
+		inventory,
+		farm_storage
 	)
+	assertions.truthy(controller.has_method("set_selected_plant_item_id"), "controller exposes explicit planting selection setter")
+	assertions.truthy(controller.has_method("get_last_action_failure_details"), "controller exposes general action failure details")
+	if controller.has_method("set_selected_plant_item_id"):
+		assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "authoritative seed mapping can be selected")
+		inventory.active_quick_item = "unknown_seed"
+		inventory.counts["grain_seed"] = 0
+		assertions.equal(controller.get_selected_plant_item_id(), "grain_seed", "explicit selection persists at zero quantity")
+		assertions.truthy(not controller.set_selected_plant_item_id("grain"), "crop category cannot be selected for planting")
+		assertions.truthy(not controller.set_selected_plant_item_id("unknown_seed"), "unmapped seed id cannot be selected")
+		assertions.equal(controller.get_selected_plant_item_id(), "grain_seed", "rejected selection preserves prior explicit seed")
+		assertions.truthy(controller.set_selected_plant_item_id(""), "empty selection clears explicit seed")
+		assertions.equal(controller.get_selected_plant_item_id(), "unknown_seed", "cleared selection falls back to quick slot")
+		inventory.active_quick_item = "grain_seed"
+		inventory.counts["grain_seed"] = 2
+		assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "explicit grain selection restores for planting")
 	var unregistered_grain := CropData.new()
 	unregistered_grain.crop_id = "unregistered_grain"
 	unregistered_grain.plant_item_id = "unregistered_grain_seed"
@@ -647,16 +672,29 @@ func _test_selection_and_transactions(
 	mature.crop_instance = CropInstance.new()
 	mature.crop_instance.crop_data = crop
 	mature.crop_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
-	inventory.accepts_harvest = false
-	assertions.truthy(not controller.perform_cell_action(mature), "full inventory blocks harvest")
+	assertions.truthy(farm_storage.restore_items_unchecked({"grain": 200}), "harvest fixture fills central storage")
+	assertions.truthy(not controller.perform_cell_action(mature), "full storage blocks harvest")
 	assertions.equal(farming.harvest_calls, 0, "blocked harvest preserves crop")
+	if controller.has_method("get_last_action_failure_details"):
+		var capacity_failure: Dictionary = controller.get_last_action_failure_details()
+		assertions.equal(capacity_failure.get("reason"), "storage_capacity", "full storage has stable failure reason")
+		assertions.equal(capacity_failure.get("storage_capacity"), 200, "failure reports total storage capacity")
+		assertions.equal(capacity_failure.get("storage_used"), 200, "failure reports used storage capacity")
+		assertions.equal(capacity_failure.get("missing_capacity"), 1, "failure reports exact missing capacity")
 
-	inventory.accepts_harvest = true
+	assertions.truthy(farm_storage.restore_items_unchecked({}), "harvest fixture clears central storage")
+	var inventory_changed_calls := 0
+	controller.inventory_changed.connect(func() -> void: inventory_changed_calls += 1)
 	assertions.truthy(controller.perform_cell_action(mature), "mature crop can be harvested")
-	assertions.equal(inventory.get_item_count("grain"), 1, "harvest adds grain")
+	assertions.equal(inventory.get_item_count("grain"), 0, "harvest never adds crops to backpack")
+	assertions.equal(farm_storage.get_count("grain"), 1, "harvest adds crops to central storage")
+	assertions.equal(inventory_changed_calls, 0, "storage-only harvest emits no controller inventory change")
 	assertions.equal(mature.state, GridCell.State.FARMLAND, "harvest restores farmland")
+	if controller.has_method("get_last_action_failure_details"):
+		assertions.equal(controller.get_last_action_failure_details(), {}, "successful harvest clears prior failure")
 
 	controller.free()
+	farm_storage.free()
 
 
 func _test_plant_preview_failure_reasons(
@@ -683,7 +721,8 @@ func _test_plant_preview_failure_reasons(
 		farming,
 		BuildingDouble.new(),
 		ToolDouble.new(),
-		inventory
+		inventory,
+		null
 	)
 	var cell := GridCell.new()
 	cell.state = GridCell.State.FARMLAND
@@ -727,7 +766,8 @@ func _test_action_modes(
 		null,
 		building,
 		tools,
-		InventoryDouble.new()
+		InventoryDouble.new(),
+		null
 	)
 
 	var has_mode_api: bool = (
@@ -825,7 +865,8 @@ func _test_build_feedback_and_exhaustion(
 		null,
 		building,
 		ToolDouble.new(),
-		InventoryDouble.new()
+		InventoryDouble.new(),
+		null
 	)
 	var feedback_events: Array[Dictionary] = []
 	controller.build_feedback_requested.connect(
