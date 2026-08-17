@@ -352,6 +352,8 @@ func _connect_save_load_completed() -> void:
 
 
 func _on_save_load_completed(_slot: int) -> void:
+	if farm_storage_system != null:
+		farm_storage_system.refresh_capacity()
 	if production_system == null or season_system == null:
 		return
 	_rebind_restored_buildings()

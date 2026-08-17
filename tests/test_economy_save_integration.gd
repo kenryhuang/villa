@@ -52,6 +52,36 @@ class RegistryLoadObserver:
 				observed_producers.append(building.to_dict())
 
 
+class FarmStorageCapacityProviderProbe:
+	extends RefCounted
+	var main: Node
+	var calls := 0
+
+	func provide() -> int:
+		calls += 1
+		return int(main.call("_farm_storage_capacity"))
+
+
+class FarmStorageCapacityRecorder:
+	extends RefCounted
+	var events: Array[Dictionary] = []
+
+	func on_capacity_changed(used: int, total: int) -> void:
+		events.append({"used": used, "total": total})
+
+	func reset() -> void:
+		events.clear()
+
+
+class FarmStorageLoadObserver:
+	extends RefCounted
+	var storage: FarmStorageSystem
+	var observed_totals: Array[int] = []
+
+	func on_load_completed(_slot: int) -> void:
+		observed_totals.append(storage.get_total_capacity())
+
+
 class SettlementObserver:
 	extends RefCounted
 	var calls := 0
@@ -249,6 +279,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_invalid_top_level_and_inventory_schema_is_atomic(assertions, tree)
 	_test_task13_legacy_inventory_repack_preserves_quick_items(assertions, tree)
 	_test_task13_building_load_signals_are_transactional(assertions, tree)
+	_test_farm_storage_capacity_refreshes_after_committed_load(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
 
 
@@ -1672,6 +1703,181 @@ func _test_task13_failed_building_load_is_atomic(
 		"%s preserves the adopted save slot" % scenario
 	)
 	_assert_atomic_load_state(assertions, main, manager, game_state, before, scenario)
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _test_farm_storage_capacity_refreshes_after_committed_load(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "FarmStorageCommittedLoadSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main_scene := load("res://scenes/main.tscn") as PackedScene
+	assertions.truthy(main_scene != null, "farm storage load fixture opens the main scene")
+	if main_scene == null:
+		manager.free()
+		return
+	var main := main_scene.instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	assertions.truthy(main.farm_storage_system != null, "main owns farm storage for load refresh")
+	if main.farm_storage_system == null:
+		main.free()
+		manager.free()
+		return
+
+	var first_location := _find_restore_location(main, "barn")
+	assertions.truthy(first_location.x >= 0, "load fixture finds its first barn footprint")
+	if first_location.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	var first_record := _plain_building_record(main, "barn", first_location)
+	for cell in first_record.occupied_cells:
+		assertions.truthy(
+			main.grid_system.set_cell_state(int(cell.gx), int(cell.gz), GridCell.State.BUILDING),
+			"load fixture reserves a first-barn grid cell"
+		)
+	var second_location := _find_restore_location(main, "barn")
+	assertions.truthy(second_location.x >= 0, "load fixture finds its second barn footprint")
+	if second_location.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	var second_record := _plain_building_record(main, "barn", second_location)
+	for cell in second_record.occupied_cells:
+		assertions.truthy(
+			main.grid_system.set_cell_state(int(cell.gx), int(cell.gz), GridCell.State.BUILDING),
+			"load fixture reserves a second-barn grid cell"
+		)
+	var unfinished_location := _find_restore_location(main, "barn")
+	assertions.truthy(unfinished_location.x >= 0, "load fixture finds its unfinished barn footprint")
+	if unfinished_location.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	var unfinished_record := _plain_building_record(main, "barn", unfinished_location)
+	var barn_definition: Dictionary = GameDataScript.get_building("barn")
+	var barn_footprint := Vector2i(
+		int(barn_definition.get("footprint_x", 1)),
+		int(barn_definition.get("footprint_z", 1))
+	)
+	unfinished_record["construction_stage"] = int(BuildingInstance.ConstructionStage.FOUNDATION)
+	unfinished_record["construction_elapsed"] = 0.0
+	unfinished_record["construction_duration"] = BuildingInstance.construction_duration_for(
+		barn_footprint
+	)
+	for cell in unfinished_record.occupied_cells:
+		assertions.truthy(
+			main.grid_system.set_cell_state(int(cell.gx), int(cell.gz), GridCell.State.BUILDING),
+			"load fixture reserves an unfinished-barn grid cell"
+		)
+
+	var progression: Dictionary = main.economy_progression_system.to_dict()
+	progression["upgrade_levels"] = [
+		{
+			"building_key": "barn:%d:%d" % [first_location.x, first_location.y],
+			"levels": [{"upgrade_id": "storage", "level": 1}],
+		},
+		{
+			"building_key": "barn:%d:%d" % [second_location.x, second_location.y],
+			"levels": [{"upgrade_id": "storage", "level": 3}],
+		},
+		{
+			"building_key": "barn:%d:%d" % [unfinished_location.x, unfinished_location.y],
+			"levels": [{"upgrade_id": "storage", "level": 3}],
+		},
+	]
+	var saved: Dictionary = manager._gather_save_data()
+	saved["grid"] = main.grid_system.to_dict()
+	saved["buildings"] = [first_record, second_record, unfinished_record]
+	saved["progression"] = progression
+	_write_json(manager._save_path(TEST_SLOT), saved)
+	_write_json(manager._save_path(BAD_SLOT), saved)
+
+	main.grid_system.reset_state()
+	var provider := FarmStorageCapacityProviderProbe.new()
+	provider.main = main
+	assertions.truthy(
+		main.farm_storage_system.configure(Callable(provider, "provide")),
+		"farm storage fixture installs a counting capacity provider"
+	)
+	assertions.equal(
+		main.farm_storage_system.get_total_capacity(),
+		FarmStorageSystemScript.DEFAULT_CAPACITY,
+		"runtime storage starts from its cached default before load"
+	)
+	provider.calls = 0
+	var capacity_recorder := FarmStorageCapacityRecorder.new()
+	main.farm_storage_system.capacity_changed.connect(capacity_recorder.on_capacity_changed)
+	var load_observer := FarmStorageLoadObserver.new()
+	load_observer.storage = main.farm_storage_system
+	manager.load_completed.connect(load_observer.on_load_completed)
+
+	assertions.truthy(manager.load_game(TEST_SLOT), "committed barn save restores through public load API")
+	assertions.equal(provider.calls, 1, "committed load derives farm storage capacity exactly once")
+	assertions.equal(
+		main.farm_storage_system.get_total_capacity(),
+		1000,
+		"farm storage capacity is correct immediately when public load returns"
+	)
+	assertions.equal(
+		capacity_recorder.events,
+		[{"used": 0, "total": 1000}],
+		"committed load publishes one derived capacity change"
+	)
+	assertions.equal(
+		load_observer.observed_totals,
+		[1000],
+		"later load-completed readers observe refreshed farm storage capacity"
+	)
+	var completed_levels: Array[int] = []
+	var unfinished_levels: Array[int] = []
+	for building in main.building_system.get_all_buildings():
+		var level: int = main.economy_progression_system.get_upgrade_level(building, "storage")
+		if building.is_construction_complete():
+			completed_levels.append(level)
+		else:
+			unfinished_levels.append(level)
+	completed_levels.sort()
+	assertions.equal(completed_levels, [1, 3], "load restores distinct completed-barn levels")
+	assertions.equal(unfinished_levels, [3], "load restores unfinished barn level without capacity")
+
+	var rejecting_resources := RejectingResourceWorld.new()
+	rejecting_resources.game_state = tree.root.get_node_or_null("GameState")
+	rejecting_resources.reject_next_restore = true
+	manager._resource_world = rejecting_resources
+	provider.calls = 0
+	capacity_recorder.reset()
+	var successful_load_observations := load_observer.observed_totals.size()
+	assertions.truthy(
+		not manager.load_game(BAD_SLOT),
+		"resource rejection rolls back an otherwise valid barn save"
+	)
+	assertions.equal(provider.calls, 0, "rolled-back load does not derive farm storage capacity")
+	assertions.equal(
+		main.farm_storage_system.get_total_capacity(),
+		1000,
+		"rolled-back load preserves the prior cached farm storage capacity"
+	)
+	assertions.truthy(
+		capacity_recorder.events.is_empty(),
+		"rolled-back load emits no spurious farm storage capacity change"
+	)
+	assertions.equal(
+		load_observer.observed_totals.size(),
+		successful_load_observations,
+		"rolled-back load emits no committed-load notification"
+	)
 	main.free()
 	manager.free()
 	_cleanup()
