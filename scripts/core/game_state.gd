@@ -18,6 +18,7 @@ var _exp_event_queue: Array[Dictionary] = []
 var _exp_event_dispatch_suspended := false
 var _is_dispatching_exp_events := false
 var _exp_event_barrier_owner: WeakRef
+var _exp_event_generation := 0
 
 
 func _init() -> void:
@@ -174,6 +175,7 @@ func arm_exp_publication(publication: Variant) -> RefCounted:
 		"amount": int(committed.amount),
 		"leveled": bool(committed.leveled),
 		"after_level": int(committed.after_level),
+		"generation": _exp_event_generation,
 	}
 	event.make_read_only()
 	_exp_event_queue.append(event)
@@ -279,12 +281,15 @@ func _drain_exp_event_queue() -> void:
 		var event: Dictionary = _exp_event_queue.pop_front()
 		if _event_bus:
 			_event_bus.exp_gained.emit(int(event.amount))
+			if int(event.generation) != _exp_event_generation:
+				continue
 			if bool(event.leveled):
 				_event_bus.level_changed.emit(int(event.after_level))
 	_is_dispatching_exp_events = false
 
 
 func invalidate_exp_state_for_replacement() -> void:
+	_exp_event_generation += 1
 	_exp_transaction_owner = null
 	_exp_transaction.clear()
 	_exp_publication_owner = null

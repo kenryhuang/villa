@@ -141,6 +141,39 @@ class CropEventRecorder:
 		timeline.append("exp:%d" % amount)
 
 
+class ExpReplacementEventBus:
+	extends Node
+
+	signal gold_changed(amount: int)
+	signal stamina_changed(amount: int)
+	signal exp_gained(amount: int)
+	signal level_changed(level: int)
+
+	var timeline: Array[String] = []
+
+	func _init() -> void:
+		exp_gained.connect(_on_exp_gained)
+		level_changed.connect(_on_level_changed)
+
+	func _on_exp_gained(amount: int) -> void:
+		timeline.append("exp:%d" % amount)
+
+	func _on_level_changed(level: int) -> void:
+		timeline.append("level:%d" % level)
+
+
+class ResetOnExpObserver:
+	extends RefCounted
+	var state: Node
+	var calls := 0
+
+	func on_exp_gained(amount: int) -> void:
+		if calls > 0 or amount <= 0:
+			return
+		calls += 1
+		state.reset_to_new_game()
+
+
 class ExpReplantObserver:
 	extends RefCounted
 	var farming: FarmingSystem
@@ -505,6 +538,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_visual_reentrancy_observes_armed_commit(assertions, tree)
 	_test_storage_replant_keeps_replacement_visual(assertions, tree)
 	_test_storage_callback_reset_invalidates_harvest_exp(assertions, tree)
+	_test_reset_from_leveling_exp_callback_suppresses_stale_level(assertions, tree)
 	_test_exp_replant_preserves_harvest_event_order(assertions, tree)
 	_test_controller_seal_failure_rolls_back_silent_apply(assertions, tree)
 	_test_controller_commits_exact_harvest_preview(assertions, tree)
@@ -1677,6 +1711,33 @@ func _test_storage_callback_reset_invalidates_harvest_exp(
 	inventory.free()
 	farming.free()
 	grid.free()
+
+
+func _test_reset_from_leveling_exp_callback_suppresses_stale_level(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var events := ExpReplacementEventBus.new()
+	var state := GameStateScript.new()
+	tree.root.add_child(state)
+	state._event_bus = events
+	var resetter := ResetOnExpObserver.new()
+	resetter.state = state
+	events.exp_gained.connect(resetter.on_exp_gained)
+
+	assertions.truthy(state.add_exp(100), "leveling EXP publishes even when its listener resets state")
+	assertions.equal(resetter.calls, 1, "leveling EXP listener resets state exactly once")
+	assertions.equal(state.player_state.exp, 0, "callback reset keeps authoritative replacement EXP")
+	assertions.equal(state.player_state.level, 1, "callback reset keeps authoritative replacement level")
+	assertions.equal(
+		events.timeline,
+		["exp:100", "level:1", "exp:0"],
+		"callback reset invalidates the popped EXP event before its stale level notification"
+	)
+
+	events.exp_gained.disconnect(resetter.on_exp_gained)
+	state.free()
+	events.free()
 
 
 func _test_exp_replant_preserves_harvest_event_order(

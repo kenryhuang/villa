@@ -73,9 +73,57 @@ class LoadOnStorageObserver:
 class ExpSignalRecorder:
 	extends RefCounted
 	var amounts: Array[int] = []
+	var levels: Array[int] = []
+	var timeline: Array[String] = []
 
 	func on_exp_gained(amount: int) -> void:
 		amounts.append(amount)
+		timeline.append("exp:%d" % amount)
+
+	func on_level_changed(level: int) -> void:
+		levels.append(level)
+		timeline.append("level:%d" % level)
+
+
+class LoadOnExpObserver:
+	extends RefCounted
+	var manager: Node
+	var slot := 0
+	var calls := 0
+	var results: Array[bool] = []
+
+	func on_exp_gained(amount: int) -> void:
+		if calls > 0 or amount <= 0:
+			return
+		calls += 1
+		results.append(manager.load_game(slot))
+
+
+class RejectingGridRestore:
+	extends GridSystemScript
+	var reject_next_restore := false
+
+	func from_dict(data: Dictionary) -> bool:
+		if reject_next_restore:
+			reject_next_restore = false
+			return false
+		return super.from_dict(data)
+
+
+class EmptyBuildingRestore:
+	extends Node
+
+	func get_all_buildings() -> Array:
+		return []
+
+	func validate_restore_buildings(records: Array, _grid_data: Dictionary) -> bool:
+		return records.is_empty()
+
+	func clear_buildings(_restore_grid := true, _emit_public_signals := true) -> void:
+		pass
+
+	func restore_buildings(records: Array, _emit_public_signals := true) -> int:
+		return records.size()
 
 
 class BuildingSignalObserver:
@@ -143,6 +191,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_harvest_seed_round_trip_migration_and_atomic_rejection(assertions, tree)
 	_test_save_round_trip_and_legacy_load(assertions, tree)
 	_test_harvest_storage_callback_load_invalidates_exp(assertions, tree)
+	_test_failed_load_preserves_committed_harvest_exp_barrier(assertions, tree)
+	_test_failed_load_preserves_prearm_harvest_exp_publication(assertions, tree)
+	_test_successful_load_from_leveling_exp_callback_suppresses_stale_level(assertions, tree)
 	_test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(assertions, tree)
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
 	_test_task13_legacy_iron_migration_and_missing_economy_idempotence(assertions, tree)
@@ -474,6 +525,133 @@ func _test_harvest_storage_callback_load_invalidates_exp(
 	game_state.player_state.max_stamina = int(original.max_stamina)
 	game_state.player_state.level = int(original.level)
 	game_state.player_state.exp = int(original.exp)
+	_cleanup()
+
+
+func _test_failed_load_preserves_committed_harvest_exp_barrier(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_test_failed_load_preserves_pending_harvest_exp(assertions, tree, true)
+
+
+func _test_failed_load_preserves_prearm_harvest_exp_publication(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_test_failed_load_preserves_pending_harvest_exp(assertions, tree, false)
+
+
+func _test_failed_load_preserves_pending_harvest_exp(
+	assertions: TestAssert,
+	tree: SceneTree,
+	arm_before_load: bool
+) -> void:
+	_cleanup()
+	var scenario := "committed barrier" if arm_before_load else "pre-arm publication"
+	var game_state := tree.root.get_node_or_null("GameState")
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(game_state != null and event_bus != null, "%s failure fixture has core autoloads" % scenario)
+	if game_state == null or event_bus == null:
+		return
+	var original := _capture_game_state_scalars(game_state)
+	var manager := SaveManagerScript.new()
+	manager.save_directory = TEST_SAVE_DIR
+	var rejecting_grid := RejectingGridRestore.new()
+	var buildings := EmptyBuildingRestore.new()
+	tree.root.add_child(manager)
+	tree.root.add_child(rejecting_grid)
+	rejecting_grid.add_to_group("grid_system")
+	tree.root.add_child(buildings)
+	buildings.add_to_group("building_system")
+	game_state.gold = 654
+	game_state.harvest_seed = 909
+	game_state.player_state.level = 3
+	game_state.player_state.exp = 250
+	assertions.truthy(manager.save_game(BAD_SLOT), "%s fixture writes a valid replacement save" % scenario)
+	game_state.gold = 111
+	game_state.harvest_seed = 707
+	game_state.player_state.level = 1
+	game_state.player_state.exp = 0
+	var fixture := _prepare_pending_harvest(game_state, event_bus)
+	var farming: FarmingSystem = fixture.farming
+	var publication: Variant = fixture.publication
+	assertions.truthy(publication is RefCounted, "%s fixture seals Farming and EXP publication" % scenario)
+	if arm_before_load:
+		assertions.truthy(farming.can_arm_harvest_publication(publication), "%s fixture prevalidates publication" % scenario)
+		farming.arm_harvest_publication(publication)
+	var recorder := ExpSignalRecorder.new()
+	event_bus.exp_gained.connect(recorder.on_exp_gained)
+	rejecting_grid.reject_next_restore = true
+
+	assertions.truthy(not manager.load_game(BAD_SLOT), "late Grid rejection fails public load with %s" % scenario)
+	assertions.equal(game_state.gold, 111, "failed load preserves %s gold" % scenario)
+	assertions.equal(game_state.harvest_seed, 707, "failed load restores %s harvest seed" % scenario)
+	assertions.equal(game_state.player_state.exp, 4, "failed load preserves silently applied %s EXP" % scenario)
+	if arm_before_load:
+		farming.publish_harvest_publication(publication)
+		assertions.equal(recorder.amounts, [4], "preserved committed barrier publishes harvest EXP exactly once")
+	else:
+		assertions.truthy(farming.can_arm_harvest_publication(publication), "failed load preserves pre-arm Farming and EXP ownership")
+		assertions.truthy(farming.cancel_harvest_publication(publication), "preserved pre-arm publication can still roll back")
+		assertions.equal(game_state.player_state.exp, 0, "pre-arm rollback restores EXP exactly")
+		assertions.equal(fixture.cell.state, GridCell.State.PLANTED, "pre-arm rollback restores the crop")
+		assertions.equal(recorder.amounts, [], "pre-arm rollback publishes no EXP notification")
+
+	event_bus.exp_gained.disconnect(recorder.on_exp_gained)
+	_free_pending_harvest(fixture)
+	buildings.free()
+	rejecting_grid.free()
+	manager.free()
+	_restore_game_state_scalars(game_state, original)
+	_cleanup()
+
+
+func _test_successful_load_from_leveling_exp_callback_suppresses_stale_level(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var game_state := tree.root.get_node_or_null("GameState")
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(game_state != null and event_bus != null, "EXP callback load fixture has core autoloads")
+	if game_state == null or event_bus == null:
+		return
+	var original := _capture_game_state_scalars(game_state)
+	var manager := SaveManagerScript.new()
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	game_state.gold = 432
+	game_state.player_state.stamina = 88
+	game_state.player_state.max_stamina = 130
+	game_state.player_state.level = 3
+	game_state.player_state.exp = 250
+	assertions.truthy(manager.save_game(TEST_SLOT), "EXP callback fixture saves authoritative replacement state")
+	game_state.gold = 100
+	game_state.player_state.stamina = 100
+	game_state.player_state.max_stamina = 100
+	game_state.player_state.level = 1
+	game_state.player_state.exp = 0
+	var recorder := ExpSignalRecorder.new()
+	var loader := LoadOnExpObserver.new()
+	loader.manager = manager
+	loader.slot = TEST_SLOT
+	event_bus.exp_gained.connect(recorder.on_exp_gained)
+	event_bus.level_changed.connect(recorder.on_level_changed)
+	event_bus.exp_gained.connect(loader.on_exp_gained)
+
+	assertions.truthy(game_state.add_exp(100), "leveling EXP remains successful when its listener loads")
+	assertions.equal(loader.results, [true], "leveling EXP listener completes one successful load")
+	assertions.equal(game_state.gold, 432, "callback load keeps authoritative gold")
+	assertions.equal(game_state.player_state.exp, 250, "callback load keeps authoritative EXP")
+	assertions.equal(game_state.player_state.level, 3, "callback load keeps authoritative level")
+	assertions.equal(recorder.timeline, ["exp:100"], "callback load suppresses stale old level notification")
+
+	event_bus.exp_gained.disconnect(loader.on_exp_gained)
+	event_bus.level_changed.disconnect(recorder.on_level_changed)
+	event_bus.exp_gained.disconnect(recorder.on_exp_gained)
+	manager.free()
+	_restore_game_state_scalars(game_state, original)
 	_cleanup()
 
 
@@ -1952,6 +2130,65 @@ func _set_npc_snapshot_day(snapshot: Dictionary, total_day: int) -> void:
 	for state_value in snapshot.get("npc_states", []):
 		if state_value is Dictionary:
 			state_value["last_simulated_day"] = total_day
+
+
+func _prepare_pending_harvest(game_state: Node, event_bus: Node) -> Dictionary:
+	var grid := GridSystemScript.new()
+	grid._event_bus = event_bus
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, game_state)
+	farming._event_bus = event_bus
+	var crop := CropDataScript.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 3
+	crop.yield_min = 1
+	crop.yield_max = 1
+	crop.exp_reward = 4
+	crop.lifecycle_type = "annual"
+	grid.set_cell_state(13, 13, GridCell.State.FARMLAND)
+	var cell := grid.get_cell(13, 13)
+	var instance: CropInstance = farming.plant(cell, crop)
+	instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+	var preview := farming.preview_harvest(cell)
+	var token := farming.prepare_harvest(cell, preview)
+	if token == null or not farming.apply_prepared_harvest(token):
+		return {"grid": grid, "farming": farming, "cell": cell, "publication": null}
+	return {
+		"grid": grid,
+		"farming": farming,
+		"cell": cell,
+		"publication": farming.seal_prepared_harvest(token),
+	}
+
+
+func _free_pending_harvest(fixture: Dictionary) -> void:
+	var farming: Variant = fixture.get("farming")
+	if farming != null and is_instance_valid(farming):
+		farming.free()
+	var grid: Variant = fixture.get("grid")
+	if grid != null and is_instance_valid(grid):
+		grid.free()
+
+
+func _capture_game_state_scalars(game_state: Node) -> Dictionary:
+	return {
+		"gold": game_state.gold,
+		"harvest_seed": game_state.harvest_seed,
+		"stamina": game_state.player_state.stamina,
+		"max_stamina": game_state.player_state.max_stamina,
+		"level": game_state.player_state.level,
+		"exp": game_state.player_state.exp,
+	}
+
+
+func _restore_game_state_scalars(game_state: Node, snapshot: Dictionary) -> void:
+	game_state.invalidate_exp_state_for_replacement()
+	game_state.gold = int(snapshot.gold)
+	game_state.harvest_seed = int(snapshot.harvest_seed)
+	game_state.player_state.stamina = int(snapshot.stamina)
+	game_state.player_state.max_stamina = int(snapshot.max_stamina)
+	game_state.player_state.level = int(snapshot.level)
+	game_state.player_state.exp = int(snapshot.exp)
 
 
 func _write_json(path: String, data: Dictionary) -> void:

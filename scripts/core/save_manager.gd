@@ -282,7 +282,7 @@ func _apply_save_data(data: Dictionary) -> bool:
 	var previous_state := _gather_save_data().duplicate(true)
 	_begin_restore_transaction()
 	var applied := _apply_migrated_save_data(migrated_data)
-	if not applied and not _apply_migrated_save_data(previous_state):
+	if not applied and not _apply_migrated_save_data(previous_state, false):
 		push_error("Failed to roll back rejected save data")
 	_end_restore_transaction()
 	return applied
@@ -315,25 +315,13 @@ func _cancel_transient_actions_for_restore() -> void:
 		_state_transition_owner.call("cancel_transient_actions", "save_restore")
 
 
-func _apply_migrated_save_data(data: Dictionary) -> bool:
+func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> bool:
 	var game_state = get_node_or_null("/root/GameState")
 	if game_state and data.has("harvest_seed"):
 		if not game_state.set_harvest_seed(int(data.harvest_seed)):
 			return false
 	if not _apply_economy_save_data(data):
 		return false
-
-	# 游戏状态
-	if game_state and data.has("gold"):
-		if game_state.has_method("invalidate_exp_state_for_replacement"):
-			game_state.invalidate_exp_state_for_replacement()
-		game_state.gold = data.gold
-		if data.has("player"):
-			var p = data.player
-			game_state.player_state.stamina = p.get("stamina", 100)
-			game_state.player_state.max_stamina = p.get("max_stamina", 100)
-			game_state.player_state.level = p.get("level", 1)
-			game_state.player_state.exp = p.get("exp", 0)
 
 	# 季节/时间
 	var season_system = _get_season_system()
@@ -406,6 +394,18 @@ func _apply_migrated_save_data(data: Dictionary) -> bool:
 		if loaded_image.load_png_from_buffer(fog_bytes) == OK:
 			exploration.fog_image = loaded_image
 			exploration.fog_texture = ImageTexture.create_from_image(loaded_image)
+
+	# GameState replacement is the load commit point. Nothing below it may reject the load.
+	if replace_game_state and game_state and data.has("gold"):
+		if game_state.has_method("invalidate_exp_state_for_replacement"):
+			game_state.invalidate_exp_state_for_replacement()
+		game_state.gold = data.gold
+		if data.has("player"):
+			var p = data.player
+			game_state.player_state.stamina = p.get("stamina", 100)
+			game_state.player_state.max_stamina = p.get("max_stamina", 100)
+			game_state.player_state.level = p.get("level", 1)
+			game_state.player_state.exp = p.get("exp", 0)
 
 	return true
 
