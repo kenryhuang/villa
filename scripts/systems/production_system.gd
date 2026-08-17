@@ -680,7 +680,7 @@ func _rollback_maintenance_transaction(
 func can_apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -> bool:
 	return (
 		building != null and _registered_buildings.has(building)
-		and _get_state(building) != null
+		and (_get_state(building) != null or _is_central_storage_barn(building))
 		and _building_is_active(building)
 		and upgrade_id in get_supported_upgrades(building)
 		and level >= 1 and level <= 3
@@ -688,7 +688,11 @@ func can_apply_upgrade(building: BuildingInstance, upgrade_id: String, level: in
 
 
 func get_supported_upgrades(building: BuildingInstance) -> Array[String]:
-	if building == null or not _registered_buildings.has(building) or _get_state(building) == null:
+	if building == null or not _registered_buildings.has(building):
+		return []
+	if _is_central_storage_barn(building):
+		return ["storage"]
+	if _get_state(building) == null:
 		return []
 	if _effect_type(building) == "crafting":
 		return ["queue_slots", "speed", "storage"]
@@ -705,7 +709,8 @@ func apply_upgrade(building: BuildingInstance, upgrade_id: String, level: int) -
 		"queue_slots":
 			state.max_queue_slots = expected_max_queue_slots(level)
 		"storage":
-			state.output_capacity = expected_output_capacity(building.building_id, level)
+			if state != null:
+				state.output_capacity = expected_output_capacity(building.building_id, level)
 		"speed":
 			pass
 	refresh_indicator(building)
@@ -1067,7 +1072,7 @@ func preflight_barn_collection(
 ) -> Dictionary:
 	var destination := inventory if inventory != null else _inventory_system
 	var failure := {"ok": false, "reason": "invalid_request", "requested": {}, "groups": {}}
-	if barn == null or destination == null or not _has_effect(barn, "inventory_expand"):
+	if barn == null or destination == null or _barn_collection_config(barn).is_empty():
 		return failure
 	var all_groups := get_nearby_output_groups(barn)
 	if not source_key.is_empty() and not all_groups.has(source_key):
@@ -1137,9 +1142,10 @@ func _nearby_output_sources(
 	item_id: String = ""
 ) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	if barn == null or not _has_effect(barn, "inventory_expand"):
+	var collection_config := _barn_collection_config(barn)
+	if barn == null or collection_config.is_empty():
 		return result
-	var radius := float(_effect_config(barn).get("collection_radius", 6))
+	var radius := float(collection_config.get("radius", 0))
 	var center := _building_center(barn)
 	for building in _valid_registered_buildings():
 		if building == barn or not _building_is_active(building):
@@ -1361,7 +1367,7 @@ func _is_effect_building(building: BuildingInstance) -> bool:
 			"animal",
 			"irrigation",
 			"ignore_season",
-			"inventory_expand",
+			"farm_storage",
 			"resource_output",
 		]
 	)
@@ -1369,6 +1375,21 @@ func _is_effect_building(building: BuildingInstance) -> bool:
 
 func _has_effect(building: BuildingInstance, effect_type: String) -> bool:
 	return _effect_type(building) == effect_type
+
+
+func _is_central_storage_barn(building: BuildingInstance) -> bool:
+	return (
+		building != null
+		and building.building_id == "barn"
+		and _has_effect(building, "farm_storage")
+	)
+
+
+func _barn_collection_config(building: BuildingInstance) -> Dictionary:
+	if not _is_central_storage_barn(building):
+		return {}
+	var value: Variant = _effect_config(building).get("nearby_output_collection")
+	return value as Dictionary if value is Dictionary else {}
 
 
 func _effect_type(building: BuildingInstance) -> String:

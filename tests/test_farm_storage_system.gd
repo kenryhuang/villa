@@ -135,6 +135,7 @@ class ReadOnlyPayloadRecorder:
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_empty_state_and_capacity_provider(assertions)
+	_test_refresh_emits_only_when_capacity_changes(assertions, tree)
 	_test_atomic_add_remove_and_capacity(assertions)
 	_test_capacity_overload_behavior(assertions)
 	_test_serialization_and_overloaded_restore(assertions)
@@ -148,6 +149,31 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_capacity_reentrancy_preserves_notification_order(assertions, tree)
 	_test_change_payload_is_read_only_for_all_listeners(assertions, tree)
 	_test_rejected_operations_and_freed_provider_are_silent(assertions, tree)
+
+
+func _test_refresh_emits_only_when_capacity_changes(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := MutableCapacity.new(200)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	assertions.truthy(storage.configure(capacity.provide), "derived capacity fixture configures")
+	var recorder := SignalRecorder.new(storage)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	storage.refresh_capacity()
+	assertions.equal(recorder.capacities, [], "unchanged derived capacity emits no refresh event")
+	capacity.value = 400
+	storage.refresh_capacity()
+	assertions.equal(
+		recorder.capacities,
+		[{"used": 0, "total": 400}],
+		"changed derived capacity emits one refresh event"
+	)
+	storage.refresh_capacity()
+	assertions.equal(recorder.capacities.size(), 1, "repeated unchanged refresh stays silent")
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
 
 
 func _test_atomic_notification_transaction(assertions: TestAssert, tree: SceneTree) -> void:

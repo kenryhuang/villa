@@ -153,6 +153,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_building_system_restore(assertions, tree)
 	_test_clock(assertions, tree)
 	_test_maintenance_lifecycle(assertions)
+	_test_barn_central_storage_upgrade_semantics(assertions)
 	_test_greenhouse_maintenance_coverage(assertions)
 	_test_greenhouse_restore_transaction(assertions)
 	_test_authoritative_passive_events(assertions, tree)
@@ -203,6 +204,31 @@ func _test_maintenance_lifecycle(assertions: TestAssert) -> void:
 	assertions.truthy(
 		production.is_maintenance_paused(building),
 		"overdue maintenance pauses production"
+	)
+
+
+func _test_barn_central_storage_upgrade_semantics(assertions: TestAssert) -> void:
+	var production := _production()
+	var barn := _building("barn")
+	barn.producer_state = null
+	assertions.truthy(production.register_building(barn), "central-storage barn registers without producer state")
+	assertions.equal(
+		production.get_supported_upgrades(barn),
+		["storage"],
+		"central-storage barn exposes its three-level storage track"
+	)
+	assertions.truthy(production.can_apply_upgrade(barn, "storage", 1), "barn accepts storage level one")
+	assertions.truthy(production.apply_upgrade(barn, "storage", 1), "barn storage upgrade applies without output state")
+	assertions.equal(barn.producer_state, null, "barn upgrade does not create producer output storage")
+
+	var workbench := _building("workbench")
+	assertions.truthy(production.register_building(workbench), "ordinary producer upgrade fixture registers")
+	var before_capacity := workbench.producer_state.output_capacity
+	assertions.truthy(production.apply_upgrade(workbench, "storage", 1), "ordinary producer storage upgrade applies")
+	assertions.equal(
+		workbench.producer_state.output_capacity,
+		before_capacity + 1,
+		"ordinary producer storage upgrade still expands output capacity"
 	)
 
 

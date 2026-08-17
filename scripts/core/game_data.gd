@@ -191,9 +191,9 @@ const BUILDINGS := {
 		"category": "basic", "palette_order": 30,
 		"footprint_x": 2, "footprint_z": 2,
 		"cost": {"plank": 8, "stone_brick": 6, "wooden_crate": 1},
-		"description": "增加背包容量 +10 格",
-		"effect": "inventory_expand", "effect_value": 10,
-		"effect_config": {"collection_radius": 6},
+		"description": "中央仓库容量 +200；可收集半径内建筑产物",
+		"effect": "farm_storage", "effect_value": 200,
+		"effect_config": {"nearby_output_collection": {"radius": 6}},
 	},
 	"greenhouse": {
 		"id": "greenhouse", "name": "温室",

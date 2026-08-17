@@ -60,7 +60,7 @@ func _ready() -> void:
 static func panel_kind_for(building_id: String, effect_type: String) -> String:
 	if building_id in PRODUCTION_BUILDINGS and effect_type == "crafting":
 		return "production"
-	if building_id in STATUS_BUILDINGS and effect_type in ["honey", "animal", "irrigation", "ignore_season", "inventory_expand", "resource_output"]:
+	if building_id in STATUS_BUILDINGS and effect_type in ["honey", "animal", "irrigation", "ignore_season", "farm_storage", "resource_output"]:
 		return "status"
 	return ""
 

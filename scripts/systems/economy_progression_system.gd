@@ -318,8 +318,8 @@ func upgrade(building: BuildingInstance, upgrade_id: String) -> bool:
 	_active_service_transactions[transaction_key] = true
 	var upgrades_before := upgrade_levels.duplicate(true)
 	var state := building.producer_state as ProducerState
-	var queue_before := state.max_queue_slots
-	var capacity_before := state.output_capacity
+	var queue_before := state.max_queue_slots if state != null else 0
+	var capacity_before := state.output_capacity if state != null else 0
 	var committed := _commit_cost(
 		int(quote.gold_cost),
 		quote.materials,
@@ -331,8 +331,9 @@ func upgrade(building: BuildingInstance, upgrade_id: String) -> bool:
 			upgrade_levels[key] = levels
 			return true,
 		func() -> bool:
-			state.max_queue_slots = queue_before
-			state.output_capacity = capacity_before
+			if state != null:
+				state.max_queue_slots = queue_before
+				state.output_capacity = capacity_before
 			upgrade_levels = upgrades_before.duplicate(true)
 			return true
 	)
@@ -404,6 +405,7 @@ func get_upgrade_quote(building: BuildingInstance, upgrade_id: String) -> Dictio
 		"gold_cost": int(base_gold[upgrade_id]) * next_level,
 		"materials": {str(material_id[upgrade_id]): next_level * 2},
 		"level": next_level,
+		"effect": _upgrade_effect(building, upgrade_id),
 	}
 
 
@@ -539,9 +541,19 @@ func _upgrade_service(building: BuildingInstance, upgrade_id: String) -> Diction
 		"kind": "upgrade", "building": building, "target_id": upgrade_id, "gate": "建筑已完成",
 		"current_state": "等级 %d/%d" % [current, int(MAX_UPGRADE_LEVELS[upgrade_id])],
 		"gold_cost": int(quote.get("gold_cost", 0)), "materials": quote.get("materials", {}),
-		"effect": {"queue_slots": "队列槽 +1", "speed": "生产速度 +25%", "storage": "产物容量 +1"}[upgrade_id],
+		"effect": _upgrade_effect(building, upgrade_id),
 		"disabled_reason": reason, "owned": maxed,
 	}
+
+
+func _upgrade_effect(building: BuildingInstance, upgrade_id: String) -> String:
+	if upgrade_id == "storage" and building != null and building.building_id == "barn":
+		return "中央仓库容量 +100"
+	return {
+		"queue_slots": "队列槽 +1",
+		"speed": "生产速度 +25%",
+		"storage": "产物容量 +1",
+	}.get(upgrade_id, "")
 
 
 func _maintenance_service(building: BuildingInstance) -> Dictionary:

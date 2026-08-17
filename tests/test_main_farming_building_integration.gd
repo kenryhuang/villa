@@ -15,6 +15,14 @@ class FailingClearSaveManager:
 		return false
 
 
+class CapacityEventRecorder:
+	extends RefCounted
+	var events: Array[Dictionary] = []
+
+	func record(used: int, total: int) -> void:
+		events.append({"used": used, "total": total})
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var official_saves_before := _snapshot_save_directory(SaveManagerScript.SAVE_DIR)
 	_cleanup_test_save_directory()
@@ -203,6 +211,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(main.farm_storage_system.is_in_group("farm_storage_system"), "central storage joins discovery group")
 		assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "main starts with default storage capacity")
 		assertions.equal(action_controller.farm_storage_system, main.farm_storage_system, "controller shares central farm storage")
+		_test_farm_storage_capacity_lifecycle(assertions, main)
 	assertions.truthy(
 		_has_property(main.build_ui, "keyboard_shortcut_enabled"),
 		"legacy build UI exposes shortcut ownership"
@@ -825,6 +834,109 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		official_saves_before,
 		"debug reset integration leaves every official save file unchanged"
 	)
+
+
+func _test_farm_storage_capacity_lifecycle(assertions: TestAssert, main: Node) -> void:
+	var has_capacity_formula := main.has_method("_farm_storage_capacity")
+	assertions.truthy(has_capacity_formula, "Main exposes the authoritative farm storage capacity formula")
+	if not has_capacity_formula:
+		return
+	var slots_before: Array[Dictionary] = []
+	slots_before.assign(main.inventory_system.slots.duplicate(true))
+	var mappings_before: Array[int] = []
+	mappings_before.assign(main.inventory_system.quick_slot_mappings.duplicate())
+	var gold_before := int((main.get_node_or_null("/root/GameState") as Node).get("gold"))
+	var recorder := CapacityEventRecorder.new()
+	main.farm_storage_system.capacity_changed.connect(recorder.record)
+	assertions.equal(main.call("_farm_storage_capacity"), 200, "no barns keeps base capacity 200")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "configured storage starts at derived base capacity")
+
+	var first := _add_capacity_barn(main, 40, 40, false)
+	assertions.equal(main.call("_farm_storage_capacity"), 200, "under-construction barn contributes zero")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "placing unfinished barn does not refresh capacity")
+	assertions.equal(recorder.events, [], "unfinished barn emits no capacity event")
+	first.complete_construction()
+	assertions.equal(main.call("_farm_storage_capacity"), 400, "one completed barn adds 200")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 400, "completion refreshes central capacity")
+	assertions.equal(recorder.events, [{"used": 0, "total": 400}], "construction completion refreshes exactly once")
+	main.farm_storage_system.refresh_capacity()
+	assertions.equal(recorder.events.size(), 1, "unchanged authoritative refresh emits nothing")
+
+	var current_day: int = main.production_system.get_current_day()
+	assertions.truthy(main.production_system.set_maintenance_due_day(first, current_day), "barn can become maintenance overdue")
+	assertions.truthy(main.production_system.is_maintenance_paused(first), "barn maintenance fixture is paused")
+	assertions.equal(main.call("_farm_storage_capacity"), 400, "maintenance pause does not lower capacity")
+	assertions.equal(recorder.events.size(), 1, "maintenance changes do not refresh farm storage")
+	assertions.truthy(main.production_system.set_maintenance_due_day(first, current_day + 14), "barn maintenance fixture resets")
+
+	for expected_level in range(1, 4):
+		var quote: Dictionary = main.economy_progression_system.get_upgrade_quote(first, "storage")
+		assertions.equal(quote.get("effect"), "中央仓库容量 +100", "barn upgrade quote exposes central capacity")
+		assertions.truthy(
+			main.economy_progression_system.upgrade(first, "storage"),
+			"completed barn storage level %d commits" % expected_level
+		)
+		assertions.equal(
+			main.farm_storage_system.get_total_capacity(),
+			400 + expected_level * 100,
+			"barn storage level %d adds exactly 100" % expected_level
+		)
+		assertions.equal(recorder.events.size(), 1 + expected_level, "committed upgrade refreshes exactly once")
+	assertions.equal(main.call("_farm_storage_capacity"), 700, "levels one through three derive 500, 600, and 700 totals")
+	assertions.equal(first.producer_state, null, "barn storage levels do not create producer output state")
+
+	var second := _add_capacity_barn(main, 44, 40, true)
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 900, "multiple completed barns stack base capacity")
+	assertions.truthy(main.economy_progression_system.upgrade(second, "storage"), "second barn storage level commits")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 1000, "multiple barn upgrade levels stack")
+	assertions.equal(recorder.events.size(), 6, "second completion and upgrade each refresh once")
+
+	assertions.truthy(main.farm_storage_system.add_items({"grain": 800}), "demolition fixture stores crops below old total")
+	var first_key: String = main.economy_progression_system.building_key(first)
+	assertions.truthy(main.building_system.remove_building(first), "upgraded barn demolition commits")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 500, "demolition removes barn base and upgrade capacity")
+	assertions.equal(main.farm_storage_system.get_count("grain"), 800, "demolition retains overloaded contents")
+	assertions.truthy(not main.farm_storage_system.add_items({"grain": 1}), "overloaded storage blocks additions")
+	assertions.truthy(
+		not main.economy_progression_system.upgrade_levels.has(first_key),
+		"demolition clears removed barn progression after capacity refresh"
+	)
+	assertions.equal(recorder.events.back(), {"used": 800, "total": 500}, "demolition publishes the correct overloaded total")
+	assertions.truthy(main.farm_storage_system.remove_items({"grain": 301}), "overload can be reduced by removals")
+	assertions.truthy(main.farm_storage_system.add_items({"grain": 1}), "additions resume once contents fit capacity")
+
+	assertions.truthy(main.building_system.remove_building(second), "second barn demolition commits")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "removing all barns restores base capacity")
+	assertions.truthy(main.farm_storage_system.restore_items_unchecked({}), "capacity fixture clears central contents")
+	main.inventory_system.restore_state(slots_before, mappings_before)
+	main.hud.call("_refresh_material_counts")
+	var game_state := main.get_node_or_null("/root/GameState")
+	if game_state != null:
+		game_state.gold = gold_before
+	main.farm_storage_system.capacity_changed.disconnect(recorder.record)
+
+
+func _add_capacity_barn(
+	main: Node,
+	gx: int,
+	gz: int,
+	completed: bool
+) -> BuildingInstance:
+	var barn := BuildingInstance.new()
+	main.buildings_container.add_child(barn)
+	barn.configure(
+		BuildingData.from_dictionary(GameDataScript.get_building("barn")),
+		gx,
+		gz,
+		[]
+	)
+	barn.start_construction()
+	main.building_system._buildings.append(barn)
+	main.building_system.call("_connect_construction_signals", barn)
+	main.building_system.building_instance_placed.emit(barn)
+	if completed:
+		barn.complete_construction()
+	return barn
 
 
 func _has_property(object: Object, property_name: String) -> bool:

@@ -259,6 +259,12 @@ func _connect_systems() -> bool:
 		building_system.building_instance_removed.connect(_on_economy_building_removed)
 	if not building_system.building_instance_placed.is_connected(_on_building_instance_placed):
 		building_system.building_instance_placed.connect(_on_building_instance_placed)
+	if not building_system.building_construction_completed.is_connected(
+		_on_farm_storage_building_completed
+	):
+		building_system.building_construction_completed.connect(
+			_on_farm_storage_building_completed
+		)
 	if not production_system.configure(
 		grid_system,
 		farming_system,
@@ -276,6 +282,17 @@ func _connect_systems() -> bool:
 		season_system,
 		get_node_or_null("/root/GameState")
 	):
+		return false
+	var event_bus := get_node_or_null("/root/EventBus")
+	if (
+		event_bus != null
+		and event_bus.has_signal("building_upgrade_changed")
+		and not event_bus.building_upgrade_changed.is_connected(
+			_on_farm_storage_building_upgraded
+		)
+	):
+		event_bus.building_upgrade_changed.connect(_on_farm_storage_building_upgraded)
+	if not farm_storage_system.configure(_farm_storage_capacity):
 		return false
 	if not economy_notification_system.configure(
 		get_node_or_null("/root/EventBus"),
@@ -902,8 +919,50 @@ func _on_economy_building_removed(building: BuildingInstance) -> void:
 		building.output_collection_requested.disconnect(
 			_on_building_output_collection_requested
 		)
+	if _is_farm_storage_barn(building) and farm_storage_system != null:
+		farm_storage_system.refresh_capacity()
 	if economy_progression_system != null:
 		economy_progression_system.clear_building_upgrades(building)
+
+
+func _on_farm_storage_building_completed(building: BuildingInstance) -> void:
+	if _is_farm_storage_barn(building) and farm_storage_system != null:
+		farm_storage_system.refresh_capacity()
+
+
+func _on_farm_storage_building_upgraded(
+	building: BuildingInstance,
+	upgrade_id: String,
+	_level: int
+) -> void:
+	if (
+		upgrade_id == "storage"
+		and _is_farm_storage_barn(building)
+		and farm_storage_system != null
+	):
+		farm_storage_system.refresh_capacity()
+
+
+func _farm_storage_capacity() -> int:
+	var total := FarmStorageSystem.DEFAULT_CAPACITY
+	if building_system == null:
+		return total
+	for building in building_system.get_all_buildings():
+		if not _is_farm_storage_barn(building) or not building.is_construction_complete():
+			continue
+		total += 200
+		if economy_progression_system != null:
+			var level := economy_progression_system.get_upgrade_level(building, "storage")
+			total += clampi(level, 0, 3) * 100
+	return total
+
+
+func _is_farm_storage_barn(building: BuildingInstance) -> bool:
+	return (
+		building != null
+		and is_instance_valid(building)
+		and building.building_id == "barn"
+	)
 
 
 func _on_building_instance_placed(building: BuildingInstance) -> void:

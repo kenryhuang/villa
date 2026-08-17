@@ -379,6 +379,28 @@ func _test_authoritative_greenhouse_crop_and_wheel_scope(assertions: TestAssert)
 
 
 func _test_barn_collection_is_atomic(assertions: TestAssert) -> void:
+	var barn_definition: Dictionary = GameDataScript.get_building("barn")
+	assertions.equal(
+		barn_definition.get("effect"),
+		"farm_storage",
+		"barn uses central farm storage semantics"
+	)
+	assertions.equal(barn_definition.get("effect_value"), 200, "completed barn contributes 200 capacity")
+	assertions.equal(
+		barn_definition.get("description"),
+		"中央仓库容量 +200；可收集半径内建筑产物",
+		"barn description distinguishes central storage from nearby collection"
+	)
+	var collection_config: Variant = (barn_definition.get("effect_config", {}) as Dictionary).get(
+		"nearby_output_collection"
+	)
+	assertions.truthy(collection_config is Dictionary, "barn collection uses an explicit config key")
+	if collection_config is Dictionary:
+		assertions.equal(collection_config.get("radius"), 6, "explicit barn collection keeps radius six")
+	assertions.truthy(
+		not (barn_definition.get("effect_config", {}) as Dictionary).has("collection_radius"),
+		"barn collection no longer overloads the storage effect config"
+	)
 	var production := _production()
 	var barn := _building("barn", 10, 10, false)
 	var hive := _building("beehive", 14, 10, true)

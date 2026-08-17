@@ -69,6 +69,14 @@ class ItemSignalCounter:
 		count += 1
 
 
+class UpgradeSignalCounter:
+	extends RefCounted
+	var records: Array[Dictionary] = []
+
+	func record(building: BuildingInstance, upgrade_id: String, level: int) -> void:
+		records.append({"building": building, "upgrade_id": upgrade_id, "level": level})
+
+
 class PurchaseReentryObserver:
 	extends RefCounted
 	var progression: Variant
@@ -129,6 +137,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_failed_service_transactions_are_signal_atomic(assertions)
 	_test_service_transactions_reject_signal_reentry(assertions, wallet)
 	_test_maintenance_and_upgrades(assertions, wallet)
+	_test_barn_central_storage_upgrades(assertions, wallet, tree)
 	_test_save_json_round_trip_atomic_rejection_and_legacy(assertions, wallet)
 	wallet.gold = original_gold
 	wallet.player_state.level = original_level
@@ -498,6 +507,12 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	var capacity_before := windmill.producer_state.output_capacity
 	for upgrade_id in ["queue_slots", "speed", "storage"]:
 		var upgrade_quote: Dictionary = progression.get_upgrade_quote(windmill, upgrade_id)
+		if upgrade_id == "storage":
+			assertions.equal(
+				upgrade_quote.get("effect"),
+				"产物容量 +1",
+				"ordinary producer storage quote keeps output-capacity wording"
+			)
 		wallet.gold = 1000
 		_give_cost(inventory, upgrade_quote.materials)
 		assertions.truthy(progression.upgrade(windmill, upgrade_id), "%s upgrade succeeds" % upgrade_id)
@@ -564,6 +579,62 @@ func _test_maintenance_and_upgrades(assertions: TestAssert, wallet: Node) -> voi
 	duplicate.maintenance.append(duplicate.maintenance[0].duplicate(true))
 	assertions.truthy(not restored_production.from_dict(duplicate), "duplicate maintenance key rejects")
 	assertions.equal(restored_production.to_dict(), before_bad, "maintenance rejection has no pollution")
+
+
+func _test_barn_central_storage_upgrades(
+	assertions: TestAssert,
+	wallet: Node,
+	tree: SceneTree
+) -> void:
+	var inventory := _inventory()
+	var tool := _tool(inventory)
+	var production := _production()
+	var day := DaySource.new()
+	var progression = _track(ProgressionScript.new())
+	assertions.truthy(
+		progression.configure(tool, production, inventory, day, wallet),
+		"barn storage upgrade fixture configures"
+	)
+	production.set_progression_system(progression)
+	var barn := _building("barn", 31, 32)
+	barn.producer_state = null
+	assertions.truthy(production.register_building(barn), "barn registers without producer output state")
+	assertions.equal(
+		production.get_supported_upgrades(barn),
+		["storage"],
+		"barn supports only central storage upgrades"
+	)
+	var event_bus := tree.root.get_node("EventBus")
+	var counter := UpgradeSignalCounter.new()
+	event_bus.building_upgrade_changed.connect(counter.record)
+	for expected_level in range(1, 4):
+		var quote: Dictionary = progression.get_upgrade_quote(barn, "storage")
+		assertions.equal(quote.get("level"), expected_level, "barn quote advances one storage level")
+		assertions.equal(
+			quote.get("effect"),
+			"中央仓库容量 +100",
+			"barn quote names the central storage effect"
+		)
+		var service_id := "upgrade_%s_storage" % ProgressionScript.building_key(barn)
+		assertions.equal(
+			_service(progression, service_id).get("effect"),
+			"中央仓库容量 +100",
+			"barn service names the central storage effect"
+		)
+		wallet.gold = 1000
+		_give_cost(inventory, quote.get("materials", {}))
+		assertions.truthy(progression.upgrade(barn, "storage"), "barn storage level %d commits" % expected_level)
+		assertions.equal(barn.producer_state, null, "barn storage upgrade creates no producer output state")
+	assertions.equal(progression.get_upgrade_level(barn, "storage"), 3, "barn storage level caps at three")
+	assertions.truthy(not progression.upgrade(barn, "storage"), "barn rejects a fourth storage level")
+	assertions.equal(counter.records.size(), 3, "each committed barn upgrade emits exactly once")
+	if counter.records.size() == 3:
+		assertions.equal(
+			counter.records.map(func(record: Dictionary) -> int: return int(record.level)),
+			[1, 2, 3],
+			"barn upgrade events preserve committed levels"
+		)
+	event_bus.building_upgrade_changed.disconnect(counter.record)
 
 
 func _test_failed_service_transactions_are_signal_atomic(assertions: TestAssert) -> void:
