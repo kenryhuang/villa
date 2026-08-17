@@ -188,7 +188,6 @@ func arm_exp_publication(publication: Variant) -> RefCounted:
 
 func release_exp_event_barrier(barrier: Variant) -> void:
 	if not _is_exp_event_barrier_owner(barrier):
-		push_error("Invalid experience event barrier ownership")
 		return
 	_exp_event_barrier_owner = null
 	_exp_event_dispatch_suspended = false
@@ -285,6 +284,16 @@ func _drain_exp_event_queue() -> void:
 	_is_dispatching_exp_events = false
 
 
+func invalidate_exp_state_for_replacement() -> void:
+	_exp_transaction_owner = null
+	_exp_transaction.clear()
+	_exp_publication_owner = null
+	_exp_publication.clear()
+	_exp_event_barrier_owner = null
+	_exp_event_dispatch_suspended = false
+	_exp_event_queue.clear()
+
+
 func set_harvest_seed(value: int) -> bool:
 	if not is_valid_harvest_seed(value):
 		return false
@@ -307,8 +316,7 @@ static func _generate_harvest_seed() -> int:
 
 
 func reset_to_new_game() -> void:
-	_clear_exp_transaction()
-	_clear_exp_publication()
+	invalidate_exp_state_for_replacement()
 	gold = 100
 	harvest_seed = _generate_harvest_seed()
 	player_state.stamina = 100

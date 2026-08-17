@@ -325,6 +325,8 @@ func _apply_migrated_save_data(data: Dictionary) -> bool:
 
 	# 游戏状态
 	if game_state and data.has("gold"):
+		if game_state.has_method("invalidate_exp_state_for_replacement"):
+			game_state.invalidate_exp_state_for_replacement()
 		game_state.gold = data.gold
 		if data.has("player"):
 			var p = data.player

@@ -7,6 +7,12 @@ const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
+const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
+const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
+const FarmStorageSystemScript = preload("res://scripts/systems/farm_storage_system.gd")
+const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const PlayerActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
+const CropDataScript = preload("res://scripts/data/crop_data.gd")
 const TEST_SAVE_DIR := "user://villa_test_saves/economy_task_5/"
 const TEST_SLOT := 3
 const BAD_SLOT := 4
@@ -52,6 +58,24 @@ class SettlementObserver:
 
 	func on_market_settled(_total_day: int) -> void:
 		calls += 1
+
+
+class LoadOnStorageObserver:
+	extends RefCounted
+	var manager: Node
+	var slot := 0
+	var results: Array[bool] = []
+
+	func on_storage_changed(_changes: Dictionary) -> void:
+		results.append(manager.load_game(slot))
+
+
+class ExpSignalRecorder:
+	extends RefCounted
+	var amounts: Array[int] = []
+
+	func on_exp_gained(amount: int) -> void:
+		amounts.append(amount)
 
 
 class BuildingSignalObserver:
@@ -118,6 +142,7 @@ class StateTransitionOwnerDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_harvest_seed_round_trip_migration_and_atomic_rejection(assertions, tree)
 	_test_save_round_trip_and_legacy_load(assertions, tree)
+	_test_harvest_storage_callback_load_invalidates_exp(assertions, tree)
 	_test_npc_economy_round_trip_atomic_rejection_and_legacy_backfill(assertions, tree)
 	_test_task13_full_json_round_trip_and_starter_lifecycle(assertions, tree)
 	_test_task13_legacy_iron_migration_and_missing_economy_idempotence(assertions, tree)
@@ -357,6 +382,98 @@ func _test_save_round_trip_and_legacy_load(assertions: TestAssert, tree: SceneTr
 	manager.free()
 	daily.free()
 	market.free()
+	_cleanup()
+
+
+func _test_harvest_storage_callback_load_invalidates_exp(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var game_state := tree.root.get_node_or_null("GameState")
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(game_state != null and event_bus != null, "load-during-harvest fixture has core autoloads")
+	if game_state == null or event_bus == null:
+		return
+	var original := {
+		"gold": game_state.gold,
+		"harvest_seed": game_state.harvest_seed,
+		"stamina": game_state.player_state.stamina,
+		"max_stamina": game_state.player_state.max_stamina,
+		"level": game_state.player_state.level,
+		"exp": game_state.player_state.exp,
+	}
+	var market := MarketSystemScript.new()
+	var daily := DailySimulationSystem.new()
+	var manager := SaveManagerScript.new()
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(market)
+	tree.root.add_child(daily)
+	tree.root.add_child(manager)
+	assertions.truthy(manager.configure_economy(market, daily), "load-during-harvest manager configures")
+	assertions.truthy(market.configure([_wood_definition()]), "load-during-harvest market configures")
+	game_state.gold = 321
+	game_state.player_state.stamina = 77
+	game_state.player_state.max_stamina = 120
+	game_state.player_state.level = 3
+	game_state.player_state.exp = 250
+	assertions.truthy(manager.save_game(TEST_SLOT), "load-during-harvest fixture saves replacement state")
+	game_state.player_state.level = 1
+	game_state.player_state.exp = 0
+
+	var grid := GridSystemScript.new()
+	grid._event_bus = event_bus
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, game_state)
+	farming._event_bus = event_bus
+	var storage := FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var inventory := InventorySystemScript.new()
+	var controller := PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
+	var crop := CropDataScript.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 3
+	crop.yield_min = 1
+	crop.yield_max = 1
+	crop.exp_reward = 4
+	crop.lifecycle_type = "annual"
+	grid.set_cell_state(15, 15, GridCell.State.FARMLAND)
+	var cell := grid.get_cell(15, 15)
+	var instance: CropInstance = farming.plant(cell, crop)
+	instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+	var loader := LoadOnStorageObserver.new()
+	loader.manager = manager
+	loader.slot = TEST_SLOT
+	var exp_recorder := ExpSignalRecorder.new()
+	storage.contents_changed.connect(loader.on_storage_changed)
+	event_bus.exp_gained.connect(exp_recorder.on_exp_gained)
+
+	assertions.truthy(controller._harvest(cell), "atomic harvest remains committed when storage callback loads")
+	assertions.equal(loader.results, [true], "storage callback completes one public save load")
+	assertions.equal(game_state.player_state.exp, 250, "load keeps exact restored EXP")
+	assertions.equal(game_state.player_state.level, 3, "load keeps exact restored level")
+	assertions.equal(exp_recorder.amounts, [], "invalidated harvest EXP never publishes after load")
+	assertions.equal(storage.get_items(), {"grain": 1}, "load callback does not roll storage back")
+	assertions.equal(cell.state, GridCell.State.FARMLAND, "load callback does not roll crop harvest back")
+
+	storage.contents_changed.disconnect(loader.on_storage_changed)
+	event_bus.exp_gained.disconnect(exp_recorder.on_exp_gained)
+	controller.free()
+	storage.free()
+	inventory.free()
+	farming.free()
+	grid.free()
+	manager.free()
+	daily.free()
+	market.free()
+	game_state.gold = int(original.gold)
+	game_state.harvest_seed = int(original.harvest_seed)
+	game_state.player_state.stamina = int(original.stamina)
+	game_state.player_state.max_stamina = int(original.max_stamina)
+	game_state.player_state.level = int(original.level)
+	game_state.player_state.exp = int(original.exp)
 	_cleanup()
 
 

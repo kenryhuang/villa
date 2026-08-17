@@ -360,9 +360,12 @@ func seal_prepared_harvest(token: Variant) -> RefCounted:
 
 func owns_harvest_publication(publication: Variant) -> bool:
 	_recover_abandoned_harvest_publication()
+	if not _is_harvest_publication_owner(publication):
+		return false
+	if bool(_harvest_publication.get("armed", false)):
+		return true
 	return (
-		_is_harvest_publication_owner(publication)
-		and _harvest_publication_state_matches()
+		_harvest_publication_state_matches()
 		and _exp_publication_is_owned()
 		and _grid_receipt_is_owned()
 	)
@@ -402,10 +405,6 @@ func arm_harvest_publication(publication: Variant) -> void:
 		)
 	var cell: GridCell = _harvest_publication.cell
 	var preview: Dictionary = _harvest_publication.preview
-	if bool(preview.regrowing) and cell.crop_instance != null:
-		_update_visual(cell, cell.crop_instance)
-	else:
-		_remove_visual(cell)
 	_farming_event_dispatch_suspended = true
 	_queue_farming_event_batch([
 		{
@@ -422,6 +421,13 @@ func arm_harvest_publication(publication: Variant) -> void:
 		},
 	])
 	_harvest_publication.armed = true
+	_harvest_publication.visual_commit_in_progress = true
+	if bool(preview.regrowing) and cell.crop_instance != null:
+		_update_visual(cell, cell.crop_instance)
+	else:
+		_remove_visual(cell)
+	if _is_harvest_publication_owner(publication):
+		_harvest_publication.visual_commit_in_progress = false
 
 
 func stage_harvest_publication(publication: Variant) -> void:
@@ -432,8 +438,12 @@ func stage_harvest_publication(publication: Variant) -> void:
 
 
 func publish_harvest_publication(publication: Variant) -> void:
-	if not _is_harvest_publication_owner(publication) or not bool(_harvest_publication.armed):
+	if not _is_harvest_publication_owner(publication):
+		return
+	if not bool(_harvest_publication.armed):
 		push_error("Invalid staged harvest publication ownership")
+		return
+	if bool(_harvest_publication.get("visual_commit_in_progress", false)):
 		return
 	var transactional_exp := bool(_harvest_publication.transactional_exp)
 	var exp_barrier: Variant = _harvest_publication.get("exp_barrier")
@@ -607,7 +617,16 @@ func _emit_cell_state(cell: GridCell) -> void:
 func _queue_farming_event_batch(events: Array) -> void:
 	if events.is_empty():
 		return
-	_farming_event_queue.append(events.duplicate(true))
+	var immutable_batch: Array = []
+	for event_value in events:
+		var event: Dictionary = (event_value as Dictionary).duplicate(true)
+		var args: Array = (event.get("args", []) as Array).duplicate(true)
+		args.make_read_only()
+		event.args = args
+		event.make_read_only()
+		immutable_batch.append(event)
+	immutable_batch.make_read_only()
+	_farming_event_queue.append(immutable_batch)
 	_drain_farming_event_queue()
 
 

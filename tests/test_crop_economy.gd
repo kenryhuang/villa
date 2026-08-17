@@ -104,6 +104,8 @@ class QuickMappingRecorder:
 class CropEventRecorder:
 	extends Node
 
+	signal gold_changed(amount: int)
+	signal stamina_changed(amount: int)
 	signal crop_planted(gx: int, gz: int, crop_id: String)
 	signal crop_harvested(gx: int, gz: int, crop_id: String)
 	signal cell_state_changed(gx: int, gz: int, state: int)
@@ -182,6 +184,50 @@ class HarvestRewardObserver:
 			return
 		rewarded_from_exp = true
 		exp_results.append(state.add_exp(5))
+
+
+class ResetOnStorageObserver:
+	extends RefCounted
+	var state: Node
+	var calls := 0
+
+	func on_storage_changed(_changes: Dictionary) -> void:
+		calls += 1
+		state.reset_to_new_game()
+
+
+class StorageReplantObserver:
+	extends RefCounted
+	var farming: FarmingSystem
+	var cell: GridCell
+	var replacement: CropData
+	var replanted: CropInstance
+
+	func on_storage_changed(_changes: Dictionary) -> void:
+		replanted = farming.plant(cell, replacement)
+
+
+class VisualTreeReentryObserver:
+	extends RefCounted
+	var farming: FarmingSystem
+	var probe_calls := 0
+	var saw_armed := false
+	var owner_checks: Array[bool] = []
+	var cancel_checks: Array[bool] = []
+	var early_harvest_events := -1
+	var recorder: CropEventRecorder
+
+	func on_child_exiting_tree(_node: Node) -> void:
+		probe_calls += 1
+		var owner := farming.get("_harvest_publication_owner") as WeakRef
+		var publication: Variant = owner.get_ref() if owner != null else null
+		var publication_state := farming.get("_harvest_publication") as Dictionary
+		saw_armed = bool(publication_state.get("armed", false))
+		owner_checks.append(farming.owns_harvest_publication(publication))
+		cancel_checks.append(farming.cancel_harvest_publication(publication))
+		if saw_armed:
+			farming.publish_harvest_publication(publication)
+		early_harvest_events = recorder.harvested_events.size() if recorder != null else -1
 
 
 class HarvestGameState:
@@ -456,6 +502,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_farming_active_token_abandonment(assertions, tree)
 	_test_coordinated_harvest_abandonment(assertions, tree)
 	_test_harvest_callback_exp_rewards_are_fifo(assertions, tree)
+	_test_visual_reentrancy_observes_armed_commit(assertions, tree)
+	_test_storage_replant_keeps_replacement_visual(assertions, tree)
+	_test_storage_callback_reset_invalidates_harvest_exp(assertions, tree)
 	_test_exp_replant_preserves_harvest_event_order(assertions, tree)
 	_test_controller_seal_failure_rolls_back_silent_apply(assertions, tree)
 	_test_controller_commits_exact_harvest_preview(assertions, tree)
@@ -1416,6 +1465,211 @@ func _test_harvest_callback_exp_rewards_are_fifo(
 	storage.contents_changed.disconnect(rewards.on_storage_changed)
 	events.crop_harvested.disconnect(rewards.on_crop_harvested)
 	events.exp_gained.disconnect(rewards.on_exp_gained)
+	controller.queue_free()
+	storage.queue_free()
+	state.queue_free()
+	events.free()
+	inventory.free()
+	farming.free()
+	grid.free()
+
+
+func _test_visual_reentrancy_observes_armed_commit(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var events := CropEventRecorder.new()
+	var state := GameStateScript.new()
+	tree.root.add_child(state)
+	state._event_bus = events
+	state.harvest_seed = 606
+	var grid := GridSystemScript.new()
+	grid._event_bus = events
+	var farming := FarmingSystemScript.new()
+	tree.root.add_child(farming)
+	farming.configure(grid, null, state)
+	farming._event_bus = events
+	var storage := FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var inventory := InventorySystemScript.new()
+	var controller := PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
+	var crop := CropDataScript.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 4
+	crop.regrow_days = 2
+	crop.yield_min = 1
+	crop.yield_max = 1
+	crop.exp_reward = 7
+	crop.lifecycle_type = "annual_regrow"
+	crop.stage_scenes.assign([
+		"res://assets/crops/grain/grain_stage_0_seed.tscn",
+		"res://assets/crops/grain/grain_stage_1_sprout.tscn",
+		"res://assets/crops/grain/grain_stage_2_growing.tscn",
+		"res://assets/crops/grain/grain_stage_3_mature.tscn",
+	])
+	grid.set_cell_state(13, 13, FARMLAND)
+	var cell := grid.get_cell(13, 13)
+	var instance: CropInstance = farming.plant(cell, crop)
+	_set_mature(instance, 4.0)
+	farming.call("_update_visual", cell, instance)
+	var visual := farming.get_crop_visual(cell)
+	var visual_parent := visual.get_parent() if visual != null else null
+	var visual_probe := VisualTreeReentryObserver.new()
+	visual_probe.farming = farming
+	visual_probe.recorder = events
+	if visual_parent != null:
+		visual_parent.child_exiting_tree.connect(visual_probe.on_child_exiting_tree)
+	events.cell_events.clear()
+	events.harvested_events.clear()
+	events.exp_events.clear()
+	events.timeline.clear()
+
+	assertions.truthy(controller._harvest(cell), "regrow harvest survives visual reentrancy")
+	assertions.equal(visual_probe.probe_calls, 1, "stage replacement invokes one node-tree reentrant probe")
+	assertions.truthy(visual_probe.saw_armed, "visual callback observes Farming past the commit point")
+	assertions.equal(visual_probe.owner_checks, [true], "visual callback retains committed publication ownership")
+	assertions.equal(visual_probe.cancel_checks, [false], "visual callback cannot roll back an armed publication")
+	assertions.equal(visual_probe.early_harvest_events, 0, "visual callback cannot publish old events early")
+	assertions.truthy((farming.get("_harvest_publication") as Dictionary).is_empty(), "controller consumes the armed publication")
+	assertions.equal(storage.get_items(), {"grain": 1}, "visual reentrancy keeps storage commit")
+	assertions.truthy(cell.crop_instance == instance, "visual reentrancy keeps regrow crop identity")
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "visual reentrancy keeps regrow state")
+	assertions.equal(state.player_state.exp, 7, "visual reentrancy keeps EXP commit")
+	assertions.equal(events.harvested_events.size(), 1, "visual reentrancy publishes harvest once")
+	assertions.equal(events.exp_events, [7], "visual reentrancy publishes EXP once")
+
+	if visual_parent != null:
+		visual_parent.child_exiting_tree.disconnect(visual_probe.on_child_exiting_tree)
+	controller.queue_free()
+	storage.queue_free()
+	state.queue_free()
+	events.free()
+	inventory.free()
+	farming.queue_free()
+	grid.free()
+
+
+func _test_storage_replant_keeps_replacement_visual(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var events := CropEventRecorder.new()
+	var state := GameStateScript.new()
+	tree.root.add_child(state)
+	state._event_bus = events
+	state.harvest_seed = 707
+	var grid := GridSystemScript.new()
+	grid._event_bus = events
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	farming._event_bus = events
+	var storage := FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var inventory := InventorySystemScript.new()
+	var controller := PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
+	var annual := CropDataScript.new()
+	annual.crop_id = "grain"
+	annual.growth_days = 3
+	annual.yield_min = 1
+	annual.yield_max = 1
+	annual.exp_reward = 4
+	annual.lifecycle_type = "annual"
+	var replacement := CropDataScript.new()
+	replacement.crop_id = "turnip"
+	replacement.growth_days = 2
+	replacement.lifecycle_type = "annual"
+	grid.set_cell_state(16, 16, FARMLAND)
+	var cell := grid.get_cell(16, 16)
+	var instance: CropInstance = farming.plant(cell, annual)
+	_set_mature(instance, 3.0)
+	farming.call("_update_visual", cell, instance)
+	events.cell_events.clear()
+	events.harvested_events.clear()
+	events.planted_events.clear()
+	events.exp_events.clear()
+	events.timeline.clear()
+	var replanter := StorageReplantObserver.new()
+	replanter.farming = farming
+	replanter.cell = cell
+	replanter.replacement = replacement
+	storage.contents_changed.connect(replanter.on_storage_changed)
+
+	assertions.truthy(controller._harvest(cell), "annual harvest commits with storage-callback replant")
+	assertions.truthy(replanter.replanted != null, "storage callback replants the committed farmland")
+	assertions.truthy(cell.crop_instance == replanter.replanted, "replacement crop owns final cell state")
+	var replacement_visual := farming.get_crop_visual(cell)
+	assertions.truthy(replacement_visual != null, "replacement planted from storage callback keeps its visual")
+	if replacement_visual != null:
+		assertions.equal(replacement_visual.get_meta("crop_id", ""), "turnip", "old harvest cleanup cannot erase replacement visual")
+	assertions.equal(
+		events.timeline,
+		["cell:%d" % FARMLAND, "harvest:grain", "cell:%d" % PLANTED, "plant:turnip", "exp:4"],
+		"old harvest transition remains causally ahead of storage-callback replant"
+	)
+
+	storage.contents_changed.disconnect(replanter.on_storage_changed)
+	controller.queue_free()
+	storage.queue_free()
+	state.queue_free()
+	events.free()
+	inventory.free()
+	farming.free()
+	grid.free()
+
+
+func _test_storage_callback_reset_invalidates_harvest_exp(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var events := CropEventRecorder.new()
+	var state := GameStateScript.new()
+	tree.root.add_child(state)
+	state._event_bus = events
+	state.harvest_seed = 707
+	var grid := GridSystemScript.new()
+	grid._event_bus = events
+	var farming := FarmingSystemScript.new()
+	farming.configure(grid, null, state)
+	farming._event_bus = events
+	var storage := FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var inventory := InventorySystemScript.new()
+	var controller := PlayerActionControllerScript.new()
+	tree.root.add_child(controller)
+	controller.configure(null, grid, farming, null, null, inventory, storage)
+	var crop := CropDataScript.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 3
+	crop.yield_min = 1
+	crop.yield_max = 1
+	crop.exp_reward = 4
+	crop.lifecycle_type = "annual"
+	grid.set_cell_state(14, 14, FARMLAND)
+	var cell := grid.get_cell(14, 14)
+	var instance: CropInstance = farming.plant(cell, crop)
+	_set_mature(instance, 3.0)
+	events.cell_events.clear()
+	events.harvested_events.clear()
+	events.exp_events.clear()
+	events.timeline.clear()
+	var resetter := ResetOnStorageObserver.new()
+	resetter.state = state
+	storage.contents_changed.connect(resetter.on_storage_changed)
+
+	assertions.truthy(controller._harvest(cell), "harvest remains committed when storage callback resets state")
+	assertions.equal(resetter.calls, 1, "storage callback resets exactly once")
+	assertions.equal(state.player_state.exp, 0, "reset keeps exact replacement EXP")
+	assertions.equal(state.player_state.level, 1, "reset keeps exact replacement level")
+	assertions.equal(events.exp_events, [0], "invalidated harvest EXP never publishes after reset")
+	assertions.equal(storage.get_items(), {"grain": 1}, "reset callback does not roll storage back")
+	assertions.equal(cell.state, FARMLAND, "reset callback does not roll crop harvest back")
+	assertions.equal(events.harvested_events.size(), 1, "reset callback still publishes crop success once")
+
+	storage.contents_changed.disconnect(resetter.on_storage_changed)
 	controller.queue_free()
 	storage.queue_free()
 	state.queue_free()

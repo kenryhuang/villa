@@ -75,6 +75,7 @@ func run(assertions: TestAssert) -> void:
 	grid.free()
 	_test_harvest_rollback_invariants(assertions)
 	_test_harvest_mutation_receipt_identity(assertions)
+	_test_state_replacement_settles_harvest_receipt(assertions)
 
 
 func _test_harvest_rollback_invariants(assertions: TestAssert) -> void:
@@ -184,6 +185,57 @@ func _test_harvest_mutation_receipt_identity(assertions: TestAssert) -> void:
 	)
 	assertions.equal(grid.get_crop_snapshot(8, 8), before, "receipt recovery restores exact annual snapshot")
 	grid.free()
+
+
+func _test_state_replacement_settles_harvest_receipt(assertions: TestAssert) -> void:
+	for replacement in ["reset", "from_dict"]:
+		var grid = GridSystemScript.new()
+		var data = _make_crop_data("grain", 3)
+		grid.set_cell_state(9, 9, FARMLAND)
+		var original: CropInstance = grid.plant_crop(9, 9, data)
+		original.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+		var before := grid.get_crop_snapshot(9, 9)
+		var after := {
+			"gx": 9,
+			"gz": 9,
+			"cell_state": FARMLAND,
+			"watered": false,
+			"crop": null,
+		}
+		var old_receipt: Variant = grid.apply_crop_harvest_transaction(before, after)
+		assertions.truthy(old_receipt is RefCounted, "%s fixture retains a live receipt" % replacement)
+		if replacement == "reset":
+			grid.reset_state()
+		else:
+			assertions.truthy(
+				grid.from_dict({
+					"version": GridSystemScript.SERIALIZATION_VERSION,
+					"cells": [{
+						"gx": 9,
+						"gz": 9,
+						"state": FARMLAND,
+						"watered": false,
+					}],
+				}),
+				"from_dict replacement succeeds with a retained receipt"
+			)
+		assertions.truthy(
+			not grid.owns_crop_harvest_transaction(old_receipt),
+			"%s invalidates the old receipt" % replacement
+		)
+		grid.set_cell_state(9, 9, FARMLAND)
+		var next: CropInstance = grid.plant_crop(9, 9, data)
+		assertions.truthy(next != null, "%s replacement accepts a new crop" % replacement)
+		next.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+		var next_before := grid.get_crop_snapshot(9, 9)
+		var next_receipt: Variant = grid.apply_crop_harvest_transaction(next_before, after)
+		assertions.truthy(next_receipt is RefCounted, "%s replacement accepts a new harvest transaction" % replacement)
+		if next_receipt != null:
+			assertions.truthy(
+				grid.rollback_crop_harvest_transaction(next_receipt, next),
+				"%s replacement leaves receipt lifecycle usable" % replacement
+			)
+		grid.free()
 
 
 func _make_regrow_rollback_fixture() -> Dictionary:

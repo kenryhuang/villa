@@ -669,6 +669,7 @@ func to_dict() -> Dictionary:
 
 
 func reset_state() -> void:
+	_settle_crop_harvest_receipt_for_state_replacement()
 	for key in _cells:
 		var cell: GridCell = _cells[key]
 		cell.state = int(_base_states.get(key, GridCell.State.WASTELAND)) as GridCell.State
@@ -760,6 +761,7 @@ func validate_dict(data: Dictionary) -> bool:
 func from_dict(data: Dictionary) -> bool:
 	if not validate_dict(data):
 		return false
+	_settle_crop_harvest_receipt_for_state_replacement()
 	for entry in data.cells:
 		if not entry is Dictionary:
 			continue
@@ -786,6 +788,15 @@ func from_dict(data: Dictionary) -> bool:
 	rebuild_farmland_visuals()
 	notify_navigation_state_changed()
 	return true
+
+
+func _settle_crop_harvest_receipt_for_state_replacement() -> void:
+	if _crop_harvest_receipt.is_empty():
+		_crop_harvest_receipt_owner = null
+		return
+	if _crop_harvest_receipt_state_matches() and _rollback_crop_harvest_receipt():
+		return
+	_clear_crop_harvest_receipt()
 
 
 func _is_integer_number(value: Variant) -> bool:
