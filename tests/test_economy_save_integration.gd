@@ -275,6 +275,9 @@ class StateTransitionOwnerDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_task7_unversioned_inventory_public_load(assertions, tree)
+	_test_task7_deterministic_season_migration(assertions, tree)
+	_test_task7_hostile_legacy_structure_rejection(assertions, tree)
 	_test_task7_canonical_environment_stability_matrix(assertions, tree)
 	_test_task7_farm_storage_canonical_and_legacy_migration(assertions, tree)
 	_test_task7_legacy_lifecycle_matrix_and_storage_notifications(assertions, tree)
@@ -299,6 +302,278 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_building_load_signals_are_transactional(assertions, tree)
 	_test_farm_storage_capacity_refreshes_after_committed_load(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
+
+
+func _test_task7_unversioned_inventory_public_load(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task7UnversionedSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var game_state := tree.root.get_node("GameState")
+	var observer := FarmStorageRestoreObserver.new()
+	observer.storage = main.farm_storage_system
+	observer.game_state = game_state
+	main.farm_storage_system.contents_changed.connect(observer.on_contents_changed)
+
+	var slots: Array[Dictionary] = [
+		{"item_id": "grain", "quantity": 99},
+		{"item_id": "grain_seed", "quantity": 7},
+		{"item_id": "wood", "quantity": 4},
+		{"item_id": "grain", "quantity": 20},
+		{"item_id": "iron", "quantity": 5},
+		{"item_id": "iron_ingot", "quantity": 3},
+	]
+	var crop_payload := _unversioned_inventory_payload(
+		manager._gather_save_data(),
+		{"slots": slots, "quick_mappings": [0, 1, 4, 5, 2, 99]}
+	)
+	main.farm_storage_system.restore_items_unchecked({"tomato": 44})
+	observer.events.clear()
+	_write_json(manager._save_path(TEST_SLOT), crop_payload)
+	assertions.truthy(manager.load_game(TEST_SLOT), "unversioned crop inventory loads through public API")
+	assertions.equal(main.farm_storage_system.get_items(), {"grain": 119}, "unversioned crop stacks move exactly into storage")
+	assertions.equal(main.inventory_system.slots[1], {"item_id": "grain_seed", "quantity": 7}, "unversioned seed preserves its relative slot")
+	assertions.equal(main.inventory_system.slots[2], {"item_id": "wood", "quantity": 4}, "unversioned material preserves its relative slot")
+	assertions.equal(main.inventory_system.get_item_count("iron"), 0, "unversioned historical iron id is removed")
+	assertions.equal(main.inventory_system.get_item_count("iron_ingot"), 8, "unversioned historical iron quantity is preserved")
+	assertions.equal(main.inventory_system.quick_slot_mappings, [-1, 1, 4, 4, 2, -1], "unversioned quick mappings follow migrations and clear crops")
+	assertions.equal(observer.events.size(), 1, "unversioned crop load publishes one final storage event")
+
+	var no_crop_slots: Array[Dictionary] = [
+		{},
+		{"item_id": "grain_seed", "quantity": 7},
+		{"item_id": "wood", "quantity": 4},
+		{},
+		{"item_id": "iron", "quantity": 5},
+		{"item_id": "iron_ingot", "quantity": 3},
+	]
+	var no_crop_payload := _unversioned_inventory_payload(
+		manager._gather_save_data(),
+		{"slots": no_crop_slots, "quick_mappings": [-1, 1, 4, 5, 2, -1]}
+	)
+	main.farm_storage_system.restore_items_unchecked({"blueberry": 73})
+	observer.events.clear()
+	_write_json(manager._save_path(TEST_SLOT), no_crop_payload)
+	assertions.truthy(manager.load_game(TEST_SLOT), "unversioned no-crop inventory loads through public API")
+	assertions.truthy(main.farm_storage_system.get_items().is_empty(), "unversioned no-crop load clears dirty runtime storage")
+	assertions.equal(main.inventory_system.get_item_count("iron_ingot"), 8, "unversioned no-crop load still applies item history")
+	assertions.equal(observer.events.size(), 1, "unversioned no-crop load publishes the coherent cleared storage")
+	assertions.truthy(manager.load_game(TEST_SLOT), "repeated unversioned no-crop load remains accepted")
+	assertions.truthy(main.farm_storage_system.get_items().is_empty(), "repeated unversioned load is storage-idempotent")
+	assertions.equal(main.inventory_system.get_item_count("iron_ingot"), 8, "repeated unversioned load is inventory-idempotent")
+
+	main.farm_storage_system.restore_items_unchecked({"carrot": 61})
+	observer.events.clear()
+	var missing_inventory := no_crop_payload.duplicate(true)
+	missing_inventory.erase("inventory")
+	_write_json(manager._save_path(BAD_SLOT), missing_inventory)
+	assertions.truthy(not manager.load_game(BAD_SLOT), "unversioned Main save missing inventory rejects consistently")
+	assertions.equal(main.farm_storage_system.get_items(), {"carrot": 61}, "missing unversioned inventory preserves dirty storage")
+	assertions.truthy(observer.events.is_empty(), "missing unversioned inventory publishes no storage event")
+
+	var malformed := crop_payload.duplicate(true)
+	malformed.inventory.slots[0]["quantity"] = 100
+	_write_json(manager._save_path(BAD_SLOT), malformed)
+	var inventory_before: Array = main.inventory_system.slots.duplicate(true)
+	assertions.truthy(not manager.load_game(BAD_SLOT), "malformed unversioned crop stack rejects")
+	assertions.equal(main.farm_storage_system.get_items(), {"carrot": 61}, "failed unversioned migration preserves storage")
+	assertions.equal(main.inventory_system.slots, inventory_before, "failed unversioned migration preserves inventory")
+	assertions.truthy(observer.events.is_empty(), "failed unversioned migration remains notification-silent")
+
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _unversioned_inventory_payload(source: Dictionary, inventory: Dictionary) -> Dictionary:
+	var payload := source.duplicate(true)
+	for field in [
+		"building_layout_version", "grid", "buildings", "farm_storage",
+		"economy_version", "market", "last_simulated_day", "resource_nodes",
+		"npc_economy", "economy_state", "progression", "tool_durability",
+		"production_upkeep", "notifications",
+	]:
+		payload.erase(field)
+	payload["inventory"] = inventory.duplicate(true)
+	return payload
+
+
+func _test_task7_deterministic_season_migration(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task7SeasonSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var season_system = main.season_system
+	var empty_slots: Array[Dictionary] = []
+	empty_slots.resize(20)
+	for index in range(empty_slots.size()):
+		empty_slots[index] = {}
+	var legacy_base := manager._gather_save_data().duplicate(true)
+	for field in [
+		"farm_storage", "economy_version", "market", "last_simulated_day",
+		"resource_nodes", "npc_economy", "economy_state", "progression",
+		"tool_durability", "production_upkeep", "notifications",
+	]:
+		legacy_base.erase(field)
+	legacy_base["inventory"] = {"slots": empty_slots, "quick_mappings": [-1, -1, -1, -1, -1, -1]}
+	legacy_base["buildings"] = []
+	legacy_base["grid"] = {"version": 1, "cells": [_legacy_crop_cell(10, 10, "tomato", 1.0)]}
+	legacy_base["building_layout_version"] = 1
+	legacy_base.erase("season")
+
+	for legacy_version in [1, 2]:
+		var missing_legacy_season := legacy_base.duplicate(true)
+		missing_legacy_season["building_layout_version"] = legacy_version
+		missing_legacy_season.grid["version"] = legacy_version
+		season_system.current_season = 2
+		_write_json(manager._save_path(TEST_SLOT), missing_legacy_season)
+		assertions.truthy(manager.load_game(TEST_SLOT), "v%d missing legacy season loads with documented default" % legacy_version)
+		assertions.equal(int(season_system.current_season), 0, "v%d missing legacy season applies spring default" % legacy_version)
+		assertions.equal(main.grid_system.get_cell(10, 10).crop_instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "v%d lifecycle derives from the applied spring default" % legacy_version)
+
+	var explicit_legacy := legacy_base.duplicate(true)
+	explicit_legacy["building_layout_version"] = 2
+	explicit_legacy.grid["version"] = 2
+	explicit_legacy["season"] = 2
+	_write_json(manager._save_path(TEST_SLOT), explicit_legacy)
+	assertions.truthy(manager.load_game(TEST_SLOT), "legacy explicit season loads")
+	assertions.equal(int(season_system.current_season), 2, "legacy explicit season applies exactly")
+	assertions.equal(main.grid_system.get_cell(10, 10).crop_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "legacy explicit season drives lifecycle derivation")
+
+	var current_explicit_value: Variant = manager._migrate_save_data(explicit_legacy)
+	assertions.truthy(current_explicit_value is Dictionary, "season fixture produces canonical v3 data")
+	if current_explicit_value is Dictionary:
+		var current_explicit := (current_explicit_value as Dictionary).duplicate(true)
+		var current_missing := current_explicit.duplicate(true)
+		current_missing.erase("season")
+		season_system.current_season = 1
+		var grid_before: Dictionary = main.grid_system.to_dict().duplicate(true)
+		_write_json(manager._save_path(BAD_SLOT), current_missing)
+		assertions.truthy(not manager.load_game(BAD_SLOT), "crop-bearing current v3 missing season rejects")
+		assertions.equal(int(season_system.current_season), 1, "rejected current v3 preserves runtime season")
+		assertions.equal(main.grid_system.to_dict(), grid_before, "rejected current v3 preserves crop lifecycle")
+		current_explicit["season"] = 2
+		_write_json(manager._save_path(TEST_SLOT), current_explicit)
+		assertions.truthy(manager.load_game(TEST_SLOT), "crop-bearing current v3 explicit season loads")
+		assertions.equal(int(season_system.current_season), 2, "current v3 explicit season applies exactly")
+
+	for invalid_season in ["summer", 1.5, -1, 4]:
+		var invalid_legacy := legacy_base.duplicate(true)
+		invalid_legacy["season"] = invalid_season
+		season_system.current_season = 3
+		_write_json(manager._save_path(BAD_SLOT), invalid_legacy)
+		assertions.truthy(not manager.load_game(BAD_SLOT), "legacy invalid explicit season rejects: %s" % [invalid_season])
+		assertions.equal(int(season_system.current_season), 3, "legacy invalid season preserves runtime: %s" % [invalid_season])
+
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _test_task7_hostile_legacy_structure_rejection(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task7HostileSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	var base := manager._gather_save_data().duplicate(true)
+	for field in [
+		"farm_storage", "economy_version", "market", "resource_nodes",
+		"npc_economy", "economy_state", "progression", "tool_durability",
+		"production_upkeep", "notifications",
+	]:
+		base.erase(field)
+	base["building_layout_version"] = 1
+	base["buildings"] = []
+	base["grid"] = {"version": 1, "cells": [_legacy_crop_cell(8, 8, "tomato", 1.0)]}
+	base.erase("farm_storage")
+	var hostile_cases: Array[Dictionary] = []
+	for field_and_value in [
+		["season", {}], ["season", 1.5], ["season", 9],
+		["total_days", []], ["last_simulated_day", "1"],
+	]:
+		var payload := base.duplicate(true)
+		payload[field_and_value[0]] = field_and_value[1]
+		hostile_cases.append({"name": "calendar %s=%s" % [field_and_value[0], field_and_value[1]], "payload": payload})
+	var barn_location := _find_restore_location(main, "barn")
+	var valid_barn := _plain_building_record(main, "barn", barn_location)
+	for field_and_value in [
+		["building_id", []], ["gx", {}], ["gx", 1.5], ["gx", 9007199254740992],
+		["gx", GridSystem.GRID_WIDTH], ["gz", -1], ["construction_stage", "complete"],
+	]:
+		var payload := base.duplicate(true)
+		var hostile_barn := valid_barn.duplicate(true)
+		if str(field_and_value[0]) == "construction_stage":
+			hostile_barn["construction_stage"] = field_and_value[1]
+			hostile_barn["construction_elapsed"] = 0.0
+			hostile_barn["construction_duration"] = 9.0
+		else:
+			hostile_barn[field_and_value[0]] = field_and_value[1]
+		payload["buildings"] = [hostile_barn]
+		hostile_cases.append({"name": "building %s=%s" % [field_and_value[0], field_and_value[1]], "payload": payload})
+	for field_and_value in [
+		["gx", {}], ["gx", 8.5], ["gx", 9007199254740992],
+		["gx", GridSystem.GRID_WIDTH], ["gz", -1], ["state", []],
+		["state", 99], ["watered", "false"],
+	]:
+		var payload := base.duplicate(true)
+		payload.grid.cells[0][field_and_value[0]] = field_and_value[1]
+		hostile_cases.append({"name": "grid %s=%s" % [field_and_value[0], field_and_value[1]], "payload": payload})
+	var duplicate_cell := base.duplicate(true)
+	duplicate_cell.grid.cells.append(duplicate_cell.grid.cells[0].duplicate(true))
+	hostile_cases.append({"name": "duplicate grid location", "payload": duplicate_cell})
+	for field_and_value in [
+		["crop_id", []], ["growth_progress", {}], ["growth_progress", INF],
+		["is_watered_today", "false"], ["harvest_count", 1.5],
+		["harvest_count", 9007199254740992],
+	]:
+		var payload := base.duplicate(true)
+		payload.grid.cells[0].crop[field_and_value[0]] = field_and_value[1]
+		hostile_cases.append({"name": "crop %s=%s" % [field_and_value[0], field_and_value[1]], "payload": payload})
+
+	main.farm_storage_system.restore_items_unchecked({"grain": 33})
+	var game_state := tree.root.get_node("GameState")
+	var observer := FarmStorageRestoreObserver.new()
+	observer.storage = main.farm_storage_system
+	observer.game_state = game_state
+	main.farm_storage_system.contents_changed.connect(observer.on_contents_changed)
+	observer.events.clear()
+	var runtime_before := manager._gather_save_data().duplicate(true)
+	runtime_before.erase("meta")
+	for hostile_case in hostile_cases:
+		assertions.truthy(manager._migrate_save_data(hostile_case.payload) == null, "hostile legacy prevalidation rejects before conversion: %s" % str(hostile_case.name))
+		assertions.truthy(not manager._apply_save_data(hostile_case.payload), "hostile legacy apply rejects: %s" % str(hostile_case.name))
+		var runtime_after := manager._gather_save_data().duplicate(true)
+		runtime_after.erase("meta")
+		assertions.equal(runtime_after, runtime_before, "hostile legacy rejection is atomic: %s" % str(hostile_case.name))
+		assertions.truthy(observer.events.is_empty(), "hostile legacy rejection publishes no storage event: %s" % str(hostile_case.name))
+
+	main.free()
+	manager.free()
+	_cleanup()
 
 
 func _test_task7_canonical_environment_stability_matrix(

@@ -10,8 +10,12 @@ const SAVE_EXT = ".json"
 const BUILDING_LAYOUT_VERSION := 3
 const LEGACY_BUILDING_LAYOUT_VERSIONS := [1, 2]
 const LEGACY_GRID_VERSIONS := [1, 2]
+const LEGACY_DEFAULT_SEASON := 0
+const MIN_SEASON := 0
+const MAX_SEASON := 3
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const GameStateScript = preload("res://scripts/core/game_state.gd")
+const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const EconomyProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
@@ -1025,13 +1029,20 @@ func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> bool:
 
 func _migrate_save_data(data: Dictionary) -> Variant:
 	var migrated := data.duplicate(true)
+	var has_layout_version := migrated.has("building_layout_version")
 	var layout_version_value: Variant = migrated.get("building_layout_version")
 	var is_legacy_layout := false
-	if layout_version_value != null:
+	if has_layout_version:
 		if not _is_integer_number(layout_version_value):
 			return null
 		var layout_version := int(layout_version_value)
 		if layout_version == BUILDING_LAYOUT_VERSION:
+			# Season-less v3 snapshots remain compatible only when no crop depends on it.
+			if (
+				(_save_grid_has_crop_records(migrated.get("grid")) or migrated.has("season"))
+				and not _valid_explicit_season(migrated.get("season"))
+			):
+				return null
 			return _normalize_inventory_migrations(migrated)
 		if layout_version not in LEGACY_BUILDING_LAYOUT_VERSIONS:
 			return null
@@ -1039,8 +1050,248 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 	if not migrated.has("harvest_seed"):
 		migrated["harvest_seed"] = GameStateScript.LEGACY_HARVEST_SEED
 	if is_legacy_layout:
+		if not _prevalidate_legacy_lifecycle_structure(migrated):
+			return null
+		if not migrated.has("season"):
+			migrated["season"] = LEGACY_DEFAULT_SEASON
 		return _migrate_legacy_lifecycle_save(migrated)
+	if migrated.has("inventory"):
+		if migrated.has("farm_storage"):
+			return null
+		var inventory_result: Variant = _migrate_legacy_inventory(migrated["inventory"])
+		if not inventory_result is Dictionary:
+			return null
+		migrated["inventory"] = (inventory_result as Dictionary).inventory
+		var farm_items := (inventory_result as Dictionary).farm_storage_items as Dictionary
+		if _has_valid_farm_storage_configuration():
+			migrated["farm_storage"] = {"items": farm_items}
+		elif not farm_items.is_empty():
+			return null
+		return migrated
+	if _has_valid_farm_storage_configuration():
+		return null
 	return _normalize_inventory_migrations(migrated)
+
+
+func _prevalidate_legacy_lifecycle_structure(data: Dictionary) -> bool:
+	if (
+		data.has("farm_storage")
+		or not data.get("inventory") is Dictionary
+		or not _prevalidate_legacy_calendar(data)
+		or not _prevalidate_legacy_buildings(data.get("buildings"))
+		or not _prevalidate_legacy_grid(data.get("grid"))
+	):
+		return false
+	if data.has("production_upkeep"):
+		if (
+			not data.production_upkeep is Dictionary
+			or not _has_valid_production_configuration()
+			or not bool(_production_system.call("validate_dict", data.production_upkeep))
+		):
+			return false
+	return true
+
+
+func _prevalidate_legacy_calendar(data: Dictionary) -> bool:
+	if data.has("season") and not _valid_explicit_season(data.season):
+		return false
+	for field in ["total_days", "last_simulated_day"]:
+		if data.has(field) and not EconomyLimitsScript.is_safe_date(data[field], false):
+			return false
+	if (
+		data.has("total_days")
+		and data.has("last_simulated_day")
+		and float(data.total_days) != float(data.last_simulated_day)
+	):
+		return false
+	for field_and_range in [["day", 1, 7], ["hour", 0, 23], ["minute", 0, 59]]:
+		var field := str(field_and_range[0])
+		if data.has(field) and not _integer_number_in_range(
+			data[field], int(field_and_range[1]), int(field_and_range[2])
+		):
+			return false
+	return true
+
+
+func _prevalidate_legacy_buildings(value: Variant) -> bool:
+	if not value is Array:
+		return false
+	for record_value in value:
+		if not record_value is Dictionary:
+			return false
+		var record := record_value as Dictionary
+		if typeof(record.get("building_id")) != TYPE_STRING:
+			return false
+		var definition: Dictionary = GameDataScript.get_building(record.building_id)
+		if definition.is_empty():
+			return false
+		if not _valid_grid_integer(record.get("gx")) or not _valid_grid_integer(record.get("gz")):
+			return false
+		var gx := int(record.gx)
+		var gz := int(record.gz)
+		var width := int(definition.get("footprint_x", 1))
+		var depth := int(definition.get("footprint_z", 1))
+		if (
+			gx < 0 or gz < 0
+			or gx + width > GridSystemScript.GRID_WIDTH
+			or gz + depth > GridSystemScript.GRID_DEPTH
+		):
+			return false
+		if not record.get("occupied_cells") is Array:
+			return false
+		for occupied_value in record.occupied_cells:
+			if not occupied_value is Dictionary:
+				return false
+			var occupied := occupied_value as Dictionary
+			if (
+				not _valid_bounded_grid_location(occupied.get("gx"), occupied.get("gz"))
+				or not _integer_number_in_range(
+					occupied.get("previous_state"),
+					GridCell.State.WASTELAND,
+					GridCell.State.DECORATION
+				)
+			):
+				return false
+		var construction_fields := [
+			"construction_stage", "construction_elapsed", "construction_duration",
+		]
+		var construction_count := 0
+		for field in construction_fields:
+			if record.has(field):
+				construction_count += 1
+		if construction_count not in [0, construction_fields.size()]:
+			return false
+		if construction_count == construction_fields.size() and (
+			not _integer_number_in_range(
+				record.construction_stage,
+				BuildingInstance.ConstructionStage.FOUNDATION,
+				BuildingInstance.ConstructionStage.COMPLETE
+			)
+			or not _finite_number_in_range(
+				record.construction_elapsed, 0.0, float(EconomyLimitsScript.MAX_SAFE_INTEGER)
+			)
+			or not _finite_number_in_range(
+				record.construction_duration, 0.0, float(EconomyLimitsScript.MAX_SAFE_INTEGER)
+			)
+		):
+			return false
+	return true
+
+
+func _prevalidate_legacy_grid(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var grid_data := value as Dictionary
+	if (
+		grid_data.size() != 2
+		or not _integer_number_in_range(grid_data.get("version"), 1, 2)
+		or not grid_data.get("cells") is Array
+	):
+		return false
+	var seen := {}
+	for entry_value in grid_data.cells:
+		if not entry_value is Dictionary:
+			return false
+		var entry := entry_value as Dictionary
+		if (
+			not _valid_bounded_grid_location(entry.get("gx"), entry.get("gz"))
+			or not _integer_number_in_range(
+				entry.get("state"), GridCell.State.WASTELAND, GridCell.State.DECORATION
+			)
+			or typeof(entry.get("watered")) != TYPE_BOOL
+		):
+			return false
+		var location := Vector2i(int(entry.gx), int(entry.gz))
+		if seen.has(location):
+			return false
+		seen[location] = true
+		var has_crop := entry.has("crop")
+		if has_crop != (int(entry.state) == GridCell.State.PLANTED):
+			return false
+		if not has_crop:
+			continue
+		if not _prevalidate_legacy_crop(entry.crop):
+			return false
+	return true
+
+
+func _prevalidate_legacy_crop(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var crop := value as Dictionary
+	for field in ["crop_id", "growth_progress", "is_watered_today", "harvest_count"]:
+		if not crop.has(field):
+			return false
+	if typeof(crop.crop_id) != TYPE_STRING:
+		return false
+	var crop_data = _registered_crop(crop.crop_id)
+	if crop_data == null:
+		return false
+	if (
+		not _finite_number_in_range(
+			crop.growth_progress, 0.0, float(crop_data.growth_days)
+		)
+		or typeof(crop.is_watered_today) != TYPE_BOOL
+		or not EconomyLimitsScript.is_safe_due_date(crop.harvest_count)
+	):
+		return false
+	if crop.has("lifecycle_state") and not _integer_number_in_range(
+		crop.lifecycle_state,
+		CropInstance.LifecycleState.GROWING,
+		CropInstance.LifecycleState.WITHERED
+	):
+		return false
+	return true
+
+
+func _valid_explicit_season(value: Variant) -> bool:
+	return _integer_number_in_range(value, MIN_SEASON, MAX_SEASON)
+
+
+func _save_grid_has_crop_records(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var cells: Variant = (value as Dictionary).get("cells")
+	if not cells is Array:
+		return false
+	for entry in cells:
+		if entry is Dictionary and (entry as Dictionary).has("crop"):
+			return true
+	return false
+
+
+func _valid_grid_integer(value: Variant) -> bool:
+	return (
+		_is_integer_number(value)
+		and float(value) >= 0.0
+		and float(value) <= float(EconomyLimitsScript.MAX_SAFE_INTEGER)
+	)
+
+
+func _valid_bounded_grid_location(gx_value: Variant, gz_value: Variant) -> bool:
+	return (
+		_valid_grid_integer(gx_value)
+		and _valid_grid_integer(gz_value)
+		and float(gx_value) < float(GridSystemScript.GRID_WIDTH)
+		and float(gz_value) < float(GridSystemScript.GRID_DEPTH)
+	)
+
+
+func _integer_number_in_range(value: Variant, minimum: int, maximum: int) -> bool:
+	return (
+		_is_integer_number(value)
+		and float(value) >= float(minimum)
+		and float(value) <= float(maximum)
+	)
+
+
+func _finite_number_in_range(value: Variant, minimum: float, maximum: float) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and float(value) >= minimum
+		and float(value) <= maximum
+	)
 
 
 func _normalize_inventory_migrations(migrated: Dictionary) -> Variant:
