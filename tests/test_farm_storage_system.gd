@@ -142,6 +142,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_failed_restore_validation_is_atomic(assertions)
 	_test_committed_signal_payloads(assertions, tree)
 	_test_atomic_notification_transaction(assertions, tree)
+	_test_sealed_transaction_defers_fifo_notifications(assertions, tree)
 	_test_contents_reentrancy_preserves_notification_order(assertions, tree)
 	_test_capacity_reentrancy_preserves_notification_order(assertions, tree)
 	_test_change_payload_is_read_only_for_all_listeners(assertions, tree)
@@ -216,6 +217,91 @@ func _test_atomic_notification_transaction(assertions: TestAssert, tree: SceneTr
 	assertions.equal(recorder.capacities, [{"used": 3, "total": 6}], "commit publishes one final capacity event")
 	assertions.equal(recorder.bus_capacities, [{"used": 3, "total": 6}], "EventBus sees one final capacity event")
 	assertions.truthy(not storage.call("commit_atomic_transaction", commit_token), "stale commit token is rejected")
+
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	event_bus.farm_storage_changed.disconnect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_bus_capacity)
+	storage.queue_free()
+
+
+func _test_sealed_transaction_defers_fifo_notifications(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := MutableCapacity.new(6)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	assertions.truthy(storage.add_items({"grain": 1}), "sealed fixture starts with grain")
+	var recorder := SignalRecorder.new(storage)
+	var event_bus = tree.root.get_node("EventBus")
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	event_bus.farm_storage_changed.connect(recorder.on_bus_contents)
+	event_bus.farm_storage_capacity_changed.connect(recorder.on_bus_capacity)
+
+	for method_name in [
+		"seal_atomic_transaction",
+		"publish_sealed_transaction",
+		"rollback_sealed_transaction",
+	]:
+		assertions.truthy(storage.has_method(method_name), "storage exposes %s" % method_name)
+	if not storage.has_method("seal_atomic_transaction"):
+		storage.queue_free()
+		return
+
+	var token: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(token, {"tomato": 2}), "seal fixture stages base harvest")
+	var publication: Variant = storage.call("seal_atomic_transaction", token)
+	assertions.truthy(publication is RefCounted, "seal returns unforgeable publication ownership")
+	assertions.equal(storage.get_items(), {"grain": 1, "tomato": 2}, "sealed state remains committed")
+	assertions.equal(recorder.contents, [], "seal dispatches no local notification")
+	assertions.equal(recorder.bus_contents, [], "seal dispatches no EventBus notification")
+	var callback_token: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(callback_token is RefCounted, "seal unlocks independent atomic transactions")
+	assertions.truthy(storage.stage_add_items(callback_token, {"potato": 1}), "independent transaction stages after seal")
+	assertions.truthy(storage.commit_atomic_transaction(callback_token), "independent transaction commits behind publication barrier")
+	assertions.truthy(storage.add_items({"grain": 1}), "normal add succeeds after seal unlocks storage")
+	capacity.value = 8
+	storage.refresh_capacity()
+	assertions.equal(storage.get_total_capacity(), 8, "capacity refresh succeeds after seal unlocks storage")
+	assertions.equal(recorder.contents, [], "post-seal write notification remains deferred")
+	assertions.equal(recorder.capacities, [], "post-seal capacity notification remains deferred")
+	assertions.truthy(storage.call("publish_sealed_transaction", publication), "sealed transaction publishes")
+	assertions.equal(
+		recorder.contents.map(func(entry: Dictionary) -> Dictionary: return entry.changes),
+		[{"tomato": 2}, {"potato": 1}, {"grain": 1}],
+		"base storage delta precedes post-seal write delta"
+	)
+	assertions.equal(recorder.bus_contents, [{"tomato": 2}, {"potato": 1}, {"grain": 1}], "EventBus preserves sealed FIFO order")
+	assertions.equal(
+		recorder.contents.map(func(entry: Dictionary) -> bool: return bool(entry.read_only)),
+		[true, true, true],
+		"sealed and reentrant payloads are immutable"
+	)
+	assertions.equal(
+		recorder.capacities,
+		[
+			{"used": 3, "total": 6},
+			{"used": 4, "total": 6},
+			{"used": 5, "total": 6},
+			{"used": 5, "total": 8},
+		],
+		"base, post-seal add, and refresh capacity batches remain FIFO"
+	)
+
+	var rollback_token: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(rollback_token, {"potato": 1}), "sealed rollback stages crop")
+	var rollback_publication: Variant = storage.call("seal_atomic_transaction", rollback_token)
+	var before_rollback_notifications := recorder.contents.size()
+	assertions.truthy(
+		storage.call("rollback_sealed_transaction", rollback_publication),
+		"sealed transaction can roll back before publication"
+	)
+	assertions.equal(storage.get_items(), {"grain": 2, "potato": 1, "tomato": 2}, "sealed rollback restores exact contents")
+	assertions.equal(storage.get_total_capacity(), 8, "sealed rollback restores exact capacity")
+	assertions.equal(recorder.contents.size(), before_rollback_notifications, "sealed rollback emits no notification")
 
 	storage.contents_changed.disconnect(recorder.on_contents)
 	storage.capacity_changed.disconnect(recorder.on_capacity)

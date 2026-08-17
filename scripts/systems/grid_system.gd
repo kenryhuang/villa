@@ -323,6 +323,37 @@ func apply_crop_harvest(before: Dictionary, after: Dictionary) -> bool:
 	return _apply_crop_mutation(before, after)
 
 
+func rollback_crop_harvest(
+	expected_after: Dictionary,
+	before: Dictionary,
+	original_instance: CropInstance
+) -> bool:
+	if (
+		not _valid_crop_mutation_payload(expected_after, true)
+		or not _valid_crop_mutation_payload(before)
+		or original_instance == null
+		or original_instance.crop_data == null
+	):
+		return false
+	var gx := int(before.gx)
+	var gz := int(before.gz)
+	if int(expected_after.gx) != gx or int(expected_after.gz) != gz:
+		return false
+	var cell := get_cell(gx, gz)
+	if cell == null or not _crop_state_matches(cell, expected_after):
+		return false
+	var crop_data: Dictionary = before.crop
+	if str(crop_data.get("crop_id", "")) != original_instance.crop_data.crop_id:
+		return false
+	if not original_instance.from_dict(crop_data):
+		return false
+	cell.crop_instance = original_instance
+	cell.state = int(before.cell_state) as GridCell.State
+	cell.watered = bool(before.watered)
+	_sync_farmland_visual(cell)
+	return true
+
+
 func apply_crop_clear(before: Dictionary, after: Dictionary) -> bool:
 	return _apply_crop_mutation(before, after)
 
@@ -372,6 +403,14 @@ func _valid_crop_mutation_payload(payload: Dictionary, allow_empty_crop: bool = 
 	if typeof(payload.cell_state) != TYPE_INT or typeof(payload.watered) != TYPE_BOOL:
 		return false
 	return payload.crop is Dictionary or (allow_empty_crop and payload.crop == null)
+
+
+func _crop_state_matches(cell: GridCell, snapshot: Dictionary) -> bool:
+	if cell.state != int(snapshot.cell_state) or cell.watered != bool(snapshot.watered):
+		return false
+	if snapshot.crop is Dictionary:
+		return get_crop_snapshot(cell.gx, cell.gz) == snapshot
+	return cell.crop_instance == null
 
 
 func water_cell(gx: int, gz: int) -> bool:

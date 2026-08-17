@@ -16,6 +16,13 @@ var _is_dispatching_notifications := false
 var _transaction_token: RefCounted
 var _transaction_items: Dictionary = {}
 var _transaction_capacity := DEFAULT_CAPACITY
+var _sealed_publication_token: RefCounted
+var _sealed_before_items: Dictionary = {}
+var _sealed_before_capacity := DEFAULT_CAPACITY
+var _sealed_items: Dictionary = {}
+var _sealed_capacity := DEFAULT_CAPACITY
+var _sealed_batch_marker: RefCounted
+var _notification_dispatch_suspended := false
 
 
 func configure(capacity_provider: Callable = Callable()) -> bool:
@@ -76,7 +83,59 @@ func begin_atomic_transaction() -> RefCounted:
 func commit_atomic_transaction(token: Variant) -> bool:
 	if token == null or token != _transaction_token:
 		return false
-	var previous_items := _transaction_items
+	if _sealed_publication_token != null:
+		return _commit_transaction_behind_publication_barrier(token)
+	var publication := seal_atomic_transaction(token)
+	if publication == null:
+		return false
+	return publish_sealed_transaction(publication)
+
+
+func seal_atomic_transaction(token: Variant) -> RefCounted:
+	if token == null or token != _transaction_token or _sealed_publication_token != null:
+		return null
+	var previous_items := _transaction_items.duplicate(true)
+	var previous_capacity := _transaction_capacity
+	var previous_used := _sum_quantities(previous_items)
+	var current_used := get_used_capacity()
+	var changes := _changes_between(previous_items, _items)
+	var publication := RefCounted.new()
+	var marker := RefCounted.new()
+	_sealed_publication_token = publication
+	_sealed_before_items = previous_items
+	_sealed_before_capacity = previous_capacity
+	_sealed_items = _items.duplicate(true)
+	_sealed_capacity = _total_capacity
+	_sealed_batch_marker = marker
+	_notification_dispatch_suspended = true
+	_transaction_token = null
+	_transaction_items.clear()
+	var batch := _make_notification_batch(
+		changes,
+		previous_used != current_used or previous_capacity != _total_capacity,
+		current_used,
+		_total_capacity
+	)
+	if not batch.is_empty():
+		batch["sealed_marker"] = marker
+		_notification_queue.append(batch)
+	return publication
+
+
+func publish_sealed_transaction(publication: Variant) -> bool:
+	if publication == null or publication != _sealed_publication_token:
+		return false
+	_clear_sealed_transaction()
+	_notification_dispatch_suspended = false
+	_drain_notification_queue()
+	return true
+
+
+func _commit_transaction_behind_publication_barrier(token: Variant) -> bool:
+	if token == null or token != _transaction_token or _sealed_publication_token == null:
+		return false
+	var previous_items := _transaction_items.duplicate(true)
+	var previous_capacity := _transaction_capacity
 	var previous_used := _sum_quantities(previous_items)
 	var current_used := get_used_capacity()
 	var changes := _changes_between(previous_items, _items)
@@ -84,10 +143,24 @@ func commit_atomic_transaction(token: Variant) -> bool:
 	_transaction_items.clear()
 	_queue_notification_batch(
 		changes,
-		previous_used != current_used or _transaction_capacity != _total_capacity,
+		previous_used != current_used or previous_capacity != _total_capacity,
 		current_used,
 		_total_capacity
 	)
+	return true
+
+
+func rollback_sealed_transaction(publication: Variant) -> bool:
+	if publication == null or publication != _sealed_publication_token:
+		return false
+	if _items != _sealed_items or _total_capacity != _sealed_capacity:
+		return false
+	_items = _sealed_before_items.duplicate(true)
+	_total_capacity = _sealed_before_capacity
+	_remove_sealed_notification_batch()
+	_clear_sealed_transaction()
+	_notification_dispatch_suspended = false
+	_drain_notification_queue()
 	return true
 
 
@@ -268,22 +341,56 @@ func _queue_notification_batch(
 	used: int,
 	total: int
 ) -> void:
-	if changes.is_empty() and not did_capacity_change:
+	var batch := _make_notification_batch(changes, did_capacity_change, used, total)
+	if batch.is_empty():
 		return
+	_notification_queue.append(batch)
+	_drain_notification_queue()
+
+
+func _make_notification_batch(
+	changes: Dictionary,
+	did_capacity_change: bool,
+	used: int,
+	total: int
+) -> Dictionary:
+	if changes.is_empty() and not did_capacity_change:
+		return {}
 	var change_snapshot := changes.duplicate(true)
 	change_snapshot.make_read_only()
-	_notification_queue.append({
+	return {
 		"changes": change_snapshot,
 		"capacity_changed": did_capacity_change,
 		"used": used,
 		"total": total,
-	})
-	if _is_dispatching_notifications:
+	}
+
+
+func _drain_notification_queue() -> void:
+	if _is_dispatching_notifications or _notification_dispatch_suspended:
 		return
 	_is_dispatching_notifications = true
-	while not _notification_queue.is_empty():
+	while not _notification_queue.is_empty() and not _notification_dispatch_suspended:
 		_dispatch_notification_batch(_notification_queue.pop_front())
 	_is_dispatching_notifications = false
+
+
+func _remove_sealed_notification_batch() -> void:
+	if _sealed_batch_marker == null:
+		return
+	for index in range(_notification_queue.size()):
+		if _notification_queue[index].get("sealed_marker") == _sealed_batch_marker:
+			_notification_queue.remove_at(index)
+			return
+
+
+func _clear_sealed_transaction() -> void:
+	_sealed_publication_token = null
+	_sealed_before_items.clear()
+	_sealed_before_capacity = _total_capacity
+	_sealed_items.clear()
+	_sealed_capacity = _total_capacity
+	_sealed_batch_marker = null
 
 
 func _dispatch_notification_batch(batch: Dictionary) -> void:

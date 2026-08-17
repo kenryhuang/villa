@@ -74,6 +74,9 @@ class FarmingDouble:
 	var harvest_calls := 0
 	var preview_reason := ""
 	var preview_plant_calls: Array[Dictionary] = []
+	var prepared_harvest_token: RefCounted
+	var prepared_harvest: Dictionary = {}
+	var harvest_publications: Dictionary = {}
 
 	func preview_plant(cell: GridCell, plant_item_id: String) -> Dictionary:
 		preview_plant_calls.append({"cell": cell, "plant_item_id": plant_item_id})
@@ -118,6 +121,61 @@ class FarmingDouble:
 		cell.crop_instance = null
 		cell.state = GridCell.State.FARMLAND
 		return {"items": ["grain"], "exp": 5}
+
+	func prepare_harvest(cell: GridCell, expected_preview: Dictionary) -> RefCounted:
+		if prepared_harvest_token != null or preview_harvest(cell) != expected_preview:
+			return null
+		prepared_harvest_token = RefCounted.new()
+		prepared_harvest = {
+			"cell": cell,
+			"preview": expected_preview.duplicate(true),
+			"instance": cell.crop_instance,
+			"applied": false,
+		}
+		return prepared_harvest_token
+
+	func apply_prepared_harvest(token: Variant) -> bool:
+		if token != prepared_harvest_token or bool(prepared_harvest.applied):
+			return false
+		harvest_calls += 1
+		var cell: GridCell = prepared_harvest.cell
+		cell.crop_instance = null
+		cell.state = GridCell.State.FARMLAND
+		prepared_harvest.applied = true
+		return true
+
+	func rollback_prepared_harvest(token: Variant) -> bool:
+		if token != prepared_harvest_token:
+			return false
+		if bool(prepared_harvest.applied):
+			var cell: GridCell = prepared_harvest.cell
+			cell.crop_instance = prepared_harvest.instance
+			cell.state = GridCell.State.PLANTED
+		prepared_harvest_token = null
+		prepared_harvest.clear()
+		return true
+
+	func finalize_prepared_harvest(token: Variant) -> RefCounted:
+		if token != prepared_harvest_token or not bool(prepared_harvest.applied):
+			return null
+		var publication := RefCounted.new()
+		harvest_publications[publication.get_instance_id()] = {
+			"token": publication,
+			"preview": prepared_harvest.preview.duplicate(true),
+		}
+		prepared_harvest_token = null
+		prepared_harvest.clear()
+		return publication
+
+	func publish_prepared_harvest(publication: Variant) -> Dictionary:
+		if not publication is RefCounted:
+			return {}
+		var publication_id := (publication as RefCounted).get_instance_id()
+		var pending: Dictionary = harvest_publications.get(publication_id, {})
+		if pending.is_empty() or pending.token != publication:
+			return {}
+		harvest_publications.erase(publication_id)
+		return pending.preview.duplicate(true)
 
 	func preview_harvest(cell: GridCell) -> Dictionary:
 		if cell.crop_instance == null or not cell.crop_instance.is_mature():

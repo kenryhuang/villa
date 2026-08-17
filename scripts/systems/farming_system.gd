@@ -13,6 +13,9 @@ var _crop_visuals := {}
 var _greenhouse_cells := {}
 var _paused_greenhouse_cells := {}
 var _game_data
+var _prepared_harvest_token: RefCounted
+var _prepared_harvest: Dictionary = {}
+var _pending_harvest_publications: Dictionary = {}
 
 
 static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
@@ -207,11 +210,30 @@ func _harvest_seed() -> int:
 
 
 func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:
-	if grid_system == null or cell == null or preview.is_empty():
+	var token := prepare_harvest(cell, preview)
+	if token == null:
 		return {}
+	if not apply_prepared_harvest(token):
+		rollback_prepared_harvest(token)
+		return {}
+	var publication := finalize_prepared_harvest(token)
+	if publication == null:
+		rollback_prepared_harvest(token)
+		return {}
+	return publish_prepared_harvest(publication)
+
+
+func prepare_harvest(cell: GridCell, preview: Dictionary) -> RefCounted:
+	if (
+		grid_system == null
+		or cell == null
+		or preview.is_empty()
+		or _prepared_harvest_token != null
+	):
+		return null
 	var expected := preview_harvest(cell)
 	if expected.is_empty() or expected != preview:
-		return {}
+		return null
 	var after := {
 		"gx": cell.gx,
 		"gz": cell.gz,
@@ -219,14 +241,80 @@ func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:
 		"watered": false,
 		"crop": preview.post_crop.duplicate(true) if preview.post_crop is Dictionary else null,
 	}
-	if not grid_system.apply_crop_harvest(preview.before, after):
-		return {}
+	var token := RefCounted.new()
+	_prepared_harvest_token = token
+	_prepared_harvest = {
+		"cell": cell,
+		"preview": preview.duplicate(true),
+		"after": after,
+		"original_instance": cell.crop_instance,
+		"applied": false,
+	}
+	return token
+
+
+func apply_prepared_harvest(token: Variant) -> bool:
+	if token == null or token != _prepared_harvest_token:
+		return false
+	if bool(_prepared_harvest.get("applied", false)):
+		return false
+	var preview: Dictionary = _prepared_harvest.preview
+	if not grid_system.apply_crop_harvest(preview.before, _prepared_harvest.after):
+		return false
+	_prepared_harvest.applied = true
+	return true
+
+
+func rollback_prepared_harvest(token: Variant) -> bool:
+	if token == null or token != _prepared_harvest_token:
+		return false
+	if bool(_prepared_harvest.get("applied", false)):
+		var preview: Dictionary = _prepared_harvest.preview
+		if not grid_system.rollback_crop_harvest(
+			_prepared_harvest.after,
+			preview.before,
+			_prepared_harvest.original_instance
+		):
+			return false
+	_clear_prepared_harvest()
+	return true
+
+
+func finalize_prepared_harvest(token: Variant) -> RefCounted:
+	if (
+		token == null
+		or token != _prepared_harvest_token
+		or not bool(_prepared_harvest.get("applied", false))
+	):
+		return null
+	var cell: GridCell = _prepared_harvest.cell
+	var preview: Dictionary = _prepared_harvest.preview
 	if bool(preview.regrowing) and cell.crop_instance != null:
 		_update_visual(cell, cell.crop_instance)
 	else:
 		_remove_visual(cell)
+	var publication := RefCounted.new()
+	_pending_harvest_publications[publication.get_instance_id()] = {
+		"token": publication,
+		"cell": cell,
+		"preview": preview.duplicate(true),
+	}
+	_clear_prepared_harvest()
 	if game_state:
 		game_state.add_exp(int(preview.exp))
+	return publication
+
+
+func publish_prepared_harvest(publication: Variant) -> Dictionary:
+	if not publication is RefCounted:
+		return {}
+	var publication_id := (publication as RefCounted).get_instance_id()
+	var pending: Dictionary = _pending_harvest_publications.get(publication_id, {})
+	if pending.is_empty() or pending.get("token") != publication:
+		return {}
+	_pending_harvest_publications.erase(publication_id)
+	var cell: GridCell = pending.cell
+	var preview: Dictionary = pending.preview
 	_emit_cell_state(cell)
 	if _event_bus and _event_bus.has_signal("crop_harvested"):
 		_event_bus.emit_signal(
@@ -236,6 +324,11 @@ func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:
 			str((preview.before.crop as Dictionary).get("crop_id", ""))
 		)
 	return preview.duplicate(true)
+
+
+func _clear_prepared_harvest() -> void:
+	_prepared_harvest_token = null
+	_prepared_harvest.clear()
 
 
 func clear_withered(cell: GridCell) -> bool:
