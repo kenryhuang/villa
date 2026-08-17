@@ -15,6 +15,19 @@ class MutableCapacity:
 		return value
 
 
+class CountingCapacity:
+	extends RefCounted
+	var value: Variant
+	var calls := 0
+
+	func _init(initial_value: Variant) -> void:
+		value = initial_value
+
+	func provide() -> Variant:
+		calls += 1
+		return value
+
+
 class DisposableCapacity:
 	extends Object
 	var value: Variant
@@ -133,9 +146,38 @@ class ReadOnlyPayloadRecorder:
 		payloads.append(changes)
 
 
+class CoherentContentsRecorder:
+	extends RefCounted
+	var storage: Node
+	var records: Array[Dictionary] = []
+	var capacity_records: Array[Dictionary] = []
+
+	func _init(target: Node) -> void:
+		storage = target
+
+	func record(changes: Dictionary) -> void:
+		records.append({
+			"changes": changes.duplicate(true),
+			"items": storage.call("get_items"),
+			"used": storage.call("get_used_capacity"),
+			"total": storage.call("get_total_capacity"),
+		})
+
+	func record_capacity(used: int, total: int) -> void:
+		capacity_records.append({
+			"used": used,
+			"emitted_total": total,
+			"observed_total": storage.call("get_total_capacity"),
+		})
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_empty_state_and_capacity_provider(assertions)
 	_test_refresh_emits_only_when_capacity_changes(assertions, tree)
+	_test_deferred_refresh_active_commit_and_rollback(assertions, tree)
+	_test_deferred_refresh_sealed_publish_and_cancel(assertions, tree)
+	_test_deferred_refresh_abandoned_boundaries(assertions, tree)
+	_test_deferred_refresh_coalescing_silence_and_reentrancy(assertions, tree)
 	_test_atomic_add_remove_and_capacity(assertions)
 	_test_capacity_overload_behavior(assertions)
 	_test_serialization_and_overloaded_restore(assertions)
@@ -173,6 +215,256 @@ func _test_refresh_emits_only_when_capacity_changes(
 	storage.refresh_capacity()
 	assertions.equal(recorder.capacities.size(), 1, "repeated unchanged refresh stays silent")
 	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+
+func _test_deferred_refresh_active_commit_and_rollback(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := CountingCapacity.new(6)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	assertions.truthy(storage.configure(capacity.provide), "active deferred refresh fixture configures")
+	capacity.calls = 0
+	assertions.truthy(storage.add_items({"grain": 1}), "active commit fixture stores initial contents")
+	var recorder := SignalRecorder.new(storage)
+	var coherent := CoherentContentsRecorder.new(storage)
+	storage.contents_changed.connect(coherent.record)
+	storage.capacity_changed.connect(coherent.record_capacity)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	var token: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(token, {"tomato": 2}), "active commit stages contents")
+	capacity.value = 4
+	storage.refresh_capacity()
+	storage.refresh_capacity()
+	capacity.value = 5
+	storage.refresh_capacity()
+	assertions.equal(capacity.calls, 0, "active refresh requests do not call the provider early")
+	assertions.equal(storage.get_total_capacity(), 6, "active refresh requests leave cached capacity stable")
+	assertions.equal(recorder.capacities, [], "active refresh requests emit no capacity event")
+	assertions.truthy(storage.commit_atomic_transaction(token), "active transaction commits")
+	assertions.equal(capacity.calls, 1, "active commit coalesces refresh requests into one provider call")
+	assertions.equal(storage.get_total_capacity(), 5, "active commit applies the latest provider capacity")
+	assertions.equal(
+		coherent.records,
+		[{
+			"changes": {"tomato": 2},
+			"items": {"grain": 1, "tomato": 2},
+			"used": 3,
+			"total": 5,
+		}],
+		"committed contents observers read the latest derived capacity"
+	)
+	assertions.equal(
+		recorder.capacities,
+		[{"used": 3, "total": 6}, {"used": 3, "total": 5}],
+		"pending capacity notification follows the sealed commit batch"
+	)
+	assertions.equal(
+		coherent.capacity_records,
+		[
+			{"used": 3, "emitted_total": 6, "observed_total": 5},
+			{"used": 3, "emitted_total": 5, "observed_total": 5},
+		],
+		"all stable-boundary callbacks read the latest cached capacity"
+	)
+	storage.contents_changed.disconnect(coherent.record)
+	storage.capacity_changed.disconnect(coherent.record_capacity)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+	capacity = CountingCapacity.new(6)
+	storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	capacity.calls = 0
+	assertions.truthy(storage.add_items({"grain": 2}), "active rollback fixture stores initial contents")
+	recorder = SignalRecorder.new(storage)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	token = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(token, {"tomato": 2}), "active rollback stages contents")
+	capacity.value = 4
+	storage.refresh_capacity()
+	assertions.truthy(storage.rollback_atomic_transaction(token), "active transaction rolls back")
+	assertions.equal(storage.get_items(), {"grain": 2}, "active rollback restores staged contents")
+	assertions.equal(storage.get_total_capacity(), 4, "active rollback flushes latest provider capacity")
+	assertions.equal(capacity.calls, 1, "active rollback flushes pending refresh exactly once")
+	assertions.equal(
+		recorder.capacities,
+		[{"used": 2, "total": 4}],
+		"active rollback publishes only the deferred capacity change"
+	)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+
+func _test_deferred_refresh_sealed_publish_and_cancel(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := CountingCapacity.new(6)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	capacity.calls = 0
+	assertions.truthy(storage.add_items({"grain": 1}), "sealed publish fixture stores initial contents")
+	var recorder := SignalRecorder.new(storage)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	var token: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(token, {"tomato": 2}), "sealed publish stages contents")
+	var publication: Variant = storage.seal_atomic_transaction(token)
+	capacity.value = 4
+	storage.refresh_capacity()
+	storage.refresh_capacity()
+	assertions.equal(capacity.calls, 0, "sealed refresh requests do not call the provider early")
+	assertions.equal(recorder.capacities, [], "sealed refresh requests emit no notification")
+	storage.publish_sealed_transaction(publication)
+	assertions.equal(capacity.calls, 1, "sealed publish flushes a coalesced provider request")
+	assertions.equal(storage.get_total_capacity(), 4, "sealed publish applies latest capacity")
+	assertions.equal(
+		recorder.capacities,
+		[{"used": 3, "total": 6}, {"used": 3, "total": 4}],
+		"sealed publish drains base then deferred capacity batches"
+	)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+	capacity = CountingCapacity.new(6)
+	storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	capacity.calls = 0
+	assertions.truthy(storage.add_items({"grain": 1}), "sealed cancel fixture stores initial contents")
+	recorder = SignalRecorder.new(storage)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	token = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(token, {"tomato": 2}), "sealed cancel stages contents")
+	publication = storage.seal_atomic_transaction(token)
+	capacity.value = 3
+	storage.refresh_capacity()
+	assertions.truthy(storage.cancel_sealed_transaction(publication), "sealed publication cancels")
+	assertions.equal(storage.get_items(), {"grain": 1}, "sealed cancel restores contents")
+	assertions.equal(storage.get_total_capacity(), 3, "sealed cancel still applies authoritative capacity")
+	assertions.equal(capacity.calls, 1, "sealed cancel flushes pending refresh exactly once")
+	assertions.equal(
+		recorder.capacities,
+		[{"used": 1, "total": 3}],
+		"sealed cancel removes staged batch and publishes only latest capacity"
+	)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+
+func _test_deferred_refresh_abandoned_boundaries(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := CountingCapacity.new(6)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	capacity.calls = 0
+	var recorder := SignalRecorder.new(storage)
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	var owner: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(owner, {"grain": 2}), "abandoned active fixture stages contents")
+	capacity.value = 5
+	storage.refresh_capacity()
+	owner = null
+	var recovery_owner: Variant = storage.begin_atomic_transaction()
+	assertions.equal(storage.get_items(), {}, "abandoned active recovery rolls back contents")
+	assertions.equal(storage.get_total_capacity(), 5, "abandoned active recovery flushes pending capacity")
+	assertions.equal(capacity.calls, 1, "abandoned active recovery calls provider once")
+	assertions.equal(recorder.contents, [], "abandoned active recovery emits no contents event")
+	assertions.equal(recorder.capacities, [{"used": 0, "total": 5}], "abandoned active recovery emits final capacity")
+	assertions.truthy(storage.rollback_atomic_transaction(recovery_owner), "active recovery releases replacement owner")
+
+	owner = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(owner, {"grain": 1}), "abandoned pre-arm seal stages contents")
+	var publication: Variant = storage.seal_atomic_transaction(owner)
+	capacity.value = 4
+	storage.refresh_capacity()
+	publication = null
+	recovery_owner = storage.begin_atomic_transaction()
+	assertions.equal(storage.get_items(), {}, "abandoned pre-arm seal rolls back contents")
+	assertions.equal(storage.get_total_capacity(), 4, "abandoned pre-arm seal flushes pending capacity")
+	assertions.equal(capacity.calls, 2, "pre-arm recovery adds one provider call")
+	assertions.equal(recorder.contents, [], "pre-arm recovery removes sealed contents notification")
+	assertions.equal(
+		recorder.capacities.back() if not recorder.capacities.is_empty() else {},
+		{"used": 0, "total": 4},
+		"pre-arm recovery publishes latest capacity"
+	)
+	assertions.truthy(storage.rollback_atomic_transaction(recovery_owner), "pre-arm recovery releases replacement owner")
+
+	owner = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(owner, {"grain": 1}), "abandoned post-arm seal stages contents")
+	publication = storage.seal_atomic_transaction(owner)
+	storage.arm_sealed_transaction(publication)
+	capacity.value = 2
+	storage.refresh_capacity()
+	publication = null
+	recovery_owner = storage.begin_atomic_transaction()
+	assertions.equal(storage.get_items(), {"grain": 1}, "abandoned post-arm seal commits contents")
+	assertions.equal(storage.get_total_capacity(), 2, "abandoned post-arm seal flushes pending capacity")
+	assertions.equal(capacity.calls, 3, "post-arm recovery adds one provider call")
+	assertions.equal(recorder.contents.back().changes, {"grain": 1}, "post-arm recovery publishes staged contents")
+	assertions.equal(
+		recorder.capacities.slice(recorder.capacities.size() - 2),
+		[{"used": 1, "total": 4}, {"used": 1, "total": 2}],
+		"post-arm recovery preserves sealed then pending FIFO capacity events"
+	)
+	assertions.truthy(storage.rollback_atomic_transaction(recovery_owner), "post-arm recovery releases replacement owner")
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+
+func _test_deferred_refresh_coalescing_silence_and_reentrancy(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var capacity := CountingCapacity.new(6)
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	capacity.calls = 0
+	var recorder := SignalRecorder.new(storage)
+	storage.capacity_changed.connect(recorder.on_capacity)
+	var token: Variant = storage.begin_atomic_transaction()
+	storage.refresh_capacity()
+	storage.refresh_capacity()
+	storage.refresh_capacity()
+	assertions.truthy(storage.commit_atomic_transaction(token), "unchanged deferred refresh transaction commits")
+	assertions.equal(capacity.calls, 1, "unchanged deferred requests coalesce into one provider call")
+	assertions.equal(recorder.capacities, [], "unchanged deferred capacity emits nothing")
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+	capacity = CountingCapacity.new(6)
+	storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	storage.configure(capacity.provide)
+	capacity.calls = 0
+	var reentrant := ReentrantCapacityRecorder.new(storage, capacity)
+	var event_bus = tree.root.get_node("EventBus")
+	storage.capacity_changed.connect(reentrant.on_capacity)
+	event_bus.farm_storage_capacity_changed.connect(reentrant.on_bus_capacity)
+	token = storage.begin_atomic_transaction()
+	capacity.value = 5
+	storage.refresh_capacity()
+	assertions.truthy(storage.commit_atomic_transaction(token), "reentrant deferred refresh transaction commits")
+	assertions.equal(
+		reentrant.timeline,
+		["local:5", "bus:5", "local:7", "bus:7"],
+		"reentrant refresh remains FIFO after deferred flush"
+	)
+	assertions.equal(storage.get_total_capacity(), 7, "reentrant callback commits newest provider capacity")
+	assertions.equal(capacity.calls, 2, "deferred flush and reentrant refresh each call provider once")
+	storage.capacity_changed.disconnect(reentrant.on_capacity)
+	event_bus.farm_storage_capacity_changed.disconnect(reentrant.on_bus_capacity)
 	storage.free()
 
 
@@ -225,10 +517,14 @@ func _test_atomic_notification_transaction(assertions: TestAssert, tree: SceneTr
 	assertions.equal(recorder.bus_capacities, [], "staged write emits no EventBus capacity signal")
 	assertions.truthy(storage.call("rollback_atomic_transaction", rollback_token), "owned transaction rolls back")
 	assertions.equal(storage.get_items(), {"grain": 1}, "rollback restores exact item snapshot")
-	assertions.equal(storage.get_total_capacity(), 6, "rollback restores exact capacity snapshot")
+	assertions.equal(storage.get_total_capacity(), 4, "rollback restores contents then applies deferred capacity")
 	assertions.equal(recorder.contents, [], "rollback emits no local contents signal")
 	assertions.equal(recorder.bus_contents, [], "rollback emits no EventBus contents signal")
+	assertions.equal(recorder.capacities, [{"used": 1, "total": 4}], "rollback emits deferred capacity once")
+	assertions.equal(recorder.bus_capacities, [{"used": 1, "total": 4}], "EventBus sees deferred rollback capacity")
 	assertions.truthy(not storage.call("rollback_atomic_transaction", rollback_token), "stale rollback token is rejected")
+	recorder.capacities.clear()
+	recorder.bus_capacities.clear()
 
 	var commit_token: Variant = storage.call("begin_atomic_transaction")
 	assertions.truthy(storage.call("stage_add_items", commit_token, {"tomato": 2}), "commit transaction stages first write")
@@ -241,8 +537,8 @@ func _test_atomic_notification_transaction(assertions: TestAssert, tree: SceneTr
 	assertions.equal(recorder.bus_contents.size(), 1, "commit emits one EventBus net contents event")
 	assertions.equal(recorder.contents[0].changes, {"grain": 1, "tomato": 1}, "commit publishes only net deltas")
 	assertions.truthy(recorder.contents[0].read_only, "transaction payload is immutable")
-	assertions.equal(recorder.capacities, [{"used": 3, "total": 6}], "commit publishes one final capacity event")
-	assertions.equal(recorder.bus_capacities, [{"used": 3, "total": 6}], "EventBus sees one final capacity event")
+	assertions.equal(recorder.capacities, [{"used": 3, "total": 4}], "commit publishes one final capacity event")
+	assertions.equal(recorder.bus_capacities, [{"used": 3, "total": 4}], "EventBus sees one final capacity event")
 	assertions.truthy(not storage.call("commit_atomic_transaction", commit_token), "stale commit token is rejected")
 
 	storage.contents_changed.disconnect(recorder.on_contents)
@@ -301,8 +597,9 @@ func _test_sealed_transaction_defers_fifo_notifications(
 		"sealed owner can cancel before publication"
 	)
 	assertions.equal(storage.get_items(), {"grain": 1}, "sealed cancel restores exact contents")
-	assertions.equal(storage.get_total_capacity(), 6, "sealed cancel restores exact capacity")
+	assertions.equal(storage.get_total_capacity(), 8, "sealed cancel restores contents then applies deferred capacity")
 	assertions.equal(recorder.contents, [], "sealed cancel emits no notification")
+	assertions.equal(recorder.capacities, [{"used": 1, "total": 8}], "sealed cancel publishes deferred capacity")
 	assertions.truthy(storage.add_items({"potato": 1}), "cancel clears the storage barrier")
 
 	var publish_recorder := ReentrantContentsRecorder.new(storage)

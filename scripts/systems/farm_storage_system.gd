@@ -22,6 +22,7 @@ var _sealed_before_capacity := DEFAULT_CAPACITY
 var _sealed_batch_marker: RefCounted
 var _sealed_armed := false
 var _notification_dispatch_suspended := false
+var _capacity_refresh_pending := false
 
 
 func configure(capacity_provider: Callable = Callable()) -> bool:
@@ -151,6 +152,7 @@ func arm_sealed_transaction(publication: Variant) -> void:
 
 func _publish_sealed_transaction() -> void:
 	_clear_sealed_transaction()
+	_flush_pending_capacity_refresh()
 	_notification_dispatch_suspended = false
 	_drain_notification_queue()
 
@@ -180,6 +182,7 @@ func _cancel_sealed_transaction() -> void:
 	_total_capacity = _sealed_before_capacity
 	_remove_sealed_notification_batch()
 	_clear_sealed_transaction()
+	_flush_pending_capacity_refresh()
 	_notification_dispatch_suspended = false
 	_drain_notification_queue()
 
@@ -193,6 +196,7 @@ func rollback_atomic_transaction(token: Variant) -> bool:
 	_transaction_owner = null
 	_transaction_items.clear()
 	_transaction_capacity = _total_capacity
+	_flush_pending_capacity_refresh()
 	return true
 
 
@@ -300,6 +304,7 @@ func refresh_capacity() -> void:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
 	if _has_atomic_transaction() or _has_sealed_transaction():
+		_capacity_refresh_pending = true
 		return
 	_refresh_capacity()
 
@@ -318,6 +323,17 @@ func _refresh_capacity() -> bool:
 		return false
 	_commit_capacity(int(provided))
 	return true
+
+
+func _flush_pending_capacity_refresh() -> void:
+	if (
+		not _capacity_refresh_pending
+		or _has_atomic_transaction()
+		or _has_sealed_transaction()
+	):
+		return
+	_capacity_refresh_pending = false
+	_refresh_capacity()
 
 
 func _normalize_items(values: Dictionary, allow_empty: bool) -> Variant:
@@ -454,6 +470,7 @@ func _recover_abandoned_transaction() -> void:
 	_transaction_owner = null
 	_transaction_items.clear()
 	_transaction_capacity = _total_capacity
+	_flush_pending_capacity_refresh()
 
 
 func _is_sealed_transaction_owner(publication: Variant) -> bool:

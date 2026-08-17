@@ -15,6 +15,28 @@ class FailingClearSaveManager:
 		return false
 
 
+class UpgradeWalletPlayer:
+	extends RefCounted
+	var level := 99
+
+
+class UpgradeRejectingWallet:
+	extends Node
+	var gold := 1000
+	var player_state := UpgradeWalletPlayer.new()
+	var production: ProductionSystem
+	var building: BuildingInstance
+
+	func spend_gold(amount: int) -> bool:
+		gold -= amount
+		production.unregister_building(building)
+		return true
+
+	func add_gold(amount: int) -> bool:
+		gold += amount
+		return true
+
+
 class CapacityEventRecorder:
 	extends RefCounted
 	var events: Array[Dictionary] = []
@@ -855,9 +877,16 @@ func _test_farm_storage_capacity_lifecycle(assertions: TestAssert, main: Node) -
 	assertions.equal(main.call("_farm_storage_capacity"), 200, "under-construction barn contributes zero")
 	assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "placing unfinished barn does not refresh capacity")
 	assertions.equal(recorder.events, [], "unfinished barn emits no capacity event")
+	var completion_token: Variant = main.farm_storage_system.begin_atomic_transaction()
 	first.complete_construction()
 	assertions.equal(main.call("_farm_storage_capacity"), 400, "one completed barn adds 200")
-	assertions.equal(main.farm_storage_system.get_total_capacity(), 400, "completion refreshes central capacity")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 200, "in-flight completion defers cached capacity")
+	assertions.equal(recorder.events, [], "in-flight completion emits no capacity event")
+	assertions.truthy(
+		main.farm_storage_system.commit_atomic_transaction(completion_token),
+		"storage transaction publishes completed barn capacity"
+	)
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 400, "completion refreshes at stable commit")
 	assertions.equal(recorder.events, [{"used": 0, "total": 400}], "construction completion refreshes exactly once")
 	main.farm_storage_system.refresh_capacity()
 	assertions.equal(recorder.events.size(), 1, "unchanged authoritative refresh emits nothing")
@@ -869,13 +898,59 @@ func _test_farm_storage_capacity_lifecycle(assertions: TestAssert, main: Node) -
 	assertions.equal(recorder.events.size(), 1, "maintenance changes do not refresh farm storage")
 	assertions.truthy(main.production_system.set_maintenance_due_day(first, current_day + 14), "barn maintenance fixture resets")
 
+	var failed_quote: Dictionary = main.economy_progression_system.get_upgrade_quote(first, "storage")
+	for item_id in failed_quote.materials:
+		var needed: int = int(failed_quote.materials[item_id]) - main.inventory_system.get_item_count(str(item_id))
+		if needed > 0:
+			main.inventory_system.add_item(str(item_id), needed)
+	var failed_slots: Array[Dictionary] = []
+	failed_slots.assign(main.inventory_system.slots.duplicate(true))
+	var failed_mappings: Array[int] = []
+	failed_mappings.assign(main.inventory_system.quick_slot_mappings.duplicate())
+	var original_wallet: Variant = main.economy_progression_system._wallet
+	var rejecting_wallet := UpgradeRejectingWallet.new()
+	rejecting_wallet.production = main.production_system
+	rejecting_wallet.building = first
+	main.add_child(rejecting_wallet)
+	main.economy_progression_system._wallet = rejecting_wallet
+	var failed_gold := rejecting_wallet.gold
+	var failed_event_count := recorder.events.size()
+	assertions.truthy(
+		not main.economy_progression_system.upgrade(first, "storage"),
+		"null-state barn domain failure rolls back upgrade transaction"
+	)
+	assertions.equal(rejecting_wallet.gold, failed_gold, "failed barn upgrade restores gold")
+	assertions.equal(main.inventory_system.slots, failed_slots, "failed barn upgrade restores materials")
+	assertions.equal(main.inventory_system.quick_slot_mappings, failed_mappings, "failed barn upgrade restores quick mappings")
+	assertions.equal(
+		main.economy_progression_system.get_upgrade_level(first, "storage"),
+		0,
+		"failed barn upgrade preserves prior level"
+	)
+	assertions.equal(first.producer_state, null, "failed barn upgrade keeps producer state null")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 400, "failed barn upgrade preserves capacity")
+	assertions.equal(recorder.events.size(), failed_event_count, "failed barn upgrade emits no capacity event")
+	main.economy_progression_system._wallet = original_wallet
+	assertions.truthy(main.production_system.register_building(first), "failed upgrade fixture re-registers barn")
+	rejecting_wallet.free()
+
 	for expected_level in range(1, 4):
 		var quote: Dictionary = main.economy_progression_system.get_upgrade_quote(first, "storage")
 		assertions.equal(quote.get("effect"), "中央仓库容量 +100", "barn upgrade quote exposes central capacity")
+		var upgrade_token: Variant = null
+		if expected_level == 1:
+			upgrade_token = main.farm_storage_system.begin_atomic_transaction()
 		assertions.truthy(
 			main.economy_progression_system.upgrade(first, "storage"),
 			"completed barn storage level %d commits" % expected_level
 		)
+		if expected_level == 1:
+			assertions.equal(main.farm_storage_system.get_total_capacity(), 400, "in-flight upgrade defers cached capacity")
+			assertions.equal(recorder.events.size(), 1, "in-flight upgrade emits no capacity event")
+			assertions.truthy(
+				main.farm_storage_system.commit_atomic_transaction(upgrade_token),
+				"storage transaction publishes upgraded barn capacity"
+			)
 		assertions.equal(
 			main.farm_storage_system.get_total_capacity(),
 			400 + expected_level * 100,
@@ -891,15 +966,30 @@ func _test_farm_storage_capacity_lifecycle(assertions: TestAssert, main: Node) -
 	assertions.equal(main.farm_storage_system.get_total_capacity(), 1000, "multiple barn upgrade levels stack")
 	assertions.equal(recorder.events.size(), 6, "second completion and upgrade each refresh once")
 
-	assertions.truthy(main.farm_storage_system.add_items({"grain": 800}), "demolition fixture stores crops below old total")
+	var demolition_token: Variant = main.farm_storage_system.begin_atomic_transaction()
+	assertions.truthy(
+		main.farm_storage_system.stage_add_items(demolition_token, {"grain": 800}),
+		"demolition fixture stages a harvest below the old total"
+	)
 	var first_key: String = main.economy_progression_system.building_key(first)
 	assertions.truthy(main.building_system.remove_building(first), "upgraded barn demolition commits")
+	assertions.equal(main.farm_storage_system.get_total_capacity(), 1000, "in-flight demolition defers cached capacity")
+	assertions.equal(recorder.events.size(), 6, "in-flight demolition and harvest emit no early capacity event")
+	assertions.truthy(
+		main.farm_storage_system.commit_atomic_transaction(demolition_token),
+		"staged harvest publishes after demolition reaches stable storage boundary"
+	)
 	assertions.equal(main.farm_storage_system.get_total_capacity(), 500, "demolition removes barn base and upgrade capacity")
 	assertions.equal(main.farm_storage_system.get_count("grain"), 800, "demolition retains overloaded contents")
 	assertions.truthy(not main.farm_storage_system.add_items({"grain": 1}), "overloaded storage blocks additions")
 	assertions.truthy(
 		not main.economy_progression_system.upgrade_levels.has(first_key),
 		"demolition clears removed barn progression after capacity refresh"
+	)
+	assertions.equal(
+		recorder.events.slice(recorder.events.size() - 2),
+		[{"used": 800, "total": 1000}, {"used": 800, "total": 500}],
+		"demolition publishes staged harvest before deferred overloaded capacity"
 	)
 	assertions.equal(recorder.events.back(), {"used": 800, "total": 500}, "demolition publishes the correct overloaded total")
 	assertions.truthy(main.farm_storage_system.remove_items({"grain": 301}), "overload can be reduced by removals")
