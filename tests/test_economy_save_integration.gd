@@ -275,6 +275,7 @@ class StateTransitionOwnerDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_task7_canonical_environment_stability_matrix(assertions, tree)
 	_test_task7_farm_storage_canonical_and_legacy_migration(assertions, tree)
 	_test_task7_legacy_lifecycle_matrix_and_storage_notifications(assertions, tree)
 	_test_harvest_seed_round_trip_migration_and_atomic_rejection(assertions, tree)
@@ -298,6 +299,222 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_building_load_signals_are_transactional(assertions, tree)
 	_test_farm_storage_capacity_refreshes_after_committed_load(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
+
+
+func _test_task7_canonical_environment_stability_matrix(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task7EnvironmentSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+
+	var greenhouse_location := _find_restore_location(main, "greenhouse")
+	assertions.truthy(greenhouse_location.x >= 0, "canonical environment fixture finds a greenhouse footprint")
+	if greenhouse_location.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	var greenhouse_record := _plain_building_record(main, "greenhouse", greenhouse_location)
+	for cell in greenhouse_record.occupied_cells:
+		assertions.truthy(
+			main.grid_system.set_cell_state(int(cell.gx), int(cell.gz), GridCell.State.BUILDING),
+			"canonical environment fixture reserves greenhouse footprint"
+		)
+	assertions.equal(
+		main.building_system.restore_buildings([greenhouse_record], false),
+		1,
+		"canonical environment fixture restores completed greenhouse"
+	)
+	main.production_system.rebuild_registered_buildings()
+	var greenhouse := main.building_system.get_all_buildings()[0] as BuildingInstance
+	var covered := Vector2i(-1, -1)
+	for candidate in main.production_system.get_greenhouse_cells(greenhouse):
+		if (
+			main.grid_system.get_cell(candidate.x, candidate.y) != null
+			and main.grid_system.set_cell_state(candidate.x, candidate.y, GridCell.State.FARMLAND)
+		):
+			covered = candidate
+			break
+	assertions.truthy(covered.x >= 0, "canonical environment fixture finds covered farmland")
+	if covered.x < 0:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	var lemon: CropData = tree.root.get_node("GameData").get_crop("lemon")
+	var planted: CropInstance = main.farming_system.plant(
+		main.grid_system.get_cell(covered.x, covered.y), lemon
+	)
+	assertions.truthy(planted != null, "canonical environment fixture plants a covered crop")
+	if planted == null:
+		main.free()
+		manager.free()
+		_cleanup()
+		return
+	var canonical: Dictionary = manager._gather_save_data().duplicate(true)
+	var greenhouse_key := "greenhouse:%d:%d" % [greenhouse_location.x, greenhouse_location.y]
+	var outdoor := Vector2i(GridSystem.GRID_WIDTH - 2, GridSystem.GRID_DEPTH - 2)
+
+	var cases: Array[Dictionary] = [
+		{"name": "active growing", "context": "active", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": true},
+		{"name": "active mature", "context": "active", "crop": "lemon", "progress": 5.0, "state": CropInstance.LifecycleState.MATURE, "valid": true},
+		{"name": "active dormant", "context": "active", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": false},
+		{"name": "active existing withered", "context": "active", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": true},
+		{"name": "paused growing", "context": "paused", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": true},
+		{"name": "paused mature", "context": "paused", "crop": "lemon", "progress": 5.0, "state": CropInstance.LifecycleState.MATURE, "valid": true},
+		{"name": "paused dormant", "context": "paused", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": true},
+		{"name": "paused withered", "context": "paused", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": true},
+		{"name": "repairing dormant", "context": "repairing", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": true},
+		{"name": "unfinished greenhouse growing", "context": "unfinished", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": false},
+		{"name": "unfinished greenhouse mature", "context": "unfinished", "crop": "lemon", "progress": 5.0, "state": CropInstance.LifecycleState.MATURE, "valid": false},
+		{"name": "unfinished greenhouse dormant", "context": "unfinished", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": false},
+		{"name": "unfinished greenhouse withered", "context": "unfinished", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": true},
+		{"name": "outdoor allowed growing", "context": "outdoor", "crop": "grain", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": true},
+		{"name": "outdoor allowed mature", "context": "outdoor", "crop": "grain", "progress": 3.0, "state": CropInstance.LifecycleState.MATURE, "valid": true},
+		{"name": "outdoor allowed dormant", "context": "outdoor", "crop": "grain", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": false},
+		{"name": "outdoor allowed existing withered", "context": "outdoor", "crop": "grain", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": true},
+		{"name": "wrong-season annual growing", "context": "outdoor", "crop": "watermelon", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": false},
+		{"name": "wrong-season annual mature", "context": "outdoor", "crop": "watermelon", "progress": 5.0, "state": CropInstance.LifecycleState.MATURE, "valid": false},
+		{"name": "wrong-season annual dormant", "context": "outdoor", "crop": "watermelon", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": false},
+		{"name": "wrong-season annual withered", "context": "outdoor", "crop": "watermelon", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": true},
+		{"name": "wrong-season persistent growing", "context": "outdoor", "crop": "blueberry", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": false},
+		{"name": "wrong-season persistent mature", "context": "outdoor", "crop": "blueberry", "progress": 5.0, "state": CropInstance.LifecycleState.MATURE, "valid": false},
+		{"name": "wrong-season persistent withered", "context": "outdoor", "crop": "blueberry", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": false},
+		{"name": "wrong-season persistent dormant", "context": "outdoor", "crop": "blueberry", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": true},
+		{"name": "greenhouse-only outdoor growing", "context": "outdoor", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.GROWING, "valid": false},
+		{"name": "greenhouse-only outdoor mature", "context": "outdoor", "crop": "lemon", "progress": 5.0, "state": CropInstance.LifecycleState.MATURE, "valid": false},
+		{"name": "greenhouse-only outdoor dormant", "context": "outdoor", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.DORMANT, "valid": false},
+		{"name": "greenhouse-only outdoor withered", "context": "outdoor", "crop": "lemon", "progress": 1.0, "state": CropInstance.LifecycleState.WITHERED, "valid": true},
+	]
+	for test_case in cases:
+		var candidate: Dictionary = canonical.duplicate(true)
+		var context := str(test_case.context)
+		var crop_position := covered
+		if context == "outdoor":
+			crop_position = outdoor
+		elif context == "unfinished":
+			candidate.buildings[0]["construction_stage"] = int(BuildingInstance.ConstructionStage.FOUNDATION)
+			candidate.buildings[0]["construction_elapsed"] = 0.0
+		elif context in ["paused", "repairing"]:
+			_set_canonical_greenhouse_pause(
+				candidate, greenhouse_key, context == "repairing"
+			)
+		_move_canonical_crop(
+			candidate,
+			covered,
+			crop_position,
+			str(test_case.crop),
+			float(test_case.progress),
+			int(test_case.state)
+		)
+		assertions.equal(
+			manager._validate_save_data(candidate),
+			bool(test_case.valid),
+			"canonical environment matrix: %s" % str(test_case.name)
+		)
+	for lifecycle_state in [
+		CropInstance.LifecycleState.GROWING,
+		CropInstance.LifecycleState.MATURE,
+		CropInstance.LifecycleState.DORMANT,
+		CropInstance.LifecycleState.WITHERED,
+	]:
+		var annual_regrow := canonical.duplicate(true)
+		annual_regrow["season"] = 2
+		_move_canonical_crop(
+			annual_regrow,
+			covered,
+			outdoor,
+			"tomato",
+			4.0 if lifecycle_state == CropInstance.LifecycleState.MATURE else 1.0,
+			lifecycle_state
+		)
+		assertions.equal(
+			manager._validate_canonical_crop_environments(annual_regrow),
+			lifecycle_state == CropInstance.LifecycleState.WITHERED,
+			"wrong-season annual_regrow state matrix: %d" % lifecycle_state
+		)
+
+	var observer := FarmStorageRestoreObserver.new()
+	observer.storage = main.farm_storage_system
+	observer.game_state = tree.root.get_node("GameState")
+	main.farm_storage_system.contents_changed.connect(observer.on_contents_changed)
+	var before: Dictionary = manager._gather_save_data().duplicate(true)
+	before.erase("meta")
+	var rejected := canonical.duplicate(true)
+	_move_canonical_crop(
+		rejected, covered, covered, "lemon", 1.0, CropInstance.LifecycleState.DORMANT
+	)
+	rejected["gold"] = int(rejected.gold) + 77
+	rejected["farm_storage"] = {"items": {"grain": 88}}
+	assertions.truthy(
+		not manager._apply_save_data(rejected),
+		"unstable canonical lifecycle rejects before runtime mutation"
+	)
+	var after: Dictionary = manager._gather_save_data().duplicate(true)
+	after.erase("meta")
+	assertions.equal(after, before, "unstable lifecycle preserves the complete runtime snapshot")
+	assertions.truthy(observer.events.is_empty(), "unstable lifecycle publishes no storage event")
+
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _move_canonical_crop(
+	payload: Dictionary,
+	from_position: Vector2i,
+	to_position: Vector2i,
+	crop_id: String,
+	progress: float,
+	lifecycle_state: int
+) -> void:
+	for entry_value in payload.grid.cells:
+		if not entry_value is Dictionary:
+			continue
+		var entry := entry_value as Dictionary
+		if int(entry.get("gx", -1)) != from_position.x or int(entry.get("gz", -1)) != from_position.y:
+			continue
+		entry["gx"] = to_position.x
+		entry["gz"] = to_position.y
+		entry["crop"] = {
+			"crop_id": crop_id,
+			"growth_progress": progress,
+			"is_watered_today": false,
+			"harvest_count": 0,
+			"lifecycle_state": lifecycle_state,
+		}
+		return
+
+
+func _set_canonical_greenhouse_pause(
+	payload: Dictionary,
+	building_key: String,
+	repairing: bool
+) -> void:
+	var loaded_day := int(payload.get("total_days", payload.get("last_simulated_day", 1)))
+	var found := false
+	for record in payload.production_upkeep.maintenance:
+		if str(record.get("building_key", "")) == building_key:
+			record["due_day"] = loaded_day + 5 if repairing else loaded_day
+			found = true
+			break
+	if not found:
+		payload.production_upkeep.maintenance.append({
+			"building_key": building_key,
+			"due_day": loaded_day + 5 if repairing else loaded_day,
+		})
+	payload.production_upkeep.repairing = (
+		[{"building_key": building_key, "remaining_seconds": 1.0}]
+		if repairing else []
+	)
 
 
 func _test_task7_legacy_lifecycle_matrix_and_storage_notifications(
@@ -525,6 +742,30 @@ func _test_task7_farm_storage_canonical_and_legacy_migration(
 		"slots": slots,
 		"quick_mappings": [1, 0, 3, 2, 19, -1],
 	}
+	var before_legacy_rejections: Dictionary = manager._gather_save_data().duplicate(true)
+	before_legacy_rejections.erase("meta")
+	var malformed_legacy_cases: Array[Dictionary] = []
+	var over_stack := legacy.duplicate(true)
+	over_stack.inventory.slots[0]["quantity"] = 100
+	malformed_legacy_cases.append({"name": "crop stack exceeds max_stack", "payload": over_stack})
+	var split_partial := legacy.duplicate(true)
+	split_partial.inventory.slots[0]["quantity"] = 50
+	split_partial.inventory.slots[4]["quantity"] = 10
+	malformed_legacy_cases.append({"name": "second crop stack follows partial stack", "payload": split_partial})
+	var fractional := legacy.duplicate(true)
+	fractional.inventory.slots[0]["quantity"] = 1.5
+	malformed_legacy_cases.append({"name": "crop stack quantity is noninteger", "payload": fractional})
+	var unsafe_quantity := legacy.duplicate(true)
+	unsafe_quantity.inventory.slots[0]["quantity"] = 9007199254740992
+	malformed_legacy_cases.append({"name": "crop stack quantity exceeds safe range", "payload": unsafe_quantity})
+	for malformed_case in malformed_legacy_cases:
+		assertions.truthy(
+			not manager._apply_save_data(malformed_case.payload),
+			"legacy inventory rejects %s" % str(malformed_case.name)
+		)
+		var after_rejection: Dictionary = manager._gather_save_data().duplicate(true)
+		after_rejection.erase("meta")
+		assertions.equal(after_rejection, before_legacy_rejections, "legacy inventory rejection is atomic: %s" % str(malformed_case.name))
 	main.farm_storage_system.restore_items_unchecked({"carrot": 5})
 	assertions.truthy(manager._apply_save_data(legacy), "version two crop backpack migrates through temporary canonical data")
 	assertions.equal(main.farm_storage_system.get_items(), {"grain": 179, "tomato": 77}, "legacy crop stacks combine exactly and may overload")
@@ -534,6 +775,31 @@ func _test_task7_farm_storage_canonical_and_legacy_migration(
 	var migrated_once: Dictionary = manager._gather_save_data().duplicate(true)
 	assertions.truthy(manager._apply_save_data(migrated_once), "reloading migrated canonical save is idempotent")
 	assertions.equal(main.farm_storage_system.get_items(), {"grain": 179, "tomato": 77}, "idempotent reload never duplicates migrated crops")
+
+	var current_iron: Dictionary = manager._gather_save_data().duplicate(true)
+	current_iron.inventory.slots[0] = {"item_id": "iron", "quantity": 5}
+	current_iron.inventory.slots[2] = {"item_id": "iron_ingot", "quantity": 3}
+	current_iron.inventory.quick_mappings = [0, 2, 1, 3, -1, -1]
+	assertions.truthy(manager._apply_save_data(current_iron), "current v3 still applies historical item migrate_to rules")
+	assertions.equal(main.inventory_system.get_item_count("iron"), 0, "current v3 removes the historical iron id")
+	assertions.equal(main.inventory_system.get_item_count("iron_ingot"), 8, "current v3 preserves migrated iron quantity")
+	assertions.equal(main.inventory_system.quick_slot_mappings, [0, 0, 1, 3, -1, -1], "current v3 quick mappings follow migrated iron")
+	var current_iron_once: Dictionary = manager._gather_save_data().duplicate(true)
+	assertions.truthy(manager._apply_save_data(current_iron_once), "current v3 item migration reload is idempotent")
+	assertions.equal(main.inventory_system.get_item_count("iron_ingot"), 8, "repeated current v3 load does not duplicate migrated iron")
+
+	var strict_before: Dictionary = manager._gather_save_data().duplicate(true)
+	var strict_snapshot := strict_before.duplicate(true)
+	strict_snapshot.erase("meta")
+	var current_crop_inventory := strict_before.duplicate(true)
+	current_crop_inventory.inventory.slots[2] = {"item_id": "grain", "quantity": 1}
+	assertions.truthy(not manager._apply_save_data(current_crop_inventory), "current v3 never extracts crop stacks from backpack")
+	var current_bad_mapping := strict_before.duplicate(true)
+	current_bad_mapping.inventory.quick_mappings[0] = 99
+	assertions.truthy(not manager._apply_save_data(current_bad_mapping), "current v3 never sanitizes malformed quick mappings")
+	var strict_after: Dictionary = manager._gather_save_data().duplicate(true)
+	strict_after.erase("meta")
+	assertions.equal(strict_after, strict_snapshot, "strict current v3 rejections preserve the complete runtime snapshot")
 
 	main.free()
 	manager.free()
@@ -2058,8 +2324,18 @@ func _test_farm_storage_capacity_refreshes_after_committed_load(
 	saved["grid"] = main.grid_system.to_dict()
 	saved["buildings"] = [first_record, second_record, unfinished_record]
 	saved["progression"] = progression
-	_write_json(manager._save_path(TEST_SLOT), saved)
-	_write_json(manager._save_path(BAD_SLOT), saved)
+	var legacy_slots: Array[Dictionary] = []
+	legacy_slots.resize(20)
+	for index in range(legacy_slots.size()):
+		legacy_slots[index] = {}
+	for index in range(11):
+		legacy_slots[index] = {"item_id": "grain", "quantity": 99}
+	legacy_slots[11] = {"item_id": "grain_seed", "quantity": 7}
+	legacy_slots[12] = {"item_id": "wood", "quantity": 4}
+	saved["inventory"] = {
+		"slots": legacy_slots,
+		"quick_mappings": [11, 12, 0, 19, -1, -1],
+	}
 
 	main.grid_system.reset_state()
 	var provider := FarmStorageCapacityProviderProbe.new()
@@ -2080,23 +2356,67 @@ func _test_farm_storage_capacity_refreshes_after_committed_load(
 	load_observer.storage = main.farm_storage_system
 	manager.load_completed.connect(load_observer.on_load_completed)
 
-	assertions.truthy(manager.load_game(TEST_SLOT), "committed barn save restores through public load API")
-	assertions.equal(provider.calls, 1, "committed load derives farm storage capacity exactly once")
-	assertions.equal(
-		main.farm_storage_system.get_total_capacity(),
-		1000,
-		"farm storage capacity is correct immediately when public load returns"
-	)
-	assertions.equal(
-		capacity_recorder.events,
-		[{"used": 0, "total": 1000}],
-		"committed load publishes one derived capacity change"
-	)
-	assertions.equal(
-		load_observer.observed_totals,
-		[1000],
-		"later load-completed readers observe refreshed farm storage capacity"
-	)
+	var last_legacy_payload: Dictionary = {}
+	for legacy_version in [1, 2]:
+		var legacy_payload := saved.duplicate(true)
+		legacy_payload["building_layout_version"] = legacy_version
+		legacy_payload.grid["version"] = legacy_version
+		legacy_payload.erase("farm_storage")
+		var preview: Variant = manager._migrate_save_data(legacy_payload)
+		assertions.truthy(
+			preview is Dictionary,
+			"v%d legacy capacity preview produces canonical temporary data" % legacy_version
+		)
+		if preview is Dictionary:
+			assertions.equal(
+				manager._legacy_farm_storage_capacity(
+					(preview as Dictionary).buildings,
+					(preview as Dictionary).progression
+				),
+				1000,
+				"v%d preview derives completed barns and distinct storage levels" % legacy_version
+			)
+			assertions.equal(
+				(preview as Dictionary).farm_storage.items,
+				{"grain": 1089},
+				"v%d preview retains crop totals above derived capacity" % legacy_version
+			)
+			assertions.truthy(
+				not (preview as Dictionary).farm_storage.has("capacity"),
+				"v%d preview never persists derived capacity" % legacy_version
+			)
+		_write_json(manager._save_path(TEST_SLOT), legacy_payload)
+		provider.calls = 0
+		capacity_recorder.reset()
+		var load_observation_count := load_observer.observed_totals.size()
+		assertions.truthy(
+			manager.load_game(TEST_SLOT),
+			"v%d committed legacy barn save restores through public load API" % legacy_version
+		)
+		assertions.equal(provider.calls, 1, "v%d committed load derives capacity exactly once" % legacy_version)
+		assertions.equal(
+			main.farm_storage_system.get_total_capacity(),
+			1000,
+			"v%d farm storage capacity is correct immediately when public load returns" % legacy_version
+		)
+		assertions.equal(
+			main.farm_storage_system.get_items(),
+			{"grain": 1089},
+			"v%d public load retains overloaded farm storage exactly" % legacy_version
+		)
+		assertions.equal(
+			load_observer.observed_totals.size(),
+			load_observation_count + 1,
+			"v%d load completion publishes after capacity refresh" % legacy_version
+		)
+		if load_observer.observed_totals.size() > load_observation_count:
+			assertions.equal(
+				load_observer.observed_totals[-1],
+				1000,
+				"v%d load-completed readers observe refreshed capacity" % legacy_version
+			)
+		last_legacy_payload = legacy_payload
+	_write_json(manager._save_path(BAD_SLOT), last_legacy_payload)
 	var completed_levels: Array[int] = []
 	var unfinished_levels: Array[int] = []
 	for building in main.building_system.get_all_buildings():

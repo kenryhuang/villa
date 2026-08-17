@@ -118,7 +118,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		_free_fixture(main, manager)
 		return
 
-	assertions.truthy(_buy_requirements(main, {"grain": 8, "fiber": 8}), "market supplies crop and fiber production inputs")
+	assertions.truthy(_buy_requirements(main, {"grain": 5, "fiber": 8}), "market supplies crop and fiber production inputs")
 	assertions.truthy(_produce_collect(main, buildings.windmill, "flour", 2), "windmill produces flour")
 	assertions.truthy(_produce_collect(main, buildings.windmill, "animal_feed", 1), "windmill produces animal feed")
 	assertions.truthy(

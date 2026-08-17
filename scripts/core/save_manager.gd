@@ -761,6 +761,57 @@ func _validate_save_data(data: Dictionary) -> bool:
 			return false
 		if not _validate_economy_building_keys(data):
 			return false
+	if data.has("grid") and not _validate_canonical_crop_environments(data):
+		return false
+	return true
+
+
+func _validate_canonical_crop_environments(data: Dictionary) -> bool:
+	var context_value: Variant = _greenhouse_context_from_records(
+		data.get("buildings", []),
+		data.get("production_upkeep", {}),
+		int(data.get("total_days", data.get("last_simulated_day", 1)))
+	)
+	if not context_value is Dictionary:
+		return false
+	var context := context_value as Dictionary
+	var active_cells := context.active as Dictionary
+	var paused_cells := context.paused as Dictionary
+	var season := int(data.get("season", 0))
+	for entry_value in (data.grid as Dictionary).get("cells", []):
+		if not entry_value is Dictionary:
+			return false
+		var entry := entry_value as Dictionary
+		if not entry.has("crop"):
+			continue
+		var crop_record := entry.crop as Dictionary
+		var crop_data = _registered_crop(str(crop_record.get("crop_id", "")))
+		if crop_data == null:
+			return false
+		var location := Vector2i(int(entry.get("gx", -1)), int(entry.get("gz", -1)))
+		var lifecycle_state := int(crop_record.get("lifecycle_state", -1))
+		if paused_cells.has(location):
+			continue
+		if active_cells.has(location):
+			if lifecycle_state == CropInstance.LifecycleState.DORMANT:
+				return false
+			continue
+		if str(crop_data.environment) == "greenhouse_only":
+			if lifecycle_state != CropInstance.LifecycleState.WITHERED:
+				return false
+			continue
+		var allowed_season: bool = (crop_data.seasons as Array).is_empty() or season in crop_data.seasons
+		if allowed_season:
+			if lifecycle_state == CropInstance.LifecycleState.DORMANT:
+				return false
+		elif str(crop_data.lifecycle_type) in ["annual", "annual_regrow"]:
+			if lifecycle_state != CropInstance.LifecycleState.WITHERED:
+				return false
+		elif str(crop_data.lifecycle_type) in ["bush", "tree", "vine"]:
+			if lifecycle_state != CropInstance.LifecycleState.DORMANT:
+				return false
+		else:
+			return false
 	return true
 
 
@@ -981,7 +1032,7 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 			return null
 		var layout_version := int(layout_version_value)
 		if layout_version == BUILDING_LAYOUT_VERSION:
-			return migrated
+			return _normalize_inventory_migrations(migrated)
 		if layout_version not in LEGACY_BUILDING_LAYOUT_VERSIONS:
 			return null
 		is_legacy_layout = true
@@ -989,6 +1040,10 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 		migrated["harvest_seed"] = GameStateScript.LEGACY_HARVEST_SEED
 	if is_legacy_layout:
 		return _migrate_legacy_lifecycle_save(migrated)
+	return _normalize_inventory_migrations(migrated)
+
+
+func _normalize_inventory_migrations(migrated: Dictionary) -> Variant:
 	var inventory_value: Variant = migrated.get("inventory")
 	if inventory_value == null:
 		return migrated
@@ -1050,7 +1105,8 @@ func _migrate_legacy_lifecycle_save(migrated: Dictionary) -> Variant:
 		grid_data,
 		canonical_buildings,
 		migrated.get("production_upkeep", {}),
-		int(migrated.get("season", 0))
+		int(migrated.get("season", 0)),
+		int(migrated.get("total_days", migrated.get("last_simulated_day", 1)))
 	)
 	if not canonical_grid is Dictionary:
 		return null
@@ -1129,6 +1185,24 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 	var mappings_source := source["quick_mappings"] as Array
 	if slots.size() > int(inventory.get("max_slots")) or mappings_source.size() != 6:
 		return null
+	var sanitized_mappings: Array[int] = []
+	for mapping_value in mappings_source:
+		if not _is_integer_number(mapping_value):
+			return null
+		var mapped_index := int(mapping_value)
+		if mapped_index < 0 or mapped_index >= slots.size():
+			sanitized_mappings.append(-1)
+		elif slots[mapped_index] is Dictionary and (slots[mapped_index] as Dictionary).is_empty():
+			sanitized_mappings.append(-1)
+		else:
+			sanitized_mappings.append(mapped_index)
+	var normalized_source: Variant = inventory.call(
+		"normalize_saved_state", slots, sanitized_mappings
+	)
+	if not normalized_source is Dictionary:
+		return null
+	slots = ((normalized_source as Dictionary).slots as Array).duplicate(true)
+	var normalized_mappings := ((normalized_source as Dictionary).quick_mappings as Array).duplicate()
 	var farm_items: Dictionary = {}
 	var removed_indices := {}
 	for index in range(slots.size()):
@@ -1146,11 +1220,7 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 			return null
 		if (definition as Dictionary).get("category") != "crop":
 			continue
-		if typeof(slot.get("quantity")) != TYPE_INT:
-			return null
 		var quantity := int(slot["quantity"])
-		if quantity <= 0 or quantity > EconomyLimitsScript.MAX_SAFE_INTEGER:
-			return null
 		if not _is_registered_crop_id(item_id):
 			return null
 		var previous := int(farm_items.get(item_id, 0))
@@ -1160,9 +1230,7 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 		slots[index] = {}
 		removed_indices[index] = true
 	var mappings: Array[int] = []
-	for mapping_value in mappings_source:
-		if not _is_integer_number(mapping_value):
-			return null
+	for mapping_value in normalized_mappings:
 		var mapped_index := int(mapping_value)
 		if (
 			mapped_index < 0
@@ -1174,24 +1242,27 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 			mappings.append(-1)
 		else:
 			mappings.append(mapped_index)
-	var normalized: Variant = inventory.call("normalize_saved_state", slots, mappings)
-	if not normalized is Dictionary:
-		return null
-	return {"inventory": normalized, "farm_storage_items": farm_items}
+	return {
+		"inventory": {"slots": slots, "quick_mappings": mappings},
+		"farm_storage_items": farm_items,
+	}
 
 
 func _migrate_legacy_grid(
 	grid_data: Dictionary,
 	building_values: Variant,
 	production_upkeep: Variant,
-	season: int
+	season: int,
+	loaded_day: int
 ) -> Variant:
-	var greenhouse_context: Variant = _legacy_greenhouse_cells(
-		building_values,
-		production_upkeep
+	var greenhouse_context: Variant = _greenhouse_context_from_records(
+		building_values, production_upkeep, loaded_day
 	)
 	if not greenhouse_context is Dictionary:
 		return null
+	var protected_cells := (greenhouse_context as Dictionary).active as Dictionary
+	for location in (greenhouse_context as Dictionary).paused:
+		protected_cells[location] = true
 	var canonical := {"version": 3, "cells": (grid_data["cells"] as Array).duplicate(true)}
 	for entry_value in canonical.cells:
 		if not entry_value is Dictionary:
@@ -1220,7 +1291,7 @@ func _migrate_legacy_grid(
 			return null
 		var location := Vector2i(int(entry.get("gx", -1)), int(entry.get("gz", -1)))
 		var lifecycle := CropInstance.LifecycleState.GROWING
-		if (greenhouse_context as Dictionary).has(location):
+		if protected_cells.has(location):
 			lifecycle = (
 				CropInstance.LifecycleState.MATURE
 				if float(progress_value) >= float(crop_data.growth_days)
@@ -1242,13 +1313,38 @@ func _migrate_legacy_grid(
 	return canonical
 
 
-func _legacy_greenhouse_cells(building_values: Variant, production_upkeep: Variant) -> Variant:
+func _greenhouse_context_from_records(
+	building_values: Variant,
+	production_upkeep: Variant,
+	loaded_day: int
+) -> Variant:
 	if not building_values is Array or not production_upkeep is Dictionary:
 		return null
-	var maintenance_records: Variant = (production_upkeep as Dictionary).get("maintenance", [])
-	if not maintenance_records is Array:
+	var upkeep := production_upkeep as Dictionary
+	var maintenance_records: Variant = upkeep.get("maintenance", [])
+	var repairing_records: Variant = upkeep.get("repairing", [])
+	if not maintenance_records is Array or not repairing_records is Array:
 		return null
-	var result := {}
+	var due_days := {}
+	for value in maintenance_records:
+		if not value is Dictionary:
+			return null
+		var record := value as Dictionary
+		var key := str(record.get("building_key", ""))
+		if key.is_empty() or due_days.has(key) or not _is_integer_number(record.get("due_day")):
+			return null
+		due_days[key] = int(record.due_day)
+	var repairing := {}
+	for value in repairing_records:
+		if not value is Dictionary:
+			return null
+		var record := value as Dictionary
+		var key := str(record.get("building_key", ""))
+		if key.is_empty() or repairing.has(key) or not due_days.has(key):
+			return null
+		repairing[key] = true
+	var active := {}
+	var paused := {}
 	for value in building_values:
 		if not value is Dictionary:
 			return null
@@ -1263,14 +1359,22 @@ func _legacy_greenhouse_cells(building_values: Variant, production_upkeep: Varia
 		var definition := GameDataScript.get_building("greenhouse")
 		var gx := int(record.gx)
 		var gz := int(record.gz)
+		var building_key := "greenhouse:%d:%d" % [gx, gz]
+		var maintenance_paused := (
+			repairing.has(building_key)
+			or (due_days.has(building_key) and int(due_days[building_key]) - loaded_day <= 0)
+		)
+		var destination := paused if maintenance_paused else active
 		var width := int(definition.get("footprint_x", 3))
 		var depth := int(definition.get("footprint_z", 3))
 		for x in range(gx, gx + width):
-			result[Vector2i(x, gz - 1)] = true
-			result[Vector2i(x, gz + depth)] = true
-		result[Vector2i(gx - 1, gz + depth / 2)] = true
-		result[Vector2i(gx + width, gz + depth / 2)] = true
-	return result
+			destination[Vector2i(x, gz - 1)] = true
+			destination[Vector2i(x, gz + depth)] = true
+		destination[Vector2i(gx - 1, gz + depth / 2)] = true
+		destination[Vector2i(gx + width, gz + depth / 2)] = true
+	for location in active:
+		paused.erase(location)
+	return {"active": active, "paused": paused}
 
 
 func _legacy_farm_storage_capacity(building_values: Variant, progression: Variant) -> Variant:
