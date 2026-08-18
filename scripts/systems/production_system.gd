@@ -27,6 +27,8 @@ var _farming_system: FarmingSystem
 var _building_system: BuildingSystem
 var _inventory_system: InventorySystem
 var _item_container_router: ItemContainerRouterScript
+var _router_required := false
+var _routed_input_isolated := false
 var _progression_system: Variant
 var _current_day := 0
 var maintenance_due_days: Dictionary = {}
@@ -69,7 +71,9 @@ func configure(
 	_building_system = building_system
 	_inventory_system = inventory_system
 	_item_container_router = null
-	if item_container_router != null and not set_item_container_router(item_container_router):
+	_router_required = item_container_router != null
+	_routed_input_isolated = false
+	if _router_required and not set_item_container_router(item_container_router):
 		return false
 	_greenhouse_coverage_initialized = false
 	_last_active_greenhouse_cells.clear()
@@ -84,6 +88,8 @@ func set_item_container_router(router: ItemContainerRouterScript) -> bool:
 	if not is_instance_valid(router):
 		return false
 	_item_container_router = router
+	_router_required = true
+	_routed_input_isolated = false
 	return true
 
 
@@ -155,13 +161,14 @@ func preflight_recipe(
 	building: BuildingInstance,
 	recipe_id: String,
 	batches: int,
-	inventory: InventorySystem
+	inventory: InventorySystem = null
 ) -> Dictionary:
 	var failure := {"ok": false, "reason": "invalid_request", "missing": {}}
 	if (
 		building == null
-		or (_item_container_router == null and inventory == null)
-		or (_item_container_router != null and not is_instance_valid(_item_container_router))
+		or _routed_input_isolated
+		or (_router_required and not is_instance_valid(_item_container_router))
+		or (not _router_required and inventory == null)
 		or recipe_id.is_empty()
 		or batches <= 0
 		or batches > MAX_SAFE_INTEGER
@@ -230,9 +237,11 @@ func start_recipe(
 	building: BuildingInstance,
 	recipe_id: String,
 	batches: int,
-	inventory: InventorySystem
+	inventory: InventorySystem = null
 ) -> bool:
-	if is_instance_valid(_item_container_router):
+	if _router_required:
+		if _routed_input_isolated or not is_instance_valid(_item_container_router):
+			return false
 		return _start_routed_recipe(building, recipe_id, batches, inventory)
 	var preflight := preflight_recipe(building, recipe_id, batches, inventory)
 	if not bool(preflight.get("ok", false)):
@@ -272,9 +281,11 @@ func add_input(
 	building: BuildingInstance,
 	item_id: String,
 	quantity: int,
-	inventory: InventorySystem
+	inventory: InventorySystem = null
 ) -> bool:
-	if is_instance_valid(_item_container_router):
+	if _router_required:
+		if _routed_input_isolated or not is_instance_valid(_item_container_router):
+			return false
 		return _add_routed_input(building, item_id, quantity)
 	var state := _get_state(building)
 	if state == null or inventory == null or quantity <= 0:
@@ -327,13 +338,14 @@ func _start_routed_recipe(
 	var router_before := _item_container_router.snapshot_for(inputs)
 	var router_token := _item_container_router.begin_atomic_transaction()
 	if router_before.is_empty() or router_token == null:
-		if router_token != null:
-			_item_container_router.rollback_atomic_transaction(router_token)
+		if router_token != null and not _item_container_router.rollback_atomic_transaction(router_token):
+			_isolate_routed_inputs("recipe prepare rollback")
 		_active_player_input_transactions.erase(key)
 		return false
 	var owns_event_transaction := _begin_event_bus_transaction()
 	if _event_bus != null and not owns_event_transaction:
-		_item_container_router.rollback_atomic_transaction(router_token)
+		if not _item_container_router.rollback_atomic_transaction(router_token):
+			_isolate_routed_inputs("recipe EventBus rollback")
 		_active_player_input_transactions.erase(key)
 		return false
 	var job := {
@@ -344,30 +356,29 @@ func _start_routed_recipe(
 	}
 	if not _item_container_router.stage_remove_items(router_token, inputs) or not state.enqueue_job(job):
 		state.jobs.assign(jobs_before)
-		_rollback_routed_inputs(router_token, null, null, router_before, owns_event_transaction)
+		_require_routed_input_rollback(router_token, null, null, router_before, owns_event_transaction, "recipe mutation")
 		_active_player_input_transactions.erase(key)
 		return false
 	var publication := _item_container_router.seal_atomic_transaction(router_token)
 	if publication == null:
 		state.jobs.assign(jobs_before)
-		_rollback_routed_inputs(router_token, null, null, router_before, owns_event_transaction)
+		_require_routed_input_rollback(router_token, null, null, router_before, owns_event_transaction, "recipe seal")
 		_active_player_input_transactions.erase(key)
 		return false
 	var finalized := _item_container_router.finalize_sealed_publication(publication)
 	if finalized == null:
 		state.jobs.assign(jobs_before)
-		_rollback_routed_inputs(null, publication, null, router_before, owns_event_transaction)
+		_require_routed_input_rollback(null, publication, null, router_before, owns_event_transaction, "recipe finalize")
 		_active_player_input_transactions.erase(key)
 		return false
 	_end_routed_event_transaction(owns_event_transaction)
 	var dispatched := _item_container_router.dispatch_finalized_publication(finalized)
-	if dispatched:
-		register_building(building)
-		_emit_event("production_job_started", [building, recipe_id, batches])
-	else:
+	if not dispatched:
 		push_error("A source-owned production publication violated its dispatch guarantee.")
+	register_building(building)
+	_emit_event("production_job_started", [building, recipe_id, batches])
 	_active_player_input_transactions.erase(key)
-	return dispatched
+	return true
 
 
 func _add_routed_input(building: BuildingInstance, item_id: String, quantity: int) -> bool:
@@ -379,6 +390,8 @@ func _add_routed_input(building: BuildingInstance, item_id: String, quantity: in
 		or not _active_player_input_transactions.is_empty()
 		or quantity <= 0
 		or quantity > MAX_SAFE_INTEGER
+		or state.get_input_count(item_id) < 0
+		or state.get_input_count(item_id) > MAX_SAFE_INTEGER - quantity
 		or GameDataScript.get_item(item_id) == null
 		or not bool(_item_container_router.can_remove({item_id: quantity}).get("ok", false))
 	):
@@ -389,39 +402,62 @@ func _add_routed_input(building: BuildingInstance, item_id: String, quantity: in
 	var router_before := _item_container_router.snapshot_for(requested)
 	var token := _item_container_router.begin_atomic_transaction()
 	if router_before.is_empty() or token == null:
-		if token != null:
-			_item_container_router.rollback_atomic_transaction(token)
+		if token != null and not _item_container_router.rollback_atomic_transaction(token):
+			_isolate_routed_inputs("input prepare rollback")
 		_active_player_input_transactions.erase(key)
 		return false
 	var owns_event_transaction := _begin_event_bus_transaction()
 	if _event_bus != null and not owns_event_transaction:
-		_item_container_router.rollback_atomic_transaction(token)
+		if not _item_container_router.rollback_atomic_transaction(token):
+			_isolate_routed_inputs("input EventBus rollback")
 		_active_player_input_transactions.erase(key)
 		return false
 	if not _item_container_router.stage_remove_items(token, requested) or not state.add_input(item_id, quantity):
 		state.inputs = inputs_before
-		_rollback_routed_inputs(token, null, null, router_before, owns_event_transaction)
+		_require_routed_input_rollback(token, null, null, router_before, owns_event_transaction, "input mutation")
 		_active_player_input_transactions.erase(key)
 		return false
 	var publication := _item_container_router.seal_atomic_transaction(token)
 	if publication == null:
 		state.inputs = inputs_before
-		_rollback_routed_inputs(token, null, null, router_before, owns_event_transaction)
+		_require_routed_input_rollback(token, null, null, router_before, owns_event_transaction, "input seal")
 		_active_player_input_transactions.erase(key)
 		return false
 	var finalized := _item_container_router.finalize_sealed_publication(publication)
 	if finalized == null:
 		state.inputs = inputs_before
-		_rollback_routed_inputs(null, publication, null, router_before, owns_event_transaction)
+		_require_routed_input_rollback(null, publication, null, router_before, owns_event_transaction, "input finalize")
 		_active_player_input_transactions.erase(key)
 		return false
 	_end_routed_event_transaction(owns_event_transaction)
 	var dispatched := _item_container_router.dispatch_finalized_publication(finalized)
-	if dispatched:
-		register_building(building)
-		_emit_event("production_input_changed", [building, item_id, state.get_input_count(item_id)])
+	if not dispatched:
+		push_error("A source-owned production input publication violated its dispatch guarantee.")
+	register_building(building)
+	_emit_event("production_input_changed", [building, item_id, state.get_input_count(item_id)])
 	_active_player_input_transactions.erase(key)
-	return dispatched
+	return true
+
+
+func _require_routed_input_rollback(
+	token: RefCounted,
+	publication: RefCounted,
+	finalized: RefCounted,
+	snapshot: Dictionary,
+	owns_event_transaction: bool,
+	context: String
+) -> bool:
+	var restored := _rollback_routed_inputs(
+		token, publication, finalized, snapshot, owns_event_transaction
+	)
+	if not restored:
+		_isolate_routed_inputs(context)
+	return restored
+
+
+func _isolate_routed_inputs(context: String) -> void:
+	_routed_input_isolated = true
+	push_error("Routed production input rollback failed exact verification: %s." % context)
 
 
 func _rollback_routed_inputs(
@@ -438,9 +474,12 @@ func _rollback_routed_inputs(
 		restored = _item_container_router.cancel_sealed_transaction(publication)
 	elif token != null and _item_container_router.owns_atomic_transaction(token):
 		restored = _item_container_router.rollback_atomic_transaction(token)
-	if not _item_container_router.snapshot_matches(snapshot):
-		_item_container_router.restore_snapshot(snapshot)
-	restored = restored and _item_container_router.snapshot_matches(snapshot)
+	var exact_match := _item_container_router.snapshot_matches(snapshot)
+	if not exact_match:
+		var snapshot_restored := _item_container_router.restore_snapshot(snapshot)
+		exact_match = _item_container_router.snapshot_matches(snapshot)
+		restored = restored and snapshot_restored
+	restored = restored and exact_match
 	_end_routed_event_transaction(owns_event_transaction)
 	return restored
 

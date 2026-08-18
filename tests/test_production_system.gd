@@ -85,6 +85,25 @@ class FailingFinalizeRouter:
 		return super.finalize_sealed_publication(publication)
 
 
+class DelayedDispatchRouter:
+	extends ItemContainerRouter
+	var delay_next_dispatch := true
+
+	func dispatch_finalized_publication(publication: Variant) -> bool:
+		if delay_next_dispatch:
+			delay_next_dispatch = false
+			return false
+		return super.dispatch_finalized_publication(publication)
+
+
+class PersistentRollbackFailureRouter:
+	extends ItemContainerRouter
+
+	func rollback_atomic_transaction(token: Variant) -> bool:
+		super.rollback_atomic_transaction(token)
+		return false
+
+
 class EconomyDouble:
 	extends RefCounted
 
@@ -179,6 +198,30 @@ class ReentrantProductionObserver:
 		inner_result = bool(action.call())
 
 
+class RoutedProductionRecorder:
+	extends RefCounted
+	var removed_events := 0
+	var job_events := 0
+	var input_events := 0
+
+	func on_item_removed(_item_id: String, _quantity: int) -> void:
+		removed_events += 1
+
+	func on_job_started(
+		_building: BuildingInstance,
+		_recipe_id: String,
+		_batches: int
+	) -> void:
+		job_events += 1
+
+	func on_input_changed(
+		_building: BuildingInstance,
+		_item_id: String,
+		_quantity: int
+	) -> void:
+		input_events += 1
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
@@ -187,6 +230,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_unfinished_building_lifecycle(assertions)
 	_test_start_failures_are_atomic(assertions)
 	_test_routed_mixed_recipe_inputs(assertions, tree)
+	await _test_routed_commit_point_and_guards(assertions, tree)
 	_test_queue_limit_and_output_pause(assertions)
 	_test_collection_is_atomic(assertions)
 	_test_rollback_signals_are_atomic(assertions, tree)
@@ -200,6 +244,123 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_greenhouse_restore_transaction(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
+
+
+func _test_routed_commit_point_and_guards(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var event_bus := tree.root.get_node("EventBus")
+	var inventory := _inventory()
+	var storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var router := _track(DelayedDispatchRouter.new()) as DelayedDispatchRouter
+	var production := _production()
+	storage.configure(func() -> int: return 100)
+	router.configure(inventory, storage)
+	production.set_item_container_router(router)
+	for node in [inventory, storage, router, production]:
+		tree.root.add_child(node)
+	await tree.process_frame
+	var recorder := RoutedProductionRecorder.new()
+	event_bus.item_removed.connect(recorder.on_item_removed)
+	event_bus.production_job_started.connect(recorder.on_job_started)
+	event_bus.production_input_changed.connect(recorder.on_input_changed)
+	inventory.add_item("wood", 2)
+	var workbench := _building("workbench")
+	assertions.truthy(
+		production.start_recipe(workbench, "plank", 1),
+		"finalized routed recipe reports committed success when dispatch is delayed"
+	)
+	assertions.equal(workbench.producer_state.jobs.size(), 1, "delayed recipe dispatch keeps committed job")
+	assertions.equal(recorder.job_events, 1, "delayed recipe dispatch publishes domain event once")
+	await tree.process_frame
+	assertions.equal(recorder.removed_events, 1, "abandoned finalized recipe publication dispatches once")
+
+	router.delay_next_dispatch = true
+	inventory.add_item("animal_feed", 1)
+	var coop := _building("chicken_coop")
+	assertions.truthy(
+		production.add_input(coop, "animal_feed", 1),
+		"finalized routed input reports committed success when dispatch is delayed"
+	)
+	assertions.equal(coop.producer_state.get_input_count("animal_feed"), 1, "delayed input dispatch keeps committed producer input")
+	assertions.equal(recorder.input_events, 1, "delayed input dispatch publishes domain event once")
+	await tree.process_frame
+	assertions.equal(recorder.removed_events, 2, "abandoned finalized input publication dispatches once")
+	event_bus.item_removed.disconnect(recorder.on_item_removed)
+	event_bus.production_job_started.disconnect(recorder.on_job_started)
+	event_bus.production_input_changed.disconnect(recorder.on_input_changed)
+	for node in [production, router, storage, inventory]:
+		tree.root.remove_child(node)
+
+	var invalid_inventory := _inventory()
+	var invalid_storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var invalid_router := ItemContainerRouterScript.new()
+	var invalid_production := _production()
+	invalid_storage.configure(func() -> int: return 100)
+	invalid_router.configure(invalid_inventory, invalid_storage)
+	invalid_production.set_item_container_router(invalid_router)
+	invalid_inventory.add_item("animal_feed", 1)
+	invalid_router.free()
+	var invalid_coop := _building("chicken_coop")
+	assertions.truthy(
+		not bool(invalid_production.preflight_recipe(_building("workbench"), "plank", 1).get("ok", false)),
+		"required freed router rejects preflight without legacy fallback"
+	)
+	assertions.truthy(
+		not invalid_production.add_input(invalid_coop, "animal_feed", 1, invalid_inventory),
+		"required freed router rejects add_input without legacy fallback"
+	)
+	assertions.equal(invalid_inventory.get_item_count("animal_feed"), 1, "freed router add_input preserves legacy inventory")
+	assertions.equal(invalid_coop.producer_state.get_input_count("animal_feed"), 0, "freed router add_input preserves producer state")
+	assertions.truthy(
+		_method_default_arg_count(invalid_production, "start_recipe") >= 1
+		and _method_default_arg_count(invalid_production, "add_input") >= 1
+		and _method_default_arg_count(invalid_production, "preflight_recipe") >= 1,
+		"router production APIs do not require a caller-selected inventory"
+	)
+
+	var overflow_inventory := _inventory()
+	var overflow_storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var overflow_router := _track(ItemContainerRouterScript.new()) as ItemContainerRouter
+	var overflow_production := _production()
+	overflow_storage.configure(func() -> int: return 100)
+	overflow_router.configure(overflow_inventory, overflow_storage)
+	overflow_production.set_item_container_router(overflow_router)
+	overflow_inventory.add_item("animal_feed", 1)
+	var full_state := ProducerStateScript.new("chicken_coop")
+	full_state.inputs["animal_feed"] = ProductionSystemScript.MAX_SAFE_INTEGER
+	var full_coop := _building("chicken_coop", full_state)
+	assertions.truthy(
+		not overflow_production.add_input(full_coop, "animal_feed", 1),
+		"routed add_input rejects current maximum plus one"
+	)
+	assertions.equal(overflow_inventory.get_item_count("animal_feed"), 1, "overflow rejection consumes no routed input")
+	assertions.equal(full_state.get_input_count("animal_feed"), ProductionSystemScript.MAX_SAFE_INTEGER, "overflow rejection preserves producer input")
+
+	var rollback_inventory := _inventory()
+	var rollback_storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var rollback_router := _track(PersistentRollbackFailureRouter.new()) as PersistentRollbackFailureRouter
+	var rollback_production := _production()
+	rollback_storage.configure(func() -> int: return 100)
+	rollback_router.configure(rollback_inventory, rollback_storage)
+	rollback_production.set_item_container_router(rollback_router)
+	rollback_inventory.add_item("animal_feed", 2)
+	var failing_state := FailingInputState.new("chicken_coop")
+	var failing_coop := _building("chicken_coop", failing_state)
+	assertions.truthy(
+		not rollback_production.add_input(failing_coop, "animal_feed", 1),
+		"reported routed rollback failure rejects input"
+	)
+	assertions.equal(rollback_inventory.get_item_count("animal_feed"), 2, "reported rollback failure still restores exact input")
+	assertions.equal(failing_state.get_input_count("animal_feed"), 0, "reported rollback failure restores producer state")
+	assertions.truthy(rollback_production.get("_routed_input_isolated") == true, "reported rollback failure isolates routed production")
+	var isolated_coop := _building("chicken_coop")
+	assertions.truthy(
+		not rollback_production.add_input(isolated_coop, "animal_feed", 1),
+		"isolated routed production rejects later player input"
+	)
+	assertions.equal(rollback_inventory.get_item_count("animal_feed"), 2, "isolation rejection changes no source input")
 
 
 func _test_freed_registered_buildings_are_pruned(assertions: TestAssert) -> void:
@@ -1142,6 +1303,13 @@ func _inventory() -> InventorySystem:
 func _track(node: Node) -> Node:
 	_owned_nodes.append(node)
 	return node
+
+
+func _method_default_arg_count(target: Object, method_name: String) -> int:
+	for method in target.get_method_list():
+		if str(method.get("name", "")) == method_name:
+			return (method.get("default_args", []) as Array).size()
+	return -1
 
 
 func _cleanup_nodes() -> void:

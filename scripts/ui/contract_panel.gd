@@ -66,7 +66,12 @@ func _ready() -> void:
 		sign_button.pressed.connect(_on_sign_pressed)
 	if not deliver_button.pressed.is_connected(_on_deliver_pressed):
 		deliver_button.pressed.connect(_on_deliver_pressed)
+	_connect_runtime_signals()
 	refresh_contracts()
+
+
+func _exit_tree() -> void:
+	_disconnect_runtime_signals()
 
 
 func configure(economy: EconomySystem, _inventory: InventorySystem = null) -> bool:
@@ -380,6 +385,25 @@ func _connect_runtime_signals() -> void:
 		var inventory_callback := Callable(self, "_on_inventory_changed")
 		if event_bus.has_signal(signal_name) and not event_bus.is_connected(signal_name, inventory_callback):
 			event_bus.connect(signal_name, inventory_callback)
+	var storage_callback := Callable(self, "_on_storage_changed")
+	if event_bus.has_signal("farm_storage_changed") and not event_bus.is_connected("farm_storage_changed", storage_callback):
+		event_bus.connect("farm_storage_changed", storage_callback)
+
+
+func _disconnect_runtime_signals() -> void:
+	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if event_bus == null:
+		return
+	var connections := {
+		"contract_updated": Callable(self, "_on_contract_updated"),
+		"item_added": Callable(self, "_on_inventory_changed"),
+		"item_removed": Callable(self, "_on_inventory_changed"),
+		"farm_storage_changed": Callable(self, "_on_storage_changed"),
+	}
+	for signal_name in connections:
+		var callback: Callable = connections[signal_name]
+		if event_bus.has_signal(signal_name) and event_bus.is_connected(signal_name, callback):
+			event_bus.disconnect(signal_name, callback)
 
 
 func _on_contract_updated(_contract_id: String) -> void:
@@ -387,6 +411,10 @@ func _on_contract_updated(_contract_id: String) -> void:
 
 
 func _on_inventory_changed(_item_id: String, _quantity: int) -> void:
+	refresh_contracts()
+
+
+func _on_storage_changed(_changes: Dictionary) -> void:
 	refresh_contracts()
 
 

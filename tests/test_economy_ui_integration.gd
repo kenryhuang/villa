@@ -34,12 +34,73 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_hud_market_sale_and_large_confirmation(assertions, tree)
 	await _test_order_delivery_updates_every_authority(assertions, tree)
 	await _test_contract_sign_delivery_reload_is_idempotent(assertions, tree)
+	await _test_order_contract_panels_follow_farm_storage(assertions, tree)
 	await _test_windmill_flour_flow(assertions, tree)
 	await _test_coop_feed_egg_flow(assertions, tree)
 	await _test_waterwheel_overlay_lifecycle(assertions, tree)
 	await _test_blueprint_service_is_idempotent(assertions, tree)
 	await _test_merged_notifications_navigate_to_target(assertions, tree)
 	await _test_every_modal_restores_original_pause(assertions, tree)
+
+
+func _test_order_contract_panels_follow_farm_storage(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state := tree.root.get_node("GameState")
+	var saved := _snapshot_wallet(game_state)
+	game_state.gold = 100
+	var fixture := _order_contract_fixture(game_state)
+	for node in [
+		fixture.market, fixture.npc, fixture.inventory, fixture.storage,
+		fixture.router, fixture.economy,
+	]:
+		tree.root.add_child(node)
+	var order_panel := preload("res://scenes/ui/economy/order_panel.tscn").instantiate()
+	var contract_panel := preload("res://scenes/ui/economy/contract_panel.tscn").instantiate()
+	tree.root.add_child(order_panel)
+	tree.root.add_child(contract_panel)
+	await tree.process_frame
+	assertions.truthy(order_panel.configure(fixture.economy, fixture.npc), "storage refresh fixture configures order panel")
+	assertions.truthy(contract_panel.configure(fixture.economy), "storage refresh fixture configures contract panel")
+	assertions.truthy(fixture.economy.sign_contract("lao_li:grain:1:3"), "storage refresh fixture signs contract")
+	order_panel.select_order("lao_li:grain:1")
+	contract_panel.select_contract("lao_li:grain:1:3")
+	assertions.equal(order_panel.owned_label.text, "持有：5/5", "order panel starts with farm-storage ownership")
+	assertions.truthy(not order_panel.deliver_button.disabled, "stored crop initially enables order delivery")
+	assertions.truthy(not contract_panel.deliver_button.disabled, "stored crop initially enables contract delivery")
+	assertions.truthy(fixture.storage.remove_items({"grain": 5}), "storage refresh fixture removes crop")
+	assertions.equal(order_panel.owned_label.text, "持有：0/5", "storage removal refreshes order ownership")
+	assertions.truthy(order_panel.deliver_button.disabled, "storage removal disables order delivery")
+	assertions.truthy(contract_panel.deliver_button.disabled, "storage removal disables contract delivery")
+	assertions.truthy(fixture.storage.add_items({"grain": 5}), "storage refresh fixture restores crop")
+	assertions.equal(order_panel.owned_label.text, "持有：5/5", "storage addition refreshes order ownership")
+	assertions.truthy(not order_panel.deliver_button.disabled, "storage addition enables order delivery")
+	assertions.truthy(not contract_panel.deliver_button.disabled, "storage addition enables contract delivery")
+	var event_bus := tree.root.get_node("EventBus")
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(order_panel, "_on_storage_changed")),
+		"order panel connects one farm-storage refresh callback"
+	)
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(contract_panel, "_on_storage_changed")),
+		"contract panel connects one farm-storage refresh callback"
+	)
+	tree.root.remove_child(order_panel)
+	tree.root.remove_child(contract_panel)
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(order_panel, "_on_storage_changed")),
+		"order panel disconnects farm-storage callback on exit"
+	)
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(contract_panel, "_on_storage_changed")),
+		"contract panel disconnects farm-storage callback on exit"
+	)
+	_free_nodes([
+		contract_panel, order_panel, fixture.economy, fixture.router, fixture.storage,
+		fixture.inventory, fixture.npc, fixture.market,
+	])
+	_restore_wallet(game_state, saved)
 
 
 func _test_main_owned_routing_contract(assertions: TestAssert, tree: SceneTree) -> void:

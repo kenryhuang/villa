@@ -389,8 +389,9 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 		push_error("A source-owned finalized publication violated its dispatch guarantee.")
 	_ensure_event_bus_unblocked(event_bus_transaction)
 	_publish_routed_wallet_event(event_bus_transaction)
+	_ensure_event_bus_unblocked(event_bus_transaction)
 	_trade_active = false
-	return router_dispatched and market_dispatched
+	return true
 
 
 func _rollback_routed_trade(
@@ -924,9 +925,11 @@ func _transfer_routed_player_delivery(
 		push_error("A source-owned delivery publication violated its dispatch guarantee.")
 	_ensure_event_bus_unblocked(owns_event_bus_transaction)
 	_publish_routed_wallet_event(owns_event_bus_transaction)
+	_ensure_event_bus_unblocked(owns_event_bus_transaction)
 	if publish_domain.is_valid():
 		publish_domain.call()
-	return dispatched
+	_ensure_event_bus_unblocked(owns_event_bus_transaction)
+	return true
 
 
 func _rollback_routed_delivery(

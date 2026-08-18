@@ -21,6 +21,9 @@ const FarmingSystemTest = preload("res://tests/test_farming_system.gd")
 const CropVisualTest = preload("res://tests/test_crop_visual.gd")
 const Phase1SystemsTest = preload("res://tests/test_phase1_systems.gd")
 const MainItemContainerWiringTest = preload("res://tests/test_main_item_container_wiring.gd")
+const EconomyOrdersTest = preload("res://tests/test_economy_orders.gd")
+const ProductionSystemTest = preload("res://tests/test_production_system.gd")
+const EconomyUIIntegrationTest = preload("res://tests/test_economy_ui_integration.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 func _init() -> void:
@@ -56,6 +59,21 @@ func _run() -> void:
 	print(
 		"[task2-main-router] complete: %d checks"
 		% (assertions.checks - task2_main_checks_before)
+	)
+	var task3_checks_before: int = assertions.checks
+	print("[task3-seed-crop-routing] start")
+	var task3_orders_test := EconomyOrdersTest.new()
+	await task3_orders_test.run(assertions, self)
+	task3_orders_test = null
+	var task3_production_test := ProductionSystemTest.new()
+	await task3_production_test.run(assertions, self)
+	task3_production_test = null
+	var task3_ui_test := EconomyUIIntegrationTest.new()
+	await task3_ui_test.run(assertions, self)
+	task3_ui_test = null
+	print(
+		"[task3-seed-crop-routing] complete: %d checks"
+		% (assertions.checks - task3_checks_before)
 	)
 	SeasonSystemTest.new().run(assertions)
 	GridSystemTest.new().run(assertions)

@@ -253,6 +253,7 @@ func finalize_sealed_publication(publication: Variant) -> RefCounted:
 	_recover_abandoned_finalized()
 	if _publication_in_progress or _has_finalized_state() or not _owns_sealed_transaction(publication):
 		return null
+	# Finalization is the source-owned commit point; dispatch only publishes its notifications.
 	return _finalize_sealed_publication()
 
 

@@ -10,7 +10,7 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions = TestAssertScript.new()
-	ProductionSystemTest.new().run(assertions, self)
+	await ProductionSystemTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d production system checks" % assertions.checks)
 		quit(0)

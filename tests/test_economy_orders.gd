@@ -70,6 +70,16 @@ class FailingFinalizeRouter extends ItemContainerRouter:
 		return super.finalize_sealed_publication(publication)
 
 
+class DelayedDispatchRouter extends ItemContainerRouter:
+	var delay_next_dispatch := true
+
+	func dispatch_finalized_publication(publication: Variant) -> bool:
+		if delay_next_dispatch:
+			delay_next_dispatch = false
+			return false
+		return super.dispatch_finalized_publication(publication)
+
+
 class ReentrantDeliveryObserver extends RefCounted:
 	var reenter: Callable
 	var attempted := false
@@ -115,6 +125,49 @@ class DeliveryEventRecorder extends RefCounted:
 		count += 1
 
 
+class CommitEventRecorder extends RefCounted:
+	var gold_events := 0
+	var item_events := 0
+	var storage_events := 0
+	var order_events := 0
+	var contract_events := 0
+
+	func on_gold(_balance: int) -> void:
+		gold_events += 1
+
+	func on_item(_item_id: String, _quantity: int) -> void:
+		item_events += 1
+
+	func on_storage(_changes: Dictionary) -> void:
+		storage_events += 1
+
+	func on_order(_order_id: String) -> void:
+		order_events += 1
+
+	func on_contract(_contract_id: String) -> void:
+		contract_events += 1
+
+
+class ReblockingGoldObserver extends CommitEventRecorder:
+	var event_bus: Node
+	var dependency_to_free: Node
+
+	func _init(bus: Node, dependency: Node) -> void:
+		event_bus = bus
+		dependency_to_free = dependency
+
+	func on_gold(_balance: int) -> void:
+		gold_events += 1
+		event_bus.set_block_signals(true)
+		if is_instance_valid(dependency_to_free):
+			dependency_to_free.free()
+		dependency_to_free = null
+
+	func release() -> void:
+		dependency_to_free = null
+		event_bus = null
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_required_api(assertions)
 	_test_stable_event_bus_signal_shape(assertions)
@@ -122,6 +175,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_order_completion_is_atomic_and_once_only(assertions)
 	_test_routed_order_sources(assertions)
 	_test_routed_delivery_failures_restore_every_authority(assertions, tree)
+	await _test_finalized_delivery_dispatch_is_committed(assertions, tree)
+	await _test_gold_listener_reblocking_preserves_domain_events(assertions, tree)
 	_test_reentrant_delivery_signals_settle_once(assertions, tree)
 	_test_expired_and_failed_orders_preserve_assets(assertions)
 	_test_contract_delivery_reload_and_breach_idempotence(assertions)
@@ -129,6 +184,117 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_snapshots_and_strict_atomic_restore(assertions)
 	_test_save_manager_round_trip(assertions, tree)
 	_test_generation_requires_current_safe_day(assertions)
+
+
+func _test_finalized_delivery_dispatch_is_committed(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var delayed_router := DelayedDispatchRouter.new()
+	var fixture := _fixture(
+		[_profile("dispatch_npc", {"iron_ore": 4})], 100, 10, null, delayed_router
+	)
+	for node in [fixture.inventory, fixture.storage, fixture.router, fixture.economy]:
+		tree.root.add_child(node)
+	await tree.process_frame
+	fixture.economy.advance_order_deadlines(12)
+	fixture.economy.generate_demand_orders(12)
+	var order: Dictionary = fixture.economy.get_orders()[0]
+	var quantity := int(order.quantity)
+	var reward := int(order.reward_gold)
+	fixture.inventory.add_item("iron_ore", quantity)
+	var recorder := CommitEventRecorder.new()
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.gold_changed.connect(recorder.on_gold)
+	event_bus.item_removed.connect(recorder.on_item)
+	event_bus.order_updated.connect(recorder.on_order)
+	var gold_before := int(fixture.wallet.gold)
+	assertions.truthy(
+		fixture.economy.complete_order(str(order.order_id)),
+		"finalized delivery reports committed success when dispatch is delayed"
+	)
+	assertions.equal(fixture.inventory.get_item_count("iron_ore"), 0, "delayed dispatch keeps committed player removal")
+	assertions.equal(fixture.npc.get_npc_state("dispatch_npc").inventory.get("iron_ore", 0), quantity, "delayed dispatch keeps committed NPC receipt")
+	assertions.equal(fixture.wallet.gold, gold_before + reward, "delayed dispatch keeps committed reward")
+	assertions.truthy(bool(fixture.economy.get_orders()[0].completed), "delayed dispatch keeps committed order state")
+	assertions.equal(recorder.gold_events, 1, "delayed dispatch publishes gold once")
+	assertions.equal(recorder.order_events, 1, "delayed dispatch publishes order domain once")
+	await tree.process_frame
+	assertions.equal(recorder.item_events, 1, "abandoned finalized delivery publication dispatches once")
+	event_bus.gold_changed.disconnect(recorder.on_gold)
+	event_bus.item_removed.disconnect(recorder.on_item)
+	event_bus.order_updated.disconnect(recorder.on_order)
+	recorder = null
+	for node in [fixture.economy, fixture.router, fixture.storage, fixture.inventory]:
+		tree.root.remove_child(node)
+	_free_fixture(fixture)
+	fixture = {}
+
+
+func _test_gold_listener_reblocking_preserves_domain_events(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var event_bus := tree.root.get_node("EventBus")
+	var fixture := _fixture([_profile("blocking_npc", {"iron_ore": 4})])
+	for node in [fixture.inventory, fixture.storage, fixture.router, fixture.economy]:
+		tree.root.add_child(node)
+	await tree.process_frame
+	fixture.economy.advance_order_deadlines(12)
+	fixture.economy.generate_demand_orders(12)
+	var order: Dictionary = fixture.economy.get_orders()[0]
+	fixture.inventory.add_item("iron_ore", int(order.quantity))
+	var order_observer := ReblockingGoldObserver.new(event_bus, fixture.npc)
+	event_bus.gold_changed.connect(order_observer.on_gold)
+	event_bus.order_updated.connect(order_observer.on_order)
+	assertions.truthy(fixture.economy.complete_order(str(order.order_id)), "gold reblocking listener cannot reverse committed order")
+	assertions.equal(order_observer.gold_events, 1, "reblocking order listener sees one gold event")
+	assertions.equal(order_observer.order_events, 1, "reblocking order listener cannot suppress domain event")
+	assertions.truthy(not event_bus.is_blocking_signals(), "order publication restores EventBus after listener reblocks it")
+	event_bus.set_block_signals(false)
+	if event_bus.gold_changed.is_connected(order_observer.on_gold):
+		event_bus.gold_changed.disconnect(order_observer.on_gold)
+	if event_bus.order_updated.is_connected(order_observer.on_order):
+		event_bus.order_updated.disconnect(order_observer.on_order)
+	order_observer.release()
+	order_observer = null
+	for node in [fixture.economy, fixture.router, fixture.storage, fixture.inventory]:
+		if is_instance_valid(node) and node.is_inside_tree():
+			tree.root.remove_child(node)
+	_free_fixture(fixture)
+	fixture = {}
+
+	fixture = _fixture([_profile("grain_npc", {"grain": 15})])
+	for node in [fixture.inventory, fixture.storage, fixture.router, fixture.economy]:
+		tree.root.add_child(node)
+	await tree.process_frame
+	fixture.economy.from_dict({
+		"last_processed_day": 0,
+		"orders": [],
+		"contracts": [_contract_record()],
+	})
+	fixture.economy.sign_contract("grain_npc:grain:1:3")
+	fixture.economy.advance_order_deadlines(1)
+	fixture.storage.add_items({"grain": 5})
+	var contract_observer := ReblockingGoldObserver.new(event_bus, fixture.npc)
+	event_bus.gold_changed.connect(contract_observer.on_gold)
+	event_bus.contract_updated.connect(contract_observer.on_contract)
+	assertions.truthy(fixture.economy.deliver_contract("grain_npc:grain:1:3", 5), "gold reblocking listener cannot reverse committed contract")
+	assertions.equal(contract_observer.gold_events, 1, "reblocking contract listener sees one gold event")
+	assertions.equal(contract_observer.contract_events, 1, "reblocking contract listener cannot suppress domain event")
+	assertions.truthy(not event_bus.is_blocking_signals(), "contract publication restores EventBus after listener reblocks it")
+	event_bus.set_block_signals(false)
+	if event_bus.gold_changed.is_connected(contract_observer.on_gold):
+		event_bus.gold_changed.disconnect(contract_observer.on_gold)
+	if event_bus.contract_updated.is_connected(contract_observer.on_contract):
+		event_bus.contract_updated.disconnect(contract_observer.on_contract)
+	contract_observer.release()
+	contract_observer = null
+	for node in [fixture.economy, fixture.router, fixture.storage, fixture.inventory]:
+		if is_instance_valid(node) and node.is_inside_tree():
+			tree.root.remove_child(node)
+	_free_fixture(fixture)
+	fixture = {}
 
 
 func _test_required_api(assertions: TestAssert) -> void:
@@ -798,7 +964,9 @@ func _assert_assets(
 
 func _free_fixture(fixture: Dictionary) -> void:
 	for key in ["economy", "router", "storage", "inventory", "wallet", "npc", "market"]:
-		(fixture[key] as Node).free()
+		var node: Variant = fixture.get(key)
+		if is_instance_valid(node):
+			(node as Node).free()
 
 
 func _method_arg_count(target: Object, method_name: String) -> int:
