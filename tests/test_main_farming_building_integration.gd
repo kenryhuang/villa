@@ -259,8 +259,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	assertions.equal(
 		main.inventory_system.get_quick_item(5),
+		"",
+		"new game keeps planting command independent of quick mappings"
+	)
+	assertions.equal(
+		main.action_controller.get_selected_plant_item_id(),
 		"grain_seed",
-		"new game maps grain seed to slot six"
+		"new game initializes grain as the selected seed"
 	)
 	assertions.equal(main.hud.get_material_count_text("wood"), "99", "HUD shows starting wood")
 	assertions.equal(main.hud.get_material_count_text("stone"), "99", "HUD shows starting stone")
@@ -646,8 +651,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	main.call("_backfill_legacy_grain_slot")
 	assertions.equal(
 		main.inventory_system.get_quick_item(PlayerActionController.SEED_SLOT),
+		"",
+		"legacy seed migration clears only obsolete slot six mapping"
+	)
+	assertions.equal(
+		main.action_controller.get_selected_plant_item_id(),
 		"carrot_seed",
-		"legacy grain backfill preserves an active roster seed"
+		"legacy seed migration preserves the mapped roster seed as selection"
 	)
 
 	main.inventory_system.reset_slots()
@@ -761,8 +771,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	assertions.equal(
 		main.inventory_system.get_quick_item(5),
+		"",
+		"debug reset keeps slot six independent of inventory mappings"
+	)
+	assertions.equal(
+		main.action_controller.get_selected_plant_item_id(),
 		"grain_seed",
-		"debug reset restores the starter quick slot"
+		"debug reset restores the starter seed selection"
 	)
 	if game_state:
 		assertions.equal(game_state.gold, 50_000, "debug reset restores starter gold")

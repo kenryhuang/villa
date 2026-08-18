@@ -802,7 +802,7 @@ func _test_selection_and_transactions(
 		assertions.truthy(not controller.set_selected_plant_item_id("unknown_seed"), "unmapped seed id cannot be selected")
 		assertions.equal(controller.get_selected_plant_item_id(), "grain_seed", "rejected selection preserves prior explicit seed")
 		assertions.truthy(controller.set_selected_plant_item_id(""), "empty selection clears explicit seed")
-		assertions.equal(controller.get_selected_plant_item_id(), "unknown_seed", "cleared selection falls back to quick slot")
+		assertions.equal(controller.get_selected_plant_item_id(), "", "cleared selection stays independent of quick-slot mappings")
 		inventory.active_quick_item = "grain_seed"
 		inventory.counts["grain_seed"] = 2
 		assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "explicit grain selection restores for planting")
@@ -927,6 +927,7 @@ func _test_plant_preview_failure_reasons(
 		inventory,
 		null
 	)
+	assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "preview fixture selects the authoritative seed")
 	var cell := GridCell.new()
 	cell.state = GridCell.State.FARMLAND
 	assertions.truthy(controller.has_method("preview_plant_action"), "controller exposes planting action preview")
@@ -948,8 +949,8 @@ func _test_plant_preview_failure_reasons(
 	farming.preview_reason = "invalid_seed_mapping"
 	inventory.active_quick_item = "unknown_seed"
 	var invalid_mapping: Dictionary = controller.call("preview_plant_action", cell)
-	assertions.equal(invalid_mapping.get("reason"), "invalid_seed_mapping", "raw selected item reaches authoritative mapping preview")
-	assertions.equal(farming.preview_plant_calls[-1].plant_item_id, "unknown_seed", "controller does not infer seed mapping from id suffix")
+	assertions.equal(invalid_mapping.get("reason"), "invalid_seed_mapping", "authoritative preview reason remains stable")
+	assertions.equal(farming.preview_plant_calls[-1].plant_item_id, "grain_seed", "quick-slot content cannot replace independent seed selection")
 	controller.free()
 
 

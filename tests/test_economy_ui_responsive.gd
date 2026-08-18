@@ -4,6 +4,7 @@ extends RefCounted
 const EconomyLayout = preload("res://scripts/ui/economy_layout.gd")
 const EconomyLayoutScript: Script = preload("res://scripts/ui/economy_layout.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const SeedSelectorPanelTest = preload("res://tests/test_seed_selector_panel.gd")
 const THEME_PATH := "res://assets/ui/economy/economy_theme.tres"
 const VIEWPORT_SIZES := [
 	Vector2(3000.0, 2000.0),
@@ -109,6 +110,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_building_modal_control_bounds(assertions, tree)
 	await _test_building_palette_viewport_contract(assertions, tree)
 	await _test_inventory_storage_viewport_contract(assertions, tree)
+	await SeedSelectorPanelTest.new().run_responsive(assertions, tree)
 	await _test_runtime_scale_and_resize_state(assertions, tree)
 	await _test_market_drawer_state(assertions, tree)
 	await _test_real_keyboard_navigation(assertions, tree)

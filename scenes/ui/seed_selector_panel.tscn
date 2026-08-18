@@ -1,0 +1,156 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/seed_selector_panel.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="ShellStyle"]
+content_margin_left = 16.0
+content_margin_top = 14.0
+content_margin_right = 16.0
+content_margin_bottom = 14.0
+bg_color = Color(0.965, 0.93, 0.84, 0.99)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.32, 0.27, 0.2, 0.82)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+shadow_color = Color(0.06, 0.05, 0.04, 0.32)
+shadow_size = 10
+
+[node name="SeedSelectorPanel" type="CanvasLayer"]
+process_mode = 3
+layer = 90
+visible = false
+script = ExtResource("1_script")
+
+[node name="Overlay" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.08, 0.07, 0.055, 0.48)
+
+[node name="Center" type="CenterContainer" parent="Overlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shell" type="PanelContainer" parent="Overlay/Center"]
+custom_minimum_size = Vector2(820, 700)
+layout_mode = 2
+theme_override_styles/panel = SubResource("ShellStyle")
+
+[node name="Layout" type="VBoxContainer" parent="Overlay/Center/Shell"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="Overlay/Center/Shell/Layout"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Overlay/Center/Shell/Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.29, 0.22, 0.17, 1)
+theme_override_font_sizes/font_size = 24
+text = "选择种子"
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="Overlay/Center/Shell/Layout/Header"]
+custom_minimum_size = Vector2(44, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "×"
+tooltip_text = "关闭（Esc）"
+
+[node name="ColumnHeader" type="HBoxContainer" parent="Overlay/Center/Shell/Layout"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="IconSpacer" type="Control" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "种子"
+
+[node name="Quantity" type="Label" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(34, 0)
+layout_mode = 2
+text = "数量"
+
+[node name="Growth" type="Label" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+text = "成熟"
+
+[node name="Seasons" type="Label" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(52, 0)
+layout_mode = 2
+text = "季节"
+
+[node name="Environment" type="Label" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(64, 0)
+layout_mode = 2
+text = "环境"
+
+[node name="Reason" type="Label" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "状态"
+
+[node name="ActionSpacer" type="Control" parent="Overlay/Center/Shell/Layout/ColumnHeader"]
+custom_minimum_size = Vector2(64, 0)
+layout_mode = 2
+
+[node name="SeedScroll" type="ScrollContainer" parent="Overlay/Center/Shell/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SeedRows" type="VBoxContainer" parent="Overlay/Center/Shell/Layout/SeedScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="EmptyLabel" type="Label" parent="Overlay/Center/Shell/Layout/SeedScroll/SeedRows"]
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+text = "背包中没有可用种子"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Footer" type="HBoxContainer" parent="Overlay/Center/Shell/Layout"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SelectionStatus" type="Label" parent="Overlay/Center/Shell/Layout/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.29, 0.22, 0.17, 1)
+text = "尚未选择种子"
+vertical_alignment = 1
+
+[node name="FooterCloseButton" type="Button" parent="Overlay/Center/Shell/Layout/Footer"]
+custom_minimum_size = Vector2(92, 40)
+layout_mode = 2
+text = "取消"

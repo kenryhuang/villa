@@ -39,6 +39,18 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.inventory_ui.farm_storage_ref == main.farm_storage_system,
 		"Main InventoryUI receives the authoritative FarmStorageSystem"
 	)
+	assertions.truthy(
+		main.seed_selector_panel.inventory_ref == main.inventory_system
+		and main.seed_selector_panel.farming_ref == main.farming_system
+		and main.seed_selector_panel.action_controller_ref == main.action_controller,
+		"Main SeedSelectorPanel receives authoritative planting dependencies"
+	)
+	assertions.truthy(
+		main.action_controller.seed_selection_requested.is_connected(
+			Callable(main, "_on_seed_selection_requested")
+		),
+		"Main connects the planting command to the seed selector"
+	)
 	var nested_parent := Node.new()
 	var nested_router := ItemContainerRouter.new()
 	main.add_child(nested_parent)

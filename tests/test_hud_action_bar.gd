@@ -373,16 +373,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			carrot_slot = slot_index
 			break
 	assertions.truthy(carrot_slot >= 0, "HUD fixture finds carrot seed inventory slot")
-	inventory.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
+	assertions.truthy(controller.set_selected_plant_item_id("carrot_seed"), "controller selects carrot independently of quick mappings")
 	assertions.equal(
 		(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
 		"胡萝卜种子 ×1",
-		"selected planting tile immediately shows mapped carrot seed and quantity"
+		"selected planting tile immediately shows selected carrot seed and quantity"
 	)
 	assertions.equal(
 		hud.tool_label.text,
 		"胡萝卜种子",
-		"selected planting label immediately names mapped carrot seed"
+		"selected planting label immediately names selected carrot seed"
 	)
 	for planting_case in [
 		{"item_id": "rose_seed", "quantity": 3, "text": "玫瑰种子 ×3", "label": "玫瑰种子"},
@@ -395,7 +395,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				planting_slot = slot_index
 				break
 		assertions.truthy(planting_slot >= 0, "HUD fixture finds %s" % planting_case.item_id)
-		inventory.set_quick_slot(planting_slot, PlayerActionController.SEED_SLOT)
+		assertions.truthy(
+			controller.set_selected_plant_item_id(planting_case.item_id),
+			"controller selects %s independently" % planting_case.item_id
+		)
 		assertions.equal(
 			(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
 			planting_case.text,
@@ -410,13 +413,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	inventory.swap_slots(0, carrot_slot)
 	assertions.equal(
 		(quick_bar.get_child(5) as ActionPaletteButtonScript).name_label.text,
-		"胡萝卜种子 ×1",
-		"swapping a selected mapped seed immediately refreshes the HUD tile"
+		"苹果树苗 ×2",
+		"quick-slot remapping cannot replace the independent seed selection"
 	)
 	assertions.equal(
 		hud.tool_label.text,
-		"胡萝卜种子",
-		"swapping a selected mapped seed immediately refreshes the HUD label"
+		"苹果树苗",
+		"quick-slot swapping cannot replace the selected planting label"
 	)
 	assertions.truthy(controller.deselect_slot(), "selected HUD action can be cancelled")
 	assertions.equal(hud.tool_label.text, "未选择工具", "HUD shows cancelled tool state")
@@ -426,15 +429,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"cancelled tool leaves every action button unpressed"
 		)
 
-	inventory.add_item("carrot_seed", 1)
-	inventory.remove_item("carrot_seed", 1)
+	inventory.remove_item("apple_sapling", 2)
 	hud.refresh_action_bar()
 	seed_tile = quick_bar.get_child(5)
 	if seed_tile is ActionPaletteButtonScript:
 		assertions.equal(
 			seed_tile.name_label.text,
-			"胡萝卜种子 ×1",
-			"active seed count refreshes after inventory change"
+			"苹果树苗 ×0",
+			"active seed selection remains visible after inventory reaches zero"
 		)
 
 	var has_mode_palette_api := (
@@ -623,6 +625,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var controller_connections := {
 		"selection_changed": Callable(hud, "_on_action_selection_changed"),
 		"inventory_changed": Callable(hud, "refresh_action_bar"),
+		"plant_selection_changed": Callable(hud, "_on_plant_selection_changed"),
 		"mode_changed": Callable(hud, "_on_action_mode_changed"),
 		"palette_changed": Callable(hud, "_on_action_palette_changed"),
 		"build_feedback_requested": Callable(hud, "show_build_feedback"),

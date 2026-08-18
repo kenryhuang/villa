@@ -99,6 +99,7 @@ var _mode_menu_hover_token := 0
 var _economy_ui_unread_count := 0
 var notification_ref: EconomyNotificationSystem
 var _build_lock_service_id := ""
+var _seed_fallback_icons: Dictionary = {}
 
 
 func _ready() -> void:
@@ -403,6 +404,11 @@ func _connect_action_controller(controller: Variant) -> void:
 		"building_category_changed",
 		Callable(self, "_on_building_category_changed")
 	)
+	_connect_controller_signal(
+		controller,
+		"plant_selection_changed",
+		Callable(self, "_on_plant_selection_changed")
+	)
 
 
 func _disconnect_action_controller(controller: Variant) -> void:
@@ -435,6 +441,11 @@ func _disconnect_action_controller(controller: Variant) -> void:
 		controller,
 		"building_category_changed",
 		Callable(self, "_on_building_category_changed")
+	)
+	_disconnect_controller_signal(
+		controller,
+		"plant_selection_changed",
+		Callable(self, "_on_plant_selection_changed")
 	)
 
 
@@ -489,11 +500,7 @@ func rebuild_action_palette() -> void:
 	mode_button.configure(
 		0,
 		mode_name,
-		_load_palette_icon(
-			_building_icon_path("barn")
-			if building_mode
-			else FARMING_ICON_PATHS[PlayerActionController.SEED_SLOT]
-		)
+		_load_palette_icon(_building_icon_path("barn")) if building_mode else _active_plant_texture()
 	)
 	mode_button.set_shortcut_visible(false)
 	mode_button.tooltip_text = "当前：%s模式\n悬停选择模式（P / B）" % mode_name
@@ -576,9 +583,14 @@ func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
 
 func _on_quick_slot_mapping_changed(quick_index: int, _item_id: String) -> void:
 	refresh_action_bar()
+	if quick_index == PlayerActionController.SEED_SLOT:
+		return
+
+
+func _on_plant_selection_changed(_plant_item_id: String) -> void:
+	refresh_action_bar()
 	if (
-		quick_index == PlayerActionController.SEED_SLOT
-		and action_controller
+		action_controller
 		and not _is_building_mode()
 		and action_controller.get_selected_slot() == PlayerActionController.SEED_SLOT
 	):
@@ -586,24 +598,66 @@ func _on_quick_slot_mapping_changed(quick_index: int, _item_id: String) -> void:
 
 
 func _active_plant_item_display() -> String:
-	if inventory_ref == null:
-		return "种苗 ×0"
-	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
+	var item_id := _active_plant_item_id()
 	var item_data = GameDataScript.get_item(item_id)
 	if item_data == null:
 		return "种苗 ×0"
 	return "%s ×%d" % [
 		str(item_data.get("name", "种苗")),
-		inventory_ref.get_item_count(item_id),
+		inventory_ref.get_item_count(item_id) if inventory_ref != null else 0,
 	]
 
 
 func _active_plant_item_name() -> String:
-	if inventory_ref == null:
-		return "种苗"
-	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
+	var item_id := _active_plant_item_id()
 	var item_data = GameDataScript.get_item(item_id)
 	return str(item_data.get("name", "种苗")) if item_data else "种苗"
+
+
+func get_active_plant_item_display() -> String:
+	return _active_plant_item_display()
+
+
+func _active_plant_item_id() -> String:
+	if action_controller == null or not action_controller.has_method("get_selected_plant_item_id"):
+		return ""
+	return str(action_controller.call("get_selected_plant_item_id"))
+
+
+func _active_plant_texture() -> Texture2D:
+	var item_id := _active_plant_item_id()
+	if item_id.is_empty():
+		return _load_palette_icon(FARMING_ICON_PATHS[PlayerActionController.SEED_SLOT])
+	var game_data := get_node_or_null("/root/GameData") if is_inside_tree() else null
+	var crop: CropData = (
+		game_data.get_crop_for_plant_item(item_id)
+		if game_data != null and game_data.has_method("get_crop_for_plant_item")
+		else null
+	)
+	if crop != null:
+		for texture_path in crop.stage_textures:
+			var texture := _load_palette_icon(texture_path)
+			if texture != null:
+				return texture
+		var painted_path := "res://assets/crops/%s/painted/stage_0/variant_0_front.png" % crop.crop_id
+		var painted := _load_palette_icon(painted_path)
+		if painted != null:
+			return painted
+	return _seed_fallback_icon(item_id)
+
+
+func _seed_fallback_icon(item_id: String) -> Texture2D:
+	if _seed_fallback_icons.has(item_id):
+		return _seed_fallback_icons[item_id] as Texture2D
+	var image := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var hue := float(absi(item_id.hash()) % 1000) / 1000.0
+	var seed_color := Color.from_hsv(hue, 0.48, 0.68, 1.0)
+	image.fill_rect(Rect2i(7, 10, 18, 14), seed_color)
+	image.fill_rect(Rect2i(11, 6, 10, 20), seed_color.lightened(0.15))
+	var texture := ImageTexture.create_from_image(image)
+	_seed_fallback_icons[item_id] = texture
+	return texture
 
 
 func _on_mode_requested(mode: int) -> void:
@@ -702,6 +756,8 @@ func _palette_texture(index: int, building_mode: bool) -> Texture2D:
 	var path := ""
 	if building_mode:
 		path = _building_icon_path(_building_id_at(index))
+	elif index == PlayerActionController.SEED_SLOT:
+		return _active_plant_texture()
 	elif not building_mode and index >= 0 and index < FARMING_ICON_PATHS.size():
 		path = FARMING_ICON_PATHS[index]
 	var texture := _load_palette_icon(path)

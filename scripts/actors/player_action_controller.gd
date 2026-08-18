@@ -10,6 +10,8 @@ signal tree_hover_changed(target: Node, allowed: bool)
 signal gather_hover_changed(target: Node, allowed: bool)
 signal gather_rejected(target: Node, reason: String)
 signal building_category_changed(category_id: String, category_index: int)
+signal seed_selection_requested(cell: GridCell)
+signal plant_selection_changed(plant_item_id: String)
 
 enum Action {
 	NONE,
@@ -131,6 +133,7 @@ func configure(
 	inventory_system = inventory
 	farm_storage_system = farm_storage
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	migrate_legacy_seed_quick_slot()
 	select_mode_slot(_selected_slot)
 
 
@@ -363,6 +366,8 @@ func _activate_current_slot() -> bool:
 	if _selected_slot < TOOL_BY_SLOT.size() and tool_system != null:
 		tool_system.switch_tool(TOOL_BY_SLOT[_selected_slot])
 	selection_changed.emit(_selected_slot, _farming_slot_label(_selected_slot))
+	if _selected_slot == SEED_SLOT:
+		seed_selection_requested.emit(null)
 	return true
 
 
@@ -842,6 +847,8 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 
 
 func _plant(cell: GridCell) -> bool:
+	if get_selected_plant_item_id().is_empty():
+		seed_selection_requested.emit(cell)
 	var preview := preview_plant_action(cell)
 	if not bool(preview.get("ok", false)):
 		_set_last_action_failure(preview, true)
@@ -1098,16 +1105,15 @@ func _get_active_plant_item_id() -> String:
 
 
 func get_selected_plant_item_id() -> String:
-	if not _selected_plant_item_id.is_empty():
-		return _selected_plant_item_id
-	if inventory_system == null or not inventory_system.has_method("get_quick_item"):
-		return ""
-	return str(inventory_system.call("get_quick_item", SEED_SLOT))
+	return _selected_plant_item_id
 
 
 func set_selected_plant_item_id(plant_item_id: String) -> bool:
 	if plant_item_id.is_empty():
+		if _selected_plant_item_id.is_empty():
+			return true
 		_selected_plant_item_id = ""
+		plant_selection_changed.emit("")
 		return true
 	var definition: Variant = GameDataScript.get_item(plant_item_id)
 	if (
@@ -1116,8 +1122,26 @@ func set_selected_plant_item_id(plant_item_id: String) -> bool:
 		or _get_crop_data(plant_item_id) == null
 	):
 		return false
+	if _selected_plant_item_id == plant_item_id:
+		return true
 	_selected_plant_item_id = plant_item_id
+	plant_selection_changed.emit(plant_item_id)
 	return true
+
+
+func migrate_legacy_seed_quick_slot() -> bool:
+	if (
+		inventory_system == null
+		or not inventory_system.has_method("get_quick_item")
+		or not inventory_system.has_method("set_quick_slot")
+	):
+		return false
+	var legacy_item_id := str(inventory_system.call("get_quick_item", SEED_SLOT))
+	if legacy_item_id.is_empty():
+		return false
+	var migrated := set_selected_plant_item_id(legacy_item_id)
+	inventory_system.call("set_quick_slot", -1, SEED_SLOT)
+	return migrated
 
 
 func _get_crop_data(plant_item_id: String = "") -> CropData:

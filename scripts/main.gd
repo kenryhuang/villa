@@ -60,6 +60,7 @@ static var _pending_debug_reload_save_slot := -1
 @onready var camera_rig = $CameraRig
 @onready var hud = $HUD
 @onready var inventory_ui = $InventoryUI
+@onready var seed_selector_panel = $SeedSelectorPanel
 @onready var dialogue_ui = $DialogueUI
 @onready var build_ui = $BuildUI
 @onready var map_ui = $MapUI
@@ -364,6 +365,7 @@ func _connect_save_load_completed() -> void:
 
 
 func _on_save_load_completed(_slot: int) -> void:
+	_initialize_plant_selection()
 	if (
 		farm_storage_system != null
 		and (
@@ -535,6 +537,12 @@ func _setup_ui() -> void:
 	# 背包 UI
 	if inventory_ui:
 		inventory_ui.configure(inventory_system, farm_storage_system)
+	if seed_selector_panel:
+		if not seed_selector_panel.configure(inventory_system, farming_system, action_controller):
+			push_error("Unable to configure seed selector UI.")
+		var seed_selector_callback := Callable(self, "_on_seed_selection_requested")
+		if not action_controller.seed_selection_requested.is_connected(seed_selector_callback):
+			action_controller.seed_selection_requested.connect(seed_selector_callback)
 
 	# 建造 UI
 	if build_ui:
@@ -805,13 +813,14 @@ func _initial_game_state() -> void:
 	_register_default_crops()
 	var loaded: bool = load_save_on_start and save_manager.load_game(save_slot)
 	if loaded:
-		_backfill_legacy_grain_slot()
+		_initialize_plant_selection()
 	else:
 		market_system.last_settled_day = season_system.total_days
 		daily_simulation_system.last_simulated_day = season_system.total_days
 		npc_economy_system.sync_daily_cursor(season_system.total_days)
 		economy_system.reset_order_state(season_system.total_days)
 		_grant_new_game_items()
+		_initialize_plant_selection()
 	production_system.rebuild_registered_buildings()
 	if not production_system.sync_daily_cursor(season_system.total_days):
 		push_error("Unable to synchronize production day during startup.")
@@ -889,13 +898,27 @@ func _grant_new_game_items() -> void:
 		var event_bus = get_node_or_null("/root/EventBus")
 		if event_bus != null:
 			event_bus.gold_changed.emit(game_state.gold)
-	_map_grain_seed_to_quick_slot()
+	action_controller.set_selected_plant_item_id("grain_seed")
 
 
 func _backfill_legacy_grain_slot() -> void:
-	if not inventory_system.get_quick_item(PlayerActionController.SEED_SLOT).is_empty():
-		return
-	_map_grain_seed_to_quick_slot()
+	_initialize_plant_selection()
+
+
+func _initialize_plant_selection() -> bool:
+	if action_controller == null or inventory_system == null:
+		return false
+	if action_controller.migrate_legacy_seed_quick_slot():
+		return true
+	if not action_controller.get_selected_plant_item_id().is_empty():
+		inventory_system.set_quick_slot(-1, PlayerActionController.SEED_SLOT)
+		return true
+	if inventory_system.get_item_count("grain_seed") <= 0:
+		inventory_system.set_quick_slot(-1, PlayerActionController.SEED_SLOT)
+		return false
+	var selected := action_controller.set_selected_plant_item_id("grain_seed")
+	inventory_system.set_quick_slot(-1, PlayerActionController.SEED_SLOT)
+	return selected
 
 
 func _map_grain_seed_to_quick_slot() -> bool:
@@ -903,6 +926,11 @@ func _map_grain_seed_to_quick_slot() -> bool:
 		if inventory_system.slots[index].get("item_id", "") == "grain_seed":
 			return inventory_system.set_quick_slot(index, PlayerActionController.SEED_SLOT)
 	return false
+
+
+func _on_seed_selection_requested(cell: GridCell) -> void:
+	if seed_selector_panel != null:
+		seed_selector_panel.open_for_cell(cell)
 
 
 func reset_debug_state() -> bool:
