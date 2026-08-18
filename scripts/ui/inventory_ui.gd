@@ -10,7 +10,10 @@ const TAB_FARM_STORAGE := &"farm_storage"
 const STORAGE_SORT_NAME := &"name"
 const STORAGE_SORT_QUANTITY := &"quantity"
 const STORAGE_WARNING_COLOR := Color("#B65C4B")
+const PANEL_MAX_SIZE := Vector2(760.0, 560.0)
+const VIEWPORT_MARGIN := Vector2(20.0, 20.0)
 
+@export var panel_path: NodePath
 @export var grid_container_path: NodePath
 @export var quick_bar_path: NodePath
 @export var tab_bar_path: NodePath
@@ -22,6 +25,7 @@ const STORAGE_WARNING_COLOR := Color("#B65C4B")
 @export var storage_rows_path: NodePath
 
 var grid_container: GridContainer
+var panel: PanelContainer
 var inventory_grid: GridContainer
 var quick_bar: HBoxContainer
 var tab_bar: TabBar
@@ -37,6 +41,7 @@ var farm_storage_ref: FarmStorageSystem
 var _is_open := false
 var _selected_tab := TAB_BACKPACK
 var _storage_sort_mode := STORAGE_SORT_NAME
+var _storage_fallback_icon: Texture2D
 
 
 func _ready() -> void:
@@ -46,6 +51,10 @@ func _ready() -> void:
 	_configure_storage_sort()
 	_connect_backpack_events()
 	_connect_storage_events()
+	var viewport_callback := Callable(self, "_on_viewport_size_changed")
+	if not get_viewport().size_changed.is_connected(viewport_callback):
+		get_viewport().size_changed.connect(viewport_callback)
+	apply_responsive_layout(Vector2(get_viewport().size))
 	_sync_tab_visibility()
 	_refresh_backpack()
 	_refresh_storage()
@@ -79,7 +88,29 @@ func get_selected_tab() -> StringName:
 	return _selected_tab
 
 
+func apply_responsive_layout(viewport_size: Vector2) -> void:
+	if panel == null:
+		return
+	var available := Vector2(
+		maxf(1.0, viewport_size.x - VIEWPORT_MARGIN.x * 2.0),
+		maxf(1.0, viewport_size.y - VIEWPORT_MARGIN.y * 2.0)
+	)
+	var panel_size := Vector2(
+		minf(PANEL_MAX_SIZE.x, available.x),
+		minf(PANEL_MAX_SIZE.y, available.y)
+	)
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -panel_size.x * 0.5
+	panel.offset_top = -panel_size.y * 0.5
+	panel.offset_right = panel_size.x * 0.5
+	panel.offset_bottom = panel_size.y * 0.5
+
+
 func _resolve_nodes() -> void:
+	panel = _node_at(panel_path) as PanelContainer
 	grid_container = _node_at(grid_container_path) as GridContainer
 	if grid_container == null:
 		grid_container = _find_grid_container()
@@ -211,10 +242,14 @@ func close() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_TAB or event.keycode == KEY_I:
-			toggle()
-			get_viewport().set_input_as_handled()
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	if event.keycode == KEY_ESCAPE and _is_open:
+		close()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_TAB or event.keycode == KEY_I:
+		toggle()
+		get_viewport().set_input_as_handled()
 
 
 func _sync_tab_visibility() -> void:
@@ -250,10 +285,20 @@ func _refresh_quick_bar() -> void:
 
 
 func _refresh_storage() -> void:
-	if storage_rows == null or storage_capacity_label == null or storage_warning_label == null:
+	_refresh_storage_capacity()
+	if storage_rows == null:
 		return
 	for child in storage_rows.get_children():
 		child.free()
+	if not is_instance_valid(farm_storage_ref):
+		return
+	for entry in _storage_entries():
+		storage_rows.add_child(_create_storage_row(entry))
+
+
+func _refresh_storage_capacity() -> void:
+	if storage_capacity_label == null or storage_warning_label == null:
+		return
 	if not is_instance_valid(farm_storage_ref):
 		storage_capacity_label.text = "0 / 0"
 		storage_warning_label.visible = false
@@ -264,8 +309,6 @@ func _refresh_storage() -> void:
 	storage_warning_label.visible = used > total
 	storage_warning_label.text = "仓库超载 %d / %d" % [used, total] if used > total else ""
 	storage_warning_label.add_theme_color_override("font_color", STORAGE_WARNING_COLOR)
-	for entry in _storage_entries():
-		storage_rows.add_child(_create_storage_row(entry))
 
 
 func _storage_entries() -> Array[Dictionary]:
@@ -331,7 +374,32 @@ func _storage_icon(item_id: String) -> Texture2D:
 	var path := "res://assets/crops/%s/painted/stage_3/variant_0_front.png" % item_id
 	if ResourceLoader.exists(path):
 		return load(path) as Texture2D
-	return null
+	if _storage_fallback_icon == null:
+		_storage_fallback_icon = _create_storage_fallback_icon()
+	return _storage_fallback_icon
+
+
+func _create_storage_fallback_icon() -> Texture2D:
+	var image := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+	for y in range(32):
+		for x in range(32):
+			var stem := absf(float(x) - 15.5) <= 1.0 and y >= 11 and y <= 27
+			var left_leaf := (
+				pow((float(x) - 10.5) / 7.5, 2.0)
+				+ pow((float(y) - 13.0) / 5.5, 2.0)
+				<= 1.0
+			)
+			var right_leaf := (
+				pow((float(x) - 21.0) / 7.5, 2.0)
+				+ pow((float(y) - 9.5) / 5.5, 2.0)
+				<= 1.0
+			)
+			if stem:
+				image.set_pixel(x, y, Color("#567A43"))
+			elif left_leaf or right_leaf:
+				image.set_pixel(x, y, Color("#79A85D"))
+	return ImageTexture.create_from_image(image)
 
 
 func assign_planting_slot(slot_index: int) -> bool:
@@ -437,7 +505,7 @@ func _on_storage_contents_changed(_changes: Dictionary) -> void:
 
 func _on_storage_capacity_changed(_used: int, _total: int) -> void:
 	if _is_open:
-		_refresh_storage()
+		_refresh_storage_capacity()
 
 
 func _on_tab_changed(tab_index: int) -> void:
@@ -449,3 +517,7 @@ func _on_storage_sort_selected(index: int) -> void:
 		return
 	_storage_sort_mode = StringName(storage_sort.get_item_metadata(index))
 	_refresh_storage()
+
+
+func _on_viewport_size_changed() -> void:
+	apply_responsive_layout(Vector2(get_viewport().size))

@@ -54,6 +54,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("1")
+panel_path = NodePath("Panel")
 grid_container_path = NodePath("Panel/VBox/BackpackContent/GridContainer")
 quick_bar_path = NodePath("Panel/VBox/BackpackContent/QuickBar")
 tab_bar_path = NodePath("Panel/VBox/Tabs")

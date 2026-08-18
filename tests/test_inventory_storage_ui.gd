@@ -5,10 +5,22 @@ const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_sys
 const InventoryUIScene := preload("res://scenes/ui/inventory_ui.tscn")
 
 
+class StorageRowObserver:
+	extends RefCounted
+	var ui: InventoryUI
+	var row_after_contents: Node
+
+	func capture(_changes: Dictionary) -> void:
+		if ui != null and ui.storage_rows.get_child_count() > 0:
+			row_after_contents = ui.storage_rows.get_child(0)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_scene_and_storage_content(assertions, tree)
 	await _test_event_isolation_and_selection(assertions, tree)
 	await _test_reconfigure_disconnects_previous_storage(assertions, tree)
+	await _test_keyboard_input_contract(assertions, tree)
+	await _test_storage_signal_refresh_coalescing(assertions, tree)
 
 
 func _test_scene_and_storage_content(assertions: TestAssert, tree: SceneTree) -> void:
@@ -35,7 +47,18 @@ func _test_scene_and_storage_content(assertions: TestAssert, tree: SceneTree) ->
 		assertions.equal(row.mouse_filter, Control.MOUSE_FILTER_IGNORE, "storage crop rows ignore pointer input")
 		assertions.truthy(not row.has_meta("slot_index"), "storage crop rows have no backpack slot identity")
 		var icon := row.get_node("Icon") as TextureRect
-		assertions.truthy(not icon.texture is PlaceholderTexture2D, "storage rows never expose debug placeholder art")
+		assertions.truthy(
+			icon.texture != null and not icon.texture is PlaceholderTexture2D,
+			"storage rows always expose visible non-debug fallback art"
+		)
+		if str(row.get_meta("item_id", "")) == "tomato" and icon.texture != null:
+			var fallback_image := icon.texture.get_image()
+			assertions.truthy(
+				fallback_image != null
+				and not fallback_image.is_empty()
+				and fallback_image.get_used_rect().has_area(),
+				"generated crop fallback contains visible pixels"
+			)
 		var text_label := row.get_node("Text") as Label
 		assertions.equal(text_label.get_theme_color("font_color"), Color("#513B2F"), "storage row text stays readable on the light panel")
 
@@ -106,6 +129,56 @@ func _test_reconfigure_disconnects_previous_storage(assertions: TestAssert, tree
 	assertions.equal(_row_item_ids(ui), ["carrot"], "detached storage cannot replace visible rows")
 	_free_fixture(fixture)
 	replacement.free()
+	await tree.process_frame
+
+
+func _test_keyboard_input_contract(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := await _make_fixture(tree)
+	var ui: InventoryUI = fixture.ui
+	for keycode in [KEY_TAB, KEY_I, KEY_ESCAPE]:
+		ui.open()
+		var echoed := InputEventKey.new()
+		echoed.keycode = keycode
+		echoed.pressed = true
+		echoed.echo = true
+		ui.call("_unhandled_input", echoed)
+		assertions.truthy(ui.visible, "echoed %s does not change inventory visibility" % keycode)
+	ui.open()
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	ui.call("_unhandled_input", escape)
+	assertions.truthy(not ui.visible, "Escape closes the visible inventory")
+	_free_fixture(fixture)
+	await tree.process_frame
+
+
+func _test_storage_signal_refresh_coalescing(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := await _make_fixture(tree)
+	var ui: InventoryUI = fixture.ui
+	var storage: FarmStorageSystem = fixture.storage
+	ui.open()
+	ui.select_tab(&"farm_storage")
+	var observer := StorageRowObserver.new()
+	observer.ui = ui
+	storage.contents_changed.connect(observer.capture)
+	assertions.truthy(storage.add_items({"grain": 3}), "coalescing fixture adds a crop")
+	assertions.truthy(
+		is_instance_valid(observer.row_after_contents),
+		"capacity notification keeps the row built by contents notification"
+	)
+	assertions.truthy(
+		observer.row_after_contents == ui.storage_rows.get_child(0),
+		"contents and capacity notifications produce one row rebuild"
+	)
+	var row_before_capacity: Node = ui.storage_rows.get_child(0)
+	assertions.truthy(storage.configure(func() -> int: return 300), "capacity-only fixture reconfigures storage")
+	assertions.equal(ui.storage_capacity_label.text, "3 / 300", "capacity-only notification refreshes capacity text")
+	assertions.truthy(
+		is_instance_valid(row_before_capacity) and row_before_capacity == ui.storage_rows.get_child(0),
+		"capacity-only notification does not rebuild storage rows"
+	)
+	_free_fixture(fixture)
 	await tree.process_frame
 
 

@@ -320,6 +320,9 @@ class BuildingDouble:
 	func is_in_build_mode() -> bool:
 		return build_mode
 
+	func update_preview_position(_world_x: float, _world_z: float) -> void:
+		pass
+
 	func place_selected_building(_gx: int, _gz: int) -> BuildingInstance:
 		return null
 

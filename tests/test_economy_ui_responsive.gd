@@ -10,6 +10,10 @@ const VIEWPORT_SIZES := [
 	Vector2(1920.0, 1080.0),
 	Vector2(1280.0, 720.0),
 ]
+const INVENTORY_VIEWPORT_SIZES := [
+	Vector2(1920.0, 1080.0),
+	Vector2(640.0, 960.0),
+]
 const PANEL_SCENES := [
 	"res://scenes/ui/shop_ui.tscn",
 	"res://scenes/ui/economy/market_panel.tscn",
@@ -104,6 +108,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_panel_contracts(assertions, tree)
 	await _test_building_modal_control_bounds(assertions, tree)
 	await _test_building_palette_viewport_contract(assertions, tree)
+	await _test_inventory_storage_viewport_contract(assertions, tree)
 	await _test_runtime_scale_and_resize_state(assertions, tree)
 	await _test_market_drawer_state(assertions, tree)
 	await _test_real_keyboard_navigation(assertions, tree)
@@ -420,6 +425,88 @@ func _test_building_palette_viewport_contract(assertions: TestAssert, tree: Scen
 		assertions.truthy(
 			not lock_panel.get_global_rect().intersects(economy_actions.get_global_rect()),
 			"locked blueprint detail avoids economy actions at %s" % viewport_size
+		)
+		host.free()
+		await tree.process_frame
+
+
+func _test_inventory_storage_viewport_contract(assertions: TestAssert, tree: SceneTree) -> void:
+	for viewport_size in INVENTORY_VIEWPORT_SIZES:
+		var host := SubViewport.new()
+		host.size = Vector2i(viewport_size)
+		tree.root.add_child(host)
+		var inventory := InventorySystem.new()
+		var storage := FarmStorageSystem.new()
+		host.add_child(inventory)
+		host.add_child(storage)
+		assertions.truthy(storage.configure(), "inventory responsive storage configures at %s" % viewport_size)
+		assertions.truthy(
+			storage.add_items({"grain": 48, "carrot": 22, "tomato": 15, "apple": 9}),
+			"inventory responsive storage accepts crops at %s" % viewport_size
+		)
+		var ui := (load("res://scenes/ui/inventory_ui.tscn") as PackedScene).instantiate() as InventoryUI
+		host.add_child(ui)
+		assertions.truthy(ui.configure(inventory, storage), "inventory UI configures at %s" % viewport_size)
+		ui.open()
+		assertions.truthy(ui.select_tab(&"farm_storage"), "storage tab opens at %s" % viewport_size)
+		await tree.process_frame
+
+		var viewport_rect := Rect2(Vector2.ZERO, viewport_size)
+		var panel := ui.get_node("Panel") as Control
+		var tabs := ui.tab_bar as Control
+		var capacity := ui.storage_capacity_label as Control
+		var rows := ui.storage_rows as Control
+		assertions.truthy(
+			viewport_rect.encloses(panel.get_global_rect()),
+			"inventory panel stays inside %s: %s" % [viewport_size, panel.get_global_rect()]
+		)
+		for control in [tabs, capacity, rows]:
+			assertions.truthy(
+				viewport_rect.encloses((control as Control).get_global_rect()),
+				"inventory storage %s stays inside %s: %s"
+				% [(control as Control).name, viewport_size, (control as Control).get_global_rect()]
+			)
+		assertions.truthy(
+			not tabs.get_global_rect().intersects(capacity.get_global_rect()),
+			"inventory tabs do not overlap capacity at %s" % viewport_size
+		)
+		var previous_row_rect := Rect2()
+		for row_value in ui.storage_rows.get_children():
+			var row := row_value as Control
+			var row_rect := row.get_global_rect()
+			assertions.truthy(
+				viewport_rect.encloses(row_rect) and panel.get_global_rect().encloses(row_rect),
+				"inventory storage row %s stays unclipped at %s: %s"
+				% [row.name, viewport_size, row_rect]
+			)
+			assertions.truthy(
+				not tabs.get_global_rect().intersects(row_rect)
+				and not capacity.get_global_rect().intersects(row_rect),
+				"inventory storage row %s avoids tabs and capacity at %s" % [row.name, viewport_size]
+			)
+			if previous_row_rect.has_area():
+				assertions.truthy(
+					not previous_row_rect.intersects(row_rect),
+					"inventory storage rows do not overlap at %s" % viewport_size
+				)
+			previous_row_rect = row_rect
+
+		assertions.truthy(ui.select_tab(&"backpack"), "backpack tab opens at %s" % viewport_size)
+		await tree.process_frame
+		var grid := ui.inventory_grid as Control
+		var quick_bar := ui.quick_bar as Control
+		for control in [tabs, grid, quick_bar]:
+			assertions.truthy(
+				viewport_rect.encloses((control as Control).get_global_rect())
+				and panel.get_global_rect().encloses((control as Control).get_global_rect()),
+				"inventory backpack %s stays unclipped at %s: %s"
+				% [(control as Control).name, viewport_size, (control as Control).get_global_rect()]
+			)
+		assertions.truthy(
+			not tabs.get_global_rect().intersects(grid.get_global_rect())
+			and not tabs.get_global_rect().intersects(quick_bar.get_global_rect())
+			and not grid.get_global_rect().intersects(quick_bar.get_global_rect()),
+			"inventory tabs, grid, and quick bar do not overlap at %s" % viewport_size
 		)
 		host.free()
 		await tree.process_frame

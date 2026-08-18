@@ -31,6 +31,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			and main.economy_system.call("uses_item_container_router", router),
 			"Main Economy uses the same Router instance"
 		)
+	assertions.truthy(
+		main.inventory_ui.inventory_ref == main.inventory_system,
+		"Main InventoryUI receives the authoritative InventorySystem"
+	)
+	assertions.truthy(
+		main.inventory_ui.farm_storage_ref == main.farm_storage_system,
+		"Main InventoryUI receives the authoritative FarmStorageSystem"
+	)
 	var nested_parent := Node.new()
 	var nested_router := ItemContainerRouter.new()
 	main.add_child(nested_parent)
