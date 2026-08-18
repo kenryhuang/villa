@@ -35,6 +35,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_order_delivery_updates_every_authority(assertions, tree)
 	await _test_contract_sign_delivery_reload_is_idempotent(assertions, tree)
 	await _test_order_contract_panels_follow_farm_storage(assertions, tree)
+	await _test_market_panel_follows_routed_storage(assertions, tree)
 	await _test_windmill_flour_flow(assertions, tree)
 	await _test_coop_feed_egg_flow(assertions, tree)
 	await _test_waterwheel_overlay_lifecycle(assertions, tree)
@@ -100,6 +101,58 @@ func _test_order_contract_panels_follow_farm_storage(
 		contract_panel, order_panel, fixture.economy, fixture.router, fixture.storage,
 		fixture.inventory, fixture.npc, fixture.market,
 	])
+	_restore_wallet(game_state, saved)
+
+
+func _test_market_panel_follows_routed_storage(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state := tree.root.get_node("GameState")
+	var saved := _snapshot_wallet(game_state)
+	game_state.gold = 10000
+	var inventory := InventorySystemScript.new() as InventorySystem
+	var storage := FarmStorageSystemScript.new() as FarmStorageSystem
+	var router := ItemContainerRouterScript.new() as ItemContainerRouter
+	var market := MarketSystemScript.new() as MarketSystem
+	var economy := EconomySystemScript.new() as EconomySystem
+	for node in [inventory, storage, router, market, economy]:
+		tree.root.add_child(node)
+	assertions.truthy(storage.configure(func() -> int: return 4), "market storage fixture configures capacity")
+	assertions.truthy(router.configure(inventory, storage), "market storage fixture configures router")
+	assertions.truthy(
+		market.configure([
+			_market_definition("grain", 10, 20, 20, 10),
+			_market_definition("grain_seed", 4, 20, 20, 10),
+		]),
+		"market storage fixture configures market"
+	)
+	assertions.truthy(economy.configure(inventory, game_state, market, null, router), "market storage fixture configures economy")
+	assertions.truthy(storage.add_items({"grain": 3}), "market storage fixture owns crop only in storage")
+	assertions.truthy(inventory.add_item("grain_seed", 2), "market storage fixture owns seed only in backpack")
+	var shop := ShopScene.instantiate()
+	tree.root.add_child(shop)
+	await tree.process_frame
+	assertions.truthy(shop.configure(inventory, economy, market), "market storage fixture configures real ShopUI")
+	shop.market_panel.select_category("crops")
+	shop.market_panel.select_item("grain")
+	var trade = shop.market_panel.trade_panel
+	assertions.equal(trade.player_quantity_label.text, "3", "ShopUI market reads crop quantity from storage")
+	assertions.truthy(not trade.sell_button.disabled, "stored crop enables ShopUI sale")
+	var grain_row := _find_meta_control(shop.market_panel.item_rows, "item_id", "grain")
+	assertions.equal(int(grain_row.get_meta("owned", -1)), 3, "ShopUI row reads crop quantity from storage")
+	assertions.truthy(storage.restore_items_unchecked({"grain": 5}), "market storage fixture creates overload")
+	trade.quantity_spin.value = 1
+	trade.refresh_quote()
+	assertions.equal(trade.buy_button.tooltip_text, "农场仓库缺少 2 容量", "ShopUI shows exact overloaded-storage shortage")
+	var before := {"gold": int(game_state.gold), "stock": market.get_stock("grain"), "storage": storage.get_items()}
+	trade.request_buy()
+	assertions.equal(
+		{"gold": int(game_state.gold), "stock": market.get_stock("grain"), "storage": storage.get_items()},
+		before,
+		"ShopUI rejects crop purchase into overloaded storage atomically"
+	)
+	_free_nodes([shop, economy, router, storage, inventory, market])
 	_restore_wallet(game_state, saved)
 
 

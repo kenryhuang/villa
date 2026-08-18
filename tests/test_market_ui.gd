@@ -6,6 +6,16 @@ const SHOP_SCENE_PATH := "res://scenes/ui/shop_ui.tscn"
 const MARKET_SCENE_PATH := "res://scenes/ui/economy/market_panel.tscn"
 const TRADE_SCENE_PATH := "res://scenes/ui/economy/trade_panel.tscn"
 const TRADE_SCRIPT_PATH := "res://scripts/ui/trade_panel.gd"
+const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_system.gd")
+const ItemContainerRouterScript := preload("res://scripts/systems/item_container_router.gd")
+
+
+class CapacityProvider:
+	extends RefCounted
+	var capacity := 200
+
+	func get_capacity() -> int:
+		return capacity
 
 
 class SignalCounter:
@@ -22,6 +32,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_modal_coordinator(assertions, tree)
 	await _test_hud_market_request(assertions, tree)
 	await _test_market_snapshot_and_transactions(assertions, tree)
+	await _test_routed_market_ownership_and_feedback(assertions, tree)
 
 
 func _test_scene_contracts(assertions: TestAssert) -> void:
@@ -379,6 +390,145 @@ func _test_market_snapshot_and_transactions(assertions: TestAssert, tree: SceneT
 	inventory.free()
 
 
+func _test_routed_market_ownership_and_feedback(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var inventory := InventorySystem.new()
+	var storage := FarmStorageSystemScript.new() as FarmStorageSystem
+	var router := ItemContainerRouterScript.new() as ItemContainerRouter
+	var market := MarketSystem.new()
+	var economy := EconomySystem.new()
+	var provider := CapacityProvider.new()
+	for node in [inventory, storage, router, market, economy]:
+		tree.root.add_child(node)
+	assertions.truthy(storage.configure(Callable(provider, "get_capacity")), "routed market configures storage")
+	assertions.truthy(router.configure(inventory, storage), "routed market configures item router")
+	assertions.truthy(market.configure(GameDataScript.get_market_items()), "routed market configures market")
+	var wallet := tree.root.get_node_or_null("GameState")
+	assertions.truthy(wallet != null, "routed market finds authoritative wallet")
+	if wallet == null:
+		_free_nodes([economy, market, router, storage, inventory])
+		return
+	var previous_gold := int(wallet.gold)
+	wallet.gold = 100000
+	assertions.truthy(
+		economy.configure(inventory, wallet, market, null, router),
+		"routed market configures authoritative economy"
+	)
+	assertions.truthy(storage.add_items({"grain": 70}), "routed market stores crops outside backpack")
+	assertions.truthy(inventory.add_item("grain_seed", 3), "routed market stores seeds in backpack")
+	assertions.equal(inventory.get_item_count("grain"), 0, "routed market crop fixture leaves backpack empty")
+	assertions.equal(storage.get_count("grain_seed"), 0, "routed market seed fixture leaves storage empty")
+
+	var panel := (load(MARKET_SCENE_PATH) as PackedScene).instantiate() as MarketPanel
+	tree.root.add_child(panel)
+	await tree.process_frame
+	assertions.truthy(panel.configure(inventory, economy, market), "routed market panel configures")
+	panel.select_category("crops")
+	panel.set_sort_mode("owned_quantity")
+	var grain_row := _find_item_row(panel.item_rows, "grain")
+	var seed_row := _find_item_row(panel.item_rows, "grain_seed")
+	assertions.truthy(grain_row != null and seed_row != null, "routed market builds crop and seed rows")
+	if grain_row != null:
+		assertions.equal(int(grain_row.get_meta("owned", -1)), 70, "crop row reads farm-storage ownership")
+		assertions.truthy(
+			(grain_row.get_node("Content/SelectButton") as Button).text.contains("持有 70"),
+			"crop row copy shows farm-storage ownership"
+		)
+	if seed_row != null:
+		assertions.equal(int(seed_row.get_meta("owned", -1)), 3, "seed row reads backpack ownership")
+	assertions.truthy(
+		panel._item_ids.find("grain") < panel._item_ids.find("grain_seed"),
+		"owned-quantity sort compares authoritative containers"
+	)
+
+	panel.apply_responsive_layout(Vector2(1000.0, 720.0))
+	panel.select_item("grain")
+	var trade := panel.trade_panel as TradePanel
+	assertions.truthy(panel.detail_card.visible, "crop selection opens the compact detail drawer")
+	assertions.equal(trade.player_quantity_label.text, "70", "detail drawer reads stored crop quantity")
+	trade.max_button.pressed.emit()
+	assertions.equal(int(trade.quantity_spin.value), 70, "maximum action reaches authoritative crop sell maximum")
+	assertions.truthy(not trade.sell_button.disabled, "stored crop enables selling at the authoritative maximum")
+
+	trade.quantity_spin.value = 30
+	trade.request_buy()
+	assertions.truthy(trade.confirmation_layer.visible, "large crop purchase opens confirmation before capacity changes")
+	var event_bus := tree.root.get_node("EventBus")
+	assertions.truthy(
+		event_bus.farm_storage_capacity_changed.is_connected(Callable(trade, "_on_storage_capacity_changed")),
+		"trade panel listens for farm-storage capacity changes"
+	)
+	assertions.truthy(not event_bus.is_blocking_signals(), "capacity feedback fixture starts with publishable EventBus")
+	provider.capacity = 70
+	storage.refresh_capacity()
+	assertions.equal(storage.get_total_capacity(), 70, "capacity feedback fixture refreshes authoritative capacity")
+	assertions.truthy(not trade.confirmation_layer.visible, "capacity change invalidates pending crop purchase")
+	assertions.equal(
+		trade.feedback_label.text,
+		"农场仓库缺少 30 容量",
+		"confirmation displays the authoritative exact capacity shortage"
+	)
+
+	provider.capacity = 68
+	storage.refresh_capacity()
+	trade.quantity_spin.value = 1
+	trade.refresh_quote()
+	assertions.truthy(trade.buy_button.disabled, "overloaded storage disables crop purchase")
+	assertions.equal(trade.buy_button.tooltip_text, "农场仓库缺少 3 容量", "overload reports exact missing capacity")
+	var assets_before := {
+		"gold": int(wallet.gold),
+		"storage": storage.get_items().duplicate(true),
+		"stock": market.get_stock("grain"),
+	}
+	trade.request_buy()
+	assertions.equal(trade.feedback_label.text, "农场仓库缺少 3 容量", "rejected buy repeats stable localized reason")
+	assertions.equal(
+		{"gold": int(wallet.gold), "storage": storage.get_items(), "stock": market.get_stock("grain")},
+		assets_before,
+		"overloaded storage rejection preserves every trade authority"
+	)
+
+	provider.capacity = 200
+	storage.refresh_capacity()
+	assertions.truthy(storage.remove_items({"grain": 69}), "routed market storage event changes crop ownership")
+	await tree.process_frame
+	grain_row = _find_item_row(panel.item_rows, "grain")
+	assertions.equal(int(grain_row.get_meta("owned", -1)), 1, "storage event refreshes market row ownership")
+	assertions.equal(trade.player_quantity_label.text, "1", "storage event refreshes selected trade quantity")
+	assertions.truthy(panel.configure(inventory, economy, market), "routed market safely repeats configure")
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(panel, "_on_storage_changed")),
+		"market panel keeps one farm-storage refresh connection"
+	)
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(trade, "_on_storage_changed")),
+		"trade panel keeps one farm-storage refresh connection"
+	)
+	assertions.truthy(not panel.configure(null, null, null), "invalid market reconfigure is rejected")
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(panel, "_on_storage_changed")),
+		"invalid market reconfigure disconnects its storage refresh"
+	)
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(trade, "_on_storage_changed")),
+		"invalid market reconfigure disconnects the trade storage refresh"
+	)
+	assertions.truthy(panel.configure(inventory, economy, market), "market reconnects after rejected dependencies")
+	tree.root.remove_child(panel)
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(panel, "_on_storage_changed")),
+		"market panel disconnects farm-storage refresh on teardown"
+	)
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(trade, "_on_storage_changed")),
+		"trade panel disconnects farm-storage refresh on teardown"
+	)
+	wallet.gold = previous_gold
+	_free_nodes([panel, economy, market, router, storage, inventory])
+
+
 func _test_market_row_affordances(
 	assertions: TestAssert,
 	market_panel: Node,
@@ -577,3 +727,9 @@ func _assert_assets_equal(
 	assertions.equal(int(wallet.gold), int(expected.gold), message + " preserves gold")
 	assertions.equal(inventory.get_item_count("wood"), int(expected.owned), message + " preserves inventory")
 	assertions.equal(market.get_stock("wood"), int(expected.stock), message + " preserves stock")
+
+
+func _free_nodes(nodes: Array) -> void:
+	for node in nodes:
+		if node != null and is_instance_valid(node):
+			node.free()

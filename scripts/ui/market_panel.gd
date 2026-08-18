@@ -61,6 +61,8 @@ var _item_ids: Array[String] = []
 var _layout_mode := "three_column"
 var _drawer_open := false
 var _logical_layout_size := Vector2.ZERO
+var _event_bus: Node
+var _authoritative_refresh_scheduled := false
 
 
 func _ready() -> void:
@@ -76,6 +78,7 @@ func _ready() -> void:
 		resized.connect(_on_control_resized)
 	if not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
 		get_viewport().size_changed.connect(_on_viewport_size_changed)
+	_connect_authoritative_signals()
 	apply_economy_ui_scale(EconomyLayoutScript.get_ui_scale())
 
 
@@ -84,16 +87,22 @@ func configure(
 	economy: EconomySystem,
 	market: MarketSystem
 ) -> bool:
+	_disconnect_authoritative_signals()
 	inventory_ref = inventory
 	economy_ref = economy
 	market_ref = market
+	var trade_configured: bool = bool(trade_panel.configure(inventory_ref, economy_ref, market_ref))
 	if inventory_ref == null or economy_ref == null or market_ref == null:
 		return false
-	trade_panel.configure(inventory_ref, economy_ref, market_ref)
+	_connect_authoritative_signals()
 	if not trade_panel.is_connected("snapshot_changed", _on_trade_snapshot_changed):
 		trade_panel.connect("snapshot_changed", _on_trade_snapshot_changed)
 	_rebuild_item_list()
-	return true
+	return trade_configured
+
+
+func refresh_market() -> void:
+	_on_trade_snapshot_changed()
 
 
 func select_category(category: String) -> void:
@@ -325,12 +334,13 @@ func _rebuild_item_list() -> void:
 		var candidate_id := str(definition.get("id", ""))
 		var state := market_ref.get_item_state(candidate_id)
 		var history: Array = state.get("history", [])
+		var owned := _owned_quantity(candidate_id)
 		var row_text := "%s　卖 %d　%s　%s　持有 %d" % [
 			str(definition.get("name", candidate_id)),
 			market_ref.quote_sell(candidate_id, 1),
 			_trend_text(history),
 			_stock_status(state),
-			inventory_ref.get_item_count(candidate_id),
+			owned,
 		]
 		item_list.add_item(row_text)
 		item_list.set_item_metadata(item_list.item_count - 1, candidate_id)
@@ -360,7 +370,9 @@ func _compare_items(a: Dictionary, b: Dictionary) -> bool:
 		"shortage":
 			return _stock_ratio(a_state) < _stock_ratio(b_state)
 		"owned_quantity":
-			return inventory_ref.get_item_count(a_id) > inventory_ref.get_item_count(b_id)
+			var a_owned := _owned_quantity(a_id)
+			var b_owned := _owned_quantity(b_id)
+			return a_id < b_id if a_owned == b_owned else a_owned > b_owned
 		"name":
 			return str(a.get("name", a_id)) < str(b.get("name", b_id))
 		_:
@@ -384,7 +396,7 @@ func _create_item_row(
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.set_meta("item_id", item_id)
 	row.set_meta("stock", int(state.get("stock", 0)))
-	row.set_meta("owned", inventory_ref.get_item_count(item_id) if inventory_ref != null else 0)
+	row.set_meta("owned", _owned_quantity(item_id))
 	row.tooltip_text = "%s；%s" % [_stock_status(state), "紧急需求" if _is_urgent(state) else "供需平稳"]
 	var row_style := StyleBoxFlat.new()
 	row_style.bg_color = Color("#FFF7E6")
@@ -628,6 +640,8 @@ func _product_button_for(target_item_id: String) -> Button:
 
 
 func _on_trade_snapshot_changed() -> void:
+	if not is_node_ready():
+		return
 	var preserved_category := selected_category
 	var preserved_item := selected_item_id
 	var preserved_sort := sort_mode
@@ -637,3 +651,80 @@ func _on_trade_snapshot_changed() -> void:
 	sort_mode = preserved_sort
 	_rebuild_item_list()
 	item_scroll.scroll_vertical = preserved_scroll
+
+
+func _owned_quantity(target_item_id: String) -> int:
+	return economy_ref.get_owned_quantity(target_item_id) if is_instance_valid(economy_ref) else 0
+
+
+func _connect_authoritative_signals() -> void:
+	if is_instance_valid(market_ref):
+		var stock_callback := Callable(self, "_on_market_stock_changed")
+		var price_callback := Callable(self, "_on_market_price_changed")
+		if not market_ref.market_stock_changed.is_connected(stock_callback):
+			market_ref.market_stock_changed.connect(stock_callback)
+		if not market_ref.market_price_changed.is_connected(price_callback):
+			market_ref.market_price_changed.connect(price_callback)
+	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	if _event_bus == null:
+		return
+	var inventory_callback := Callable(self, "_on_inventory_changed")
+	for signal_name in [&"item_added", &"item_removed"]:
+		if not _event_bus.is_connected(signal_name, inventory_callback):
+			_event_bus.connect(signal_name, inventory_callback)
+	var storage_callback := Callable(self, "_on_storage_changed")
+	if not _event_bus.farm_storage_changed.is_connected(storage_callback):
+		_event_bus.farm_storage_changed.connect(storage_callback)
+
+
+func _disconnect_authoritative_signals() -> void:
+	if is_instance_valid(market_ref):
+		var stock_callback := Callable(self, "_on_market_stock_changed")
+		var price_callback := Callable(self, "_on_market_price_changed")
+		if market_ref.market_stock_changed.is_connected(stock_callback):
+			market_ref.market_stock_changed.disconnect(stock_callback)
+		if market_ref.market_price_changed.is_connected(price_callback):
+			market_ref.market_price_changed.disconnect(price_callback)
+	if is_instance_valid(_event_bus):
+		var inventory_callback := Callable(self, "_on_inventory_changed")
+		for signal_name in [&"item_added", &"item_removed"]:
+			if _event_bus.is_connected(signal_name, inventory_callback):
+				_event_bus.disconnect(signal_name, inventory_callback)
+		var storage_callback := Callable(self, "_on_storage_changed")
+		if _event_bus.farm_storage_changed.is_connected(storage_callback):
+			_event_bus.farm_storage_changed.disconnect(storage_callback)
+	_event_bus = null
+
+
+func _on_market_stock_changed(_item_id: String, _stock: int) -> void:
+	_schedule_authoritative_refresh()
+
+
+func _on_market_price_changed(_item_id: String, _price: int) -> void:
+	_schedule_authoritative_refresh()
+
+
+func _on_inventory_changed(_item_id: String, _quantity: int) -> void:
+	_schedule_authoritative_refresh()
+
+
+func _on_storage_changed(_changes: Dictionary) -> void:
+	_schedule_authoritative_refresh()
+
+
+func _schedule_authoritative_refresh() -> void:
+	if _authoritative_refresh_scheduled:
+		return
+	_authoritative_refresh_scheduled = true
+	call_deferred("_flush_authoritative_refresh")
+
+
+func _flush_authoritative_refresh() -> void:
+	_authoritative_refresh_scheduled = false
+	if is_inside_tree():
+		_on_trade_snapshot_changed()
+
+
+func _exit_tree() -> void:
+	_authoritative_refresh_scheduled = false
+	_disconnect_authoritative_signals()

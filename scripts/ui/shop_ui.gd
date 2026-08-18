@@ -115,6 +115,7 @@ func configure(
 		if service_dependencies.any(func(value: Variant) -> bool: return value == null):
 			return false
 		configured = service_panel.configure(progression, tool_system, production) and configured
+	market_panel.refresh_market()
 	_refresh_header()
 	return configured
 
@@ -138,7 +139,7 @@ func open(tab_id: String = "market", target_id: String = "") -> void:
 	_has_opened = true
 	_refresh_header()
 	if selected_tab == "market":
-		market_panel.refresh_snapshot()
+		market_panel.refresh_market()
 	elif selected_tab == "orders":
 		order_panel.refresh_orders()
 	elif selected_tab == "contracts":
@@ -179,7 +180,7 @@ func select_tab(tab_id: String) -> bool:
 		tab_buttons[button_id].button_pressed = button_id == selected_tab
 	_apply_tab_styles()
 	if selected_tab == "market" and _market_ref != null:
-		market_panel.refresh_snapshot()
+		market_panel.refresh_market()
 	elif selected_tab == "orders" and _economy_ref != null:
 		order_panel.refresh_orders()
 	elif selected_tab == "contracts" and _economy_ref != null:
@@ -323,9 +324,10 @@ func _block_trade_modal_focus() -> void:
 
 func _restore_trade_modal_focus() -> void:
 	for control_value in _trade_modal_focus_modes:
+		if not is_instance_valid(control_value):
+			continue
 		var control := control_value as Control
-		if is_instance_valid(control):
-			control.focus_mode = int(_trade_modal_focus_modes[control_value])
+		control.focus_mode = int(_trade_modal_focus_modes[control_value])
 	_trade_modal_focus_modes.clear()
 
 

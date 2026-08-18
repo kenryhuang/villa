@@ -1,7 +1,6 @@
 class_name TradePanel
 extends Control
 
-const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MAX_UI_QUANTITY := 999
 
 signal snapshot_changed
@@ -38,6 +37,10 @@ var _underlying_focus_modes: Dictionary = {}
 var _focus_before_confirmation: Control
 
 
+func _enter_tree() -> void:
+	_connect_authoritative_signals()
+
+
 func _ready() -> void:
 	quantity_spin.value_changed.connect(_on_quantity_changed)
 	quantity_spin.gui_input.connect(_on_quantity_gui_input)
@@ -49,6 +52,7 @@ func _ready() -> void:
 	confirmation_layer.visibility_changed.connect(_on_confirmation_visibility_changed)
 	feedback_timer.timeout.connect(_clear_feedback)
 	confirmation_layer.visible = false
+	_connect_authoritative_signals()
 
 
 func configure(
@@ -56,6 +60,7 @@ func configure(
 	economy: EconomySystem,
 	market: MarketSystem
 ) -> bool:
+	_disconnect_authoritative_signals()
 	inventory_ref = inventory
 	economy_ref = economy
 	market_ref = market
@@ -79,7 +84,7 @@ func refresh_quote() -> void:
 	_refreshing_quote = true
 	var state := market_ref.get_item_state(item_id) if market_ref != null else {}
 	var stock := int(state.get("stock", 0))
-	var owned := inventory_ref.get_item_count(item_id) if inventory_ref != null else 0
+	var owned := _owned_quantity()
 	var safe_limit := maxi(1, mini(MAX_UI_QUANTITY, maxi(stock, owned)))
 	quantity_spin.max_value = float(safe_limit)
 	var quantity := safe_quantity(quantity_spin.value, stock, owned)
@@ -100,8 +105,8 @@ func refresh_quote() -> void:
 	buy_total_label.text = str(buy_total)
 	sell_total_label.text = str(sell_total)
 	impact_label.text = localized_impact(impact_for(quantity, liquidity))
-	var buy_reason := _buy_disabled_reason(state, quantity, buy_total)
-	var sell_reason := _sell_disabled_reason(state, quantity)
+	var buy_reason := _localized_trade_failure(_trade_preflight(quantity, true))
+	var sell_reason := _localized_trade_failure(_trade_preflight(quantity, false))
 	buy_button.disabled = not buy_reason.is_empty()
 	buy_button.tooltip_text = buy_reason
 	sell_button.disabled = not sell_reason.is_empty()
@@ -246,9 +251,10 @@ func _block_underlying_focus() -> void:
 
 func _restore_underlying_focus() -> void:
 	for control_value in _underlying_focus_modes:
+		if not is_instance_valid(control_value):
+			continue
 		var control := control_value as Control
-		if is_instance_valid(control):
-			control.focus_mode = int(_underlying_focus_modes[control_value])
+		control.focus_mode = int(_underlying_focus_modes[control_value])
 	_underlying_focus_modes.clear()
 	if is_instance_valid(_focus_before_confirmation) and _focus_before_confirmation.is_visible_in_tree():
 		_focus_before_confirmation.call_deferred("grab_focus")
@@ -268,6 +274,11 @@ func _all_controls(root: Control) -> Array[Control]:
 
 
 func _execute_trade(action: String, quantity: int) -> void:
+	var preflight := _trade_preflight(quantity, action == "buy")
+	if not bool(preflight.get("ok", false)):
+		refresh_quote()
+		_show_feedback(_localized_trade_failure(preflight))
+		return
 	var succeeded := (
 		economy_ref.buy_item(item_id, quantity)
 		if action == "buy"
@@ -301,7 +312,8 @@ func _open_confirmation(
 		"market_stock": int(state.get("stock", 0)),
 		"mid_price": int(state.get("mid_price", 0)),
 		"daily_liquidity": int(state.get("daily_liquidity", 0)),
-		"player_owned": inventory_ref.get_item_count(item_id),
+		"player_owned": _owned_quantity(),
+		"preflight": _trade_preflight(quantity, action == "buy"),
 	}
 	first_unit_label.text = "首件价格：%d" % first
 	last_unit_label.text = "末件价格：%d" % last
@@ -318,13 +330,19 @@ func _confirm_pending_trade() -> void:
 	if _pending_action.is_empty() or _confirmation_snapshot.is_empty():
 		return
 	var snapshot := _confirmation_snapshot.duplicate(true)
+	var action := str(snapshot.get("action", ""))
+	var quantity := int(snapshot.get("quantity", 0))
+	var preflight := _trade_preflight(quantity, action == "buy")
+	if not bool(preflight.get("ok", false)):
+		dismiss_confirmation()
+		_show_feedback(_localized_trade_failure(preflight))
+		refresh_quote()
+		return
 	if not _confirmation_is_current(snapshot):
 		dismiss_confirmation()
 		_show_feedback("状态已变化，请重新确认")
 		refresh_quote()
 		return
-	var action := str(snapshot.get("action", ""))
-	var quantity := int(snapshot.get("quantity", 0))
 	dismiss_confirmation()
 	_execute_trade(action, quantity)
 
@@ -332,7 +350,7 @@ func _confirm_pending_trade() -> void:
 func _on_quantity_changed(_value: float) -> void:
 	if confirmation_layer != null and confirmation_layer.visible:
 		_invalidate_confirmation("数量已变化，请重新确认")
-	if market_ref != null and inventory_ref != null:
+	if is_instance_valid(market_ref) and is_instance_valid(economy_ref):
 		refresh_quote()
 
 
@@ -348,20 +366,19 @@ func _on_quantity_gui_input(event: InputEvent) -> void:
 
 
 func _on_max_pressed() -> void:
-	if market_ref == null or inventory_ref == null:
+	if market_ref == null or economy_ref == null:
 		return
 	var state := market_ref.get_item_state(item_id)
-	var stock := mini(MAX_UI_QUANTITY, int(state.get("stock", 0)))
-	var gold := _gold()
+	var stock := int(state.get("stock", 0))
+	var owned := _owned_quantity()
 	var maximum := 0
 	var low := 1
-	var high := stock
+	var high := mini(MAX_UI_QUANTITY, maxi(stock, owned))
 	while low <= high:
 		var quantity := floori(float(low + high) / 2.0)
-		if (
-			market_ref.quote_buy(item_id, quantity) <= gold
-			and inventory_ref.can_add_item(item_id, quantity)
-		):
+		var can_buy := bool(_trade_preflight(quantity, true).get("ok", false))
+		var can_sell := bool(_trade_preflight(quantity, false).get("ok", false))
+		if can_buy or can_sell:
 			maximum = quantity
 			low = quantity + 1
 		else:
@@ -371,7 +388,7 @@ func _on_max_pressed() -> void:
 
 func _safe_current_quantity(state: Dictionary) -> int:
 	var stock := int(state.get("stock", 0))
-	var owned := inventory_ref.get_item_count(item_id) if inventory_ref != null else 0
+	var owned := _owned_quantity()
 	return safe_quantity(quantity_spin.value, stock, owned)
 
 
@@ -423,11 +440,13 @@ func _confirmation_is_current(snapshot: Dictionary) -> bool:
 		and int(state.get("stock", -1)) == int(snapshot.get("market_stock", -2))
 		and int(state.get("mid_price", -1)) == int(snapshot.get("mid_price", -2))
 		and int(state.get("daily_liquidity", -1)) == int(snapshot.get("daily_liquidity", -2))
-		and inventory_ref.get_item_count(item_id) == int(snapshot.get("player_owned", -1))
+		and _owned_quantity() == int(snapshot.get("player_owned", -1))
 	)
 
 
 func _connect_authoritative_signals() -> void:
+	if not is_instance_valid(market_ref):
+		return
 	var stock_callable := Callable(self, "_on_market_stock_changed")
 	if not market_ref.market_stock_changed.is_connected(stock_callable):
 		market_ref.market_stock_changed.connect(stock_callable)
@@ -444,6 +463,38 @@ func _connect_authoritative_signals() -> void:
 			)
 			if not _event_bus.is_connected(signal_name, callback):
 				_event_bus.connect(signal_name, callback)
+		var storage_callback := Callable(self, "_on_storage_changed")
+		if not _event_bus.farm_storage_changed.is_connected(storage_callback):
+			_event_bus.farm_storage_changed.connect(storage_callback)
+		var capacity_callback := Callable(self, "_on_storage_capacity_changed")
+		if not _event_bus.farm_storage_capacity_changed.is_connected(capacity_callback):
+			_event_bus.farm_storage_capacity_changed.connect(capacity_callback)
+
+
+func _disconnect_authoritative_signals() -> void:
+	if is_instance_valid(market_ref):
+		var stock_callable := Callable(self, "_on_market_stock_changed")
+		var price_callable := Callable(self, "_on_market_price_changed")
+		if market_ref.market_stock_changed.is_connected(stock_callable):
+			market_ref.market_stock_changed.disconnect(stock_callable)
+		if market_ref.market_price_changed.is_connected(price_callable):
+			market_ref.market_price_changed.disconnect(price_callable)
+	if is_instance_valid(_event_bus):
+		for signal_name in [&"gold_changed", &"item_added", &"item_removed"]:
+			var callback := (
+				Callable(self, "_on_gold_changed")
+				if signal_name == &"gold_changed"
+				else Callable(self, "_on_inventory_changed")
+			)
+			if _event_bus.is_connected(signal_name, callback):
+				_event_bus.disconnect(signal_name, callback)
+		var storage_callback := Callable(self, "_on_storage_changed")
+		if _event_bus.farm_storage_changed.is_connected(storage_callback):
+			_event_bus.farm_storage_changed.disconnect(storage_callback)
+		var capacity_callback := Callable(self, "_on_storage_capacity_changed")
+		if _event_bus.farm_storage_capacity_changed.is_connected(capacity_callback):
+			_event_bus.farm_storage_capacity_changed.disconnect(capacity_callback)
+	_event_bus = null
 
 
 func _on_market_stock_changed(changed_item_id: String, _stock: int) -> void:
@@ -465,9 +516,22 @@ func _on_inventory_changed(changed_item_id: String, _quantity: int) -> void:
 		_on_authoritative_snapshot_changed()
 
 
+func _on_storage_changed(changes: Dictionary) -> void:
+	if changes.has(item_id):
+		_on_authoritative_snapshot_changed()
+
+
+func _on_storage_capacity_changed(_used: int, _total: int) -> void:
+	_on_authoritative_snapshot_changed()
+
+
 func _on_authoritative_snapshot_changed() -> void:
 	if confirmation_layer != null and confirmation_layer.visible:
-		_invalidate_confirmation("状态已变化，请重新确认")
+		var pending_is_buy := _pending_action == "buy"
+		var pending_quantity := int(_confirmation_snapshot.get("quantity", 0))
+		var preflight := _trade_preflight(pending_quantity, pending_is_buy)
+		var reason := _localized_trade_failure(preflight)
+		_invalidate_confirmation(reason if not reason.is_empty() else "状态已变化，请重新确认")
 	refresh_quote()
 
 
@@ -476,40 +540,41 @@ func _invalidate_confirmation(message: String) -> void:
 	_show_feedback(message)
 
 
-func _buy_disabled_reason(state: Dictionary, quantity: int, total: int) -> String:
-	if state.is_empty() or total <= 0:
-		return "商品不可交易"
-	var stock := int(state.get("stock", 0))
-	if stock < quantity:
-		return "市集库存仅剩 %d" % stock
-	var missing_gold := total - _gold()
-	if missing_gold > 0:
-		return "金币不足 %d" % missing_gold
-	if inventory_ref == null or not inventory_ref.can_add_item(item_id, quantity):
-		return "背包需要 %d 个空位" % _required_empty_slots(quantity)
-	return ""
+func _trade_preflight(quantity: int, is_buy: bool) -> Dictionary:
+	if not is_instance_valid(economy_ref) or not economy_ref.has_method("quote_trade_failure"):
+		return {"ok": false, "reason": "not_configured", "item_id": item_id}
+	return economy_ref.quote_trade_failure(item_id, quantity, is_buy)
 
 
-func _sell_disabled_reason(state: Dictionary, quantity: int) -> String:
-	if state.is_empty() or market_ref == null or market_ref.quote_sell(item_id, quantity) <= 0:
-		return "商品不可交易"
-	var owned := inventory_ref.get_item_count(item_id) if inventory_ref != null else 0
-	if owned < quantity:
-		return "持有量仅有 %d" % owned
-	return ""
+func _localized_trade_failure(result: Dictionary) -> String:
+	if bool(result.get("ok", false)):
+		return ""
+	match str(result.get("reason", "")):
+		"market_stock":
+			return "市集库存仅剩 %d" % int(result.get("available_quantity", 0))
+		"insufficient_gold":
+			return "金币不足 %d" % maxi(
+				0,
+				int(result.get("required_gold", 0)) - int(result.get("available_gold", 0))
+			)
+		"storage_capacity":
+			return "农场仓库缺少 %d 容量" % int(result.get("missing_capacity", 0))
+		"inventory_capacity":
+			return "背包容量不足 %d 件" % int(result.get("missing_quantity", 0))
+		"insufficient_crop", "insufficient_seed", "insufficient_resources":
+			return "持有量仅有 %d" % _owned_quantity()
+		"wallet_overflow":
+			return "金币已达上限"
+		"not_configured":
+			return "交易系统未就绪"
+		"transaction_failed":
+			return "交易暂不可用"
+		_:
+			return "商品不可交易"
 
 
-func _required_empty_slots(quantity: int) -> int:
-	if inventory_ref == null:
-		return 1
-	var item_data = GameDataScript.get_item(item_id)
-	var max_stack := int(item_data.get("max_stack", 99)) if item_data != null else 99
-	var existing_capacity := 0
-	for slot in inventory_ref.slots:
-		if not slot.is_empty() and str(slot.get("item_id", "")) == item_id:
-			existing_capacity += maxi(0, max_stack - int(slot.get("quantity", 0)))
-	var remaining := maxi(0, quantity - existing_capacity)
-	return maxi(1, ceili(float(remaining) / float(maxi(1, max_stack))))
+func _owned_quantity() -> int:
+	return economy_ref.get_owned_quantity(item_id) if is_instance_valid(economy_ref) else 0
 
 
 func _liquidity() -> int:
@@ -529,3 +594,7 @@ func _show_feedback(message: String) -> void:
 
 func _clear_feedback() -> void:
 	feedback_label.visible = false
+
+
+func _exit_tree() -> void:
+	_disconnect_authoritative_signals()
