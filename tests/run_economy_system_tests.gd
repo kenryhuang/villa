@@ -29,6 +29,14 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions = TestAssertScript.new()
+	for script_value in [ItemContainerRouterTest, MarketMathTest, MarketSystemTest, EconomyTransactionsTest]:
+		assertions.truthy(
+			script_value != null and script_value.can_instantiate(),
+			"Task2 economy script compiles: " + str(script_value.resource_path)
+		)
+	if not assertions.failures.is_empty():
+		_finish(assertions)
+		return
 	var task2_checks_before: int = assertions.checks
 	print("[task2-trade] router start")
 	var router_checks_before: int = assertions.checks
@@ -66,6 +74,10 @@ func _run() -> void:
 	await economy_ui_responsive_test.run(assertions, self)
 	print("[economy-suite] deterministic economy simulation")
 	EconomySimulationTest.new().run(assertions)
+	_finish(assertions)
+
+
+func _finish(assertions: TestAssert) -> void:
 	if assertions.failures.is_empty():
 		print("PASS: %d economy checks" % assertions.checks)
 		quit(0)

@@ -1,6 +1,8 @@
 class_name MarketMath
 extends RefCounted
 
+const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+
 
 static func target_price(
 	base: int,
@@ -34,12 +36,32 @@ static func smooth_price(current: int, target: int, base: int) -> int:
 
 
 static func quote_total(mid: int, quantity: int, liquidity: int, is_buy: bool) -> int:
-	if mid <= 0 or quantity <= 0:
+	if (
+		mid <= 0
+		or mid > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or quantity <= 0
+		or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY
+	):
+		return 0
+	var safe_liquidity := maxi(liquidity, 1)
+	var spread := 1.10 if is_buy else 0.90
+	var max_pressure := float(quantity - 1) / safe_liquidity if is_buy else 0.0
+	var max_slip := 1.0 + max_pressure * 0.20 if is_buy else 1.0
+	var max_raw_unit := float(mid) * spread * max_slip
+	if not is_finite(max_raw_unit) or max_raw_unit > EconomyLimitsScript.MAX_SAFE_INTEGER:
+		return 0
+	var max_unit := maxi(1, roundi(max_raw_unit))
+	if max_unit > floori(float(EconomyLimitsScript.MAX_SAFE_INTEGER) / quantity):
 		return 0
 	var total := 0
 	for i in range(quantity):
-		var pressure := float(i) / maxi(liquidity, 1)
-		var spread := 1.10 if is_buy else 0.90
+		var pressure := float(i) / safe_liquidity
 		var slip := 1.0 + pressure * 0.20 if is_buy else maxf(0.50, 1.0 - pressure * 0.20)
-		total += maxi(1, roundi(mid * spread * slip))
+		var raw_unit := float(mid) * spread * slip
+		if not is_finite(raw_unit) or raw_unit > EconomyLimitsScript.MAX_SAFE_INTEGER:
+			return 0
+		var unit_price := maxi(1, roundi(raw_unit))
+		if unit_price > EconomyLimitsScript.MAX_SAFE_INTEGER - total:
+			return 0
+		total += unit_price
 	return total

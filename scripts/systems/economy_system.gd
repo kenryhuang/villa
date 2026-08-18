@@ -114,8 +114,8 @@ func _buy_item_legacy(item_id: String, quantity: int) -> bool:
 	var market_before: Dictionary = _market_ref.call("to_dict")
 	var inventory_before := _snapshot_inventory()
 	var wallet_before: Variant = _get_wallet_balance()
-	var owns_market_transaction := _begin_market_transaction()
-	if _market_supports_atomic_transactions() and not owns_market_transaction:
+	var owns_market_transaction: Variant = _begin_market_transaction()
+	if _market_supports_atomic_transactions() and owns_market_transaction == null:
 		return false
 	var owns_event_bus_transaction := _begin_event_bus_transaction()
 	var owns_mapping_transaction: bool = _inventory_ref.begin_mapping_transaction()
@@ -163,8 +163,8 @@ func _sell_item_legacy(item_id: String, quantity: int) -> bool:
 	var market_before: Dictionary = _market_ref.call("to_dict")
 	var inventory_before := _snapshot_inventory()
 	var wallet_before: Variant = _get_wallet_balance()
-	var owns_market_transaction := _begin_market_transaction()
-	if _market_supports_atomic_transactions() and not owns_market_transaction:
+	var owns_market_transaction: Variant = _begin_market_transaction()
+	if _market_supports_atomic_transactions() and owns_market_transaction == null:
 		return false
 	var owns_event_bus_transaction := _begin_event_bus_transaction()
 	var owns_mapping_transaction: bool = _inventory_ref.begin_mapping_transaction()
@@ -300,23 +300,23 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 	if router_before.is_empty():
 		_trade_active = false
 		return false
-	var market_transaction := _begin_market_transaction()
-	if not market_transaction:
+	var market_transaction: Variant = _begin_market_transaction()
+	if market_transaction == null:
 		_trade_active = false
 		return false
 	var router_token: RefCounted = _router_ref.begin_atomic_transaction()
 	if router_token == null:
 		var restored := _rollback_routed_trade(
-			null, null, router_before, market_before, wallet_before,
-			market_transaction, false
+			null, null, market_transaction, null,
+			router_before, market_before, wallet_before, false
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
 	var event_bus_transaction := _begin_event_bus_transaction()
 	if _event_bus != null and not event_bus_transaction:
 		var restored := _rollback_routed_trade(
-			router_token, null, router_before, market_before, wallet_before,
-			market_transaction, false
+			router_token, null, market_transaction, null,
+			router_before, market_before, wallet_before, false
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
@@ -333,58 +333,80 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 		mutation_succeeded = spend_gold(int(quote.total)) if is_buy else add_gold(int(quote.total))
 	if not mutation_succeeded:
 		var restored := _rollback_routed_trade(
-			router_token, null, router_before, market_before, wallet_before,
-			market_transaction, event_bus_transaction
+			router_token, null, market_transaction, null,
+			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
 
-	var publication: RefCounted = _router_ref.seal_atomic_transaction(router_token)
-	if publication == null:
+	var market_publication: RefCounted = _market_ref.call(
+		"seal_atomic_transaction", market_transaction
+	)
+	if market_publication == null:
 		var restored := _rollback_routed_trade(
-			router_token, null, router_before, market_before, wallet_before,
-			market_transaction, event_bus_transaction
+			router_token, null, market_transaction, null,
+			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
-	if not _router_ref.can_arm_sealed_transaction(publication):
+	var router_publication: RefCounted = _router_ref.seal_atomic_transaction(router_token)
+	if router_publication == null:
 		var restored := _rollback_routed_trade(
-			null, publication, router_before, market_before, wallet_before,
-			market_transaction, event_bus_transaction
+			router_token, null, null, market_publication,
+			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
 
-	if not _end_market_transaction(market_transaction, true, true):
+	var publications_ready := (
+		_router_ref.can_arm_sealed_transaction(router_publication)
+		and bool(_market_ref.call("can_arm_sealed_transaction", market_publication))
+		and _router_ref.can_publish_sealed_transaction(router_publication, true)
+		and bool(_market_ref.call("can_publish_sealed_transaction", market_publication, true))
+	)
+	if not publications_ready:
 		var restored := _rollback_routed_trade(
-			null, publication, router_before, market_before, wallet_before,
-			market_transaction, event_bus_transaction
+			null, router_publication, null, market_publication,
+			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
-	if not bool(_market_ref.call("has_deferred_atomic_publication")):
+
+	# Both arm calls are deterministic after the readiness checks and run before callbacks.
+	if not _router_ref.arm_sealed_transaction(router_publication):
 		var restored := _rollback_routed_trade(
-			null, publication, router_before, market_before, wallet_before,
-			false, event_bus_transaction
+			null, router_publication, null, market_publication,
+			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
+	if not bool(_market_ref.call("arm_sealed_transaction", market_publication)):
+		push_error("Market publication violated its checked arm contract.")
+		_restore_event_bus_block(event_bus_transaction)
+		_trade_active = false
+		return false
 
 	_restore_event_bus_block(event_bus_transaction)
-	var router_published := _router_ref.publish_sealed_transaction(publication)
-	if not router_published and _router_ref.owns_sealed_transaction(publication):
-		var restored := _rollback_routed_trade(
-			null, publication, router_before, market_before, wallet_before,
-			false, event_bus_transaction
-		)
+	var router_published := _router_ref.publish_sealed_transaction(router_publication)
+	if not router_published:
+		_ensure_event_bus_unblocked(event_bus_transaction)
+		router_published = _router_ref.publish_sealed_transaction(router_publication)
+	if not router_published:
+		push_error("Router publication violated its checked publish contract.")
 		_trade_active = false
-		return false if restored else _report_failed_rollback()
+		return false
 
 	_ensure_event_bus_unblocked(event_bus_transaction)
-	var market_published := bool(_market_ref.call("publish_deferred_atomic_events"))
+	var market_published := bool(_market_ref.call(
+		"publish_sealed_transaction", market_publication
+	))
 	if not market_published:
-		push_error("Committed market publication unexpectedly failed.")
 		_ensure_event_bus_unblocked(event_bus_transaction)
+		market_published = bool(_market_ref.call(
+			"publish_sealed_transaction", market_publication
+		))
+	if not market_published:
+		push_error("Market publication violated its checked publish contract.")
 		_trade_active = false
 		return false
 	_ensure_event_bus_unblocked(event_bus_transaction)
@@ -396,32 +418,39 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 
 func _rollback_routed_trade(
 	router_token: RefCounted,
-	publication: RefCounted,
+	router_publication: RefCounted,
+	market_transaction: Variant,
+	market_publication: RefCounted,
 	router_before: Dictionary,
 	market_before: Dictionary,
 	wallet_before: Variant,
-	market_transaction: bool,
 	event_bus_transaction: bool
 ) -> bool:
 	var router_restored := true
 	if is_instance_valid(_router_ref):
-		if publication != null and _router_ref.owns_sealed_transaction(publication):
-			router_restored = _router_ref.cancel_sealed_transaction(publication)
-		elif router_token != null:
+		if (
+			router_publication != null
+			and _router_ref.owns_sealed_transaction(router_publication)
+		):
+			router_restored = _router_ref.cancel_sealed_transaction(router_publication)
+		elif router_token != null and _router_ref.owns_atomic_transaction(router_token):
 			router_restored = _router_ref.rollback_atomic_transaction(router_token)
 		router_restored = router_restored and _router_ref.snapshot_matches(router_before)
-	var market_restored := false
+	var market_restored := true
 	if (
-		_market_ref.has_method("has_deferred_atomic_publication")
-		and bool(_market_ref.call("has_deferred_atomic_publication"))
+		market_publication != null
+		and bool(_market_ref.call("owns_sealed_transaction", market_publication))
 	):
-		market_restored = bool(_market_ref.call("discard_deferred_atomic_publication", true))
-	elif market_transaction:
-		market_restored = _end_market_transaction(true, false)
-	else:
-		market_restored = _market_ref.call("to_dict") == market_before
-		if not market_restored:
-			market_restored = _restore_market(market_before)
+		market_restored = bool(_market_ref.call(
+			"cancel_sealed_transaction", market_publication
+		))
+	elif (
+		market_transaction != null
+		and bool(_market_ref.call("owns_atomic_transaction", market_transaction))
+	):
+		market_restored = bool(_market_ref.call(
+			"rollback_atomic_transaction", market_transaction
+		))
 	market_restored = market_restored and _market_ref.call("to_dict") == market_before
 	var wallet_restored := _restore_wallet(wallet_before)
 	_restore_event_bus_block(event_bus_transaction)
@@ -533,11 +562,10 @@ func _restore_market(snapshot: Dictionary) -> bool:
 	return _market_ref != null and bool(_market_ref.call("from_dict", snapshot))
 
 
-func _begin_market_transaction() -> bool:
-	return (
-		_market_supports_atomic_transactions()
-		and bool(_market_ref.call("begin_atomic_transaction"))
-	)
+func _begin_market_transaction() -> Variant:
+	if not _market_supports_atomic_transactions():
+		return null
+	return _market_ref.call("begin_atomic_transaction")
 
 
 func _market_supports_atomic_transactions() -> bool:
@@ -552,8 +580,10 @@ func _market_supports_routed_transactions() -> bool:
 	if not _market_supports_atomic_transactions():
 		return false
 	for method_name in [
-		"get_item_state", "has_deferred_atomic_publication",
-		"publish_deferred_atomic_events", "discard_deferred_atomic_publication",
+		"get_item_state", "rollback_atomic_transaction", "owns_atomic_transaction",
+		"seal_atomic_transaction", "can_arm_sealed_transaction",
+		"arm_sealed_transaction", "can_publish_sealed_transaction", "publish_sealed_transaction",
+		"cancel_sealed_transaction", "owns_sealed_transaction",
 	]:
 		if not _market_ref.has_method(method_name):
 			return false
@@ -561,15 +591,12 @@ func _market_supports_routed_transactions() -> bool:
 
 
 func _end_market_transaction(
-	owns_transaction: bool,
-	commit_changes: bool,
-	defer_publication: bool = false
+	transaction: Variant,
+	commit_changes: bool
 ) -> bool:
-	if not owns_transaction or not _market_supports_atomic_transactions():
+	if transaction == null or not _market_supports_atomic_transactions():
 		return false
-	if defer_publication:
-		return bool(_market_ref.call("end_atomic_transaction", commit_changes, true))
-	return bool(_market_ref.call("end_atomic_transaction", commit_changes))
+	return bool(_market_ref.call("end_atomic_transaction", transaction, commit_changes))
 
 
 func _begin_event_bus_transaction() -> bool:

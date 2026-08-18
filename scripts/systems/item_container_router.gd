@@ -208,12 +208,26 @@ func arm_sealed_transaction(publication: Variant) -> bool:
 	return true
 
 
-func publish_sealed_transaction(publication: Variant) -> bool:
+func can_publish_sealed_transaction(
+	publication: Variant,
+	allow_blocked_event_bus: bool = false
+) -> bool:
 	_recover_abandoned_seal()
 	if _publication_in_progress or not _owns_sealed_transaction(publication):
 		return false
+	if not _sealed_armed and not can_arm_sealed_transaction(publication):
+		return false
 	var event_bus := _event_bus()
-	if is_instance_valid(event_bus) and event_bus.is_blocking_signals():
+	return (
+		allow_blocked_event_bus
+		or not is_instance_valid(event_bus)
+		or not event_bus.is_blocking_signals()
+	)
+
+
+func publish_sealed_transaction(publication: Variant) -> bool:
+	_recover_abandoned_seal()
+	if not can_publish_sealed_transaction(publication):
 		return false
 	if not _sealed_armed and not arm_sealed_transaction(publication):
 		return false
@@ -232,6 +246,11 @@ func rollback_atomic_transaction(token: Variant) -> bool:
 		return _rollback_active_transaction()
 	_recover_abandoned_transaction()
 	return false
+
+
+func owns_atomic_transaction(token: Variant) -> bool:
+	_recover_abandoned_transaction()
+	return _owns_atomic_transaction(token)
 
 
 func owns_sealed_transaction(publication: Variant) -> bool:

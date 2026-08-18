@@ -146,11 +146,11 @@ class MarketDouble:
 			return false
 		return super.commit_sell(item_id, quantity)
 
-	func end_atomic_transaction(commit_changes: bool, defer_publication: bool = false) -> bool:
-		if commit_changes and fail_next_commit_end:
+	func seal_atomic_transaction(transaction: Variant) -> RefCounted:
+		if fail_next_commit_end:
 			fail_next_commit_end = false
-			return false
-		return super.end_atomic_transaction(commit_changes, defer_publication)
+			return null
+		return super.seal_atomic_transaction(transaction)
 
 	func from_dict(data: Dictionary) -> bool:
 		if fail_all_restore:
@@ -201,10 +201,16 @@ class FailingRouter:
 		return super.arm_sealed_transaction(publication)
 
 	func publish_sealed_transaction(publication: Variant) -> bool:
+		return super.publish_sealed_transaction(publication)
+
+	func can_publish_sealed_transaction(
+		publication: Variant,
+		allow_blocked_event_bus: bool = false
+	) -> bool:
 		if fail_next_publish:
 			fail_next_publish = false
 			return false
-		return super.publish_sealed_transaction(publication)
+		return super.can_publish_sealed_transaction(publication, allow_blocked_event_bus)
 
 
 class TradeRecorder:
@@ -226,6 +232,9 @@ class TradeRecorder:
 	var observations: Array[Dictionary] = []
 	var attempt_reentry := false
 	var reblock_before_reentry := false
+	var attack_market_during_router_publish := false
+	var reblock_on_local_market := false
+	var market_attack_results: Dictionary = {}
 	var reentry_results: Array[bool] = []
 
 	func on_item_added(item_id: String, quantity: int) -> void:
@@ -247,10 +256,37 @@ class TradeRecorder:
 	func on_local_market_changed(item_id: String, stock: int) -> void:
 		local_market_events.append({"item_id": item_id, "stock": stock})
 		_record_observation("market_local")
+		if reblock_on_local_market:
+			var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+			event_bus.set_block_signals(true)
 
 	func on_storage_changed(changes: Dictionary) -> void:
 		storage_events.append(changes.duplicate(true))
 		_record_observation("storage")
+		if attack_market_during_router_publish:
+			attack_market_during_router_publish = false
+			market_attack_results = {
+				"begin": market.begin_atomic_transaction(),
+				"buy": market.commit_buy("grain", 1),
+				"sell": market.commit_sell("grain", 1),
+				"demand": market.add_external_demand("grain", 1),
+				"supply": market.add_external_supply("grain", 1),
+				"publish_null": (
+					bool(market.call("publish_sealed_transaction", null))
+					if market.has_method("publish_sealed_transaction")
+					else false
+				),
+				"cancel_null": (
+					bool(market.call("cancel_sealed_transaction", null))
+					if market.has_method("cancel_sealed_transaction")
+					else false
+				),
+				"legacy_publish": (
+					bool(market.call("publish_deferred_atomic_events"))
+					if market.has_method("publish_deferred_atomic_events")
+					else false
+				),
+			}
 		if attempt_reentry:
 			attempt_reentry = false
 			if reblock_before_reentry:
@@ -342,6 +378,7 @@ func run(assertions: TestAssert) -> void:
 	_test_routed_trade_rejects_unrestorable_wallet(assertions)
 	_test_routed_router_lifecycle_is_required(assertions)
 	_test_routed_trade_publication_is_final_and_nonreentrant(assertions)
+	_test_router_listener_cannot_mutate_or_consume_market_publication(assertions)
 	_test_routed_preflight_rejects_unpublishable_outer_state(assertions)
 
 
@@ -660,7 +697,8 @@ func _run_nested_market_rejection(
 	event_bus.item_added.connect(on_item)
 	event_bus.market_stock_changed.connect(on_bus_stock)
 
-	assertions.truthy(market.begin_atomic_transaction(), message + " acquires outer market transaction")
+	var outer_transaction: Variant = market.begin_atomic_transaction()
+	assertions.truthy(outer_transaction != null, message + " acquires outer market transaction")
 	if queue_outer_stock_event:
 		assertions.truthy(market.commit_buy("wood", 1), message + " queues outer stock event")
 	var before := _snapshot(inventory, wallet, market)
@@ -673,7 +711,10 @@ func _run_nested_market_rejection(
 		inject_destination_failure,
 		message + " never reaches inventory destination"
 	)
-	assertions.truthy(market.end_atomic_transaction(true), message + " releases outer transaction")
+	assertions.truthy(
+		market.end_atomic_transaction(outer_transaction, true),
+		message + " releases outer transaction"
+	)
 	var expected_stock_events: Array = [9] if queue_outer_stock_event else []
 	assertions.equal(local_stock_events, expected_stock_events, message + " preserves local outer queue")
 	assertions.equal(bus_gold_events, [], message + " emits no gold signal")
@@ -1168,6 +1209,45 @@ func _test_routed_trade_publication_is_final_and_nonreentrant(assertions: TestAs
 		"market notification follows Router publication"
 	)
 
+	_disconnect_trade_recorder(fixture, recorder)
+	_free_routed_fixture(fixture)
+
+
+func _test_router_listener_cannot_mutate_or_consume_market_publication(
+	assertions: TestAssert
+) -> void:
+	var fixture := _make_routed_fixture()
+	var recorder := _connect_trade_recorder(fixture)
+	recorder.attack_market_during_router_publish = true
+	recorder.reblock_on_local_market = true
+	var total: int = fixture.market.quote_buy("grain", 2)
+	assertions.truthy(fixture.economy.buy_item("grain", 2), "malicious Router listener cannot break trade")
+	assertions.equal(recorder.market_attack_results, {
+		"begin": null,
+		"buy": false,
+		"sell": false,
+		"demand": false,
+		"supply": false,
+		"publish_null": false,
+		"cancel_null": false,
+		"legacy_publish": false,
+	}, "sealed Market rejects every direct callback attack")
+	assertions.equal(fixture.market.get_stock("grain"), 8, "malicious callback preserves final stock")
+	assertions.equal(fixture.market.get_item_state("grain").get("demand"), 2, "malicious callback preserves demand")
+	assertions.equal(fixture.wallet.gold, 1000 - total, "malicious callback preserves wallet")
+	assertions.equal(fixture.storage.get_count("grain"), 2, "malicious callback preserves storage")
+	assertions.equal(
+		recorder.local_market_events,
+		[{"item_id": "grain", "stock": 8}],
+		"Market local committed notification emits exactly once"
+	)
+	assertions.equal(
+		recorder.market_events,
+		[{"item_id": "grain", "stock": 8}],
+		"Market EventBus committed notification survives local reblock exactly once"
+	)
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+	assertions.truthy(not event_bus.is_blocking_signals(), "Market publication clears listener reblock")
 	_disconnect_trade_recorder(fixture, recorder)
 	_free_routed_fixture(fixture)
 

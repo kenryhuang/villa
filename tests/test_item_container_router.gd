@@ -850,6 +850,17 @@ func _test_transaction_ownership_and_abandonment(assertions: TestAssert, tree: S
 	var wrong_token := RefCounted.new()
 	var token: RefCounted = fixture.router.begin_atomic_transaction()
 	assertions.truthy(token != null, "ownership fixture begins transaction")
+	var has_transaction_ownership: bool = fixture.router.has_method("owns_atomic_transaction")
+	assertions.truthy(has_transaction_ownership, "router exposes transaction ownership")
+	if has_transaction_ownership:
+		assertions.truthy(
+			bool(fixture.router.call("owns_atomic_transaction", token)),
+			"router recognizes active owner"
+		)
+		assertions.truthy(
+			not bool(fixture.router.call("owns_atomic_transaction", wrong_token)),
+			"router rejects foreign owner"
+		)
 	assertions.equal(fixture.router.begin_atomic_transaction(), null, "nested transaction is rejected")
 	assertions.truthy(
 		not fixture.router.configure(fixture.inventory, fixture.storage),
@@ -867,6 +878,11 @@ func _test_transaction_ownership_and_abandonment(assertions: TestAssert, tree: S
 	var cancel_token: RefCounted = fixture.router.begin_atomic_transaction()
 	fixture.router.stage_add_items(cancel_token, {"wood": 1, "grain": 1})
 	var abandoned_publication: RefCounted = fixture.router.seal_atomic_transaction(cancel_token)
+	if has_transaction_ownership:
+		assertions.truthy(
+			not bool(fixture.router.call("owns_atomic_transaction", cancel_token)),
+			"sealed router no longer owns the consumed transaction token"
+		)
 	abandoned_publication = null
 	await tree.process_frame
 	await tree.process_frame

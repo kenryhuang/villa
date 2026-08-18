@@ -9,6 +9,7 @@ func run(assertions: TestAssert) -> void:
 	_test_seed_and_crop_market_entries_are_independent(assertions)
 	_test_invalid_operations_are_atomic(assertions)
 	_test_safe_ledger_boundaries_and_transaction_rollback(assertions)
+	_test_sealed_publication_requires_ownership(assertions)
 	_test_settlement_is_idempotent_and_bounded(assertions)
 	_test_state_is_deep_copied_and_persistent(assertions)
 
@@ -153,12 +154,102 @@ func _test_safe_ledger_boundaries_and_transaction_rollback(assertions: TestAsser
 	assertions.equal(market.to_dict(), sell_boundary, "stock overflow preserves market")
 
 	assertions.truthy(market.from_dict(configured), "transaction rollback fixture restores")
-	assertions.truthy(market.begin_atomic_transaction(), "market transaction begins")
+	var rollback_transaction: Variant = market.begin_atomic_transaction()
+	assertions.truthy(rollback_transaction != null, "market transaction begins")
 	assertions.truthy(not market.from_dict(configured), "active market rejects external restore")
 	assertions.truthy(not market.configure([_wood_definition()]), "active market rejects reconfigure")
 	assertions.truthy(market.commit_buy("wood", 1), "market transaction mutates state")
-	assertions.truthy(market.end_atomic_transaction(false), "market transaction rolls back")
+	assertions.truthy(
+		market.end_atomic_transaction(rollback_transaction, false),
+		"market transaction rolls back"
+	)
 	assertions.equal(market.to_dict(), configured, "market rollback restores exact snapshot")
+	market.free()
+
+
+func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void:
+	var market := MarketSystem.new()
+	assertions.truthy(market.configure([_wood_definition()]), "sealed market fixture configures")
+	var required_methods := [
+		"seal_atomic_transaction", "can_arm_sealed_transaction", "arm_sealed_transaction",
+		"publish_sealed_transaction", "cancel_sealed_transaction", "owns_sealed_transaction",
+	]
+	for method_name in required_methods:
+		assertions.truthy(market.has_method(method_name), "market exposes " + method_name)
+	if required_methods.any(func(method_name: String) -> bool: return not market.has_method(method_name)):
+		market.free()
+		return
+
+	var stock_events: Array[int] = []
+	market.market_stock_changed.connect(func(_item_id: String, stock: int) -> void:
+		stock_events.append(stock)
+	)
+	var transaction: Variant = market.begin_atomic_transaction()
+	assertions.truthy(transaction is RefCounted, "market transaction has an unforgeable owner")
+	var has_transaction_ownership := market.has_method("owns_atomic_transaction")
+	assertions.truthy(has_transaction_ownership, "market exposes transaction ownership")
+	if has_transaction_ownership:
+		assertions.truthy(
+			bool(market.call("owns_atomic_transaction", transaction)),
+			"market recognizes its active transaction owner"
+		)
+	assertions.truthy(
+		not market.end_atomic_transaction(true),
+		"market transaction cannot end without its owner token"
+	)
+	assertions.truthy(
+		not market.rollback_atomic_transaction(RefCounted.new()),
+		"forged transaction owner cannot roll back market"
+	)
+	assertions.truthy(market.commit_buy("wood", 1), "owned market transaction mutates")
+	var publication: Variant = market.call("seal_atomic_transaction", transaction)
+	assertions.truthy(publication is RefCounted, "market seal returns an owned publication")
+	if has_transaction_ownership:
+		assertions.truthy(
+			not bool(market.call("owns_atomic_transaction", transaction)),
+			"sealed market no longer owns the consumed transaction token"
+		)
+	assertions.truthy(
+		bool(market.call("owns_sealed_transaction", publication)),
+		"market recognizes its publication owner"
+	)
+	var forged := RefCounted.new()
+	assertions.truthy(not bool(market.call("publish_sealed_transaction", null)), "null cannot publish market")
+	assertions.truthy(not bool(market.call("publish_sealed_transaction", forged)), "forged owner cannot publish market")
+	assertions.truthy(not bool(market.call("cancel_sealed_transaction", null)), "null cannot discard market")
+	assertions.truthy(not bool(market.call("cancel_sealed_transaction", forged)), "forged owner cannot discard market")
+	assertions.equal(market.begin_atomic_transaction(), null, "sealed market rejects another transaction")
+	assertions.truthy(not market.commit_buy("wood", 1), "sealed market rejects buy mutation")
+	assertions.truthy(not market.commit_sell("wood", 1), "sealed market rejects sale mutation")
+	assertions.truthy(not market.add_external_demand("wood", 1), "sealed market rejects demand mutation")
+	assertions.truthy(not market.add_external_supply("wood", 1), "sealed market rejects supply mutation")
+	assertions.truthy(not market.settle_day(1), "sealed market rejects settlement mutation")
+	assertions.equal(stock_events, [], "sealed market has published no transient event")
+	assertions.truthy(
+		bool(market.call("can_arm_sealed_transaction", publication)),
+		"owned market publication can arm"
+	)
+	assertions.truthy(bool(market.call("arm_sealed_transaction", publication)), "market publication arms")
+	assertions.truthy(
+		not bool(market.call("cancel_sealed_transaction", publication)),
+		"armed market publication cannot roll back"
+	)
+	assertions.truthy(bool(market.call("publish_sealed_transaction", publication)), "owned market publishes")
+	assertions.equal(stock_events, [9], "owned market publication emits exactly once")
+	assertions.truthy(
+		not bool(market.call("publish_sealed_transaction", publication)),
+		"consumed market publication cannot replay"
+	)
+	var committed_state := market.to_dict()
+	var cancel_transaction: Variant = market.begin_atomic_transaction()
+	assertions.truthy(market.commit_sell("wood", 1), "cancellable market transaction mutates")
+	var cancel_publication: Variant = market.call("seal_atomic_transaction", cancel_transaction)
+	assertions.truthy(
+		bool(market.call("cancel_sealed_transaction", cancel_publication)),
+		"owned unarmed market publication cancels"
+	)
+	assertions.equal(market.to_dict(), committed_state, "owned market cancellation restores exact state")
+	assertions.equal(stock_events, [9], "market cancellation emits no event")
 	market.free()
 
 

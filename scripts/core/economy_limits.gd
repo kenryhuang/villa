@@ -10,7 +10,9 @@ const MAX_SAFE_DATE := MAX_SAFE_INTEGER - MAINTENANCE_HORIZON_DAYS
 const MAX_DELIVERY_QUANTITY := (
 	InventorySystemScript.DEFAULT_MAX_SLOTS * GameDataScript.DEFAULT_MAX_STACK
 )
-const MAX_TRADE_QUANTITY := MAX_DELIVERY_QUANTITY
+# A fully upgraded 36x28 map can hold at most 252 2x2 barns: 126,200 storage.
+# This independent ceiling also leaves room for repaired overloaded saves.
+const MAX_TRADE_QUANTITY := 200_000
 
 
 static func is_safe_date(value: Variant, allow_zero: bool = true) -> bool:

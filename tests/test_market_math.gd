@@ -1,6 +1,7 @@
 extends RefCounted
 
 const MarketMath = preload("res://scripts/shared/market_math.gd")
+const EconomyLimits = preload("res://scripts/core/economy_limits.gd")
 
 
 func run(assertions: TestAssert) -> void:
@@ -10,6 +11,7 @@ func run(assertions: TestAssert) -> void:
 	_test_smooth_price_normalizes_out_of_bounds_current(assertions)
 	_test_quote_spread_and_slippage(assertions)
 	_test_safe_boundaries(assertions)
+	_test_quote_overflow_and_independent_trade_limit(assertions)
 	_test_deterministic_results(assertions)
 
 
@@ -62,6 +64,47 @@ func _test_safe_boundaries(assertions: TestAssert) -> void:
 		MarketMath.target_price(100, 0, 0, 100, 0, 0, 1.0, 1.0),
 		250,
 		"zero target stock and liquidity remain safe"
+	)
+
+
+func _test_quote_overflow_and_independent_trade_limit(assertions: TestAssert) -> void:
+	assertions.truthy(
+		EconomyLimits.MAX_TRADE_QUANTITY >= 200_000,
+		"trade limit covers theoretical upgraded central storage"
+	)
+	assertions.truthy(
+		EconomyLimits.MAX_TRADE_QUANTITY != EconomyLimits.MAX_DELIVERY_QUANTITY,
+		"trade limit is independent from backpack delivery capacity"
+	)
+	var started := Time.get_ticks_usec()
+	assertions.equal(
+		MarketMath.quote_total(
+			EconomyLimits.MAX_SAFE_INTEGER,
+			EconomyLimits.MAX_SAFE_INTEGER,
+			EconomyLimits.MAX_SAFE_INTEGER,
+			true
+		),
+		0,
+		"MAX_SAFE quote saturates to failure"
+	)
+	assertions.truthy(
+		Time.get_ticks_usec() - started < 100_000,
+		"MAX_SAFE quote fails before quantity iteration"
+	)
+	assertions.equal(
+		MarketMath.quote_total(EconomyLimits.MAX_SAFE_INTEGER, 1, EconomyLimits.MAX_SAFE_INTEGER, true),
+		0,
+		"unsafe rounded unit price fails"
+	)
+	assertions.equal(
+		MarketMath.quote_total(EconomyLimits.MAX_SAFE_INTEGER, 2, EconomyLimits.MAX_SAFE_INTEGER, false),
+		0,
+		"unsafe total multiplication fails"
+	)
+	assertions.equal(
+		MarketMath.quote_total(1, EconomyLimits.MAX_TRADE_QUANTITY, EconomyLimits.MAX_SAFE_INTEGER, false),
+		EconomyLimits.MAX_TRADE_QUANTITY,
+		"largest supported low-price quote remains exact"
 	)
 	var negative_inputs_price: int = MarketMath.target_price(100, 100, -1, 100, 0, -1, 1.0, 1.0)
 	assertions.truthy(negative_inputs_price > 0, "negative target stock and liquidity remain positive")

@@ -14,15 +14,18 @@ var last_settled_day: int = 0
 var _items: Dictionary = {}
 var _catalog_defaults: Dictionary = {}
 var _event_bus: Node
-var _transaction_active := false
+var _transaction_owner: WeakRef
 var _transaction_snapshot: Dictionary = {}
 var _pending_stock_events: Dictionary = {}
 var _pending_price_events: Dictionary = {}
 var _pending_settlement_day := 0
-var _deferred_snapshot: Dictionary = {}
-var _deferred_stock_events: Dictionary = {}
-var _deferred_price_events: Dictionary = {}
-var _deferred_settlement_day := 0
+var _sealed_owner: WeakRef
+var _sealed_snapshot: Dictionary = {}
+var _sealed_stock_events: Dictionary = {}
+var _sealed_price_events: Dictionary = {}
+var _sealed_settlement_day := 0
+var _sealed_armed := false
+var _publication_in_progress := false
 
 
 func _ready() -> void:
@@ -30,7 +33,8 @@ func _ready() -> void:
 
 
 func configure(item_definitions: Array) -> bool:
-	if _transaction_active or has_deferred_atomic_publication() or item_definitions.is_empty():
+	_recover_abandoned_state()
+	if _has_atomic_state() or _has_sealed_state() or _publication_in_progress or item_definitions.is_empty():
 		return false
 	var configured_items: Dictionary = {}
 	for definition_value in item_definitions:
@@ -135,66 +139,113 @@ func can_buy(item_id: String, quantity: int) -> bool:
 	)
 
 
-func begin_atomic_transaction() -> bool:
-	if _items.is_empty() or _transaction_active or has_deferred_atomic_publication():
-		return false
-	_transaction_active = true
+func begin_atomic_transaction() -> RefCounted:
+	_recover_abandoned_state()
+	if _items.is_empty() or _has_atomic_state() or _has_sealed_state() or _publication_in_progress:
+		return null
+	var token := RefCounted.new()
+	_transaction_owner = weakref(token)
 	_transaction_snapshot = to_dict()
 	_pending_stock_events.clear()
 	_pending_price_events.clear()
 	_pending_settlement_day = 0
-	return true
+	return token
 
 
-func end_atomic_transaction(commit_changes: bool, defer_publication: bool = false) -> bool:
-	if not _transaction_active:
+func end_atomic_transaction(transaction: Variant, commit_changes: Variant = null) -> bool:
+	if typeof(commit_changes) != TYPE_BOOL or not _owns_atomic_transaction(transaction):
 		return false
+	if not commit_changes:
+		return rollback_atomic_transaction(transaction)
 	var stock_events := _pending_stock_events.duplicate()
 	var price_events := _pending_price_events.duplicate()
 	var settlement_day := _pending_settlement_day
+	_clear_transaction_state()
+	_publish_immediate_events(stock_events, price_events, settlement_day)
+	return true
+
+
+func rollback_atomic_transaction(transaction: Variant) -> bool:
+	if not _owns_atomic_transaction(transaction):
+		return false
 	var before := _transaction_snapshot.duplicate(true)
-	_transaction_active = false
-	_transaction_snapshot.clear()
-	_pending_stock_events.clear()
-	_pending_price_events.clear()
-	_pending_settlement_day = 0
-	if not commit_changes:
-		return _restore_transaction_snapshot(before)
-	if defer_publication:
-		_deferred_snapshot = before
-		_deferred_stock_events = stock_events
-		_deferred_price_events = price_events
-		_deferred_settlement_day = settlement_day
-		return true
-	_publish_events(stock_events, price_events, settlement_day)
+	_clear_transaction_state()
+	return _restore_transaction_snapshot(before)
+
+
+func owns_atomic_transaction(transaction: Variant) -> bool:
+	_recover_abandoned_state()
+	return _owns_atomic_transaction(transaction)
+
+
+func seal_atomic_transaction(transaction: Variant) -> RefCounted:
+	_recover_abandoned_state()
+	if not _owns_atomic_transaction(transaction) or _has_sealed_state() or _publication_in_progress:
+		return null
+	var publication := RefCounted.new()
+	_sealed_owner = weakref(publication)
+	_sealed_snapshot = _transaction_snapshot.duplicate(true)
+	_sealed_stock_events = _pending_stock_events.duplicate()
+	_sealed_price_events = _pending_price_events.duplicate()
+	_sealed_settlement_day = _pending_settlement_day
+	_sealed_armed = false
+	_clear_transaction_state()
+	return publication
+
+
+func can_arm_sealed_transaction(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	return _owns_sealed_transaction(publication) and not _sealed_armed and not _publication_in_progress
+
+
+func arm_sealed_transaction(publication: Variant) -> bool:
+	if not can_arm_sealed_transaction(publication):
+		return false
+	_sealed_armed = true
 	return true
 
 
-func has_deferred_atomic_publication() -> bool:
-	return not _deferred_snapshot.is_empty()
-
-
-func publish_deferred_atomic_events() -> bool:
-	if not has_deferred_atomic_publication():
+func can_publish_sealed_transaction(
+	publication: Variant,
+	allow_blocked_event_bus: bool = false
+) -> bool:
+	_recover_abandoned_state()
+	if _publication_in_progress or not _owns_sealed_transaction(publication):
 		return false
-	var stock_events := _deferred_stock_events.duplicate()
-	var price_events := _deferred_price_events.duplicate()
-	var settlement_day := _deferred_settlement_day
-	_clear_deferred_publication()
-	_publish_events(stock_events, price_events, settlement_day)
-	return true
-
-
-func discard_deferred_atomic_publication(restore_state: bool = true) -> bool:
-	if not has_deferred_atomic_publication():
+	if not _sealed_armed and not can_arm_sealed_transaction(publication):
 		return false
-	var before := _deferred_snapshot.duplicate(true)
-	_clear_deferred_publication()
-	return not restore_state or _restore_transaction_snapshot(before)
+	return (
+		allow_blocked_event_bus
+		or not is_instance_valid(_event_bus)
+		or not _event_bus.is_blocking_signals()
+	)
+
+
+func publish_sealed_transaction(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	if not can_publish_sealed_transaction(publication):
+		return false
+	if not _sealed_armed and not arm_sealed_transaction(publication):
+		return false
+	return _publish_sealed_transaction()
+
+
+func cancel_sealed_transaction(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	if not _owns_sealed_transaction(publication) or _sealed_armed or _publication_in_progress:
+		return false
+	var before := _sealed_snapshot.duplicate(true)
+	_clear_sealed_state()
+	return _restore_transaction_snapshot(before)
+
+
+func owns_sealed_transaction(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	return _owns_sealed_transaction(publication)
 
 
 func commit_buy(item_id: String, quantity: int) -> bool:
-	if not can_buy(item_id, quantity):
+	if not _can_mutate() or not can_buy(item_id, quantity):
 		return false
 	var state: Dictionary = _items[item_id]
 	if not _can_add_safely(int(state.get("demand", -1)), quantity):
@@ -207,7 +258,12 @@ func commit_buy(item_id: String, quantity: int) -> bool:
 
 
 func commit_sell(item_id: String, quantity: int) -> bool:
-	if quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY or not _items.has(item_id):
+	if (
+		not _can_mutate()
+		or quantity <= 0
+		or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY
+		or not _items.has(item_id)
+	):
 		return false
 	var state: Dictionary = _items[item_id]
 	if (
@@ -223,7 +279,7 @@ func commit_sell(item_id: String, quantity: int) -> bool:
 
 
 func add_external_demand(item_id: String, quantity: int) -> bool:
-	if quantity <= 0 or not _items.has(item_id):
+	if not _can_mutate() or quantity <= 0 or not _items.has(item_id):
 		return false
 	var state: Dictionary = _items[item_id]
 	if not _can_add_safely(int(state.get("demand", -1)), quantity):
@@ -234,7 +290,7 @@ func add_external_demand(item_id: String, quantity: int) -> bool:
 
 
 func add_external_supply(item_id: String, quantity: int) -> bool:
-	if quantity <= 0 or not _items.has(item_id):
+	if not _can_mutate() or quantity <= 0 or not _items.has(item_id):
 		return false
 	var state: Dictionary = _items[item_id]
 	if not _can_add_safely(int(state.get("supply", -1)), quantity):
@@ -245,7 +301,12 @@ func add_external_supply(item_id: String, quantity: int) -> bool:
 
 
 func can_settle_day(total_day: int) -> bool:
-	return EconomyLimitsScript.is_safe_date(total_day, false) and total_day > last_settled_day and not _items.is_empty()
+	return (
+		_can_mutate()
+		and EconomyLimitsScript.is_safe_date(total_day, false)
+		and total_day > last_settled_day
+		and not _items.is_empty()
+	)
 
 
 func settle_day(
@@ -298,7 +359,8 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(data: Dictionary) -> bool:
-	if _transaction_active or has_deferred_atomic_publication():
+	_recover_abandoned_state()
+	if _has_atomic_state() or _has_sealed_state() or _publication_in_progress:
 		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
@@ -321,7 +383,8 @@ func from_dict(data: Dictionary) -> bool:
 
 
 func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
-	if _transaction_active or has_deferred_atomic_publication() or _catalog_defaults.is_empty():
+	_recover_abandoned_state()
+	if _has_atomic_state() or _has_sealed_state() or _publication_in_progress or _catalog_defaults.is_empty():
 		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
@@ -451,7 +514,7 @@ func _is_integer_number(value: Variant) -> bool:
 
 
 func _emit_stock_changed(item_id: String, new_stock: int) -> void:
-	if _transaction_active:
+	if _has_atomic_state():
 		_pending_stock_events[item_id] = new_stock
 		return
 	market_stock_changed.emit(item_id, new_stock)
@@ -459,7 +522,7 @@ func _emit_stock_changed(item_id: String, new_stock: int) -> void:
 
 
 func _emit_price_changed(item_id: String, new_price: int) -> void:
-	if _transaction_active:
+	if _has_atomic_state():
 		_pending_price_events[item_id] = new_price
 		return
 	market_price_changed.emit(item_id, new_price)
@@ -467,7 +530,7 @@ func _emit_price_changed(item_id: String, new_price: int) -> void:
 
 
 func _emit_settled(total_day: int) -> void:
-	if _transaction_active:
+	if _has_atomic_state():
 		_pending_settlement_day = total_day
 		return
 	market_settled.emit(total_day)
@@ -498,7 +561,53 @@ func _restore_transaction_snapshot(snapshot: Dictionary) -> bool:
 	return to_dict() == snapshot
 
 
-func _publish_events(stock_events: Dictionary, price_events: Dictionary, settlement_day: int) -> void:
+func _can_mutate() -> bool:
+	_recover_abandoned_state()
+	return not _has_sealed_state() and not _publication_in_progress
+
+
+func _publish_sealed_transaction() -> bool:
+	if not _has_sealed_state() or _publication_in_progress:
+		return false
+	var stock_events := _sealed_stock_events.duplicate()
+	var price_events := _sealed_price_events.duplicate()
+	var settlement_day := _sealed_settlement_day
+	_publication_in_progress = true
+	_clear_sealed_state()
+	_publish_committed_events(stock_events, price_events, settlement_day)
+	_publication_in_progress = false
+	_ensure_event_bus_unblocked()
+	return true
+
+
+func _publish_committed_events(
+	stock_events: Dictionary,
+	price_events: Dictionary,
+	settlement_day: int
+) -> void:
+	for item_id in stock_events:
+		var normalized_id := str(item_id)
+		var stock := int(stock_events[item_id])
+		market_stock_changed.emit(normalized_id, stock)
+		_ensure_event_bus_unblocked()
+		_emit_event_bus("market_stock_changed", [normalized_id, stock])
+	for item_id in price_events:
+		var normalized_id := str(item_id)
+		var price := int(price_events[item_id])
+		market_price_changed.emit(normalized_id, price)
+		_ensure_event_bus_unblocked()
+		_emit_event_bus("market_price_changed", [normalized_id, price])
+	if settlement_day > 0:
+		market_settled.emit(settlement_day)
+		_ensure_event_bus_unblocked()
+		_emit_event_bus("market_settled", [settlement_day])
+
+
+func _publish_immediate_events(
+	stock_events: Dictionary,
+	price_events: Dictionary,
+	settlement_day: int
+) -> void:
 	for item_id in stock_events:
 		_emit_stock_changed(str(item_id), int(stock_events[item_id]))
 	for item_id in price_events:
@@ -507,8 +616,63 @@ func _publish_events(stock_events: Dictionary, price_events: Dictionary, settlem
 		_emit_settled(settlement_day)
 
 
-func _clear_deferred_publication() -> void:
-	_deferred_snapshot.clear()
-	_deferred_stock_events.clear()
-	_deferred_price_events.clear()
-	_deferred_settlement_day = 0
+func _ensure_event_bus_unblocked() -> void:
+	if is_instance_valid(_event_bus) and _event_bus.is_blocking_signals():
+		_event_bus.set_block_signals(false)
+
+
+func _has_atomic_state() -> bool:
+	return _transaction_owner != null or not _transaction_snapshot.is_empty()
+
+
+func _owns_atomic_transaction(transaction: Variant) -> bool:
+	return (
+		transaction is RefCounted
+		and _transaction_owner != null
+		and _transaction_owner.get_ref() == transaction
+	)
+
+
+func _has_sealed_state() -> bool:
+	return _sealed_owner != null or not _sealed_snapshot.is_empty()
+
+
+func _owns_sealed_transaction(publication: Variant) -> bool:
+	return (
+		publication is RefCounted
+		and _sealed_owner != null
+		and _sealed_owner.get_ref() == publication
+	)
+
+
+func _recover_abandoned_state() -> void:
+	if _has_atomic_state() and (
+		_transaction_owner == null or _transaction_owner.get_ref() == null
+	):
+		var before := _transaction_snapshot.duplicate(true)
+		_clear_transaction_state()
+		_restore_transaction_snapshot(before)
+	if _has_sealed_state() and (_sealed_owner == null or _sealed_owner.get_ref() == null):
+		if _sealed_armed:
+			_publish_sealed_transaction()
+		else:
+			var before := _sealed_snapshot.duplicate(true)
+			_clear_sealed_state()
+			_restore_transaction_snapshot(before)
+
+
+func _clear_transaction_state() -> void:
+	_transaction_owner = null
+	_transaction_snapshot.clear()
+	_pending_stock_events.clear()
+	_pending_price_events.clear()
+	_pending_settlement_day = 0
+
+
+func _clear_sealed_state() -> void:
+	_sealed_owner = null
+	_sealed_snapshot.clear()
+	_sealed_stock_events.clear()
+	_sealed_price_events.clear()
+	_sealed_settlement_day = 0
+	_sealed_armed = false

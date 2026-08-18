@@ -24,6 +24,14 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions := TestAssertScript.new()
+	for script_value in [MainItemContainerWiringTest, MainGatheringIntegrationTest]:
+		assertions.truthy(
+			script_value != null and script_value.can_instantiate(),
+			"Main integration script compiles: " + str(script_value.resource_path)
+		)
+	if not assertions.failures.is_empty():
+		_finish(assertions)
+		return
 	var task2_main_checks_before: int = assertions.checks
 	print("[task2-main-router] start")
 	await MainItemContainerWiringTest.new().run(assertions, self)
@@ -43,6 +51,10 @@ func _run() -> void:
 	await BuildingEconomyUITest.new().run(assertions, self)
 	await EconomyUIIntegrationTest.new().run(assertions, self)
 	await MainPointerFarmingTest.new().run(assertions, self)
+	_finish(assertions)
+
+
+func _finish(assertions: TestAssert) -> void:
 	if assertions.failures.is_empty():
 		print("PASS: %d main gameplay integration checks" % assertions.checks)
 		quit(0)

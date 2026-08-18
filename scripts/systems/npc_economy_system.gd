@@ -454,20 +454,21 @@ func _buy_bundle(state: NpcEconomyState, purchases: Dictionary) -> bool:
 	if state.gold < total_cost:
 		return false
 	var market_before: Dictionary = _market_system.call("to_dict")
-	if not bool(_market_system.call("begin_atomic_transaction")):
+	var market_transaction: Variant = _market_system.call("begin_atomic_transaction")
+	if market_transaction == null:
 		return false
 	for item_id_value in purchases.keys():
 		var item_id := str(item_id_value)
 		var quantity := int(purchases[item_id])
 		if not bool(_market_system.call("commit_buy", item_id, quantity)):
 			_market_system.call("from_dict", market_before)
-			_market_system.call("end_atomic_transaction", false)
+			_market_system.call("end_atomic_transaction", market_transaction, false)
 			return false
 	state.gold -= total_cost
 	for item_id_value in purchases.keys():
 		var item_id := str(item_id_value)
 		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) + int(purchases[item_id])
-	_market_system.call("end_atomic_transaction", true)
+	_market_system.call("end_atomic_transaction", market_transaction, true)
 	return true
 
 
@@ -485,20 +486,21 @@ func _sell_bundle(state: NpcEconomyState, sales: Dictionary) -> bool:
 			return false
 		total_income += quote
 	var market_before: Dictionary = _market_system.call("to_dict")
-	if not bool(_market_system.call("begin_atomic_transaction")):
+	var market_transaction: Variant = _market_system.call("begin_atomic_transaction")
+	if market_transaction == null:
 		return false
 	for item_id_value in sales.keys():
 		var item_id := str(item_id_value)
 		var quantity := int(sales[item_id])
 		if not bool(_market_system.call("commit_sell", item_id, quantity)):
 			_market_system.call("from_dict", market_before)
-			_market_system.call("end_atomic_transaction", false)
+			_market_system.call("end_atomic_transaction", market_transaction, false)
 			return false
 	state.gold += total_income
 	for item_id_value in sales.keys():
 		var item_id := str(item_id_value)
 		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) - int(sales[item_id])
-	_market_system.call("end_atomic_transaction", true)
+	_market_system.call("end_atomic_transaction", market_transaction, true)
 	return true
 
 

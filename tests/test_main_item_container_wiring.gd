@@ -31,6 +31,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			and main.economy_system.call("uses_item_container_router", router),
 			"Main Economy uses the same Router instance"
 		)
+	var nested_parent := Node.new()
+	var nested_router := ItemContainerRouter.new()
+	main.add_child(nested_parent)
+	nested_parent.add_child(nested_router)
+	var nested_routers: Array[Node] = []
+	_collect_routers(main, nested_routers)
+	assertions.equal(nested_routers.size(), 2, "nested ordinary Node Router is counted")
+	nested_parent.free()
 	main.free()
 
 

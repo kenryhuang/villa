@@ -28,6 +28,14 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions = TestAssertScript.new()
+	var main_wiring_script: Variant = MainItemContainerWiringTest
+	assertions.truthy(
+		main_wiring_script != null and main_wiring_script.can_instantiate(),
+		"aggregate Main Router script compiles"
+	)
+	if not assertions.failures.is_empty():
+		_finish(assertions)
+		return
 	CombatMathTest.new().run(assertions)
 	RoadMathTest.new().run(assertions)
 	TreeScatterTest.new().run(assertions)
@@ -55,6 +63,10 @@ func _run() -> void:
 	FarmingSystemTest.new().run(assertions)
 	CropVisualTest.new().run(assertions)
 	Phase1SystemsTest.new().run(assertions)
+	_finish(assertions)
+
+
+func _finish(assertions: TestAssert) -> void:
 	if assertions.failures.is_empty():
 		print("PASS: %d checks" % assertions.checks)
 		quit(0)
