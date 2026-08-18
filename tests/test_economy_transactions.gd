@@ -3,6 +3,9 @@ extends RefCounted
 const EconomySystem = preload("res://scripts/systems/economy_system.gd")
 const InventorySystem = preload("res://scripts/systems/inventory_system.gd")
 const MarketSystem = preload("res://scripts/systems/market_system.gd")
+const FarmStorageSystem = preload("res://scripts/systems/farm_storage_system.gd")
+const ItemContainerRouter = preload("res://scripts/systems/item_container_router.gd")
+const EconomyLimits = preload("res://scripts/core/economy_limits.gd")
 
 
 class WalletDouble:
@@ -97,6 +100,122 @@ class MarketDouble:
 		return super.commit_sell(item_id, quantity)
 
 
+class CapacityProvider:
+	extends RefCounted
+
+	var capacity := FarmStorageSystem.DEFAULT_CAPACITY
+
+	func get_capacity() -> int:
+		return capacity
+
+
+class FailingStorage:
+	extends FarmStorageSystem
+
+	var fail_next_add := false
+	var fail_next_remove := false
+
+	func stage_add_items(token: Variant, requested: Dictionary) -> bool:
+		if fail_next_add:
+			fail_next_add = false
+			super.stage_add_items(token, requested)
+			return false
+		return super.stage_add_items(token, requested)
+
+	func stage_remove_items(token: Variant, requested: Dictionary) -> bool:
+		if fail_next_remove:
+			fail_next_remove = false
+			super.stage_remove_items(token, requested)
+			return false
+		return super.stage_remove_items(token, requested)
+
+
+class FailingRouter:
+	extends ItemContainerRouter
+
+	var fail_next_arm := false
+
+	func arm_sealed_transaction(publication: Variant) -> bool:
+		if fail_next_arm:
+			fail_next_arm = false
+			return false
+		return super.arm_sealed_transaction(publication)
+
+
+class TradeRecorder:
+	extends RefCounted
+
+	var economy: EconomySystem
+	var router: ItemContainerRouter
+	var wallet: WalletDouble
+	var market: MarketSystem
+	var item_events: Array[Dictionary] = []
+	var gold_events: Array[int] = []
+	var market_events: Array[Dictionary] = []
+	var local_market_events: Array[Dictionary] = []
+	var storage_events: Array[Dictionary] = []
+	var storage_bus_events: Array[Dictionary] = []
+	var storage_capacity_events: Array[Dictionary] = []
+	var storage_capacity_bus_events: Array[Dictionary] = []
+	var mapping_events: Array[Dictionary] = []
+	var observations: Array[Dictionary] = []
+	var attempt_reentry := false
+	var reentry_results: Array[bool] = []
+
+	func on_item_added(item_id: String, quantity: int) -> void:
+		item_events.append({"kind": "add", "item_id": item_id, "quantity": quantity})
+		_record_observation("item_added")
+
+	func on_item_removed(item_id: String, quantity: int) -> void:
+		item_events.append({"kind": "remove", "item_id": item_id, "quantity": quantity})
+		_record_observation("item_removed")
+
+	func on_gold_changed(gold: int) -> void:
+		gold_events.append(gold)
+		_record_observation("gold")
+
+	func on_market_changed(item_id: String, stock: int) -> void:
+		market_events.append({"item_id": item_id, "stock": stock})
+		_record_observation("market_bus")
+
+	func on_local_market_changed(item_id: String, stock: int) -> void:
+		local_market_events.append({"item_id": item_id, "stock": stock})
+		_record_observation("market_local")
+
+	func on_storage_changed(changes: Dictionary) -> void:
+		storage_events.append(changes.duplicate(true))
+		_record_observation("storage")
+		if attempt_reentry:
+			attempt_reentry = false
+			reentry_results.append(economy.buy_item("grain_seed", 1))
+
+	func on_storage_bus_changed(changes: Dictionary) -> void:
+		storage_bus_events.append(changes.duplicate(true))
+		_record_observation("storage_bus")
+
+	func on_storage_capacity_changed(used: int, total: int) -> void:
+		storage_capacity_events.append({"used": used, "total": total})
+		_record_observation("storage_capacity")
+
+	func on_storage_capacity_bus_changed(used: int, total: int) -> void:
+		storage_capacity_bus_events.append({"used": used, "total": total})
+		_record_observation("storage_capacity_bus")
+
+	func on_mapping_changed(quick_index: int, item_id: String) -> void:
+		mapping_events.append({"quick_index": quick_index, "item_id": item_id})
+		_record_observation("mapping")
+
+	func _record_observation(source: String) -> void:
+		observations.append({
+			"source": source,
+			"gold": wallet.gold,
+			"seed": router.get_count("grain_seed"),
+			"crop": router.get_count("grain"),
+			"seed_stock": market.get_stock("grain_seed"),
+			"crop_stock": market.get_stock("grain"),
+		})
+
+
 class LegacyMarketDouble:
 	extends Node
 
@@ -146,6 +265,11 @@ func run(assertions: TestAssert) -> void:
 	_test_mapping_signals_only_observe_committed_trade(assertions)
 	_test_nested_market_transaction_is_preflight_failure(assertions)
 	_test_market_without_optional_transaction_api_still_trades(assertions)
+	_test_seed_and_crop_trade_through_authoritative_containers(assertions)
+	_test_routed_trade_preflight_reports_stable_exact_failures(assertions)
+	_test_routed_trade_failures_restore_all_domains(assertions)
+	_test_routed_trade_publication_is_final_and_nonreentrant(assertions)
+	_test_routed_preflight_rejects_unpublishable_outer_state(assertions)
 
 
 func _new_market() -> MarketDouble:
@@ -509,3 +633,362 @@ func _test_market_without_optional_transaction_api_still_trades(assertions: Test
 	market.free()
 	inventory.free()
 	wallet.free()
+
+
+func _market_definition(item_id: String, base_price: int, stock: int) -> Dictionary:
+	return {
+		"id": item_id,
+		"base_price": base_price,
+		"initial_stock": stock,
+		"target_stock": maxi(stock, 1),
+		"daily_liquidity": 20,
+	}
+
+
+func _item_slot(inventory: InventorySystem, item_id: String) -> int:
+	for index in range(inventory.slots.size()):
+		if str(inventory.slots[index].get("item_id", "")) == item_id:
+			return index
+	return -1
+
+
+func _make_routed_fixture(capacity: int = FarmStorageSystem.DEFAULT_CAPACITY) -> Dictionary:
+	var tree := Engine.get_main_loop() as SceneTree
+	var inventory := InventoryDouble.new()
+	var wallet := WalletDouble.new()
+	var market := MarketDouble.new()
+	var storage := FailingStorage.new()
+	var provider := CapacityProvider.new()
+	var router := FailingRouter.new()
+	var economy := EconomySystem.new()
+	provider.capacity = capacity
+	market.configure([
+		_market_definition("wood", 100, 10),
+		_market_definition("grain_seed", 4, 10),
+		_market_definition("grain", 28, 10),
+	])
+	for node in [inventory, wallet, market, storage, router, economy]:
+		tree.root.add_child(node)
+	storage.configure(Callable(provider, "get_capacity"))
+	router.configure(inventory, storage)
+	economy.configure(inventory, wallet, market, null, router)
+	return {
+		"inventory": inventory,
+		"wallet": wallet,
+		"market": market,
+		"storage": storage,
+		"provider": provider,
+		"router": router,
+		"economy": economy,
+	}
+
+
+func _free_routed_fixture(fixture: Dictionary) -> void:
+	for key in ["economy", "router", "storage", "market", "wallet", "inventory"]:
+		var node: Node = fixture.get(key)
+		if is_instance_valid(node):
+			node.free()
+
+
+func _routed_snapshot(fixture: Dictionary) -> Dictionary:
+	var inventory: InventorySystem = fixture.inventory
+	var storage: FarmStorageSystem = fixture.storage
+	var wallet: WalletDouble = fixture.wallet
+	var market: MarketSystem = fixture.market
+	return {
+		"gold": wallet.gold,
+		"slots": inventory.slots.duplicate(true),
+		"mappings": inventory.quick_slot_mappings.duplicate(),
+		"storage": storage.get_items().duplicate(true),
+		"market": market.to_dict(),
+	}
+
+
+func _assert_routed_snapshot(
+	assertions: TestAssert,
+	expected: Dictionary,
+	fixture: Dictionary,
+	message: String
+) -> void:
+	var inventory: InventorySystem = fixture.inventory
+	assertions.equal(fixture.wallet.gold, expected.gold, message + " preserves wallet")
+	assertions.equal(inventory.slots, expected.slots, message + " preserves inventory slots")
+	assertions.equal(
+		inventory.quick_slot_mappings,
+		expected.mappings,
+		message + " preserves quick mappings"
+	)
+	assertions.equal(fixture.storage.get_items(), expected.storage, message + " preserves storage")
+	assertions.equal(fixture.market.to_dict(), expected.market, message + " preserves market")
+
+
+func _connect_trade_recorder(fixture: Dictionary) -> TradeRecorder:
+	var recorder := TradeRecorder.new()
+	recorder.economy = fixture.economy
+	recorder.router = fixture.router
+	recorder.wallet = fixture.wallet
+	recorder.market = fixture.market
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+	event_bus.item_added.connect(recorder.on_item_added)
+	event_bus.item_removed.connect(recorder.on_item_removed)
+	event_bus.gold_changed.connect(recorder.on_gold_changed)
+	event_bus.market_stock_changed.connect(recorder.on_market_changed)
+	event_bus.farm_storage_changed.connect(recorder.on_storage_bus_changed)
+	event_bus.farm_storage_capacity_changed.connect(recorder.on_storage_capacity_bus_changed)
+	fixture.market.market_stock_changed.connect(recorder.on_local_market_changed)
+	fixture.storage.contents_changed.connect(recorder.on_storage_changed)
+	fixture.storage.capacity_changed.connect(recorder.on_storage_capacity_changed)
+	fixture.inventory.quick_slot_mapping_changed.connect(recorder.on_mapping_changed)
+	return recorder
+
+
+func _disconnect_trade_recorder(fixture: Dictionary, recorder: TradeRecorder) -> void:
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+	event_bus.item_added.disconnect(recorder.on_item_added)
+	event_bus.item_removed.disconnect(recorder.on_item_removed)
+	event_bus.gold_changed.disconnect(recorder.on_gold_changed)
+	event_bus.market_stock_changed.disconnect(recorder.on_market_changed)
+	event_bus.farm_storage_changed.disconnect(recorder.on_storage_bus_changed)
+	event_bus.farm_storage_capacity_changed.disconnect(recorder.on_storage_capacity_bus_changed)
+	fixture.market.market_stock_changed.disconnect(recorder.on_local_market_changed)
+	fixture.storage.contents_changed.disconnect(recorder.on_storage_changed)
+	fixture.storage.capacity_changed.disconnect(recorder.on_storage_capacity_changed)
+	fixture.inventory.quick_slot_mapping_changed.disconnect(recorder.on_mapping_changed)
+
+
+func _assert_trade_recorder_silent(
+	assertions: TestAssert,
+	recorder: TradeRecorder,
+	message: String
+) -> void:
+	assertions.equal(recorder.item_events, [], message + " emits no item event")
+	assertions.equal(recorder.gold_events, [], message + " emits no gold event")
+	assertions.equal(recorder.market_events, [], message + " emits no market bus event")
+	assertions.equal(recorder.local_market_events, [], message + " emits no local market event")
+	assertions.equal(recorder.storage_events, [], message + " emits no storage event")
+	assertions.equal(recorder.storage_bus_events, [], message + " emits no storage bus event")
+	assertions.equal(recorder.storage_capacity_events, [], message + " emits no storage capacity event")
+	assertions.equal(
+		recorder.storage_capacity_bus_events,
+		[],
+		message + " emits no storage capacity bus event"
+	)
+	assertions.equal(recorder.mapping_events, [], message + " emits no mapping event")
+
+
+func _test_seed_and_crop_trade_through_authoritative_containers(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var economy: EconomySystem = fixture.economy
+	var inventory: InventorySystem = fixture.inventory
+	var storage: FarmStorageSystem = fixture.storage
+	assertions.truthy(economy.has_method("get_owned_quantity"), "economy exposes routed owned quantity")
+	assertions.truthy(economy.has_method("quote_trade_failure"), "economy exposes stable trade preflight")
+	if not economy.has_method("get_owned_quantity") or not economy.has_method("quote_trade_failure"):
+		_free_routed_fixture(fixture)
+		return
+
+	assertions.truthy(economy.buy_item("grain_seed", 3), "seed purchase succeeds")
+	assertions.equal(inventory.get_item_count("grain_seed"), 3, "seed purchase enters backpack")
+	assertions.equal(storage.get_count("grain_seed"), 0, "seed purchase never enters storage")
+	assertions.equal(economy.get_owned_quantity("grain_seed"), 3, "seed ownership reads backpack")
+	var inventory_after_seed := inventory.slots.duplicate(true)
+
+	assertions.truthy(economy.buy_item("grain", 4), "crop purchase succeeds")
+	assertions.equal(storage.get_count("grain"), 4, "crop purchase enters farm storage")
+	assertions.equal(inventory.get_item_count("grain"), 0, "crop purchase never enters backpack")
+	assertions.equal(inventory.slots, inventory_after_seed, "crop purchase leaves backpack untouched")
+	assertions.equal(economy.get_owned_quantity("grain"), 4, "crop ownership reads storage")
+
+	assertions.truthy(economy.sell_item("grain_seed", 2), "seed sale succeeds")
+	assertions.equal(inventory.get_item_count("grain_seed"), 1, "seed sale removes from backpack")
+	assertions.equal(storage.get_count("grain"), 4, "seed sale leaves crop storage untouched")
+	assertions.truthy(economy.sell_item("grain", 3), "crop sale succeeds")
+	assertions.equal(storage.get_count("grain"), 1, "crop sale removes from storage")
+	assertions.equal(inventory.get_item_count("grain_seed"), 1, "crop sale leaves backpack untouched")
+	_free_routed_fixture(fixture)
+
+
+func _test_routed_trade_preflight_reports_stable_exact_failures(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var economy: EconomySystem = fixture.economy
+	if not economy.has_method("quote_trade_failure"):
+		assertions.truthy(false, "routed trade preflight API exists")
+		_free_routed_fixture(fixture)
+		return
+
+	fixture.wallet.gold = 0
+	var result: Dictionary = economy.quote_trade_failure("grain_seed", 1, true)
+	assertions.equal(result.get("reason"), "insufficient_gold", "buy reports insufficient gold")
+	var before := _routed_snapshot(fixture)
+	assertions.truthy(not economy.buy_item("grain_seed", 1), "insufficient gold rejects seed buy")
+	_assert_routed_snapshot(assertions, before, fixture, "insufficient gold")
+
+	fixture.wallet.gold = 1000
+	result = economy.quote_trade_failure("grain", 11, true)
+	assertions.equal(result.get("reason"), "market_stock", "buy reports finite market stock")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not economy.buy_item("grain", 11), "market stock rejects crop buy")
+	_assert_routed_snapshot(assertions, before, fixture, "market stock")
+	_free_routed_fixture(fixture)
+
+	fixture = _make_routed_fixture()
+	fixture.inventory.max_slots = 1
+	fixture.inventory.reset_slots()
+	fixture.inventory.add_item("stone", 99)
+	result = fixture.economy.quote_trade_failure("grain_seed", 2, true)
+	assertions.equal(result.get("reason"), "inventory_capacity", "seed buy reports backpack capacity")
+	assertions.equal(result.get("item_id"), "grain_seed", "backpack failure identifies seed")
+	assertions.equal(result.get("missing_quantity"), 2, "backpack failure reports exact missing items")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not fixture.economy.buy_item("grain_seed", 2), "full backpack rejects seed buy")
+	_assert_routed_snapshot(assertions, before, fixture, "full backpack")
+	_free_routed_fixture(fixture)
+
+	fixture = _make_routed_fixture(3)
+	fixture.storage.add_items({"grain": 2})
+	result = fixture.economy.quote_trade_failure("grain", 2, true)
+	assertions.equal(result.get("reason"), "storage_capacity", "crop buy reports storage capacity")
+	assertions.equal(result.get("missing_capacity"), 1, "storage failure reports exact missing capacity")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not fixture.economy.buy_item("grain", 2), "full storage rejects crop buy")
+	_assert_routed_snapshot(assertions, before, fixture, "full storage")
+	_free_routed_fixture(fixture)
+
+	fixture = _make_routed_fixture(1)
+	fixture.storage.restore_items_unchecked({"grain": 2})
+	result = fixture.economy.quote_trade_failure("grain", 1, true)
+	assertions.equal(result.get("reason"), "storage_capacity", "overload blocks crop additions")
+	assertions.equal(result.get("missing_capacity"), 2, "overload reports capacity needed to fit addition")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not fixture.economy.buy_item("grain", 1), "overloaded storage rejects crop buy")
+	_assert_routed_snapshot(assertions, before, fixture, "overloaded storage")
+	_free_routed_fixture(fixture)
+
+	fixture = _make_routed_fixture()
+	result = fixture.economy.quote_trade_failure("grain_seed", 2, false)
+	assertions.equal(result.get("reason"), "insufficient_seed", "seed sale reports seed shortage")
+	assertions.equal(result.get("missing_quantity"), 2, "seed shortage reports exact quantity")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not fixture.economy.sell_item("grain_seed", 2), "seed shortage rejects sale")
+	_assert_routed_snapshot(assertions, before, fixture, "seed shortage")
+	result = fixture.economy.quote_trade_failure("grain", 3, false)
+	assertions.equal(result.get("reason"), "insufficient_crop", "crop sale reports crop shortage")
+	assertions.equal(result.get("missing_quantity"), 3, "crop shortage reports exact quantity")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not fixture.economy.sell_item("grain", 3), "crop shortage rejects sale")
+	_assert_routed_snapshot(assertions, before, fixture, "crop shortage")
+	fixture.storage.add_items({"grain": 1})
+	fixture.wallet.gold = EconomyLimits.MAX_SAFE_INTEGER
+	result = fixture.economy.quote_trade_failure("grain", 1, false)
+	assertions.equal(result.get("reason"), "wallet_overflow", "sale reports wallet overflow")
+	before = _routed_snapshot(fixture)
+	assertions.truthy(not fixture.economy.sell_item("grain", 1), "wallet overflow rejects crop sale")
+	_assert_routed_snapshot(assertions, before, fixture, "wallet overflow")
+	_free_routed_fixture(fixture)
+
+
+func _test_routed_trade_failures_restore_all_domains(assertions: TestAssert) -> void:
+	var cases := [
+		{"name": "wallet spend", "is_buy": true, "item_id": "grain_seed", "failure": "spend"},
+		{"name": "market buy commit", "is_buy": true, "item_id": "grain", "failure": "market_buy"},
+		{"name": "container buy commit", "is_buy": true, "item_id": "grain", "failure": "container_arm"},
+		{"name": "container sale mutation", "is_buy": false, "item_id": "grain", "failure": "storage_remove"},
+		{"name": "market sale commit", "is_buy": false, "item_id": "grain_seed", "failure": "market_sell"},
+		{"name": "wallet credit", "is_buy": false, "item_id": "grain", "failure": "add"},
+	]
+	for case_value in cases:
+		var case := case_value as Dictionary
+		var fixture := _make_routed_fixture()
+		if not bool(case.is_buy):
+			fixture.router.add_items({str(case.item_id): 2})
+			if str(case.item_id) == "grain_seed":
+				var slot_index := _item_slot(fixture.inventory, "grain_seed")
+				fixture.inventory.set_quick_slot(slot_index, 0)
+		var recorder := _connect_trade_recorder(fixture)
+		match str(case.failure):
+			"spend":
+				fixture.wallet.fail_next_spend = true
+			"market_buy":
+				fixture.market.fail_next_buy = true
+			"container_arm":
+				fixture.router.fail_next_arm = true
+			"storage_remove":
+				fixture.storage.fail_next_remove = true
+			"market_sell":
+				fixture.market.fail_next_sell = true
+			"add":
+				fixture.wallet.fail_next_add = true
+		var before := _routed_snapshot(fixture)
+		var traded: bool = (
+			fixture.economy.buy_item(str(case.item_id), 1)
+			if bool(case.is_buy)
+			else fixture.economy.sell_item(str(case.item_id), 1)
+		)
+		assertions.truthy(not traded, str(case.name) + " failure is reported")
+		_assert_routed_snapshot(assertions, before, fixture, str(case.name))
+		_assert_trade_recorder_silent(assertions, recorder, str(case.name))
+		_disconnect_trade_recorder(fixture, recorder)
+		_free_routed_fixture(fixture)
+
+
+func _test_routed_trade_publication_is_final_and_nonreentrant(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var recorder := _connect_trade_recorder(fixture)
+	recorder.attempt_reentry = true
+	var before_gold: int = fixture.wallet.gold
+	var crop_total: int = fixture.market.quote_buy("grain", 2)
+	assertions.truthy(fixture.economy.buy_item("grain", 2), "observed crop buy succeeds")
+	assertions.equal(recorder.reentry_results, [false], "trade listener cannot start a nested trade")
+	assertions.equal(fixture.router.get_count("grain_seed"), 0, "reentrant seed buy changes nothing")
+	assertions.equal(recorder.storage_events, [{"grain": 2}], "crop buy publishes one storage delta")
+	assertions.equal(recorder.item_events, [], "crop buy publishes no backpack item event")
+	assertions.equal(recorder.gold_events, [before_gold - crop_total], "crop buy publishes final gold once")
+	assertions.equal(
+		recorder.market_events,
+		[{"item_id": "grain", "stock": 8}],
+		"crop buy publishes final market stock once"
+	)
+	for observation in recorder.observations:
+		assertions.equal(observation.gold, before_gold - crop_total, "listener sees final wallet")
+		assertions.equal(observation.crop, 2, "listener sees final crop storage")
+		assertions.equal(observation.crop_stock, 8, "listener sees final crop market stock")
+
+	_disconnect_trade_recorder(fixture, recorder)
+	_free_routed_fixture(fixture)
+
+
+func _test_routed_preflight_rejects_unpublishable_outer_state(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+	event_bus.set_block_signals(true)
+	var before := _routed_snapshot(fixture)
+	var result: Dictionary = fixture.economy.quote_trade_failure("grain", 1, true)
+	assertions.equal(result.get("reason"), "transaction_failed", "blocked event bus rejects routed trade")
+	assertions.truthy(not fixture.economy.buy_item("grain", 1), "blocked event bus cannot strand publication")
+	_assert_routed_snapshot(assertions, before, fixture, "blocked event bus")
+	event_bus.set_block_signals(false)
+	_free_routed_fixture(fixture)
+
+	var tree := Engine.get_main_loop() as SceneTree
+	var inventory := InventoryDouble.new()
+	var wallet := WalletDouble.new()
+	var market := LegacyMarketDouble.new()
+	var storage := FailingStorage.new()
+	var router := FailingRouter.new()
+	var economy := EconomySystem.new()
+	for node in [inventory, wallet, market, storage, router, economy]:
+		tree.root.add_child(node)
+	storage.configure()
+	router.configure(inventory, storage)
+	assertions.truthy(
+		economy.configure(inventory, wallet, market, null, router),
+		"legacy market remains structurally configurable"
+	)
+	result = economy.quote_trade_failure("wood", 1, true)
+	assertions.equal(result.get("reason"), "transaction_failed", "routed trade requires atomic market")
+	assertions.truthy(not economy.buy_item("wood", 1), "non-atomic market cannot leak routed trade")
+	assertions.equal(wallet.gold, 1000, "non-atomic routed rejection preserves wallet")
+	assertions.equal(inventory.get_item_count("wood"), 0, "non-atomic routed rejection preserves inventory")
+	assertions.equal(market.get_stock("wood"), 10, "non-atomic routed rejection preserves market")
+	for node in [economy, router, storage, market, wallet, inventory]:
+		node.free()

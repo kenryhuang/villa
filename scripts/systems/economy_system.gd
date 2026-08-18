@@ -2,6 +2,7 @@ class_name EconomySystem
 extends Node
 
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
 
 ## 经济系统 - 金币管理、订单系统、资源消耗
 
@@ -34,7 +35,9 @@ var _inventory_ref: InventorySystem
 var _wallet_ref: Node
 var _market_ref: Node
 var _npc_ref: Node
+var _router_ref: ItemContainerRouterScript
 var _is_configured := false
+var _trade_active := false
 var _event_bus
 var _affinity: Dictionary = {}
 
@@ -47,12 +50,14 @@ func configure(
 	inventory: InventorySystem,
 	wallet: Node,
 	market: Node = null,
-	npc_economy_system: Node = null
+	npc_economy_system: Node = null,
+	router: ItemContainerRouterScript = null
 ) -> bool:
 	_inventory_ref = inventory
 	_wallet_ref = wallet
 	_market_ref = market
 	_npc_ref = npc_economy_system
+	_router_ref = router
 	_is_configured = (
 		_inventory_ref != null
 		and _wallet_ref != null
@@ -60,6 +65,7 @@ func configure(
 		and _wallet_ref.has_method("spend_gold")
 		and (_market_ref == null or _is_market_compatible(_market_ref))
 		and (_npc_ref == null or _is_npc_compatible(_npc_ref))
+		and (_router_ref == null or is_instance_valid(_router_ref))
 	)
 	if not _is_configured:
 		return false
@@ -87,6 +93,12 @@ func spend_gold(amount: int) -> bool:
 # ============================================================
 
 func buy_item(item_id: String, quantity: int) -> bool:
+	if _router_ref != null:
+		return _execute_routed_trade(item_id, quantity, true)
+	return _buy_item_legacy(item_id, quantity)
+
+
+func _buy_item_legacy(item_id: String, quantity: int) -> bool:
 	if not _can_trade() or item_id.is_empty() or quantity <= 0:
 		return false
 	if not bool(_market_ref.call("can_buy", item_id, quantity)):
@@ -132,6 +144,12 @@ func buy_item(item_id: String, quantity: int) -> bool:
 
 
 func sell_item(item_id: String, quantity: int) -> bool:
+	if _router_ref != null:
+		return _execute_routed_trade(item_id, quantity, false)
+	return _sell_item_legacy(item_id, quantity)
+
+
+func _sell_item_legacy(item_id: String, quantity: int) -> bool:
 	if not _can_trade() or item_id.is_empty() or quantity <= 0:
 		return false
 	if not _inventory_ref.has_item(item_id, quantity):
@@ -172,6 +190,216 @@ func sell_item(item_id: String, quantity: int) -> bool:
 	_end_mapping_transaction(owns_mapping_transaction, true)
 	_end_event_bus_transaction(owns_event_bus_transaction, true, item_id, quantity, false)
 	return true
+
+
+func get_owned_quantity(item_id: String) -> int:
+	if item_id.is_empty() or not _is_configured:
+		return 0
+	if _router_ref != null and is_instance_valid(_router_ref):
+		return _router_ref.get_count(item_id)
+	return _inventory_ref.get_item_count(item_id) if _inventory_ref != null else 0
+
+
+func quote_trade_failure(item_id: String, quantity: int, is_buy: bool) -> Dictionary:
+	if _trade_active:
+		return _trade_failure("transaction_failed", item_id)
+	if not _can_trade():
+		return _trade_failure("not_configured", item_id)
+	if _router_ref != null and (
+		not _market_supports_atomic_transactions()
+		or (_event_bus != null and _event_bus.is_blocking_signals())
+	):
+		return _trade_failure("transaction_failed", item_id)
+	if item_id.is_empty() or quantity <= 0 or quantity > EconomyLimitsScript.MAX_SAFE_INTEGER:
+		return _trade_failure("invalid_request", item_id)
+	if GameDataScript.get_item(item_id) == null:
+		return _trade_failure("unknown_item", item_id)
+
+	var container_result: Dictionary
+	if _router_ref != null and is_instance_valid(_router_ref):
+		container_result = (
+			_router_ref.can_add({item_id: quantity})
+			if is_buy
+			else _router_ref.can_remove({item_id: quantity})
+		)
+	else:
+		container_result = _legacy_container_preflight(item_id, quantity, is_buy)
+	if not bool(container_result.get("ok", false)):
+		return container_result.duplicate(true)
+
+	if is_buy and not bool(_market_ref.call("can_buy", item_id, quantity)):
+		return {
+			"ok": false,
+			"reason": "market_stock",
+			"item_id": item_id,
+			"requested_quantity": quantity,
+			"available_quantity": (
+				int(_market_ref.call("get_stock", item_id))
+				if _market_ref.has_method("get_stock")
+				else 0
+			),
+		}
+	var total := int(_market_ref.call("quote_buy" if is_buy else "quote_sell", item_id, quantity))
+	if total <= 0 or total > EconomyLimitsScript.MAX_SAFE_INTEGER:
+		return _trade_failure("transaction_failed", item_id)
+	var balance: Variant = _get_wallet_balance()
+	if balance == null or int(balance) < 0 or int(balance) > EconomyLimitsScript.MAX_SAFE_INTEGER:
+		return _trade_failure("transaction_failed", item_id)
+	if is_buy and int(balance) < total:
+		return {
+			"ok": false,
+			"reason": "insufficient_gold",
+			"item_id": item_id,
+			"required_gold": total,
+			"available_gold": int(balance),
+		}
+	if not is_buy and total > EconomyLimitsScript.MAX_SAFE_INTEGER - int(balance):
+		return {
+			"ok": false,
+			"reason": "wallet_overflow",
+			"item_id": item_id,
+			"trade_gold": total,
+			"available_capacity": EconomyLimitsScript.MAX_SAFE_INTEGER - int(balance),
+		}
+	return {
+		"ok": true,
+		"reason": "",
+		"item_id": item_id,
+		"quantity": quantity,
+		"total": total,
+		"owned_quantity": get_owned_quantity(item_id),
+	}
+
+
+func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool:
+	var quote := quote_trade_failure(item_id, quantity, is_buy)
+	if not bool(quote.get("ok", false)) or _router_ref == null:
+		return false
+	_trade_active = true
+	var market_before: Dictionary = _market_ref.call("to_dict")
+	var wallet_before: Variant = _get_wallet_balance()
+	var market_transaction := _begin_market_transaction()
+	if _market_supports_atomic_transactions() and not market_transaction:
+		_trade_active = false
+		return false
+	var router_token: RefCounted = _router_ref.begin_atomic_transaction()
+	if router_token == null:
+		_end_market_transaction(market_transaction, false)
+		_trade_active = false
+		return false
+	var event_bus_transaction := _begin_event_bus_transaction()
+	var mutation_succeeded := false
+	if is_buy:
+		mutation_succeeded = (
+			spend_gold(int(quote.total))
+			and bool(_market_ref.call("commit_buy", item_id, quantity))
+			and _router_ref.stage_add_items(router_token, {item_id: quantity})
+		)
+	else:
+		mutation_succeeded = (
+			_router_ref.stage_remove_items(router_token, {item_id: quantity})
+			and bool(_market_ref.call("commit_sell", item_id, quantity))
+			and add_gold(int(quote.total))
+		)
+	if not mutation_succeeded:
+		_rollback_routed_trade(
+			router_token, null, market_before, wallet_before,
+			market_transaction, event_bus_transaction
+		)
+		_trade_active = false
+		return false
+
+	var publication: RefCounted = _router_ref.seal_atomic_transaction(router_token)
+	if publication == null:
+		_rollback_routed_trade(
+			router_token, null, market_before, wallet_before,
+			market_transaction, event_bus_transaction
+		)
+		_trade_active = false
+		return false
+	if (
+		not _router_ref.can_arm_sealed_transaction(publication)
+		or not _router_ref.arm_sealed_transaction(publication)
+	):
+		_rollback_routed_trade(
+			null, publication, market_before, wallet_before,
+			market_transaction, event_bus_transaction
+		)
+		_trade_active = false
+		return false
+
+	_end_market_transaction(market_transaction, true)
+	_publish_routed_trade_events(event_bus_transaction, item_id)
+	_router_ref.publish_sealed_transaction(publication)
+	_trade_active = false
+	return true
+
+
+func _rollback_routed_trade(
+	router_token: RefCounted,
+	publication: RefCounted,
+	market_before: Dictionary,
+	wallet_before: Variant,
+	market_transaction: bool,
+	event_bus_transaction: bool
+) -> void:
+	if publication != null and _router_ref.owns_sealed_transaction(publication):
+		_router_ref.cancel_sealed_transaction(publication)
+	elif router_token != null:
+		_router_ref.rollback_atomic_transaction(router_token)
+	_restore_market(market_before)
+	_restore_wallet(wallet_before)
+	_end_market_transaction(market_transaction, false)
+	_restore_event_bus_block(event_bus_transaction)
+
+
+func _publish_routed_trade_events(owns_event_bus: bool, item_id: String) -> void:
+	if not owns_event_bus or _event_bus == null:
+		return
+	_event_bus.set_block_signals(false)
+	var balance: Variant = _get_wallet_balance()
+	if balance != null:
+		_event_bus.emit_signal("gold_changed", int(balance))
+	if _market_ref.has_method("get_stock"):
+		_event_bus.emit_signal(
+			"market_stock_changed", item_id, int(_market_ref.call("get_stock", item_id))
+		)
+
+
+func _restore_event_bus_block(owns_event_bus: bool) -> void:
+	if owns_event_bus and _event_bus != null:
+		_event_bus.set_block_signals(false)
+
+
+func _legacy_container_preflight(item_id: String, quantity: int, is_buy: bool) -> Dictionary:
+	if is_buy:
+		var result := _inventory_ref.preflight_add_items({item_id: quantity})
+		if not bool(result.get("ok", false)):
+			result["reason"] = "inventory_capacity"
+			result["item_id"] = item_id
+		return result
+	if _inventory_ref.has_item(item_id, quantity):
+		return {"ok": true, "reason": ""}
+	var definition: Dictionary = GameDataScript.get_item(item_id)
+	var category := str(definition.get("category", ""))
+	var reason := "insufficient_resources"
+	if category == "seed":
+		reason = "insufficient_seed"
+	elif category == "crop":
+		reason = "insufficient_crop"
+	var available := _inventory_ref.get_item_count(item_id)
+	return {
+		"ok": false,
+		"reason": reason,
+		"item_id": item_id,
+		"requested_quantity": quantity,
+		"available_quantity": available,
+		"missing_quantity": quantity - available,
+	}
+
+
+func _trade_failure(reason: String, item_id: String = "") -> Dictionary:
+	return {"ok": false, "reason": reason, "item_id": item_id}
 
 
 func _can_trade() -> bool:

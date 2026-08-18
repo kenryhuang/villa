@@ -5,6 +5,7 @@ const MarketSystem = preload("res://scripts/systems/market_system.gd")
 
 func run(assertions: TestAssert) -> void:
 	_test_finite_stock_ledger_and_quotes(assertions)
+	_test_seed_and_crop_market_entries_are_independent(assertions)
 	_test_invalid_operations_are_atomic(assertions)
 	_test_settlement_is_idempotent_and_bounded(assertions)
 	_test_state_is_deep_copied_and_persistent(assertions)
@@ -55,6 +56,33 @@ func _test_finite_stock_ledger_and_quotes(assertions: TestAssert) -> void:
 	assertions.equal(stock_events.size(), 2, "stock changes emit exactly once")
 	assertions.equal(stock_events[0], {"item_id": "wood", "stock": 7}, "buy emits resulting stock")
 	assertions.equal(stock_events[1], {"item_id": "wood", "stock": 12}, "sale emits resulting stock")
+	market.free()
+
+
+func _test_seed_and_crop_market_entries_are_independent(assertions: TestAssert) -> void:
+	var market := MarketSystem.new()
+	assertions.truthy(market.configure([
+		{
+			"id": "grain_seed",
+			"base_price": 4,
+			"initial_stock": 20,
+			"target_stock": 20,
+			"daily_liquidity": 10,
+		},
+		{
+			"id": "grain",
+			"base_price": 28,
+			"initial_stock": 12,
+			"target_stock": 12,
+			"daily_liquidity": 10,
+		},
+	]), "market configures seed and crop entries")
+	assertions.truthy(market.commit_buy("grain_seed", 3), "market sells seed stock")
+	assertions.equal(market.get_stock("grain_seed"), 17, "seed stock decreases independently")
+	assertions.equal(market.get_stock("grain"), 12, "seed purchase leaves crop stock unchanged")
+	assertions.truthy(market.commit_sell("grain", 2), "market accepts crop stock")
+	assertions.equal(market.get_stock("grain"), 14, "crop stock increases independently")
+	assertions.equal(market.get_stock("grain_seed"), 17, "crop sale leaves seed stock unchanged")
 	market.free()
 
 

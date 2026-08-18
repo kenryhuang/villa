@@ -12,6 +12,7 @@ const DailySimulationSystemScript := preload(
 )
 const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
 const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_system.gd")
+const ItemContainerRouterScript := preload("res://scripts/systems/item_container_router.gd")
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 const EconomyProgressionSystemScript := preload(
 	"res://scripts/systems/economy_progression_system.gd"
@@ -81,6 +82,7 @@ var economy_notification_system: EconomyNotificationSystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
+var item_container_router: Node
 var building_system: BuildingSystem
 var tool_system: ToolSystem
 var grid_pathfinder: GridPathfinder
@@ -156,10 +158,6 @@ func _initialize_systems() -> void:
 	npc_economy_system.name = "NpcEconomySystem"
 	add_child(npc_economy_system)
 
-	economy_system = EconomySystem.new()
-	economy_system.name = "EconomySystem"
-	add_child(economy_system)
-
 	daily_simulation_system = DailySimulationSystemScript.new()
 	daily_simulation_system.name = "DailySimulationSystem"
 	add_child(daily_simulation_system)
@@ -173,6 +171,14 @@ func _initialize_systems() -> void:
 	farm_storage_system.add_to_group("farm_storage_system")
 	add_child(farm_storage_system)
 	farm_storage_system.configure()
+
+	item_container_router = ItemContainerRouterScript.new()
+	item_container_router.name = "ItemContainerRouter"
+	add_child(item_container_router)
+
+	economy_system = EconomySystem.new()
+	economy_system.name = "EconomySystem"
+	add_child(economy_system)
 
 	building_system = BUILDING_SYSTEM_SCENE.instantiate() as BuildingSystem
 	add_child(building_system)
@@ -241,12 +247,16 @@ func _connect_systems() -> bool:
 	):
 		return false
 
-	# EconomySystem 依赖 InventorySystem + GameState 钱包 + MarketSystem
+	if not item_container_router.configure(inventory_system, farm_storage_system):
+		return false
+
+	# EconomySystem 依赖权威物品路由、GameState 钱包和 MarketSystem。
 	if not economy_system.configure(
 		inventory_system,
 		get_node_or_null("/root/GameState"),
 		market_system,
-		npc_economy_system
+		npc_economy_system,
+		item_container_router
 	):
 		return false
 
