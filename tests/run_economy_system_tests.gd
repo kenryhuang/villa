@@ -35,7 +35,7 @@ func _run() -> void:
 	MarketMathTest.new().run(assertions)
 	MarketSystemTest.new().run(assertions)
 	EconomyTransactionsTest.new().run(assertions)
-	ItemContainerRouterTest.new().run(assertions, self)
+	await ItemContainerRouterTest.new().run(assertions, self)
 	print("[economy-suite] simulation and save")
 	DailySimulationSystemTest.new().run(assertions, self)
 	EconomySaveIntegrationTest.new().run(assertions, self)
