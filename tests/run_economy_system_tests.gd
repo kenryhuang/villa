@@ -29,6 +29,13 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions = TestAssertScript.new()
+	print("[economy-suite] authoritative item containers")
+	var router_checks_before: int = assertions.checks
+	await ItemContainerRouterTest.new().run(assertions, self)
+	print(
+		"[economy-suite] authoritative item containers complete: %d checks"
+		% (assertions.checks - router_checks_before)
+	)
 	print("[economy-suite] core market")
 	EconomyWalletTest.new().run(assertions)
 	MarketCatalogTest.new().run(assertions)
@@ -57,8 +64,6 @@ func _run() -> void:
 	await economy_ui_responsive_test.run(assertions, self)
 	print("[economy-suite] deterministic economy simulation")
 	EconomySimulationTest.new().run(assertions)
-	print("[economy-suite] authoritative item containers")
-	await ItemContainerRouterTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d economy checks" % assertions.checks)
 		quit(0)

@@ -29,6 +29,11 @@ func _init() -> void:
 	set_process(false)
 
 
+func _enter_tree() -> void:
+	_tearing_down = false
+	_update_process_monitor()
+
+
 func _ready() -> void:
 	_update_process_monitor()
 
@@ -475,22 +480,23 @@ func _publish_sealed_transaction() -> bool:
 	var storage_publication := _sealed_storage_publication
 	_publication_in_progress = true
 	_clear_sealed_state()
-	var final_inventory: Dictionary = {}
+	var inventory_publication: Dictionary = _freeze_variant({"item_events": [], "quick_events": []})
 	if is_instance_valid(inventory):
-		final_inventory = {
+		var final_inventory := {
 			"slots": inventory.slots.duplicate(true),
 			"quick_mappings": inventory.quick_slot_mappings.duplicate(),
 		}
 		inventory.end_restore_notification_transaction(false)
-	if is_instance_valid(inventory):
-		_publish_inventory_changes(inventory, event_bus, inventory_snapshot, final_inventory)
-	var storage_published := false
-	if is_instance_valid(storage) and storage.owns_sealed_transaction(storage_publication):
-		storage.publish_sealed_transaction(storage_publication)
-		storage_published = true
+		inventory_publication = _prepare_inventory_publication(inventory_snapshot, final_inventory)
 	_publication_in_progress = false
 	_update_process_monitor()
-	return storage_published
+	return _dispatch_publication(
+		storage,
+		storage_publication,
+		inventory,
+		event_bus,
+		inventory_publication
+	)
 
 
 func _cancel_sealed_transaction() -> bool:
@@ -530,12 +536,11 @@ func _restore_storage_silently(items: Dictionary) -> bool:
 	return restored
 
 
-func _publish_inventory_changes(
-	inventory: InventorySystem,
-	event_bus: Node,
+func _prepare_inventory_publication(
 	previous: Dictionary,
 	current: Dictionary
-) -> void:
+) -> Dictionary:
+	var item_events: Array[Dictionary] = []
 	var previous_counts := _inventory_counts(previous.slots)
 	var current_counts := _inventory_counts(current.slots)
 	var item_ids: Array[String] = []
@@ -548,15 +553,41 @@ func _publish_inventory_changes(
 	item_ids.sort()
 	for item_id in item_ids:
 		var delta := int(current_counts.get(item_id, 0)) - int(previous_counts.get(item_id, 0))
-		if delta > 0 and is_instance_valid(event_bus):
-			event_bus.emit_signal(&"item_added", item_id, delta)
-		elif delta < 0 and is_instance_valid(event_bus):
-			event_bus.emit_signal(&"item_removed", item_id, -delta)
+		if delta > 0:
+			item_events.append({"signal": &"item_added", "item_id": item_id, "quantity": delta})
+		elif delta < 0:
+			item_events.append({"signal": &"item_removed", "item_id": item_id, "quantity": -delta})
 	var previous_quick := _quick_items(previous)
 	var current_quick := _quick_items(current)
+	var quick_events: Array[Dictionary] = []
 	for quick_index in range(InventorySystem.QUICK_SLOT_COUNT):
 		if previous_quick[quick_index] != current_quick[quick_index]:
-			inventory.quick_slot_mapping_changed.emit(quick_index, current_quick[quick_index])
+			quick_events.append({"quick_index": quick_index, "item_id": current_quick[quick_index]})
+	return _freeze_variant({"item_events": item_events, "quick_events": quick_events})
+
+
+static func _dispatch_publication(
+	storage: FarmStorageSystem,
+	storage_publication: RefCounted,
+	inventory: InventorySystem,
+	event_bus: Node,
+	inventory_publication: Dictionary
+) -> bool:
+	var storage_published := false
+	if is_instance_valid(storage) and storage.owns_sealed_transaction(storage_publication):
+		storage.publish_sealed_transaction(storage_publication)
+		storage_published = true
+	for event_value in inventory_publication.item_events:
+		if not is_instance_valid(event_bus):
+			break
+		var event := event_value as Dictionary
+		event_bus.emit_signal(event.signal, event.item_id, event.quantity)
+	for event_value in inventory_publication.quick_events:
+		if not is_instance_valid(inventory):
+			break
+		var event := event_value as Dictionary
+		inventory.quick_slot_mapping_changed.emit(event.quick_index, event.item_id)
+	return storage_published
 
 
 func _inventory_counts(slots: Array) -> Dictionary:

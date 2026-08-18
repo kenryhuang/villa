@@ -121,11 +121,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_failed_stage_does_not_leak_inventory_event_delta(assertions, tree)
 	await _test_late_abandonment_recovers_without_router_call(assertions, tree)
 	_test_publish_reentrancy_is_rejected(assertions, tree)
+	await _test_reparent_restores_abandonment_monitor(assertions, tree)
+	await _test_publish_callbacks_can_release_dependencies(assertions, tree)
 	await _test_exit_tree_and_invalid_dependency_release_locks(assertions, tree)
 	_test_blocked_event_bus_keeps_publication_retryable(assertions, tree)
 	_test_persistent_storage_restore_failure_is_non_mutating(assertions, tree)
 	await _test_transaction_ownership_and_abandonment(assertions, tree)
 	_test_unconfigured_and_invalid_containers(assertions, tree)
+	await tree.process_frame
 
 
 func _test_explicit_category_routing(assertions: TestAssert, tree: SceneTree) -> void:
@@ -617,6 +620,126 @@ func _test_publish_reentrancy_is_rejected(assertions: TestAssert, tree: SceneTre
 	tree.root.get_node("EventBus").item_added.disconnect(callback)
 	_disconnect_recorder(fixture, tree, recorder)
 	_free_fixture(fixture)
+
+
+func _test_reparent_restores_abandonment_monitor(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var fixture := _make_fixture(tree)
+	var router: Node = fixture.router
+	var first_token: RefCounted = router.begin_atomic_transaction()
+	router.stage_add_items(first_token, {"wood": 1, "grain": 1})
+	tree.root.remove_child(router)
+	assertions.equal(fixture.inventory.get_item_count("wood"), 0, "reparent exit restores inventory")
+	assertions.equal(fixture.storage.get_count("grain"), 0, "reparent exit restores storage")
+	tree.root.add_child(router)
+	var second_token: RefCounted = router.begin_atomic_transaction()
+	assertions.truthy(second_token != null, "reparented router begins a new transaction")
+	assertions.truthy(
+		router.stage_add_items(second_token, {"wood": 1, "grain": 1}),
+		"reparented router stages a mixed transaction"
+	)
+	await tree.process_frame
+	await tree.process_frame
+	second_token = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(fixture.inventory.get_item_count("wood"), 0, "reparent monitor restores inventory")
+	assertions.equal(fixture.storage.get_count("grain"), 0, "reparent monitor restores storage")
+	assertions.truthy(not router.is_processing(), "reparent recovery disables the monitor")
+	_assert_container_transactions_available(assertions, fixture, "reparent abandonment")
+	_free_fixture(fixture)
+
+
+func _test_publish_callbacks_can_release_dependencies(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var event_bus := tree.root.get_node("EventBus")
+	var router_fixture := _make_fixture(tree)
+	var router: Node = router_fixture.router
+	var router_token: RefCounted = router.begin_atomic_transaction()
+	router.stage_add_items(router_token, {"wood": 1, "grain": 1})
+	var router_publication: RefCounted = router.seal_atomic_transaction(router_token)
+	var router_event_count := [0]
+	var router_storage_count := [0]
+	var free_router := func(_item_id: String, _quantity: int) -> void:
+		router_event_count[0] += 1
+		if is_instance_valid(router):
+			router.queue_free()
+	var count_router_storage := func(_changes: Dictionary) -> void:
+		router_storage_count[0] += 1
+	event_bus.item_added.connect(free_router)
+	router_fixture.storage.contents_changed.connect(count_router_storage)
+	var router_publish_result: bool = router.publish_sealed_transaction(router_publication)
+	event_bus.item_added.disconnect(free_router)
+	if is_instance_valid(router_fixture.storage):
+		router_fixture.storage.contents_changed.disconnect(count_router_storage)
+	await tree.process_frame
+	await tree.process_frame
+	assertions.truthy(router_publish_result, "EventBus callback can free router during publication")
+	assertions.equal(router_event_count[0], 1, "router release callback runs once")
+	assertions.equal(router_storage_count[0], 1, "router release still publishes storage once")
+	assertions.truthy(not is_instance_valid(router), "EventBus callback releases router")
+	assertions.equal(router_fixture.inventory.get_item_count("wood"), 1, "router release keeps inventory result")
+	assertions.equal(router_fixture.storage.get_count("grain"), 1, "router release keeps storage result")
+	_assert_container_transactions_available(assertions, router_fixture, "router callback release")
+	_free_fixture(router_fixture)
+
+	var inventory_fixture := _make_fixture(tree)
+	inventory_fixture.router.add_items({"wood": 1})
+	var wood_slot := _item_slot(inventory_fixture.inventory, "wood")
+	inventory_fixture.inventory.set_quick_slot(wood_slot, 0)
+	var inventory_token: RefCounted = inventory_fixture.router.begin_atomic_transaction()
+	inventory_fixture.router.stage_remove_items(inventory_token, {"wood": 1})
+	var inventory_publication: RefCounted = inventory_fixture.router.seal_atomic_transaction(inventory_token)
+	var inventory_quick_count := [0]
+	var inventory_removed_count := [0]
+	var free_storage := func(_quick_index: int, _item_id: String) -> void:
+		inventory_quick_count[0] += 1
+		if is_instance_valid(inventory_fixture.storage):
+			inventory_fixture.storage.free()
+	var count_inventory_remove := func(_item_id: String, _quantity: int) -> void:
+		inventory_removed_count[0] += 1
+	inventory_fixture.inventory.quick_slot_mapping_changed.connect(free_storage)
+	event_bus.item_removed.connect(count_inventory_remove)
+	assertions.truthy(
+		inventory_fixture.router.publish_sealed_transaction(inventory_publication),
+		"quick-slot callback can free storage after publication"
+	)
+	event_bus.item_removed.disconnect(count_inventory_remove)
+	assertions.equal(inventory_quick_count[0], 1, "quick callback runs once")
+	assertions.equal(inventory_removed_count[0], 1, "inventory release emits EventBus removal once")
+	assertions.truthy(not is_instance_valid(inventory_fixture.storage), "quick callback releases storage")
+	_assert_container_transactions_available(assertions, inventory_fixture, "storage callback release")
+	_free_fixture(inventory_fixture)
+
+	var storage_fixture := _make_fixture(tree)
+	var storage_token: RefCounted = storage_fixture.router.begin_atomic_transaction()
+	storage_fixture.router.stage_add_items(storage_token, {"wood": 1, "grain": 1})
+	var storage_publication: RefCounted = storage_fixture.router.seal_atomic_transaction(storage_token)
+	var storage_contents_count := [0]
+	var storage_event_count := [0]
+	var free_inventory := func(_changes: Dictionary) -> void:
+		storage_contents_count[0] += 1
+		if is_instance_valid(storage_fixture.inventory):
+			storage_fixture.inventory.free()
+	var count_storage_inventory_event := func(_item_id: String, _quantity: int) -> void:
+		storage_event_count[0] += 1
+	storage_fixture.storage.contents_changed.connect(free_inventory)
+	event_bus.item_added.connect(count_storage_inventory_event)
+	assertions.truthy(
+		storage_fixture.router.publish_sealed_transaction(storage_publication),
+		"storage callback can free inventory during publication"
+	)
+	event_bus.item_added.disconnect(count_storage_inventory_event)
+	assertions.equal(storage_contents_count[0], 1, "inventory release callback runs once")
+	assertions.equal(storage_event_count[0], 1, "storage callback still emits prepared inventory event once")
+	assertions.truthy(not is_instance_valid(storage_fixture.inventory), "storage callback releases inventory")
+	assertions.equal(storage_fixture.storage.get_count("grain"), 1, "inventory release keeps storage result")
+	_assert_container_transactions_available(assertions, storage_fixture, "inventory callback release")
+	_free_fixture(storage_fixture)
 
 
 func _test_exit_tree_and_invalid_dependency_release_locks(
