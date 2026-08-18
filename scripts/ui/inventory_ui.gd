@@ -51,10 +51,12 @@ func _ready() -> void:
 	_configure_storage_sort()
 	_connect_backpack_events()
 	_connect_storage_events()
-	var viewport_callback := Callable(self, "_on_viewport_size_changed")
-	if not get_viewport().size_changed.is_connected(viewport_callback):
-		get_viewport().size_changed.connect(viewport_callback)
-	apply_responsive_layout(Vector2(get_viewport().size))
+	var viewport := get_viewport()
+	if viewport != null:
+		var viewport_callback := Callable(self, "_on_viewport_size_changed")
+		if not viewport.size_changed.is_connected(viewport_callback):
+			viewport.size_changed.connect(viewport_callback)
+		apply_responsive_layout(Vector2(viewport.size))
 	_sync_tab_visibility()
 	_refresh_backpack()
 	_refresh_storage()
