@@ -35,7 +35,6 @@ func _run() -> void:
 	MarketMathTest.new().run(assertions)
 	MarketSystemTest.new().run(assertions)
 	EconomyTransactionsTest.new().run(assertions)
-	await ItemContainerRouterTest.new().run(assertions, self)
 	print("[economy-suite] simulation and save")
 	DailySimulationSystemTest.new().run(assertions, self)
 	EconomySaveIntegrationTest.new().run(assertions, self)
@@ -58,6 +57,8 @@ func _run() -> void:
 	await economy_ui_responsive_test.run(assertions, self)
 	print("[economy-suite] deterministic economy simulation")
 	EconomySimulationTest.new().run(assertions)
+	print("[economy-suite] authoritative item containers")
+	await ItemContainerRouterTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d economy checks" % assertions.checks)
 		quit(0)

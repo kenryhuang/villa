@@ -10,6 +10,7 @@ class FailingInventory:
 
 	var fail_add_item_id := ""
 	var fail_remove_item_id := ""
+	var restore_calls := 0
 
 	func add_item(item_id: String, quantity: int = 1) -> bool:
 		if item_id == fail_add_item_id:
@@ -25,6 +26,10 @@ class FailingInventory:
 			return false
 		return super.remove_item(item_id, quantity)
 
+	func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
+		restore_calls += 1
+		super.restore_state(saved_slots, saved_quick_mappings)
+
 
 class FailingStorage:
 	extends FarmStorageSystemScript
@@ -32,6 +37,8 @@ class FailingStorage:
 	var fail_next_add := false
 	var fail_next_remove := false
 	var fail_next_restore := false
+	var fail_all_restores := false
+	var restore_calls := 0
 	var saw_blocked_event_bus := false
 
 	func stage_add_items(token: Variant, requested: Dictionary) -> bool:
@@ -51,7 +58,8 @@ class FailingStorage:
 		return super.stage_remove_items(token, requested)
 
 	func restore_items_unchecked(items: Dictionary) -> bool:
-		if fail_next_restore:
+		restore_calls += 1
+		if fail_all_restores or fail_next_restore:
 			fail_next_restore = false
 			return false
 		return super.restore_items_unchecked(items)
@@ -111,6 +119,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_restore_snapshot_uses_normalized_inventory_state(assertions, tree)
 	_test_multistage_failure_keeps_original_rollback_boundary(assertions, tree)
 	_test_failed_stage_does_not_leak_inventory_event_delta(assertions, tree)
+	await _test_late_abandonment_recovers_without_router_call(assertions, tree)
+	_test_publish_reentrancy_is_rejected(assertions, tree)
+	await _test_exit_tree_and_invalid_dependency_release_locks(assertions, tree)
+	_test_blocked_event_bus_keeps_publication_retryable(assertions, tree)
+	_test_persistent_storage_restore_failure_is_non_mutating(assertions, tree)
 	await _test_transaction_ownership_and_abandonment(assertions, tree)
 	_test_unconfigured_and_invalid_containers(assertions, tree)
 
@@ -518,6 +531,197 @@ func _test_failed_stage_does_not_leak_inventory_event_delta(
 	_free_fixture(fixture)
 
 
+func _test_late_abandonment_recovers_without_router_call(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var token_fixture := _make_fixture(tree)
+	var token_recorder := _connect_recorder(token_fixture, tree)
+	assertions.truthy(not token_fixture.router.is_processing(), "idle router does not process")
+	var token: RefCounted = token_fixture.router.begin_atomic_transaction()
+	token_fixture.router.stage_add_items(token, {"wood": 1, "grain": 1})
+	assertions.truthy(token_fixture.router.is_processing(), "active token enables recovery monitor")
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(token_fixture.inventory.get_item_count("wood"), 1, "held token survives two frames")
+	token = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(token_fixture.inventory.get_item_count("wood"), 0, "late token abandonment restores inventory")
+	assertions.equal(token_fixture.storage.get_count("grain"), 0, "late token abandonment restores storage")
+	assertions.truthy(not token_fixture.router.is_processing(), "token recovery disables monitor")
+	_assert_recorder_silent(assertions, token_recorder, "late token abandonment")
+	_assert_container_transactions_available(assertions, token_fixture, "late token abandonment")
+	_disconnect_recorder(token_fixture, tree, token_recorder)
+	_free_fixture(token_fixture)
+
+	var cancel_fixture := _make_fixture(tree)
+	var cancel_recorder := _connect_recorder(cancel_fixture, tree)
+	var cancel_token: RefCounted = cancel_fixture.router.begin_atomic_transaction()
+	cancel_fixture.router.stage_add_items(cancel_token, {"wood": 1, "grain": 1})
+	var abandoned_publication: RefCounted = cancel_fixture.router.seal_atomic_transaction(cancel_token)
+	await tree.process_frame
+	await tree.process_frame
+	abandoned_publication = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(cancel_fixture.inventory.get_item_count("wood"), 0, "late publication abandonment restores inventory")
+	assertions.equal(cancel_fixture.storage.get_count("grain"), 0, "late publication abandonment restores storage")
+	assertions.truthy(not cancel_fixture.router.is_processing(), "cancelled seal disables monitor")
+	_assert_recorder_silent(assertions, cancel_recorder, "late publication abandonment")
+	_assert_container_transactions_available(assertions, cancel_fixture, "late publication abandonment")
+	_disconnect_recorder(cancel_fixture, tree, cancel_recorder)
+	_free_fixture(cancel_fixture)
+
+	var publish_fixture := _make_fixture(tree)
+	var publish_recorder := _connect_recorder(publish_fixture, tree)
+	var publish_token: RefCounted = publish_fixture.router.begin_atomic_transaction()
+	publish_fixture.router.stage_add_items(publish_token, {"wood": 1, "grain": 1})
+	var armed_publication: RefCounted = publish_fixture.router.seal_atomic_transaction(publish_token)
+	assertions.truthy(publish_fixture.router.arm_sealed_transaction(armed_publication), "abandon publish fixture arms")
+	await tree.process_frame
+	await tree.process_frame
+	armed_publication = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(publish_fixture.inventory.get_item_count("wood"), 1, "armed abandonment publishes inventory")
+	assertions.equal(publish_fixture.storage.get_count("grain"), 1, "armed abandonment publishes storage")
+	assertions.equal(publish_recorder.records.size(), 2, "armed abandonment publishes EventBus once")
+	assertions.equal(publish_recorder.local_storage_records.size(), 1, "armed abandonment publishes storage once")
+	assertions.truthy(not publish_fixture.router.is_processing(), "published seal disables monitor")
+	_assert_container_transactions_available(assertions, publish_fixture, "armed publication abandonment")
+	_disconnect_recorder(publish_fixture, tree, publish_recorder)
+	_free_fixture(publish_fixture)
+
+
+func _test_publish_reentrancy_is_rejected(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := _make_fixture(tree)
+	var token: RefCounted = fixture.router.begin_atomic_transaction()
+	fixture.router.stage_add_items(token, {"wood": 1, "grain": 1})
+	var publication: RefCounted = fixture.router.seal_atomic_transaction(token)
+	var recorder := _connect_recorder(fixture, tree)
+	var reentered := [false]
+	var reentrant_results: Array[bool] = []
+	var callback := func(_item_id: String, _quantity: int) -> void:
+		if reentered[0]:
+			return
+		reentered[0] = true
+		reentrant_results.append(fixture.router.publish_sealed_transaction(publication))
+	tree.root.get_node("EventBus").item_added.connect(callback)
+	assertions.truthy(fixture.router.publish_sealed_transaction(publication), "outer publication succeeds")
+	assertions.equal(reentrant_results, [false], "publish callback cannot reenter publication")
+	assertions.equal(recorder.records.size(), 2, "reentrant publish emits EventBus changes once")
+	assertions.equal(recorder.local_storage_records.size(), 1, "reentrant publish emits storage once")
+	assertions.equal(fixture.inventory.get_item_count("wood"), 1, "reentrant publish keeps final inventory")
+	assertions.equal(fixture.storage.get_count("grain"), 1, "reentrant publish keeps final storage")
+	tree.root.get_node("EventBus").item_added.disconnect(callback)
+	_disconnect_recorder(fixture, tree, recorder)
+	_free_fixture(fixture)
+
+
+func _test_exit_tree_and_invalid_dependency_release_locks(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var exit_fixture := _make_fixture(tree)
+	var exit_recorder := _connect_recorder(exit_fixture, tree)
+	var exit_token: RefCounted = exit_fixture.router.begin_atomic_transaction()
+	exit_fixture.router.stage_add_items(exit_token, {"wood": 1, "grain": 1})
+	exit_fixture.router.queue_free()
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(exit_fixture.inventory.get_item_count("wood"), 0, "router exit restores inventory")
+	assertions.equal(exit_fixture.storage.get_count("grain"), 0, "router exit restores storage")
+	_assert_recorder_silent(assertions, exit_recorder, "router exit")
+	_assert_container_transactions_available(assertions, exit_fixture, "router exit")
+	_disconnect_recorder(exit_fixture, tree, exit_recorder)
+	_free_fixture(exit_fixture)
+
+	var sealed_fixture := _make_fixture(tree)
+	var sealed_recorder := _connect_recorder(sealed_fixture, tree)
+	var sealed_token: RefCounted = sealed_fixture.router.begin_atomic_transaction()
+	sealed_fixture.router.stage_add_items(sealed_token, {"wood": 1, "grain": 1})
+	var sealed_publication: RefCounted = sealed_fixture.router.seal_atomic_transaction(sealed_token)
+	assertions.truthy(sealed_publication != null, "router exit fixture seals transaction")
+	sealed_fixture.router.queue_free()
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(sealed_fixture.inventory.get_item_count("wood"), 0, "router exit cancels sealed inventory")
+	assertions.equal(sealed_fixture.storage.get_count("grain"), 0, "router exit cancels sealed storage")
+	_assert_recorder_silent(assertions, sealed_recorder, "sealed router exit")
+	_assert_container_transactions_available(assertions, sealed_fixture, "sealed router exit")
+	_disconnect_recorder(sealed_fixture, tree, sealed_recorder)
+	_free_fixture(sealed_fixture)
+
+	var invalid_fixture := _make_fixture(tree)
+	var invalid_token: RefCounted = invalid_fixture.router.begin_atomic_transaction()
+	invalid_fixture.router.stage_add_items(invalid_token, {"wood": 1, "grain": 1})
+	invalid_fixture.inventory.get_parent().remove_child(invalid_fixture.inventory)
+	invalid_fixture.inventory.free()
+	assertions.truthy(
+		invalid_fixture.router.rollback_atomic_transaction(invalid_token),
+		"rollback tolerates released inventory"
+	)
+	assertions.equal(invalid_fixture.storage.get_count("grain"), 0, "released dependency still unlocks storage")
+	var storage_token: RefCounted = invalid_fixture.storage.begin_atomic_transaction()
+	assertions.truthy(storage_token != null, "storage remains transaction-capable after dependency loss")
+	if storage_token != null:
+		invalid_fixture.storage.rollback_atomic_transaction(storage_token)
+	_free_fixture(invalid_fixture)
+
+
+func _test_blocked_event_bus_keeps_publication_retryable(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var fixture := _make_fixture(tree)
+	var token: RefCounted = fixture.router.begin_atomic_transaction()
+	fixture.router.stage_add_items(token, {"wood": 1, "grain": 1})
+	var publication: RefCounted = fixture.router.seal_atomic_transaction(token)
+	assertions.truthy(fixture.router.arm_sealed_transaction(publication), "blocked bus fixture arms publication")
+	var recorder := _connect_recorder(fixture, tree)
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.set_block_signals(true)
+	var blocked_result: bool = fixture.router.publish_sealed_transaction(publication)
+	event_bus.set_block_signals(false)
+	assertions.truthy(not blocked_result, "blocked EventBus rejects publication")
+	assertions.truthy(fixture.router.owns_sealed_transaction(publication), "blocked publication remains owned")
+	assertions.truthy(not fixture.router.cancel_sealed_transaction(publication), "armed retryable publication cannot cancel")
+	_assert_recorder_silent(assertions, recorder, "blocked publication")
+	assertions.truthy(fixture.router.publish_sealed_transaction(publication), "publication retries after unblock")
+	assertions.equal(recorder.records.size(), 2, "retried publication emits EventBus once")
+	assertions.equal(recorder.local_storage_records.size(), 1, "retried publication emits storage once")
+	_disconnect_recorder(fixture, tree, recorder)
+	_free_fixture(fixture)
+
+
+func _test_persistent_storage_restore_failure_is_non_mutating(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var fixture := _make_fixture(tree)
+	fixture.router.add_items({"wood": 2, "grain": 2})
+	var target: Dictionary = fixture.router.snapshot_for({"wood": 1, "grain": 1})
+	fixture.router.add_items({"wood": 1, "grain": 1})
+	var before_slots: Array = fixture.inventory.slots.duplicate(true)
+	var before_mappings: Array = fixture.inventory.quick_slot_mappings.duplicate()
+	var before_storage: Dictionary = fixture.storage.get_items().duplicate(true)
+	var inventory_restore_calls: int = fixture.inventory.restore_calls
+	var storage_restore_calls: int = fixture.storage.restore_calls
+	var recorder := _connect_recorder(fixture, tree)
+	fixture.storage.fail_all_restores = true
+	assertions.truthy(not fixture.router.restore_snapshot(target), "persistent storage restore failure is reported")
+	assertions.equal(fixture.inventory.restore_calls, inventory_restore_calls, "storage failure never touches inventory")
+	assertions.equal(fixture.storage.restore_calls, storage_restore_calls + 1, "storage restore is attempted once")
+	assertions.equal(fixture.inventory.slots, before_slots, "persistent restore keeps inventory slots")
+	assertions.equal(fixture.inventory.quick_slot_mappings, before_mappings, "persistent restore keeps mappings")
+	assertions.equal(fixture.storage.get_items(), before_storage, "persistent restore keeps storage")
+	_assert_recorder_silent(assertions, recorder, "persistent restore failure")
+	fixture.storage.fail_all_restores = false
+	_disconnect_recorder(fixture, tree, recorder)
+	_free_fixture(fixture)
+
+
 func _test_transaction_ownership_and_abandonment(assertions: TestAssert, tree: SceneTree) -> void:
 	var fixture := _make_fixture(tree)
 	var wrong_token := RefCounted.new()
@@ -604,6 +808,23 @@ func _assert_recorder_silent(assertions: TestAssert, recorder: EventRecorder, co
 	assertions.equal(recorder.local_storage_records.size(), 0, "%s emits no storage events" % context)
 
 
+func _assert_container_transactions_available(
+	assertions: TestAssert,
+	fixture: Dictionary,
+	context: String
+) -> void:
+	if is_instance_valid(fixture.inventory):
+		var inventory_available: bool = fixture.inventory.begin_restore_notification_transaction()
+		assertions.truthy(inventory_available, "%s releases inventory transaction" % context)
+		if inventory_available:
+			fixture.inventory.end_restore_notification_transaction(false)
+	if is_instance_valid(fixture.storage):
+		var storage_token: RefCounted = fixture.storage.begin_atomic_transaction()
+		assertions.truthy(storage_token != null, "%s releases storage transaction" % context)
+		if storage_token != null:
+			fixture.storage.rollback_atomic_transaction(storage_token)
+
+
 func _item_slot(inventory: Node, item_id: String) -> int:
 	for index in range(inventory.slots.size()):
 		if inventory.slots[index].get("item_id", "") == item_id:
@@ -626,9 +847,10 @@ func _make_fixture(tree: SceneTree, capacity: int = 200) -> Dictionary:
 
 
 func _free_fixture(fixture: Dictionary) -> void:
-	fixture.inventory.get_parent().remove_child(fixture.inventory)
-	fixture.storage.get_parent().remove_child(fixture.storage)
-	fixture.router.get_parent().remove_child(fixture.router)
-	fixture.inventory.free()
-	fixture.storage.free()
-	fixture.router.free()
+	for key in ["inventory", "storage", "router"]:
+		var node: Variant = fixture.get(key)
+		if not is_instance_valid(node):
+			continue
+		if (node as Node).get_parent() != null:
+			(node as Node).get_parent().remove_child(node)
+		(node as Node).free()

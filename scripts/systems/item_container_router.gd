@@ -21,12 +21,40 @@ var _sealed_inventory_snapshot: Dictionary = {}
 var _sealed_storage_snapshot: Dictionary = {}
 var _sealed_storage_publication: RefCounted
 var _sealed_armed := false
+var _publication_in_progress := false
+var _tearing_down := false
+
+
+func _init() -> void:
+	set_process(false)
+
+
+func _ready() -> void:
+	_update_process_monitor()
+
+
+func _process(_delta: float) -> void:
+	_recover_abandoned_transaction()
+	_recover_abandoned_seal()
+	_update_process_monitor()
+
+
+func _exit_tree() -> void:
+	_tearing_down = true
+	set_process(false)
+	if _has_atomic_state():
+		_rollback_active_transaction()
+	if _has_sealed_state():
+		if _sealed_armed:
+			_publish_sealed_transaction()
+		else:
+			_cancel_sealed_transaction()
 
 
 func configure(inventory: InventorySystem, storage: FarmStorageSystem) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	if _publication_in_progress or _has_atomic_state() or _has_sealed_state():
 		return false
 	if not is_instance_valid(inventory) or not is_instance_valid(storage):
 		return false
@@ -96,7 +124,7 @@ func remove_items(items: Dictionary) -> bool:
 func begin_atomic_transaction() -> RefCounted:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if not _is_configured() or _has_atomic_transaction() or _has_sealed_transaction():
+	if not _is_configured() or _publication_in_progress or _has_atomic_state() or _has_sealed_state():
 		return null
 	var inventory_snapshot := _inventory_state()
 	var storage_snapshot := _storage.get_items().duplicate(true)
@@ -111,7 +139,7 @@ func begin_atomic_transaction() -> RefCounted:
 	_transaction_inventory_snapshot = inventory_snapshot
 	_transaction_storage_snapshot = storage_snapshot
 	_transaction_storage_token = storage_token
-	call_deferred("_recover_abandoned_transaction")
+	_update_process_monitor()
 	return token
 
 
@@ -136,7 +164,7 @@ func commit_atomic_transaction(token: Variant) -> bool:
 func seal_atomic_transaction(token: Variant) -> RefCounted:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if not _owns_atomic_transaction(token) or _has_sealed_transaction():
+	if not _owns_atomic_transaction(token) or _has_sealed_state() or _publication_in_progress:
 		return null
 	var storage_publication := _storage.seal_atomic_transaction(_transaction_storage_token)
 	if storage_publication == null:
@@ -149,7 +177,7 @@ func seal_atomic_transaction(token: Variant) -> RefCounted:
 	_sealed_storage_publication = storage_publication
 	_sealed_armed = false
 	_clear_transaction_state()
-	call_deferred("_recover_abandoned_seal")
+	_update_process_monitor()
 	return publication
 
 
@@ -158,6 +186,7 @@ func can_arm_sealed_transaction(publication: Variant) -> bool:
 	return (
 		_owns_sealed_transaction(publication)
 		and not _sealed_armed
+		and is_instance_valid(_storage)
 		and _storage.can_arm_sealed_transaction(_sealed_storage_publication)
 	)
 
@@ -172,12 +201,14 @@ func arm_sealed_transaction(publication: Variant) -> bool:
 
 func publish_sealed_transaction(publication: Variant) -> bool:
 	_recover_abandoned_seal()
-	if not _owns_sealed_transaction(publication):
+	if _publication_in_progress or not _owns_sealed_transaction(publication):
+		return false
+	var event_bus := _event_bus()
+	if is_instance_valid(event_bus) and event_bus.is_blocking_signals():
 		return false
 	if not _sealed_armed and not arm_sealed_transaction(publication):
 		return false
-	_publish_sealed_transaction()
-	return true
+	return _publish_sealed_transaction()
 
 
 func cancel_sealed_transaction(publication: Variant) -> bool:
@@ -188,10 +219,10 @@ func cancel_sealed_transaction(publication: Variant) -> bool:
 
 
 func rollback_atomic_transaction(token: Variant) -> bool:
+	if _owns_atomic_transaction(token):
+		return _rollback_active_transaction()
 	_recover_abandoned_transaction()
-	if not _owns_atomic_transaction(token):
-		return false
-	return _rollback_active_transaction()
+	return false
 
 
 func owns_sealed_transaction(publication: Variant) -> bool:
@@ -211,7 +242,7 @@ func snapshot_for(items: Dictionary) -> Dictionary:
 func restore_snapshot(snapshot: Dictionary) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if not _is_configured() or _has_atomic_transaction() or _has_sealed_transaction():
+	if not _is_configured() or _publication_in_progress or _has_atomic_state() or _has_sealed_state():
 		return false
 	var normalized_value: Variant = _normalize_snapshot(snapshot)
 	if normalized_value == null:
@@ -219,8 +250,6 @@ func restore_snapshot(snapshot: Dictionary) -> bool:
 	var normalized := normalized_value as Dictionary
 	var inventory_state: Variant = normalized.get(INVENTORY_KIND)
 	var storage_state: Variant = normalized.get(STORAGE_KIND)
-	var before_inventory := _inventory_state() if inventory_state != null else {}
-	var before_storage := _storage.get_items().duplicate(true) if storage_state != null else {}
 	var inventory_transaction := false
 	var storage_transaction := false
 	if inventory_state != null:
@@ -238,16 +267,11 @@ func restore_snapshot(snapshot: Dictionary) -> bool:
 	if is_instance_valid(event_bus) and not event_bus_was_blocked:
 		event_bus.set_block_signals(true)
 
-	if inventory_state != null:
-		_inventory.restore_state(inventory_state.slots, inventory_state.quick_mappings)
 	var restored := true
 	if storage_state != null:
 		restored = _storage.restore_items_unchecked(storage_state.items)
-	if not restored:
-		if inventory_state != null:
-			_inventory.restore_state(before_inventory.slots, before_inventory.quick_mappings)
-		if storage_state != null:
-			_storage.restore_items_unchecked(before_storage)
+	if restored and inventory_state != null:
+		_inventory.restore_state(inventory_state.slots, inventory_state.quick_mappings)
 	if inventory_transaction:
 		_inventory.end_restore_notification_transaction(false)
 	if storage_transaction:
@@ -413,51 +437,92 @@ func _restore_active_stage(inventory_state: Dictionary, storage_items: Dictionar
 
 
 func _rollback_active_transaction() -> bool:
-	if _transaction_storage_token == null or _transaction_inventory_snapshot.is_empty():
+	if not _has_atomic_state():
 		return false
 	var event_bus := _event_bus()
 	var event_bus_was_blocked := is_instance_valid(event_bus) and event_bus.is_blocking_signals()
 	if is_instance_valid(event_bus) and not event_bus_was_blocked:
 		event_bus.set_block_signals(true)
-	_inventory.restore_state(_transaction_inventory_snapshot.slots, _transaction_inventory_snapshot.quick_mappings)
-	var storage_rolled_back := _storage.rollback_atomic_transaction(_transaction_storage_token)
-	var storage_restored := (
-		_restore_storage_silently(_transaction_storage_snapshot)
-		if storage_rolled_back
-		else false
-	)
-	_inventory.end_restore_notification_transaction(false)
+	var storage_restored := true
+	if is_instance_valid(_storage):
+		storage_restored = _storage.rollback_atomic_transaction(_transaction_storage_token)
+		if storage_restored:
+			storage_restored = _restore_storage_silently(_transaction_storage_snapshot)
+	if is_instance_valid(_inventory):
+		_inventory.restore_state(
+			_transaction_inventory_snapshot.slots,
+			_transaction_inventory_snapshot.quick_mappings
+		)
+		_inventory.end_restore_notification_transaction(false)
 	_restore_event_bus(event_bus, event_bus_was_blocked)
 	_clear_transaction_state()
-	return storage_rolled_back and storage_restored
+	return storage_restored
 
 
-func _publish_sealed_transaction() -> void:
-	var final_inventory := _inventory_state()
-	_inventory.end_restore_notification_transaction(false)
-	_publish_inventory_changes(_sealed_inventory_snapshot, final_inventory)
-	_storage.publish_sealed_transaction(_sealed_storage_publication)
+func _publish_sealed_transaction() -> bool:
+	if not _has_sealed_state() or _publication_in_progress:
+		return false
+	var event_bus := _event_bus()
+	if (
+		not _tearing_down
+		and is_instance_valid(event_bus)
+		and event_bus.is_blocking_signals()
+	):
+		return false
+	var inventory := _inventory if is_instance_valid(_inventory) else null
+	var storage := _storage if is_instance_valid(_storage) else null
+	var inventory_snapshot := _sealed_inventory_snapshot
+	var storage_publication := _sealed_storage_publication
+	_publication_in_progress = true
 	_clear_sealed_state()
+	var final_inventory: Dictionary = {}
+	if is_instance_valid(inventory):
+		final_inventory = {
+			"slots": inventory.slots.duplicate(true),
+			"quick_mappings": inventory.quick_slot_mappings.duplicate(),
+		}
+		inventory.end_restore_notification_transaction(false)
+	if is_instance_valid(inventory):
+		_publish_inventory_changes(inventory, event_bus, inventory_snapshot, final_inventory)
+	var storage_published := false
+	if is_instance_valid(storage) and storage.owns_sealed_transaction(storage_publication):
+		storage.publish_sealed_transaction(storage_publication)
+		storage_published = true
+	_publication_in_progress = false
+	_update_process_monitor()
+	return storage_published
 
 
 func _cancel_sealed_transaction() -> bool:
+	if not _has_sealed_state():
+		return false
 	var event_bus := _event_bus()
 	var event_bus_was_blocked := is_instance_valid(event_bus) and event_bus.is_blocking_signals()
 	if is_instance_valid(event_bus) and not event_bus_was_blocked:
 		event_bus.set_block_signals(true)
-	var storage_cancelled := _storage.cancel_sealed_transaction(_sealed_storage_publication)
+	var storage_cancelled := true
+	if is_instance_valid(_storage):
+		storage_cancelled = _storage.cancel_sealed_transaction(_sealed_storage_publication)
 	if not storage_cancelled:
 		_restore_event_bus(event_bus, event_bus_was_blocked)
 		return false
-	var storage_restored := _restore_storage_silently(_sealed_storage_snapshot)
-	_inventory.restore_state(_sealed_inventory_snapshot.slots, _sealed_inventory_snapshot.quick_mappings)
-	_inventory.end_restore_notification_transaction(false)
+	var storage_restored := true
+	if is_instance_valid(_storage):
+		storage_restored = _restore_storage_silently(_sealed_storage_snapshot)
+	if is_instance_valid(_inventory):
+		_inventory.restore_state(
+			_sealed_inventory_snapshot.slots,
+			_sealed_inventory_snapshot.quick_mappings
+		)
+		_inventory.end_restore_notification_transaction(false)
 	_restore_event_bus(event_bus, event_bus_was_blocked)
 	_clear_sealed_state()
 	return storage_restored
 
 
 func _restore_storage_silently(items: Dictionary) -> bool:
+	if not is_instance_valid(_storage):
+		return true
 	if not _storage.begin_restore_notification_transaction():
 		return false
 	var restored := _storage.restore_items_unchecked(items)
@@ -465,7 +530,12 @@ func _restore_storage_silently(items: Dictionary) -> bool:
 	return restored
 
 
-func _publish_inventory_changes(previous: Dictionary, current: Dictionary) -> void:
+func _publish_inventory_changes(
+	inventory: InventorySystem,
+	event_bus: Node,
+	previous: Dictionary,
+	current: Dictionary
+) -> void:
 	var previous_counts := _inventory_counts(previous.slots)
 	var current_counts := _inventory_counts(current.slots)
 	var item_ids: Array[String] = []
@@ -476,7 +546,6 @@ func _publish_inventory_changes(previous: Dictionary, current: Dictionary) -> vo
 		if not item_ids.has(item_id):
 			item_ids.append(item_id)
 	item_ids.sort()
-	var event_bus := _event_bus()
 	for item_id in item_ids:
 		var delta := int(current_counts.get(item_id, 0)) - int(previous_counts.get(item_id, 0))
 		if delta > 0 and is_instance_valid(event_bus):
@@ -487,7 +556,7 @@ func _publish_inventory_changes(previous: Dictionary, current: Dictionary) -> vo
 	var current_quick := _quick_items(current)
 	for quick_index in range(InventorySystem.QUICK_SLOT_COUNT):
 		if previous_quick[quick_index] != current_quick[quick_index]:
-			_inventory.quick_slot_mapping_changed.emit(quick_index, current_quick[quick_index])
+			inventory.quick_slot_mapping_changed.emit(quick_index, current_quick[quick_index])
 
 
 func _inventory_counts(slots: Array) -> Dictionary:
@@ -575,16 +644,16 @@ func _is_configured() -> bool:
 	return is_instance_valid(_inventory) and is_instance_valid(_storage)
 
 
-func _has_atomic_transaction() -> bool:
-	return _transaction_owner != null and _transaction_owner.get_ref() != null
+func _has_atomic_state() -> bool:
+	return _transaction_storage_token != null or not _transaction_inventory_snapshot.is_empty()
 
 
 func _owns_atomic_transaction(token: Variant) -> bool:
 	return token is RefCounted and _transaction_owner != null and _transaction_owner.get_ref() == token
 
 
-func _has_sealed_transaction() -> bool:
-	return _sealed_owner != null and _sealed_owner.get_ref() != null
+func _has_sealed_state() -> bool:
+	return _sealed_storage_publication != null or not _sealed_inventory_snapshot.is_empty()
 
 
 func _owns_sealed_transaction(publication: Variant) -> bool:
@@ -592,12 +661,21 @@ func _owns_sealed_transaction(publication: Variant) -> bool:
 
 
 func _recover_abandoned_transaction() -> void:
-	if _transaction_owner != null and _transaction_owner.get_ref() == null:
+	if not _has_atomic_state():
+		return
+	if (
+		_transaction_owner == null
+		or _transaction_owner.get_ref() == null
+		or not _is_configured()
+	):
 		_rollback_active_transaction()
 
 
 func _recover_abandoned_seal() -> void:
-	if _sealed_owner == null or _sealed_owner.get_ref() != null:
+	if not _has_sealed_state():
+		return
+	var abandoned := _sealed_owner == null or _sealed_owner.get_ref() == null
+	if not abandoned and _is_configured():
 		return
 	if _sealed_armed:
 		_publish_sealed_transaction()
@@ -610,6 +688,7 @@ func _clear_transaction_state() -> void:
 	_transaction_inventory_snapshot = {}
 	_transaction_storage_snapshot = {}
 	_transaction_storage_token = null
+	_update_process_monitor()
 
 
 func _clear_sealed_state() -> void:
@@ -618,10 +697,21 @@ func _clear_sealed_state() -> void:
 	_sealed_storage_snapshot = {}
 	_sealed_storage_publication = null
 	_sealed_armed = false
+	_update_process_monitor()
+
+
+func _update_process_monitor() -> void:
+	if _tearing_down or not is_inside_tree():
+		return
+	set_process(_has_atomic_state() or _has_sealed_state())
 
 
 func _event_bus() -> Node:
-	return _inventory.get_node_or_null("/root/EventBus") if _inventory.is_inside_tree() else null
+	return (
+		_inventory.get_node_or_null("/root/EventBus")
+		if is_instance_valid(_inventory) and _inventory.is_inside_tree()
+		else null
+	)
 
 
 func _restore_event_bus(event_bus: Node, was_blocked: bool) -> void:
