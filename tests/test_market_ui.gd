@@ -416,7 +416,7 @@ func _test_routed_market_ownership_and_feedback(
 		economy.configure(inventory, wallet, market, null, router),
 		"routed market configures authoritative economy"
 	)
-	assertions.truthy(storage.add_items({"grain": 70}), "routed market stores crops outside backpack")
+	assertions.truthy(storage.add_items({"grain": 7}), "routed market stores crops outside backpack")
 	assertions.truthy(inventory.add_item("grain_seed", 3), "routed market stores seeds in backpack")
 	assertions.equal(inventory.get_item_count("grain"), 0, "routed market crop fixture leaves backpack empty")
 	assertions.equal(storage.get_count("grain_seed"), 0, "routed market seed fixture leaves storage empty")
@@ -431,9 +431,9 @@ func _test_routed_market_ownership_and_feedback(
 	var seed_row := _find_item_row(panel.item_rows, "grain_seed")
 	assertions.truthy(grain_row != null and seed_row != null, "routed market builds crop and seed rows")
 	if grain_row != null:
-		assertions.equal(int(grain_row.get_meta("owned", -1)), 70, "crop row reads farm-storage ownership")
+		assertions.equal(int(grain_row.get_meta("owned", -1)), 7, "crop row reads farm-storage ownership")
 		assertions.truthy(
-			(grain_row.get_node("Content/SelectButton") as Button).text.contains("持有 70"),
+			(grain_row.get_node("Content/SelectButton") as Button).text.contains("持有 7"),
 			"crop row copy shows farm-storage ownership"
 		)
 	if seed_row != null:
@@ -447,9 +447,13 @@ func _test_routed_market_ownership_and_feedback(
 	panel.select_item("grain")
 	var trade := panel.trade_panel as TradePanel
 	assertions.truthy(panel.detail_card.visible, "crop selection opens the compact detail drawer")
-	assertions.equal(trade.player_quantity_label.text, "70", "detail drawer reads stored crop quantity")
+	assertions.equal(trade.player_quantity_label.text, "7", "detail drawer reads stored crop quantity")
+	assertions.truthy(
+		market.get_stock("grain") > economy.get_owned_quantity("grain"),
+		"sell-maximum fixture keeps market stock above routed player ownership"
+	)
 	trade.max_button.pressed.emit()
-	assertions.equal(int(trade.quantity_spin.value), 70, "maximum action reaches authoritative crop sell maximum")
+	assertions.equal(int(trade.quantity_spin.value), 7, "maximum action reaches authoritative crop sell maximum")
 	assertions.truthy(not trade.sell_button.disabled, "stored crop enables selling at the authoritative maximum")
 
 	trade.quantity_spin.value = 30
@@ -461,9 +465,9 @@ func _test_routed_market_ownership_and_feedback(
 		"trade panel listens for farm-storage capacity changes"
 	)
 	assertions.truthy(not event_bus.is_blocking_signals(), "capacity feedback fixture starts with publishable EventBus")
-	provider.capacity = 70
+	provider.capacity = 7
 	storage.refresh_capacity()
-	assertions.equal(storage.get_total_capacity(), 70, "capacity feedback fixture refreshes authoritative capacity")
+	assertions.equal(storage.get_total_capacity(), 7, "capacity feedback fixture refreshes authoritative capacity")
 	assertions.truthy(not trade.confirmation_layer.visible, "capacity change invalidates pending crop purchase")
 	assertions.equal(
 		trade.feedback_label.text,
@@ -471,7 +475,7 @@ func _test_routed_market_ownership_and_feedback(
 		"confirmation displays the authoritative exact capacity shortage"
 	)
 
-	provider.capacity = 68
+	provider.capacity = 5
 	storage.refresh_capacity()
 	trade.quantity_spin.value = 1
 	trade.refresh_quote()
@@ -492,7 +496,7 @@ func _test_routed_market_ownership_and_feedback(
 
 	provider.capacity = 200
 	storage.refresh_capacity()
-	assertions.truthy(storage.remove_items({"grain": 69}), "routed market storage event changes crop ownership")
+	assertions.truthy(storage.remove_items({"grain": 6}), "routed market storage event changes crop ownership")
 	await tree.process_frame
 	grain_row = _find_item_row(panel.item_rows, "grain")
 	assertions.equal(int(grain_row.get_meta("owned", -1)), 1, "storage event refreshes market row ownership")

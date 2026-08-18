@@ -366,19 +366,16 @@ func _on_quantity_gui_input(event: InputEvent) -> void:
 
 
 func _on_max_pressed() -> void:
-	if market_ref == null or economy_ref == null:
+	if not is_instance_valid(economy_ref):
 		return
-	var state := market_ref.get_item_state(item_id)
-	var stock := int(state.get("stock", 0))
 	var owned := _owned_quantity()
 	var maximum := 0
 	var low := 1
-	var high := mini(MAX_UI_QUANTITY, maxi(stock, owned))
+	var high := mini(MAX_UI_QUANTITY, owned)
 	while low <= high:
 		var quantity := floori(float(low + high) / 2.0)
-		var can_buy := bool(_trade_preflight(quantity, true).get("ok", false))
 		var can_sell := bool(_trade_preflight(quantity, false).get("ok", false))
-		if can_buy or can_sell:
+		if can_sell:
 			maximum = quantity
 			low = quantity + 1
 		else:
