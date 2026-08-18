@@ -318,23 +318,41 @@ func _test_composable_publish_observes_final_state(assertions: TestAssert, tree:
 	assertions.equal(recorder.records.size(), 0, "seal publishes no EventBus events")
 	assertions.equal(recorder.quick_records.size(), 0, "seal publishes no quick mapping events")
 	assertions.equal(recorder.local_storage_records.size(), 0, "seal publishes no storage events")
+	var has_finalize: bool = (
+		fixture.router.has_method("finalize_sealed_publication")
+		and fixture.router.has_method("dispatch_finalized_publication")
+	)
+	assertions.truthy(has_finalize, "router exposes finalized publication batches")
+	if not has_finalize:
+		fixture.router.cancel_sealed_transaction(publication)
+		_disconnect_recorder(fixture, tree, recorder)
+		_free_fixture(fixture)
+		return
 	var outer_events := [0]
 	var on_outer_event := func(_gold: int) -> void: outer_events[0] += 1
 	tree.root.get_node("EventBus").gold_changed.connect(on_outer_event)
 	tree.root.get_node("EventBus").gold_changed.emit(99)
 	assertions.equal(outer_events[0], 1, "sealed router does not swallow outer-domain events")
 	tree.root.get_node("EventBus").gold_changed.disconnect(on_outer_event)
-	assertions.truthy(fixture.router.arm_sealed_transaction(publication), "outer domain arms publication")
-	assertions.truthy(not fixture.router.arm_sealed_transaction(publication), "publication cannot arm twice")
-	assertions.truthy(not fixture.router.cancel_sealed_transaction(publication), "armed publication cannot cancel")
-	assertions.truthy(fixture.router.publish_sealed_transaction(publication), "armed publication publishes")
+	var batch: Variant = fixture.router.call("finalize_sealed_publication", publication)
+	assertions.truthy(batch is RefCounted, "router finalizes publication to a batch")
+	assertions.equal(recorder.records.size(), 0, "router finalize emits no EventBus event")
+	assertions.equal(recorder.quick_records.size(), 0, "router finalize emits no mapping event")
+	assertions.equal(recorder.local_storage_records.size(), 0, "router finalize emits no storage event")
+	assertions.truthy(
+		bool(fixture.router.call("dispatch_finalized_publication", batch)),
+		"router finalized batch dispatches"
+	)
 	assertions.equal(recorder.records.size(), 2, "publish emits both container EventBus events")
 	assertions.equal(recorder.quick_records.size(), 1, "publish emits deferred quick mapping event")
 	assertions.equal(recorder.local_storage_records.size(), 1, "publish emits deferred storage event")
 	for record in recorder.records + recorder.quick_records + recorder.local_storage_records:
 		assertions.equal(record.wood, 0, "publish listener sees final inventory state")
 		assertions.equal(record.grain, 0, "publish listener sees final storage state")
-	assertions.truthy(not fixture.router.publish_sealed_transaction(publication), "publication cannot publish twice")
+	assertions.truthy(
+		not bool(fixture.router.call("dispatch_finalized_publication", batch)),
+		"router finalized batch cannot dispatch twice"
+	)
 	_disconnect_recorder(fixture, tree, recorder)
 	_free_fixture(fixture)
 

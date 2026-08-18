@@ -29,7 +29,10 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions = TestAssertScript.new()
-	for script_value in [ItemContainerRouterTest, MarketMathTest, MarketSystemTest, EconomyTransactionsTest]:
+	for script_value in [
+		ItemContainerRouterTest, MarketMathTest, MarketSystemTest,
+		EconomyTransactionsTest, NpcEconomySystemTest,
+	]:
 		assertions.truthy(
 			script_value != null and script_value.can_instantiate(),
 			"Task2 economy script compiles: " + str(script_value.resource_path)
@@ -49,7 +52,7 @@ func _run() -> void:
 	EconomyWalletTest.new().run(assertions)
 	MarketCatalogTest.new().run(assertions)
 	MarketMathTest.new().run(assertions)
-	MarketSystemTest.new().run(assertions)
+	await MarketSystemTest.new().run(assertions, self)
 	EconomyTransactionsTest.new().run(assertions)
 	print("[task2-trade] complete: %d checks" % (assertions.checks - task2_checks_before))
 	print("[economy-suite] simulation and save")

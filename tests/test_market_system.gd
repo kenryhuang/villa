@@ -4,7 +4,7 @@ const MarketSystem = preload("res://scripts/systems/market_system.gd")
 const EconomyLimits = preload("res://scripts/core/economy_limits.gd")
 
 
-func run(assertions: TestAssert) -> void:
+func run(assertions: TestAssert, tree: SceneTree = null) -> void:
 	_test_finite_stock_ledger_and_quotes(assertions)
 	_test_seed_and_crop_market_entries_are_independent(assertions)
 	_test_invalid_operations_are_atomic(assertions)
@@ -12,6 +12,8 @@ func run(assertions: TestAssert) -> void:
 	_test_sealed_publication_requires_ownership(assertions)
 	_test_settlement_is_idempotent_and_bounded(assertions)
 	_test_state_is_deep_copied_and_persistent(assertions)
+	if tree != null:
+		await _test_abandoned_state_recovers_without_market_calls(assertions, tree)
 
 
 func _wood_definition() -> Dictionary:
@@ -158,7 +160,12 @@ func _test_safe_ledger_boundaries_and_transaction_rollback(assertions: TestAsser
 	assertions.truthy(rollback_transaction != null, "market transaction begins")
 	assertions.truthy(not market.from_dict(configured), "active market rejects external restore")
 	assertions.truthy(not market.configure([_wood_definition()]), "active market rejects reconfigure")
-	assertions.truthy(market.commit_buy("wood", 1), "market transaction mutates state")
+	assertions.truthy(not market.commit_buy("wood", 1), "active market rejects ownerless buy")
+	assertions.truthy(
+		market.has_method("stage_buy")
+		and bool(market.call("stage_buy", rollback_transaction, "wood", 1)),
+		"owned market transaction stages buy"
+	)
 	assertions.truthy(
 		market.end_atomic_transaction(rollback_transaction, false),
 		"market transaction rolls back"
@@ -171,7 +178,9 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 	var market := MarketSystem.new()
 	assertions.truthy(market.configure([_wood_definition()]), "sealed market fixture configures")
 	var required_methods := [
+		"stage_buy", "stage_sell", "stage_external_demand", "stage_external_supply",
 		"seal_atomic_transaction", "can_arm_sealed_transaction", "arm_sealed_transaction",
+		"finalize_sealed_publication", "dispatch_finalized_publication",
 		"publish_sealed_transaction", "cancel_sealed_transaction", "owns_sealed_transaction",
 	]
 	for method_name in required_methods:
@@ -201,7 +210,31 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 		not market.rollback_atomic_transaction(RefCounted.new()),
 		"forged transaction owner cannot roll back market"
 	)
-	assertions.truthy(market.commit_buy("wood", 1), "owned market transaction mutates")
+	var forged := RefCounted.new()
+	assertions.truthy(not market.commit_buy("wood", 1), "active transaction rejects direct buy")
+	assertions.truthy(not market.commit_sell("wood", 1), "active transaction rejects direct sale")
+	assertions.truthy(not market.add_external_demand("wood", 1), "active transaction rejects direct demand")
+	assertions.truthy(not market.add_external_supply("wood", 1), "active transaction rejects direct supply")
+	assertions.truthy(
+		not bool(market.call("stage_buy", forged, "wood", 1)),
+		"forged owner cannot stage buy"
+	)
+	assertions.truthy(
+		not bool(market.call("stage_sell", forged, "wood", 1)),
+		"forged owner cannot stage sale"
+	)
+	assertions.truthy(
+		not bool(market.call("stage_external_demand", forged, "wood", 1)),
+		"forged owner cannot stage demand"
+	)
+	assertions.truthy(
+		not bool(market.call("stage_external_supply", forged, "wood", 1)),
+		"forged owner cannot stage supply"
+	)
+	assertions.truthy(
+		bool(market.call("stage_buy", transaction, "wood", 1)),
+		"owned market transaction stages buy"
+	)
 	var publication: Variant = market.call("seal_atomic_transaction", transaction)
 	assertions.truthy(publication is RefCounted, "market seal returns an owned publication")
 	if has_transaction_ownership:
@@ -213,7 +246,6 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 		bool(market.call("owns_sealed_transaction", publication)),
 		"market recognizes its publication owner"
 	)
-	var forged := RefCounted.new()
 	assertions.truthy(not bool(market.call("publish_sealed_transaction", null)), "null cannot publish market")
 	assertions.truthy(not bool(market.call("publish_sealed_transaction", forged)), "forged owner cannot publish market")
 	assertions.truthy(not bool(market.call("cancel_sealed_transaction", null)), "null cannot discard market")
@@ -225,24 +257,24 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 	assertions.truthy(not market.add_external_supply("wood", 1), "sealed market rejects supply mutation")
 	assertions.truthy(not market.settle_day(1), "sealed market rejects settlement mutation")
 	assertions.equal(stock_events, [], "sealed market has published no transient event")
+	var batch: Variant = market.call("finalize_sealed_publication", publication)
+	assertions.truthy(batch is RefCounted, "owned market publication finalizes to a batch")
+	assertions.equal(stock_events, [], "market finalize invokes no callback")
 	assertions.truthy(
-		bool(market.call("can_arm_sealed_transaction", publication)),
-		"owned market publication can arm"
+		bool(market.call("dispatch_finalized_publication", batch)),
+		"finalized market batch dispatches"
 	)
-	assertions.truthy(bool(market.call("arm_sealed_transaction", publication)), "market publication arms")
+	assertions.equal(stock_events, [9], "finalized market batch emits exactly once")
 	assertions.truthy(
-		not bool(market.call("cancel_sealed_transaction", publication)),
-		"armed market publication cannot roll back"
-	)
-	assertions.truthy(bool(market.call("publish_sealed_transaction", publication)), "owned market publishes")
-	assertions.equal(stock_events, [9], "owned market publication emits exactly once")
-	assertions.truthy(
-		not bool(market.call("publish_sealed_transaction", publication)),
-		"consumed market publication cannot replay"
+		not bool(market.call("dispatch_finalized_publication", batch)),
+		"finalized market batch cannot replay"
 	)
 	var committed_state := market.to_dict()
 	var cancel_transaction: Variant = market.begin_atomic_transaction()
-	assertions.truthy(market.commit_sell("wood", 1), "cancellable market transaction mutates")
+	assertions.truthy(
+		bool(market.call("stage_sell", cancel_transaction, "wood", 1)),
+		"cancellable market transaction stages"
+	)
 	var cancel_publication: Variant = market.call("seal_atomic_transaction", cancel_transaction)
 	assertions.truthy(
 		bool(market.call("cancel_sealed_transaction", cancel_publication)),
@@ -250,6 +282,71 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 	)
 	assertions.equal(market.to_dict(), committed_state, "owned market cancellation restores exact state")
 	assertions.equal(stock_events, [9], "market cancellation emits no event")
+	market.free()
+
+
+func _test_abandoned_state_recovers_without_market_calls(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var market := MarketSystem.new()
+	tree.root.add_child(market)
+	assertions.truthy(market.configure([_wood_definition()]), "abandonment market configures")
+	var stock_events: Array[int] = []
+	market.market_stock_changed.connect(func(_item_id: String, stock: int) -> void:
+		stock_events.append(stock)
+	)
+	if not market.has_method("stage_buy"):
+		assertions.truthy(false, "abandonment requires token-owned staging")
+		market.free()
+		return
+
+	var active_owner: Variant = market.begin_atomic_transaction()
+	assertions.truthy(
+		bool(market.call("stage_buy", active_owner, "wood", 1)),
+		"abandoned active fixture stages"
+	)
+	active_owner = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(market.get_stock("wood"), 10, "active owner abandonment rolls back across frames")
+	assertions.equal(stock_events, [], "active owner abandonment emits nothing")
+	assertions.truthy(not market.is_processing(), "active recovery disables monitor")
+
+	var sealed_owner: Variant = market.begin_atomic_transaction()
+	market.call("stage_buy", sealed_owner, "wood", 1)
+	var abandoned_seal: Variant = market.seal_atomic_transaction(sealed_owner)
+	abandoned_seal = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(market.get_stock("wood"), 10, "unarmed publication abandonment rolls back")
+	assertions.equal(stock_events, [], "unarmed publication abandonment is silent")
+
+	var armed_owner: Variant = market.begin_atomic_transaction()
+	market.call("stage_buy", armed_owner, "wood", 1)
+	var armed_seal: Variant = market.seal_atomic_transaction(armed_owner)
+	assertions.truthy(market.arm_sealed_transaction(armed_seal), "armed abandonment fixture arms")
+	armed_seal = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(market.get_stock("wood"), 9, "armed publication abandonment keeps committed state")
+	assertions.equal(stock_events, [9], "armed publication abandonment dispatches exactly once")
+	assertions.truthy(not market.is_processing(), "armed recovery disables monitor")
+
+	var read_owner: Variant = market.begin_atomic_transaction()
+	market.call("stage_buy", read_owner, "wood", 1)
+	read_owner = null
+	assertions.equal(market.to_dict().items.wood.stock, 9, "to_dict recovers abandoned active state")
+
+	var reparent_owner: Variant = market.begin_atomic_transaction()
+	market.call("stage_buy", reparent_owner, "wood", 1)
+	tree.root.remove_child(market)
+	assertions.equal(market.get_stock("wood"), 9, "exit tree rolls back active state")
+	tree.root.add_child(market)
+	await tree.process_frame
+	var second_owner: Variant = market.begin_atomic_transaction()
+	assertions.truthy(second_owner != null, "reparented market accepts a new transaction")
+	market.rollback_atomic_transaction(second_owner)
 	market.free()
 
 

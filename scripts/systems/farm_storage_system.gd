@@ -3,6 +3,7 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 const DEFAULT_CAPACITY := 200
 
 signal contents_changed(changes: Dictionary)
@@ -95,8 +96,7 @@ func commit_atomic_transaction(token: Variant) -> bool:
 	var publication := seal_atomic_transaction(token)
 	if publication == null:
 		return false
-	publish_sealed_transaction(publication)
-	return true
+	return publish_sealed_transaction(publication)
 
 
 func seal_atomic_transaction(token: Variant) -> RefCounted:
@@ -133,13 +133,13 @@ func seal_atomic_transaction(token: Variant) -> RefCounted:
 	return publication
 
 
-func publish_sealed_transaction(publication: Variant) -> void:
+func publish_sealed_transaction(publication: Variant) -> bool:
 	if not owns_sealed_transaction(publication):
-		push_error("Invalid storage publication ownership")
-		return
+		return false
 	if not _sealed_armed:
 		arm_sealed_transaction(publication)
-	_publish_sealed_transaction()
+	var batch := finalize_sealed_publication(publication)
+	return dispatch_finalized_publication(batch)
 
 
 func can_arm_sealed_transaction(publication: Variant) -> bool:
@@ -153,11 +153,57 @@ func arm_sealed_transaction(publication: Variant) -> void:
 	_sealed_armed = true
 
 
-func _publish_sealed_transaction() -> void:
+func finalize_sealed_publication(publication: Variant) -> RefCounted:
+	if not owns_sealed_transaction(publication):
+		return null
+	return _finalize_sealed_publication()
+
+
+func dispatch_finalized_publication(batch: Variant) -> bool:
+	return (
+		batch is RefCounted
+		and batch.get_script() == FinalizedPublicationBatchScript
+		and bool(batch.call("is_from", self))
+		and bool(batch.call("dispatch"))
+	)
+
+
+func _finalize_sealed_publication() -> RefCounted:
+	if _sealed_publication_owner == null:
+		return null
 	_clear_sealed_transaction()
 	_flush_pending_capacity_refresh()
+	var queued_batches := _notification_queue.duplicate(true)
+	_notification_queue.clear()
 	_notification_dispatch_suspended = false
-	_drain_notification_queue()
+	var actions: Array[Dictionary] = []
+	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	for batch_value in queued_batches:
+		var batch := batch_value as Dictionary
+		var changes: Dictionary = batch.get("changes", {})
+		if not changes.is_empty():
+			actions.append({
+				"local_target": self,
+				"local_signal": &"contents_changed",
+				"event_bus": event_bus,
+				"bus_signal": &"farm_storage_changed",
+				"arguments": [changes.duplicate(true)],
+			})
+		if bool(batch.get("capacity_changed", false)):
+			actions.append({
+				"local_target": self,
+				"local_signal": &"capacity_changed",
+				"event_bus": event_bus,
+				"bus_signal": &"farm_storage_capacity_changed",
+				"arguments": [int(batch.get("used", 0)), int(batch.get("total", 0))],
+			})
+	return FinalizedPublicationBatchScript.new(self, actions)
+
+
+func _publish_sealed_transaction() -> void:
+	var batch := _finalize_sealed_publication()
+	if batch != null:
+		FinalizedPublicationBatchScript.dispatch_all([batch])
 
 
 func owns_sealed_transaction(publication: Variant) -> bool:

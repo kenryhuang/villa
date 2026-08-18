@@ -2,8 +2,8 @@ class_name MarketSystem
 extends Node
 
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
-
 const MarketMath = preload("res://scripts/shared/market_math.gd")
+const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
@@ -26,10 +26,40 @@ var _sealed_price_events: Dictionary = {}
 var _sealed_settlement_day := 0
 var _sealed_armed := false
 var _publication_in_progress := false
+var _tearing_down := false
+
+
+func _init() -> void:
+	set_process(false)
+
+
+func _enter_tree() -> void:
+	_tearing_down = false
+	_update_process_monitor()
 
 
 func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	_update_process_monitor()
+
+
+func _process(_delta: float) -> void:
+	_recover_abandoned_state()
+	_update_process_monitor()
+
+
+func _exit_tree() -> void:
+	_tearing_down = true
+	set_process(false)
+	if _has_atomic_state():
+		_rollback_abandoned_transaction()
+	if _has_sealed_state():
+		if _sealed_armed:
+			var batch := _finalize_sealed_publication()
+			if batch != null:
+				FinalizedPublicationBatchScript.dispatch_all([batch])
+		else:
+			_cancel_sealed_publication()
 
 
 func configure(item_definitions: Array) -> bool:
@@ -82,24 +112,28 @@ func configure(item_definitions: Array) -> bool:
 
 
 func get_item_state(item_id: String) -> Dictionary:
+	_recover_abandoned_state()
 	if not _items.has(item_id):
 		return {}
 	return (_items[item_id] as Dictionary).duplicate(true)
 
 
 func get_stock(item_id: String) -> int:
+	_recover_abandoned_state()
 	if not _items.has(item_id):
 		return 0
 	return int((_items[item_id] as Dictionary).get("stock", 0))
 
 
 func get_mid_price(item_id: String) -> int:
+	_recover_abandoned_state()
 	if not _items.has(item_id):
 		return 0
 	return int((_items[item_id] as Dictionary).get("mid_price", 0))
 
 
 func get_history(item_id: String) -> Array:
+	_recover_abandoned_state()
 	if not _items.has(item_id):
 		return []
 	var history: Array = (_items[item_id] as Dictionary).get("history", [])
@@ -107,6 +141,7 @@ func get_history(item_id: String) -> Array:
 
 
 func quote_buy(item_id: String, quantity: int) -> int:
+	_recover_abandoned_state()
 	if quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY or not _items.has(item_id):
 		return 0
 	var state: Dictionary = _items[item_id]
@@ -119,6 +154,7 @@ func quote_buy(item_id: String, quantity: int) -> int:
 
 
 func quote_sell(item_id: String, quantity: int) -> int:
+	_recover_abandoned_state()
 	if quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY or not _items.has(item_id):
 		return 0
 	var state: Dictionary = _items[item_id]
@@ -131,6 +167,7 @@ func quote_sell(item_id: String, quantity: int) -> int:
 
 
 func can_buy(item_id: String, quantity: int) -> bool:
+	_recover_abandoned_state()
 	return (
 		quantity > 0
 		and quantity <= EconomyLimitsScript.MAX_TRADE_QUANTITY
@@ -143,12 +180,14 @@ func begin_atomic_transaction() -> RefCounted:
 	_recover_abandoned_state()
 	if _items.is_empty() or _has_atomic_state() or _has_sealed_state() or _publication_in_progress:
 		return null
+	var snapshot := to_dict()
 	var token := RefCounted.new()
 	_transaction_owner = weakref(token)
-	_transaction_snapshot = to_dict()
+	_transaction_snapshot = snapshot
 	_pending_stock_events.clear()
 	_pending_price_events.clear()
 	_pending_settlement_day = 0
+	_update_process_monitor()
 	return token
 
 
@@ -157,12 +196,11 @@ func end_atomic_transaction(transaction: Variant, commit_changes: Variant = null
 		return false
 	if not commit_changes:
 		return rollback_atomic_transaction(transaction)
-	var stock_events := _pending_stock_events.duplicate()
-	var price_events := _pending_price_events.duplicate()
-	var settlement_day := _pending_settlement_day
-	_clear_transaction_state()
-	_publish_immediate_events(stock_events, price_events, settlement_day)
-	return true
+	var publication := seal_atomic_transaction(transaction)
+	if publication == null:
+		return false
+	var batch := finalize_sealed_publication(publication)
+	return dispatch_finalized_publication(batch)
 
 
 func rollback_atomic_transaction(transaction: Variant) -> bool:
@@ -190,6 +228,7 @@ func seal_atomic_transaction(transaction: Variant) -> RefCounted:
 	_sealed_settlement_day = _pending_settlement_day
 	_sealed_armed = false
 	_clear_transaction_state()
+	_update_process_monitor()
 	return publication
 
 
@@ -227,16 +266,31 @@ func publish_sealed_transaction(publication: Variant) -> bool:
 		return false
 	if not _sealed_armed and not arm_sealed_transaction(publication):
 		return false
-	return _publish_sealed_transaction()
+	var batch := finalize_sealed_publication(publication)
+	return dispatch_finalized_publication(batch)
+
+
+func finalize_sealed_publication(publication: Variant) -> RefCounted:
+	_recover_abandoned_state()
+	if _publication_in_progress or not _owns_sealed_transaction(publication):
+		return null
+	return _finalize_sealed_publication()
+
+
+func dispatch_finalized_publication(batch: Variant) -> bool:
+	return (
+		batch is RefCounted
+		and batch.get_script() == FinalizedPublicationBatchScript
+		and bool(batch.call("is_from", self))
+		and bool(batch.call("dispatch"))
+	)
 
 
 func cancel_sealed_transaction(publication: Variant) -> bool:
 	_recover_abandoned_state()
 	if not _owns_sealed_transaction(publication) or _sealed_armed or _publication_in_progress:
 		return false
-	var before := _sealed_snapshot.duplicate(true)
-	_clear_sealed_state()
-	return _restore_transaction_snapshot(before)
+	return _cancel_sealed_publication()
 
 
 func owns_sealed_transaction(publication: Variant) -> bool:
@@ -245,7 +299,20 @@ func owns_sealed_transaction(publication: Variant) -> bool:
 
 
 func commit_buy(item_id: String, quantity: int) -> bool:
-	if not _can_mutate() or not can_buy(item_id, quantity):
+	if not _can_direct_mutate():
+		return false
+	return _apply_buy(item_id, quantity)
+
+
+func stage_buy(transaction: Variant, item_id: String, quantity: int) -> bool:
+	_recover_abandoned_state()
+	if not _owns_atomic_transaction(transaction):
+		return false
+	return _apply_buy(item_id, quantity)
+
+
+func _apply_buy(item_id: String, quantity: int) -> bool:
+	if not can_buy(item_id, quantity):
 		return false
 	var state: Dictionary = _items[item_id]
 	if not _can_add_safely(int(state.get("demand", -1)), quantity):
@@ -258,9 +325,21 @@ func commit_buy(item_id: String, quantity: int) -> bool:
 
 
 func commit_sell(item_id: String, quantity: int) -> bool:
+	if not _can_direct_mutate():
+		return false
+	return _apply_sell(item_id, quantity)
+
+
+func stage_sell(transaction: Variant, item_id: String, quantity: int) -> bool:
+	_recover_abandoned_state()
+	if not _owns_atomic_transaction(transaction):
+		return false
+	return _apply_sell(item_id, quantity)
+
+
+func _apply_sell(item_id: String, quantity: int) -> bool:
 	if (
-		not _can_mutate()
-		or quantity <= 0
+		quantity <= 0
 		or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY
 		or not _items.has(item_id)
 	):
@@ -279,30 +358,46 @@ func commit_sell(item_id: String, quantity: int) -> bool:
 
 
 func add_external_demand(item_id: String, quantity: int) -> bool:
-	if not _can_mutate() or quantity <= 0 or not _items.has(item_id):
+	if not _can_direct_mutate():
 		return false
-	var state: Dictionary = _items[item_id]
-	if not _can_add_safely(int(state.get("demand", -1)), quantity):
+	return _apply_external_flow(item_id, quantity, true)
+
+
+func stage_external_demand(transaction: Variant, item_id: String, quantity: int) -> bool:
+	_recover_abandoned_state()
+	if not _owns_atomic_transaction(transaction):
 		return false
-	state["demand"] = int(state.get("demand", 0)) + quantity
-	_items[item_id] = state
-	return true
+	return _apply_external_flow(item_id, quantity, true)
 
 
 func add_external_supply(item_id: String, quantity: int) -> bool:
-	if not _can_mutate() or quantity <= 0 or not _items.has(item_id):
+	if not _can_direct_mutate():
+		return false
+	return _apply_external_flow(item_id, quantity, false)
+
+
+func stage_external_supply(transaction: Variant, item_id: String, quantity: int) -> bool:
+	_recover_abandoned_state()
+	if not _owns_atomic_transaction(transaction):
+		return false
+	return _apply_external_flow(item_id, quantity, false)
+
+
+func _apply_external_flow(item_id: String, quantity: int, is_demand: bool) -> bool:
+	if quantity <= 0 or not _items.has(item_id):
 		return false
 	var state: Dictionary = _items[item_id]
-	if not _can_add_safely(int(state.get("supply", -1)), quantity):
+	var field := "demand" if is_demand else "supply"
+	if not _can_add_safely(int(state.get(field, -1)), quantity):
 		return false
-	state["supply"] = int(state.get("supply", 0)) + quantity
+	state[field] = int(state.get(field, 0)) + quantity
 	_items[item_id] = state
 	return true
 
 
 func can_settle_day(total_day: int) -> bool:
 	return (
-		_can_mutate()
+		_can_direct_mutate()
 		and EconomyLimitsScript.is_safe_date(total_day, false)
 		and total_day > last_settled_day
 		and not _items.is_empty()
@@ -352,6 +447,7 @@ func settle_day(
 
 
 func to_dict() -> Dictionary:
+	_recover_abandoned_state()
 	return {
 		"last_settled_day": last_settled_day,
 		"items": _items.duplicate(true),
@@ -561,23 +657,80 @@ func _restore_transaction_snapshot(snapshot: Dictionary) -> bool:
 	return to_dict() == snapshot
 
 
-func _can_mutate() -> bool:
+func _can_direct_mutate() -> bool:
 	_recover_abandoned_state()
-	return not _has_sealed_state() and not _publication_in_progress
+	return not _has_atomic_state() and not _has_sealed_state() and not _publication_in_progress
 
 
-func _publish_sealed_transaction() -> bool:
+func _finalize_sealed_publication() -> RefCounted:
 	if not _has_sealed_state() or _publication_in_progress:
-		return false
+		return null
 	var stock_events := _sealed_stock_events.duplicate()
 	var price_events := _sealed_price_events.duplicate()
 	var settlement_day := _sealed_settlement_day
-	_publication_in_progress = true
 	_clear_sealed_state()
-	_publish_committed_events(stock_events, price_events, settlement_day)
+	var actions: Array[Dictionary] = []
+	for item_id in stock_events:
+		actions.append({
+			"local_target": self,
+			"local_signal": &"market_stock_changed",
+			"event_bus": _event_bus,
+			"bus_signal": &"market_stock_changed",
+			"arguments": [str(item_id), int(stock_events[item_id])],
+		})
+	for item_id in price_events:
+		actions.append({
+			"local_target": self,
+			"local_signal": &"market_price_changed",
+			"event_bus": _event_bus,
+			"bus_signal": &"market_price_changed",
+			"arguments": [str(item_id), int(price_events[item_id])],
+		})
+	if settlement_day > 0:
+		actions.append({
+			"local_target": self,
+			"local_signal": &"market_settled",
+			"event_bus": _event_bus,
+			"bus_signal": &"market_settled",
+			"arguments": [settlement_day],
+		})
+	_update_process_monitor()
+	return FinalizedPublicationBatchScript.new(
+		self,
+		actions,
+		[],
+		Callable(self, "_begin_finalized_dispatch"),
+		Callable(self, "_end_finalized_dispatch")
+	)
+
+
+func _publish_sealed_transaction() -> bool:
+	var batch := _finalize_sealed_publication()
+	return batch != null and FinalizedPublicationBatchScript.dispatch_all([batch])
+
+
+func _cancel_sealed_publication() -> bool:
+	if not _has_sealed_state():
+		return false
+	var before := _sealed_snapshot.duplicate(true)
+	_clear_sealed_state()
+	return _restore_transaction_snapshot(before)
+
+
+func _rollback_abandoned_transaction() -> bool:
+	if not _has_atomic_state():
+		return false
+	var before := _transaction_snapshot.duplicate(true)
+	_clear_transaction_state()
+	return _restore_transaction_snapshot(before)
+
+
+func _begin_finalized_dispatch() -> void:
+	_publication_in_progress = true
+
+
+func _end_finalized_dispatch() -> void:
 	_publication_in_progress = false
-	_ensure_event_bus_unblocked()
-	return true
 
 
 func _publish_committed_events(
@@ -649,16 +802,12 @@ func _recover_abandoned_state() -> void:
 	if _has_atomic_state() and (
 		_transaction_owner == null or _transaction_owner.get_ref() == null
 	):
-		var before := _transaction_snapshot.duplicate(true)
-		_clear_transaction_state()
-		_restore_transaction_snapshot(before)
+		_rollback_abandoned_transaction()
 	if _has_sealed_state() and (_sealed_owner == null or _sealed_owner.get_ref() == null):
 		if _sealed_armed:
 			_publish_sealed_transaction()
 		else:
-			var before := _sealed_snapshot.duplicate(true)
-			_clear_sealed_state()
-			_restore_transaction_snapshot(before)
+			_cancel_sealed_publication()
 
 
 func _clear_transaction_state() -> void:
@@ -667,6 +816,7 @@ func _clear_transaction_state() -> void:
 	_pending_stock_events.clear()
 	_pending_price_events.clear()
 	_pending_settlement_day = 0
+	_update_process_monitor()
 
 
 func _clear_sealed_state() -> void:
@@ -676,3 +826,10 @@ func _clear_sealed_state() -> void:
 	_sealed_price_events.clear()
 	_sealed_settlement_day = 0
 	_sealed_armed = false
+	_update_process_monitor()
+
+
+func _update_process_monitor() -> void:
+	if _tearing_down or not is_inside_tree():
+		return
+	set_process(_has_atomic_state() or _has_sealed_state())

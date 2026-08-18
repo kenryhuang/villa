@@ -53,8 +53,11 @@ func configure(
 ) -> bool:
 	if not _has_methods(market_system, [
 		"get_item_state", "get_stock", "quote_buy", "quote_sell",
-		"can_buy", "commit_buy", "commit_sell", "add_external_demand",
-		"to_dict", "from_dict", "begin_atomic_transaction", "end_atomic_transaction",
+		"can_buy", "add_external_demand", "to_dict", "from_dict",
+		"begin_atomic_transaction", "rollback_atomic_transaction", "owns_atomic_transaction",
+		"stage_buy", "stage_sell", "seal_atomic_transaction", "owns_sealed_transaction",
+		"cancel_sealed_transaction", "finalize_sealed_publication",
+		"dispatch_finalized_publication",
 	]):
 		return false
 	var candidate_definitions := _market_definitions(market_system)
@@ -453,23 +456,7 @@ func _buy_bundle(state: NpcEconomyState, purchases: Dictionary) -> bool:
 		total_cost += quote
 	if state.gold < total_cost:
 		return false
-	var market_before: Dictionary = _market_system.call("to_dict")
-	var market_transaction: Variant = _market_system.call("begin_atomic_transaction")
-	if market_transaction == null:
-		return false
-	for item_id_value in purchases.keys():
-		var item_id := str(item_id_value)
-		var quantity := int(purchases[item_id])
-		if not bool(_market_system.call("commit_buy", item_id, quantity)):
-			_market_system.call("from_dict", market_before)
-			_market_system.call("end_atomic_transaction", market_transaction, false)
-			return false
-	state.gold -= total_cost
-	for item_id_value in purchases.keys():
-		var item_id := str(item_id_value)
-		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) + int(purchases[item_id])
-	_market_system.call("end_atomic_transaction", market_transaction, true)
-	return true
+	return _execute_market_bundle(state, purchases, total_cost, true)
 
 
 func _sell_bundle(state: NpcEconomyState, sales: Dictionary) -> bool:
@@ -485,23 +472,91 @@ func _sell_bundle(state: NpcEconomyState, sales: Dictionary) -> bool:
 		if quote <= 0:
 			return false
 		total_income += quote
+	return _execute_market_bundle(state, sales, total_income, false)
+
+
+func _execute_market_bundle(
+	state: NpcEconomyState,
+	items: Dictionary,
+	total: int,
+	is_buy: bool
+) -> bool:
+	var npc_before := state.to_dict()
 	var market_before: Dictionary = _market_system.call("to_dict")
-	var market_transaction: Variant = _market_system.call("begin_atomic_transaction")
-	if market_transaction == null:
+	var transaction: Variant = _market_system.call("begin_atomic_transaction")
+	if transaction == null:
 		return false
-	for item_id_value in sales.keys():
-		var item_id := str(item_id_value)
-		var quantity := int(sales[item_id])
-		if not bool(_market_system.call("commit_sell", item_id, quantity)):
-			_market_system.call("from_dict", market_before)
-			_market_system.call("end_atomic_transaction", market_transaction, false)
+	var item_ids: Array[String] = []
+	for item_id_value in items:
+		item_ids.append(str(item_id_value))
+	item_ids.sort()
+	for item_id in item_ids:
+		if not bool(_market_system.call(
+			"stage_buy" if is_buy else "stage_sell",
+			transaction, item_id, int(items[item_id])
+		)):
+			_restore_failed_market_bundle(
+				state, npc_before, market_before, transaction, null
+			)
 			return false
-	state.gold += total_income
-	for item_id_value in sales.keys():
-		var item_id := str(item_id_value)
-		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) - int(sales[item_id])
-	_market_system.call("end_atomic_transaction", market_transaction, true)
+	var publication: Variant = _market_system.call("seal_atomic_transaction", transaction)
+	if publication == null:
+		_restore_failed_market_bundle(state, npc_before, market_before, transaction, null)
+		return false
+	var batch: Variant = _market_system.call("finalize_sealed_publication", publication)
+	if batch == null:
+		_restore_failed_market_bundle(state, npc_before, market_before, null, publication)
+		return false
+
+	state.gold += -total if is_buy else total
+	for item_id in item_ids:
+		var delta := int(items[item_id]) if is_buy else -int(items[item_id])
+		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) + delta
+	if not bool(_market_system.call("dispatch_finalized_publication", batch)):
+		_restore_failed_market_bundle(state, npc_before, market_before, null, null)
+		return false
 	return true
+
+
+func _restore_failed_market_bundle(
+	state: NpcEconomyState,
+	npc_before: Dictionary,
+	market_before: Dictionary,
+	transaction: Variant,
+	publication: Variant
+) -> bool:
+	var market_restored := _restore_failed_market_transaction(
+		market_before, transaction, publication
+	)
+	var npc_restored := state.from_dict(npc_before)
+	return market_restored and npc_restored
+
+
+func _restore_failed_market_transaction(
+	market_before: Dictionary,
+	transaction: Variant,
+	publication: Variant
+) -> bool:
+	var transaction_restored := true
+	if (
+		transaction != null
+		and bool(_market_system.call("owns_atomic_transaction", transaction))
+	):
+		transaction_restored = bool(_market_system.call(
+			"rollback_atomic_transaction", transaction
+		))
+	elif (
+		publication != null
+		and bool(_market_system.call("owns_sealed_transaction", publication))
+	):
+		transaction_restored = bool(_market_system.call(
+			"cancel_sealed_transaction", publication
+		))
+	var market_restored: bool = _market_system.call("to_dict") == market_before
+	if not market_restored:
+		market_restored = bool(_market_system.call("from_dict", market_before))
+	market_restored = market_restored and _market_system.call("to_dict") == market_before
+	return transaction_restored and market_restored
 
 
 func _protected_targets_met(state: NpcEconomyState) -> bool:
@@ -564,7 +619,21 @@ func _import_essential(item_id: String, total_day: int) -> bool:
 	var import_cost := ceili(local_quote * IMPORT_COST_MULTIPLIER)
 	if local_quote <= 0 or importer.gold < import_cost:
 		return false
-	if not bool(_market_system.call("commit_sell", item_id, quantity)):
+	var npc_before := to_dict()
+	var market_before: Dictionary = _market_system.call("to_dict")
+	var transaction: Variant = _market_system.call("begin_atomic_transaction")
+	if transaction == null:
+		return false
+	if not bool(_market_system.call("stage_sell", transaction, item_id, quantity)):
+		_restore_failed_market_transaction(market_before, transaction, null)
+		return false
+	var publication: Variant = _market_system.call("seal_atomic_transaction", transaction)
+	if publication == null:
+		_restore_failed_market_transaction(market_before, transaction, null)
+		return false
+	var batch: Variant = _market_system.call("finalize_sealed_publication", publication)
+	if batch == null:
+		_restore_failed_market_transaction(market_before, null, publication)
 		return false
 	importer.gold -= import_cost
 	_demand_tags["import:%s" % item_id] = "老李商队高价补货 %s ×%d（成本 %d）" % [
@@ -577,6 +646,10 @@ func _import_essential(item_id: String, total_day: int) -> bool:
 			"quantity": quantity,
 			"departure_day": total_day + 1,
 		})
+	if not bool(_market_system.call("dispatch_finalized_publication", batch)):
+		_restore_failed_market_transaction(market_before, null, null)
+		from_dict(npc_before)
+		return false
 	_emit_event("market_caravan_changed", [
 		EMERGENCY_CARAVAN_ID, item_id, quantity, total_day, true,
 	])

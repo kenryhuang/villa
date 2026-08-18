@@ -130,27 +130,44 @@ class MarketDouble:
 	var fail_next_buy := false
 	var fail_next_sell := false
 	var fail_next_commit_end := false
+	var fail_next_finalize := false
 	var fail_all_restore := false
+	var fail_next_rollback_dirty := false
 
-	func commit_buy(item_id: String, quantity: int) -> bool:
+	func stage_buy(transaction: Variant, item_id: String, quantity: int) -> bool:
 		if fail_next_buy:
 			fail_next_buy = false
-			super.commit_buy(item_id, quantity)
+			super.stage_buy(transaction, item_id, quantity)
 			return false
-		return super.commit_buy(item_id, quantity)
+		return super.stage_buy(transaction, item_id, quantity)
 
-	func commit_sell(item_id: String, quantity: int) -> bool:
+	func stage_sell(transaction: Variant, item_id: String, quantity: int) -> bool:
 		if fail_next_sell:
 			fail_next_sell = false
-			super.commit_sell(item_id, quantity)
+			super.stage_sell(transaction, item_id, quantity)
 			return false
-		return super.commit_sell(item_id, quantity)
+		return super.stage_sell(transaction, item_id, quantity)
 
 	func seal_atomic_transaction(transaction: Variant) -> RefCounted:
 		if fail_next_commit_end:
 			fail_next_commit_end = false
 			return null
 		return super.seal_atomic_transaction(transaction)
+
+	func finalize_sealed_publication(publication: Variant) -> RefCounted:
+		if fail_next_finalize:
+			fail_next_finalize = false
+			return null
+		return super.finalize_sealed_publication(publication)
+
+	func rollback_atomic_transaction(transaction: Variant) -> bool:
+		if fail_next_rollback_dirty:
+			fail_next_rollback_dirty = false
+			var staged := to_dict()
+			super.rollback_atomic_transaction(transaction)
+			super.from_dict(staged)
+			return false
+		return super.rollback_atomic_transaction(transaction)
 
 	func from_dict(data: Dictionary) -> bool:
 		if fail_all_restore:
@@ -193,6 +210,7 @@ class FailingRouter:
 
 	var fail_next_arm := false
 	var fail_next_publish := false
+	var fail_next_finalize := false
 
 	func arm_sealed_transaction(publication: Variant) -> bool:
 		if fail_next_arm:
@@ -211,6 +229,12 @@ class FailingRouter:
 			fail_next_publish = false
 			return false
 		return super.can_publish_sealed_transaction(publication, allow_blocked_event_bus)
+
+	func finalize_sealed_publication(publication: Variant) -> RefCounted:
+		if fail_next_finalize:
+			fail_next_finalize = false
+			return null
+		return super.finalize_sealed_publication(publication)
 
 
 class TradeRecorder:
@@ -379,6 +403,7 @@ func run(assertions: TestAssert) -> void:
 	_test_routed_router_lifecycle_is_required(assertions)
 	_test_routed_trade_publication_is_final_and_nonreentrant(assertions)
 	_test_router_listener_cannot_mutate_or_consume_market_publication(assertions)
+	_test_finalized_dispatch_survives_destroyed_market(assertions)
 	_test_routed_preflight_rejects_unpublishable_outer_state(assertions)
 
 
@@ -700,7 +725,10 @@ func _run_nested_market_rejection(
 	var outer_transaction: Variant = market.begin_atomic_transaction()
 	assertions.truthy(outer_transaction != null, message + " acquires outer market transaction")
 	if queue_outer_stock_event:
-		assertions.truthy(market.commit_buy("wood", 1), message + " queues outer stock event")
+		assertions.truthy(
+			market.stage_buy(outer_transaction, "wood", 1),
+			message + " queues outer stock event"
+		)
 	var before := _snapshot(inventory, wallet, market)
 	inventory.fail_next_add = inject_destination_failure
 	var trade_result := economy.buy_item("wood", 1) if is_buy else economy.sell_item("wood", 1)
@@ -799,7 +827,7 @@ func _make_routed_fixture(capacity: int = FarmStorageSystem.DEFAULT_CAPACITY) ->
 
 func _free_routed_fixture(fixture: Dictionary) -> void:
 	for key in ["economy", "router", "storage", "market", "wallet", "inventory"]:
-		var node: Node = fixture.get(key)
+		var node: Variant = fixture.get(key)
 		if is_instance_valid(node):
 			node.free()
 
@@ -1005,7 +1033,7 @@ func _test_routed_trade_failures_restore_all_domains(assertions: TestAssert) -> 
 	var cases := [
 		{"name": "wallet spend", "is_buy": true, "item_id": "grain_seed", "failure": "spend"},
 		{"name": "market buy commit", "is_buy": true, "item_id": "grain", "failure": "market_buy"},
-		{"name": "container buy commit", "is_buy": true, "item_id": "grain", "failure": "container_arm"},
+		{"name": "container buy finalize", "is_buy": true, "item_id": "grain", "failure": "container_finalize"},
 		{"name": "container sale mutation", "is_buy": false, "item_id": "grain", "failure": "storage_remove"},
 		{"name": "market sale commit", "is_buy": false, "item_id": "grain_seed", "failure": "market_sell"},
 		{"name": "wallet credit", "is_buy": false, "item_id": "grain", "failure": "add"},
@@ -1024,8 +1052,8 @@ func _test_routed_trade_failures_restore_all_domains(assertions: TestAssert) -> 
 				fixture.wallet.fail_next_spend = true
 			"market_buy":
 				fixture.market.fail_next_buy = true
-			"container_arm":
-				fixture.router.fail_next_arm = true
+			"container_finalize":
+				fixture.router.fail_next_finalize = true
 			"storage_remove":
 				fixture.storage.fail_next_remove = true
 			"market_sell":
@@ -1098,16 +1126,23 @@ func _test_routed_trade_bounds_and_ledger_preflight(assertions: TestAssert) -> v
 
 func _test_routed_finalization_failures_are_atomic(assertions: TestAssert) -> void:
 	for failure in [
-		"market_end", "router_publish", "persistent_market_restore", "persistent_wallet_compensation"
+		"market_seal", "market_finalize", "router_finalize",
+		"rollback_false_dirty_market", "persistent_market_restore",
+		"persistent_wallet_compensation"
 	]:
 		var fixture := _make_routed_fixture()
 		var recorder := _connect_trade_recorder(fixture)
 		var before := _routed_snapshot(fixture)
 		match failure:
-			"market_end":
+			"market_seal":
 				fixture.market.fail_next_commit_end = true
-			"router_publish":
-				fixture.router.fail_next_publish = true
+			"market_finalize":
+				fixture.market.fail_next_finalize = true
+			"router_finalize":
+				fixture.router.fail_next_finalize = true
+			"rollback_false_dirty_market":
+				fixture.market.fail_next_buy = true
+				fixture.market.fail_next_rollback_dirty = true
 			"persistent_market_restore":
 				fixture.market.fail_next_buy = true
 				fixture.market.fail_all_restore = true
@@ -1116,6 +1151,14 @@ func _test_routed_finalization_failures_are_atomic(assertions: TestAssert) -> vo
 		assertions.truthy(not fixture.economy.buy_item("grain_seed", 1), failure + " is reported")
 		_assert_routed_snapshot(assertions, before, fixture, failure)
 		_assert_trade_recorder_silent(assertions, recorder, failure)
+		var router_probe: Variant = fixture.router.begin_atomic_transaction()
+		assertions.truthy(router_probe != null, failure + " releases Router lock")
+		if router_probe != null:
+			fixture.router.rollback_atomic_transaction(router_probe)
+		var market_probe: Variant = fixture.market.begin_atomic_transaction()
+		assertions.truthy(market_probe != null, failure + " releases Market lock")
+		if market_probe != null:
+			fixture.market.rollback_atomic_transaction(market_probe)
 		_disconnect_trade_recorder(fixture, recorder)
 		_free_routed_fixture(fixture)
 
@@ -1195,8 +1238,9 @@ func _test_routed_trade_publication_is_final_and_nonreentrant(assertions: TestAs
 		assertions.equal(observation.gold, before_gold - crop_total, "listener sees final wallet")
 		assertions.equal(observation.crop, 2, "listener sees final crop storage")
 		assertions.equal(observation.crop_stock, 8, "listener sees final crop market stock")
-	assertions.equal(recorder.observations[0].source, "storage", "Router publishes container first")
-	assertions.equal(recorder.observations[-1].source, "gold", "gold notification publishes last")
+	if not recorder.observations.is_empty():
+		assertions.equal(recorder.observations[0].source, "storage", "Router publishes container first")
+		assertions.equal(recorder.observations[-1].source, "gold", "gold notification publishes last")
 	assertions.truthy(
 		recorder.observations.find({
 			"source": "market_bus",
@@ -1210,6 +1254,40 @@ func _test_routed_trade_publication_is_final_and_nonreentrant(assertions: TestAs
 	)
 
 	_disconnect_trade_recorder(fixture, recorder)
+	_free_routed_fixture(fixture)
+
+
+func _test_finalized_dispatch_survives_destroyed_market(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+	var market_events: Array[Dictionary] = []
+	var on_market := func(item_id: String, stock: int) -> void:
+		market_events.append({"item_id": item_id, "stock": stock})
+	event_bus.market_stock_changed.connect(on_market)
+	var market: MarketSystem = fixture.market
+	var on_storage := func(_changes: Dictionary) -> void:
+		if is_instance_valid(market):
+			market.free()
+	fixture.storage.contents_changed.connect(on_storage)
+	var total: int = fixture.market.quote_buy("grain", 2)
+	assertions.truthy(
+		fixture.economy.buy_item("grain", 2),
+		"unified dispatch survives listener destroying Market"
+	)
+	assertions.truthy(not is_instance_valid(market), "storage listener destroys Market during dispatch")
+	assertions.equal(fixture.storage.get_count("grain"), 2, "destroyed Market leaves container committed")
+	assertions.equal(fixture.wallet.gold, 1000 - total, "destroyed Market leaves wallet committed")
+	assertions.equal(
+		market_events,
+		[{"item_id": "grain", "stock": 8}],
+		"captured Market EventBus batch still dispatches once"
+	)
+	var router_probe: Variant = fixture.router.begin_atomic_transaction()
+	assertions.truthy(router_probe != null, "destroy callback leaves Router unlocked")
+	if router_probe != null:
+		fixture.router.rollback_atomic_transaction(router_probe)
+	fixture.storage.contents_changed.disconnect(on_storage)
+	event_bus.market_stock_changed.disconnect(on_market)
 	_free_routed_fixture(fixture)
 
 

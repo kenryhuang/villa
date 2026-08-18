@@ -3,6 +3,7 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 
 const INVENTORY_KIND := &"inventory"
 const STORAGE_KIND := &"farm_storage"
@@ -231,7 +232,24 @@ func publish_sealed_transaction(publication: Variant) -> bool:
 		return false
 	if not _sealed_armed and not arm_sealed_transaction(publication):
 		return false
-	return _publish_sealed_transaction()
+	var batch := finalize_sealed_publication(publication)
+	return dispatch_finalized_publication(batch)
+
+
+func finalize_sealed_publication(publication: Variant) -> RefCounted:
+	_recover_abandoned_seal()
+	if _publication_in_progress or not _owns_sealed_transaction(publication):
+		return null
+	return _finalize_sealed_publication()
+
+
+func dispatch_finalized_publication(batch: Variant) -> bool:
+	return (
+		batch is RefCounted
+		and batch.get_script() == FinalizedPublicationBatchScript
+		and bool(batch.call("is_from", self))
+		and bool(batch.call("dispatch"))
+	)
 
 
 func cancel_sealed_transaction(publication: Variant) -> bool:
@@ -502,20 +520,18 @@ func _rollback_active_transaction() -> bool:
 	return storage_restored
 
 
-func _publish_sealed_transaction() -> bool:
+func _finalize_sealed_publication() -> RefCounted:
 	if not _has_sealed_state() or _publication_in_progress:
-		return false
-	var event_bus := _event_bus()
-	if (
-		not _tearing_down
-		and is_instance_valid(event_bus)
-		and event_bus.is_blocking_signals()
-	):
-		return false
+		return null
 	var inventory := _inventory if is_instance_valid(_inventory) else null
 	var storage := _storage if is_instance_valid(_storage) else null
 	var inventory_snapshot := _sealed_inventory_snapshot
 	var storage_publication := _sealed_storage_publication
+	var storage_batch: RefCounted
+	if is_instance_valid(storage):
+		storage_batch = storage.finalize_sealed_publication(storage_publication)
+		if storage_batch == null:
+			return null
 	_publication_in_progress = true
 	_clear_sealed_state()
 	var inventory_publication: Dictionary = _freeze_variant({"item_events": [], "quick_events": []})
@@ -528,13 +544,37 @@ func _publish_sealed_transaction() -> bool:
 		inventory_publication = _prepare_inventory_publication(inventory_snapshot, final_inventory)
 	_publication_in_progress = false
 	_update_process_monitor()
-	return _dispatch_publication(
-		storage,
-		storage_publication,
-		inventory,
-		event_bus,
-		inventory_publication
+	var event_bus := _event_bus()
+	var actions: Array[Dictionary] = []
+	for event_value in inventory_publication.item_events:
+		var event := event_value as Dictionary
+		actions.append({
+			"event_bus": event_bus,
+			"bus_signal": event.signal,
+			"arguments": [event.item_id, event.quantity],
+		})
+	for event_value in inventory_publication.quick_events:
+		var event := event_value as Dictionary
+		actions.append({
+			"local_target": inventory,
+			"local_signal": &"quick_slot_mapping_changed",
+			"arguments": [event.quick_index, event.item_id],
+		})
+	var children: Array = []
+	if storage_batch is RefCounted and storage_batch.get_script() == FinalizedPublicationBatchScript:
+		children.append(storage_batch)
+	return FinalizedPublicationBatchScript.new(
+		self,
+		actions,
+		children,
+		Callable(self, "_begin_finalized_dispatch"),
+		Callable(self, "_end_finalized_dispatch")
 	)
+
+
+func _publish_sealed_transaction() -> bool:
+	var batch := _finalize_sealed_publication()
+	return batch != null and FinalizedPublicationBatchScript.dispatch_all([batch])
 
 
 func _cancel_sealed_transaction() -> bool:
@@ -604,28 +644,12 @@ func _prepare_inventory_publication(
 	return _freeze_variant({"item_events": item_events, "quick_events": quick_events})
 
 
-static func _dispatch_publication(
-	storage: FarmStorageSystem,
-	storage_publication: RefCounted,
-	inventory: InventorySystem,
-	event_bus: Node,
-	inventory_publication: Dictionary
-) -> bool:
-	var storage_published := false
-	if is_instance_valid(storage) and storage.owns_sealed_transaction(storage_publication):
-		storage.publish_sealed_transaction(storage_publication)
-		storage_published = true
-	for event_value in inventory_publication.item_events:
-		if not is_instance_valid(event_bus):
-			break
-		var event := event_value as Dictionary
-		event_bus.emit_signal(event.signal, event.item_id, event.quantity)
-	for event_value in inventory_publication.quick_events:
-		if not is_instance_valid(inventory):
-			break
-		var event := event_value as Dictionary
-		inventory.quick_slot_mapping_changed.emit(event.quick_index, event.item_id)
-	return storage_published
+func _begin_finalized_dispatch() -> void:
+	_publication_in_progress = true
+
+
+func _end_finalized_dispatch() -> void:
+	_publication_in_progress = false
 
 
 func _inventory_counts(slots: Array) -> Dictionary:

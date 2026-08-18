@@ -3,6 +3,7 @@ extends Node
 
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
+const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 
 ## 经济系统 - 金币管理、订单系统、资源消耗
 
@@ -125,7 +126,7 @@ func _buy_item_legacy(item_id: String, quantity: int) -> bool:
 		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, true)
 		return false
-	if not bool(_market_ref.call("commit_buy", item_id, quantity)):
+	if not _stage_or_commit_market_trade(owns_market_transaction, item_id, quantity, true):
 		_restore_market(market_before)
 		_restore_wallet(wallet_before)
 		_end_market_transaction(owns_market_transaction, false)
@@ -174,7 +175,7 @@ func _sell_item_legacy(item_id: String, quantity: int) -> bool:
 		_end_mapping_transaction(owns_mapping_transaction, false)
 		_end_event_bus_transaction(owns_event_bus_transaction, false, item_id, quantity, false)
 		return false
-	if not bool(_market_ref.call("commit_sell", item_id, quantity)):
+	if not _stage_or_commit_market_trade(owns_market_transaction, item_id, quantity, false):
 		_restore_market(market_before)
 		_restore_inventory(inventory_before)
 		_end_market_transaction(owns_market_transaction, false)
@@ -327,7 +328,8 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 	)
 	if mutation_succeeded:
 		mutation_succeeded = bool(_market_ref.call(
-			"commit_buy" if is_buy else "commit_sell", item_id, quantity
+			"stage_buy" if is_buy else "stage_sell",
+			market_transaction, item_id, quantity
 		))
 	if mutation_succeeded:
 		mutation_succeeded = spend_gold(int(quote.total)) if is_buy else add_gold(int(quote.total))
@@ -358,59 +360,40 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
 
-	var publications_ready := (
-		_router_ref.can_arm_sealed_transaction(router_publication)
-		and bool(_market_ref.call("can_arm_sealed_transaction", market_publication))
-		and _router_ref.can_publish_sealed_transaction(router_publication, true)
-		and bool(_market_ref.call("can_publish_sealed_transaction", market_publication, true))
+	var router_batch: RefCounted = _router_ref.finalize_sealed_publication(router_publication)
+	if router_batch == null:
+		var restored := _rollback_routed_trade(
+			null, router_publication, null, market_publication,
+			router_before, market_before, wallet_before, event_bus_transaction
+		)
+		_trade_active = false
+		return false if restored else _report_failed_rollback()
+	var market_batch: RefCounted = _market_ref.call(
+		"finalize_sealed_publication", market_publication
 	)
-	if not publications_ready:
+	if market_batch == null:
 		var restored := _rollback_routed_trade(
-			null, router_publication, null, market_publication,
+			null, null, null, market_publication,
 			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
-
-	# Both arm calls are deterministic after the readiness checks and run before callbacks.
-	if not _router_ref.arm_sealed_transaction(router_publication):
-		var restored := _rollback_routed_trade(
-			null, router_publication, null, market_publication,
-			router_before, market_before, wallet_before, event_bus_transaction
-		)
-		_trade_active = false
-		return false if restored else _report_failed_rollback()
-	if not bool(_market_ref.call("arm_sealed_transaction", market_publication)):
-		push_error("Market publication violated its checked arm contract.")
-		_restore_event_bus_block(event_bus_transaction)
-		_trade_active = false
-		return false
-
 	_restore_event_bus_block(event_bus_transaction)
-	var router_published := _router_ref.publish_sealed_transaction(router_publication)
-	if not router_published:
-		_ensure_event_bus_unblocked(event_bus_transaction)
-		router_published = _router_ref.publish_sealed_transaction(router_publication)
-	if not router_published:
-		push_error("Router publication violated its checked publish contract.")
+	var wallet_batch := FinalizedPublicationBatchScript.new(self, [{
+		"event_bus": _event_bus,
+		"bus_signal": &"gold_changed",
+		"arguments": [int(_get_wallet_balance())],
+	}])
+	var dispatched := FinalizedPublicationBatchScript.dispatch_all([
+		router_batch, market_batch, wallet_batch,
+	])
+	if not dispatched:
+		var restored := _rollback_routed_trade(
+			null, null, null, null,
+			router_before, market_before, wallet_before, event_bus_transaction
+		)
 		_trade_active = false
-		return false
-
-	_ensure_event_bus_unblocked(event_bus_transaction)
-	var market_published := bool(_market_ref.call(
-		"publish_sealed_transaction", market_publication
-	))
-	if not market_published:
-		_ensure_event_bus_unblocked(event_bus_transaction)
-		market_published = bool(_market_ref.call(
-			"publish_sealed_transaction", market_publication
-		))
-	if not market_published:
-		push_error("Market publication violated its checked publish contract.")
-		_trade_active = false
-		return false
-	_ensure_event_bus_unblocked(event_bus_transaction)
-	_publish_routed_wallet_event(event_bus_transaction)
+		return false if restored else _report_failed_rollback()
 	_ensure_event_bus_unblocked(event_bus_transaction)
 	_trade_active = false
 	return true
@@ -435,7 +418,9 @@ func _rollback_routed_trade(
 			router_restored = _router_ref.cancel_sealed_transaction(router_publication)
 		elif router_token != null and _router_ref.owns_atomic_transaction(router_token):
 			router_restored = _router_ref.rollback_atomic_transaction(router_token)
-		router_restored = router_restored and _router_ref.snapshot_matches(router_before)
+		if not _router_ref.snapshot_matches(router_before):
+			_router_ref.restore_snapshot(router_before)
+		router_restored = _router_ref.snapshot_matches(router_before)
 	var market_restored := true
 	if (
 		market_publication != null
@@ -451,7 +436,9 @@ func _rollback_routed_trade(
 		market_restored = bool(_market_ref.call(
 			"rollback_atomic_transaction", market_transaction
 		))
-	market_restored = market_restored and _market_ref.call("to_dict") == market_before
+	if is_instance_valid(_market_ref) and _market_ref.call("to_dict") != market_before:
+		_restore_market(market_before)
+	market_restored = _market_ref.call("to_dict") == market_before
 	var wallet_restored := _restore_wallet(wallet_before)
 	_restore_event_bus_block(event_bus_transaction)
 	return router_restored and market_restored and wallet_restored
@@ -562,6 +549,21 @@ func _restore_market(snapshot: Dictionary) -> bool:
 	return _market_ref != null and bool(_market_ref.call("from_dict", snapshot))
 
 
+func _stage_or_commit_market_trade(
+	transaction: Variant,
+	item_id: String,
+	quantity: int,
+	is_buy: bool
+) -> bool:
+	var stage_method := "stage_buy" if is_buy else "stage_sell"
+	if transaction != null:
+		return (
+			_market_ref.has_method(stage_method)
+			and bool(_market_ref.call(stage_method, transaction, item_id, quantity))
+		)
+	return bool(_market_ref.call("commit_buy" if is_buy else "commit_sell", item_id, quantity))
+
+
 func _begin_market_transaction() -> Variant:
 	if not _market_supports_atomic_transactions():
 		return null
@@ -581,8 +583,8 @@ func _market_supports_routed_transactions() -> bool:
 		return false
 	for method_name in [
 		"get_item_state", "rollback_atomic_transaction", "owns_atomic_transaction",
-		"seal_atomic_transaction", "can_arm_sealed_transaction",
-		"arm_sealed_transaction", "can_publish_sealed_transaction", "publish_sealed_transaction",
+		"stage_buy", "stage_sell", "seal_atomic_transaction",
+		"finalize_sealed_publication", "dispatch_finalized_publication",
 		"cancel_sealed_transaction", "owns_sealed_transaction",
 	]:
 		if not _market_ref.has_method(method_name):
@@ -622,7 +624,7 @@ func _end_event_bus_transaction(
 	if balance != null:
 		_event_bus.emit_signal("gold_changed", int(balance))
 	_event_bus.emit_signal("item_added" if is_buy else "item_removed", item_id, quantity)
-	if _market_ref.has_method("get_stock"):
+	if not _market_supports_atomic_transactions() and _market_ref.has_method("get_stock"):
 		_event_bus.emit_signal("market_stock_changed", item_id, int(_market_ref.call("get_stock", item_id)))
 
 

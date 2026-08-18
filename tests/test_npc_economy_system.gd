@@ -8,6 +8,25 @@ const NotificationSystemScript = preload("res://scripts/systems/economy_notifica
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 
+class FailingPublicationMarket:
+	extends MarketSystemScript
+
+	var fail_next_finalize := false
+	var fail_next_dispatch := false
+
+	func finalize_sealed_publication(publication: Variant) -> RefCounted:
+		if fail_next_finalize:
+			fail_next_finalize = false
+			return null
+		return super.finalize_sealed_publication(publication)
+
+	func dispatch_finalized_publication(batch: Variant) -> bool:
+		if fail_next_dispatch:
+			fail_next_dispatch = false
+			return false
+		return super.dispatch_finalized_publication(batch)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_state_contract_is_strict_and_atomic(assertions)
 	_test_woodworker_uses_finite_market_and_protects_reserves(assertions)
@@ -22,6 +41,164 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_day_cursor_and_snapshot_are_atomic(assertions)
 	_test_registered_profiles_and_determinism(assertions)
 	_test_default_crafted_sale_targets_trade_on_finite_market(assertions)
+	_test_npc_trade_publication_failures_are_atomic(assertions, tree)
+	_test_npc_trade_dispatch_preserves_event_bus_state(assertions, tree)
+	_test_emergency_import_publication_failures_are_atomic(assertions, tree)
+
+
+func _test_npc_trade_publication_failures_are_atomic(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var market := FailingPublicationMarket.new()
+	var system := NpcEconomySystemScript.new()
+	tree.root.add_child(market)
+	tree.root.add_child(system)
+	assertions.truthy(market.configure([
+		_definition("wood", 10, 20, 20, 20, "essential", "material"),
+		_definition("plank", 20, 5, 10, 10, "industrial", "processed_material"),
+	]), "NPC publication failure market configures")
+	assertions.truthy(system.configure(market, [_woodworker_profile()], []), "NPC publication failure system configures")
+	var state = system.get_npc_state("woodworker")
+	var event_bus := tree.root.get_node("EventBus")
+	var market_events: Array[Dictionary] = []
+	var on_market := func(item_id: String, stock: int) -> void:
+		market_events.append({"item_id": item_id, "stock": stock})
+	event_bus.market_stock_changed.connect(on_market)
+
+	for failure in ["buy_finalize", "buy_dispatch", "sell_finalize", "sell_dispatch"]:
+		state.inventory = {"plank": 2} if failure.begins_with("sell") else {}
+		state.gold = 300
+		var npc_before := state.to_dict()
+		var market_before := market.to_dict()
+		market_events.clear()
+		market.fail_next_finalize = failure.ends_with("finalize")
+		market.fail_next_dispatch = failure.ends_with("dispatch")
+		var succeeded := (
+			bool(system.call("_sell_bundle", state, {"plank": 1}))
+			if failure.begins_with("sell")
+			else bool(system.call("_buy_bundle", state, {"wood": 1}))
+		)
+		assertions.truthy(not succeeded, failure + " is reported")
+		assertions.equal(state.to_dict(), npc_before, failure + " restores NPC exactly")
+		assertions.equal(market.to_dict(), market_before, failure + " restores Market exactly")
+		assertions.equal(market_events, [], failure + " emits no EventBus notification")
+		var probe: Variant = market.begin_atomic_transaction()
+		assertions.truthy(probe != null, failure + " releases Market transaction lock")
+		if probe != null:
+			market.rollback_atomic_transaction(probe)
+
+	event_bus.market_stock_changed.disconnect(on_market)
+	system.free()
+	market.free()
+
+
+func _test_npc_trade_dispatch_preserves_event_bus_state(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var market := MarketSystemScript.new()
+	var system := NpcEconomySystemScript.new()
+	tree.root.add_child(market)
+	tree.root.add_child(system)
+	market.configure([
+		_definition("wood", 10, 20, 20, 20, "essential", "material"),
+		_definition("plank", 20, 5, 10, 10, "industrial", "processed_material"),
+	])
+	system.configure(market, [_woodworker_profile()], [])
+	var state = system.get_npc_state("woodworker")
+	var event_bus := tree.root.get_node("EventBus")
+	var local_events: Array[int] = []
+	var bus_events: Array[int] = []
+	var on_local := func(_item_id: String, stock: int) -> void:
+		local_events.append(stock)
+		event_bus.set_block_signals(true)
+	var on_bus := func(_item_id: String, stock: int) -> void:
+		bus_events.append(stock)
+	market.market_stock_changed.connect(on_local)
+	event_bus.market_stock_changed.connect(on_bus)
+
+	assertions.truthy(
+		bool(system.call("_buy_bundle", state, {"wood": 1})),
+		"NPC immediate buy dispatches finalized transaction"
+	)
+	assertions.equal(local_events, [19], "NPC Market local notification emits once")
+	assertions.equal(bus_events, [19], "NPC Market bus notification survives local reblock once")
+	assertions.truthy(not event_bus.is_blocking_signals(), "NPC dispatch restores initially unblocked EventBus")
+
+	local_events.clear()
+	bus_events.clear()
+	event_bus.set_block_signals(true)
+	assertions.truthy(
+		bool(system.call("_sell_bundle", state, {"wood": 1})),
+		"NPC immediate sale dispatches while EventBus was blocked"
+	)
+	assertions.equal(local_events, [20], "blocked NPC sale local notification emits once")
+	assertions.equal(bus_events, [20], "blocked NPC sale bus notification emits once")
+	assertions.truthy(event_bus.is_blocking_signals(), "NPC dispatch restores initially blocked EventBus")
+	event_bus.set_block_signals(false)
+	market.market_stock_changed.disconnect(on_local)
+	event_bus.market_stock_changed.disconnect(on_bus)
+	system.free()
+	market.free()
+
+
+func _test_emergency_import_publication_failures_are_atomic(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var market := FailingPublicationMarket.new()
+	var system := NpcEconomySystemScript.new()
+	tree.root.add_child(market)
+	tree.root.add_child(system)
+	assertions.truthy(market.configure([
+		_definition("wood", 10, 0, 12, 4, "essential", "material"),
+	]), "failed import market configures")
+	assertions.truthy(system.configure(market, [{
+		"id": "lao_li", "display_name": "老李", "gold": 1000,
+		"inventory": {}, "essential_targets": {}, "reserve_targets": {},
+		"production_recipes": [], "sale_targets": {},
+		"investment_gold_threshold": 2000, "import_buffer": true,
+	}], []), "failed import NPC fixture configures")
+	var event_bus := tree.root.get_node("EventBus")
+	var caravan_events: Array[Dictionary] = []
+	var on_caravan := func(
+		caravan_id: String,
+		item_id: String,
+		quantity: int,
+		total_day: int,
+		arrived: bool
+	) -> void:
+		caravan_events.append({
+			"caravan_id": caravan_id,
+			"item_id": item_id,
+			"quantity": quantity,
+			"total_day": total_day,
+			"arrived": arrived,
+		})
+	event_bus.market_caravan_changed.connect(on_caravan)
+
+	for failure in ["finalize", "dispatch"]:
+		var npc_before := system.to_dict()
+		var market_before := market.to_dict()
+		caravan_events.clear()
+		market.fail_next_finalize = failure == "finalize"
+		market.fail_next_dispatch = failure == "dispatch"
+		assertions.truthy(
+			not bool(system.call("_import_essential", "wood", 3)),
+			"emergency import reports %s failure" % failure
+		)
+		assertions.equal(system.to_dict(), npc_before, "failed import restores NPC system for " + failure)
+		assertions.equal(market.to_dict(), market_before, "failed import restores Market for " + failure)
+		assertions.equal(caravan_events, [], "failed import emits no caravan event for " + failure)
+		var probe: Variant = market.begin_atomic_transaction()
+		assertions.truthy(probe != null, "failed import releases Market lock for " + failure)
+		if probe != null:
+			market.rollback_atomic_transaction(probe)
+
+	event_bus.market_caravan_changed.disconnect(on_caravan)
+	system.free()
+	market.free()
 
 
 func _test_state_contract_is_strict_and_atomic(assertions: TestAssert) -> void:

@@ -4,6 +4,7 @@ const ItemContainerRouterTest = preload("res://tests/test_item_container_router.
 const MarketMathTest = preload("res://tests/test_market_math.gd")
 const MarketSystemTest = preload("res://tests/test_market_system.gd")
 const EconomyTransactionsTest = preload("res://tests/test_economy_transactions.gd")
+const NpcEconomySystemTest = preload("res://tests/test_npc_economy_system.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -15,6 +16,7 @@ func _run() -> void:
 	var assertions := TestAssertScript.new()
 	for script_value in [
 		ItemContainerRouterTest, MarketMathTest, MarketSystemTest, EconomyTransactionsTest,
+		NpcEconomySystemTest,
 	]:
 		assertions.truthy(
 			script_value != null and script_value.can_instantiate(),
@@ -29,8 +31,10 @@ func _run() -> void:
 	print("[task2-trade] router complete: %d checks" % (assertions.checks - router_checks_before))
 	print("[task2-trade] economy start")
 	MarketMathTest.new().run(assertions)
-	MarketSystemTest.new().run(assertions)
+	await MarketSystemTest.new().run(assertions, self)
 	EconomyTransactionsTest.new().run(assertions)
+	print("[task2-trade] npc start")
+	NpcEconomySystemTest.new().run(assertions, self)
 	print("[task2-trade] complete: %d checks" % assertions.checks)
 	_finish(assertions)
 
