@@ -1,12 +1,14 @@
 extends RefCounted
 
 const MarketSystem = preload("res://scripts/systems/market_system.gd")
+const EconomyLimits = preload("res://scripts/core/economy_limits.gd")
 
 
 func run(assertions: TestAssert) -> void:
 	_test_finite_stock_ledger_and_quotes(assertions)
 	_test_seed_and_crop_market_entries_are_independent(assertions)
 	_test_invalid_operations_are_atomic(assertions)
+	_test_safe_ledger_boundaries_and_transaction_rollback(assertions)
 	_test_settlement_is_idempotent_and_bounded(assertions)
 	_test_state_is_deep_copied_and_persistent(assertions)
 
@@ -108,6 +110,55 @@ func _test_invalid_operations_are_atomic(assertions: TestAssert) -> void:
 	assertions.equal(market.get_stock("missing"), 0, "missing item reports no stock")
 	assertions.equal(market.get_mid_price("missing"), 0, "missing item reports no price")
 	assertions.equal(market.get_history("missing"), [], "missing item reports no history")
+	market.free()
+
+
+func _test_safe_ledger_boundaries_and_transaction_rollback(assertions: TestAssert) -> void:
+	var market := MarketSystem.new()
+	assertions.truthy(market.configure([_wood_definition()]), "safe-ledger fixture configures")
+	var configured := market.to_dict()
+	var quote_started := Time.get_ticks_usec()
+	assertions.equal(
+		market.quote_buy("wood", EconomyLimits.MAX_SAFE_INTEGER),
+		0,
+		"market rejects huge quote before MarketMath"
+	)
+	assertions.truthy(
+		Time.get_ticks_usec() - quote_started < 100_000,
+		"market huge quote returns promptly"
+	)
+	var unsafe_definition := _wood_definition()
+	unsafe_definition["initial_stock"] = EconomyLimits.MAX_SAFE_INTEGER + 1
+	assertions.truthy(
+		not market.configure([unsafe_definition]),
+		"market rejects unsafe catalog stock"
+	)
+	assertions.equal(market.to_dict(), configured, "unsafe catalog preserves market state")
+	for field in ["stock", "demand", "supply"]:
+		var unsafe_saved := configured.duplicate(true)
+		unsafe_saved["items"]["wood"][field] = EconomyLimits.MAX_SAFE_INTEGER + 1
+		assertions.truthy(not market.from_dict(unsafe_saved), "market rejects unsafe saved " + field)
+		assertions.equal(market.to_dict(), configured, "unsafe saved " + field + " preserves state")
+
+	var buy_boundary := configured.duplicate(true)
+	buy_boundary["items"]["wood"]["demand"] = EconomyLimits.MAX_SAFE_INTEGER
+	assertions.truthy(market.from_dict(buy_boundary), "safe demand boundary restores")
+	assertions.truthy(not market.commit_buy("wood", 1), "buy cannot overflow demand ledger")
+	assertions.equal(market.to_dict(), buy_boundary, "demand overflow preserves market")
+
+	var sell_boundary := configured.duplicate(true)
+	sell_boundary["items"]["wood"]["stock"] = EconomyLimits.MAX_SAFE_INTEGER
+	assertions.truthy(market.from_dict(sell_boundary), "safe stock boundary restores")
+	assertions.truthy(not market.commit_sell("wood", 1), "sale cannot overflow stock ledger")
+	assertions.equal(market.to_dict(), sell_boundary, "stock overflow preserves market")
+
+	assertions.truthy(market.from_dict(configured), "transaction rollback fixture restores")
+	assertions.truthy(market.begin_atomic_transaction(), "market transaction begins")
+	assertions.truthy(not market.from_dict(configured), "active market rejects external restore")
+	assertions.truthy(not market.configure([_wood_definition()]), "active market rejects reconfigure")
+	assertions.truthy(market.commit_buy("wood", 1), "market transaction mutates state")
+	assertions.truthy(market.end_atomic_transaction(false), "market transaction rolls back")
+	assertions.equal(market.to_dict(), configured, "market rollback restores exact snapshot")
 	market.free()
 
 

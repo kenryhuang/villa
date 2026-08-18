@@ -20,6 +20,7 @@ const GridMutationTest = preload("res://tests/test_grid_mutation.gd")
 const FarmingSystemTest = preload("res://tests/test_farming_system.gd")
 const CropVisualTest = preload("res://tests/test_crop_visual.gd")
 const Phase1SystemsTest = preload("res://tests/test_phase1_systems.gd")
+const MainItemContainerWiringTest = preload("res://tests/test_main_item_container_wiring.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 func _init() -> void:
@@ -41,6 +42,13 @@ func _run() -> void:
 	TreeInstanceTest.new().run(assertions)
 	CoreFoundationTest.new().run(assertions)
 	CoreAutoloadsTest.new().run(assertions)
+	var task2_main_checks_before: int = assertions.checks
+	print("[task2-main-router] start")
+	await MainItemContainerWiringTest.new().run(assertions, self)
+	print(
+		"[task2-main-router] complete: %d checks"
+		% (assertions.checks - task2_main_checks_before)
+	)
 	SeasonSystemTest.new().run(assertions)
 	GridSystemTest.new().run(assertions)
 	GridMutationTest.new().run(assertions)

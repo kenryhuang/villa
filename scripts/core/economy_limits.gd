@@ -10,6 +10,7 @@ const MAX_SAFE_DATE := MAX_SAFE_INTEGER - MAINTENANCE_HORIZON_DAYS
 const MAX_DELIVERY_QUANTITY := (
 	InventorySystemScript.DEFAULT_MAX_SLOTS * GameDataScript.DEFAULT_MAX_STACK
 )
+const MAX_TRADE_QUANTITY := MAX_DELIVERY_QUANTITY
 
 
 static func is_safe_date(value: Variant, allow_zero: bool = true) -> bool:

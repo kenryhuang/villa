@@ -1,5 +1,7 @@
 extends Node
 
+const EconomyLimits = preload("res://scripts/core/economy_limits.gd")
+
 const LEGACY_HARVEST_SEED := 42
 const MIN_HARVEST_SEED := 1
 const MAX_HARVEST_SEED := 2147483647
@@ -49,6 +51,17 @@ func spend_gold(amount: int) -> bool:
 	gold -= amount
 	if _event_bus:
 		_event_bus.gold_changed.emit(gold)
+	return true
+
+
+func restore_gold_unchecked(value: int) -> bool:
+	if value < 0 or value > EconomyLimits.MAX_SAFE_INTEGER:
+		return false
+	gold = value
+	return true
+
+
+func can_restore_gold_unchecked() -> bool:
 	return true
 
 

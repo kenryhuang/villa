@@ -68,6 +68,10 @@ func configure(inventory: InventorySystem, storage: FarmStorageSystem) -> bool:
 	return true
 
 
+func is_configured_with(inventory: InventorySystem, storage: FarmStorageSystem) -> bool:
+	return _is_configured() and _inventory == inventory and _storage == storage
+
+
 func container_kind(item_id: String) -> StringName:
 	var definition: Variant = GameDataScript.get_item(item_id)
 	if not definition is Dictionary:
@@ -242,6 +246,21 @@ func snapshot_for(items: Dictionary) -> Dictionary:
 	if not bool(prepared.get("ok", false)):
 		return {}
 	return _freeze_variant(_snapshot_prepared(prepared)) as Dictionary
+
+
+func snapshot_matches(snapshot: Dictionary) -> bool:
+	var normalized: Variant = _normalize_snapshot(snapshot)
+	if not normalized is Dictionary:
+		return false
+	var expected := normalized as Dictionary
+	if expected.has(INVENTORY_KIND) and _inventory_state() != expected[INVENTORY_KIND]:
+		return false
+	if (
+		expected.has(STORAGE_KIND)
+		and _storage.get_items() != (expected[STORAGE_KIND] as Dictionary).items
+	):
+		return false
+	return true
 
 
 func restore_snapshot(snapshot: Dictionary) -> bool:

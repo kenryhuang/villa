@@ -29,19 +29,21 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions = TestAssertScript.new()
-	print("[economy-suite] authoritative item containers")
+	var task2_checks_before: int = assertions.checks
+	print("[task2-trade] router start")
 	var router_checks_before: int = assertions.checks
 	await ItemContainerRouterTest.new().run(assertions, self)
 	print(
 		"[economy-suite] authoritative item containers complete: %d checks"
 		% (assertions.checks - router_checks_before)
 	)
-	print("[economy-suite] core market")
+	print("[task2-trade] economy start")
 	EconomyWalletTest.new().run(assertions)
 	MarketCatalogTest.new().run(assertions)
 	MarketMathTest.new().run(assertions)
 	MarketSystemTest.new().run(assertions)
 	EconomyTransactionsTest.new().run(assertions)
+	print("[task2-trade] complete: %d checks" % (assertions.checks - task2_checks_before))
 	print("[economy-suite] simulation and save")
 	DailySimulationSystemTest.new().run(assertions, self)
 	EconomySaveIntegrationTest.new().run(assertions, self)

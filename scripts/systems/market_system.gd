@@ -15,9 +15,14 @@ var _items: Dictionary = {}
 var _catalog_defaults: Dictionary = {}
 var _event_bus: Node
 var _transaction_active := false
+var _transaction_snapshot: Dictionary = {}
 var _pending_stock_events: Dictionary = {}
 var _pending_price_events: Dictionary = {}
 var _pending_settlement_day := 0
+var _deferred_snapshot: Dictionary = {}
+var _deferred_stock_events: Dictionary = {}
+var _deferred_price_events: Dictionary = {}
+var _deferred_settlement_day := 0
 
 
 func _ready() -> void:
@@ -25,7 +30,7 @@ func _ready() -> void:
 
 
 func configure(item_definitions: Array) -> bool:
-	if item_definitions.is_empty():
+	if _transaction_active or has_deferred_atomic_publication() or item_definitions.is_empty():
 		return false
 	var configured_items: Dictionary = {}
 	for definition_value in item_definitions:
@@ -49,6 +54,10 @@ func configure(item_definitions: Array) -> bool:
 			or initial_stock < 0
 			or target_stock <= 0
 			or daily_liquidity <= 0
+			or base_price > EconomyLimitsScript.MAX_SAFE_INTEGER
+			or initial_stock > EconomyLimitsScript.MAX_SAFE_INTEGER
+			or target_stock > EconomyLimitsScript.MAX_SAFE_INTEGER
+			or daily_liquidity > EconomyLimitsScript.MAX_SAFE_INTEGER
 		):
 			return false
 		configured_items[item_id] = {
@@ -94,7 +103,7 @@ func get_history(item_id: String) -> Array:
 
 
 func quote_buy(item_id: String, quantity: int) -> int:
-	if quantity <= 0 or not _items.has(item_id):
+	if quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY or not _items.has(item_id):
 		return 0
 	var state: Dictionary = _items[item_id]
 	return MarketMath.quote_total(
@@ -106,7 +115,7 @@ func quote_buy(item_id: String, quantity: int) -> int:
 
 
 func quote_sell(item_id: String, quantity: int) -> int:
-	if quantity <= 0 or not _items.has(item_id):
+	if quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY or not _items.has(item_id):
 		return 0
 	var state: Dictionary = _items[item_id]
 	return MarketMath.quote_total(
@@ -118,43 +127,78 @@ func quote_sell(item_id: String, quantity: int) -> int:
 
 
 func can_buy(item_id: String, quantity: int) -> bool:
-	return quantity > 0 and _items.has(item_id) and get_stock(item_id) >= quantity
+	return (
+		quantity > 0
+		and quantity <= EconomyLimitsScript.MAX_TRADE_QUANTITY
+		and _items.has(item_id)
+		and get_stock(item_id) >= quantity
+	)
 
 
 func begin_atomic_transaction() -> bool:
-	if _transaction_active:
+	if _items.is_empty() or _transaction_active or has_deferred_atomic_publication():
 		return false
 	_transaction_active = true
+	_transaction_snapshot = to_dict()
 	_pending_stock_events.clear()
 	_pending_price_events.clear()
 	_pending_settlement_day = 0
 	return true
 
 
-func end_atomic_transaction(commit_changes: bool) -> bool:
+func end_atomic_transaction(commit_changes: bool, defer_publication: bool = false) -> bool:
 	if not _transaction_active:
 		return false
-	_transaction_active = false
 	var stock_events := _pending_stock_events.duplicate()
 	var price_events := _pending_price_events.duplicate()
 	var settlement_day := _pending_settlement_day
+	var before := _transaction_snapshot.duplicate(true)
+	_transaction_active = false
+	_transaction_snapshot.clear()
 	_pending_stock_events.clear()
 	_pending_price_events.clear()
 	_pending_settlement_day = 0
-	if commit_changes:
-		for item_id in stock_events:
-			_emit_stock_changed(str(item_id), int(stock_events[item_id]))
-		for item_id in price_events:
-			_emit_price_changed(str(item_id), int(price_events[item_id]))
-		if settlement_day > 0:
-			_emit_settled(settlement_day)
+	if not commit_changes:
+		return _restore_transaction_snapshot(before)
+	if defer_publication:
+		_deferred_snapshot = before
+		_deferred_stock_events = stock_events
+		_deferred_price_events = price_events
+		_deferred_settlement_day = settlement_day
+		return true
+	_publish_events(stock_events, price_events, settlement_day)
 	return true
+
+
+func has_deferred_atomic_publication() -> bool:
+	return not _deferred_snapshot.is_empty()
+
+
+func publish_deferred_atomic_events() -> bool:
+	if not has_deferred_atomic_publication():
+		return false
+	var stock_events := _deferred_stock_events.duplicate()
+	var price_events := _deferred_price_events.duplicate()
+	var settlement_day := _deferred_settlement_day
+	_clear_deferred_publication()
+	_publish_events(stock_events, price_events, settlement_day)
+	return true
+
+
+func discard_deferred_atomic_publication(restore_state: bool = true) -> bool:
+	if not has_deferred_atomic_publication():
+		return false
+	var before := _deferred_snapshot.duplicate(true)
+	_clear_deferred_publication()
+	return not restore_state or _restore_transaction_snapshot(before)
 
 
 func commit_buy(item_id: String, quantity: int) -> bool:
 	if not can_buy(item_id, quantity):
 		return false
 	var state: Dictionary = _items[item_id]
+	if not _can_add_safely(int(state.get("demand", -1)), quantity):
+		return false
 	state["stock"] = int(state.get("stock", 0)) - quantity
 	state["demand"] = int(state.get("demand", 0)) + quantity
 	_items[item_id] = state
@@ -163,9 +207,14 @@ func commit_buy(item_id: String, quantity: int) -> bool:
 
 
 func commit_sell(item_id: String, quantity: int) -> bool:
-	if quantity <= 0 or not _items.has(item_id):
+	if quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY or not _items.has(item_id):
 		return false
 	var state: Dictionary = _items[item_id]
+	if (
+		not _can_add_safely(int(state.get("stock", -1)), quantity)
+		or not _can_add_safely(int(state.get("supply", -1)), quantity)
+	):
+		return false
 	state["stock"] = int(state.get("stock", 0)) + quantity
 	state["supply"] = int(state.get("supply", 0)) + quantity
 	_items[item_id] = state
@@ -177,6 +226,8 @@ func add_external_demand(item_id: String, quantity: int) -> bool:
 	if quantity <= 0 or not _items.has(item_id):
 		return false
 	var state: Dictionary = _items[item_id]
+	if not _can_add_safely(int(state.get("demand", -1)), quantity):
+		return false
 	state["demand"] = int(state.get("demand", 0)) + quantity
 	_items[item_id] = state
 	return true
@@ -186,6 +237,8 @@ func add_external_supply(item_id: String, quantity: int) -> bool:
 	if quantity <= 0 or not _items.has(item_id):
 		return false
 	var state: Dictionary = _items[item_id]
+	if not _can_add_safely(int(state.get("supply", -1)), quantity):
+		return false
 	state["supply"] = int(state.get("supply", 0)) + quantity
 	_items[item_id] = state
 	return true
@@ -245,6 +298,8 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(data: Dictionary) -> bool:
+	if _transaction_active or has_deferred_atomic_publication():
+		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
 	if not EconomyLimitsScript.is_safe_date(data["last_settled_day"]):
@@ -266,7 +321,7 @@ func from_dict(data: Dictionary) -> bool:
 
 
 func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
-	if _catalog_defaults.is_empty():
+	if _transaction_active or has_deferred_atomic_publication() or _catalog_defaults.is_empty():
 		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
@@ -340,6 +395,13 @@ func _normalize_runtime_state(item_key: String, state: Dictionary) -> Dictionary
 		or int(state["daily_liquidity"]) <= 0
 		or int(state["demand"]) < 0
 		or int(state["supply"]) < 0
+		or int(state["base_price"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or int(state["mid_price"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or int(state["stock"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or int(state["target_stock"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or int(state["daily_liquidity"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or int(state["demand"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
+		or int(state["supply"]) > EconomyLimitsScript.MAX_SAFE_INTEGER
 	):
 		return {}
 	var global_min := ceili(int(state["base_price"]) * 0.5)
@@ -418,3 +480,35 @@ func _emit_event_bus(signal_name: StringName, arguments: Array) -> void:
 			_event_bus.emit_signal(signal_name, arguments[0], arguments[1])
 		elif arguments.size() == 1:
 			_event_bus.emit_signal(signal_name, arguments[0])
+
+
+func _can_add_safely(current: int, quantity: int) -> bool:
+	return (
+		current >= 0
+		and quantity > 0
+		and current <= EconomyLimitsScript.MAX_SAFE_INTEGER - quantity
+	)
+
+
+func _restore_transaction_snapshot(snapshot: Dictionary) -> bool:
+	if snapshot.is_empty():
+		return false
+	_items = (snapshot.get("items", {}) as Dictionary).duplicate(true)
+	last_settled_day = int(snapshot.get("last_settled_day", 0))
+	return to_dict() == snapshot
+
+
+func _publish_events(stock_events: Dictionary, price_events: Dictionary, settlement_day: int) -> void:
+	for item_id in stock_events:
+		_emit_stock_changed(str(item_id), int(stock_events[item_id]))
+	for item_id in price_events:
+		_emit_price_changed(str(item_id), int(price_events[item_id]))
+	if settlement_day > 0:
+		_emit_settled(settlement_day)
+
+
+func _clear_deferred_publication() -> void:
+	_deferred_snapshot.clear()
+	_deferred_stock_events.clear()
+	_deferred_price_events.clear()
+	_deferred_settlement_day = 0

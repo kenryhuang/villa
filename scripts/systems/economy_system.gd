@@ -36,6 +36,7 @@ var _wallet_ref: Node
 var _market_ref: Node
 var _npc_ref: Node
 var _router_ref: ItemContainerRouterScript
+var _router_required := false
 var _is_configured := false
 var _trade_active := false
 var _event_bus
@@ -58,6 +59,7 @@ func configure(
 	_market_ref = market
 	_npc_ref = npc_economy_system
 	_router_ref = router
+	_router_required = router != null
 	_is_configured = (
 		_inventory_ref != null
 		and _wallet_ref != null
@@ -65,7 +67,8 @@ func configure(
 		and _wallet_ref.has_method("spend_gold")
 		and (_market_ref == null or _is_market_compatible(_market_ref))
 		and (_npc_ref == null or _is_npc_compatible(_npc_ref))
-		and (_router_ref == null or is_instance_valid(_router_ref))
+		and (not _router_required or is_instance_valid(_router_ref))
+		and (not _router_required or _wallet_supports_exact_restore())
 	)
 	if not _is_configured:
 		return false
@@ -93,7 +96,7 @@ func spend_gold(amount: int) -> bool:
 # ============================================================
 
 func buy_item(item_id: String, quantity: int) -> bool:
-	if _router_ref != null:
+	if _router_required:
 		return _execute_routed_trade(item_id, quantity, true)
 	return _buy_item_legacy(item_id, quantity)
 
@@ -144,7 +147,7 @@ func _buy_item_legacy(item_id: String, quantity: int) -> bool:
 
 
 func sell_item(item_id: String, quantity: int) -> bool:
-	if _router_ref != null:
+	if _router_required:
 		return _execute_routed_trade(item_id, quantity, false)
 	return _sell_item_legacy(item_id, quantity)
 
@@ -195,9 +198,18 @@ func _sell_item_legacy(item_id: String, quantity: int) -> bool:
 func get_owned_quantity(item_id: String) -> int:
 	if item_id.is_empty() or not _is_configured:
 		return 0
-	if _router_ref != null and is_instance_valid(_router_ref):
-		return _router_ref.get_count(item_id)
+	if _router_required:
+		return _router_ref.get_count(item_id) if is_instance_valid(_router_ref) else 0
 	return _inventory_ref.get_item_count(item_id) if _inventory_ref != null else 0
+
+
+func uses_item_container_router(router: Variant) -> bool:
+	return (
+		_router_required
+		and is_instance_valid(_router_ref)
+		and is_instance_valid(router)
+		and _router_ref == router
+	)
 
 
 func quote_trade_failure(item_id: String, quantity: int, is_buy: bool) -> Dictionary:
@@ -205,18 +217,24 @@ func quote_trade_failure(item_id: String, quantity: int, is_buy: bool) -> Dictio
 		return _trade_failure("transaction_failed", item_id)
 	if not _can_trade():
 		return _trade_failure("not_configured", item_id)
-	if _router_ref != null and (
-		not _market_supports_atomic_transactions()
+	if _router_required and not is_instance_valid(_router_ref):
+		return _trade_failure("transaction_failed", item_id)
+	if _router_required and (
+		not _market_supports_routed_transactions()
 		or (_event_bus != null and _event_bus.is_blocking_signals())
 	):
 		return _trade_failure("transaction_failed", item_id)
-	if item_id.is_empty() or quantity <= 0 or quantity > EconomyLimitsScript.MAX_SAFE_INTEGER:
+	if item_id.is_empty() or quantity <= 0 or quantity > EconomyLimitsScript.MAX_TRADE_QUANTITY:
 		return _trade_failure("invalid_request", item_id)
 	if GameDataScript.get_item(item_id) == null:
 		return _trade_failure("unknown_item", item_id)
+	if _router_required:
+		var ledger_result := _market_ledger_preflight(item_id, quantity, is_buy)
+		if not bool(ledger_result.get("ok", false)):
+			return ledger_result
 
 	var container_result: Dictionary
-	if _router_ref != null and is_instance_valid(_router_ref):
+	if _router_required:
 		container_result = (
 			_router_ref.can_add({item_id: quantity})
 			if is_buy
@@ -273,64 +291,105 @@ func quote_trade_failure(item_id: String, quantity: int, is_buy: bool) -> Dictio
 
 func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool:
 	var quote := quote_trade_failure(item_id, quantity, is_buy)
-	if not bool(quote.get("ok", false)) or _router_ref == null:
+	if not bool(quote.get("ok", false)) or not is_instance_valid(_router_ref):
 		return false
 	_trade_active = true
 	var market_before: Dictionary = _market_ref.call("to_dict")
 	var wallet_before: Variant = _get_wallet_balance()
+	var router_before := _router_ref.snapshot_for({item_id: quantity})
+	if router_before.is_empty():
+		_trade_active = false
+		return false
 	var market_transaction := _begin_market_transaction()
-	if _market_supports_atomic_transactions() and not market_transaction:
+	if not market_transaction:
 		_trade_active = false
 		return false
 	var router_token: RefCounted = _router_ref.begin_atomic_transaction()
 	if router_token == null:
-		_end_market_transaction(market_transaction, false)
+		var restored := _rollback_routed_trade(
+			null, null, router_before, market_before, wallet_before,
+			market_transaction, false
+		)
 		_trade_active = false
-		return false
+		return false if restored else _report_failed_rollback()
 	var event_bus_transaction := _begin_event_bus_transaction()
-	var mutation_succeeded := false
-	if is_buy:
-		mutation_succeeded = (
-			spend_gold(int(quote.total))
-			and bool(_market_ref.call("commit_buy", item_id, quantity))
-			and _router_ref.stage_add_items(router_token, {item_id: quantity})
+	if _event_bus != null and not event_bus_transaction:
+		var restored := _rollback_routed_trade(
+			router_token, null, router_before, market_before, wallet_before,
+			market_transaction, false
 		)
-	else:
-		mutation_succeeded = (
-			_router_ref.stage_remove_items(router_token, {item_id: quantity})
-			and bool(_market_ref.call("commit_sell", item_id, quantity))
-			and add_gold(int(quote.total))
-		)
+		_trade_active = false
+		return false if restored else _report_failed_rollback()
+	var mutation_succeeded := (
+		_router_ref.stage_add_items(router_token, {item_id: quantity})
+		if is_buy
+		else _router_ref.stage_remove_items(router_token, {item_id: quantity})
+	)
+	if mutation_succeeded:
+		mutation_succeeded = bool(_market_ref.call(
+			"commit_buy" if is_buy else "commit_sell", item_id, quantity
+		))
+	if mutation_succeeded:
+		mutation_succeeded = spend_gold(int(quote.total)) if is_buy else add_gold(int(quote.total))
 	if not mutation_succeeded:
-		_rollback_routed_trade(
-			router_token, null, market_before, wallet_before,
+		var restored := _rollback_routed_trade(
+			router_token, null, router_before, market_before, wallet_before,
 			market_transaction, event_bus_transaction
 		)
 		_trade_active = false
-		return false
+		return false if restored else _report_failed_rollback()
 
 	var publication: RefCounted = _router_ref.seal_atomic_transaction(router_token)
 	if publication == null:
-		_rollback_routed_trade(
-			router_token, null, market_before, wallet_before,
+		var restored := _rollback_routed_trade(
+			router_token, null, router_before, market_before, wallet_before,
 			market_transaction, event_bus_transaction
 		)
 		_trade_active = false
-		return false
-	if (
-		not _router_ref.can_arm_sealed_transaction(publication)
-		or not _router_ref.arm_sealed_transaction(publication)
-	):
-		_rollback_routed_trade(
-			null, publication, market_before, wallet_before,
+		return false if restored else _report_failed_rollback()
+	if not _router_ref.can_arm_sealed_transaction(publication):
+		var restored := _rollback_routed_trade(
+			null, publication, router_before, market_before, wallet_before,
 			market_transaction, event_bus_transaction
 		)
 		_trade_active = false
-		return false
+		return false if restored else _report_failed_rollback()
 
-	_end_market_transaction(market_transaction, true)
-	_publish_routed_trade_events(event_bus_transaction, item_id)
-	_router_ref.publish_sealed_transaction(publication)
+	if not _end_market_transaction(market_transaction, true, true):
+		var restored := _rollback_routed_trade(
+			null, publication, router_before, market_before, wallet_before,
+			market_transaction, event_bus_transaction
+		)
+		_trade_active = false
+		return false if restored else _report_failed_rollback()
+	if not bool(_market_ref.call("has_deferred_atomic_publication")):
+		var restored := _rollback_routed_trade(
+			null, publication, router_before, market_before, wallet_before,
+			false, event_bus_transaction
+		)
+		_trade_active = false
+		return false if restored else _report_failed_rollback()
+
+	_restore_event_bus_block(event_bus_transaction)
+	var router_published := _router_ref.publish_sealed_transaction(publication)
+	if not router_published and _router_ref.owns_sealed_transaction(publication):
+		var restored := _rollback_routed_trade(
+			null, publication, router_before, market_before, wallet_before,
+			false, event_bus_transaction
+		)
+		_trade_active = false
+		return false if restored else _report_failed_rollback()
+
+	_ensure_event_bus_unblocked(event_bus_transaction)
+	var market_published := bool(_market_ref.call("publish_deferred_atomic_events"))
+	if not market_published:
+		push_error("Committed market publication unexpectedly failed.")
+		_ensure_event_bus_unblocked(event_bus_transaction)
+		_trade_active = false
+		return false
+	_ensure_event_bus_unblocked(event_bus_transaction)
+	_publish_routed_wallet_event(event_bus_transaction)
+	_ensure_event_bus_unblocked(event_bus_transaction)
 	_trade_active = false
 	return true
 
@@ -338,32 +397,53 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 func _rollback_routed_trade(
 	router_token: RefCounted,
 	publication: RefCounted,
+	router_before: Dictionary,
 	market_before: Dictionary,
 	wallet_before: Variant,
 	market_transaction: bool,
 	event_bus_transaction: bool
-) -> void:
-	if publication != null and _router_ref.owns_sealed_transaction(publication):
-		_router_ref.cancel_sealed_transaction(publication)
-	elif router_token != null:
-		_router_ref.rollback_atomic_transaction(router_token)
-	_restore_market(market_before)
-	_restore_wallet(wallet_before)
-	_end_market_transaction(market_transaction, false)
+) -> bool:
+	var router_restored := true
+	if is_instance_valid(_router_ref):
+		if publication != null and _router_ref.owns_sealed_transaction(publication):
+			router_restored = _router_ref.cancel_sealed_transaction(publication)
+		elif router_token != null:
+			router_restored = _router_ref.rollback_atomic_transaction(router_token)
+		router_restored = router_restored and _router_ref.snapshot_matches(router_before)
+	var market_restored := false
+	if (
+		_market_ref.has_method("has_deferred_atomic_publication")
+		and bool(_market_ref.call("has_deferred_atomic_publication"))
+	):
+		market_restored = bool(_market_ref.call("discard_deferred_atomic_publication", true))
+	elif market_transaction:
+		market_restored = _end_market_transaction(true, false)
+	else:
+		market_restored = _market_ref.call("to_dict") == market_before
+		if not market_restored:
+			market_restored = _restore_market(market_before)
+	market_restored = market_restored and _market_ref.call("to_dict") == market_before
+	var wallet_restored := _restore_wallet(wallet_before)
 	_restore_event_bus_block(event_bus_transaction)
+	return router_restored and market_restored and wallet_restored
 
 
-func _publish_routed_trade_events(owns_event_bus: bool, item_id: String) -> void:
+func _publish_routed_wallet_event(owns_event_bus: bool) -> void:
 	if not owns_event_bus or _event_bus == null:
 		return
-	_event_bus.set_block_signals(false)
 	var balance: Variant = _get_wallet_balance()
 	if balance != null:
 		_event_bus.emit_signal("gold_changed", int(balance))
-	if _market_ref.has_method("get_stock"):
-		_event_bus.emit_signal(
-			"market_stock_changed", item_id, int(_market_ref.call("get_stock", item_id))
-		)
+
+
+func _ensure_event_bus_unblocked(owns_event_bus: bool) -> void:
+	if owns_event_bus and _event_bus != null and _event_bus.is_blocking_signals():
+		_event_bus.set_block_signals(false)
+
+
+func _report_failed_rollback() -> bool:
+	push_error("Routed trade rollback failed its exact-state verification.")
+	return false
 
 
 func _restore_event_bus_block(owns_event_bus: bool) -> void:
@@ -396,6 +476,24 @@ func _legacy_container_preflight(item_id: String, quantity: int, is_buy: bool) -
 		"available_quantity": available,
 		"missing_quantity": quantity - available,
 	}
+
+
+func _market_ledger_preflight(item_id: String, quantity: int, is_buy: bool) -> Dictionary:
+	if not _market_ref.has_method("get_item_state"):
+		return _trade_failure("transaction_failed", item_id)
+	var state: Dictionary = _market_ref.call("get_item_state", item_id)
+	if state.is_empty():
+		return _trade_failure("unknown_item", item_id)
+	var fields := ["demand"] if is_buy else ["stock", "supply"]
+	for field in fields:
+		var value: Variant = state.get(field, null)
+		if (
+			typeof(value) != TYPE_INT
+			or int(value) < 0
+			or int(value) > EconomyLimitsScript.MAX_SAFE_INTEGER - quantity
+		):
+			return _trade_failure("market_ledger_overflow", item_id)
+	return {"ok": true, "reason": "", "item_id": item_id}
 
 
 func _trade_failure(reason: String, item_id: String = "") -> Dictionary:
@@ -450,9 +548,28 @@ func _market_supports_atomic_transactions() -> bool:
 	)
 
 
-func _end_market_transaction(owns_transaction: bool, commit_changes: bool) -> void:
-	if owns_transaction and _market_supports_atomic_transactions():
-		_market_ref.call("end_atomic_transaction", commit_changes)
+func _market_supports_routed_transactions() -> bool:
+	if not _market_supports_atomic_transactions():
+		return false
+	for method_name in [
+		"get_item_state", "has_deferred_atomic_publication",
+		"publish_deferred_atomic_events", "discard_deferred_atomic_publication",
+	]:
+		if not _market_ref.has_method(method_name):
+			return false
+	return true
+
+
+func _end_market_transaction(
+	owns_transaction: bool,
+	commit_changes: bool,
+	defer_publication: bool = false
+) -> bool:
+	if not owns_transaction or not _market_supports_atomic_transactions():
+		return false
+	if defer_publication:
+		return bool(_market_ref.call("end_atomic_transaction", commit_changes, true))
+	return bool(_market_ref.call("end_atomic_transaction", commit_changes))
 
 
 func _begin_event_bus_transaction() -> bool:
@@ -493,17 +610,30 @@ func _get_wallet_balance() -> Variant:
 	return null
 
 
+func _wallet_supports_exact_restore() -> bool:
+	return (
+		_wallet_ref != null
+		and _wallet_ref.has_method("restore_gold_unchecked")
+		and _wallet_ref.has_method("can_restore_gold_unchecked")
+		and bool(_wallet_ref.call("can_restore_gold_unchecked"))
+	)
+
+
 func _restore_wallet(expected_balance: Variant) -> bool:
-	if expected_balance == null:
+	if expected_balance == null or _wallet_ref == null:
 		return false
-	var current_balance: Variant = _get_wallet_balance()
-	if current_balance == null:
-		return false
-	var difference := int(expected_balance) - int(current_balance)
-	if difference > 0:
-		_wallet_ref.call("add_gold", difference)
-	elif difference < 0:
-		_wallet_ref.call("spend_gold", -difference)
+	if _wallet_ref.has_method("restore_gold_unchecked"):
+		if not bool(_wallet_ref.call("restore_gold_unchecked", int(expected_balance))):
+			return false
+	else:
+		var current_balance: Variant = _get_wallet_balance()
+		if current_balance == null:
+			return false
+		var difference := int(expected_balance) - int(current_balance)
+		if difference > 0:
+			_wallet_ref.call("add_gold", difference)
+		elif difference < 0:
+			_wallet_ref.call("spend_gold", -difference)
 	return _get_wallet_balance() == expected_balance
 
 

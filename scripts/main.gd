@@ -82,7 +82,7 @@ var economy_notification_system: EconomyNotificationSystem
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
-var item_container_router: Node
+var item_container_router: ItemContainerRouterScript
 var building_system: BuildingSystem
 var tool_system: ToolSystem
 var grid_pathfinder: GridPathfinder

@@ -14,12 +14,19 @@ class WalletDouble:
 	var gold := 1000
 	var fail_next_add := false
 	var fail_next_spend := false
+	var fail_all_add := false
+	var fail_all_spend := false
 	var _event_bus: Node
 
 	func _ready() -> void:
 		_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 
 	func add_gold(amount: int) -> bool:
+		if fail_all_add:
+			if amount > 0:
+				gold += amount
+				_emit_gold_changed()
+			return false
 		if fail_next_add:
 			fail_next_add = false
 			if amount > 0:
@@ -33,6 +40,11 @@ class WalletDouble:
 		return true
 
 	func spend_gold(amount: int) -> bool:
+		if fail_all_spend:
+			if amount > 0 and amount <= gold:
+				gold -= amount
+				_emit_gold_changed()
+			return false
 		if fail_next_spend:
 			fail_next_spend = false
 			if amount > 0 and amount <= gold:
@@ -43,6 +55,15 @@ class WalletDouble:
 			return false
 		gold -= amount
 		_emit_gold_changed()
+		return true
+
+	func restore_gold_unchecked(value: int) -> bool:
+		if value < 0 or value > EconomyLimits.MAX_SAFE_INTEGER:
+			return false
+		gold = value
+		return true
+
+	func can_restore_gold_unchecked() -> bool:
 		return true
 
 	func _emit_gold_changed() -> void:
@@ -71,6 +92,30 @@ class InventoryDouble:
 		return super.remove_item(item_id, quantity)
 
 
+class UnrestorableWallet:
+	extends Node
+
+	var gold := 1000
+
+	func add_gold(amount: int) -> bool:
+		gold += amount
+		return true
+
+	func spend_gold(amount: int) -> bool:
+		gold -= amount
+		return true
+
+
+class RejectingRestoreWallet:
+	extends UnrestorableWallet
+
+	func restore_gold_unchecked(_value: int) -> bool:
+		return false
+
+	func can_restore_gold_unchecked() -> bool:
+		return false
+
+
 class QuickMappingRecorder:
 	extends RefCounted
 	var events: Array[Dictionary] = []
@@ -84,6 +129,8 @@ class MarketDouble:
 
 	var fail_next_buy := false
 	var fail_next_sell := false
+	var fail_next_commit_end := false
+	var fail_all_restore := false
 
 	func commit_buy(item_id: String, quantity: int) -> bool:
 		if fail_next_buy:
@@ -98,6 +145,17 @@ class MarketDouble:
 			super.commit_sell(item_id, quantity)
 			return false
 		return super.commit_sell(item_id, quantity)
+
+	func end_atomic_transaction(commit_changes: bool, defer_publication: bool = false) -> bool:
+		if commit_changes and fail_next_commit_end:
+			fail_next_commit_end = false
+			return false
+		return super.end_atomic_transaction(commit_changes, defer_publication)
+
+	func from_dict(data: Dictionary) -> bool:
+		if fail_all_restore:
+			return false
+		return super.from_dict(data)
 
 
 class CapacityProvider:
@@ -134,12 +192,19 @@ class FailingRouter:
 	extends ItemContainerRouter
 
 	var fail_next_arm := false
+	var fail_next_publish := false
 
 	func arm_sealed_transaction(publication: Variant) -> bool:
 		if fail_next_arm:
 			fail_next_arm = false
 			return false
 		return super.arm_sealed_transaction(publication)
+
+	func publish_sealed_transaction(publication: Variant) -> bool:
+		if fail_next_publish:
+			fail_next_publish = false
+			return false
+		return super.publish_sealed_transaction(publication)
 
 
 class TradeRecorder:
@@ -160,6 +225,7 @@ class TradeRecorder:
 	var mapping_events: Array[Dictionary] = []
 	var observations: Array[Dictionary] = []
 	var attempt_reentry := false
+	var reblock_before_reentry := false
 	var reentry_results: Array[bool] = []
 
 	func on_item_added(item_id: String, quantity: int) -> void:
@@ -187,6 +253,9 @@ class TradeRecorder:
 		_record_observation("storage")
 		if attempt_reentry:
 			attempt_reentry = false
+			if reblock_before_reentry:
+				var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+				event_bus.set_block_signals(true)
 			reentry_results.append(economy.buy_item("grain_seed", 1))
 
 	func on_storage_bus_changed(changes: Dictionary) -> void:
@@ -268,6 +337,10 @@ func run(assertions: TestAssert) -> void:
 	_test_seed_and_crop_trade_through_authoritative_containers(assertions)
 	_test_routed_trade_preflight_reports_stable_exact_failures(assertions)
 	_test_routed_trade_failures_restore_all_domains(assertions)
+	_test_routed_trade_bounds_and_ledger_preflight(assertions)
+	_test_routed_finalization_failures_are_atomic(assertions)
+	_test_routed_trade_rejects_unrestorable_wallet(assertions)
+	_test_routed_router_lifecycle_is_required(assertions)
 	_test_routed_trade_publication_is_final_and_nonreentrant(assertions)
 	_test_routed_preflight_rejects_unpublishable_outer_state(assertions)
 
@@ -931,14 +1004,143 @@ func _test_routed_trade_failures_restore_all_domains(assertions: TestAssert) -> 
 		_free_routed_fixture(fixture)
 
 
+func _test_routed_trade_bounds_and_ledger_preflight(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var before := _routed_snapshot(fixture)
+	var started := Time.get_ticks_usec()
+	var result: Dictionary = fixture.economy.quote_trade_failure(
+		"grain_seed", EconomyLimits.MAX_SAFE_INTEGER, true
+	)
+	var elapsed := Time.get_ticks_usec() - started
+	assertions.equal(result.get("reason"), "invalid_request", "huge trade quantity is invalid")
+	assertions.truthy(elapsed < 100_000, "huge trade quote returns without per-unit iteration")
+	_assert_routed_snapshot(assertions, before, fixture, "huge trade quote")
+	result = fixture.economy.quote_trade_failure(
+		"grain_seed", EconomyLimits.MAX_TRADE_QUANTITY + 1, true
+	)
+	assertions.equal(result.get("reason"), "invalid_request", "trade limit plus one is invalid")
+
+	var market_state: Dictionary = fixture.market.to_dict()
+	market_state["items"]["grain_seed"]["demand"] = EconomyLimits.MAX_SAFE_INTEGER
+	assertions.truthy(fixture.market.from_dict(market_state), "buy ledger boundary fixture restores")
+	before = _routed_snapshot(fixture)
+	result = fixture.economy.quote_trade_failure("grain_seed", 1, true)
+	assertions.equal(result.get("reason"), "market_ledger_overflow", "buy demand overflow is stable")
+	assertions.truthy(not fixture.economy.buy_item("grain_seed", 1), "buy demand overflow rejects trade")
+	_assert_routed_snapshot(assertions, before, fixture, "buy demand overflow")
+	_free_routed_fixture(fixture)
+
+	fixture = _make_routed_fixture()
+	fixture.router.add_items({"grain": 1})
+	market_state = fixture.market.to_dict()
+	market_state["items"]["grain"]["supply"] = EconomyLimits.MAX_SAFE_INTEGER
+	assertions.truthy(fixture.market.from_dict(market_state), "sale ledger boundary fixture restores")
+	before = _routed_snapshot(fixture)
+	result = fixture.economy.quote_trade_failure("grain", 1, false)
+	assertions.equal(result.get("reason"), "market_ledger_overflow", "sale supply overflow is stable")
+	assertions.truthy(not fixture.economy.sell_item("grain", 1), "sale supply overflow rejects trade")
+	_assert_routed_snapshot(assertions, before, fixture, "sale supply overflow")
+	_free_routed_fixture(fixture)
+
+	fixture = _make_routed_fixture()
+	fixture.router.add_items({"grain": 1})
+	market_state = fixture.market.to_dict()
+	market_state["items"]["grain"]["stock"] = EconomyLimits.MAX_SAFE_INTEGER
+	assertions.truthy(fixture.market.from_dict(market_state), "sale stock boundary fixture restores")
+	before = _routed_snapshot(fixture)
+	result = fixture.economy.quote_trade_failure("grain", 1, false)
+	assertions.equal(result.get("reason"), "market_ledger_overflow", "sale stock overflow is stable")
+	assertions.truthy(not fixture.economy.sell_item("grain", 1), "sale stock overflow rejects trade")
+	_assert_routed_snapshot(assertions, before, fixture, "sale stock overflow")
+	_free_routed_fixture(fixture)
+
+
+func _test_routed_finalization_failures_are_atomic(assertions: TestAssert) -> void:
+	for failure in [
+		"market_end", "router_publish", "persistent_market_restore", "persistent_wallet_compensation"
+	]:
+		var fixture := _make_routed_fixture()
+		var recorder := _connect_trade_recorder(fixture)
+		var before := _routed_snapshot(fixture)
+		match failure:
+			"market_end":
+				fixture.market.fail_next_commit_end = true
+			"router_publish":
+				fixture.router.fail_next_publish = true
+			"persistent_market_restore":
+				fixture.market.fail_next_buy = true
+				fixture.market.fail_all_restore = true
+			"persistent_wallet_compensation":
+				fixture.wallet.fail_all_spend = true
+		assertions.truthy(not fixture.economy.buy_item("grain_seed", 1), failure + " is reported")
+		_assert_routed_snapshot(assertions, before, fixture, failure)
+		_assert_trade_recorder_silent(assertions, recorder, failure)
+		_disconnect_trade_recorder(fixture, recorder)
+		_free_routed_fixture(fixture)
+
+
+func _test_routed_router_lifecycle_is_required(assertions: TestAssert) -> void:
+	var fixture := _make_routed_fixture()
+	var router: ItemContainerRouter = fixture.router
+	fixture.erase("router")
+	router.free()
+	var before := _routed_snapshot(fixture)
+	var result: Dictionary = fixture.economy.quote_trade_failure("grain_seed", 1, true)
+	assertions.equal(result.get("reason"), "transaction_failed", "freed required router is stable")
+	assertions.truthy(not fixture.economy.buy_item("grain_seed", 1), "freed router cannot use legacy path")
+	_assert_routed_snapshot(assertions, before, fixture, "freed required router")
+	_free_routed_fixture(fixture)
+
+
+func _test_routed_trade_rejects_unrestorable_wallet(assertions: TestAssert) -> void:
+	_test_routed_wallet_capability_rejection(assertions, UnrestorableWallet.new(), "missing")
+	_test_routed_wallet_capability_rejection(assertions, RejectingRestoreWallet.new(), "persistent")
+
+
+func _test_routed_wallet_capability_rejection(
+	assertions: TestAssert,
+	wallet: Node,
+	label: String
+) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	var inventory := InventoryDouble.new()
+	var market := MarketDouble.new()
+	var storage := FailingStorage.new()
+	var router := FailingRouter.new()
+	var economy := EconomySystem.new()
+	market.configure([_market_definition("grain_seed", 4, 10)])
+	for node in [inventory, wallet, market, storage, router, economy]:
+		tree.root.add_child(node)
+	storage.configure()
+	router.configure(inventory, storage)
+	assertions.truthy(
+		not economy.configure(inventory, wallet, market, null, router),
+		"routed economy rejects " + label + " exact restore capability"
+	)
+	assertions.equal(
+		economy.quote_trade_failure("grain_seed", 1, true).get("reason"),
+		"not_configured",
+		label + " restore capability fails before mutation"
+	)
+	assertions.truthy(not economy.buy_item("grain_seed", 1), label + " restore wallet cannot trade")
+	assertions.equal(wallet.get("gold"), 1000, label + " restore wallet is unchanged")
+	assertions.equal(inventory.get_item_count("grain_seed"), 0, label + " restore inventory is unchanged")
+	assertions.equal(market.get_stock("grain_seed"), 10, label + " restore market is unchanged")
+	for node in [economy, router, storage, market, wallet, inventory]:
+		node.free()
+
+
 func _test_routed_trade_publication_is_final_and_nonreentrant(assertions: TestAssert) -> void:
 	var fixture := _make_routed_fixture()
 	var recorder := _connect_trade_recorder(fixture)
 	recorder.attempt_reentry = true
+	recorder.reblock_before_reentry = true
 	var before_gold: int = fixture.wallet.gold
 	var crop_total: int = fixture.market.quote_buy("grain", 2)
 	assertions.truthy(fixture.economy.buy_item("grain", 2), "observed crop buy succeeds")
 	assertions.equal(recorder.reentry_results, [false], "trade listener cannot start a nested trade")
+	var event_bus := (Engine.get_main_loop() as SceneTree).root.get_node("EventBus")
+	assertions.truthy(not event_bus.is_blocking_signals(), "listener reblock is cleared before final events")
 	assertions.equal(fixture.router.get_count("grain_seed"), 0, "reentrant seed buy changes nothing")
 	assertions.equal(recorder.storage_events, [{"grain": 2}], "crop buy publishes one storage delta")
 	assertions.equal(recorder.item_events, [], "crop buy publishes no backpack item event")
@@ -952,6 +1154,19 @@ func _test_routed_trade_publication_is_final_and_nonreentrant(assertions: TestAs
 		assertions.equal(observation.gold, before_gold - crop_total, "listener sees final wallet")
 		assertions.equal(observation.crop, 2, "listener sees final crop storage")
 		assertions.equal(observation.crop_stock, 8, "listener sees final crop market stock")
+	assertions.equal(recorder.observations[0].source, "storage", "Router publishes container first")
+	assertions.equal(recorder.observations[-1].source, "gold", "gold notification publishes last")
+	assertions.truthy(
+		recorder.observations.find({
+			"source": "market_bus",
+			"gold": before_gold - crop_total,
+			"seed": 0,
+			"crop": 2,
+			"seed_stock": 10,
+			"crop_stock": 8,
+		}) > 0,
+		"market notification follows Router publication"
+	)
 
 	_disconnect_trade_recorder(fixture, recorder)
 	_free_routed_fixture(fixture)
