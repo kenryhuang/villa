@@ -28,6 +28,24 @@ class CountingCapacity:
 		return value
 
 
+class MaliciousCapacity:
+	extends RefCounted
+	var storage: Node
+	var value := 6
+	var calls := 0
+	var attack_enabled := false
+	var mutation_results: Array[bool] = []
+
+	func _init(target: Node) -> void:
+		storage = target
+
+	func provide() -> Variant:
+		calls += 1
+		if attack_enabled:
+			mutation_results.append(bool(storage.call("add_items", {"tomato": 1})))
+		return value
+
+
 class DisposableCapacity:
 	extends Object
 	var value: Variant
@@ -191,6 +209,115 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_capacity_reentrancy_preserves_notification_order(assertions, tree)
 	_test_change_payload_is_read_only_for_all_listeners(assertions, tree)
 	_test_rejected_operations_and_freed_provider_are_silent(assertions, tree)
+	await _test_source_owned_finalized_publication(assertions, tree)
+
+
+func run_task2_finalized(assertions: TestAssert, tree: SceneTree) -> void:
+	await _test_source_owned_finalized_publication(assertions, tree)
+
+
+func _test_source_owned_finalized_publication(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	var provider := MaliciousCapacity.new(storage)
+	assertions.truthy(storage.configure(provider.provide), "finalized storage fixture configures")
+	provider.calls = 0
+	provider.attack_enabled = true
+	var recorder := SignalRecorder.new(storage)
+	storage.contents_changed.connect(recorder.on_contents)
+	storage.capacity_changed.connect(recorder.on_capacity)
+
+	var transaction: Variant = storage.begin_atomic_transaction()
+	assertions.truthy(storage.stage_add_items(transaction, {"grain": 1}), "finalized storage stages")
+	var publication: Variant = storage.seal_atomic_transaction(transaction)
+	provider.value = 5
+	storage.refresh_capacity()
+	var finalized: Variant = storage.finalize_sealed_publication(publication)
+	assertions.truthy(finalized is RefCounted, "storage finalize returns identity token")
+	assertions.truthy(storage.has_method("owns_finalized_publication"), "storage exposes finalized ownership")
+	assertions.truthy(storage.has_method("cancel_finalized_publication"), "storage exposes finalized cancellation")
+	if (
+		not storage.has_method("owns_finalized_publication")
+		or not storage.has_method("cancel_finalized_publication")
+	):
+		storage.contents_changed.disconnect(recorder.on_contents)
+		storage.capacity_changed.disconnect(recorder.on_capacity)
+		storage.free()
+		return
+	assertions.truthy(
+		bool(storage.call("owns_finalized_publication", finalized)),
+		"storage recognizes exact finalized owner"
+	)
+	assertions.truthy(not finalized.has_method("dispatch"), "finalized token has no dispatch API")
+	assertions.truthy(not finalized.has_method("dispatch_all"), "finalized token has no batch API")
+	finalized.set_meta("actions", [{"item_id": "evil"}])
+	assertions.equal(provider.calls, 0, "storage finalize never invokes pending capacity provider")
+	assertions.equal(provider.mutation_results, [], "provider cannot reenter during storage finalize")
+	assertions.equal(recorder.contents, [], "storage finalize emits no contents callback")
+	assertions.equal(recorder.capacities, [], "storage finalize emits no capacity callback")
+	assertions.equal(storage.begin_atomic_transaction(), null, "finalized storage blocks new transaction")
+	assertions.truthy(not storage.add_items({"grain": 1}), "finalized storage blocks direct mutation")
+	var forged := RefCounted.new()
+	assertions.truthy(
+		not bool(storage.call("dispatch_finalized_publication", forged)),
+		"forged finalized storage token cannot dispatch"
+	)
+	assertions.truthy(
+		not bool(storage.call("cancel_finalized_publication", forged)),
+		"forged finalized storage token cannot cancel"
+	)
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(recorder.contents, [], "retained finalized storage token stays deferred across frames")
+	assertions.equal(provider.calls, 0, "retained finalized storage token keeps provider deferred")
+	assertions.truthy(
+		bool(storage.call("dispatch_finalized_publication", finalized)),
+		"exact finalized storage token dispatches source-owned state"
+	)
+	assertions.equal(provider.calls, 1, "storage dispatch flushes provider after finalized state")
+	assertions.equal(provider.mutation_results, [true], "provider runs only after finalized barrier clears")
+	assertions.equal(recorder.contents[0].changes, {"grain": 1}, "token metadata cannot replace storage payload")
+	assertions.truthy(
+		not bool(storage.call("dispatch_finalized_publication", finalized)),
+		"finalized storage token cannot replay"
+	)
+
+	var committed := storage.get_items()
+	transaction = storage.begin_atomic_transaction()
+	storage.stage_add_items(transaction, {"potato": 1})
+	publication = storage.seal_atomic_transaction(transaction)
+	finalized = storage.finalize_sealed_publication(publication)
+	assertions.truthy(
+		bool(storage.call("cancel_finalized_publication", finalized)),
+		"exact finalized storage token can restore before dispatch"
+	)
+	assertions.equal(storage.get_items(), committed, "finalized storage cancel restores exact snapshot")
+	assertions.truthy(
+		not bool(storage.call("cancel_finalized_publication", finalized)),
+		"finalized storage cancel cannot repeat"
+	)
+	storage.contents_changed.disconnect(recorder.on_contents)
+	storage.capacity_changed.disconnect(recorder.on_capacity)
+	storage.free()
+
+	storage = FarmStorageSystemScript.new()
+	tree.root.add_child(storage)
+	recorder = SignalRecorder.new(storage)
+	storage.contents_changed.connect(recorder.on_contents)
+	transaction = storage.begin_atomic_transaction()
+	storage.stage_add_items(transaction, {"grain": 2})
+	publication = storage.seal_atomic_transaction(transaction)
+	finalized = storage.finalize_sealed_publication(publication)
+	finalized = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(storage.get_items(), {"grain": 2}, "abandoned finalized storage keeps committed state")
+	assertions.equal(recorder.contents.size(), 1, "abandoned finalized storage auto-dispatches once")
+	assertions.truthy(storage.begin_atomic_transaction() != null, "abandoned finalized storage unlocks")
+	storage.free()
 
 
 func _test_refresh_emits_only_when_capacity_changes(
@@ -611,13 +738,13 @@ func _test_sealed_transaction_defers_fifo_notifications(
 	assertions.truthy(storage.stage_add_items(publish_token, {"tomato": 2}), "publish fixture stages harvest")
 	var publish_owner: Variant = storage.call("seal_atomic_transaction", publish_token)
 	storage.call("publish_sealed_transaction", publish_owner)
-	assertions.equal(publish_recorder.nested_add_results, [true], "publish unlocks storage before callbacks")
+	assertions.equal(publish_recorder.nested_add_results, [false], "publication callbacks cannot reenter storage")
 	assertions.equal(
 		publish_recorder.local_contents.map(func(changes: Dictionary) -> Dictionary: return changes.duplicate(true)),
-		[{"tomato": 2}, {"tomato": 1}],
-		"base sealed notification precedes reentrant write notification"
+		[{"tomato": 2}],
+		"rejected callback write publishes no extra notification"
 	)
-	assertions.equal(storage.get_items(), {"grain": 1, "potato": 1, "tomato": 3}, "published and reentrant writes both remain")
+	assertions.equal(storage.get_items(), {"grain": 1, "potato": 1, "tomato": 2}, "rejected callback write leaves committed state")
 
 	storage.contents_changed.disconnect(publish_recorder.on_contents)
 	storage.capacity_changed.disconnect(publish_recorder.on_capacity)

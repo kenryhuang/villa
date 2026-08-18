@@ -289,6 +289,7 @@ class TradeRecorder:
 		_record_observation("storage")
 		if attack_market_during_router_publish:
 			attack_market_during_router_publish = false
+			var forged_finalized := RefCounted.new()
 			market_attack_results = {
 				"begin": market.begin_atomic_transaction(),
 				"buy": market.commit_buy("grain", 1),
@@ -305,6 +306,8 @@ class TradeRecorder:
 					if market.has_method("cancel_sealed_transaction")
 					else false
 				),
+				"dispatch_forged_finalized": market.dispatch_finalized_publication(forged_finalized),
+				"cancel_forged_finalized": market.cancel_finalized_publication(forged_finalized),
 				"legacy_publish": (
 					bool(market.call("publish_deferred_atomic_events"))
 					if market.has_method("publish_deferred_atomic_events")
@@ -1308,8 +1311,10 @@ func _test_router_listener_cannot_mutate_or_consume_market_publication(
 		"supply": false,
 		"publish_null": false,
 		"cancel_null": false,
+		"dispatch_forged_finalized": false,
+		"cancel_forged_finalized": false,
 		"legacy_publish": false,
-	}, "sealed Market rejects every direct callback attack")
+	}, "finalized Market rejects every unowned callback attack")
 	assertions.equal(fixture.market.get_stock("grain"), 8, "malicious callback preserves final stock")
 	assertions.equal(fixture.market.get_item_state("grain").get("demand"), 2, "malicious callback preserves demand")
 	assertions.equal(fixture.wallet.gold, 1000 - total, "malicious callback preserves wallet")

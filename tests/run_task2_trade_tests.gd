@@ -1,6 +1,7 @@
 extends SceneTree
 
 const ItemContainerRouterTest = preload("res://tests/test_item_container_router.gd")
+const FarmStorageSystemTest = preload("res://tests/test_farm_storage_system.gd")
 const MarketMathTest = preload("res://tests/test_market_math.gd")
 const MarketSystemTest = preload("res://tests/test_market_system.gd")
 const EconomyTransactionsTest = preload("res://tests/test_economy_transactions.gd")
@@ -15,7 +16,8 @@ func _init() -> void:
 func _run() -> void:
 	var assertions := TestAssertScript.new()
 	for script_value in [
-		ItemContainerRouterTest, MarketMathTest, MarketSystemTest, EconomyTransactionsTest,
+		FarmStorageSystemTest, ItemContainerRouterTest, MarketMathTest,
+		MarketSystemTest, EconomyTransactionsTest,
 		NpcEconomySystemTest,
 	]:
 		assertions.truthy(
@@ -25,6 +27,14 @@ func _run() -> void:
 	if not assertions.failures.is_empty():
 		_finish(assertions)
 		return
+	assertions.truthy(
+		not ResourceLoader.exists("res://scripts/shared/finalized_publication_batch.gd"),
+		"public executable finalized batch API is removed"
+	)
+	print("[task2-trade] storage start")
+	var storage_checks_before: int = assertions.checks
+	await FarmStorageSystemTest.new().run_task2_finalized(assertions, self)
+	print("[task2-trade] storage complete: %d checks" % (assertions.checks - storage_checks_before))
 	print("[task2-trade] router start")
 	var router_checks_before: int = assertions.checks
 	await ItemContainerRouterTest.new().run(assertions, self)

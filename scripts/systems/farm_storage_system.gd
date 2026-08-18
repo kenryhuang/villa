@@ -3,7 +3,6 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
-const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 const DEFAULT_CAPACITY := 200
 
 signal contents_changed(changes: Dictionary)
@@ -22,6 +21,12 @@ var _sealed_before_items: Dictionary = {}
 var _sealed_before_capacity := DEFAULT_CAPACITY
 var _sealed_batch_marker: RefCounted
 var _sealed_armed := false
+var _finalized_owner: WeakRef
+var _finalized_before_items: Dictionary = {}
+var _finalized_before_capacity := DEFAULT_CAPACITY
+var _finalized_batches: Array[Dictionary] = []
+var _publication_in_progress := false
+var _tearing_down := false
 var _notification_dispatch_suspended := false
 var _capacity_refresh_pending := false
 var _restore_notification_transaction_active := false
@@ -29,10 +34,41 @@ var _restore_before_items: Dictionary = {}
 var _restore_before_capacity := DEFAULT_CAPACITY
 
 
+func _init() -> void:
+	set_process(false)
+
+
+func _enter_tree() -> void:
+	_tearing_down = false
+	_update_process_monitor()
+
+
+func _process(_delta: float) -> void:
+	_recover_abandoned_transaction()
+	_recover_abandoned_seal()
+	_recover_abandoned_finalized()
+	_update_process_monitor()
+
+
+func _exit_tree() -> void:
+	_tearing_down = true
+	set_process(false)
+	if _has_atomic_transaction():
+		_recover_or_rollback_active()
+	if _has_sealed_transaction():
+		if _sealed_armed:
+			_publish_sealed_transaction()
+		else:
+			_cancel_sealed_transaction()
+	if _has_finalized_state():
+		_dispatch_finalized_state()
+
+
 func configure(capacity_provider: Callable = Callable()) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
+	_recover_abandoned_finalized()
+	if _is_mutation_blocked():
 		return false
 	var next_total := DEFAULT_CAPACITY
 	if not capacity_provider.is_null():
@@ -48,20 +84,24 @@ func configure(capacity_provider: Callable = Callable()) -> bool:
 
 
 func get_count(item_id: String) -> int:
+	_recover_abandoned_finalized()
 	return int(_items.get(item_id, 0))
 
 
 func get_items() -> Dictionary:
+	_recover_abandoned_finalized()
 	var snapshot := _items.duplicate(true)
 	snapshot.make_read_only()
 	return snapshot
 
 
 func get_used_capacity() -> int:
+	_recover_abandoned_finalized()
 	return _sum_quantities(_items)
 
 
 func get_total_capacity() -> int:
+	_recover_abandoned_finalized()
 	return _total_capacity
 
 
@@ -80,12 +120,14 @@ func can_add(requested: Dictionary) -> bool:
 func begin_atomic_transaction() -> RefCounted:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
+	_recover_abandoned_finalized()
+	if _is_mutation_blocked():
 		return null
 	var token := RefCounted.new()
 	_transaction_owner = weakref(token)
 	_transaction_items = _items.duplicate(true)
 	_transaction_capacity = _total_capacity
+	_update_process_monitor()
 	call_deferred("_recover_abandoned_transaction")
 	return token
 
@@ -129,6 +171,7 @@ func seal_atomic_transaction(token: Variant) -> RefCounted:
 	if not batch.is_empty():
 		batch["sealed_marker"] = marker
 		_notification_queue.append(batch)
+	_update_process_monitor()
 	call_deferred("_recover_abandoned_seal")
 	return publication
 
@@ -154,56 +197,54 @@ func arm_sealed_transaction(publication: Variant) -> void:
 
 
 func finalize_sealed_publication(publication: Variant) -> RefCounted:
-	if not owns_sealed_transaction(publication):
+	_recover_abandoned_finalized()
+	if not owns_sealed_transaction(publication) or _has_finalized_state() or _publication_in_progress:
 		return null
 	return _finalize_sealed_publication()
 
 
-func dispatch_finalized_publication(batch: Variant) -> bool:
-	return (
-		batch is RefCounted
-		and batch.get_script() == FinalizedPublicationBatchScript
-		and bool(batch.call("is_from", self))
-		and bool(batch.call("dispatch"))
-	)
+func owns_finalized_publication(publication: Variant) -> bool:
+	_recover_abandoned_finalized()
+	return _owns_finalized_publication(publication)
+
+
+func dispatch_finalized_publication(publication: Variant) -> bool:
+	_recover_abandoned_finalized()
+	if not _owns_finalized_publication(publication) or _publication_in_progress:
+		return false
+	return _dispatch_finalized_state()
+
+
+func cancel_finalized_publication(publication: Variant) -> bool:
+	_recover_abandoned_finalized()
+	if not _owns_finalized_publication(publication) or _publication_in_progress:
+		return false
+	_items = _finalized_before_items.duplicate(true)
+	_total_capacity = _finalized_before_capacity
+	_clear_finalized_state()
+	_notification_dispatch_suspended = false
+	_flush_pending_capacity_refresh()
+	_drain_notification_queue()
+	return true
 
 
 func _finalize_sealed_publication() -> RefCounted:
-	if _sealed_publication_owner == null:
+	if _sealed_publication_owner == null or _has_finalized_state():
 		return null
+	var publication := RefCounted.new()
+	_finalized_owner = weakref(publication)
+	_finalized_before_items = _sealed_before_items.duplicate(true)
+	_finalized_before_capacity = _sealed_before_capacity
+	_finalized_batches = _take_sealed_notification_batches()
 	_clear_sealed_transaction()
-	_flush_pending_capacity_refresh()
-	var queued_batches := _notification_queue.duplicate(true)
-	_notification_queue.clear()
-	_notification_dispatch_suspended = false
-	var actions: Array[Dictionary] = []
-	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
-	for batch_value in queued_batches:
-		var batch := batch_value as Dictionary
-		var changes: Dictionary = batch.get("changes", {})
-		if not changes.is_empty():
-			actions.append({
-				"local_target": self,
-				"local_signal": &"contents_changed",
-				"event_bus": event_bus,
-				"bus_signal": &"farm_storage_changed",
-				"arguments": [changes.duplicate(true)],
-			})
-		if bool(batch.get("capacity_changed", false)):
-			actions.append({
-				"local_target": self,
-				"local_signal": &"capacity_changed",
-				"event_bus": event_bus,
-				"bus_signal": &"farm_storage_capacity_changed",
-				"arguments": [int(batch.get("used", 0)), int(batch.get("total", 0))],
-			})
-	return FinalizedPublicationBatchScript.new(self, actions)
+	_update_process_monitor()
+	return publication
 
 
 func _publish_sealed_transaction() -> void:
-	var batch := _finalize_sealed_publication()
-	if batch != null:
-		FinalizedPublicationBatchScript.dispatch_all([batch])
+	var publication := _finalize_sealed_publication()
+	if publication != null:
+		dispatch_finalized_publication(publication)
 
 
 func owns_sealed_transaction(publication: Variant) -> bool:
@@ -234,6 +275,7 @@ func _cancel_sealed_transaction() -> void:
 	_flush_pending_capacity_refresh()
 	_notification_dispatch_suspended = false
 	_drain_notification_queue()
+	_update_process_monitor()
 
 
 func rollback_atomic_transaction(token: Variant) -> bool:
@@ -246,13 +288,15 @@ func rollback_atomic_transaction(token: Variant) -> bool:
 	_transaction_items.clear()
 	_transaction_capacity = _total_capacity
 	_flush_pending_capacity_refresh()
+	_update_process_monitor()
 	return true
 
 
 func add_items(requested: Dictionary) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
+	_recover_abandoned_finalized()
+	if _is_mutation_blocked():
 		return false
 	return _add_items(requested)
 
@@ -290,7 +334,8 @@ func can_remove(requested: Dictionary) -> bool:
 func remove_items(requested: Dictionary) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _restore_notification_transaction_active or _has_atomic_transaction() or _has_sealed_transaction():
+	_recover_abandoned_finalized()
+	if _is_mutation_blocked():
 		return false
 	return _remove_items(requested)
 
@@ -321,6 +366,7 @@ func _remove_items(requested: Dictionary) -> bool:
 
 
 func to_dict() -> Dictionary:
+	_recover_abandoned_finalized()
 	return {"items": _items.duplicate(true)}
 
 
@@ -340,7 +386,8 @@ func from_dict(data: Dictionary) -> bool:
 func restore_items_unchecked(items: Dictionary) -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	_recover_abandoned_finalized()
+	if _has_atomic_transaction() or _has_sealed_transaction() or _has_finalized_state() or _publication_in_progress:
 		return false
 	var normalized_value: Variant = _normalize_items(items, true)
 	if normalized_value == null:
@@ -352,10 +399,13 @@ func restore_items_unchecked(items: Dictionary) -> bool:
 func begin_restore_notification_transaction() -> bool:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
+	_recover_abandoned_finalized()
 	if (
 		_restore_notification_transaction_active
 		or _has_atomic_transaction()
 		or _has_sealed_transaction()
+		or _has_finalized_state()
+		or _publication_in_progress
 	):
 		return false
 	_restore_notification_transaction_active = true
@@ -386,7 +436,8 @@ func end_restore_notification_transaction(commit_changes: bool) -> bool:
 func refresh_capacity() -> void:
 	_recover_abandoned_transaction()
 	_recover_abandoned_seal()
-	if _has_atomic_transaction() or _has_sealed_transaction():
+	_recover_abandoned_finalized()
+	if _has_atomic_transaction() or _has_sealed_transaction() or _has_finalized_state() or _publication_in_progress:
 		_capacity_refresh_pending = true
 		return
 	_refresh_capacity()
@@ -413,6 +464,8 @@ func _flush_pending_capacity_refresh() -> void:
 		not _capacity_refresh_pending
 		or _has_atomic_transaction()
 		or _has_sealed_transaction()
+		or _has_finalized_state()
+		or _publication_in_progress
 	):
 		return
 	_capacity_refresh_pending = false
@@ -519,6 +572,97 @@ func _clear_sealed_transaction() -> void:
 	_sealed_before_capacity = _total_capacity
 	_sealed_batch_marker = null
 	_sealed_armed = false
+	_update_process_monitor()
+
+
+func _take_sealed_notification_batches() -> Array[Dictionary]:
+	var taken: Array[Dictionary] = []
+	if _sealed_batch_marker == null:
+		return taken
+	for index in range(_notification_queue.size() - 1, -1, -1):
+		var batch := _notification_queue[index] as Dictionary
+		if batch.get("sealed_marker") != _sealed_batch_marker:
+			continue
+		batch.erase("sealed_marker")
+		taken.push_front(batch)
+		_notification_queue.remove_at(index)
+	return taken
+
+
+func _has_finalized_state() -> bool:
+	return _finalized_owner != null
+
+
+func _owns_finalized_publication(publication: Variant) -> bool:
+	return (
+		publication is RefCounted
+		and _finalized_owner != null
+		and _finalized_owner.get_ref() == publication
+	)
+
+
+func _clear_finalized_state() -> void:
+	_finalized_owner = null
+	_finalized_before_items.clear()
+	_finalized_before_capacity = _total_capacity
+	_finalized_batches.clear()
+	_update_process_monitor()
+
+
+func _dispatch_finalized_state() -> bool:
+	if not _has_finalized_state() or _publication_in_progress:
+		return false
+	var batches: Array[Dictionary] = _finalized_batches.duplicate()
+	_publication_in_progress = true
+	_clear_finalized_state()
+	_publication_in_progress = false
+	_flush_pending_capacity_refresh()
+	_publication_in_progress = true
+	var event_bus := get_node_or_null("/root/EventBus") if is_inside_tree() else null
+	var event_bus_was_blocked := is_instance_valid(event_bus) and event_bus.is_blocking_signals()
+	for batch in batches:
+		_dispatch_committed_notification_batch(batch, event_bus)
+	if is_instance_valid(event_bus):
+		event_bus.set_block_signals(event_bus_was_blocked)
+	_publication_in_progress = false
+	_notification_dispatch_suspended = false
+	_drain_notification_queue()
+	_update_process_monitor()
+	return true
+
+
+func _dispatch_committed_notification_batch(batch: Dictionary, event_bus: Node) -> void:
+	var changes: Dictionary = batch.get("changes", {})
+	if not changes.is_empty():
+		contents_changed.emit(changes)
+		if is_instance_valid(event_bus) and event_bus.has_signal(&"farm_storage_changed"):
+			event_bus.set_block_signals(false)
+			event_bus.emit_signal(&"farm_storage_changed", changes)
+	if bool(batch.get("capacity_changed", false)):
+		var used := int(batch.get("used", 0))
+		var total := int(batch.get("total", 0))
+		capacity_changed.emit(used, total)
+		if is_instance_valid(event_bus) and event_bus.has_signal(&"farm_storage_capacity_changed"):
+			event_bus.set_block_signals(false)
+			event_bus.emit_signal(&"farm_storage_capacity_changed", used, total)
+
+
+func _recover_abandoned_finalized() -> void:
+	if (
+		_has_finalized_state()
+		and (_finalized_owner.get_ref() == null or not is_inside_tree() and _tearing_down)
+	):
+		_dispatch_finalized_state()
+
+
+func _is_mutation_blocked() -> bool:
+	return (
+		_restore_notification_transaction_active
+		or _has_atomic_transaction()
+		or _has_sealed_transaction()
+		or _has_finalized_state()
+		or _publication_in_progress
+	)
 
 
 func _has_sealed_transaction() -> bool:
@@ -554,6 +698,19 @@ func _recover_abandoned_transaction() -> void:
 	_transaction_items.clear()
 	_transaction_capacity = _total_capacity
 	_flush_pending_capacity_refresh()
+	_update_process_monitor()
+
+
+func _recover_or_rollback_active() -> void:
+	if not _has_atomic_transaction():
+		return
+	_items = _transaction_items.duplicate(true)
+	_total_capacity = _transaction_capacity
+	_transaction_owner = null
+	_transaction_items.clear()
+	_transaction_capacity = _total_capacity
+	_flush_pending_capacity_refresh()
+	_update_process_monitor()
 
 
 func _is_sealed_transaction_owner(publication: Variant) -> bool:
@@ -574,6 +731,12 @@ func _dispatch_notification_batch(batch: Dictionary) -> void:
 		var total := int(batch.total)
 		capacity_changed.emit(used, total)
 		_emit_event(&"farm_storage_capacity_changed", [used, total])
+
+
+func _update_process_monitor() -> void:
+	if _tearing_down or not is_inside_tree():
+		return
+	set_process(_has_atomic_transaction() or _has_sealed_transaction() or _has_finalized_state())
 
 
 func _emit_event(signal_name: StringName, arguments: Array) -> void:

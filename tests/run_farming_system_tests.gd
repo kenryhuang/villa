@@ -26,7 +26,7 @@ func _run() -> void:
 	GrainCropArtAssetsTest.new().run(assertions)
 	CropSpriteClusterTest.new().run(assertions, self)
 	GrainCropModelsTest.new().run(assertions, self)
-	FarmStorageSystemTest.new().run(assertions, self)
+	await FarmStorageSystemTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d farming system checks" % assertions.checks)
 		quit(0)

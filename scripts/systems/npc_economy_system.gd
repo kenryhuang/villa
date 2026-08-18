@@ -57,7 +57,8 @@ func configure(
 		"begin_atomic_transaction", "rollback_atomic_transaction", "owns_atomic_transaction",
 		"stage_buy", "stage_sell", "seal_atomic_transaction", "owns_sealed_transaction",
 		"cancel_sealed_transaction", "finalize_sealed_publication",
-		"dispatch_finalized_publication",
+		"dispatch_finalized_publication", "owns_finalized_publication",
+		"cancel_finalized_publication",
 	]):
 		return false
 	var candidate_definitions := _market_definitions(market_system)
@@ -513,7 +514,7 @@ func _execute_market_bundle(
 		var delta := int(items[item_id]) if is_buy else -int(items[item_id])
 		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) + delta
 	if not bool(_market_system.call("dispatch_finalized_publication", batch)):
-		_restore_failed_market_bundle(state, npc_before, market_before, null, null)
+		_restore_failed_market_bundle(state, npc_before, market_before, null, null, batch)
 		return false
 	return true
 
@@ -523,10 +524,11 @@ func _restore_failed_market_bundle(
 	npc_before: Dictionary,
 	market_before: Dictionary,
 	transaction: Variant,
-	publication: Variant
+	publication: Variant,
+	finalized: Variant = null
 ) -> bool:
 	var market_restored := _restore_failed_market_transaction(
-		market_before, transaction, publication
+		market_before, transaction, publication, finalized
 	)
 	var npc_restored := state.from_dict(npc_before)
 	return market_restored and npc_restored
@@ -535,7 +537,8 @@ func _restore_failed_market_bundle(
 func _restore_failed_market_transaction(
 	market_before: Dictionary,
 	transaction: Variant,
-	publication: Variant
+	publication: Variant,
+	finalized: Variant = null
 ) -> bool:
 	var transaction_restored := true
 	if (
@@ -551,6 +554,13 @@ func _restore_failed_market_transaction(
 	):
 		transaction_restored = bool(_market_system.call(
 			"cancel_sealed_transaction", publication
+		))
+	elif (
+		finalized != null
+		and bool(_market_system.call("owns_finalized_publication", finalized))
+	):
+		transaction_restored = bool(_market_system.call(
+			"cancel_finalized_publication", finalized
 		))
 	var market_restored: bool = _market_system.call("to_dict") == market_before
 	if not market_restored:
@@ -647,7 +657,7 @@ func _import_essential(item_id: String, total_day: int) -> bool:
 			"departure_day": total_day + 1,
 		})
 	if not bool(_market_system.call("dispatch_finalized_publication", batch)):
-		_restore_failed_market_transaction(market_before, null, null)
+		_restore_failed_market_transaction(market_before, null, null, batch)
 		from_dict(npc_before)
 		return false
 	_emit_event("market_caravan_changed", [

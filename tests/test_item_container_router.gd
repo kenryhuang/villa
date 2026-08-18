@@ -321,8 +321,10 @@ func _test_composable_publish_observes_final_state(assertions: TestAssert, tree:
 	var has_finalize: bool = (
 		fixture.router.has_method("finalize_sealed_publication")
 		and fixture.router.has_method("dispatch_finalized_publication")
+		and fixture.router.has_method("cancel_finalized_publication")
+		and fixture.router.has_method("owns_finalized_publication")
 	)
-	assertions.truthy(has_finalize, "router exposes finalized publication batches")
+	assertions.truthy(has_finalize, "router exposes finalized publication tokens")
 	if not has_finalize:
 		fixture.router.cancel_sealed_transaction(publication)
 		_disconnect_recorder(fixture, tree, recorder)
@@ -334,14 +336,44 @@ func _test_composable_publish_observes_final_state(assertions: TestAssert, tree:
 	tree.root.get_node("EventBus").gold_changed.emit(99)
 	assertions.equal(outer_events[0], 1, "sealed router does not swallow outer-domain events")
 	tree.root.get_node("EventBus").gold_changed.disconnect(on_outer_event)
-	var batch: Variant = fixture.router.call("finalize_sealed_publication", publication)
-	assertions.truthy(batch is RefCounted, "router finalizes publication to a batch")
+	var finalized: Variant = fixture.router.call("finalize_sealed_publication", publication)
+	assertions.truthy(finalized is RefCounted, "router finalizes publication to an identity token")
+	assertions.truthy(
+		fixture.router.has_method("owns_finalized_publication")
+		and bool(fixture.router.call("owns_finalized_publication", finalized)),
+		"router recognizes exact finalized owner"
+	)
+	assertions.truthy(
+		fixture.router.has_method("cancel_finalized_publication"),
+		"router exposes finalized cancellation"
+	)
+	assertions.truthy(not finalized.has_method("dispatch"), "router finalized token has no dispatch API")
+	finalized.set_meta("actions", [{"signal": "evil"}])
 	assertions.equal(recorder.records.size(), 0, "router finalize emits no EventBus event")
 	assertions.equal(recorder.quick_records.size(), 0, "router finalize emits no mapping event")
 	assertions.equal(recorder.local_storage_records.size(), 0, "router finalize emits no storage event")
+	assertions.equal(fixture.router.begin_atomic_transaction(), null, "finalized router blocks new transaction")
 	assertions.truthy(
-		bool(fixture.router.call("dispatch_finalized_publication", batch)),
-		"router finalized batch dispatches"
+		not fixture.router.restore_snapshot({
+			&"inventory": {
+				"slots": fixture.inventory.slots.duplicate(true),
+				"quick_mappings": fixture.inventory.quick_slot_mappings.duplicate(),
+			},
+		}),
+		"finalized router blocks snapshot restore"
+	)
+	var forged := RefCounted.new()
+	assertions.truthy(
+		not bool(fixture.router.call("dispatch_finalized_publication", forged)),
+		"forged router finalized token cannot dispatch"
+	)
+	assertions.truthy(
+		not bool(fixture.router.call("cancel_finalized_publication", forged)),
+		"forged router finalized token cannot cancel"
+	)
+	assertions.truthy(
+		bool(fixture.router.call("dispatch_finalized_publication", finalized)),
+		"router finalized token dispatches source-owned state"
 	)
 	assertions.equal(recorder.records.size(), 2, "publish emits both container EventBus events")
 	assertions.equal(recorder.quick_records.size(), 1, "publish emits deferred quick mapping event")
@@ -350,8 +382,8 @@ func _test_composable_publish_observes_final_state(assertions: TestAssert, tree:
 		assertions.equal(record.wood, 0, "publish listener sees final inventory state")
 		assertions.equal(record.grain, 0, "publish listener sees final storage state")
 	assertions.truthy(
-		not bool(fixture.router.call("dispatch_finalized_publication", batch)),
-		"router finalized batch cannot dispatch twice"
+		not bool(fixture.router.call("dispatch_finalized_publication", finalized)),
+		"router finalized token cannot dispatch twice"
 	)
 	_disconnect_recorder(fixture, tree, recorder)
 	_free_fixture(fixture)
@@ -376,6 +408,29 @@ func _test_composable_cancel_is_exact_and_silent(assertions: TestAssert, tree: S
 	assertions.equal(fixture.storage.get_items(), before_storage, "cancel restores storage exactly")
 	_assert_recorder_silent(assertions, recorder, "cancel")
 	assertions.truthy(not fixture.router.cancel_sealed_transaction(publication), "publication cannot cancel twice")
+	if (
+		not fixture.router.has_method("finalize_sealed_publication")
+		or not fixture.router.has_method("cancel_finalized_publication")
+	):
+		_disconnect_recorder(fixture, tree, recorder)
+		_free_fixture(fixture)
+		return
+	token = fixture.router.begin_atomic_transaction()
+	fixture.router.stage_add_items(token, {"wood": 1, "grain": 1})
+	publication = fixture.router.seal_atomic_transaction(token)
+	var finalized: Variant = fixture.router.call("finalize_sealed_publication", publication)
+	assertions.truthy(
+		bool(fixture.router.call("cancel_finalized_publication", finalized)),
+		"router finalized owner can cancel before dispatch"
+	)
+	assertions.equal(fixture.inventory.slots, before_slots, "finalized cancel restores inventory slots")
+	assertions.equal(fixture.inventory.quick_slot_mappings, before_mappings, "finalized cancel restores mappings")
+	assertions.equal(fixture.storage.get_items(), before_storage, "finalized cancel restores storage")
+	_assert_recorder_silent(assertions, recorder, "finalized cancel")
+	assertions.truthy(
+		not bool(fixture.router.call("cancel_finalized_publication", finalized)),
+		"router finalized token cannot cancel twice"
+	)
 	_disconnect_recorder(fixture, tree, recorder)
 	_free_fixture(fixture)
 
@@ -613,6 +668,35 @@ func _test_late_abandonment_recovers_without_router_call(
 	_assert_container_transactions_available(assertions, publish_fixture, "armed publication abandonment")
 	_disconnect_recorder(publish_fixture, tree, publish_recorder)
 	_free_fixture(publish_fixture)
+
+	var finalized_fixture := _make_fixture(tree)
+	var finalized_recorder := _connect_recorder(finalized_fixture, tree)
+	var finalized_transaction: RefCounted = finalized_fixture.router.begin_atomic_transaction()
+	finalized_fixture.router.stage_add_items(finalized_transaction, {"wood": 1, "grain": 1})
+	var finalized_seal: RefCounted = finalized_fixture.router.seal_atomic_transaction(
+		finalized_transaction
+	)
+	var finalized_owner: Variant = finalized_fixture.router.call(
+		"finalize_sealed_publication", finalized_seal
+	)
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(finalized_recorder.records, [], "retained router finalized token stays deferred")
+	assertions.equal(
+		finalized_fixture.router.begin_atomic_transaction(),
+		null,
+		"retained finalized router stays locked"
+	)
+	finalized_owner = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(finalized_fixture.router.get_count("wood"), 1, "abandoned finalized router keeps inventory")
+	assertions.equal(finalized_fixture.router.get_count("grain"), 1, "abandoned finalized router keeps storage")
+	assertions.equal(finalized_recorder.records.size(), 2, "abandoned finalized router auto-dispatches once")
+	assertions.equal(finalized_recorder.local_storage_records.size(), 1, "abandoned router dispatches storage once")
+	_assert_container_transactions_available(assertions, finalized_fixture, "finalized abandonment")
+	_disconnect_recorder(finalized_fixture, tree, finalized_recorder)
+	_free_fixture(finalized_fixture)
 
 
 func _test_publish_reentrancy_is_rejected(assertions: TestAssert, tree: SceneTree) -> void:

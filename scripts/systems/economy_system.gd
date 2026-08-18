@@ -3,7 +3,6 @@ extends Node
 
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
-const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 
 ## 经济系统 - 金币管理、订单系统、资源消耗
 
@@ -360,43 +359,38 @@ func _execute_routed_trade(item_id: String, quantity: int, is_buy: bool) -> bool
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
 
-	var router_batch: RefCounted = _router_ref.finalize_sealed_publication(router_publication)
-	if router_batch == null:
+	var router_finalized: RefCounted = _router_ref.finalize_sealed_publication(router_publication)
+	if router_finalized == null:
 		var restored := _rollback_routed_trade(
 			null, router_publication, null, market_publication,
 			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
 		return false if restored else _report_failed_rollback()
-	var market_batch: RefCounted = _market_ref.call(
+	var market_finalized: RefCounted = _market_ref.call(
 		"finalize_sealed_publication", market_publication
 	)
-	if market_batch == null:
+	if market_finalized == null:
+		var router_cancelled := _router_ref.cancel_finalized_publication(router_finalized)
 		var restored := _rollback_routed_trade(
 			null, null, null, market_publication,
 			router_before, market_before, wallet_before, event_bus_transaction
 		)
 		_trade_active = false
-		return false if restored else _report_failed_rollback()
+		return false if router_cancelled and restored else _report_failed_rollback()
 	_restore_event_bus_block(event_bus_transaction)
-	var wallet_batch := FinalizedPublicationBatchScript.new(self, [{
-		"event_bus": _event_bus,
-		"bus_signal": &"gold_changed",
-		"arguments": [int(_get_wallet_balance())],
-	}])
-	var dispatched := FinalizedPublicationBatchScript.dispatch_all([
-		router_batch, market_batch, wallet_batch,
-	])
-	if not dispatched:
-		var restored := _rollback_routed_trade(
-			null, null, null, null,
-			router_before, market_before, wallet_before, event_bus_transaction
-		)
-		_trade_active = false
-		return false if restored else _report_failed_rollback()
+	var router_dispatched := _router_ref.dispatch_finalized_publication(router_finalized)
+	var market_dispatched := (
+		bool(_market_ref.call("dispatch_finalized_publication", market_finalized))
+		if is_instance_valid(_market_ref)
+		else true
+	)
+	if not router_dispatched or not market_dispatched:
+		push_error("A source-owned finalized publication violated its dispatch guarantee.")
 	_ensure_event_bus_unblocked(event_bus_transaction)
+	_publish_routed_wallet_event(event_bus_transaction)
 	_trade_active = false
-	return true
+	return router_dispatched and market_dispatched
 
 
 func _rollback_routed_trade(
@@ -585,6 +579,7 @@ func _market_supports_routed_transactions() -> bool:
 		"get_item_state", "rollback_atomic_transaction", "owns_atomic_transaction",
 		"stage_buy", "stage_sell", "seal_atomic_transaction",
 		"finalize_sealed_publication", "dispatch_finalized_publication",
+		"cancel_finalized_publication", "owns_finalized_publication",
 		"cancel_sealed_transaction", "owns_sealed_transaction",
 	]:
 		if not _market_ref.has_method(method_name):

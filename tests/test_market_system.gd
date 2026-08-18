@@ -181,11 +181,15 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 		"stage_buy", "stage_sell", "stage_external_demand", "stage_external_supply",
 		"seal_atomic_transaction", "can_arm_sealed_transaction", "arm_sealed_transaction",
 		"finalize_sealed_publication", "dispatch_finalized_publication",
+		"cancel_finalized_publication", "owns_finalized_publication",
 		"publish_sealed_transaction", "cancel_sealed_transaction", "owns_sealed_transaction",
 	]
+	var missing_required := false
 	for method_name in required_methods:
 		assertions.truthy(market.has_method(method_name), "market exposes " + method_name)
-	if required_methods.any(func(method_name: String) -> bool: return not market.has_method(method_name)):
+		if not market.has_method(method_name):
+			missing_required = true
+	if missing_required:
 		market.free()
 		return
 
@@ -257,17 +261,44 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 	assertions.truthy(not market.add_external_supply("wood", 1), "sealed market rejects supply mutation")
 	assertions.truthy(not market.settle_day(1), "sealed market rejects settlement mutation")
 	assertions.equal(stock_events, [], "sealed market has published no transient event")
-	var batch: Variant = market.call("finalize_sealed_publication", publication)
-	assertions.truthy(batch is RefCounted, "owned market publication finalizes to a batch")
-	assertions.equal(stock_events, [], "market finalize invokes no callback")
+	var finalized: Variant = market.call("finalize_sealed_publication", publication)
+	assertions.truthy(finalized is RefCounted, "owned market publication finalizes to identity token")
 	assertions.truthy(
-		bool(market.call("dispatch_finalized_publication", batch)),
-		"finalized market batch dispatches"
+		bool(market.call("owns_finalized_publication", finalized)),
+		"market recognizes exact finalized owner"
 	)
-	assertions.equal(stock_events, [9], "finalized market batch emits exactly once")
+	assertions.truthy(not finalized.has_method("dispatch"), "market finalized token has no dispatch API")
+	assertions.truthy(not finalized.has_method("dispatch_all"), "market token has no batch API")
+	finalized.set_meta("actions", [{"stock": 999}])
+	assertions.equal(stock_events, [], "market finalize invokes no callback")
+	assertions.equal(market.begin_atomic_transaction(), null, "finalized market rejects another transaction")
+	assertions.truthy(not market.commit_buy("wood", 1), "finalized market rejects direct buy")
+	assertions.truthy(not market.commit_sell("wood", 1), "finalized market rejects direct sale")
+	assertions.truthy(not market.add_external_demand("wood", 1), "finalized market rejects demand")
+	assertions.truthy(not market.add_external_supply("wood", 1), "finalized market rejects supply")
+	var finalized_state: Dictionary = market.to_dict()
+	assertions.truthy(not market.from_dict(finalized_state), "finalized market rejects direct restore")
 	assertions.truthy(
-		not bool(market.call("dispatch_finalized_publication", batch)),
-		"finalized market batch cannot replay"
+		not market.restore_from_dict_with_current_catalog(finalized_state),
+		"finalized market rejects catalog restore"
+	)
+	var forged_finalized := RefCounted.new()
+	assertions.truthy(
+		not bool(market.call("dispatch_finalized_publication", forged_finalized)),
+		"forged finalized market token cannot dispatch"
+	)
+	assertions.truthy(
+		not bool(market.call("cancel_finalized_publication", forged_finalized)),
+		"forged finalized market token cannot cancel"
+	)
+	assertions.truthy(
+		bool(market.call("dispatch_finalized_publication", finalized)),
+		"finalized market token dispatches source-owned state"
+	)
+	assertions.equal(stock_events, [9], "market ignores token metadata and emits source state once")
+	assertions.truthy(
+		not bool(market.call("dispatch_finalized_publication", finalized)),
+		"finalized market token cannot replay"
 	)
 	var committed_state := market.to_dict()
 	var cancel_transaction: Variant = market.begin_atomic_transaction()
@@ -282,6 +313,22 @@ func _test_sealed_publication_requires_ownership(assertions: TestAssert) -> void
 	)
 	assertions.equal(market.to_dict(), committed_state, "owned market cancellation restores exact state")
 	assertions.equal(stock_events, [9], "market cancellation emits no event")
+	var final_cancel_transaction: Variant = market.begin_atomic_transaction()
+	market.call("stage_sell", final_cancel_transaction, "wood", 1)
+	var final_cancel_seal: Variant = market.seal_atomic_transaction(final_cancel_transaction)
+	var final_cancel_owner: Variant = market.call(
+		"finalize_sealed_publication", final_cancel_seal
+	)
+	assertions.truthy(
+		bool(market.call("cancel_finalized_publication", final_cancel_owner)),
+		"exact finalized market owner restores before dispatch"
+	)
+	assertions.equal(market.to_dict(), committed_state, "finalized market cancellation restores snapshot")
+	assertions.equal(stock_events, [9], "finalized market cancellation remains silent")
+	assertions.truthy(
+		not bool(market.call("cancel_finalized_publication", final_cancel_owner)),
+		"finalized market cancellation cannot repeat"
+	)
 	market.free()
 
 
@@ -333,15 +380,30 @@ func _test_abandoned_state_recovers_without_market_calls(
 	assertions.equal(stock_events, [9], "armed publication abandonment dispatches exactly once")
 	assertions.truthy(not market.is_processing(), "armed recovery disables monitor")
 
+	var finalized_transaction: Variant = market.begin_atomic_transaction()
+	market.call("stage_sell", finalized_transaction, "wood", 2)
+	var finalized_seal: Variant = market.seal_atomic_transaction(finalized_transaction)
+	var finalized_owner: Variant = market.call("finalize_sealed_publication", finalized_seal)
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(stock_events, [9], "retained finalized market token stays deferred")
+	assertions.equal(market.begin_atomic_transaction(), null, "retained finalized market stays locked")
+	finalized_owner = null
+	await tree.process_frame
+	await tree.process_frame
+	assertions.equal(market.get_stock("wood"), 11, "abandoned finalized market keeps committed state")
+	assertions.equal(stock_events, [9, 11], "abandoned finalized market auto-dispatches once")
+	assertions.truthy(not market.is_processing(), "finalized abandonment disables monitor")
+
 	var read_owner: Variant = market.begin_atomic_transaction()
 	market.call("stage_buy", read_owner, "wood", 1)
 	read_owner = null
-	assertions.equal(market.to_dict().items.wood.stock, 9, "to_dict recovers abandoned active state")
+	assertions.equal(market.to_dict().items.wood.stock, 11, "to_dict recovers abandoned active state")
 
 	var reparent_owner: Variant = market.begin_atomic_transaction()
 	market.call("stage_buy", reparent_owner, "wood", 1)
 	tree.root.remove_child(market)
-	assertions.equal(market.get_stock("wood"), 9, "exit tree rolls back active state")
+	assertions.equal(market.get_stock("wood"), 11, "exit tree rolls back active state")
 	tree.root.add_child(market)
 	await tree.process_frame
 	var second_owner: Variant = market.begin_atomic_transaction()

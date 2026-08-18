@@ -3,7 +3,6 @@ extends Node
 
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const MarketMath = preload("res://scripts/shared/market_math.gd")
-const FinalizedPublicationBatchScript = preload("res://scripts/shared/finalized_publication_batch.gd")
 
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
@@ -25,6 +24,11 @@ var _sealed_stock_events: Dictionary = {}
 var _sealed_price_events: Dictionary = {}
 var _sealed_settlement_day := 0
 var _sealed_armed := false
+var _finalized_owner: WeakRef
+var _finalized_snapshot: Dictionary = {}
+var _finalized_stock_events: Dictionary = {}
+var _finalized_price_events: Dictionary = {}
+var _finalized_settlement_day := 0
 var _publication_in_progress := false
 var _tearing_down := false
 
@@ -55,16 +59,16 @@ func _exit_tree() -> void:
 		_rollback_abandoned_transaction()
 	if _has_sealed_state():
 		if _sealed_armed:
-			var batch := _finalize_sealed_publication()
-			if batch != null:
-				FinalizedPublicationBatchScript.dispatch_all([batch])
+			_publish_sealed_transaction()
 		else:
 			_cancel_sealed_publication()
+	if _has_finalized_state():
+		_dispatch_finalized_state()
 
 
 func configure(item_definitions: Array) -> bool:
 	_recover_abandoned_state()
-	if _has_atomic_state() or _has_sealed_state() or _publication_in_progress or item_definitions.is_empty():
+	if _has_atomic_state() or _has_sealed_state() or _has_finalized_state() or _publication_in_progress or item_definitions.is_empty():
 		return false
 	var configured_items: Dictionary = {}
 	for definition_value in item_definitions:
@@ -178,7 +182,7 @@ func can_buy(item_id: String, quantity: int) -> bool:
 
 func begin_atomic_transaction() -> RefCounted:
 	_recover_abandoned_state()
-	if _items.is_empty() or _has_atomic_state() or _has_sealed_state() or _publication_in_progress:
+	if _items.is_empty() or _has_atomic_state() or _has_sealed_state() or _has_finalized_state() or _publication_in_progress:
 		return null
 	var snapshot := to_dict()
 	var token := RefCounted.new()
@@ -272,18 +276,30 @@ func publish_sealed_transaction(publication: Variant) -> bool:
 
 func finalize_sealed_publication(publication: Variant) -> RefCounted:
 	_recover_abandoned_state()
-	if _publication_in_progress or not _owns_sealed_transaction(publication):
+	if _publication_in_progress or _has_finalized_state() or not _owns_sealed_transaction(publication):
 		return null
 	return _finalize_sealed_publication()
 
 
-func dispatch_finalized_publication(batch: Variant) -> bool:
-	return (
-		batch is RefCounted
-		and batch.get_script() == FinalizedPublicationBatchScript
-		and bool(batch.call("is_from", self))
-		and bool(batch.call("dispatch"))
-	)
+func owns_finalized_publication(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	return _owns_finalized_publication(publication)
+
+
+func dispatch_finalized_publication(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	if not _owns_finalized_publication(publication) or _publication_in_progress:
+		return false
+	return _dispatch_finalized_state()
+
+
+func cancel_finalized_publication(publication: Variant) -> bool:
+	_recover_abandoned_state()
+	if not _owns_finalized_publication(publication) or _publication_in_progress:
+		return false
+	var before := _finalized_snapshot.duplicate(true)
+	_clear_finalized_state()
+	return _restore_transaction_snapshot(before)
 
 
 func cancel_sealed_transaction(publication: Variant) -> bool:
@@ -456,7 +472,7 @@ func to_dict() -> Dictionary:
 
 func from_dict(data: Dictionary) -> bool:
 	_recover_abandoned_state()
-	if _has_atomic_state() or _has_sealed_state() or _publication_in_progress:
+	if _has_atomic_state() or _has_sealed_state() or _has_finalized_state() or _publication_in_progress:
 		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
@@ -480,7 +496,7 @@ func from_dict(data: Dictionary) -> bool:
 
 func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
 	_recover_abandoned_state()
-	if _has_atomic_state() or _has_sealed_state() or _publication_in_progress or _catalog_defaults.is_empty():
+	if _has_atomic_state() or _has_sealed_state() or _has_finalized_state() or _publication_in_progress or _catalog_defaults.is_empty():
 		return false
 	if not data.has("last_settled_day") or not data.has("items"):
 		return false
@@ -659,54 +675,31 @@ func _restore_transaction_snapshot(snapshot: Dictionary) -> bool:
 
 func _can_direct_mutate() -> bool:
 	_recover_abandoned_state()
-	return not _has_atomic_state() and not _has_sealed_state() and not _publication_in_progress
-
-
-func _finalize_sealed_publication() -> RefCounted:
-	if not _has_sealed_state() or _publication_in_progress:
-		return null
-	var stock_events := _sealed_stock_events.duplicate()
-	var price_events := _sealed_price_events.duplicate()
-	var settlement_day := _sealed_settlement_day
-	_clear_sealed_state()
-	var actions: Array[Dictionary] = []
-	for item_id in stock_events:
-		actions.append({
-			"local_target": self,
-			"local_signal": &"market_stock_changed",
-			"event_bus": _event_bus,
-			"bus_signal": &"market_stock_changed",
-			"arguments": [str(item_id), int(stock_events[item_id])],
-		})
-	for item_id in price_events:
-		actions.append({
-			"local_target": self,
-			"local_signal": &"market_price_changed",
-			"event_bus": _event_bus,
-			"bus_signal": &"market_price_changed",
-			"arguments": [str(item_id), int(price_events[item_id])],
-		})
-	if settlement_day > 0:
-		actions.append({
-			"local_target": self,
-			"local_signal": &"market_settled",
-			"event_bus": _event_bus,
-			"bus_signal": &"market_settled",
-			"arguments": [settlement_day],
-		})
-	_update_process_monitor()
-	return FinalizedPublicationBatchScript.new(
-		self,
-		actions,
-		[],
-		Callable(self, "_begin_finalized_dispatch"),
-		Callable(self, "_end_finalized_dispatch")
+	return (
+		not _has_atomic_state()
+		and not _has_sealed_state()
+		and not _has_finalized_state()
+		and not _publication_in_progress
 	)
 
 
+func _finalize_sealed_publication() -> RefCounted:
+	if not _has_sealed_state() or _has_finalized_state() or _publication_in_progress:
+		return null
+	var publication := RefCounted.new()
+	_finalized_owner = weakref(publication)
+	_finalized_snapshot = _sealed_snapshot.duplicate(true)
+	_finalized_stock_events = _sealed_stock_events.duplicate()
+	_finalized_price_events = _sealed_price_events.duplicate()
+	_finalized_settlement_day = _sealed_settlement_day
+	_clear_sealed_state()
+	_update_process_monitor()
+	return publication
+
+
 func _publish_sealed_transaction() -> bool:
-	var batch := _finalize_sealed_publication()
-	return batch != null and FinalizedPublicationBatchScript.dispatch_all([batch])
+	var publication := _finalize_sealed_publication()
+	return publication != null and dispatch_finalized_publication(publication)
 
 
 func _cancel_sealed_publication() -> bool:
@@ -725,12 +718,21 @@ func _rollback_abandoned_transaction() -> bool:
 	return _restore_transaction_snapshot(before)
 
 
-func _begin_finalized_dispatch() -> void:
+func _dispatch_finalized_state() -> bool:
+	if not _has_finalized_state() or _publication_in_progress:
+		return false
+	var stock_events := _finalized_stock_events.duplicate()
+	var price_events := _finalized_price_events.duplicate()
+	var settlement_day := _finalized_settlement_day
 	_publication_in_progress = true
-
-
-func _end_finalized_dispatch() -> void:
+	_clear_finalized_state()
+	var event_bus_was_blocked := is_instance_valid(_event_bus) and _event_bus.is_blocking_signals()
+	_publish_committed_events(stock_events, price_events, settlement_day)
+	if is_instance_valid(_event_bus):
+		_event_bus.set_block_signals(event_bus_was_blocked)
 	_publication_in_progress = false
+	_update_process_monitor()
+	return true
 
 
 func _publish_committed_events(
@@ -798,6 +800,18 @@ func _owns_sealed_transaction(publication: Variant) -> bool:
 	)
 
 
+func _has_finalized_state() -> bool:
+	return _finalized_owner != null
+
+
+func _owns_finalized_publication(publication: Variant) -> bool:
+	return (
+		publication is RefCounted
+		and _finalized_owner != null
+		and _finalized_owner.get_ref() == publication
+	)
+
+
 func _recover_abandoned_state() -> void:
 	if _has_atomic_state() and (
 		_transaction_owner == null or _transaction_owner.get_ref() == null
@@ -808,6 +822,8 @@ func _recover_abandoned_state() -> void:
 			_publish_sealed_transaction()
 		else:
 			_cancel_sealed_publication()
+	if _has_finalized_state() and _finalized_owner.get_ref() == null:
+		_dispatch_finalized_state()
 
 
 func _clear_transaction_state() -> void:
@@ -829,7 +845,16 @@ func _clear_sealed_state() -> void:
 	_update_process_monitor()
 
 
+func _clear_finalized_state() -> void:
+	_finalized_owner = null
+	_finalized_snapshot.clear()
+	_finalized_stock_events.clear()
+	_finalized_price_events.clear()
+	_finalized_settlement_day = 0
+	_update_process_monitor()
+
+
 func _update_process_monitor() -> void:
 	if _tearing_down or not is_inside_tree():
 		return
-	set_process(_has_atomic_state() or _has_sealed_state())
+	set_process(_has_atomic_state() or _has_sealed_state() or _has_finalized_state())
