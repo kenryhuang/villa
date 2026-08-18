@@ -534,7 +534,7 @@ func _setup_ui() -> void:
 
 	# 背包 UI
 	if inventory_ui:
-		inventory_ui.configure(inventory_system)
+		inventory_ui.configure(inventory_system, farm_storage_system)
 
 	# 建造 UI
 	if build_ui:

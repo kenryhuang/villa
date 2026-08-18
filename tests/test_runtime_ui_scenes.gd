@@ -50,7 +50,13 @@ func _run() -> void:
 		"BottomBar/ActionRow/ModeButton",
 		"BottomBar/ActionRow/QuickBar",
 	])
-	_check_scene("res://scenes/ui/inventory_ui.tscn", ["Panel/VBox/GridContainer", "Panel/VBox/QuickBar"])
+	_check_scene("res://scenes/ui/inventory_ui.tscn", [
+		"Panel/VBox/Tabs",
+		"Panel/VBox/BackpackContent/GridContainer",
+		"Panel/VBox/BackpackContent/QuickBar",
+		"Panel/VBox/StorageContent/Header/Capacity",
+		"Panel/VBox/StorageContent/Scroll/Rows",
+	])
 	_check_scene("res://scenes/ui/dialogue_ui.tscn", [
 		"DialoguePanel/Margin/VBox/NameLabel",
 		"DialoguePanel/Margin/VBox/TextContainer/TextLabel",

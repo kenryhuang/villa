@@ -1,26 +1,98 @@
 class_name InventoryUI
 extends Control
 
-## 背包界面 - 网格布局显示背包物品和快捷栏
+## 背包与中央农场仓库界面。
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const PLANTING_QUICK_SLOT := 5
+const TAB_BACKPACK := &"backpack"
+const TAB_FARM_STORAGE := &"farm_storage"
+const STORAGE_SORT_NAME := &"name"
+const STORAGE_SORT_QUANTITY := &"quantity"
+const STORAGE_WARNING_COLOR := Color("#B65C4B")
 
 @export var grid_container_path: NodePath
 @export var quick_bar_path: NodePath
+@export var tab_bar_path: NodePath
+@export var backpack_content_path: NodePath
+@export var storage_content_path: NodePath
+@export var storage_capacity_path: NodePath
+@export var storage_warning_path: NodePath
+@export var storage_sort_path: NodePath
+@export var storage_rows_path: NodePath
 
 var grid_container: GridContainer
 var inventory_grid: GridContainer
 var quick_bar: HBoxContainer
+var tab_bar: TabBar
+var backpack_content: Control
+var storage_content: Control
+var storage_capacity_label: Label
+var storage_warning_label: Label
+var storage_sort: OptionButton
+var storage_rows: VBoxContainer
 var inventory_ref: InventorySystem
+var farm_storage_ref: FarmStorageSystem
 
 var _is_open := false
+var _selected_tab := TAB_BACKPACK
+var _storage_sort_mode := STORAGE_SORT_NAME
 
 
 func _ready() -> void:
 	visible = false
-	grid_container = get_node_or_null(grid_container_path) if grid_container_path else _find_grid_container()
-	quick_bar = get_node_or_null(quick_bar_path) if quick_bar_path else _find_quick_bar()
+	_resolve_nodes()
+	_configure_tabs()
+	_configure_storage_sort()
+	_connect_backpack_events()
+	_connect_storage_events()
+	_sync_tab_visibility()
+	_refresh_backpack()
+	_refresh_storage()
+
+
+func configure(inv: InventorySystem, farm_storage: FarmStorageSystem = null) -> bool:
+	if inv == null:
+		return false
+	_disconnect_storage_events()
+	inventory_ref = inv
+	farm_storage_ref = farm_storage
+	_connect_storage_events()
+	_refresh_backpack()
+	_refresh_storage()
+	return true
+
+
+func select_tab(tab_id: StringName) -> bool:
+	if tab_id != TAB_BACKPACK and tab_id != TAB_FARM_STORAGE:
+		return false
+	_selected_tab = tab_id
+	if tab_bar != null:
+		var next_index := 0 if tab_id == TAB_BACKPACK else 1
+		if tab_bar.current_tab != next_index:
+			tab_bar.current_tab = next_index
+	_sync_tab_visibility()
+	return true
+
+
+func get_selected_tab() -> StringName:
+	return _selected_tab
+
+
+func _resolve_nodes() -> void:
+	grid_container = _node_at(grid_container_path) as GridContainer
+	if grid_container == null:
+		grid_container = _find_grid_container()
+	quick_bar = _node_at(quick_bar_path) as HBoxContainer
+	if quick_bar == null:
+		quick_bar = _find_quick_bar()
+	tab_bar = _node_at(tab_bar_path) as TabBar
+	backpack_content = _node_at(backpack_content_path) as Control
+	storage_content = _node_at(storage_content_path) as Control
+	storage_capacity_label = _node_at(storage_capacity_path) as Label
+	storage_warning_label = _node_at(storage_warning_path) as Label
+	storage_sort = _node_at(storage_sort_path) as OptionButton
+	storage_rows = _node_at(storage_rows_path) as VBoxContainer
 	if grid_container == null:
 		grid_container = GridContainer.new()
 		grid_container.columns = 5
@@ -30,17 +102,70 @@ func _ready() -> void:
 		add_child(quick_bar)
 	inventory_grid = grid_container
 
-	# 连接 EventBus
+
+func _node_at(path: NodePath) -> Node:
+	return get_node_or_null(path) if not path.is_empty() else null
+
+
+func _configure_tabs() -> void:
+	if tab_bar == null:
+		return
+	tab_bar.clear_tabs()
+	tab_bar.add_tab("背包")
+	tab_bar.set_tab_tooltip(0, "背包")
+	tab_bar.add_tab("农场仓库")
+	tab_bar.set_tab_tooltip(1, "农场仓库")
+	var callback := Callable(self, "_on_tab_changed")
+	if not tab_bar.tab_changed.is_connected(callback):
+		tab_bar.tab_changed.connect(callback)
+	tab_bar.current_tab = 0 if _selected_tab == TAB_BACKPACK else 1
+
+
+func _configure_storage_sort() -> void:
+	if storage_sort == null:
+		return
+	storage_sort.clear()
+	storage_sort.add_item("名称", 0)
+	storage_sort.set_item_metadata(0, STORAGE_SORT_NAME)
+	storage_sort.add_item("数量", 1)
+	storage_sort.set_item_metadata(1, STORAGE_SORT_QUANTITY)
+	var callback := Callable(self, "_on_storage_sort_selected")
+	if not storage_sort.item_selected.is_connected(callback):
+		storage_sort.item_selected.connect(callback)
+	storage_sort.select(0 if _storage_sort_mode == STORAGE_SORT_NAME else 1)
+
+
+func _connect_backpack_events() -> void:
 	var event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
-	if event_bus:
-		event_bus.item_added.connect(_on_inventory_changed)
-		event_bus.item_removed.connect(_on_inventory_changed)
-	_refresh()
+	if event_bus == null:
+		return
+	var callback := Callable(self, "_on_inventory_changed")
+	if not event_bus.item_added.is_connected(callback):
+		event_bus.item_added.connect(callback)
+	if not event_bus.item_removed.is_connected(callback):
+		event_bus.item_removed.connect(callback)
 
 
-func configure(inv: InventorySystem) -> void:
-	inventory_ref = inv
-	_refresh()
+func _connect_storage_events() -> void:
+	if not is_instance_valid(farm_storage_ref):
+		return
+	var contents_callback := Callable(self, "_on_storage_contents_changed")
+	var capacity_callback := Callable(self, "_on_storage_capacity_changed")
+	if not farm_storage_ref.contents_changed.is_connected(contents_callback):
+		farm_storage_ref.contents_changed.connect(contents_callback)
+	if not farm_storage_ref.capacity_changed.is_connected(capacity_callback):
+		farm_storage_ref.capacity_changed.connect(capacity_callback)
+
+
+func _disconnect_storage_events() -> void:
+	if not is_instance_valid(farm_storage_ref):
+		return
+	var contents_callback := Callable(self, "_on_storage_contents_changed")
+	var capacity_callback := Callable(self, "_on_storage_capacity_changed")
+	if farm_storage_ref.contents_changed.is_connected(contents_callback):
+		farm_storage_ref.contents_changed.disconnect(contents_callback)
+	if farm_storage_ref.capacity_changed.is_connected(capacity_callback):
+		farm_storage_ref.capacity_changed.disconnect(capacity_callback)
 
 
 func _find_grid_container() -> GridContainer:
@@ -75,7 +200,9 @@ func toggle() -> void:
 func open() -> void:
 	_is_open = true
 	visible = true
-	_refresh()
+	_sync_tab_visibility()
+	_refresh_backpack()
+	_refresh_storage()
 
 
 func close() -> void:
@@ -90,32 +217,121 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
+func _sync_tab_visibility() -> void:
+	if backpack_content != null:
+		backpack_content.visible = _selected_tab == TAB_BACKPACK
+	if storage_content != null:
+		storage_content.visible = _selected_tab == TAB_FARM_STORAGE
+
+
 func _refresh() -> void:
+	_refresh_backpack()
+	_refresh_storage()
+
+
+func _refresh_backpack() -> void:
 	if inventory_ref == null:
 		return
-
-	# 刷新背包格子
 	if grid_container:
-		# 清除旧格子
 		for child in grid_container.get_children():
 			child.free()
-
-		# 创建格子
-		for i in range(inventory_ref.max_slots):
-			var slot_ui = _create_slot_ui(i)
-			grid_container.add_child(slot_ui)
-
+		for index in range(inventory_ref.max_slots):
+			grid_container.add_child(_create_slot_ui(index))
 	_refresh_quick_bar()
 
 
 func _refresh_quick_bar() -> void:
-	if quick_bar:
-		for child in quick_bar.get_children():
-			child.free()
+	if quick_bar == null or inventory_ref == null:
+		return
+	for child in quick_bar.get_children():
+		child.free()
+	for index in range(6):
+		quick_bar.add_child(_create_quick_slot_ui(index))
 
-		for i in range(6):
-			var slot_ui = _create_quick_slot_ui(i)
-			quick_bar.add_child(slot_ui)
+
+func _refresh_storage() -> void:
+	if storage_rows == null or storage_capacity_label == null or storage_warning_label == null:
+		return
+	for child in storage_rows.get_children():
+		child.free()
+	if not is_instance_valid(farm_storage_ref):
+		storage_capacity_label.text = "0 / 0"
+		storage_warning_label.visible = false
+		return
+	var used := farm_storage_ref.get_used_capacity()
+	var total := farm_storage_ref.get_total_capacity()
+	storage_capacity_label.text = "%d / %d" % [used, total]
+	storage_warning_label.visible = used > total
+	storage_warning_label.text = "仓库超载 %d / %d" % [used, total] if used > total else ""
+	storage_warning_label.add_theme_color_override("font_color", STORAGE_WARNING_COLOR)
+	for entry in _storage_entries():
+		storage_rows.add_child(_create_storage_row(entry))
+
+
+func _storage_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if not is_instance_valid(farm_storage_ref):
+		return entries
+	for item_id_value in farm_storage_ref.get_items():
+		var item_id := str(item_id_value)
+		var definition: Variant = GameDataScript.get_item(item_id)
+		if not definition is Dictionary:
+			continue
+		entries.append({
+			"item_id": item_id,
+			"name": str((definition as Dictionary).get("name", item_id)),
+			"quantity": farm_storage_ref.get_count(item_id),
+		})
+	entries.sort_custom(_compare_storage_entries)
+	return entries
+
+
+func _compare_storage_entries(a: Dictionary, b: Dictionary) -> bool:
+	if _storage_sort_mode == STORAGE_SORT_QUANTITY:
+		var a_quantity := int(a.get("quantity", 0))
+		var b_quantity := int(b.get("quantity", 0))
+		if a_quantity != b_quantity:
+			return a_quantity > b_quantity
+	var a_name := str(a.get("name", a.get("item_id", "")))
+	var b_name := str(b.get("name", b.get("item_id", "")))
+	if a_name != b_name:
+		return a_name < b_name
+	return str(a.get("item_id", "")) < str(b.get("item_id", ""))
+
+
+func _create_storage_row(entry: Dictionary) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "CropRow_%s" % str(entry.get("item_id", ""))
+	row.custom_minimum_size = Vector2(0.0, 42.0)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_meta("item_id", str(entry.get("item_id", "")))
+	row.add_theme_constant_override("separation", 10)
+	var icon := TextureRect.new()
+	icon.name = "Icon"
+	icon.custom_minimum_size = Vector2(32.0, 32.0)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.texture = _storage_icon(str(entry.get("item_id", "")))
+	row.add_child(icon)
+	var text_label := Label.new()
+	text_label.name = "Text"
+	text_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	text_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_label.text = "%s    x%d" % [str(entry.get("name", "")), int(entry.get("quantity", 0))]
+	text_label.add_theme_color_override("font_color", Color("#513B2F"))
+	text_label.add_theme_font_size_override("font_size", 18)
+	row.add_child(text_label)
+	return row
+
+
+func _storage_icon(item_id: String) -> Texture2D:
+	var path := "res://assets/crops/%s/painted/stage_3/variant_0_front.png" % item_id
+	if ResourceLoader.exists(path):
+		return load(path) as Texture2D
+	return null
 
 
 func assign_planting_slot(slot_index: int) -> bool:
@@ -147,11 +363,9 @@ func _create_slot_ui(index: int) -> PanelContainer:
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(64, 64)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
 	if index < inventory_ref.slots.size() and not inventory_ref.slots[index].is_empty():
 		var slot = inventory_ref.slots[index]
 		var item_data = GameDataScript.get_item(slot.item_id)
@@ -162,13 +376,11 @@ func _create_slot_ui(index: int) -> PanelContainer:
 		name_label.text = item_data.name if item_data else slot.item_id
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.add_theme_font_size_override("font_size", 10)
-
 		var qty_label = Label.new()
 		qty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		qty_label.text = "x%d" % slot.quantity
 		qty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		qty_label.add_theme_font_size_override("font_size", 12)
-
 		vbox.add_child(name_label)
 		vbox.add_child(qty_label)
 	else:
@@ -176,7 +388,6 @@ func _create_slot_ui(index: int) -> PanelContainer:
 		empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		empty_label.text = ""
 		vbox.add_child(empty_label)
-
 	panel.add_child(vbox)
 	panel.gui_input.connect(_on_inventory_slot_gui_input.bind(index))
 	return panel
@@ -195,16 +406,13 @@ func _on_inventory_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 func _create_quick_slot_ui(index: int) -> PanelContainer:
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(64, 64)
-
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-
 	var num_label = Label.new()
 	num_label.text = str(index + 1)
 	num_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	num_label.add_theme_font_size_override("font_size", 10)
 	vbox.add_child(num_label)
-
 	var item_id = inventory_ref.get_quick_item(index)
 	if not item_id.is_empty():
 		var item_data = GameDataScript.get_item(item_id)
@@ -213,11 +421,31 @@ func _create_quick_slot_ui(index: int) -> PanelContainer:
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.add_theme_font_size_override("font_size", 10)
 		vbox.add_child(name_label)
-
 	panel.add_child(vbox)
 	return panel
 
 
 func _on_inventory_changed(_item_id: String, _quantity: int) -> void:
 	if _is_open:
-		_refresh()
+		_refresh_backpack()
+
+
+func _on_storage_contents_changed(_changes: Dictionary) -> void:
+	if _is_open:
+		_refresh_storage()
+
+
+func _on_storage_capacity_changed(_used: int, _total: int) -> void:
+	if _is_open:
+		_refresh_storage()
+
+
+func _on_tab_changed(tab_index: int) -> void:
+	select_tab(TAB_BACKPACK if tab_index == 0 else TAB_FARM_STORAGE)
+
+
+func _on_storage_sort_selected(index: int) -> void:
+	if storage_sort == null or index < 0 or index >= storage_sort.item_count:
+		return
+	_storage_sort_mode = StringName(storage_sort.get_item_metadata(index))
+	_refresh_storage()

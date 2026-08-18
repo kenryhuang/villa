@@ -15,6 +15,7 @@ const GatheringControllerTest = preload("res://tests/test_gathering_controller.g
 const GatheringVisualsTest = preload("res://tests/test_gathering_visuals.gd")
 const MainGatheringIntegrationTest = preload("res://tests/test_main_gathering_integration.gd")
 const MainItemContainerWiringTest = preload("res://tests/test_main_item_container_wiring.gd")
+const InventoryStorageUITest = preload("res://tests/test_inventory_storage_ui.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -38,6 +39,13 @@ func _run() -> void:
 	print(
 		"[task2-main-router] complete: %d checks"
 		% (assertions.checks - task2_main_checks_before)
+	)
+	var task4_inventory_checks_before: int = assertions.checks
+	print("[task4-inventory-storage] start")
+	await InventoryStorageUITest.new().run(assertions, self)
+	print(
+		"[task4-inventory-storage] complete: %d checks"
+		% (assertions.checks - task4_inventory_checks_before)
 	)
 	InventoryCapacityTest.new().run(assertions)
 	ToolActionTransactionTest.new().run(assertions, self)

@@ -1,6 +1,49 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource path="res://scripts/ui/inventory_ui.gd" type="Script" id="1"]
+
+[sub_resource type="StyleBoxFlat" id="PanelStyle"]
+content_margin_left = 20.0
+content_margin_top = 18.0
+content_margin_right = 20.0
+content_margin_bottom = 18.0
+bg_color = Color(0.945, 0.898, 0.785, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.31, 0.24, 0.85)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="SelectedTabStyle"]
+content_margin_left = 18.0
+content_margin_top = 8.0
+content_margin_right = 18.0
+content_margin_bottom = 9.0
+bg_color = Color(1, 0.969, 0.902, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_color = Color(0.55, 0.46, 0.34, 0.5)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+
+[sub_resource type="StyleBoxFlat" id="UnselectedTabStyle"]
+content_margin_left = 18.0
+content_margin_top = 8.0
+content_margin_right = 18.0
+content_margin_bottom = 8.0
+bg_color = Color(0.82, 0.76, 0.65, 0.82)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.31, 0.24, 0.36)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
 
 [node name="InventoryUI" type="Control"]
 layout_mode = 3
@@ -11,6 +54,15 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("1")
+grid_container_path = NodePath("Panel/VBox/BackpackContent/GridContainer")
+quick_bar_path = NodePath("Panel/VBox/BackpackContent/QuickBar")
+tab_bar_path = NodePath("Panel/VBox/Tabs")
+backpack_content_path = NodePath("Panel/VBox/BackpackContent")
+storage_content_path = NodePath("Panel/VBox/StorageContent")
+storage_capacity_path = NodePath("Panel/VBox/StorageContent/Header/Capacity")
+storage_warning_path = NodePath("Panel/VBox/StorageContent/Warning")
+storage_sort_path = NodePath("Panel/VBox/StorageContent/Header/Sort")
+storage_rows_path = NodePath("Panel/VBox/StorageContent/Scroll/Rows")
 
 [node name="Panel" type="PanelContainer" parent="."]
 layout_mode = 0
@@ -22,25 +74,91 @@ offset_left = -380.0
 offset_top = -280.0
 offset_right = 380.0
 offset_bottom = 280.0
+theme_override_styles/panel = SubResource("PanelStyle")
 
 [node name="VBox" type="VBoxContainer" parent="Panel"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Panel/VBox"]
 layout_mode = 2
-text = "背包"
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_font_sizes/font_size = 24
+text = "物品"
 horizontal_alignment = 1
 
-[node name="GridContainer" type="GridContainer" parent="Panel/VBox"]
+[node name="Tabs" type="TabBar" parent="Panel/VBox"]
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+theme_override_colors/font_selected_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_colors/font_unselected_color = Color(0.38, 0.31, 0.24, 0.8)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/tab_selected = SubResource("SelectedTabStyle")
+theme_override_styles/tab_unselected = SubResource("UnselectedTabStyle")
+
+[node name="BackpackContent" type="VBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="GridContainer" type="GridContainer" parent="Panel/VBox/BackpackContent"]
 layout_mode = 2
 columns = 5
 
-[node name="QuickTitle" type="Label" parent="Panel/VBox"]
+[node name="QuickTitle" type="Label" parent="Panel/VBox/BackpackContent"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
 text = "快捷栏"
 horizontal_alignment = 1
 
-[node name="QuickBar" type="HBoxContainer" parent="Panel/VBox"]
+[node name="QuickBar" type="HBoxContainer" parent="Panel/VBox/BackpackContent"]
 layout_mode = 2
 alignment = 1
+
+[node name="StorageContent" type="VBoxContainer" parent="Panel/VBox"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Panel/VBox/StorageContent"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="CapacityTitle" type="Label" parent="Panel/VBox/StorageContent/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+theme_override_font_sizes/font_size = 18
+text = "容量"
+vertical_alignment = 1
+
+[node name="Capacity" type="Label" parent="Panel/VBox/StorageContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_font_sizes/font_size = 18
+text = "0 / 0"
+vertical_alignment = 1
+
+[node name="Sort" type="OptionButton" parent="Panel/VBox/StorageContent/Header"]
+custom_minimum_size = Vector2(128, 38)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+
+[node name="Warning" type="Label" parent="Panel/VBox/StorageContent"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.714, 0.361, 0.294, 1)
+theme_override_font_sizes/font_size = 18
+text = "仓库超载"
+
+[node name="Scroll" type="ScrollContainer" parent="Panel/VBox/StorageContent"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Rows" type="VBoxContainer" parent="Panel/VBox/StorageContent/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
