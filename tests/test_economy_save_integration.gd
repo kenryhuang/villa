@@ -2,6 +2,7 @@ extends RefCounted
 
 const DailySimulationSystem = preload("res://scripts/systems/daily_simulation_system.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const MainScript = preload("res://scripts/main.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const SaveManagerScript = preload("res://scripts/core/save_manager.gd")
@@ -275,6 +276,8 @@ class StateTransitionOwnerDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_task7_non_economy_calendar_prevalidation(assertions, tree)
+	_test_task7_layoutless_canonical_storage_round_trip(assertions, tree)
 	_test_task7_unversioned_inventory_public_load(assertions, tree)
 	_test_task7_deterministic_season_migration(assertions, tree)
 	_test_task7_hostile_legacy_structure_rejection(assertions, tree)
@@ -302,6 +305,207 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_building_load_signals_are_transactional(assertions, tree)
 	_test_farm_storage_capacity_refreshes_after_committed_load(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
+
+
+func _test_task7_non_economy_calendar_prevalidation(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task7CalendarPrevalidationSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var main := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	main.load_save_on_start = false
+	main.save_manager = manager
+	tree.root.add_child(main)
+	main.process_mode = Node.PROCESS_MODE_DISABLED
+	var game_state := tree.root.get_node("GameState")
+	var storage_observer := FarmStorageRestoreObserver.new()
+	storage_observer.storage = main.farm_storage_system
+	storage_observer.game_state = game_state
+	main.farm_storage_system.contents_changed.connect(storage_observer.on_contents_changed)
+	var load_observer := LoadObserver.new(manager)
+	manager.load_completed.connect(load_observer.on_load_completed)
+
+	var slots: Array[Dictionary] = []
+	slots.resize(20)
+	for index in range(slots.size()):
+		slots[index] = {}
+	slots[0] = {"item_id": "grain_seed", "quantity": 7}
+	slots[1] = {"item_id": "wood", "quantity": 9}
+	main.inventory_system.restore_state(slots, [0, 1, -1, -1, -1, -1])
+	assertions.equal(main.inventory_system.slots, slots, "calendar rejection fixture restores a valid inventory")
+	assertions.truthy(
+		main.farm_storage_system.restore_items_unchecked({"grain": 31}),
+		"calendar rejection fixture restores valid storage"
+	)
+	main.season_system.current_season = 2
+	main.season_system.current_day = 4
+	main.season_system.total_days = 18
+	main.season_system.hour = 14
+	main.season_system.minute = 33
+	var canonical := _without_economy_payload(manager._gather_save_data())
+	var unversioned := _unversioned_inventory_payload(canonical, canonical.inventory)
+	var hostile_fields := {
+		"season": {}, "day": {}, "total_days": [], "hour": "14", "minute": 1.5,
+	}
+	var inventory_before: Array = main.inventory_system.slots.duplicate(true)
+	var mappings_before: Array = main.inventory_system.quick_slot_mappings.duplicate(true)
+	var storage_before: Dictionary = main.farm_storage_system.get_items().duplicate(true)
+	var calendar_before := _calendar_snapshot(main.season_system)
+	storage_observer.events.clear()
+	for format in ["unversioned", "v3"]:
+		for field in hostile_fields:
+			var payload: Dictionary = (
+				unversioned.duplicate(true)
+				if format == "unversioned"
+				else canonical.duplicate(true)
+			)
+			payload[field] = hostile_fields[field]
+			_write_json(manager._save_path(BAD_SLOT), payload)
+			assertions.truthy(
+				not manager.load_game(BAD_SLOT),
+				"%s non-economy hostile calendar rejects: %s" % [format, field]
+			)
+			assertions.equal(
+				main.inventory_system.slots,
+				inventory_before,
+				"%s hostile %s preserves inventory" % [format, field]
+			)
+			assertions.equal(
+				main.inventory_system.quick_slot_mappings,
+				mappings_before,
+				"%s hostile %s preserves quick mappings" % [format, field]
+			)
+			assertions.equal(
+				main.farm_storage_system.get_items(),
+				storage_before,
+				"%s hostile %s preserves storage" % [format, field]
+			)
+			assertions.equal(
+				_calendar_snapshot(main.season_system),
+				calendar_before,
+				"%s hostile %s preserves calendar" % [format, field]
+			)
+	assertions.truthy(storage_observer.events.is_empty(), "hostile calendar loads publish no storage notifications")
+	assertions.equal(load_observer.calls, 0, "hostile calendar loads publish no success notifications")
+
+	main.free()
+	manager.free()
+	_cleanup()
+
+
+func _without_economy_payload(source: Dictionary) -> Dictionary:
+	var payload := source.duplicate(true)
+	for field in [
+		"economy_version", "market", "last_simulated_day", "resource_nodes",
+		"npc_economy", "economy_state", "progression", "tool_durability",
+		"production_upkeep", "notifications",
+	]:
+		payload.erase(field)
+	return payload
+
+
+func _calendar_snapshot(season_system: Node) -> Dictionary:
+	return {
+		"season": season_system.current_season,
+		"day": season_system.current_day,
+		"total_days": season_system.total_days,
+		"hour": season_system.hour,
+		"minute": season_system.minute,
+	}
+
+
+func _test_task7_layoutless_canonical_storage_round_trip(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var game_data := tree.root.get_node("GameData")
+	for crop in MainScript.default_crop_definitions():
+		if game_data.get_crop(crop.crop_id) == null:
+			game_data.register_crop(crop)
+	assertions.truthy(
+		game_data.get_crop("grain") != null and game_data.get_crop("tomato") != null,
+		"layoutless fixture has authoritative crop registrations"
+	)
+	var market := MarketSystemScript.new()
+	var daily := DailySimulationSystem.new()
+	var inventory := InventorySystemScript.new()
+	var storage := FarmStorageSystemScript.new()
+	var manager := SaveManagerScript.new()
+	manager.name = "Task7LayoutlessSaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	for node in [market, daily, inventory, storage, manager]:
+		tree.root.add_child(node)
+	assertions.truthy(market.configure(GameDataScript.get_market_items()), "layoutless market configures")
+	assertions.truthy(storage.configure(), "layoutless farm storage configures")
+	assertions.truthy(
+		manager.configure_economy(
+			market, daily, null, null, null, null, null, null, null, null, null, storage
+		),
+		"layoutless SaveManager configures farm storage"
+	)
+	var slots: Array[Dictionary] = []
+	slots.resize(20)
+	for index in range(slots.size()):
+		slots[index] = {}
+	slots[0] = {"item_id": "grain_seed", "quantity": 8}
+	slots[1] = {"item_id": "wood", "quantity": 11}
+	inventory.restore_state(slots, [0, 1, -1, -1, -1, -1])
+	assertions.equal(inventory.slots, slots, "layoutless inventory restores")
+	assertions.truthy(storage.restore_items_unchecked({"grain": 241, "tomato": 17}), "layoutless storage restores overload")
+	var gathered := manager._gather_save_data().duplicate(true)
+	assertions.truthy(gathered.has("inventory") and gathered.has("farm_storage"), "layoutless gather includes inventory and storage")
+	assertions.truthy(not gathered.has("building_layout_version"), "layoutless gather omits layout version")
+	assertions.equal(gathered.farm_storage, {"items": {"grain": 241, "tomato": 17}}, "layoutless gather stores no capacity")
+	assertions.truthy(manager.save_game(TEST_SLOT), "layoutless canonical snapshot saves")
+	inventory.restore_state([], [-1, -1, -1, -1, -1, -1])
+	assertions.truthy(inventory.slots.all(func(slot: Dictionary) -> bool: return slot.is_empty()), "layoutless runtime inventory diverges")
+	assertions.truthy(storage.restore_items_unchecked({"carrot": 3}), "layoutless runtime storage diverges")
+	var storage_observer := FarmStorageRestoreObserver.new()
+	storage_observer.storage = storage
+	storage_observer.game_state = tree.root.get_node("GameState")
+	storage.contents_changed.connect(storage_observer.on_contents_changed)
+	storage_observer.events.clear()
+	assertions.truthy(manager.load_game(TEST_SLOT), "layoutless canonical snapshot self-loads")
+	assertions.equal(inventory.slots, gathered.inventory.slots, "layoutless canonical inventory round trips exactly")
+	assertions.equal(inventory.quick_slot_mappings, gathered.inventory.quick_mappings, "layoutless quick mappings round trip exactly")
+	assertions.equal(storage.get_items(), gathered.farm_storage.items, "layoutless canonical storage round trips exactly")
+	assertions.equal(storage_observer.events.size(), 1, "layoutless canonical load publishes one storage event")
+
+	var canonical_before := manager._gather_save_data().duplicate(true)
+	canonical_before.erase("meta")
+	var hostile_storage := gathered.duplicate(true)
+	hostile_storage["farm_storage"] = {"items": {"grain": "241"}}
+	storage_observer.events.clear()
+	_write_json(manager._save_path(BAD_SLOT), hostile_storage)
+	assertions.truthy(not manager.load_game(BAD_SLOT), "layoutless hostile canonical storage rejects")
+	var canonical_after := manager._gather_save_data().duplicate(true)
+	canonical_after.erase("meta")
+	assertions.equal(canonical_after, canonical_before, "layoutless hostile storage rejection is atomic")
+	assertions.truthy(storage_observer.events.is_empty(), "layoutless hostile storage publishes no event")
+
+	var legacy := gathered.duplicate(true)
+	legacy.erase("farm_storage")
+	legacy.inventory.slots[0] = {"item_id": "grain", "quantity": 99}
+	legacy.inventory.slots[1] = {"item_id": "grain", "quantity": 2}
+	legacy.inventory.slots[2] = {"item_id": "grain_seed", "quantity": 8}
+	legacy.inventory.quick_mappings = [0, 1, 2, -1, -1, -1]
+	_write_json(manager._save_path(TEST_SLOT), legacy)
+	assertions.truthy(manager.load_game(TEST_SLOT), "layoutless legacy inventory migrates when storage is absent")
+	assertions.equal(storage.get_items(), {"grain": 101}, "layoutless legacy crops migrate exactly")
+	assertions.equal(inventory.slots[2], {"item_id": "grain_seed", "quantity": 8}, "layoutless legacy seed keeps its slot")
+	assertions.equal(inventory.quick_slot_mappings, [-1, -1, 2, -1, -1, -1], "layoutless legacy mappings normalize")
+	assertions.truthy(manager.load_game(TEST_SLOT), "layoutless legacy migration repeats successfully")
+	assertions.equal(storage.get_items(), {"grain": 101}, "layoutless legacy migration is storage-idempotent")
+	assertions.equal(inventory.quick_slot_mappings, [-1, -1, 2, -1, -1, -1], "layoutless legacy migration is mapping-idempotent")
+
+	for node in [manager, storage, inventory, daily, market]:
+		node.free()
+	_cleanup()
 
 
 func _test_task7_unversioned_inventory_public_load(

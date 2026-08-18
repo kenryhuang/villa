@@ -1029,6 +1029,8 @@ func _apply_resource_save_data(data: Dictionary, loaded_day: int) -> bool:
 
 func _migrate_save_data(data: Dictionary) -> Variant:
 	var migrated := data.duplicate(true)
+	if not migrated.has("economy_version") and not _prevalidate_calendar(migrated):
+		return null
 	var has_layout_version := migrated.has("building_layout_version")
 	var layout_version_value: Variant = migrated.get("building_layout_version")
 	var is_legacy_layout := false
@@ -1042,6 +1044,8 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 				(_save_grid_has_crop_records(migrated.get("grid")) or migrated.has("season"))
 				and not _valid_explicit_season(migrated.get("season"))
 			):
+				return null
+			if migrated.has("farm_storage") and not _normalize_canonical_farm_storage(migrated):
 				return null
 			return _normalize_inventory_migrations(migrated)
 		if layout_version not in LEGACY_BUILDING_LAYOUT_VERSIONS:
@@ -1057,7 +1061,9 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 		return _migrate_legacy_lifecycle_save(migrated)
 	if migrated.has("inventory"):
 		if migrated.has("farm_storage"):
-			return null
+			if not _normalize_canonical_farm_storage(migrated):
+				return null
+			return _normalize_inventory_migrations(migrated)
 		var inventory_result: Variant = _migrate_legacy_inventory(migrated["inventory"])
 		if not inventory_result is Dictionary:
 			return null
@@ -1073,11 +1079,34 @@ func _migrate_save_data(data: Dictionary) -> Variant:
 	return _normalize_inventory_migrations(migrated)
 
 
+func _normalize_canonical_farm_storage(data: Dictionary) -> bool:
+	var storage_value: Variant = data.get("farm_storage")
+	if (
+		not storage_value is Dictionary
+		or (storage_value as Dictionary).size() != 1
+		or not (storage_value as Dictionary).get("items") is Dictionary
+	):
+		return false
+	var normalized_items := {}
+	for item_id in (storage_value as Dictionary).items:
+		var quantity: Variant = (storage_value as Dictionary).items[item_id]
+		if (
+			typeof(item_id) != TYPE_STRING
+			or not _is_integer_number(quantity)
+			or float(quantity) <= 0.0
+			or float(quantity) > float(EconomyLimitsScript.MAX_SAFE_INTEGER)
+		):
+			return false
+		normalized_items[item_id] = int(quantity)
+	data["farm_storage"] = {"items": normalized_items}
+	return true
+
+
 func _prevalidate_legacy_lifecycle_structure(data: Dictionary) -> bool:
 	if (
 		data.has("farm_storage")
 		or not data.get("inventory") is Dictionary
-		or not _prevalidate_legacy_calendar(data)
+		or not _prevalidate_calendar(data)
 		or not _prevalidate_legacy_buildings(data.get("buildings"))
 		or not _prevalidate_legacy_grid(data.get("grid"))
 	):
@@ -1092,7 +1121,7 @@ func _prevalidate_legacy_lifecycle_structure(data: Dictionary) -> bool:
 	return true
 
 
-func _prevalidate_legacy_calendar(data: Dictionary) -> bool:
+func _prevalidate_calendar(data: Dictionary) -> bool:
 	if data.has("season") and not _valid_explicit_season(data.season):
 		return false
 	for field in ["total_days", "last_simulated_day"]:
