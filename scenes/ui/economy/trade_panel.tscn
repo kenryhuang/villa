@@ -57,11 +57,23 @@ max_value = 99.0
 value = 1.0
 allow_greater = false
 
-[node name="MaxButton" type="Button" parent="Content/QuantityRow"]
-custom_minimum_size = Vector2(64, 44)
+[node name="MaxActions" type="HBoxContainer" parent="Content"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "最大"
+theme_override_constants/separation = 8
+
+[node name="MaxButton" type="Button" parent="Content/MaxActions"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "最大买入"
+
+[node name="SellMaxButton" type="Button" parent="Content/MaxActions"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "最大卖出"
 
 [node name="SummaryGrid" type="GridContainer" parent="Content"]
 layout_mode = 2

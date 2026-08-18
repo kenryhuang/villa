@@ -99,25 +99,41 @@ func configure(
 	production: ProductionSystem = null,
 	npc_economy: NpcEconomySystem = null
 ) -> bool:
+	var service_dependencies := [progression, tool_system, production]
+	var has_any_service_dependency := service_dependencies.any(
+		func(value: Variant) -> bool: return value != null
+	)
+	var has_missing_service_dependency := service_dependencies.any(
+		func(value: Variant) -> bool: return value == null
+	)
+	if inventory == null or economy == null or market == null:
+		_revoke_market_authority()
+		return false
+	if has_any_service_dependency and has_missing_service_dependency:
+		_revoke_market_authority()
+		return false
 	_inventory_ref = inventory
 	_economy_ref = economy
 	_market_ref = market
 	_npc_economy_ref = npc_economy
-	if _inventory_ref == null or _economy_ref == null or _market_ref == null:
-		return false
 	var configured: bool = market_panel.configure(_inventory_ref, _economy_ref, _market_ref)
 	configured = contract_panel.configure(_economy_ref) and configured
 	if _npc_economy_ref != null:
 		configured = order_panel.configure(_economy_ref, _npc_economy_ref) and configured
-	var service_dependencies := [progression, tool_system, production]
-	var has_any_service_dependency := service_dependencies.any(func(value: Variant) -> bool: return value != null)
 	if has_any_service_dependency:
-		if service_dependencies.any(func(value: Variant) -> bool: return value == null):
-			return false
 		configured = service_panel.configure(progression, tool_system, production) and configured
 	market_panel.refresh_market()
 	_refresh_header()
 	return configured
+
+
+func _revoke_market_authority() -> void:
+	_inventory_ref = null
+	_economy_ref = null
+	_market_ref = null
+	_npc_economy_ref = null
+	if is_instance_valid(market_panel):
+		market_panel.configure(null, null, null)
 
 
 func open(tab_id: String = "market", target_id: String = "") -> void:

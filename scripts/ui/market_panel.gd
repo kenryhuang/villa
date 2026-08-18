@@ -65,6 +65,10 @@ var _event_bus: Node
 var _authoritative_refresh_scheduled := false
 
 
+func _enter_tree() -> void:
+	_connect_authoritative_signals()
+
+
 func _ready() -> void:
 	add_to_group(EconomyLayoutScript.RESPONSIVE_GROUP)
 	for category_id in category_buttons:

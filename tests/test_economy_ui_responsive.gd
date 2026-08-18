@@ -1097,11 +1097,22 @@ func _test_trade_keyboard_and_wheel(assertions: TestAssert, tree: SceneTree) -> 
 	tree.root.add_child(panel)
 	await tree.process_frame
 	var quantity := panel.get_node("Content/QuantityRow/QuantitySpin") as SpinBox
-	var max_button := panel.get_node("Content/QuantityRow/MaxButton") as Button
+	var max_actions := panel.get_node_or_null("Content/MaxActions") as HBoxContainer
+	var max_button := panel.get_node_or_null("Content/MaxActions/MaxButton") as Button
+	var sell_max_button := panel.get_node_or_null("Content/MaxActions/SellMaxButton") as Button
 	var buy_button := panel.get_node("Content/Actions/BuyButton") as Button
 	var sell_button := panel.get_node("Content/Actions/SellButton") as Button
 	assertions.equal(quantity.custom_minimum_size.y, 44.0, "trade quantity uses the standard control height")
-	assertions.equal(max_button.custom_minimum_size.y, 44.0, "trade maximum uses the standard control height")
+	assertions.truthy(max_actions != null, "trade exposes a dedicated maximum-action row")
+	assertions.truthy(max_button != null and sell_max_button != null, "trade exposes separate maximum-buy and maximum-sell commands")
+	if max_button != null and sell_max_button != null:
+		assertions.equal(max_button.custom_minimum_size.y, 44.0, "trade maximum-buy uses the standard control height")
+		assertions.equal(sell_max_button.custom_minimum_size.y, 44.0, "trade maximum-sell uses the standard control height")
+		assertions.equal(max_button.custom_minimum_size, sell_max_button.custom_minimum_size, "trade maximum commands have equal geometry")
+		assertions.equal(max_button.text, "最大买入", "trade maximum-buy direction is explicit")
+		assertions.equal(sell_max_button.text, "最大卖出", "trade maximum-sell direction is explicit")
+	if max_actions != null:
+		assertions.truthy(_controls_within_width(max_actions, panel.get_global_rect()), "trade maximum commands fit the compact card width")
 	assertions.equal(buy_button.custom_minimum_size.y, 44.0, "trade buy uses the standard control height")
 	assertions.equal(sell_button.custom_minimum_size.y, 44.0, "trade sell uses the standard control height")
 	assertions.equal(buy_button.custom_minimum_size, sell_button.custom_minimum_size, "trade actions have equal geometry")

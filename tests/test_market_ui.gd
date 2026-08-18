@@ -78,7 +78,8 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"Content/SummaryGrid/PlayerQuantityLabel",
 		"Content/SummaryGrid/MarketQuantityLabel",
 		"Content/QuantityRow/QuantitySpin",
-		"Content/QuantityRow/MaxButton",
+		"Content/MaxActions/MaxButton",
+		"Content/MaxActions/SellMaxButton",
 		"Content/SummaryGrid/ReferencePriceLabel",
 		"Content/SummaryGrid/BuyTotalLabel",
 		"Content/SummaryGrid/SellTotalLabel",
@@ -452,9 +453,25 @@ func _test_routed_market_ownership_and_feedback(
 		market.get_stock("grain") > economy.get_owned_quantity("grain"),
 		"sell-maximum fixture keeps market stock above routed player ownership"
 	)
+	var sell_max_button := trade.get_node_or_null("Content/MaxActions/SellMaxButton") as Button
+	assertions.truthy(sell_max_button != null, "trade panel exposes an explicit maximum-sell command")
+	if sell_max_button != null:
+		sell_max_button.pressed.emit()
+		assertions.equal(int(trade.quantity_spin.value), 7, "maximum-sell reaches authoritative routed ownership")
+		assertions.truthy(not trade.sell_button.disabled, "stored crop enables selling at the authoritative maximum")
+
+	assertions.truthy(inventory.remove_item("grain_seed", 3), "maximum-buy fixture clears routed seed ownership")
+	panel.select_item("grain_seed")
+	assertions.equal(economy.get_owned_quantity("grain_seed"), 0, "maximum-buy starts with zero routed ownership")
 	trade.max_button.pressed.emit()
-	assertions.equal(int(trade.quantity_spin.value), 7, "maximum action reaches authoritative crop sell maximum")
-	assertions.truthy(not trade.sell_button.disabled, "stored crop enables selling at the authoritative maximum")
+	assertions.truthy(int(trade.quantity_spin.value) > 1, "maximum-buy preserves batch buying with zero ownership")
+	assertions.equal(
+		int(trade.quantity_spin.value),
+		market.get_stock("grain_seed"),
+		"maximum-buy reaches the authoritative affordable market batch"
+	)
+	assertions.truthy(not trade.buy_button.disabled, "maximum-buy selects a valid authoritative buy preflight")
+	panel.select_item("grain")
 
 	trade.quantity_spin.value = 30
 	trade.request_buy()
@@ -529,6 +546,22 @@ func _test_routed_market_ownership_and_feedback(
 		not event_bus.farm_storage_changed.is_connected(Callable(trade, "_on_storage_changed")),
 		"trade panel disconnects farm-storage refresh on teardown"
 	)
+	tree.root.add_child(panel)
+	await tree.process_frame
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(panel, "_on_storage_changed")),
+		"market panel reconnects farm-storage refresh on re-enter"
+	)
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(trade, "_on_storage_changed")),
+		"trade panel reconnects farm-storage refresh on re-enter"
+	)
+	assertions.truthy(storage.add_items({"grain": 2}), "re-enter fixture changes routed crop ownership")
+	await tree.process_frame
+	grain_row = _find_item_row(panel.item_rows, "grain")
+	assertions.equal(int(grain_row.get_meta("owned", -1)), 3, "re-entered market row follows storage events")
+	assertions.equal(trade.player_quantity_label.text, "3", "re-entered trade detail follows storage events")
+	tree.root.remove_child(panel)
 	wallet.gold = previous_gold
 	_free_nodes([panel, economy, market, router, storage, inventory])
 

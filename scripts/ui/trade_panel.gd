@@ -8,7 +8,8 @@ signal snapshot_changed
 @onready var player_quantity_label: Label = $Content/SummaryGrid/PlayerQuantityLabel
 @onready var market_quantity_label: Label = $Content/SummaryGrid/MarketQuantityLabel
 @onready var quantity_spin: SpinBox = $Content/QuantityRow/QuantitySpin
-@onready var max_button: Button = $Content/QuantityRow/MaxButton
+@onready var max_button: Button = $Content/MaxActions/MaxButton
+@onready var sell_max_button: Button = $Content/MaxActions/SellMaxButton
 @onready var reference_price_label: Label = $Content/SummaryGrid/ReferencePriceLabel
 @onready var buy_total_label: Label = $Content/SummaryGrid/BuyTotalLabel
 @onready var sell_total_label: Label = $Content/SummaryGrid/SellTotalLabel
@@ -44,7 +45,8 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	quantity_spin.value_changed.connect(_on_quantity_changed)
 	quantity_spin.gui_input.connect(_on_quantity_gui_input)
-	max_button.pressed.connect(_on_max_pressed)
+	max_button.pressed.connect(_on_buy_max_pressed)
+	sell_max_button.pressed.connect(_on_sell_max_pressed)
 	buy_button.pressed.connect(request_buy)
 	sell_button.pressed.connect(request_sell)
 	confirmation_confirm_button.pressed.connect(_confirm_pending_trade)
@@ -60,6 +62,8 @@ func configure(
 	economy: EconomySystem,
 	market: MarketSystem
 ) -> bool:
+	if is_node_ready():
+		dismiss_confirmation()
 	_disconnect_authoritative_signals()
 	inventory_ref = inventory
 	economy_ref = economy
@@ -98,7 +102,7 @@ func refresh_quote() -> void:
 	var liquidity := int(state.get("daily_liquidity", 0))
 	var buy_total := market_ref.quote_buy(item_id, quantity) if market_ref != null else 0
 	var sell_total := market_ref.quote_sell(item_id, quantity) if market_ref != null else 0
-	quantity_spin.max_value = maxf(1.0, float(maxi(stock, owned)))
+	quantity_spin.max_value = float(safe_limit)
 	player_quantity_label.text = str(owned)
 	market_quantity_label.text = str(stock)
 	reference_price_label.text = str(mid)
@@ -365,22 +369,37 @@ func _on_quantity_gui_input(event: InputEvent) -> void:
 		accept_event()
 
 
-func _on_max_pressed() -> void:
+func _on_buy_max_pressed() -> void:
+	if not is_instance_valid(economy_ref) or not is_instance_valid(market_ref):
+		return
+	var stock := int(market_ref.get_item_state(item_id).get("stock", 0))
+	quantity_spin.value = maxi(
+		1,
+		_maximum_preflight_quantity(mini(MAX_UI_QUANTITY, stock), true)
+	)
+
+
+func _on_sell_max_pressed() -> void:
 	if not is_instance_valid(economy_ref):
 		return
-	var owned := _owned_quantity()
+	quantity_spin.value = maxi(
+		1,
+		_maximum_preflight_quantity(mini(MAX_UI_QUANTITY, _owned_quantity()), false)
+	)
+
+
+func _maximum_preflight_quantity(limit: int, is_buy: bool) -> int:
 	var maximum := 0
 	var low := 1
-	var high := mini(MAX_UI_QUANTITY, owned)
+	var high := maxi(0, limit)
 	while low <= high:
 		var quantity := floori(float(low + high) / 2.0)
-		var can_sell := bool(_trade_preflight(quantity, false).get("ok", false))
-		if can_sell:
+		if bool(_trade_preflight(quantity, is_buy).get("ok", false)):
 			maximum = quantity
 			low = quantity + 1
 		else:
 			high = quantity - 1
-	quantity_spin.value = maxi(1, maximum)
+	return maximum
 
 
 func _safe_current_quantity(state: Dictionary) -> int:

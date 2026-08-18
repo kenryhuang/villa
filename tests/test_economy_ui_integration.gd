@@ -152,6 +152,35 @@ func _test_market_panel_follows_routed_storage(
 		before,
 		"ShopUI rejects crop purchase into overloaded storage atomically"
 	)
+	var event_bus := tree.root.get_node("EventBus")
+	assertions.truthy(
+		event_bus.farm_storage_changed.is_connected(Callable(shop.market_panel, "_on_storage_changed")),
+		"failed-reconfigure fixture starts with market storage authority"
+	)
+	assertions.truthy(not shop.configure(null, null, null), "ShopUI rejects missing core dependencies")
+	assertions.truthy(shop.market_panel.inventory_ref == null, "failed ShopUI configure clears market inventory authority")
+	assertions.truthy(shop.market_panel.economy_ref == null, "failed ShopUI configure clears market economy authority")
+	assertions.truthy(shop.market_panel.market_ref == null, "failed ShopUI configure clears market price authority")
+	assertions.truthy(trade.inventory_ref == null, "failed ShopUI configure clears trade inventory authority")
+	assertions.truthy(trade.economy_ref == null, "failed ShopUI configure clears trade economy authority")
+	assertions.truthy(trade.market_ref == null, "failed ShopUI configure clears trade market authority")
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(shop.market_panel, "_on_storage_changed")),
+		"failed ShopUI configure disconnects market storage events"
+	)
+	assertions.truthy(
+		not event_bus.farm_storage_changed.is_connected(Callable(trade, "_on_storage_changed")),
+		"failed ShopUI configure disconnects trade storage events"
+	)
+	var revoked_before := {"gold": int(game_state.gold), "stock": market.get_stock("grain"), "storage": storage.get_items()}
+	trade.quantity_spin.value = 1
+	trade.request_sell()
+	assertions.equal(
+		{"gold": int(game_state.gold), "stock": market.get_stock("grain"), "storage": storage.get_items()},
+		revoked_before,
+		"failed ShopUI configure revokes stale trading permission"
+	)
+	assertions.truthy(trade.sell_button.disabled, "failed ShopUI configure leaves trade commands disabled")
 	_free_nodes([shop, economy, router, storage, inventory, market])
 	_restore_wallet(game_state, saved)
 
