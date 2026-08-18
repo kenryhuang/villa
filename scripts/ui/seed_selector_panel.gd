@@ -34,6 +34,10 @@ func _ready() -> void:
 	visible = false
 	close_button.pressed.connect(close)
 	footer_close_button.pressed.connect(close)
+	_event_bus = get_node_or_null("/root/EventBus")
+	if is_instance_valid(inventory_ref):
+		_connect_authoritative_signals()
+		_refresh()
 	var viewport := get_viewport()
 	if viewport != null and not viewport.size_changed.is_connected(_apply_responsive_layout):
 		viewport.size_changed.connect(_apply_responsive_layout)
@@ -46,9 +50,9 @@ func configure(
 	action_controller: PlayerActionController
 ) -> bool:
 	if (
-		inventory == null
-		or farming == null
-		or action_controller == null
+		not is_instance_valid(inventory)
+		or not is_instance_valid(farming)
+		or not is_instance_valid(action_controller)
 		or not farming.has_method("preview_plant")
 		or not action_controller.has_method("set_selected_plant_item_id")
 	):
@@ -307,24 +311,24 @@ func _seed_icon(crop: CropData, item_id: String) -> Texture2D:
 
 
 func _connect_authoritative_signals() -> void:
-	if _event_bus != null:
+	if is_instance_valid(_event_bus):
 		for signal_name in [&"item_added", &"item_removed"]:
 			var callback := Callable(self, "_on_inventory_item_changed")
 			if _event_bus.has_signal(signal_name) and not _event_bus.is_connected(signal_name, callback):
 				_event_bus.connect(signal_name, callback)
-	if action_controller_ref != null:
+	if is_instance_valid(action_controller_ref):
 		var callback := Callable(self, "_on_plant_selection_changed")
 		if not action_controller_ref.plant_selection_changed.is_connected(callback):
 			action_controller_ref.plant_selection_changed.connect(callback)
 
 
 func _disconnect_authoritative_signals() -> void:
-	if _event_bus != null:
+	if is_instance_valid(_event_bus):
 		for signal_name in [&"item_added", &"item_removed"]:
 			var callback := Callable(self, "_on_inventory_item_changed")
 			if _event_bus.has_signal(signal_name) and _event_bus.is_connected(signal_name, callback):
 				_event_bus.disconnect(signal_name, callback)
-	if action_controller_ref != null:
+	if is_instance_valid(action_controller_ref):
 		var callback := Callable(self, "_on_plant_selection_changed")
 		if action_controller_ref.plant_selection_changed.is_connected(callback):
 			action_controller_ref.plant_selection_changed.disconnect(callback)

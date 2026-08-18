@@ -23,6 +23,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_controller_command_and_legacy_migration(assertions, tree)
 	await _test_hud_selection_survives_zero_quantity(assertions, tree)
 	await _test_topmost_escape_and_pause_restore(assertions, tree)
+	await _test_off_tree_configure_binds_authoritative_events_on_ready(assertions, tree)
+	await _test_reconfigure_after_old_dependencies_are_freed(assertions, tree)
 	_cleanup_registered_crops()
 
 
@@ -201,6 +203,123 @@ func _test_topmost_escape_and_pause_restore(assertions: TestAssert, tree: SceneT
 	assertions.truthy(tree.paused, "closing selector preserves an originally paused tree")
 	tree.paused = false
 	_free_fixture(fixture)
+	await tree.process_frame
+
+
+func _test_off_tree_configure_binds_authoritative_events_on_ready(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var inventory := InventorySystemScript.new() as InventorySystem
+	var farming := FarmingSystemScript.new() as FarmingSystem
+	var controller := ControllerScript.new() as PlayerActionController
+	tree.root.add_child(inventory)
+	tree.root.add_child(farming)
+	tree.root.add_child(controller)
+	farming.season_system = SeasonDouble.new()
+	inventory.add_item("grain_seed", 3)
+	controller.configure(null, null, farming, null, null, inventory, null)
+	controller.set_selected_plant_item_id("grain_seed")
+	var scene := load("res://scenes/ui/seed_selector_panel.tscn") as PackedScene
+	var panel = scene.instantiate()
+	assertions.truthy(
+		panel.configure(inventory, farming, controller),
+		"seed selector accepts authoritative dependencies before entering the tree"
+	)
+	tree.root.add_child(panel)
+	panel.open_for_cell()
+	await tree.process_frame
+	var row := _row(panel, "grain_seed")
+	assertions.truthy(row != null, "off-tree configured selector refreshes initial rows on ready")
+	if row != null:
+		assertions.equal((row.get_node("Quantity") as Label).text, "×3", "off-tree configured selector shows initial quantity")
+	assertions.truthy(inventory.add_item("grain_seed", 2), "off-tree event fixture adds selected seed")
+	await tree.process_frame
+	row = _row(panel, "grain_seed")
+	assertions.truthy(row != null, "authoritative add event keeps the selected seed row visible")
+	if row != null:
+		assertions.equal((row.get_node("Quantity") as Label).text, "×5", "authoritative add event refreshes selector quantity")
+	assertions.truthy(inventory.remove_item("grain_seed", 5), "off-tree event fixture drains selected seed")
+	await tree.process_frame
+	assertions.truthy(_row(panel, "grain_seed") == null, "authoritative remove event removes zero-quantity seed row")
+	assertions.truthy(panel.selection_status.text.contains("库存不足"), "authoritative remove event refreshes selected no-seed state")
+	panel.close()
+	panel.free()
+	controller.free()
+	farming.free()
+	inventory.free()
+	await tree.process_frame
+
+
+func _test_reconfigure_after_old_dependencies_are_freed(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var panel_source := FileAccess.get_file_as_string("res://scripts/ui/seed_selector_panel.gd")
+	assertions.truthy(
+		panel_source.contains("is_instance_valid(action_controller_ref)"),
+		"selector explicitly guards a freed old action controller before disconnect"
+	)
+	var scene := load("res://scenes/ui/seed_selector_panel.tscn") as PackedScene
+	var panel = scene.instantiate()
+	tree.root.add_child(panel)
+	var old_inventory := InventorySystemScript.new() as InventorySystem
+	var old_farming := FarmingSystemScript.new() as FarmingSystem
+	var old_controller := ControllerScript.new() as PlayerActionController
+	tree.root.add_child(old_inventory)
+	tree.root.add_child(old_farming)
+	tree.root.add_child(old_controller)
+	old_farming.season_system = SeasonDouble.new()
+	old_inventory.add_item("grain_seed", 1)
+	old_controller.configure(null, null, old_farming, null, null, old_inventory, null)
+	assertions.truthy(panel.configure(old_inventory, old_farming, old_controller), "selector configures with the original dependencies")
+	assertions.truthy(panel.configure(old_inventory, old_farming, old_controller), "repeated configure is idempotent")
+	var callback := Callable(panel, "_on_plant_selection_changed")
+	assertions.equal(
+		old_controller.plant_selection_changed.get_connections().filter(
+			func(connection: Dictionary) -> bool: return connection.get("callable") == callback
+		).size(),
+		1,
+		"repeated configure keeps one old-controller callback"
+	)
+	old_controller.free()
+	old_farming.free()
+	old_inventory.free()
+
+	var replacement_inventory := InventorySystemScript.new() as InventorySystem
+	var replacement_farming := FarmingSystemScript.new() as FarmingSystem
+	var replacement_controller := ControllerScript.new() as PlayerActionController
+	tree.root.add_child(replacement_inventory)
+	tree.root.add_child(replacement_farming)
+	tree.root.add_child(replacement_controller)
+	replacement_farming.season_system = SeasonDouble.new()
+	replacement_inventory.add_item("grain_seed", 4)
+	replacement_controller.configure(
+		null,
+		null,
+		replacement_farming,
+		null,
+		null,
+		replacement_inventory,
+		null
+	)
+	var reconfigured: Variant = panel.configure(
+		replacement_inventory,
+		replacement_farming,
+		replacement_controller
+	)
+	assertions.truthy(bool(reconfigured), "selector safely reconfigures after every old dependency is freed")
+	panel.open_for_cell()
+	await tree.process_frame
+	var replacement_row := _row(panel, "grain_seed")
+	assertions.truthy(replacement_row != null, "reconfigured selector renders replacement inventory")
+	if replacement_row != null:
+		assertions.equal((replacement_row.get_node("Quantity") as Label).text, "×4", "reconfigured selector uses replacement quantity")
+	panel.close()
+	panel.free()
+	replacement_controller.free()
+	replacement_farming.free()
+	replacement_inventory.free()
 	await tree.process_frame
 
 
