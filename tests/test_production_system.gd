@@ -3,6 +3,8 @@ extends RefCounted
 const ProductionSystemScript = preload("res://scripts/systems/production_system.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const FarmStorageSystemScript = preload("res://scripts/systems/farm_storage_system.gd")
+const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const GRID_SYSTEM_SCENE := preload("res://scenes/systems/grid_system.tscn")
 const BUILDING_SYSTEM_SCENE := preload("res://scenes/systems/building_system.tscn")
@@ -58,6 +60,29 @@ class FailingOutputRemovalState:
 	func remove_outputs(requested: Dictionary) -> bool:
 		super.remove_outputs(requested)
 		return false
+
+
+class FailingRemovalStorage:
+	extends FarmStorageSystem
+	var fail_next_remove := true
+
+	func stage_remove_items(token: Variant, items: Dictionary) -> bool:
+		var result := super.stage_remove_items(token, items)
+		if fail_next_remove:
+			fail_next_remove = false
+			return false
+		return result
+
+
+class FailingFinalizeRouter:
+	extends ItemContainerRouter
+	var fail_next_finalize := true
+
+	func finalize_sealed_publication(publication: Variant) -> RefCounted:
+		if fail_next_finalize:
+			fail_next_finalize = false
+			return null
+		return super.finalize_sealed_publication(publication)
 
 
 class EconomyDouble:
@@ -138,6 +163,22 @@ class ProductionEventRecorder:
 		maintenance.append({"building": building, "due_day": due_day})
 
 
+class ReentrantProductionObserver:
+	extends RefCounted
+	var action: Callable
+	var attempted := false
+	var inner_result := true
+
+	func _init(callback: Callable) -> void:
+		action = callback
+
+	func on_job_started(_building: BuildingInstance, _recipe_id: String, _batches: int) -> void:
+		if attempted:
+			return
+		attempted = true
+		inner_result = bool(action.call())
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
@@ -145,6 +186,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_freed_registered_buildings_are_pruned(assertions)
 	_test_unfinished_building_lifecycle(assertions)
 	_test_start_failures_are_atomic(assertions)
+	_test_routed_mixed_recipe_inputs(assertions, tree)
 	_test_queue_limit_and_output_pause(assertions)
 	_test_collection_is_atomic(assertions)
 	_test_rollback_signals_are_atomic(assertions, tree)
@@ -491,6 +533,135 @@ func _test_start_failures_are_atomic(assertions: TestAssert) -> void:
 	assertions.truthy(not production.start_recipe(failing_building, "plank", 1, enqueue_inventory), "enqueue mutation failure is reported")
 	assertions.equal(enqueue_inventory.get_item_count("wood"), 2, "enqueue failure restores removed input")
 	assertions.equal(failing_building.producer_state.jobs.size(), 0, "enqueue failure restores mutated queue")
+
+
+func _test_routed_mixed_recipe_inputs(assertions: TestAssert, tree: SceneTree) -> void:
+	RecipeDatabaseScript._recipes["test_grain_wood"] = {
+		"id": "test_grain_wood",
+		"display_name": "Test grain wood",
+		"station": "workbench",
+		"inputs": {"grain": 2, "wood": 3},
+		"outputs": {"plank": 1},
+		"duration_minutes": 10,
+		"unlock_tier": 0,
+	}
+	var production := _production()
+	var inventory := _inventory()
+	var storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var router := _track(ItemContainerRouterScript.new()) as ItemContainerRouter
+	storage.configure(func() -> int: return 100)
+	assertions.truthy(router.configure(inventory, storage), "mixed recipe router configures")
+	assertions.truthy(production.set_item_container_router(router), "production accepts authoritative router")
+	assertions.truthy(inventory.add_item("wood", 1), "mixed shortage owns one wood")
+	assertions.truthy(storage.add_items({"grain": 1}), "mixed shortage owns one grain")
+	var building := _building("workbench")
+	var preflight := production.preflight_recipe(building, "test_grain_wood", 1, inventory)
+	assertions.equal(preflight.get("reason"), "missing_inputs", "mixed shortage has stable reason")
+	assertions.equal(preflight.get("missing"), {"grain": 1, "wood": 2}, "mixed shortage reports both containers")
+	assertions.truthy(inventory.add_item("wood", 2), "mixed success fills backpack input")
+	assertions.truthy(storage.add_items({"grain": 1}), "mixed success fills storage input")
+	var unrelated_inventory := _inventory()
+	assertions.truthy(production.start_recipe(building, "test_grain_wood", 1, unrelated_inventory), "mixed recipe uses configured router, not caller inventory")
+	assertions.equal(inventory.get_item_count("wood"), 0, "mixed recipe removes backpack material")
+	assertions.equal(storage.get_count("grain"), 0, "mixed recipe removes storage crop")
+	assertions.equal(building.producer_state.jobs.size(), 1, "mixed recipe queues one job")
+
+	var failing_production := _production()
+	var failing_inventory := _inventory()
+	var failing_storage := _track(FailingRemovalStorage.new()) as FailingRemovalStorage
+	var failing_router := _track(ItemContainerRouterScript.new()) as ItemContainerRouter
+	failing_storage.configure(func() -> int: return 100)
+	failing_router.configure(failing_inventory, failing_storage)
+	failing_production.set_item_container_router(failing_router)
+	failing_inventory.add_item("wood", 3)
+	failing_storage.add_items({"grain": 2})
+	var failing_building := _building("workbench")
+	var inventory_before := {
+		"slots": failing_inventory.slots.duplicate(true),
+		"quick": failing_inventory.quick_slot_mappings.duplicate(),
+	}
+	var storage_before: Dictionary = failing_storage.get_items()
+	assertions.truthy(not failing_production.start_recipe(failing_building, "test_grain_wood", 1, unrelated_inventory), "second container failure rejects mixed recipe")
+	assertions.equal(
+		{"slots": failing_inventory.slots, "quick": failing_inventory.quick_slot_mappings},
+		inventory_before,
+		"second container failure restores backpack exactly"
+	)
+	assertions.equal(failing_storage.get_items(), storage_before, "second container failure restores storage exactly")
+	assertions.equal(failing_building.producer_state.jobs, [], "second container failure queues no job")
+	assertions.equal(production.preflight_recipe(building, "test_grain_wood", 9223372036854775807, inventory).get("reason"), "invalid_request", "hostile batch count is rejected before multiplication")
+
+	var finalized_production := _production()
+	var finalized_inventory := _inventory()
+	var finalized_storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var finalized_router := _track(FailingFinalizeRouter.new()) as FailingFinalizeRouter
+	finalized_storage.configure(func() -> int: return 100)
+	finalized_router.configure(finalized_inventory, finalized_storage)
+	finalized_production.set_item_container_router(finalized_router)
+	finalized_inventory.add_item("wood", 3)
+	finalized_storage.add_items({"grain": 2})
+	var finalized_building := _building("workbench")
+	assertions.truthy(not finalized_production.start_recipe(finalized_building, "test_grain_wood", 1, unrelated_inventory), "finalize failure rejects mixed recipe")
+	assertions.equal(finalized_inventory.get_item_count("wood"), 3, "finalize failure restores backpack")
+	assertions.equal(finalized_storage.get_count("grain"), 2, "finalize failure restores storage")
+	assertions.equal(finalized_building.producer_state.jobs, [], "finalize failure restores queue")
+
+	var held_token := finalized_router.begin_atomic_transaction()
+	assertions.truthy(held_token != null, "prepare-failure fixture holds the router")
+	assertions.truthy(not finalized_production.start_recipe(finalized_building, "test_grain_wood", 1, unrelated_inventory), "busy router rejects production prepare")
+	assertions.equal(finalized_inventory.get_item_count("wood"), 3, "prepare failure preserves backpack")
+	assertions.equal(finalized_storage.get_count("grain"), 2, "prepare failure preserves storage")
+	assertions.equal(finalized_building.producer_state.jobs, [], "prepare failure preserves queue")
+	assertions.truthy(finalized_router.rollback_atomic_transaction(held_token), "prepare-failure fixture releases router")
+
+	var abandoned_token := finalized_router.begin_atomic_transaction()
+	assertions.truthy(abandoned_token != null, "abandonment fixture acquires router token")
+	abandoned_token = null
+	assertions.truthy(finalized_production.start_recipe(finalized_building, "test_grain_wood", 1, unrelated_inventory), "abandoned token is recovered before next production input")
+	assertions.equal(finalized_inventory.get_item_count("wood"), 0, "post-abandonment recipe removes backpack input")
+	assertions.equal(finalized_storage.get_count("grain"), 0, "post-abandonment recipe removes storage input")
+
+	var invalid_production := _production()
+	var invalid_inventory := _inventory()
+	var invalid_storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var invalid_router := ItemContainerRouterScript.new()
+	invalid_storage.configure(func() -> int: return 100)
+	invalid_router.configure(invalid_inventory, invalid_storage)
+	invalid_production.set_item_container_router(invalid_router)
+	invalid_inventory.add_item("wood", 3)
+	invalid_storage.add_items({"grain": 2})
+	invalid_router.free()
+	assertions.truthy(not invalid_production.start_recipe(_building("workbench"), "test_grain_wood", 1, unrelated_inventory), "freed configured router rejects production safely")
+	assertions.equal(invalid_inventory.get_item_count("wood"), 3, "freed router preserves backpack")
+	assertions.equal(invalid_storage.get_count("grain"), 2, "freed router preserves storage")
+
+	var reentrant_production := _production()
+	var reentrant_inventory := _inventory()
+	var reentrant_storage := _track(FarmStorageSystemScript.new()) as FarmStorageSystem
+	var reentrant_router := _track(ItemContainerRouterScript.new()) as ItemContainerRouter
+	reentrant_storage.configure(func() -> int: return 100)
+	reentrant_router.configure(reentrant_inventory, reentrant_storage)
+	reentrant_production.set_item_container_router(reentrant_router)
+	for node in [reentrant_inventory, reentrant_storage, reentrant_router, reentrant_production]:
+		tree.root.add_child(node)
+	reentrant_inventory.add_item("wood", 6)
+	reentrant_storage.add_items({"grain": 4})
+	var first_building := _building("workbench")
+	var second_building := _building("workbench")
+	var observer := ReentrantProductionObserver.new(
+		Callable(reentrant_production, "start_recipe").bind(second_building, "test_grain_wood", 1, unrelated_inventory)
+	)
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.production_job_started.connect(observer.on_job_started)
+	assertions.truthy(reentrant_production.start_recipe(first_building, "test_grain_wood", 1, unrelated_inventory), "outer routed production starts")
+	event_bus.production_job_started.disconnect(observer.on_job_started)
+	assertions.truthy(observer.attempted, "production listener attempts cross-building reentry")
+	assertions.truthy(not observer.inner_result, "cross-building production reentry is rejected")
+	assertions.equal(first_building.producer_state.jobs.size(), 1, "outer production queues once")
+	assertions.equal(second_building.producer_state.jobs.size(), 0, "reentrant production queues nothing")
+	for node in [reentrant_production, reentrant_router, reentrant_storage, reentrant_inventory]:
+		tree.root.remove_child(node)
+	RecipeDatabaseScript._recipes.erase("test_grain_wood")
 
 
 func _test_queue_limit_and_output_pause(assertions: TestAssert) -> void:

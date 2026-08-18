@@ -279,7 +279,8 @@ func _connect_systems() -> bool:
 		grid_system,
 		farming_system,
 		building_system,
-		inventory_system
+		inventory_system,
+		item_container_router
 	):
 		return false
 

@@ -5,6 +5,8 @@ const EconomySystemScript = preload("res://scripts/systems/economy_system.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const FarmStorageSystemScript = preload("res://scripts/systems/farm_storage_system.gd")
+const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
 const MarketSystemScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomySystemScript = preload("res://scripts/systems/npc_economy_system.gd")
 const DailySimulationSystemScript = preload("res://scripts/systems/daily_simulation_system.gd")
@@ -37,6 +39,36 @@ class WalletDouble extends Node:
 		gold -= amount
 		return true
 
+	func restore_gold_unchecked(value: int) -> bool:
+		if value < 0 or value > EconomyLimitsScript.MAX_SAFE_INTEGER:
+			return false
+		gold = value
+		return true
+
+	func can_restore_gold_unchecked() -> bool:
+		return true
+
+
+class FailingReceiptNpc extends NpcEconomySystem:
+	var fail_next_receipt := true
+
+	func receive_item(npc_id: String, item_id: String, quantity: int) -> bool:
+		var result := super.receive_item(npc_id, item_id, quantity)
+		if fail_next_receipt:
+			fail_next_receipt = false
+			return false
+		return result
+
+
+class FailingFinalizeRouter extends ItemContainerRouter:
+	var fail_next_finalize := true
+
+	func finalize_sealed_publication(publication: Variant) -> RefCounted:
+		if fail_next_finalize:
+			fail_next_finalize = false
+			return null
+		return super.finalize_sealed_publication(publication)
+
 
 class ReentrantDeliveryObserver extends RefCounted:
 	var reenter: Callable
@@ -44,6 +76,7 @@ class ReentrantDeliveryObserver extends RefCounted:
 	var inner_result := true
 	var gold_events := 0
 	var item_events := 0
+	var storage_events := 0
 
 	func _init(action: Callable) -> void:
 		reenter = action
@@ -58,12 +91,37 @@ class ReentrantDeliveryObserver extends RefCounted:
 	func on_item_removed(_item_id: String, _quantity: int) -> void:
 		item_events += 1
 
+	func on_storage_changed(_changes: Dictionary) -> void:
+		storage_events += 1
+		if attempted:
+			return
+		attempted = true
+		inner_result = bool(reenter.call())
+
+
+class DeliveryEventRecorder extends RefCounted:
+	var count := 0
+
+	func on_gold(_balance: int) -> void:
+		count += 1
+
+	func on_item(_item_id: String, _quantity: int) -> void:
+		count += 1
+
+	func on_storage(_changes: Dictionary) -> void:
+		count += 1
+
+	func on_order(_order_id: String) -> void:
+		count += 1
+
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_required_api(assertions)
 	_test_stable_event_bus_signal_shape(assertions)
 	_test_shortage_premiums_cap_and_dedup(assertions)
 	_test_order_completion_is_atomic_and_once_only(assertions)
+	_test_routed_order_sources(assertions)
+	_test_routed_delivery_failures_restore_every_authority(assertions, tree)
 	_test_reentrant_delivery_signals_settle_once(assertions, tree)
 	_test_expired_and_failed_orders_preserve_assets(assertions)
 	_test_contract_delivery_reload_and_breach_idempotence(assertions)
@@ -172,6 +230,84 @@ func _test_order_completion_is_atomic_and_once_only(assertions: TestAssert) -> v
 	_free_fixture(fixture)
 
 
+func _test_routed_order_sources(assertions: TestAssert) -> void:
+	var crop_fixture := _fixture([_profile("crop_npc", {"grain": 5})])
+	var crop_economy: Node = crop_fixture.economy
+	crop_economy.call("advance_order_deadlines", 12)
+	assertions.truthy(bool(crop_economy.call("generate_demand_orders", 12)), "crop order generates")
+	var crop_order: Dictionary = _record_for(crop_economy.call("get_orders"), "crop_npc:grain:12")
+	var crop_quantity := int(crop_order.get("quantity", 0))
+	assertions.truthy(crop_fixture.storage.add_items({"grain": crop_quantity}), "crop order stock enters farm storage")
+	assertions.truthy(crop_economy.call("complete_order", "crop_npc:grain:12"), "crop order completes through router")
+	assertions.equal(crop_fixture.storage.get_count("grain"), 0, "crop order removes farm storage")
+	assertions.equal(crop_fixture.inventory.get_item_count("grain"), 0, "crop order never touches backpack")
+	_free_fixture(crop_fixture)
+
+	var seed_fixture := _fixture([_profile("seed_npc", {"grain_seed": 3})])
+	var seed_economy: Node = seed_fixture.economy
+	seed_economy.set("_last_processed_day", 12)
+	var seed_orders: Array[Dictionary] = [{
+		"order_id": "seed_npc:grain_seed:12", "npc_id": "seed_npc",
+		"item_id": "grain_seed", "quantity": 3, "unit_price": 4,
+		"reward_gold": 12, "expires_day": 14, "kind": "daily",
+		"completed": false, "expired": false,
+	}]
+	seed_economy.set("_orders", seed_orders)
+	var seed_order: Dictionary = _record_for(seed_economy.call("get_orders"), "seed_npc:grain_seed:12")
+	var seed_quantity := int(seed_order.get("quantity", 0))
+	assertions.truthy(seed_fixture.inventory.add_item("grain_seed", seed_quantity), "seed order stock enters backpack")
+	assertions.truthy(seed_economy.call("complete_order", "seed_npc:grain_seed:12"), "seed order completes through router")
+	assertions.equal(seed_fixture.inventory.get_item_count("grain_seed"), 0, "seed order removes backpack")
+	assertions.equal(seed_fixture.storage.get_count("grain_seed"), 0, "seed order never touches farm storage")
+	_free_fixture(seed_fixture)
+
+
+func _test_routed_delivery_failures_restore_every_authority(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var failing_npc := FailingReceiptNpc.new()
+	var receipt_fixture := _fixture(
+		[_profile("receipt_npc", {"iron_ore": 4})], 100, 10, failing_npc
+	)
+	receipt_fixture.economy.advance_order_deadlines(12)
+	receipt_fixture.economy.generate_demand_orders(12)
+	var receipt_order: Dictionary = receipt_fixture.economy.get_orders()[0]
+	receipt_fixture.inventory.add_item("iron_ore", int(receipt_order.quantity))
+	var receipt_before := _full_delivery_snapshot(receipt_fixture)
+	assertions.truthy(not receipt_fixture.economy.complete_order(receipt_order.order_id), "NPC receipt failure rejects routed order")
+	assertions.equal(_full_delivery_snapshot(receipt_fixture), receipt_before, "NPC receipt failure restores every authority")
+	_free_fixture(receipt_fixture)
+
+	var failing_router := FailingFinalizeRouter.new()
+	var finalize_fixture := _fixture(
+		[_profile("finalize_npc", {"grain": 4})], 100, 10, null, failing_router
+	)
+	finalize_fixture.economy.advance_order_deadlines(12)
+	finalize_fixture.economy.generate_demand_orders(12)
+	var finalize_order: Dictionary = finalize_fixture.economy.get_orders()[0]
+	finalize_fixture.storage.add_items({"grain": int(finalize_order.quantity)})
+	var finalize_before := _full_delivery_snapshot(finalize_fixture)
+	for node in [finalize_fixture.inventory, finalize_fixture.storage, finalize_fixture.router, finalize_fixture.economy]:
+		tree.root.add_child(node)
+	var recorder := DeliveryEventRecorder.new()
+	var event_bus := tree.root.get_node("EventBus")
+	event_bus.gold_changed.connect(recorder.on_gold)
+	event_bus.item_removed.connect(recorder.on_item)
+	event_bus.order_updated.connect(recorder.on_order)
+	finalize_fixture.storage.contents_changed.connect(recorder.on_storage)
+	assertions.truthy(not finalize_fixture.economy.complete_order(finalize_order.order_id), "router finalize failure rejects routed order")
+	assertions.equal(_full_delivery_snapshot(finalize_fixture), finalize_before, "router finalize failure restores goods NPC gold and order state")
+	assertions.equal(recorder.count, 0, "failed routed delivery publishes no temporary notifications")
+	event_bus.gold_changed.disconnect(recorder.on_gold)
+	event_bus.item_removed.disconnect(recorder.on_item)
+	event_bus.order_updated.disconnect(recorder.on_order)
+	finalize_fixture.storage.contents_changed.disconnect(recorder.on_storage)
+	for node in [finalize_fixture.economy, finalize_fixture.router, finalize_fixture.storage, finalize_fixture.inventory]:
+		tree.root.remove_child(node)
+	_free_fixture(finalize_fixture)
+
+
 func _test_reentrant_delivery_signals_settle_once(assertions: TestAssert, tree: SceneTree) -> void:
 	var event_bus := tree.root.get_node_or_null("EventBus")
 	assertions.truthy(event_bus != null, "real EventBus exists for reentrant delivery coverage")
@@ -179,7 +315,8 @@ func _test_reentrant_delivery_signals_settle_once(assertions: TestAssert, tree: 
 		return
 	var fixture := _fixture([_profile("urgent_npc", {"iron_ore": 10})])
 	var economy: Node = fixture.economy
-	tree.root.add_child(economy)
+	for node in [fixture.inventory, fixture.storage, fixture.router, economy]:
+		tree.root.add_child(node)
 	economy.call("advance_order_deadlines", 12)
 	assertions.equal(economy.call("generate_demand_orders", 12), true, "reentrant order fixture generates on its current day")
 	var order: Dictionary = (economy.call("get_orders") as Array)[0]
@@ -203,12 +340,14 @@ func _test_reentrant_delivery_signals_settle_once(assertions: TestAssert, tree: 
 	assertions.truthy(bool((economy.call("get_orders") as Array)[0].completed), "reentrant order records one completion")
 	assertions.equal(order_observer.gold_events, 1, "reentrant order emits one final gold signal")
 	assertions.equal(order_observer.item_events, 1, "reentrant order emits one final item signal")
-	tree.root.remove_child(economy)
+	for node in [economy, fixture.router, fixture.storage, fixture.inventory]:
+		tree.root.remove_child(node)
 	_free_fixture(fixture)
 
 	fixture = _fixture([_profile("grain_npc", {"grain": 15})])
 	economy = fixture.economy
-	tree.root.add_child(economy)
+	for node in [fixture.inventory, fixture.storage, fixture.router, economy]:
+		tree.root.add_child(node)
 	assertions.truthy(bool(economy.call("from_dict", {
 		"last_processed_day": 0,
 		"orders": [],
@@ -216,25 +355,28 @@ func _test_reentrant_delivery_signals_settle_once(assertions: TestAssert, tree: 
 	})), "reentrant contract fixture restores")
 	assertions.truthy(bool(economy.call("sign_contract", "grain_npc:grain:1:3")), "reentrant contract fixture signs")
 	economy.call("advance_order_deadlines", 1)
-	assertions.truthy(fixture.inventory.add_item("grain", 10), "reentrant contract fixture owns two deliveries")
+	assertions.truthy(fixture.storage.add_items({"grain": 10}), "reentrant contract fixture owns two deliveries")
 	gold_before = int(fixture.wallet.gold)
 	var contract_observer := ReentrantDeliveryObserver.new(
 		Callable(economy, "deliver_contract").bind("grain_npc:grain:1:3", 5)
 	)
 	event_bus.gold_changed.connect(contract_observer.on_gold_changed)
 	event_bus.item_removed.connect(contract_observer.on_item_removed)
+	fixture.storage.contents_changed.connect(contract_observer.on_storage_changed)
 	assertions.truthy(bool(economy.call("deliver_contract", "grain_npc:grain:1:3", 5)), "outer contract delivery succeeds")
 	event_bus.gold_changed.disconnect(contract_observer.on_gold_changed)
 	event_bus.item_removed.disconnect(contract_observer.on_item_removed)
+	fixture.storage.contents_changed.disconnect(contract_observer.on_storage_changed)
 	assertions.truthy(contract_observer.attempted, "gold signal attempts one reentrant contract delivery")
 	assertions.truthy(not contract_observer.inner_result, "reentrant delivery of the same contract day is rejected")
-	assertions.equal(fixture.inventory.get_item_count("grain"), 5, "reentrant contract consumes one delivery")
+	assertions.equal(fixture.storage.get_count("grain"), 5, "reentrant contract consumes one delivery")
 	assertions.equal(fixture.npc.get_npc_state("grain_npc").inventory.get("grain", 0), 5, "reentrant contract credits NPC once")
 	assertions.equal(fixture.wallet.gold, gold_before + 50, "reentrant contract pays once")
 	assertions.equal((economy.call("get_contracts") as Array)[0].delivered_days, [1], "reentrant contract records one delivered day")
 	assertions.equal(contract_observer.gold_events, 1, "reentrant contract emits one final gold signal")
-	assertions.equal(contract_observer.item_events, 1, "reentrant contract emits one final item signal")
-	tree.root.remove_child(economy)
+	assertions.equal(contract_observer.storage_events, 1, "reentrant contract emits one final storage signal")
+	for node in [economy, fixture.router, fixture.storage, fixture.inventory]:
+		tree.root.remove_child(node)
 	_free_fixture(fixture)
 
 
@@ -327,16 +469,16 @@ func _test_contract_delivery_reload_and_breach_idempotence(assertions: TestAsser
 	assertions.truthy(bool(economy.call("sign_contract", "grain_npc:grain:1:3")), "available contract signs once")
 	assertions.truthy(not bool(economy.call("sign_contract", "grain_npc:grain:1:3")), "signed contract cannot sign twice")
 	economy.call("advance_order_deadlines", 1)
-	assertions.truthy(fixture.inventory.add_item("grain", 10), "two delivery days are prepared")
+	assertions.truthy(fixture.storage.add_items({"grain": 10}), "two delivery days are prepared")
 	var gold_before := int(fixture.wallet.gold)
 	assertions.truthy(not bool(economy.call("deliver_contract", "grain_npc:grain:1:3", 4)), "wrong daily quantity is rejected")
-	assertions.equal(fixture.inventory.get_item_count("grain"), 10, "wrong quantity removes no items")
+	assertions.equal(fixture.storage.get_count("grain"), 10, "wrong quantity removes no items")
 	assertions.truthy(bool(economy.call("deliver_contract", "grain_npc:grain:1:3", 5)), "first daily contract delivery succeeds")
 	assertions.equal(fixture.wallet.gold, gold_before + 50, "first contract delivery pays once")
 
 	persisted = economy.call("to_dict")
 	var reloaded := EconomySystemScript.new()
-	assertions.truthy(bool(reloaded.call("configure", fixture.inventory, fixture.wallet, fixture.market, fixture.npc)), "reloaded economy configures dependencies")
+	assertions.truthy(bool(reloaded.call("configure", fixture.inventory, fixture.wallet, fixture.market, fixture.npc, fixture.router)), "reloaded economy configures dependencies")
 	assertions.truthy(bool(reloaded.call("from_dict", persisted)), "signed contract and first delivery reload")
 	assertions.truthy(not bool(reloaded.call("deliver_contract", "grain_npc:grain:1:3", 5)), "reload cannot duplicate same-day delivery payment")
 	assertions.equal(fixture.wallet.gold, gold_before + 50, "duplicate delivery after reload preserves wallet")
@@ -411,9 +553,8 @@ func _test_contract_delivery_quantity_limit(assertions: TestAssert) -> void:
 	oversized_contract.signed = true
 	economy.set("_contracts", [oversized_contract.duplicate(true)])
 	economy.set("_last_processed_day", 1)
-	fixture.inventory.max_slots = 21
-	fixture.inventory.reset_slots()
-	assertions.truthy(fixture.inventory.add_item("grain", over_limit), "runtime defense fixture can physically hold max plus one")
+	fixture.storage.configure(func() -> int: return over_limit)
+	assertions.truthy(fixture.storage.add_items({"grain": over_limit}), "runtime defense fixture can physically hold max plus one")
 	before = _asset_snapshot(fixture, "grain_npc", "grain")
 	assertions.truthy(not bool(economy.call("deliver_contract", "grain_npc:grain:1:3", over_limit)), "runtime delivery rejects an oversized authoritative contract")
 	_assert_assets(assertions, fixture, before, "grain_npc", "grain", "oversized runtime delivery")
@@ -498,7 +639,7 @@ func _test_save_manager_round_trip(assertions: TestAssert, tree: SceneTree) -> v
 	})), "save fixture restores available contract")
 	assertions.truthy(bool(economy.call("sign_contract", "grain_npc:grain:1:3")), "save fixture signs contract")
 	economy.call("advance_order_deadlines", 1)
-	assertions.truthy(fixture.inventory.add_item("grain", 5), "save fixture prepares contract goods")
+	assertions.truthy(fixture.storage.add_items({"grain": 5}), "save fixture prepares contract goods")
 	assertions.truthy(bool(economy.call("deliver_contract", "grain_npc:grain:1:3", 5)), "save fixture records first delivery")
 	assertions.truthy(bool(manager.call(
 		"configure_economy", fixture.market, daily, null, null, fixture.npc, economy
@@ -536,25 +677,38 @@ func _test_generation_requires_current_safe_day(assertions: TestAssert) -> void:
 	_free_fixture(fixture)
 
 
-func _fixture(profiles: Array, iron_price: int = 100, grain_price: int = 10) -> Dictionary:
+func _fixture(
+	profiles: Array,
+	iron_price: int = 100,
+	grain_price: int = 10,
+	npc_override: NpcEconomySystem = null,
+	router_override: ItemContainerRouter = null
+) -> Dictionary:
 	var market := MarketSystemScript.new()
 	market.configure([
 		_definition("iron_ore", iron_price),
 		_definition("grain", grain_price),
+		_definition("grain_seed", 4),
 	])
-	var npc := NpcEconomySystemScript.new()
+	var npc := npc_override if npc_override != null else NpcEconomySystemScript.new()
 	npc.configure(market, profiles, [])
 	var inventory := InventorySystemScript.new()
+	var storage := FarmStorageSystemScript.new()
+	var router := router_override if router_override != null else ItemContainerRouterScript.new()
+	storage.configure(func() -> int: return 1000)
+	router.configure(inventory, storage)
 	var wallet := WalletDouble.new()
 	var economy := EconomySystemScript.new()
 	if economy.has_method("get_orders"):
-		economy.call("configure", inventory, wallet, market, npc)
+		economy.call("configure", inventory, wallet, market, npc, router)
 	else:
 		economy.call("configure", inventory, wallet, market)
 	return {
 		"market": market,
 		"npc": npc,
 		"inventory": inventory,
+		"storage": storage,
+		"router": router,
 		"wallet": wallet,
 		"economy": economy,
 	}
@@ -612,9 +766,20 @@ func _record_for(records: Array, record_id: String) -> Dictionary:
 
 func _asset_snapshot(fixture: Dictionary, npc_id: String, item_id: String) -> Dictionary:
 	return {
-		"player": fixture.inventory.get_item_count(item_id),
+		"player": fixture.economy.get_owned_quantity(item_id),
 		"npc": fixture.npc.get_npc_state(npc_id).inventory.get(item_id, 0),
 		"gold": fixture.wallet.gold,
+	}
+
+
+func _full_delivery_snapshot(fixture: Dictionary) -> Dictionary:
+	return {
+		"inventory": fixture.inventory.slots.duplicate(true),
+		"quick": fixture.inventory.quick_slot_mappings.duplicate(),
+		"storage": fixture.storage.get_items(),
+		"npc": fixture.npc.to_dict(),
+		"wallet": fixture.wallet.gold,
+		"economy": fixture.economy.to_dict(),
 	}
 
 
@@ -626,13 +791,13 @@ func _assert_assets(
 	item_id: String,
 	message: String
 ) -> void:
-	assertions.equal(fixture.inventory.get_item_count(item_id), expected.player, message + " preserves player inventory")
+	assertions.equal(fixture.economy.get_owned_quantity(item_id), expected.player, message + " preserves player inventory")
 	assertions.equal(fixture.npc.get_npc_state(npc_id).inventory.get(item_id, 0), expected.npc, message + " preserves NPC inventory")
 	assertions.equal(fixture.wallet.gold, expected.gold, message + " preserves wallet")
 
 
 func _free_fixture(fixture: Dictionary) -> void:
-	for key in ["economy", "inventory", "wallet", "npc", "market"]:
+	for key in ["economy", "router", "storage", "inventory", "wallet", "npc", "market"]:
 		(fixture[key] as Node).free()
 
 

@@ -707,13 +707,17 @@ func complete_order(order_id: String) -> bool:
 		or _last_processed_day > int(order.expires_day)
 	):
 		return false
+	var order_before := _orders[index].duplicate(true)
 	if not _transfer_record_delivery(
 		"order:%s" % order_id,
-		str(order.npc_id), str(order.item_id), int(order.quantity), int(order.reward_gold)
+		str(order.npc_id), str(order.item_id), int(order.quantity), int(order.reward_gold),
+		func() -> bool:
+			_orders[index]["completed"] = true
+			return true,
+		func() -> void: _orders[index] = order_before.duplicate(true),
+		func() -> void: _emit_record_updated("order_updated", order_id)
 	):
 		return false
-	_orders[index]["completed"] = true
-	_emit_record_updated("order_updated", order_id)
 	return true
 
 
@@ -752,16 +756,20 @@ func deliver_contract(contract_id: String, quantity: int) -> bool:
 		or _last_processed_day in (contract.delivered_days as Array)
 	):
 		return false
+	var contract_before := _contracts[index].duplicate(true)
 	if not _transfer_record_delivery(
 		"contract:%s" % contract_id,
-		str(contract.npc_id), str(contract.item_id), quantity, int(contract.reward_gold)
+		str(contract.npc_id), str(contract.item_id), quantity, int(contract.reward_gold),
+		func() -> bool:
+			var delivered_days: Array = _contracts[index].delivered_days
+			delivered_days.append(_last_processed_day)
+			delivered_days.sort()
+			_contracts[index]["completed"] = delivered_days.size() == _contract_duration(contract)
+			return true,
+		func() -> void: _contracts[index] = contract_before.duplicate(true),
+		func() -> void: _emit_record_updated("contract_updated", contract_id)
 	):
 		return false
-	var delivered_days: Array = _contracts[index].delivered_days
-	delivered_days.append(_last_processed_day)
-	delivered_days.sort()
-	_contracts[index]["completed"] = delivered_days.size() == _contract_duration(contract)
-	_emit_record_updated("contract_updated", contract_id)
 	return true
 
 
@@ -770,12 +778,18 @@ func _transfer_record_delivery(
 	npc_id: String,
 	item_id: String,
 	quantity: int,
-	reward_gold: int
+	reward_gold: int,
+	commit_domain: Callable = Callable(),
+	rollback_domain: Callable = Callable(),
+	publish_domain: Callable = Callable()
 ) -> bool:
 	if _active_deliveries.has(delivery_key):
 		return false
 	_active_deliveries[delivery_key] = true
-	var transferred := _transfer_player_delivery(npc_id, item_id, quantity, reward_gold)
+	var transferred := _transfer_player_delivery(
+		npc_id, item_id, quantity, reward_gold,
+		commit_domain, rollback_domain, publish_domain
+	)
 	_active_deliveries.erase(delivery_key)
 	return transferred
 
@@ -784,8 +798,16 @@ func _transfer_player_delivery(
 	npc_id: String,
 	item_id: String,
 	quantity: int,
-	reward_gold: int
+	reward_gold: int,
+	commit_domain: Callable = Callable(),
+	rollback_domain: Callable = Callable(),
+	publish_domain: Callable = Callable()
 ) -> bool:
+	if _router_required:
+		return _transfer_routed_player_delivery(
+			npc_id, item_id, quantity, reward_gold,
+			commit_domain, rollback_domain, publish_domain
+		)
 	if (
 		not _is_configured
 		or _inventory_ref == null
@@ -812,8 +834,11 @@ func _transfer_player_delivery(
 		_inventory_ref.remove_item(item_id, quantity)
 		and bool(_npc_ref.call("receive_item", npc_id, item_id, quantity))
 		and add_gold(reward_gold)
+		and (not commit_domain.is_valid() or bool(commit_domain.call()))
 	)
 	if not success:
+		if rollback_domain.is_valid():
+			rollback_domain.call()
 		_restore_inventory(inventory_before)
 		_npc_ref.call("from_dict", npc_before)
 		_restore_wallet(wallet_before)
@@ -822,7 +847,119 @@ func _transfer_player_delivery(
 		return false
 	_end_mapping_transaction(owns_mapping_transaction, true)
 	_end_delivery_event_transaction(owns_event_bus_transaction, true, item_id, quantity)
+	if publish_domain.is_valid():
+		publish_domain.call()
 	return true
+
+
+func _transfer_routed_player_delivery(
+	npc_id: String,
+	item_id: String,
+	quantity: int,
+	reward_gold: int,
+	commit_domain: Callable,
+	rollback_domain: Callable,
+	publish_domain: Callable
+) -> bool:
+	if (
+		not _is_configured
+		or not is_instance_valid(_router_ref)
+		or _wallet_ref == null
+		or _npc_ref == null
+		or not _is_valid_delivery_quantity(quantity)
+		or reward_gold <= 0
+		or not bool(_npc_ref.call("can_receive_item", npc_id, item_id, quantity))
+	):
+		return false
+	var preflight := _router_ref.can_remove({item_id: quantity})
+	if not bool(preflight.get("ok", false)):
+		return false
+	var wallet_before: Variant = _get_wallet_balance()
+	if (
+		wallet_before == null
+		or int(wallet_before) < 0
+		or int(wallet_before) > EconomyLimitsScript.MAX_SAFE_INTEGER - reward_gold
+	):
+		return false
+	var router_before := _router_ref.snapshot_for({item_id: quantity})
+	var npc_before: Dictionary = _npc_ref.call("to_dict")
+	if router_before.is_empty() or npc_before.is_empty():
+		return false
+	var router_token := _router_ref.begin_atomic_transaction()
+	if router_token == null:
+		return false
+	var owns_event_bus_transaction := _begin_event_bus_transaction()
+	if _event_bus != null and not owns_event_bus_transaction:
+		_router_ref.rollback_atomic_transaction(router_token)
+		return false
+	var domain_committed := false
+	var success := (
+		_router_ref.stage_remove_items(router_token, {item_id: quantity})
+		and bool(_npc_ref.call("receive_item", npc_id, item_id, quantity))
+		and add_gold(reward_gold)
+	)
+	if success:
+		domain_committed = not commit_domain.is_valid() or bool(commit_domain.call())
+		success = domain_committed
+	if not success:
+		return _rollback_routed_delivery(
+			router_token, null, null, router_before, npc_before, wallet_before,
+			domain_committed, rollback_domain, owns_event_bus_transaction
+		)
+	var router_publication := _router_ref.seal_atomic_transaction(router_token)
+	if router_publication == null:
+		return _rollback_routed_delivery(
+			router_token, null, null, router_before, npc_before, wallet_before,
+			true, rollback_domain, owns_event_bus_transaction
+		)
+	var router_finalized := _router_ref.finalize_sealed_publication(router_publication)
+	if router_finalized == null:
+		return _rollback_routed_delivery(
+			null, router_publication, null, router_before, npc_before, wallet_before,
+			true, rollback_domain, owns_event_bus_transaction
+		)
+	_restore_event_bus_block(owns_event_bus_transaction)
+	var dispatched := _router_ref.dispatch_finalized_publication(router_finalized)
+	if not dispatched:
+		push_error("A source-owned delivery publication violated its dispatch guarantee.")
+	_ensure_event_bus_unblocked(owns_event_bus_transaction)
+	_publish_routed_wallet_event(owns_event_bus_transaction)
+	if publish_domain.is_valid():
+		publish_domain.call()
+	return dispatched
+
+
+func _rollback_routed_delivery(
+	router_token: RefCounted,
+	router_publication: RefCounted,
+	router_finalized: RefCounted,
+	router_before: Dictionary,
+	npc_before: Dictionary,
+	wallet_before: Variant,
+	domain_committed: bool,
+	rollback_domain: Callable,
+	event_bus_transaction: bool
+) -> bool:
+	if domain_committed and rollback_domain.is_valid():
+		rollback_domain.call()
+	var router_restored := true
+	if is_instance_valid(_router_ref):
+		if router_finalized != null and _router_ref.owns_finalized_publication(router_finalized):
+			router_restored = _router_ref.cancel_finalized_publication(router_finalized)
+		elif router_publication != null and _router_ref.owns_sealed_transaction(router_publication):
+			router_restored = _router_ref.cancel_sealed_transaction(router_publication)
+		elif router_token != null and _router_ref.owns_atomic_transaction(router_token):
+			router_restored = _router_ref.rollback_atomic_transaction(router_token)
+		if not _router_ref.snapshot_matches(router_before):
+			_router_ref.restore_snapshot(router_before)
+		router_restored = router_restored and _router_ref.snapshot_matches(router_before)
+	var npc_restored := bool(_npc_ref.call("from_dict", npc_before))
+	npc_restored = npc_restored and _npc_ref.call("to_dict") == npc_before
+	var wallet_restored := _restore_wallet(wallet_before)
+	_restore_event_bus_block(event_bus_transaction)
+	if not router_restored or not npc_restored or not wallet_restored:
+		push_error("Routed delivery rollback failed its exact-state verification.")
+	return false
 
 
 func _end_delivery_event_transaction(

@@ -6,6 +6,8 @@ const GameDataScript := preload("res://scripts/core/game_data.gd")
 const MarketSystemScript := preload("res://scripts/systems/market_system.gd")
 const EconomySystemScript := preload("res://scripts/systems/economy_system.gd")
 const InventorySystemScript := preload("res://scripts/systems/inventory_system.gd")
+const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_system.gd")
+const ItemContainerRouterScript := preload("res://scripts/systems/item_container_router.gd")
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
 const ProgressionSystemScript := preload("res://scripts/systems/economy_progression_system.gd")
@@ -135,7 +137,7 @@ func _test_order_delivery_updates_every_authority(assertions: TestAssert, tree: 
 	await tree.process_frame
 	assertions.truthy(notifications.configure(tree.root.get_node("EventBus"), fixture.market, fixture.economy), "order flow connects notification authority")
 	hud.configure_notifications(notifications)
-	assertions.truthy(panel.configure(fixture.economy, fixture.npc, fixture.inventory), "order flow configures real panel")
+	assertions.truthy(panel.call("configure", fixture.economy, fixture.npc), "order flow configures real panel without inventory ownership")
 	var order_id := "tiejiang_zhang:iron_ore:1"
 	(_find_meta_button(panel.order_rows, "order_id", order_id) as Button).pressed.emit()
 	var order := _record_for(fixture.economy.get_orders(), "order_id", order_id)
@@ -152,7 +154,7 @@ func _test_order_delivery_updates_every_authority(assertions: TestAssert, tree: 
 	assertions.equal(notifications.get_unread_count(), 1, "order completion emits one unread notification")
 	var notice := notifications.get_recent(1)[0]
 	assertions.equal({"kind": notice.kind, "target_type": notice.target_type, "target_id": notice.target_id}, {"kind": "order_completed", "target_type": "order", "target_id": order_id}, "order notification points to exact row")
-	_free_nodes([panel, hud, notifications, fixture.economy, fixture.inventory, fixture.npc, fixture.market])
+	_free_nodes([panel, hud, notifications, fixture.economy, fixture.router, fixture.storage, fixture.inventory, fixture.npc, fixture.market])
 	_restore_wallet(game_state, saved)
 
 
@@ -190,7 +192,7 @@ func _test_contract_sign_delivery_reload_is_idempotent(assertions: TestAssert, t
 	var delivered := _record_for(fixture.economy.get_contracts(), "contract_id", contract_id)
 	assertions.equal(delivered.delivered_days, [1], "daily contract records exactly one delivered day")
 	assertions.equal(int(delivered.breaches), 0, "successful contract day has no breach")
-	assertions.equal(fixture.inventory.get_item_count("grain"), 0, "daily contract removes exact player goods")
+	assertions.equal(fixture.storage.get_count("grain"), 0, "daily contract removes exact farm-storage goods")
 	assertions.equal(int(fixture.npc.get_npc_state("lao_li").inventory.get("grain", 0)), npc_before + 5, "daily contract transfers exact NPC goods")
 	assertions.equal(int(game_state.gold), gold_before + 50, "daily contract pays exactly once")
 	var assets_after := _contract_assets(fixture, game_state)
@@ -207,7 +209,7 @@ func _test_contract_sign_delivery_reload_is_idempotent(assertions: TestAssert, t
 	assertions.equal(panel.error_label.text, "今日已交付，不能重复结算", "duplicate contract command reloads and shows authoritative reason")
 	shop.close()
 	assertions.truthy(not tree.paused, "closing ShopUI after contract confirmation restores running state")
-	_free_nodes([notifications, shop, fixture.economy, fixture.inventory, fixture.npc, fixture.market])
+	_free_nodes([notifications, shop, fixture.economy, fixture.router, fixture.storage, fixture.inventory, fixture.npc, fixture.market])
 	_restore_wallet(game_state, saved)
 
 
@@ -215,7 +217,7 @@ func _test_windmill_flour_flow(assertions: TestAssert, tree: SceneTree) -> void:
 	var fixture := _production_fixture(tree)
 	_unlock_station(fixture.progression, "windmill")
 	fixture.production.set_progression_system(fixture.progression)
-	assertions.truthy(fixture.inventory.add_item("grain", 2), "windmill flow owns two grain")
+	assertions.truthy(fixture.storage.add_items({"grain": 2}), "windmill flow owns two grain in farm storage")
 	var windmill := _building("windmill", 4, 5)
 	tree.root.add_child(windmill)
 	assertions.truthy(fixture.production.register_building(windmill), "windmill registers real producer")
@@ -231,7 +233,7 @@ func _test_windmill_flour_flow(assertions: TestAssert, tree: SceneTree) -> void:
 	(ui.production_panel.recipe_list.get_node("Recipe_flour") as Button).pressed.emit()
 	ui.production_panel.batch_spin_box.value = 1
 	ui.production_panel.start_button.pressed.emit()
-	assertions.equal(fixture.inventory.get_item_count("grain"), 0, "starting flour consumes exactly two grain")
+	assertions.equal(fixture.storage.get_count("grain"), 0, "starting flour consumes exactly two stored grain")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "starting flour creates one queue job")
 	assertions.equal(str(windmill.producer_state.jobs[0].recipe_id), "flour", "queue stores flour recipe")
 	fixture.production.advance_minutes(360)
@@ -396,7 +398,7 @@ func _test_merged_notifications_navigate_to_target(assertions: TestAssert, tree:
 	assertions.truthy(not ui.notification_center.visible, "successful target navigation closes notification center")
 	main.close_economy_modal()
 	assertions.truthy(not building_ui.is_open(), "Main.close_economy_modal closes routed building panel")
-	_free_nodes([ui, system, shop, fixture.economy, fixture.inventory, fixture.npc, fixture.market, building_ui, windmill])
+	_free_nodes([ui, system, shop, fixture.economy, fixture.router, fixture.storage, fixture.inventory, fixture.npc, fixture.market, building_ui, windmill])
 	_free_production_fixture(production_fixture)
 	main.free()
 	building_system.free()
@@ -507,19 +509,23 @@ func _production_fixture(tree: SceneTree) -> Dictionary:
 	var grid := GridSystemScript.new() as GridSystem
 	var farming := FarmingSystemScript.new() as FarmingSystem
 	var inventory := InventorySystemScript.new() as InventorySystem
+	var storage := FarmStorageSystemScript.new() as FarmStorageSystem
+	var router := ItemContainerRouterScript.new() as ItemContainerRouter
 	var production := ProductionSystemScript.new() as ProductionSystem
 	var progression := ProgressionSystemScript.new() as EconomyProgressionSystem
 	var tool := ToolSystemScript.new() as ToolSystem
-	for node in [grid, farming, inventory, production, progression, tool]:
+	for node in [grid, farming, inventory, storage, router, production, progression, tool]:
 		tree.root.add_child(node)
+	storage.configure(func() -> int: return 1000)
+	router.configure(inventory, storage)
 	farming.configure(grid, null, null)
-	production.configure(grid, farming, null, inventory)
+	production.call("configure", grid, farming, null, inventory, router)
 	tool.configure(null, inventory, null)
-	return {"grid": grid, "farming": farming, "inventory": inventory, "production": production, "progression": progression, "tool": tool}
+	return {"grid": grid, "farming": farming, "inventory": inventory, "storage": storage, "router": router, "production": production, "progression": progression, "tool": tool}
 
 
 func _free_production_fixture(fixture: Dictionary) -> void:
-	_free_nodes([fixture.tool, fixture.progression, fixture.production, fixture.inventory, fixture.farming, fixture.grid])
+	_free_nodes([fixture.tool, fixture.progression, fixture.production, fixture.router, fixture.storage, fixture.inventory, fixture.farming, fixture.grid])
 
 
 func _unlock_station(progression: EconomyProgressionSystem, station: String) -> void:
@@ -558,10 +564,14 @@ func _order_contract_fixture(wallet: Node) -> Dictionary:
 		_npc_profile("xiao_hua", "小花", {"honey": 2}),
 	], [])
 	var inventory := InventorySystemScript.new() as InventorySystem
+	var storage := FarmStorageSystemScript.new() as FarmStorageSystem
+	var router := ItemContainerRouterScript.new() as ItemContainerRouter
+	storage.configure(func() -> int: return 1000)
+	router.configure(inventory, storage)
 	inventory.add_item("iron_ore", 10)
-	inventory.add_item("grain", 5)
+	storage.add_items({"grain": 5})
 	var economy := EconomySystemScript.new() as EconomySystem
-	economy.configure(inventory, wallet, market, npc)
+	economy.configure(inventory, wallet, market, npc, router)
 	market.settle_day(1)
 	npc.sync_daily_cursor(1)
 	economy.advance_order_deadlines(1)
@@ -574,7 +584,7 @@ func _order_contract_fixture(wallet: Node) -> Dictionary:
 		"signed": false, "completed": false, "expired": false,
 	})
 	economy.from_dict(state)
-	return {"market": market, "npc": npc, "inventory": inventory, "economy": economy}
+	return {"market": market, "npc": npc, "inventory": inventory, "storage": storage, "router": router, "economy": economy}
 
 
 func _market_definition(item_id: String, price: int, stock: int, target: int, liquidity: int) -> Dictionary:
@@ -602,7 +612,7 @@ func _trade_assets(inventory: InventorySystem, market: MarketSystem, wallet: Nod
 
 func _contract_assets(fixture: Dictionary, wallet: Node) -> Dictionary:
 	return {
-		"grain": fixture.inventory.get_item_count("grain"), "gold": int(wallet.gold),
+		"grain": fixture.storage.get_count("grain"), "gold": int(wallet.gold),
 		"npc_grain": int(fixture.npc.get_npc_state("lao_li").inventory.get("grain", 0)),
 	}
 

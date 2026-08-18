@@ -6,6 +6,7 @@ const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
+const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
 
 const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
@@ -25,6 +26,7 @@ var _grid_system: GridSystem
 var _farming_system: FarmingSystem
 var _building_system: BuildingSystem
 var _inventory_system: InventorySystem
+var _item_container_router: ItemContainerRouterScript
 var _progression_system: Variant
 var _current_day := 0
 var maintenance_due_days: Dictionary = {}
@@ -37,6 +39,7 @@ var _last_active_greenhouse_cells: Array = []
 var _last_paused_greenhouse_cells: Array = []
 var _feed_shortage_active: Dictionary = {}
 var _passive_output_blocked: Dictionary = {}
+var _active_player_input_transactions: Dictionary = {}
 
 
 func _init() -> void:
@@ -55,7 +58,8 @@ func configure(
 	grid_system: GridSystem,
 	farming_system: FarmingSystem,
 	building_system: BuildingSystem = null,
-	inventory_system: InventorySystem = null
+	inventory_system: InventorySystem = null,
+	item_container_router: ItemContainerRouterScript = null
 ) -> bool:
 	if grid_system == null or farming_system == null:
 		return false
@@ -64,12 +68,22 @@ func configure(
 	_farming_system = farming_system
 	_building_system = building_system
 	_inventory_system = inventory_system
+	_item_container_router = null
+	if item_container_router != null and not set_item_container_router(item_container_router):
+		return false
 	_greenhouse_coverage_initialized = false
 	_last_active_greenhouse_cells.clear()
 	_last_paused_greenhouse_cells.clear()
 	_connect_building_system()
 	register_existing_buildings()
 	_refresh_greenhouse_cells()
+	return true
+
+
+func set_item_container_router(router: ItemContainerRouterScript) -> bool:
+	if not is_instance_valid(router):
+		return false
+	_item_container_router = router
 	return true
 
 
@@ -144,7 +158,14 @@ func preflight_recipe(
 	inventory: InventorySystem
 ) -> Dictionary:
 	var failure := {"ok": false, "reason": "invalid_request", "missing": {}}
-	if building == null or inventory == null or recipe_id.is_empty() or batches <= 0:
+	if (
+		building == null
+		or (_item_container_router == null and inventory == null)
+		or (_item_container_router != null and not is_instance_valid(_item_container_router))
+		or recipe_id.is_empty()
+		or batches <= 0
+		or batches > MAX_SAFE_INTEGER
+	):
 		return failure
 	var state := _get_state(building)
 	if state == null:
@@ -179,9 +200,16 @@ func preflight_recipe(
 		failure.reason = "queue_full"
 		return failure
 	var required := _multiplied_counts(recipe.inputs, batches)
+	if required.is_empty() or int(recipe.duration_minutes) > MAX_SAFE_INTEGER / batches:
+		return failure
 	var missing := {}
 	for item_id in required:
-		var shortfall := int(required[item_id]) - inventory.get_item_count(str(item_id))
+		var available := (
+			_item_container_router.get_count(str(item_id))
+			if is_instance_valid(_item_container_router)
+			else inventory.get_item_count(str(item_id))
+		)
+		var shortfall := int(required[item_id]) - available
 		if shortfall > 0:
 			missing[item_id] = shortfall
 	if not missing.is_empty():
@@ -204,6 +232,8 @@ func start_recipe(
 	batches: int,
 	inventory: InventorySystem
 ) -> bool:
+	if is_instance_valid(_item_container_router):
+		return _start_routed_recipe(building, recipe_id, batches, inventory)
 	var preflight := preflight_recipe(building, recipe_id, batches, inventory)
 	if not bool(preflight.get("ok", false)):
 		return false
@@ -244,6 +274,8 @@ func add_input(
 	quantity: int,
 	inventory: InventorySystem
 ) -> bool:
+	if is_instance_valid(_item_container_router):
+		return _add_routed_input(building, item_id, quantity)
 	var state := _get_state(building)
 	if state == null or inventory == null or quantity <= 0:
 		return false
@@ -274,6 +306,148 @@ func add_input(
 	register_building(building)
 	_emit_event("production_input_changed", [building, item_id, state.get_input_count(item_id)])
 	return true
+
+
+func _start_routed_recipe(
+	building: BuildingInstance,
+	recipe_id: String,
+	batches: int,
+	inventory: InventorySystem
+) -> bool:
+	var key := "recipe:%s" % building.get_instance_id() if is_instance_valid(building) else ""
+	if key.is_empty() or not _active_player_input_transactions.is_empty():
+		return false
+	var preflight := preflight_recipe(building, recipe_id, batches, inventory)
+	if not bool(preflight.get("ok", false)):
+		return false
+	_active_player_input_transactions[key] = true
+	var state := _get_state(building)
+	var jobs_before: Array[Dictionary] = state.jobs.duplicate(true)
+	var inputs: Dictionary = preflight.inputs
+	var router_before := _item_container_router.snapshot_for(inputs)
+	var router_token := _item_container_router.begin_atomic_transaction()
+	if router_before.is_empty() or router_token == null:
+		if router_token != null:
+			_item_container_router.rollback_atomic_transaction(router_token)
+		_active_player_input_transactions.erase(key)
+		return false
+	var owns_event_transaction := _begin_event_bus_transaction()
+	if _event_bus != null and not owns_event_transaction:
+		_item_container_router.rollback_atomic_transaction(router_token)
+		_active_player_input_transactions.erase(key)
+		return false
+	var job := {
+		"recipe_id": recipe_id,
+		"batches": batches,
+		"remaining_minutes": int(preflight.duration_minutes),
+		"status": "running" if state.jobs.is_empty() else "queued",
+	}
+	if not _item_container_router.stage_remove_items(router_token, inputs) or not state.enqueue_job(job):
+		state.jobs.assign(jobs_before)
+		_rollback_routed_inputs(router_token, null, null, router_before, owns_event_transaction)
+		_active_player_input_transactions.erase(key)
+		return false
+	var publication := _item_container_router.seal_atomic_transaction(router_token)
+	if publication == null:
+		state.jobs.assign(jobs_before)
+		_rollback_routed_inputs(router_token, null, null, router_before, owns_event_transaction)
+		_active_player_input_transactions.erase(key)
+		return false
+	var finalized := _item_container_router.finalize_sealed_publication(publication)
+	if finalized == null:
+		state.jobs.assign(jobs_before)
+		_rollback_routed_inputs(null, publication, null, router_before, owns_event_transaction)
+		_active_player_input_transactions.erase(key)
+		return false
+	_end_routed_event_transaction(owns_event_transaction)
+	var dispatched := _item_container_router.dispatch_finalized_publication(finalized)
+	if dispatched:
+		register_building(building)
+		_emit_event("production_job_started", [building, recipe_id, batches])
+	else:
+		push_error("A source-owned production publication violated its dispatch guarantee.")
+	_active_player_input_transactions.erase(key)
+	return dispatched
+
+
+func _add_routed_input(building: BuildingInstance, item_id: String, quantity: int) -> bool:
+	var state := _get_state(building)
+	var key := "input:%s" % building.get_instance_id() if is_instance_valid(building) else ""
+	if (
+		state == null
+		or key.is_empty()
+		or not _active_player_input_transactions.is_empty()
+		or quantity <= 0
+		or quantity > MAX_SAFE_INTEGER
+		or GameDataScript.get_item(item_id) == null
+		or not bool(_item_container_router.can_remove({item_id: quantity}).get("ok", false))
+	):
+		return false
+	_active_player_input_transactions[key] = true
+	var inputs_before: Dictionary = state.inputs.duplicate(true)
+	var requested := {item_id: quantity}
+	var router_before := _item_container_router.snapshot_for(requested)
+	var token := _item_container_router.begin_atomic_transaction()
+	if router_before.is_empty() or token == null:
+		if token != null:
+			_item_container_router.rollback_atomic_transaction(token)
+		_active_player_input_transactions.erase(key)
+		return false
+	var owns_event_transaction := _begin_event_bus_transaction()
+	if _event_bus != null and not owns_event_transaction:
+		_item_container_router.rollback_atomic_transaction(token)
+		_active_player_input_transactions.erase(key)
+		return false
+	if not _item_container_router.stage_remove_items(token, requested) or not state.add_input(item_id, quantity):
+		state.inputs = inputs_before
+		_rollback_routed_inputs(token, null, null, router_before, owns_event_transaction)
+		_active_player_input_transactions.erase(key)
+		return false
+	var publication := _item_container_router.seal_atomic_transaction(token)
+	if publication == null:
+		state.inputs = inputs_before
+		_rollback_routed_inputs(token, null, null, router_before, owns_event_transaction)
+		_active_player_input_transactions.erase(key)
+		return false
+	var finalized := _item_container_router.finalize_sealed_publication(publication)
+	if finalized == null:
+		state.inputs = inputs_before
+		_rollback_routed_inputs(null, publication, null, router_before, owns_event_transaction)
+		_active_player_input_transactions.erase(key)
+		return false
+	_end_routed_event_transaction(owns_event_transaction)
+	var dispatched := _item_container_router.dispatch_finalized_publication(finalized)
+	if dispatched:
+		register_building(building)
+		_emit_event("production_input_changed", [building, item_id, state.get_input_count(item_id)])
+	_active_player_input_transactions.erase(key)
+	return dispatched
+
+
+func _rollback_routed_inputs(
+	token: RefCounted,
+	publication: RefCounted,
+	finalized: RefCounted,
+	snapshot: Dictionary,
+	owns_event_transaction: bool
+) -> bool:
+	var restored := true
+	if finalized != null and _item_container_router.owns_finalized_publication(finalized):
+		restored = _item_container_router.cancel_finalized_publication(finalized)
+	elif publication != null and _item_container_router.owns_sealed_transaction(publication):
+		restored = _item_container_router.cancel_sealed_transaction(publication)
+	elif token != null and _item_container_router.owns_atomic_transaction(token):
+		restored = _item_container_router.rollback_atomic_transaction(token)
+	if not _item_container_router.snapshot_matches(snapshot):
+		_item_container_router.restore_snapshot(snapshot)
+	restored = restored and _item_container_router.snapshot_matches(snapshot)
+	_end_routed_event_transaction(owns_event_transaction)
+	return restored
+
+
+func _end_routed_event_transaction(owns_transaction: bool) -> void:
+	if owns_transaction and _event_bus != null:
+		_event_bus.set_block_signals(false)
 
 
 func advance_minutes(minutes: int) -> void:
@@ -1766,8 +1940,13 @@ static func expected_storage_quantity_capacity(building_id: String, storage_leve
 
 func _multiplied_counts(counts: Dictionary, multiplier: int) -> Dictionary:
 	var result := {}
+	if multiplier <= 0 or multiplier > MAX_SAFE_INTEGER:
+		return result
 	for item_id in counts:
-		result[item_id] = int(counts[item_id]) * multiplier
+		var quantity := int(counts[item_id])
+		if quantity <= 0 or quantity > MAX_SAFE_INTEGER / multiplier:
+			return {}
+		result[item_id] = quantity * multiplier
 	return result
 
 

@@ -26,7 +26,6 @@ signal delivery_succeeded(contract_id: String)
 
 var selected_contract_id := ""
 var _economy: EconomySystem
-var _inventory: InventorySystem
 var _contracts: Array[Dictionary] = []
 var _sign_in_progress := false
 
@@ -70,14 +69,13 @@ func _ready() -> void:
 	refresh_contracts()
 
 
-func configure(economy: EconomySystem, inventory: InventorySystem) -> bool:
-	if economy == null or inventory == null:
+func configure(economy: EconomySystem, _inventory: InventorySystem = null) -> bool:
+	if economy == null:
 		return false
-	for method_name in ["get_contracts", "sign_contract", "deliver_contract", "to_dict"]:
+	for method_name in ["get_contracts", "sign_contract", "deliver_contract", "get_owned_quantity", "to_dict"]:
 		if not economy.has_method(method_name):
 			return false
 	_economy = economy
-	_inventory = inventory
 	_connect_runtime_signals()
 	refresh_contracts()
 	return true
@@ -125,7 +123,7 @@ func commit_confirmed_sign(contract_id: String, expected_snapshot: Dictionary) -
 
 
 func request_delivery(contract_id: String, quantity: int) -> void:
-	if _economy == null or _inventory == null:
+	if _economy == null:
 		_set_error("合同系统未连接")
 		return
 	var contract := _visible_contract_for_id(contract_id)
@@ -304,7 +302,7 @@ func _delivery_disabled_reason(contract: Dictionary, quantity: int, after_failur
 	if quantity != required or safe_delivery_quantity(quantity, required) != required:
 		return "每日必须交付 %d" % required
 	var item_id := str(contract.get("item_id", ""))
-	var owned := _inventory.get_item_count(item_id) if _inventory != null else 0
+	var owned := _economy.get_owned_quantity(item_id) if _economy != null else 0
 	if owned < required:
 		return "缺少%s ×%d" % [_item_name(item_id), required - owned]
 	return "合同状态已变化" if after_failure else ""

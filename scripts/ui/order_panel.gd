@@ -43,7 +43,6 @@ var selected_filter := "all"
 var selected_order_id := ""
 var _economy: EconomySystem
 var _npc_economy: NpcEconomySystem
-var _inventory: InventorySystem
 var _orders: Array[Dictionary] = []
 var _visible_orders: Array[Dictionary] = []
 
@@ -73,11 +72,11 @@ func _ready() -> void:
 func configure(
 	economy: EconomySystem,
 	npc_economy: NpcEconomySystem,
-	inventory: InventorySystem
+	_inventory: InventorySystem = null
 ) -> bool:
-	if economy == null or npc_economy == null or inventory == null:
+	if economy == null or npc_economy == null:
 		return false
-	for method_name in ["get_orders", "complete_order", "to_dict"]:
+	for method_name in ["get_orders", "complete_order", "get_owned_quantity", "to_dict"]:
 		if not economy.has_method(method_name):
 			return false
 	for method_name in ["get_shortages", "has_npc"]:
@@ -85,7 +84,6 @@ func configure(
 			return false
 	_economy = economy
 	_npc_economy = npc_economy
-	_inventory = inventory
 	_connect_runtime_signals()
 	refresh_orders()
 	return true
@@ -107,7 +105,7 @@ func select_order(order_id: String) -> void:
 
 
 func request_delivery(order_id: String) -> void:
-	if _economy == null or _inventory == null:
+	if _economy == null:
 		_set_error("订单系统未连接")
 		return
 	var order := _visible_order_for_id(order_id)
@@ -304,7 +302,7 @@ func _visible_order_for_id(order_id: String) -> Dictionary:
 
 
 func _owned(order: Dictionary) -> int:
-	return _inventory.get_item_count(str(order.get("item_id", ""))) if _inventory != null else 0
+	return _economy.get_owned_quantity(str(order.get("item_id", ""))) if _economy != null else 0
 
 
 func _total_day() -> int:

@@ -106,9 +106,9 @@ func configure(
 	if _inventory_ref == null or _economy_ref == null or _market_ref == null:
 		return false
 	var configured: bool = market_panel.configure(_inventory_ref, _economy_ref, _market_ref)
-	configured = contract_panel.configure(_economy_ref, _inventory_ref) and configured
+	configured = contract_panel.configure(_economy_ref) and configured
 	if _npc_economy_ref != null:
-		configured = order_panel.configure(_economy_ref, _npc_economy_ref, _inventory_ref) and configured
+		configured = order_panel.configure(_economy_ref, _npc_economy_ref) and configured
 	var service_dependencies := [progression, tool_system, production]
 	var has_any_service_dependency := service_dependencies.any(func(value: Variant) -> bool: return value != null)
 	if has_any_service_dependency:
