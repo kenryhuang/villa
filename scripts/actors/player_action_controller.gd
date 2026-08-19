@@ -1154,6 +1154,9 @@ func set_selected_plant_item_id(plant_item_id: String) -> bool:
 		return true
 	_selected_plant_item_id = plant_item_id
 	plant_selection_changed.emit(plant_item_id)
+	# Ensure the action slot switches to SEED_SLOT so _plant() actually fires
+	if _selected_slot != SEED_SLOT:
+		select_slot(SEED_SLOT)
 	return true
 
 
