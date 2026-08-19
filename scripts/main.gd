@@ -350,7 +350,6 @@ func _connect_systems() -> bool:
 	exploration_system.configure(player)
 
 	# Auto-map seeds to the seed quick slot when acquired
-	var event_bus = get_node_or_null("/root/EventBus")
 	if event_bus and event_bus.has_signal("item_added"):
 		var callback := Callable(self, "_on_item_added_auto_map_seed")
 		if not event_bus.is_connected("item_added", callback):
