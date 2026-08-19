@@ -355,6 +355,12 @@ func _connect_systems() -> bool:
 		if not event_bus.is_connected("item_added", callback):
 			event_bus.item_added.connect(callback)
 
+	# Show planting failure hints on the HUD
+	if action_controller and action_controller.has_signal("action_failure_hint"):
+		var hint_callback := Callable(hud, "show_action_hint")
+		if not action_controller.action_failure_hint.is_connected(hint_callback):
+			action_controller.action_failure_hint.connect(hint_callback)
+
 	return true
 
 

@@ -12,6 +12,7 @@ signal gather_rejected(target: Node, reason: String)
 signal building_category_changed(category_id: String, category_index: int)
 signal seed_selection_requested(cell: GridCell)
 signal plant_selection_changed(plant_item_id: String)
+signal action_failure_hint(text: String)
 
 enum Action {
 	NONE,
@@ -28,6 +29,13 @@ enum ActionMode {
 }
 
 const SEED_SLOT := 5
+const PLANT_FAILURE_LABELS := {
+	"wrong_season": "当前季节不适宜播种",
+	"greenhouse_required": "此作物仅限温室种植",
+	"plot_unavailable": "地块不可播种",
+	"no_seed": "种子库存不足",
+	"invalid_seed_mapping": "种植资料无效",
+}
 const BuildingCatalogScript = preload("res://scripts/core/building_catalog.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const SLOT_LABELS := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "种苗"]
@@ -852,6 +860,7 @@ func _plant(cell: GridCell) -> bool:
 	var preview := preview_plant_action(cell)
 	if not bool(preview.get("ok", false)):
 		_set_last_action_failure(preview, true)
+		_emit_plant_failure_hint(preview)
 		return false
 	var plant_item_id := str(preview.get("plant_item_id", ""))
 	var inventory_snapshot := {
@@ -936,6 +945,14 @@ func _set_last_action_failure(details: Dictionary, is_plant_failure: bool = fals
 	_last_action_failure_details = details.duplicate(true)
 	if is_plant_failure:
 		_last_plant_failure_details = details.duplicate(true)
+
+
+func _emit_plant_failure_hint(preview: Dictionary) -> void:
+	var reason := str(preview.get("reason", ""))
+	if reason.is_empty():
+		return
+	var label := str(PLANT_FAILURE_LABELS.get(reason, reason))
+	action_failure_hint.emit(label)
 
 
 func _current_plant_commit_failure(

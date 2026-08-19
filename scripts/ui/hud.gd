@@ -69,6 +69,9 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var build_feedback_toast: PanelContainer = $BottomBar/BuildFeedbackToast
 @onready var build_feedback_label: Label = $BottomBar/BuildFeedbackToast/Message
 @onready var build_feedback_timer: Timer = $BuildFeedbackTimer
+@onready var action_hint_toast: PanelContainer = $BottomBar/ActionHintToast
+@onready var action_hint_label: Label = $BottomBar/ActionHintToast/Message
+@onready var action_hint_timer: Timer = $ActionHintTimer
 @onready var build_category_bar: HBoxContainer = $BottomBar/BuildCategoryBar
 @onready var build_category_buttons := {
 	"basic": $BottomBar/BuildCategoryBar/Basic,
@@ -141,6 +144,7 @@ func _ready() -> void:
 	mode_menu_content.mouse_entered.connect(_on_mode_menu_mouse_entered)
 	mode_menu_content.mouse_exited.connect(_on_mode_menu_mouse_exited)
 	build_feedback_timer.timeout.connect(_on_build_feedback_timeout)
+	action_hint_timer.timeout.connect(_on_action_hint_timeout)
 	for category_id in build_category_buttons:
 		build_category_buttons[category_id].pressed.connect(
 			_on_build_category_pressed.bind(category_id)
@@ -915,6 +919,20 @@ func show_build_feedback(message: String, _details: Dictionary = {}) -> void:
 
 func _on_build_feedback_timeout() -> void:
 	build_feedback_toast.visible = false
+
+
+func show_action_hint(text: String, duration := 2.5) -> void:
+	if action_hint_label == null or action_hint_toast == null or action_hint_timer == null:
+		return
+	action_hint_label.text = text
+	action_hint_toast.visible = true
+	action_hint_timer.wait_time = duration
+	action_hint_timer.start()
+
+
+func _on_action_hint_timeout() -> void:
+	if action_hint_toast != null:
+		action_hint_toast.visible = false
 
 
 func _refresh_material_counts() -> void:

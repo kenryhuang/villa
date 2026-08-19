@@ -292,6 +292,20 @@ theme_override_font_sizes/font_size = 24
 text = "无法建造"
 horizontal_alignment = 1
 
+[node name="ActionHintToast" type="PanelContainer" parent="BottomBar"]
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("ToastPanelStyle")
+
+[node name="Message" type="Label" parent="BottomBar/ActionHintToast"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.06, 0.05, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 22
+text = ""
+horizontal_alignment = 1
+
 [node name="BuildCategoryBar" type="HBoxContainer" parent="BottomBar"]
 visible = false
 layout_mode = 2
@@ -444,5 +458,9 @@ layout_mode = 2
 text = "关闭"
 
 [node name="BuildFeedbackTimer" type="Timer" parent="."]
+wait_time = 2.5
+one_shot = true
+
+[node name="ActionHintTimer" type="Timer" parent="."]
 wait_time = 2.5
 one_shot = true

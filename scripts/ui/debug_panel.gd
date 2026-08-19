@@ -128,7 +128,7 @@ func build_draft() -> Dictionary:
 func show_apply_result(result: Dictionary, refreshed_snapshot: Dictionary = {}) -> void:
 	if bool(result.get("ok", false)):
 		if not refreshed_snapshot.is_empty():
-			refresh_from_snapshot(refreshed_snapshot)
+			_refresh_quantities_only(refreshed_snapshot.items as Dictionary)
 		status_label.text = str(
 			result.get("message", "调试数据已应用；尚未写入存档")
 		)
@@ -136,6 +136,22 @@ func show_apply_result(result: Dictionary, refreshed_snapshot: Dictionary = {}) 
 		return
 	status_label.text = _failure_message(result)
 	status_label.add_theme_color_override("font_color", Color("b65c4b"))
+
+
+## Update quantity SpinBox values without destroying/recreating rows.
+func _refresh_quantities_only(items: Dictionary) -> void:
+	if items.is_empty():
+		return
+	for child in item_rows.get_children():
+		var item_id := str(child.get_meta("item_id", ""))
+		if item_id.is_empty() or not items.has(item_id):
+			continue
+		var record := items[item_id] as Dictionary
+		var new_qty := int(record.get("quantity", 0))
+		_item_quantities[item_id] = new_qty
+		var spin_box := child.get_node_or_null("Quantity") as SpinBox
+		if spin_box != null:
+			spin_box.value = new_qty
 
 
 func get_visible_item_ids() -> Array[String]:
@@ -151,6 +167,7 @@ func _rebuild_item_rows(records: Dictionary) -> void:
 		child.free()
 	_item_quantities.clear()
 	_item_records.clear()
+	_all_item_ids.clear()
 	var item_ids: Array[String] = []
 	for item_id_value in records:
 		item_ids.append(str(item_id_value))
@@ -277,8 +294,13 @@ func _on_show_empty_toggled(_pressed: bool) -> void:
 
 
 func _on_apply_pressed() -> void:
-	if _configured:
-		apply_requested.emit(build_draft())
+	if not _configured:
+		return
+	apply_button.disabled = true
+	status_label.text = "应用中…"
+	status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+	apply_requested.emit(build_draft())
+	apply_button.disabled = false
 
 
 func _on_refresh_pressed() -> void:
