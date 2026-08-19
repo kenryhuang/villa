@@ -905,11 +905,11 @@ func _grant_new_game_items() -> void:
 		var event_bus = get_node_or_null("/root/EventBus")
 		if event_bus != null:
 			event_bus.gold_changed.emit(game_state.gold)
-		_auto_map_seed_to_quick_slot()
+	_auto_map_seed_to_quick_slot()
 
 
 func _backfill_legacy_grain_slot() -> void:
-		_initialize_plant_selection()
+	_initialize_plant_selection()
 
 
 func _initialize_plant_selection() -> bool:
