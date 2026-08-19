@@ -1,0 +1,36 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
+[ext_resource path="res://assets/crops/lemon/materials/trunk_brown.tres" type="Material" id="1"]
+[ext_resource path="res://assets/crops/lemon/materials/leaf_green.tres" type="Material" id="2"]
+[ext_resource path="res://assets/crops/lemon/materials/fruit_yellow.tres" type="Material" id="3"]
+[ext_resource path="res://assets/crops/lemon/materials/seed_brown.tres" type="Material" id="4"]
+
+[sub_resource type="SphereMesh" id="KernelMesh"]
+material = ExtResource("1")
+radius = 0.075
+height = 0.1
+radial_segments = 8
+rings = 4
+
+[node name="LemonStage0Seed" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/lemon/painted/stage_0/variant_0_back.png", "res://assets/crops/lemon/painted/stage_0/variant_1_back.png", "res://assets/crops/lemon/painted/stage_0/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/lemon/painted/stage_0/variant_0_front.png", "res://assets/crops/lemon/painted/stage_0/variant_1_front.png", "res://assets/crops/lemon/painted/stage_0/variant_2_front.png"])
+canvas_world_height = 0.4
+
+[node name="KernelLeft" type="MeshInstance3D" parent="."]
+position = Vector3(-0.11, 0.05, 0.02)
+rotation_degrees = Vector3(0, 24, -12)
+scale = Vector3(1.35, 0.72, 0.78)
+mesh = SubResource("KernelMesh")
+[node name="KernelCenter" type="MeshInstance3D" parent="."]
+position = Vector3(0.01, 0.048, -0.07)
+rotation_degrees = Vector3(4, -18, 8)
+scale = Vector3(1.3, 0.7, 0.76)
+mesh = SubResource("KernelMesh")
+[node name="KernelRight" type="MeshInstance3D" parent="."]
+position = Vector3(0.12, 0.052, 0.05)
+rotation_degrees = Vector3(-5, 42, 10)
+scale = Vector3(1.32, 0.74, 0.8)
+mesh = SubResource("KernelMesh")

@@ -30,6 +30,7 @@ const CATEGORY_NAMES := {
 @onready var stamina_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Stamina
 @onready var search_input: LineEdit = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Search
 @onready var category_input: OptionButton = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Category
+@onready var show_empty_check: CheckBox = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/ShowEmpty
 @onready var item_rows: VBoxContainer = $Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows
 @onready var status_label: Label = $Overlay/Center/Panel/Layout/Footer/Status
 @onready var refresh_button: Button = $Overlay/Center/Panel/Layout/Footer/RefreshButton
@@ -39,6 +40,7 @@ const CATEGORY_NAMES := {
 var _snapshot: Dictionary = {}
 var _item_quantities := {}
 var _item_records := {}
+var _all_item_ids: Array[String] = []
 var _loading := false
 var _configured := false
 
@@ -52,6 +54,7 @@ func _ready() -> void:
 	refresh_button.pressed.connect(_on_refresh_pressed)
 	search_input.text_changed.connect(_on_search_changed)
 	category_input.item_selected.connect(_on_category_selected)
+	show_empty_check.toggled.connect(_on_show_empty_toggled)
 	for input in [level_input, elapsed_days_input, gold_input, stamina_input]:
 		input.value_changed.connect(_on_state_value_changed)
 	visible = false
@@ -158,10 +161,14 @@ func _rebuild_item_rows(records: Dictionary) -> void:
 			return _item_sort_key(left_record) < _item_sort_key(right_record)
 	)
 	var max_slots := int(_snapshot.get("max_slots", 20))
+	var show_empty := show_empty_check.button_pressed if show_empty_check else false
 	for item_id in item_ids:
 		var record := (records[item_id] as Dictionary).duplicate(true)
 		_item_records[item_id] = record
 		_item_quantities[item_id] = int(record.get("quantity", 0))
+		_all_item_ids.append(item_id)
+		if not show_empty and int(record.get("quantity", 0)) == 0:
+			continue
 		item_rows.add_child(_create_item_row(record, max_slots))
 
 
@@ -260,6 +267,12 @@ func _on_search_changed(_text: String) -> void:
 
 
 func _on_category_selected(_index: int) -> void:
+	_apply_item_filters()
+
+
+func _on_show_empty_toggled(_pressed: bool) -> void:
+	_rebuild_item_rows(_snapshot.items as Dictionary)
+	_rebuild_category_filter()
 	_apply_item_filters()
 
 

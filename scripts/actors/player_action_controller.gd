@@ -1101,7 +1101,35 @@ func _is_mature(cell: GridCell) -> bool:
 
 func _get_active_plant_item_id() -> String:
 	var item_id := get_selected_plant_item_id()
-	return item_id if _get_crop_data(item_id) != null else ""
+	if _get_crop_data(item_id) != null:
+		return item_id
+	# Selected plant item is empty or invalid — fall back to first seed/sapling in inventory
+	return _find_first_seed_in_inventory()
+
+
+## Search inventory for the first seed or sapling item the player owns.
+func _find_first_seed_in_inventory() -> String:
+	if inventory_system == null:
+		return ""
+	for slot in inventory_system.slots:
+		var slot_id: String = str(slot.get("item_id", ""))
+		if not slot_id.is_empty() and _get_crop_data(slot_id) != null:
+			return slot_id
+	return ""
+
+
+## Auto-map the first seed/sapling in inventory to the seed quick slot
+## if the slot is currently empty or holds a depleted item.
+func auto_map_seed_to_quick_slot() -> bool:
+	if inventory_system == null:
+		return false
+	var current := get_selected_plant_item_id()
+	if not current.is_empty() and _get_crop_data(current) != null and inventory_system.has_item(current, 1):
+		return false  # already has a valid seed selected
+	var seed_id := _find_first_seed_in_inventory()
+	if seed_id.is_empty():
+		return false
+	return set_selected_plant_item_id(seed_id)
 
 
 func get_selected_plant_item_id() -> String:

@@ -662,14 +662,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	main.inventory_system.reset_slots()
 	main.inventory_system.slots[1] = {"item_id": "grain_seed", "quantity": 3}
-	assertions.truthy(
-		main.call("_map_grain_seed_to_quick_slot"),
-		"legacy seed backfill skips empty dictionary slots"
-	)
+	main.call("_auto_map_seed_to_quick_slot")
 	assertions.equal(
 		main.inventory_system.get_quick_item(5),
 		"grain_seed",
-		"legacy seed backfill maps the discovered dictionary slot"
+		"auto seed map discovers and maps the seed in inventory"
 	)
 
 	assertions.equal(

@@ -598,6 +598,8 @@ func _on_plant_selection_changed(_plant_item_id: String) -> void:
 
 
 func _active_plant_item_display() -> String:
+	if inventory_ref == null:
+		return "种苗 ×0"
 	var item_id := _active_plant_item_id()
 	var item_data = GameDataScript.get_item(item_id)
 	if item_data == null:
@@ -621,7 +623,13 @@ func get_active_plant_item_display() -> String:
 func _active_plant_item_id() -> String:
 	if action_controller == null or not action_controller.has_method("get_selected_plant_item_id"):
 		return ""
-	return str(action_controller.call("get_selected_plant_item_id"))
+	var selected := str(action_controller.call("get_selected_plant_item_id"))
+	if not selected.is_empty():
+		return selected
+	# Fall back to first seed/sapling in inventory
+	if action_controller and action_controller.has_method("_get_active_plant_item_id"):
+		return str(action_controller._get_active_plant_item_id())
+	return ""
 
 
 func _active_plant_texture() -> Texture2D:

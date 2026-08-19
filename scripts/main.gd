@@ -348,6 +348,14 @@ func _connect_systems() -> bool:
 
 	# ExplorationSystem 依赖 Player
 	exploration_system.configure(player)
+
+	# Auto-map seeds to the seed quick slot when acquired
+	var event_bus = get_node_or_null("/root/EventBus")
+	if event_bus and event_bus.has_signal("item_added"):
+		var callback := Callable(self, "_on_item_added_auto_map_seed")
+		if not event_bus.is_connected("item_added", callback):
+			event_bus.item_added.connect(callback)
+
 	return true
 
 
@@ -877,13 +885,12 @@ static func default_crop_definitions() -> Array[CropData]:
 		crop.tags.assign(row.get("tags", []))
 		crop.exp_reward = int(row.exp)
 		crop.stage_textures.assign(["seed", "sprout", "growing", "mature"])
-		if crop.crop_id == "grain":
-			crop.stage_scenes.assign([
-				"res://assets/crops/grain/grain_stage_0_seed.tscn",
-				"res://assets/crops/grain/grain_stage_1_sprout.tscn",
-				"res://assets/crops/grain/grain_stage_2_growing.tscn",
-				"res://assets/crops/grain/grain_stage_3_mature.tscn",
-			])
+		crop.stage_scenes.assign([
+			"res://assets/crops/%s/%s_stage_0_seed.tscn" % [crop.crop_id, crop.crop_id],
+			"res://assets/crops/%s/%s_stage_1_sprout.tscn" % [crop.crop_id, crop.crop_id],
+			"res://assets/crops/%s/%s_stage_2_growing.tscn" % [crop.crop_id, crop.crop_id],
+			"res://assets/crops/%s/%s_stage_3_mature.tscn" % [crop.crop_id, crop.crop_id],
+		])
 		definitions.append(crop)
 	return definitions
 
@@ -898,11 +905,11 @@ func _grant_new_game_items() -> void:
 		var event_bus = get_node_or_null("/root/EventBus")
 		if event_bus != null:
 			event_bus.gold_changed.emit(game_state.gold)
-	action_controller.set_selected_plant_item_id("grain_seed")
+		_auto_map_seed_to_quick_slot()
 
 
 func _backfill_legacy_grain_slot() -> void:
-	_initialize_plant_selection()
+		_initialize_plant_selection()
 
 
 func _initialize_plant_selection() -> bool:
@@ -913,19 +920,19 @@ func _initialize_plant_selection() -> bool:
 	if not action_controller.get_selected_plant_item_id().is_empty():
 		inventory_system.set_quick_slot(-1, PlayerActionController.SEED_SLOT)
 		return true
-	if inventory_system.get_item_count("grain_seed") <= 0:
-		inventory_system.set_quick_slot(-1, PlayerActionController.SEED_SLOT)
-		return false
-	var selected := action_controller.set_selected_plant_item_id("grain_seed")
-	inventory_system.set_quick_slot(-1, PlayerActionController.SEED_SLOT)
-	return selected
+	return _auto_map_seed_to_quick_slot()
 
 
-func _map_grain_seed_to_quick_slot() -> bool:
-	for index in range(inventory_system.slots.size()):
-		if inventory_system.slots[index].get("item_id", "") == "grain_seed":
-			return inventory_system.set_quick_slot(index, PlayerActionController.SEED_SLOT)
+func _auto_map_seed_to_quick_slot() -> bool:
+	if action_controller != null and action_controller.has_method("auto_map_seed_to_quick_slot"):
+		return action_controller.auto_map_seed_to_quick_slot()
 	return false
+
+
+func _on_item_added_auto_map_seed(item_id: String, _quantity: int) -> void:
+	if item_id.ends_with("_seed") or item_id.ends_with("_sapling"):
+		_auto_map_seed_to_quick_slot()
+
 
 
 func _on_seed_selection_requested(cell: GridCell) -> void:
