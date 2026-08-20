@@ -202,6 +202,7 @@ func settle_day(
 ) -> bool:
 	if not can_settle_day(total_day):
 		return false
+	begin_atomic_transaction()
 	for item_id_value in _items.keys():
 		var item_id := str(item_id_value)
 		var state: Dictionary = _items[item_id]
@@ -234,6 +235,7 @@ func settle_day(
 			_emit_price_changed(item_id, new_price)
 	last_settled_day = total_day
 	_emit_settled(total_day)
+	end_atomic_transaction(true)
 	return true
 
 

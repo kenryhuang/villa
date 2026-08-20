@@ -58,10 +58,15 @@ class DailyDouble:
 	extends RefCounted
 	var last_simulated_day := 9
 	var run_day_calls := 0
+	var catch_up_calls := 0
 
 	func run_day(_day: int) -> bool:
 		run_day_calls += 1
 		return true
+
+	func catch_up_farming_to_day(target_day: int) -> void:
+		catch_up_calls += 1
+		last_simulated_day = target_day
 
 
 class ResourceDouble:
@@ -295,6 +300,7 @@ func _test_direct_elapsed_day_jump(assertions: TestAssert) -> void:
 		assertions.equal(fixture.market.last_settled_day, case.total, "market cursor synchronizes")
 		assertions.equal(fixture.daily.last_simulated_day, case.total, "daily cursor synchronizes")
 		assertions.equal(fixture.daily.run_day_calls, 0, "direct jump never settles skipped days")
+		assertions.equal(fixture.daily.catch_up_calls, 1, "direct jump catches up farming once")
 		assertions.equal(fixture.resources.cursor, case.total, "resource cursor synchronizes")
 		assertions.equal(fixture.resources.state, resource_state_before, "resource state stays unchanged")
 		assertions.equal(day_events, [case.total], "date jump emits one refresh event")

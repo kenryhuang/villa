@@ -1,0 +1,55 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
+[ext_resource path="res://assets/crops/sunflower/materials/stem_green.tres" type="Material" id="1"]
+[ext_resource path="res://assets/crops/sunflower/materials/leaf_green.tres" type="Material" id="2"]
+[ext_resource path="res://assets/crops/sunflower/materials/flower_gold.tres" type="Material" id="3"]
+[ext_resource path="res://assets/crops/sunflower/materials/center_brown.tres" type="Material" id="4"]
+[ext_resource path="res://assets/crops/sunflower/materials/seed_brown.tres" type="Material" id="5"]
+
+[sub_resource type="CylinderMesh" id="StemMesh"]
+material = ExtResource("1")
+top_radius = 0.018
+bottom_radius = 0.03
+height = 0.78
+radial_segments = 6
+rings = 1
+[sub_resource type="BoxMesh" id="LeafMesh"]
+material = ExtResource("2")
+size = Vector3(0.055, 0.32, 0.016)
+[sub_resource type="SphereMesh" id="FlowerMesh"]
+material = ExtResource("3")
+radius = 0.12
+height = 0.2
+radial_segments = 10
+rings = 5
+[sub_resource type="SphereMesh" id="CenterMesh"]
+material = ExtResource("4")
+radius = 0.06
+height = 0.1
+radial_segments = 8
+rings = 4
+
+[node name="SunflowerStage3Mature" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/sunflower/painted/stage_3/variant_0_back.png", "res://assets/crops/sunflower/painted/stage_3/variant_1_back.png", "res://assets/crops/sunflower/painted/stage_3/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/sunflower/painted/stage_3/variant_0_front.png", "res://assets/crops/sunflower/painted/stage_3/variant_1_front.png", "res://assets/crops/sunflower/painted/stage_3/variant_2_front.png"])
+canvas_world_height = 1.2
+
+[node name="Stem1" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.39, 0)
+mesh = SubResource("StemMesh")
+[node name="Leaf1A" type="MeshInstance3D" parent="."]
+position = Vector3(-0.09, 0.34, 0)
+rotation_degrees = Vector3(0, 0, -52)
+mesh = SubResource("LeafMesh")
+[node name="Leaf1B" type="MeshInstance3D" parent="."]
+position = Vector3(0.09, 0.51, 0)
+rotation_degrees = Vector3(0, 0, 48)
+mesh = SubResource("LeafMesh")
+[node name="FlowerHead" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.82, 0)
+mesh = SubResource("FlowerMesh")
+[node name="FlowerCenter" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.85, 0)
+mesh = SubResource("CenterMesh")

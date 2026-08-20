@@ -1,0 +1,45 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
+[ext_resource path="res://assets/crops/strawberry/materials/stem_green.tres" type="Material" id="1"]
+[ext_resource path="res://assets/crops/strawberry/materials/leaf_green.tres" type="Material" id="2"]
+[ext_resource path="res://assets/crops/strawberry/materials/fruit_red.tres" type="Material" id="3"]
+[ext_resource path="res://assets/crops/strawberry/materials/seed_beige.tres" type="Material" id="4"]
+
+[sub_resource type="CylinderMesh" id="StemMesh"]
+material = ExtResource("1")
+top_radius = 0.022
+bottom_radius = 0.032
+height = 0.56
+radial_segments = 6
+rings = 1
+[sub_resource type="BoxMesh" id="LeafMesh"]
+material = ExtResource("2")
+size = Vector3(0.06, 0.3, 0.018)
+[sub_resource type="SphereMesh" id="BushMesh"]
+material = ExtResource("2")
+radius = 0.2
+height = 0.35
+radial_segments = 8
+rings = 4
+
+[node name="StrawberryStage2Growing" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/strawberry/painted/stage_2/variant_0_back.png", "res://assets/crops/strawberry/painted/stage_2/variant_1_back.png", "res://assets/crops/strawberry/painted/stage_2/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/strawberry/painted/stage_2/variant_0_front.png", "res://assets/crops/strawberry/painted/stage_2/variant_1_front.png", "res://assets/crops/strawberry/painted/stage_2/variant_2_front.png"])
+canvas_world_height = 0.65
+
+[node name="StemCenter" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.28, 0)
+mesh = SubResource("StemMesh")
+[node name="LeafLeft" type="MeshInstance3D" parent="."]
+position = Vector3(-0.09, 0.29, 0)
+rotation_degrees = Vector3(0, 0, -48)
+mesh = SubResource("LeafMesh")
+[node name="LeafRight" type="MeshInstance3D" parent="."]
+position = Vector3(0.09, 0.43, 0)
+rotation_degrees = Vector3(0, 0, 48)
+mesh = SubResource("LeafMesh")
+[node name="BushMound" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.45, 0)
+mesh = SubResource("BushMesh")

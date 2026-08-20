@@ -1,0 +1,46 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
+[ext_resource path="res://assets/crops/apple/materials/trunk_brown.tres" type="Material" id="1"]
+[ext_resource path="res://assets/crops/apple/materials/leaf_green.tres" type="Material" id="2"]
+[ext_resource path="res://assets/crops/apple/materials/fruit_red.tres" type="Material" id="3"]
+[ext_resource path="res://assets/crops/apple/materials/seed_brown.tres" type="Material" id="4"]
+
+[sub_resource type="CylinderMesh" id="TrunkMesh"]
+material = ExtResource("1")
+top_radius = 0.06
+bottom_radius = 0.08
+height = 0.6
+radial_segments = 6
+rings = 1
+[sub_resource type="SphereMesh" id="CanopyMesh"]
+material = ExtResource("2")
+radius = 0.35
+height = 0.6
+radial_segments = 8
+rings = 4
+[sub_resource type="SphereMesh" id="FruitBudMesh"]
+material = ExtResource("3")
+radius = 0.035
+height = 0.06
+radial_segments = 8
+rings = 4
+
+[node name="AppleStage2Growing" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/apple/painted/stage_2/variant_0_back.png", "res://assets/crops/apple/painted/stage_2/variant_1_back.png", "res://assets/crops/apple/painted/stage_2/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/apple/painted/stage_2/variant_0_front.png", "res://assets/crops/apple/painted/stage_2/variant_1_front.png", "res://assets/crops/apple/painted/stage_2/variant_2_front.png"])
+canvas_world_height = 1.0
+
+[node name="Trunk" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.3, 0)
+mesh = SubResource("TrunkMesh")
+[node name="Canopy" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.75, 0)
+mesh = SubResource("CanopyMesh")
+[node name="FruitBud1" type="MeshInstance3D" parent="."]
+position = Vector3(-0.12, 0.68, 0.08)
+mesh = SubResource("FruitBudMesh")
+[node name="FruitBud2" type="MeshInstance3D" parent="."]
+position = Vector3(0.15, 0.72, -0.06)
+mesh = SubResource("FruitBudMesh")

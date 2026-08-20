@@ -1460,8 +1460,8 @@ func _on_time_changed(hour: int, minute: int) -> void:
 		elapsed = (24 * 60 - _last_clock_minutes) + (current - DAY_START_MINUTES)
 	else:
 		return
-	_last_clock_minutes = current
-	advance_minutes(elapsed)
+		_last_clock_minutes = current
+		advance_minutes(elapsed)
 
 
 func _advance_building(building: BuildingInstance, minutes: int) -> void:

@@ -1,0 +1,44 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
+[ext_resource path="res://assets/crops/grape/materials/vine_green.tres" type="Material" id="1"]
+[ext_resource path="res://assets/crops/grape/materials/leaf_green.tres" type="Material" id="2"]
+[ext_resource path="res://assets/crops/grape/materials/fruit_purple.tres" type="Material" id="3"]
+[ext_resource path="res://assets/crops/grape/materials/seed_brown.tres" type="Material" id="4"]
+
+[sub_resource type="CylinderMesh" id="StemMesh"]
+material = ExtResource("1")
+top_radius = 0.022
+bottom_radius = 0.032
+height = 0.56
+radial_segments = 6
+rings = 1
+[sub_resource type="BoxMesh" id="LeafMesh"]
+material = ExtResource("2")
+size = Vector3(0.06, 0.3, 0.018)
+[sub_resource type="CylinderMesh" id="HorizontalStem"]
+material = ExtResource("1")
+top_radius = 0.02
+bottom_radius = 0.025
+height = 0.8
+radial_segments = 6
+rings = 1
+
+[node name="GrapeStage2Growing" type="Node3D"]
+script = ExtResource("CropSpriteClusterScript")
+back_texture_paths = Array[String](["res://assets/crops/grape/painted/stage_2/variant_0_back.png", "res://assets/crops/grape/painted/stage_2/variant_1_back.png", "res://assets/crops/grape/painted/stage_2/variant_2_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/grape/painted/stage_2/variant_0_front.png", "res://assets/crops/grape/painted/stage_2/variant_1_front.png", "res://assets/crops/grape/painted/stage_2/variant_2_front.png"])
+canvas_world_height = 0.85
+
+[node name="MainStem" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.4, 0)
+rotation_degrees = Vector3(0, 0, 90)
+mesh = SubResource("HorizontalStem")
+[node name="LeafA" type="MeshInstance3D" parent="."]
+position = Vector3(-0.15, 0.45, 0.02)
+rotation_degrees = Vector3(0, 0, -35)
+mesh = SubResource("LeafMesh")
+[node name="LeafB" type="MeshInstance3D" parent="."]
+position = Vector3(0.15, 0.38, -0.03)
+rotation_degrees = Vector3(0, 0, 40)
+mesh = SubResource("LeafMesh")

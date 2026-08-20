@@ -40,6 +40,30 @@ var _economy: Variant
 var _season: Variant
 var _last_prices: Dictionary = {}
 var _shortage_state: Dictionary = {}
+var _suppress_emissions := false
+var _pending_pushes: Array[Dictionary] = []
+
+
+## Begin suppressing notification emissions (queue them instead).
+## Call before batch operations like run_day to avoid expensive
+## per-notification UI updates. Call flush_suppressed after.
+func begin_suppress() -> void:
+	_suppress_emissions = true
+
+
+## Flush all queued notifications and stop suppressing.
+func end_suppress() -> void:
+	_suppress_emissions = false
+	if _pending_pushes.is_empty():
+		return
+	var queued := _pending_pushes.duplicate()
+	_pending_pushes.clear()
+	for entry in queued:
+		push(
+			str(entry.kind), str(entry.title), str(entry.body),
+			int(entry.total_day), str(entry.target_type),
+			str(entry.target_id), float(entry.timestamp_seconds)
+		)
 
 
 func configure(
@@ -70,6 +94,13 @@ func push(
 	timestamp_seconds: float = -1.0
 ) -> String:
 	if not _valid_payload(kind, title, body, total_day, target_type, target_id):
+		return ""
+	if _suppress_emissions:
+		_pending_pushes.append({
+			"kind": kind, "title": title, "body": body,
+			"total_day": total_day, "target_type": target_type,
+			"target_id": target_id, "timestamp_seconds": timestamp_seconds,
+		})
 		return ""
 	var now := timestamp_seconds
 	if now == -1.0:
@@ -561,6 +592,8 @@ func _on_tool_durability_changed(tool_id: String, current: int, _maximum: int) -
 
 
 func _on_day_changed(_total_day: int) -> void:
+	if _suppress_emissions:
+		return
 	if _economy == null:
 		return
 	if _economy.has_method("get_orders"):
