@@ -30,7 +30,6 @@ const CATEGORY_NAMES := {
 @onready var stamina_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Stamina
 @onready var search_input: LineEdit = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Search
 @onready var category_input: OptionButton = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Category
-@onready var show_empty_check: CheckBox = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/ShowEmpty
 @onready var item_rows: VBoxContainer = $Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows
 @onready var status_label: Label = $Overlay/Center/Panel/Layout/Footer/Status
 @onready var refresh_button: Button = $Overlay/Center/Panel/Layout/Footer/RefreshButton
@@ -40,7 +39,6 @@ const CATEGORY_NAMES := {
 var _snapshot: Dictionary = {}
 var _item_quantities := {}
 var _item_records := {}
-var _all_item_ids: Array[String] = []
 var _loading := false
 var _configured := false
 
@@ -54,7 +52,6 @@ func _ready() -> void:
 	refresh_button.pressed.connect(_on_refresh_pressed)
 	search_input.text_changed.connect(_on_search_changed)
 	category_input.item_selected.connect(_on_category_selected)
-	show_empty_check.toggled.connect(_on_show_empty_toggled)
 	for input in [level_input, elapsed_days_input, gold_input, stamina_input]:
 		input.value_changed.connect(_on_state_value_changed)
 	visible = false
@@ -125,37 +122,6 @@ func build_draft() -> Dictionary:
 	return draft
 
 
-## Lightweight update after a successful apply — updates internal state and
-## SpinBox values in-place without rebuilding all item rows.  Much faster than
-## refresh_from_snapshot when only a few fields changed.
-func update_after_apply(applied_draft: Dictionary) -> void:
-	if not _configured:
-		return
-	_loading = true
-	_snapshot["level"] = int(applied_draft.get("level", _snapshot.get("level", 1)))
-	_snapshot["elapsed_days"] = int(applied_draft.get("elapsed_days", _snapshot.get("elapsed_days", 0)))
-	_snapshot["gold"] = int(applied_draft.get("gold", _snapshot.get("gold", 0)))
-	_snapshot["stamina"] = int(applied_draft.get("stamina", _snapshot.get("stamina", 0)))
-	level_input.value = int(_snapshot["level"])
-	elapsed_days_input.value = int(_snapshot["elapsed_days"])
-	gold_input.value = int(_snapshot["gold"])
-	stamina_input.value = int(_snapshot["stamina"])
-	var draft_items: Variant = applied_draft.get("items", {})
-	if draft_items is Dictionary:
-		for item_id_value in draft_items:
-			var item_id := str(item_id_value)
-			var new_quantity := int((draft_items[item_id_value] as Dictionary).get("quantity", 0))
-			_item_quantities[item_id] = new_quantity
-			if _snapshot.items.has(item_id):
-				(_snapshot.items[item_id] as Dictionary)["quantity"] = new_quantity
-			var row := item_rows.get_node_or_null(_safe_node_name(item_id))
-			if row != null:
-				var spin_box := row.get_node_or_null("Quantity") as SpinBox
-				if spin_box != null:
-					spin_box.value = new_quantity
-	_loading = false
-
-
 func show_apply_result(result: Dictionary, refreshed_snapshot: Dictionary = {}) -> void:
 	if bool(result.get("ok", false)):
 		if not refreshed_snapshot.is_empty():
@@ -182,7 +148,6 @@ func _rebuild_item_rows(records: Dictionary) -> void:
 		child.free()
 	_item_quantities.clear()
 	_item_records.clear()
-	_all_item_ids.clear()
 	var item_ids: Array[String] = []
 	for item_id_value in records:
 		item_ids.append(str(item_id_value))
@@ -193,14 +158,10 @@ func _rebuild_item_rows(records: Dictionary) -> void:
 			return _item_sort_key(left_record) < _item_sort_key(right_record)
 	)
 	var max_slots := int(_snapshot.get("max_slots", 20))
-	var show_empty := show_empty_check.button_pressed if show_empty_check else false
 	for item_id in item_ids:
 		var record := (records[item_id] as Dictionary).duplicate(true)
 		_item_records[item_id] = record
 		_item_quantities[item_id] = int(record.get("quantity", 0))
-		_all_item_ids.append(item_id)
-		if not show_empty and int(record.get("quantity", 0)) == 0:
-			continue
 		item_rows.add_child(_create_item_row(record, max_slots))
 
 
@@ -299,12 +260,6 @@ func _on_search_changed(_text: String) -> void:
 
 
 func _on_category_selected(_index: int) -> void:
-	_apply_item_filters()
-
-
-func _on_show_empty_toggled(_pressed: bool) -> void:
-	_rebuild_item_rows(_snapshot.items as Dictionary)
-	_rebuild_category_filter()
 	_apply_item_filters()
 
 

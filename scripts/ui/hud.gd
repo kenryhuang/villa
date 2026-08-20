@@ -588,7 +588,7 @@ func _on_quick_slot_mapping_changed(quick_index: int, _item_id: String) -> void:
 func _active_plant_item_display() -> String:
 	if inventory_ref == null:
 		return "种苗 ×0"
-	var item_id := _current_seed_item_id()
+	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
 	var item_data = GameDataScript.get_item(item_id)
 	if item_data == null:
 		return "种苗 ×0"
@@ -599,21 +599,11 @@ func _active_plant_item_display() -> String:
 
 
 func _active_plant_item_name() -> String:
-	var item_id := _current_seed_item_id()
+	if inventory_ref == null:
+		return "种苗"
+	var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
 	var item_data = GameDataScript.get_item(item_id)
 	return str(item_data.get("name", "种苗")) if item_data else "种苗"
-
-
-## Return the item_id of the currently active seed/sapling,
-## using the same logic as PlayerActionController._get_active_plant_item_id.
-func _current_seed_item_id() -> String:
-	if action_controller and action_controller.has_method("_get_active_plant_item_id"):
-		return str(action_controller._get_active_plant_item_id())
-	if inventory_ref != null:
-		var item_id := str(inventory_ref.get_quick_item(PlayerActionController.SEED_SLOT))
-		if not item_id.is_empty():
-			return item_id
-	return ""
 
 
 func _on_mode_requested(mode: int) -> void:

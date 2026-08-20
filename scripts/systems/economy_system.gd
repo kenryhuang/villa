@@ -548,19 +548,15 @@ func advance_order_deadlines(day: int) -> void:
 		var contract: Dictionary = _contracts[index]
 		if bool(contract.completed) or bool(contract.expired):
 			continue
-		var _changed := false
 		if bool(contract.signed):
 			var first_missed_day := maxi(int(contract.start_day), _last_processed_day)
 			var last_missed_day := mini(int(contract.end_day), day - 1)
 			for missed_day in range(first_missed_day, last_missed_day + 1):
 				if missed_day not in (contract.delivered_days as Array):
 					_contracts[index]["breaches"] = int(_contracts[index].breaches) + 1
-					_changed = true
 		if day > int(contract.end_day):
 			_contracts[index]["expired"] = true
-			_changed = true
-		if _changed:
-			_emit_record_updated("contract_updated", str(contract.contract_id))
+		_emit_record_updated("contract_updated", str(contract.contract_id))
 	_last_processed_day = day
 
 

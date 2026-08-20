@@ -12,7 +12,6 @@ var _economy_system: Variant
 var _market_system: Variant
 var _save_manager: Variant
 var _resource_system: Variant
-var _notification_system: Variant
 var _event_bus: Node
 var _is_configured := false
 
@@ -29,8 +28,7 @@ func configure(
 	economy_system: Variant,
 	market_system: Variant,
 	save_manager: Variant,
-	resource_system: Variant = null,
-	notification_system: Variant = null
+	resource_system: Variant = null
 ) -> bool:
 	if not _has_methods(farming_system, ["on_day_changed"]):
 		return false
@@ -58,7 +56,6 @@ func configure(
 	_market_system = market_system
 	_save_manager = save_manager
 	_resource_system = resource_system
-	_notification_system = notification_system
 	_is_configured = true
 	if is_inside_tree():
 		_event_bus = get_node_or_null("/root/EventBus")
@@ -92,20 +89,6 @@ func run_day(day: int) -> bool:
 	last_simulated_day = day
 	_save_manager.call("save_game", int(_save_manager.get("current_slot")))
 	return true
-
-
-## Run only the farming growth simulation for each day in [last_simulated_day + 1, target_day].
-## Used by the debug state editor to advance crops without the full daily
-## simulation overhead (production, NPC, market, save).
-## When target_day <= last_simulated_day (backward jump), no farming runs but
-## the cursor is still updated so all system cursors stay consistent.
-func catch_up_farming_to_day(target_day: int) -> void:
-	if not _is_configured or _farming_system == null:
-		return
-	if target_day > last_simulated_day:
-		for day in range(last_simulated_day + 1, target_day + 1):
-			_farming_system.call("on_day_changed", day)
-	last_simulated_day = target_day
 
 
 func _on_day_changed(day: int) -> void:

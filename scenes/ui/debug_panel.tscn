@@ -212,12 +212,6 @@ placeholder_text = "搜索名称或物品 ID"
 custom_minimum_size = Vector2(190, 42)
 layout_mode = 2
 
-[node name="ShowEmpty" type="CheckBox" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 16
-text = "显示空物品"
-tooltip_text = "勾选后显示数量为 0 的物品"
-
 [node name="Columns" type="HBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory"]
 layout_mode = 2
 theme_override_constants/separation = 12

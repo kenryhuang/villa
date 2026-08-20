@@ -209,8 +209,8 @@ func apply(draft: Dictionary) -> Dictionary:
 		return _failure("transaction_failed")
 
 	_market.set("last_settled_day", target_total_days)
+	_daily.set("last_simulated_day", target_total_days)
 	_apply_date_fields(int(draft.get("elapsed_days")), target_total_days)
-	_daily.call("catch_up_farming_to_day", target_total_days)
 	var player_state: Variant = _game_state.get("player_state")
 	var level := int(draft.get("level"))
 	player_state.set("level", level)

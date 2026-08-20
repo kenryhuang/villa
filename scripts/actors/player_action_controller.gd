@@ -994,38 +994,7 @@ func _get_active_plant_item_id() -> String:
 	if inventory_system == null or not inventory_system.has_method("get_quick_item"):
 		return ""
 	var item_id := str(inventory_system.get_quick_item(SEED_SLOT))
-	if not crop_id_for_plant_item(item_id).is_empty():
-		return item_id
-	# Quick slot has no seed — fall back to first seed/sapling in inventory
-	return _find_first_seed_in_inventory()
-
-
-## Search inventory for the first seed or sapling item the player owns.
-func _find_first_seed_in_inventory() -> String:
-	if inventory_system == null:
-		return ""
-	for slot in inventory_system.slots:
-		var slot_id: String = str(slot.get("item_id", ""))
-		if not slot_id.is_empty() and not crop_id_for_plant_item(slot_id).is_empty():
-			return slot_id
-	return ""
-
-
-## Auto-map the first seed/sapling in inventory to the seed quick slot
-## if the slot is currently empty or holds a depleted item.
-func auto_map_seed_to_quick_slot() -> bool:
-	if inventory_system == null:
-		return false
-	var current := str(inventory_system.get_quick_item(SEED_SLOT))
-	if not crop_id_for_plant_item(current).is_empty() and inventory_system.has_item(current, 1):
-		return false  # slot already has a valid seed
-	var seed_id := _find_first_seed_in_inventory()
-	if seed_id.is_empty():
-		return false
-	for index in range(inventory_system.slots.size()):
-		if inventory_system.slots[index].get("item_id", "") == seed_id:
-			return inventory_system.set_quick_slot(index, SEED_SLOT)
-	return false
+	return item_id if not crop_id_for_plant_item(item_id).is_empty() else ""
 
 
 static func crop_id_for_plant_item(item_id: String) -> String:
