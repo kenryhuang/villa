@@ -28,6 +28,7 @@ var selected_contract_id := ""
 var _economy: EconomySystem
 var _contracts: Array[Dictionary] = []
 var _sign_in_progress := false
+var _refresh_queued := false
 
 
 static func safe_delivery_quantity(value: Variant, authoritative_quantity: int) -> int:
@@ -407,10 +408,22 @@ func _disconnect_runtime_signals() -> void:
 
 
 func _on_contract_updated(_contract_id: String) -> void:
-	refresh_contracts()
+	_queue_refresh()
 
 
 func _on_inventory_changed(_item_id: String, _quantity: int) -> void:
+	_queue_refresh()
+
+
+func _queue_refresh() -> void:
+	if _refresh_queued:
+		return
+	_refresh_queued = true
+	call_deferred("_do_queued_refresh")
+
+
+func _do_queued_refresh() -> void:
+	_refresh_queued = false
 	refresh_contracts()
 
 

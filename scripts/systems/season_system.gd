@@ -28,6 +28,10 @@ func _process(delta: float) -> void:
 	if not _action_clock_locks.is_empty():
 		return
 	_accumulator += delta * MINUTES_PER_REAL_SECOND
+	# Cap to at most one game day per frame to prevent cascading
+	# day_changed/save_game events when the game resumes from a long pause.
+	if _accumulator > GAME_MINUTES_PER_DAY:
+		_accumulator = GAME_MINUTES_PER_DAY
 	var whole_minutes := int(_accumulator)
 	if whole_minutes > 0:
 		_accumulator -= whole_minutes
@@ -75,6 +79,8 @@ func advance_game_minutes(minutes_to_add: int) -> void:
 			minute = 0
 			hour += 1
 		if hour >= 24:
+			if _event_bus:
+				_event_bus.time_changed.emit(23, 59)
 			hour = 6
 			current_day += 1
 			total_days += 1
@@ -84,11 +90,44 @@ func advance_game_minutes(minutes_to_add: int) -> void:
 				if _event_bus:
 					_event_bus.season_changed.emit(current_season)
 			if _event_bus:
+				# Suppress expensive notification UI updates during the
+				# synchronous day_changed signal chain (run_day, notifications, UI).
+				var _notif: Variant = _find_notification_system()
+				var _suppressing := false
+				if _notif != null and _notif.has_method("begin_suppress"):
+					_notif.call("begin_suppress")
+					_suppressing = true
 				_event_bus.day_changed.emit(total_days)
-		if _event_bus:
-			_event_bus.time_changed.emit(hour, minute)
+				if _suppressing and _notif != null and _notif.has_method("end_suppress"):
+					_notif.call("end_suppress")
+	if _event_bus:
+		_event_bus.time_changed.emit(hour, minute)
 
 
 func advance_to_next_day() -> void:
 	var minutes_until_next_day := (24 - hour) * 60 - minute
 	advance_game_minutes(maxi(1, minutes_until_next_day))
+
+
+func _find_notification_system():
+	# The notification system lives under the main scene (not an autoload),
+	# so search the scene tree for it.
+	var main_scene := get_tree().current_scene if is_inside_tree() else null
+	if main_scene == null:
+		return null
+	# Fast path: check common name
+	for child in main_scene.get_children():
+		if child.name == "EconomyNotificationSystem":
+			return child
+	# Slow path: recursive search
+	return _find_node_recursive(main_scene, "EconomyNotificationSystem")
+
+
+func _find_node_recursive(node: Node, target_name: String) -> Node:
+	if node.name == target_name:
+		return node
+	for child in node.get_children():
+		var result := _find_node_recursive(child, target_name)
+		if result != null:
+			return result
+	return null

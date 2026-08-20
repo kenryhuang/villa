@@ -342,7 +342,8 @@ func _connect_systems() -> bool:
 		economy_system,
 		market_system,
 		save_manager,
-		world
+		world,
+		economy_notification_system
 	):
 		return false
 

@@ -34,6 +34,7 @@ var _pending_action := ""
 var _confirmation_snapshot: Dictionary = {}
 var _event_bus: Node
 var _refreshing_quote := false
+var _quote_refresh_queued := false
 var _underlying_focus_modes: Dictionary = {}
 var _focus_before_confirmation: Control
 
@@ -548,6 +549,14 @@ func _on_authoritative_snapshot_changed() -> void:
 		var preflight := _trade_preflight(pending_quantity, pending_is_buy)
 		var reason := _localized_trade_failure(preflight)
 		_invalidate_confirmation(reason if not reason.is_empty() else "状态已变化，请重新确认")
+	if _quote_refresh_queued:
+		return
+	_quote_refresh_queued = true
+	call_deferred("_do_queued_quote_refresh")
+
+
+func _do_queued_quote_refresh() -> void:
+	_quote_refresh_queued = false
 	refresh_quote()
 
 
