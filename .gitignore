@@ -5,6 +5,5 @@
 !.worktrees/.gdignore
 .superpowers/
 
-# Godot editor generated files
-*.uid
+# Temp files
 tmp/
