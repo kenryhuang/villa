@@ -4,3 +4,7 @@
 .worktrees/*
 !.worktrees/.gdignore
 .superpowers/
+
+# Godot editor generated files
+*.uid
+tmp/
