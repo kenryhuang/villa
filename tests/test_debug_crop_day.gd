@@ -36,8 +36,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	main.season_system = clock
 	main.farming_system = farming
 	assertions.truthy(main._advance_debug_crop_day(), "debug crop day succeeds with required systems")
-	assertions.equal(clock.current_day, 2, "debug crop day advances the calendar once")
-	assertions.equal(farming.days, [2], "debug crop day advances farming once")
+	assertions.equal(clock.current_day, 1, "debug crop day leaves the season calendar unchanged")
+	assertions.equal(clock.total_days, 1, "debug crop day leaves the authoritative day cursor unchanged")
+	assertions.equal(farming.days, [1], "debug crop day advances farming once at the current day")
 	assertions.equal(formal_days.size(), 0, "debug crop day does not emit formal day_changed")
 	main.farming_system = null
 	assertions.truthy(

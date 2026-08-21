@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Start gameplay in an explicit no-mode state, open the seed selector only after an explicit slot-6 command, and make debug N advance only the calendar and crops.
+**Goal:** Start gameplay in an explicit no-mode state, open the seed selector only after an explicit slot-6 command, and make debug N advance only crop growth.
 
-**Architecture:** Add `ActionMode.NONE` as the controller's startup state and separate silent slot restoration from explicit slot activation. Make HUD palette visibility derive from the controller mode. Add an opt-out for the formal `day_changed` broadcast and coordinate the debug crop-only day in `Main` without touching daily economy cursors or saves.
+**Architecture:** Add `ActionMode.NONE` as the controller's startup state and separate silent slot restoration from explicit slot activation. Make HUD palette visibility derive from the controller mode. Coordinate the debug crop-only step in `Main` without changing the authoritative calendar, daily economy cursors, or saves.
 
 **Tech Stack:** Godot 4.7, GDScript, the repository's `TestAssert` SceneTree runners, Git.
 
@@ -13,8 +13,7 @@
 ## File Map
 
 - Modify `scripts/actors/player_action_controller.gd`: startup mode, explicit/silent slot activation, seed selection side-effect removal.
-- Modify `scripts/ui/hud.gd`: hide the action palette for `NONE`, reveal it for P/B, refresh calendar text from time updates.
-- Modify `scripts/systems/season_system.gd`: optional suppression of the formal day event.
+- Modify `scripts/ui/hud.gd`: hide the action palette for `NONE` and reveal it for P/B.
 - Modify `scripts/main.gd`: crop-only debug N coordinator.
 - Modify `tests/test_player_action_controller.gd`: controller regression coverage.
 - Modify `tests/test_hud_action_bar.gd`: initial palette and P-mode coverage.
@@ -22,6 +21,8 @@
 - Modify `tests/test_main_item_container_wiring.gd`: real main-scene startup modal coverage.
 - Create `tests/test_debug_crop_day.gd`: isolated Main coordinator coverage without the broken broad integration fixture.
 - Create `tests/run_action_mode_debug_day_regression_tests.gd`: focused runner for this bug set.
+
+> **Review correction:** Tasks 3–4 below record the initial implementation path. The final behavior supersedes their calendar-advance steps: `N` calls farming once at the current day and leaves `SeasonSystem` unchanged. This avoids desynchronizing the authoritative date from daily-simulation and market cursors.
 
 ### Task 1: Lock Down Controller Startup and Seed-Selector Semantics
 

@@ -72,7 +72,7 @@ func _exit_tree() -> void:
 	_action_clock_locks.clear()
 
 
-func advance_game_minutes(minutes_to_add: int, emit_day_changed: bool = true) -> void:
+func advance_game_minutes(minutes_to_add: int) -> void:
 	for _unused in range(maxi(0, minutes_to_add)):
 		minute += 1
 		if minute >= 60:
@@ -89,7 +89,7 @@ func advance_game_minutes(minutes_to_add: int, emit_day_changed: bool = true) ->
 				current_season = (current_season + 1) % 4 as Season
 				if _event_bus:
 					_event_bus.season_changed.emit(current_season)
-			if _event_bus and emit_day_changed:
+			if _event_bus:
 				# Suppress expensive notification UI updates during the
 				# synchronous day_changed signal chain (run_day, notifications, UI).
 				var _notif: Variant = _find_notification_system()
@@ -104,9 +104,9 @@ func advance_game_minutes(minutes_to_add: int, emit_day_changed: bool = true) ->
 		_event_bus.time_changed.emit(hour, minute)
 
 
-func advance_to_next_day(emit_day_changed: bool = true) -> void:
+func advance_to_next_day() -> void:
 	var minutes_until_next_day := (24 - hour) * 60 - minute
-	advance_game_minutes(maxi(1, minutes_until_next_day), emit_day_changed)
+	advance_game_minutes(maxi(1, minutes_until_next_day))
 
 
 func _find_notification_system():

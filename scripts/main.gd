@@ -138,7 +138,6 @@ func _unhandled_input(event: InputEvent) -> void:
 func _advance_debug_crop_day() -> bool:
 	if season_system == null or farming_system == null:
 		return false
-	season_system.advance_to_next_day(false)
 	farming_system.on_day_changed(season_system.total_days)
 	return true
 
