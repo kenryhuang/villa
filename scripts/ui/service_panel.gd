@@ -25,6 +25,7 @@ var _tool_system: ToolSystem
 var _production_system: ProductionSystem
 var _services_by_id: Dictionary = {}
 var selected_service_id := ""
+var _refresh_queued := false
 
 
 func _ready() -> void:
@@ -97,6 +98,7 @@ func select_service(service_id: String) -> bool:
 
 
 func refresh_services() -> void:
+	_refresh_queued = false
 	if not is_node_ready():
 		return
 	for child in service_cards.get_children():
@@ -207,8 +209,23 @@ func _cost_text(service: Dictionary) -> String:
 
 
 func _on_gold_changed(_gold: int) -> void:
-	refresh_services()
+	_queue_event_refresh()
 
 
 func _on_service_state_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:
-	refresh_services()
+	_queue_event_refresh()
+
+
+func _queue_event_refresh() -> void:
+	if not is_visible_in_tree() or _refresh_queued:
+		return
+	_refresh_queued = true
+	call_deferred("_flush_event_refresh")
+
+
+func _flush_event_refresh() -> void:
+	if not _refresh_queued:
+		return
+	_refresh_queued = false
+	if is_visible_in_tree():
+		refresh_services()

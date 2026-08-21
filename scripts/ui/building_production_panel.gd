@@ -57,6 +57,7 @@ var _inventory: InventorySystem
 var _progression: EconomyProgressionSystem
 var _building_ref: WeakRef
 var _selected_by_building: Dictionary = {}
+var _snapshot_refresh_queued := false
 
 
 func _ready() -> void:
@@ -270,6 +271,7 @@ func request_collect_item(item_id: String) -> void:
 
 
 func refresh_snapshot() -> void:
+	_snapshot_refresh_queued = false
 	var building := _building()
 	if building == null or _production == null or _inventory == null:
 		_clear_view()
@@ -687,4 +689,19 @@ func _on_economy_state_changed(a: Variant = null, _b: Variant = null, _c: Varian
 		return
 	if a is BuildingInstance and a != building:
 		return
-	refresh_snapshot()
+	_queue_snapshot_refresh()
+
+
+func _queue_snapshot_refresh() -> void:
+	if not is_visible_in_tree() or _snapshot_refresh_queued:
+		return
+	_snapshot_refresh_queued = true
+	call_deferred("_flush_snapshot_refresh")
+
+
+func _flush_snapshot_refresh() -> void:
+	if not _snapshot_refresh_queued:
+		return
+	_snapshot_refresh_queued = false
+	if is_visible_in_tree():
+		refresh_snapshot()

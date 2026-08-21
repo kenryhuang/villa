@@ -51,6 +51,7 @@ var _grid: GridSystem
 var _range_overlay: WorldRangeOverlay
 var _building_ref: WeakRef
 var _range_preview_enabled := false
+var _snapshot_refresh_queued := false
 
 
 func _ready() -> void:
@@ -170,6 +171,7 @@ func set_range_preview(enabled: bool) -> void:
 
 
 func refresh_snapshot() -> void:
+	_snapshot_refresh_queued = false
 	var building := _building()
 	if building == null or _production == null:
 		snapshot = {}
@@ -493,4 +495,19 @@ func _on_economy_state_changed(a: Variant = null, _b: Variant = null, _c: Varian
 		return
 	if a is BuildingInstance and a != building and building.building_id != "barn":
 		return
-	refresh_snapshot()
+	_queue_snapshot_refresh()
+
+
+func _queue_snapshot_refresh() -> void:
+	if not is_visible_in_tree() or _snapshot_refresh_queued:
+		return
+	_snapshot_refresh_queued = true
+	call_deferred("_flush_snapshot_refresh")
+
+
+func _flush_snapshot_refresh() -> void:
+	if not _snapshot_refresh_queued:
+		return
+	_snapshot_refresh_queued = false
+	if is_visible_in_tree():
+		refresh_snapshot()

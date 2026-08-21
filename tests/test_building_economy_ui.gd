@@ -190,6 +190,27 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(panel.queue_slot_nodes[0].get_node("Content/Header/StateLabel").text, "生产中", "running queue state renders in Chinese")
 	assertions.equal(ui.state_label.text, "运行中", "shell title state updates in the same frame when production starts")
 	ui.close()
+	assertions.truthy(
+		ui.production_panel.has_method("_flush_snapshot_refresh"),
+		"production panel exposes a deferred event refresh flush"
+	)
+	assertions.truthy(
+		ui.status_panel.has_method("_flush_snapshot_refresh"),
+		"status panel exposes a deferred event refresh flush"
+	)
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	if event_bus != null:
+		event_bus.item_added.emit("wood", 1)
+	assertions.equal(
+		ui.production_panel.get("_snapshot_refresh_queued"),
+		false,
+		"hidden production panel skips inventory refresh work"
+	)
+	assertions.equal(
+		ui.status_panel.get("_snapshot_refresh_queued"),
+		false,
+		"hidden status panel skips inventory refresh work"
+	)
 	assertions.truthy(ui.open_for(windmill), "windmill reopens")
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "closing and reopening preserves authoritative job")
 	assertions.equal(ui.production_panel.selected_recipe_id, "flour", "closing preserves selected recipe")

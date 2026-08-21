@@ -78,6 +78,30 @@ func _test_categories_cards_transactions_and_shop_route(
 			if connection.callable.get_object() == panel:
 				refresh_connections += 1
 		assertions.equal(refresh_connections, 1, "repeated configure owns one gold refresh signal")
+		var cards := panel.get_node("ServiceScroll/ServiceCards") as VBoxContainer
+		var first_card := cards.get_child(0) if cards.get_child_count() > 0 else null
+		assertions.truthy(first_card != null, "service refresh fixture starts with a rendered card")
+		var has_deferred_refresh := panel.has_method("_flush_event_refresh")
+		assertions.truthy(has_deferred_refresh, "service events expose one deferred refresh flush")
+		event_bus.gold_changed.emit(int(wallet.gold))
+		event_bus.item_added.emit("wood", 1)
+		event_bus.item_removed.emit("wood", 1)
+		assertions.equal(panel.get("_refresh_queued"), true, "same-frame service events share one queued refresh")
+		assertions.truthy(
+			cards.get_child_count() > 0 and cards.get_child(0) == first_card,
+			"service events do not rebuild cards synchronously"
+		)
+		if has_deferred_refresh:
+			panel.call("_flush_event_refresh")
+			assertions.equal(panel.get("_refresh_queued"), false, "service refresh queue clears after one flush")
+			assertions.truthy(
+				cards.get_child_count() > 0 and cards.get_child(0) != first_card,
+				"deferred service refresh replaces the rendered snapshot"
+			)
+			panel.visible = false
+			event_bus.gold_changed.emit(int(wallet.gold))
+			assertions.equal(panel.get("_refresh_queued"), false, "hidden service panel skips event refresh work")
+			panel.visible = true
 
 	var categories := [
 		"blueprints", "recipes", "repairs", "upgrades", "maintenance",
