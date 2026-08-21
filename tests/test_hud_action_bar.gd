@@ -293,6 +293,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		null
 	)
 	hud.configure_action_bar(controller, inventory, EconomyDouble.new())
+	assertions.equal(
+		hud.get_palette_button_count(),
+		0,
+		"startup HUD hides action shortcuts before P or B"
+	)
+	assertions.truthy(
+		controller.switch_mode(PlayerActionController.ActionMode.FARMING),
+		"HUD fixture explicitly enters farming mode"
+	)
+	assertions.equal(hud.get_palette_button_count(), 6, "P reveals six farming shortcuts")
 	var mapping_handler := Callable(hud, "_on_quick_slot_mapping_changed")
 	assertions.truthy(
 		inventory.quick_slot_mapping_changed.is_connected(mapping_handler),

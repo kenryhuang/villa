@@ -13,10 +13,10 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions := TestAssertScript.new()
+	await MainWiringTest.new().run(assertions, self)
 	ControllerTest.new().run(assertions, self)
 	HudTest.new().run(assertions, self)
 	SeasonTest.new().run(assertions)
-	await MainWiringTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d action-mode/debug-day regression checks" % assertions.checks)
 		quit(0)

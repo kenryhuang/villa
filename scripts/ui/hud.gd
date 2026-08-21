@@ -484,6 +484,15 @@ func rebuild_action_palette() -> void:
 		return
 	for child in quick_bar.get_children():
 		child.free()
+	var has_active_mode := _has_active_action_mode()
+	quick_bar.visible = has_active_mode
+	if not has_active_mode:
+		build_category_bar.visible = false
+		mode_button.configure(0, "选择模式", null)
+		mode_button.set_shortcut_visible(false)
+		mode_button.tooltip_text = "选择操作模式（P / B）"
+		_refresh_build_cost_bar(-1)
+		return
 	var building_mode := _is_building_mode()
 	var building_ids: Array = (
 		action_controller.get_current_building_ids()
@@ -718,6 +727,16 @@ func _is_building_mode() -> bool:
 	return (
 		action_controller != null
 		and action_controller.get_action_mode() == PlayerActionController.ActionMode.BUILDING
+	)
+
+
+func _has_active_action_mode() -> bool:
+	return (
+		action_controller != null
+		and action_controller.get_action_mode() in [
+			PlayerActionController.ActionMode.FARMING,
+			PlayerActionController.ActionMode.BUILDING,
+		]
 	)
 
 
