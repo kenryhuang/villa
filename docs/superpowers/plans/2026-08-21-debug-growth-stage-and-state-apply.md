@@ -39,7 +39,7 @@ var first := farming.debug_advance_growth_stage()
 assertions.near(instance.growth_progress, 2.0, 0.001, "first N reaches stage-one threshold")
 assertions.equal(instance.get_current_stage(), 1, "first N changes the visible stage")
 assertions.equal(first, {"advanced": 1, "matured": 0}, "stage step reports one crop")
-assertions.equal(int(farming.get_crop_visual(cell).get_meta("growth_stage", -1)), 1, "stage step refreshes the real visual")
+assertions.equal(int(farming.get_crop_visual(cell).get_meta("crop_stage", -1)), 1, "stage step refreshes the real visual")
 ```
 
 Continue twice and assert progress `4.0`, then `6.0`, lifecycle `MATURE`, and final result `{"advanced": 1, "matured": 1}`. Water before one call and assert the water flags are unchanged.

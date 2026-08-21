@@ -129,16 +129,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		and event.pressed
 		and not event.echo
 		and event.keycode == KEY_N
-		and season_system != null
 	):
 		if _advance_debug_crop_day():
 			get_viewport().set_input_as_handled()
 
 
 func _advance_debug_crop_day() -> bool:
-	if season_system == null or farming_system == null:
+	if farming_system == null:
 		return false
-	farming_system.on_day_changed(season_system.total_days)
+	var result: Dictionary = farming_system.debug_advance_growth_stage()
+	var advanced := int(result.get("advanced", 0))
+	var matured := int(result.get("matured", 0))
+	var message := (
+		"推进了 %d 株作物，其中 %d 株成熟" % [advanced, matured]
+		if advanced > 0
+		else "没有可推进的作物"
+	)
+	if hud != null:
+		hud.show_action_hint(message)
 	return true
 
 

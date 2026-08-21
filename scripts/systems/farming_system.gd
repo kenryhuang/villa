@@ -689,6 +689,50 @@ func on_day_changed(_day: int) -> void:
 			}])
 
 
+func debug_advance_growth_stage() -> Dictionary:
+	var result := {"advanced": 0, "matured": 0}
+	for cell in get_all_planted_cells():
+		if is_paused_greenhouse_cell(cell):
+			continue
+		var instance: CropInstance = cell.crop_instance
+		if (
+			instance == null
+			or instance.crop_data == null
+			or instance.lifecycle_state != CropInstance.LifecycleState.GROWING
+			or int(instance.crop_data.growth_days) <= 0
+		):
+			continue
+		var stage_count := instance.get_stage_count()
+		if stage_count < 2:
+			continue
+		var next_stage := mini(instance.get_current_stage() + 1, stage_count - 1)
+		var target_progress := (
+			float(instance.crop_data.growth_days)
+			* float(next_stage)
+			/ float(stage_count - 1)
+		)
+		var next_state := (
+			CropInstance.LifecycleState.MATURE
+			if next_stage == stage_count - 1
+			else CropInstance.LifecycleState.GROWING
+		)
+		if not instance.set_growth_state(target_progress, next_state):
+			continue
+		_update_visual(cell, instance)
+		result.advanced = int(result.advanced) + 1
+		_queue_farming_event_batch([{
+			"signal": &"crop_grew",
+			"args": [cell.gx, cell.gz, next_stage],
+		}])
+		if next_state == CropInstance.LifecycleState.MATURE:
+			result.matured = int(result.matured) + 1
+			_queue_farming_event_batch([{
+				"signal": &"crop_matured",
+				"args": [cell.gx, cell.gz],
+			}])
+	return result
+
+
 func _is_current_season_allowed(data: CropData) -> bool:
 	if data == null:
 		return false
