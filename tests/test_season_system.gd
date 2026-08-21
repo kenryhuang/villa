@@ -72,6 +72,32 @@ func run(assertions: TestAssert) -> void:
 		assertions.equal(clock5.minute, 0, "next-day advancement clears minutes")
 		assertions.equal(clock5.current_day, 2, "next-day advancement increments the day once")
 
+	var scene_tree := Engine.get_main_loop() as SceneTree
+	var event_bus := scene_tree.root.get_node_or_null("EventBus")
+	var debug_clock := SeasonSystemScript.new()
+	scene_tree.root.add_child(debug_clock)
+	debug_clock.hour = 14
+	debug_clock.minute = 35
+	var supports_day_suppression := false
+	for method in debug_clock.get_method_list():
+		if str(method.get("name", "")) == "advance_to_next_day":
+			supports_day_suppression = (method.get("args", []) as Array).size() == 1
+			break
+	assertions.truthy(
+		supports_day_suppression,
+		"next-day advancement accepts a formal day-event switch"
+	)
+	if supports_day_suppression and event_bus != null:
+		var formal_days: Array[int] = []
+		var callback := func(day: int) -> void: formal_days.append(day)
+		event_bus.day_changed.connect(callback)
+		debug_clock.call("advance_to_next_day", false)
+		assertions.equal(debug_clock.current_day, 2, "debug next day advances the calendar")
+		assertions.equal(formal_days.size(), 0, "debug next day suppresses formal day_changed")
+		debug_clock.call("advance_to_next_day")
+		assertions.equal(formal_days.size(), 1, "normal next day still emits formal day_changed")
+		event_bus.day_changed.disconnect(callback)
+
 	var locked_clock := SeasonSystemScript.new()
 	var owner_a := Node.new()
 	var owner_b := Node.new()
@@ -102,6 +128,7 @@ func run(assertions: TestAssert) -> void:
 	clock4.free()
 	action_clock.free()
 	clock5.free()
+	debug_clock.free()
 	owner_a.free()
 	owner_b.free()
 	locked_clock.free()

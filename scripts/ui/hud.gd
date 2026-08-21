@@ -288,6 +288,9 @@ func _on_day_changed(_total_day: int) -> void:
 
 func _on_time_changed(hour: int, minute: int) -> void:
 	_update_time_display(hour, minute)
+	var season_system = _get_season_system()
+	if season_system:
+		_update_season_display(season_system)
 
 
 # ============================================================
