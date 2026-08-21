@@ -28,6 +28,40 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		0,
 		"real Main hides shortcuts until P or B"
 	)
+	assertions.truthy(
+		main.action_controller.switch_mode(PlayerActionController.ActionMode.FARMING),
+		"real Main enters farming mode"
+	)
+	assertions.truthy(
+		main.action_controller.select_mode_slot(0),
+		"real Main selects the hoe"
+	)
+	var camera: Camera3D = tree.root.get_camera_3d()
+	var target_cell := _visible_reachable_farm_cell(main, camera)
+	assertions.truthy(target_cell != null, "real Main has a visible reachable farm cell")
+	if target_cell != null:
+		var motion := InputEventMouseMotion.new()
+		motion.position = camera.unproject_position(target_cell.world_position_3d())
+		motion.global_position = motion.position
+		main.action_controller._input(motion)
+		main.action_controller._process(0.0)
+		var highlight := main.grid_system.get_node_or_null(
+			"GridCells/CellHighlight"
+		) as MeshInstance3D
+		assertions.truthy(
+			highlight != null and highlight.visible,
+			"hoe shows a cell shadow"
+		)
+		assertions.equal(
+			int(highlight.get_meta("gx", -1)),
+			target_cell.gx,
+			"hoe shadow aligns on x"
+		)
+		assertions.equal(
+			int(highlight.get_meta("gz", -1)),
+			target_cell.gz,
+			"hoe shadow aligns on z"
+		)
 
 	var routers: Array[Node] = []
 	_collect_routers(main, routers)
@@ -74,6 +108,25 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(nested_routers.size(), 2, "nested ordinary Node Router is counted")
 	nested_parent.free()
 	main.free()
+
+
+func _visible_reachable_farm_cell(main: Node, camera: Camera3D) -> GridCell:
+	if camera == null:
+		return null
+	for cell_value in main.grid_system._cells.values():
+		var cell := cell_value as GridCell
+		if not main.grid_system.can_farm_at(cell.gx, cell.gz):
+			continue
+		var point := cell.world_position_3d()
+		if camera.is_position_behind(point):
+			continue
+		var distance := Vector2(
+			main.player.global_position.x - point.x,
+			main.player.global_position.z - point.z
+		).length()
+		if distance <= main.player.interaction_range:
+			return cell
+	return null
 
 
 func _collect_routers(node: Node, routers: Array[Node]) -> void:
