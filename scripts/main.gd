@@ -131,8 +131,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		and event.keycode == KEY_N
 		and season_system != null
 	):
-		season_system.advance_to_next_day()
-		get_viewport().set_input_as_handled()
+		if _advance_debug_crop_day():
+			get_viewport().set_input_as_handled()
+
+
+func _advance_debug_crop_day() -> bool:
+	if season_system == null or farming_system == null:
+		return false
+	season_system.advance_to_next_day(false)
+	farming_system.on_day_changed(season_system.total_days)
+	return true
 
 
 # ============================================================
