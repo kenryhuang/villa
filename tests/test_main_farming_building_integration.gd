@@ -509,50 +509,47 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		action_controller.select_slot(1)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player waters grain")
-		var event_bus = tree.root.get_node_or_null("EventBus")
-		var official_autosave_callback := Callable(
-			official_save_manager,
-			"_on_day_changed"
-		)
-		var official_autosave_was_connected: bool = (
-			event_bus != null
-			and official_save_manager != null
-			and event_bus.day_changed.is_connected(official_autosave_callback)
-		)
-		if official_autosave_was_connected:
-			event_bus.day_changed.disconnect(official_autosave_callback)
+		var day_before_debug := main.season_system.total_days
 		var next_day := InputEventKey.new()
 		next_day.keycode = KEY_N
 		next_day.pressed = true
 		main._unhandled_input(next_day)
 		assertions.near(
 			farm_cell.crop_instance.growth_progress,
-			1.5,
+			1.0,
 			0.001,
-			"debug N advances watered grain through the normal day event"
+			"debug N advances grain to the next visible stage"
 		)
 		assertions.equal(
 			farm_cell.crop_instance.get_current_stage(),
 			1,
-			"first watered day displays the sprout stage"
+			"first debug step displays the sprout stage"
 		)
-		assertions.equal(main.hud.season_label.text, "春 2/7", "debug N refreshes the HUD day")
-		assertions.truthy(
-			action_controller.perform_cell_action(farm_cell),
-			"grain can be watered again on the next day"
+		assertions.equal(
+			main.season_system.total_days,
+			day_before_debug,
+			"debug N leaves the authoritative date unchanged"
+		)
+		assertions.equal(main.hud.season_label.text, "春 1/7", "debug N leaves the HUD date unchanged")
+		main._unhandled_input(next_day)
+		assertions.near(
+			farm_cell.crop_instance.growth_progress,
+			2.0,
+			0.001,
+			"second debug N reaches the growing stage"
+		)
+		assertions.equal(
+			farm_cell.crop_instance.get_current_stage(),
+			2,
+			"second debug step displays the growing stage"
 		)
 		main._unhandled_input(next_day)
-		if official_autosave_was_connected:
-			event_bus.day_changed.connect(official_autosave_callback)
-		assertions.truthy(
-			FileAccess.file_exists(_test_save_path(TEST_SAVE_SLOT)),
-			"day change autosaves the isolated current slot"
+		assertions.truthy(farm_cell.crop_instance.is_mature(), "third debug N matures main grain")
+		assertions.equal(
+			main.season_system.total_days,
+			day_before_debug,
+			"repeated debug growth never advances the formal date"
 		)
-		assertions.truthy(
-			not FileAccess.file_exists(_test_save_path(0)),
-			"day change never falls back to isolated slot zero"
-		)
-		assertions.truthy(farm_cell.crop_instance.is_mature(), "main grain reaches maturity")
 		var backpack_grain_before: int = main.inventory_system.get_item_count("grain")
 		var storage_grain_before: int = main.farm_storage_system.get_count("grain")
 		var expected_grain: int = int(

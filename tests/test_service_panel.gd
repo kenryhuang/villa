@@ -210,6 +210,19 @@ func _test_categories_cards_transactions_and_shop_route(
 		shop.get_node("ScreenLayer/ModalLayer/HubPanel/Margin/Shell/PageHost/ServicesPage").get_script() != null,
 		"ShopUI services page is a real scripted panel"
 	)
+	shop.open("services")
+	var shop_service_state := shop.service_panel.get("_services_by_id") as Dictionary
+	shop_service_state["debug_stale"] = {"id": "debug_stale"}
+	shop.close()
+	if event_bus != null:
+		event_bus.gold_changed.emit(int(wallet.gold))
+	shop.open()
+	assertions.equal(shop.selected_tab, "services", "default reopen preserves the selected services tab")
+	assertions.truthy(
+		not (shop.service_panel.get("_services_by_id") as Dictionary).has("debug_stale"),
+		"reopening the selected services tab refreshes hidden state"
+	)
+	shop.close()
 
 	shop.free()
 	economy.free()

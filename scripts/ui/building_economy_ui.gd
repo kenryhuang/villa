@@ -226,6 +226,10 @@ func _apply_page_kind(kind: String) -> void:
 	status_tab.theme_type_variation = (
 		&"EconomyTabSelected" if kind == "status" else &"EconomyTab"
 	)
+	if kind == "production":
+		production_panel.refresh_snapshot()
+	else:
+		status_panel.refresh_snapshot()
 	state_label.text = (
 		_production_state_text()
 		if kind == "production"

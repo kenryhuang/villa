@@ -630,6 +630,7 @@ func _setup_runtime_debug_tools() -> void:
 		season_system,
 		inventory_system,
 		production_system,
+		economy_system,
 		market_system,
 		npc_economy_system,
 		daily_simulation_system,

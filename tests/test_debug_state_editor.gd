@@ -37,6 +37,28 @@ class ProductionDouble:
 		return current_day
 
 
+class EconomyDouble:
+	extends RefCounted
+	var state := {
+		"last_processed_day": 9,
+		"orders": [{"order_id": "preserved-until-date-change"}],
+		"contracts": [],
+	}
+	var reset_calls: Array[int] = []
+
+	func to_dict() -> Dictionary:
+		return state.duplicate(true)
+
+	func from_dict(value: Dictionary) -> bool:
+		state = value.duplicate(true)
+		return true
+
+	func reset_order_state(day: int) -> bool:
+		reset_calls.append(day)
+		state = {"last_processed_day": day, "orders": [], "contracts": []}
+		return true
+
+
 class MarketDouble:
 	extends RefCounted
 	var last_settled_day := 9
@@ -103,9 +125,17 @@ func run(assertions: TestAssert) -> void:
 
 func _test_unchanged_apply_emits_no_events(assertions: TestAssert) -> void:
 	var fixture := _fixture()
+	fixture.game_state.player_state.level = 3
+	fixture.game_state.player_state.exp = 275
 	var events := _record_state_events(fixture.event_bus)
 	var result: Dictionary = fixture.editor.apply(fixture.editor.snapshot())
 	assertions.truthy(bool(result.get("ok", false)), "unchanged debug snapshot applies")
+	assertions.equal(
+		fixture.game_state.player_state.exp,
+		275,
+		"unchanged level preserves progress within the current level"
+	)
+	assertions.equal(fixture.economy.reset_calls, [], "unchanged date preserves active orders and contracts")
 	for event_name in events:
 		assertions.equal(
 			(events[event_name] as Array).size(),
@@ -309,6 +339,18 @@ func _test_direct_elapsed_day_jump(assertions: TestAssert) -> void:
 		assertions.equal(fixture.market.last_settled_day, case.total, "market cursor synchronizes")
 		assertions.equal(fixture.daily.last_simulated_day, case.total, "daily cursor synchronizes")
 		assertions.equal(fixture.daily.run_day_calls, 0, "direct jump never settles skipped days")
+		assertions.equal(
+			int(fixture.economy.state.last_processed_day),
+			case.total,
+			"economy order cursor synchronizes"
+		)
+		assertions.equal(
+			fixture.economy.reset_calls,
+			[case.total],
+			"date edit relocates orders without processing skipped days"
+		)
+		assertions.equal(fixture.economy.state.orders, [], "date edit clears date-bound orders")
+		assertions.equal(fixture.economy.state.contracts, [], "date edit clears date-bound contracts")
 		assertions.equal(fixture.resources.cursor, case.total, "resource cursor synchronizes")
 		assertions.equal(fixture.resources.state, resource_state_before, "resource state stays unchanged")
 		assertions.equal(day_events, [], "direct date edit never emits formal day_changed")
@@ -353,6 +395,7 @@ func _fixture() -> Dictionary:
 	var season := SeasonDouble.new()
 	var inventory := InventorySystemScript.new() as InventorySystem
 	var production := ProductionDouble.new()
+	var economy := EconomyDouble.new()
 	var market := MarketDouble.new()
 	var npc := NpcDouble.new()
 	var daily := DailyDouble.new()
@@ -364,6 +407,7 @@ func _fixture() -> Dictionary:
 		season,
 		inventory,
 		production,
+		economy,
 		market,
 		npc,
 		daily,
@@ -378,6 +422,7 @@ func _fixture() -> Dictionary:
 		"season": season,
 		"inventory": inventory,
 		"production": production,
+		"economy": economy,
 		"market": market,
 		"npc": npc,
 		"daily": daily,

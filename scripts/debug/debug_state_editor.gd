@@ -9,6 +9,7 @@ var _game_state: Variant
 var _season: Variant
 var _inventory: Variant
 var _production: Variant
+var _economy: Variant
 var _market: Variant
 var _npc: Variant
 var _daily: Variant
@@ -23,6 +24,7 @@ func configure(
 	season: Variant,
 	inventory: Variant,
 	production: Variant,
+	economy: Variant,
 	market: Variant,
 	npc: Variant,
 	daily: Variant,
@@ -45,6 +47,7 @@ func configure(
 		or not _has_properties(inventory, ["slots", "max_slots", "quick_slot_mappings"])
 		or not _has_methods(inventory, ["get_item_count", "restore_state"])
 		or not _has_methods(production, ["sync_daily_cursor", "get_current_day"])
+		or not _has_methods(economy, ["to_dict", "from_dict", "reset_order_state"])
 		or not _has_properties(market, ["last_settled_day"])
 		or not _has_properties(npc, ["last_simulated_day"])
 		or not _has_methods(npc, ["sync_daily_cursor"])
@@ -61,6 +64,7 @@ func configure(
 	_season = season
 	_inventory = inventory
 	_production = production
+	_economy = economy
 	_market = market
 	_npc = npc
 	_daily = daily
@@ -207,6 +211,17 @@ func apply(draft: Dictionary) -> Dictionary:
 			int(before.get("resource_day", before.get("total_days", 1)))
 		)
 		return _failure("transaction_failed")
+	if (
+		target_total_days != int(before.economy_day)
+		and not bool(_economy.call("reset_order_state", target_total_days))
+	):
+		_restore_cursors(before)
+		_resources.call(
+			"restore_resource_dicts",
+			resource_state,
+			int(before.get("resource_day", before.get("total_days", 1)))
+		)
+		return _failure("transaction_failed")
 
 	_market.set("last_settled_day", target_total_days)
 	_daily.set("last_simulated_day", target_total_days)
@@ -214,7 +229,12 @@ func apply(draft: Dictionary) -> Dictionary:
 	var player_state: Variant = _game_state.get("player_state")
 	var level := int(draft.get("level"))
 	player_state.set("level", level)
-	player_state.set("exp", int(PlayerStateScript.LEVEL_THRESHOLDS[level - 1]))
+	player_state.set(
+		"exp",
+		int(PlayerStateScript.LEVEL_THRESHOLDS[level - 1])
+		if level != int(before.level)
+		else int(before.exp)
+	)
 	player_state.set("stamina", int(draft.get("stamina")))
 	_game_state.set("gold", int(draft.get("gold")))
 	_inventory.call(
@@ -253,6 +273,7 @@ func _apply_date_fields(elapsed_days: int, target_total_days: int) -> void:
 
 func _capture_state() -> Dictionary:
 	var player_state: Variant = _game_state.get("player_state")
+	var economy_state: Dictionary = _economy.call("to_dict")
 	return {
 		"level": int(player_state.get("level")),
 		"exp": int(player_state.get("exp")),
@@ -268,6 +289,8 @@ func _capture_state() -> Dictionary:
 			_inventory.get("quick_slot_mappings") as Array
 		).duplicate(),
 		"production_day": int(_production.call("get_current_day")),
+		"economy_day": int(economy_state.get("last_processed_day", 0)),
+		"economy_state": economy_state,
 		"market_day": int(_market.get("last_settled_day")),
 		"npc_day": int(_npc.get("last_simulated_day")),
 		"daily_day": int(_daily.get("last_simulated_day")),
@@ -283,6 +306,7 @@ func _restore_cursors(before: Dictionary) -> void:
 			_production.set("_current_day", int(before.production_day))
 	if not bool(_npc.call("sync_daily_cursor", int(before.npc_day))):
 		_npc.set("last_simulated_day", int(before.npc_day))
+	_economy.call("from_dict", before.economy_state)
 	_market.set("last_settled_day", int(before.market_day))
 	_daily.set("last_simulated_day", int(before.daily_day))
 

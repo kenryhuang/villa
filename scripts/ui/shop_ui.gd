@@ -160,6 +160,8 @@ func open(tab_id: String = "market", target_id: String = "") -> void:
 		order_panel.refresh_orders()
 	elif selected_tab == "contracts":
 		contract_panel.refresh_contracts()
+	elif selected_tab == "services" and service_panel != null:
+		service_panel.refresh_services()
 	_select_target(selected_tab, target_id)
 	_animate_open(hub_panel)
 

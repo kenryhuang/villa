@@ -15,6 +15,8 @@
 - Modify `scripts/systems/farming_system.gd`: dedicated next-visible-stage debug mutation and result counts.
 - Modify `scripts/main.gd`: route N to the new API, display feedback, and explicitly refresh HUD after debug apply.
 - Modify `scripts/debug/debug_state_editor.gd`: emit only changed state events and suppress formal day events.
+- Modify `scripts/ui/shop_ui.gd`: refresh the selected services page whenever the shop reopens.
+- Modify `scripts/ui/building_economy_ui.gd`: refresh the page that becomes visible on a tab switch.
 - Modify `scripts/ui/service_panel.gd`: defer/coalesce event-driven refreshes and skip hidden rendering.
 - Modify `scripts/ui/building_production_panel.gd`: defer/coalesce event-driven refreshes and skip hidden rendering.
 - Modify `scripts/ui/building_status_panel.gd`: defer/coalesce event-driven refreshes and skip hidden rendering.
@@ -159,6 +161,8 @@ if int(draft.stamina) != int(before.stamina):
 
 Keep the existing sorted exact item-delta loop and changed-only `season_changed` block. Delete the final `_emit_signal_if_available("day_changed", ...)` call.
 
+Inject `EconomySystem` into the editor. When the requested date differs from its captured `last_processed_day`, call the existing `reset_order_state(target_total_days)` inside the cursor transaction so skipped days are not processed and date-bound orders/contracts cannot invalidate the next save. Capture `to_dict()` and restore it with `from_dict()` on cursor failure. When the requested level is unchanged, retain `before.exp`; only a real level change resets experience to the new threshold.
+
 - [ ] **Step 4: Explicitly refresh the HUD after success**
 
 In `Main._on_debug_panel_apply_requested()`, call:
@@ -189,6 +193,8 @@ git commit -m "fix: publish precise debug state events"
 - Modify: `scripts/ui/service_panel.gd`
 - Modify: `scripts/ui/building_production_panel.gd`
 - Modify: `scripts/ui/building_status_panel.gd`
+- Modify: `scripts/ui/shop_ui.gd`
+- Modify: `scripts/ui/building_economy_ui.gd`
 
 - [ ] **Step 1: Write failing deferred-refresh assertions**
 
@@ -252,6 +258,8 @@ func _flush_snapshot_refresh() -> void:
 ```
 
 In each `_on_economy_state_changed()`, retain the existing building filters and replace its final `refresh_snapshot()` with `_queue_snapshot_refresh()`. Direct command paths continue calling `refresh_snapshot()` synchronously.
+
+Add a services branch to `ShopUI.open()` so reopening a shop that retained the Services tab calls `service_panel.refresh_services()`. In `BuildingEconomyUI._apply_page_kind()`, synchronously refresh the panel that has just become visible; hidden pages continue to skip event-driven work.
 
 - [ ] **Step 5: Run UI runners and verify GREEN**
 

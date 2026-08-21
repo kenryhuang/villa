@@ -26,6 +26,21 @@ class HudDouble:
 		hints.append(message)
 
 
+class CropEventBus:
+	extends Node
+	signal crop_grew(gx: int, gz: int, stage: int)
+	signal crop_matured(gx: int, gz: int)
+
+	var grew_stages: Array[int] = []
+	var matured_cells: Array[Vector2i] = []
+
+	func _init() -> void:
+		crop_grew.connect(func(_gx: int, _gz: int, stage: int) -> void: grew_stages.append(stage))
+		crop_matured.connect(
+			func(gx: int, gz: int) -> void: matured_cells.append(Vector2i(gx, gz))
+		)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_real_stage_advancement(assertions)
 	_test_main_coordinator_feedback(assertions, tree)
@@ -35,6 +50,8 @@ func _test_real_stage_advancement(assertions: TestAssert) -> void:
 	var grid := GridSystemScript.new() as GridSystem
 	var farming := FarmingSystem.new()
 	assertions.truthy(farming.configure(grid, null, null), "debug crop fixture configures real farming")
+	var crop_events := CropEventBus.new()
+	farming._event_bus = crop_events
 	grid.set_cell_state(4, 5, GridCell.State.FARMLAND)
 	var cell := grid.get_cell(4, 5)
 	var crop := CropDataScript.new() as CropData
@@ -83,6 +100,8 @@ func _test_real_stage_advancement(assertions: TestAssert) -> void:
 		{"advanced": 0, "matured": 0},
 		"mature crops are not advanced again"
 	)
+	assertions.equal(crop_events.grew_stages, [1, 2, 3], "debug stages publish one ordered crop_grew each")
+	assertions.equal(crop_events.matured_cells, [Vector2i(4, 5)], "debug maturity publishes exactly once")
 
 	grid.set_cell_state(7, 8, GridCell.State.FARMLAND)
 	var paused_cell := grid.get_cell(7, 8)
@@ -94,7 +113,10 @@ func _test_real_stage_advancement(assertions: TestAssert) -> void:
 		"paused greenhouse crops are skipped"
 	)
 	assertions.near(paused_instance.growth_progress, 0.0, 0.001, "paused crop progress stays unchanged")
+	assertions.equal(crop_events.grew_stages, [1, 2, 3], "skipped crops publish no growth event")
+	assertions.equal(crop_events.matured_cells.size(), 1, "skipped crops publish no maturity event")
 	farming.free()
+	crop_events.free()
 	grid.free()
 
 

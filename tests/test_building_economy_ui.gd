@@ -215,6 +215,20 @@ func _test_production_panel_transactions_and_persistence(assertions: TestAssert,
 	assertions.equal(windmill.producer_state.jobs.size(), 1, "closing and reopening preserves authoritative job")
 	assertions.equal(ui.production_panel.selected_recipe_id, "flour", "closing preserves selected recipe")
 	assertions.equal(ui.production_panel.batches, 1, "temporary batch resets on reopen")
+	ui.status_tab.pressed.emit()
+	ui.production_panel.snapshot = {"debug_stale": true}
+	if event_bus != null:
+		event_bus.item_added.emit("wood", 1)
+	assertions.equal(
+		ui.production_panel.get("_snapshot_refresh_queued"),
+		false,
+		"hidden production tab defers work until selected"
+	)
+	ui.production_tab.pressed.emit()
+	assertions.truthy(
+		not ui.production_panel.snapshot.has("debug_stale"),
+		"selecting a previously hidden building tab refreshes authoritative state"
+	)
 	production.advance_minutes(360)
 	panel.refresh_snapshot()
 	assertions.equal(ui.state_label.text, "空闲", "shell title state updates in the same frame when production finishes")
