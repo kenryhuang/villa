@@ -233,6 +233,9 @@ func request_start() -> void:
 
 
 func request_collect_all() -> void:
+	# Event-driven rendering is deferred, so commands re-read authority before
+	# validating a snapshot that may still represent the previous frame.
+	refresh_snapshot()
 	var building := _building()
 	if building == null or _production == null or _inventory == null:
 		_set_failure("not_configured", "collect_all")
@@ -252,6 +255,7 @@ func request_collect_all() -> void:
 
 
 func request_collect_item(item_id: String) -> void:
+	refresh_snapshot()
 	var building := _building()
 	if building == null or _production == null or _inventory == null:
 		_set_failure("not_configured", "collect_item")

@@ -120,6 +120,9 @@ func request_add_input(item_id: String, quantity: int) -> void:
 
 
 func request_collect_all() -> void:
+	# Event-driven rendering is deferred, so commands re-read authority before
+	# validating a snapshot that may still represent the previous frame.
+	refresh_snapshot()
 	var building := _building()
 	if building == null or _production == null or _inventory == null:
 		_set_failure("not_configured", "建筑状态未连接")
@@ -145,6 +148,7 @@ func request_collect_all() -> void:
 
 
 func request_collect_group_item(source_key: String, item_id: String) -> void:
+	refresh_snapshot()
 	var building := _building()
 	if building == null or building.building_id != "barn" or _production == null or _inventory == null:
 		_set_failure("not_configured", "谷仓状态未连接")
