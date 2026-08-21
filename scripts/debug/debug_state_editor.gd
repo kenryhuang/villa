@@ -340,10 +340,13 @@ func _item_counts() -> Dictionary:
 
 
 func _emit_success_events(before: Dictionary, draft: Dictionary) -> void:
-	_emit_signal_if_available("level_changed", [int(draft.level)])
-	_emit_signal_if_available("exp_gained", [0])
-	_emit_signal_if_available("gold_changed", [int(draft.gold)])
-	_emit_signal_if_available("stamina_changed", [int(draft.stamina)])
+	if int(draft.level) != int(before.level):
+		_emit_signal_if_available("level_changed", [int(draft.level)])
+		_emit_signal_if_available("exp_gained", [0])
+	if int(draft.gold) != int(before.gold):
+		_emit_signal_if_available("gold_changed", [int(draft.gold)])
+	if int(draft.stamina) != int(before.stamina):
+		_emit_signal_if_available("stamina_changed", [int(draft.stamina)])
 	var before_counts := before.item_counts as Dictionary
 	var item_ids: Array[String] = []
 	for item_id_value in draft.items:
@@ -359,7 +362,6 @@ func _emit_success_events(before: Dictionary, draft: Dictionary) -> void:
 	var current_season := int(_season.get("current_season"))
 	if current_season != int(before.season):
 		_emit_signal_if_available("season_changed", [current_season])
-	_emit_signal_if_available("day_changed", [int(_season.get("total_days"))])
 
 
 func _emit_signal_if_available(signal_name: StringName, arguments: Array) -> void:

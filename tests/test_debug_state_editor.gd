@@ -95,9 +95,24 @@ class EventBusDouble:
 func run(assertions: TestAssert) -> void:
 	_test_snapshot(assertions)
 	_test_validation(assertions)
+	_test_unchanged_apply_emits_no_events(assertions)
 	_test_apply_player_and_inventory(assertions)
 	_test_apply_rolls_back_on_cursor_failure(assertions)
 	_test_direct_elapsed_day_jump(assertions)
+
+
+func _test_unchanged_apply_emits_no_events(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	var events := _record_state_events(fixture.event_bus)
+	var result: Dictionary = fixture.editor.apply(fixture.editor.snapshot())
+	assertions.truthy(bool(result.get("ok", false)), "unchanged debug snapshot applies")
+	for event_name in events:
+		assertions.equal(
+			(events[event_name] as Array).size(),
+			0,
+			"unchanged debug snapshot emits no %s event" % event_name
+		)
+	fixture.inventory.free()
 
 
 func _test_snapshot(assertions: TestAssert) -> void:
@@ -188,7 +203,7 @@ func _test_apply_player_and_inventory(assertions: TestAssert) -> void:
 	assertions.truthy(fixture.inventory.set_quick_slot(1, 5), "apply fixture maps seed")
 	var added_events: Array = []
 	var removed_events: Array = []
-	var level_events: Array = []
+	var state_events := _record_state_events(fixture.event_bus)
 	fixture.event_bus.item_added.connect(
 		func(item_id: String, quantity: int) -> void:
 			added_events.append([item_id, quantity])
@@ -197,11 +212,6 @@ func _test_apply_player_and_inventory(assertions: TestAssert) -> void:
 		func(item_id: String, quantity: int) -> void:
 			removed_events.append([item_id, quantity])
 	)
-	fixture.event_bus.level_changed.connect(
-		func(level: int) -> void:
-			level_events.append(level)
-	)
-
 	var draft: Dictionary = fixture.editor.snapshot()
 	draft["level"] = 4
 	draft["gold"] = 4321
@@ -224,7 +234,11 @@ func _test_apply_player_and_inventory(assertions: TestAssert) -> void:
 	assertions.equal(fixture.inventory.get_quick_item(5), "", "removed quick item mapping clears")
 	assertions.equal(added_events, [["wood", 118]], "apply emits exact positive item delta")
 	assertions.equal(removed_events, [["grain_seed", 4]], "apply emits exact removed item delta")
-	assertions.equal(level_events, [4], "apply emits one level refresh")
+	assertions.equal(state_events.level, [4], "apply emits one changed level refresh")
+	assertions.equal(state_events.exp, [0], "changed level refreshes derived experience once")
+	assertions.equal(state_events.gold, [4321], "apply emits one changed gold refresh")
+	assertions.equal(state_events.stamina, [17], "apply emits one changed stamina refresh")
+	assertions.equal(state_events.day, [], "non-date apply emits no formal day event")
 	assertions.equal(
 		str(result.get("message", "")),
 		"调试数据已应用；尚未写入存档",
@@ -297,13 +311,41 @@ func _test_direct_elapsed_day_jump(assertions: TestAssert) -> void:
 		assertions.equal(fixture.daily.run_day_calls, 0, "direct jump never settles skipped days")
 		assertions.equal(fixture.resources.cursor, case.total, "resource cursor synchronizes")
 		assertions.equal(fixture.resources.state, resource_state_before, "resource state stays unchanged")
-		assertions.equal(day_events, [case.total], "date jump emits one refresh event")
+		assertions.equal(day_events, [], "direct date edit never emits formal day_changed")
 		assertions.equal(
 			season_events,
 			[case.season] if old_season != int(case.season) else [],
 			"date jump only emits changed season"
 		)
 		fixture.inventory.free()
+
+
+func _record_state_events(event_bus: EventBusDouble) -> Dictionary:
+	var events := {
+		"level": [],
+		"exp": [],
+		"gold": [],
+		"stamina": [],
+		"item_added": [],
+		"item_removed": [],
+		"season": [],
+		"day": [],
+	}
+	event_bus.level_changed.connect(func(value: int) -> void: events.level.append(value))
+	event_bus.exp_gained.connect(func(value: int) -> void: events.exp.append(value))
+	event_bus.gold_changed.connect(func(value: int) -> void: events.gold.append(value))
+	event_bus.stamina_changed.connect(func(value: int) -> void: events.stamina.append(value))
+	event_bus.item_added.connect(
+		func(item_id: String, quantity: int) -> void:
+			events.item_added.append([item_id, quantity])
+	)
+	event_bus.item_removed.connect(
+		func(item_id: String, quantity: int) -> void:
+			events.item_removed.append([item_id, quantity])
+	)
+	event_bus.season_changed.connect(func(value: int) -> void: events.season.append(value))
+	event_bus.day_changed.connect(func(value: int) -> void: events.day.append(value))
+	return events
 
 
 func _fixture() -> Dictionary:

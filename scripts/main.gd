@@ -670,7 +670,9 @@ func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
 		return
 	var result: Dictionary = debug_state_editor.apply(draft)
 	if bool(result.get("ok", false)):
-		hud.refresh_action_bar()
+		if hud != null:
+			hud.configure_season_system(season_system)
+			hud.refresh_action_bar()
 		debug_panel.show_apply_result(result, debug_state_editor.snapshot())
 		return
 	debug_panel.show_apply_result(result)
