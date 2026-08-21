@@ -75,7 +75,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var tool = ToolSystemScript.new()
 	tree.root.add_child(tool)
 	tool.configure(GridDouble.new(), null, null)
+	var event_bus := tree.root.get_node_or_null("EventBus")
+	assertions.truthy(event_bus != null, "tool transaction test has EventBus")
+	var selection_item_events: Array[Dictionary] = []
+	var selection_callback := func(item_id: String, quantity: int) -> void:
+		selection_item_events.append({"item_id": item_id, "quantity": quantity})
+	event_bus.item_added.connect(selection_callback)
 	tool.switch_tool(ToolSystem.ToolType.HOE)
+	event_bus.item_added.disconnect(selection_callback)
+	assertions.equal(
+		selection_item_events,
+		[],
+		"selecting the hoe does not publish a fake inventory addition"
+	)
 
 	var invalid := GridCell.new()
 	invalid.gx = 1
@@ -147,7 +159,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(tool.get_durability("pickaxe").current, 100, "preview does not spend durability")
 	assertions.equal(inventory.get_item_count("copper_ore"), 0, "preview does not add inventory")
 
+	var gather_item_events: Array[Dictionary] = []
+	var gather_callback := func(item_id: String, quantity: int) -> void:
+		gather_item_events.append({"item_id": item_id, "quantity": quantity})
+	event_bus.item_added.connect(gather_callback)
 	var committed: Dictionary = tool.commit_gather_unit(copper)
+	event_bus.item_added.disconnect(gather_callback)
+	assertions.equal(
+		gather_item_events,
+		[{"item_id": "copper_ore", "quantity": 3}],
+		"automatic equipment publishes the reward but no zero-quantity tool event"
+	)
 	assertions.equal(committed.get("allowed"), true, "valid gather transaction commits")
 	assertions.equal(tool.current_tool, ToolSystem.ToolType.PICKAXE, "commit automatically equips pickaxe")
 	assertions.equal(inventory.get_item_count("copper_ore"), 3, "commit adds the full copper vein")

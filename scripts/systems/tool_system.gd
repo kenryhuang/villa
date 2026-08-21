@@ -61,8 +61,6 @@ func configure(grid_sys, inv, player, farming_sys = null) -> void:
 
 func switch_tool(tool_type: ToolType) -> void:
 	current_tool = tool_type
-	if _event_bus:
-		_event_bus.item_added.emit(_tool_to_item_id(tool_type), 0)
 
 
 func switch_tool_by_id(tool_id: String) -> bool:
@@ -192,7 +190,6 @@ func commit_gather_unit(target: Node) -> Dictionary:
 	if _event_bus != null:
 		_event_bus.stamina_changed.emit(int(game_state.player_state.stamina))
 		_emit_durability_changed(str(preview.tool_id))
-		_event_bus.item_added.emit(str(preview.tool_id), 0)
 	_active_gather_transactions.erase(transaction_id)
 	return preview
 
