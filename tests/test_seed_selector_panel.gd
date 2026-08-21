@@ -136,6 +136,10 @@ func _test_controller_command_and_legacy_migration(assertions: TestAssert, tree:
 	var requests: Array = []
 	if controller.has_signal("seed_selection_requested"):
 		controller.seed_selection_requested.connect(func(cell): requests.append(cell))
+	assertions.truthy(
+		controller.switch_mode(PlayerActionController.ActionMode.FARMING),
+		"seed command fixture explicitly enters farming mode"
+	)
 	assertions.truthy(controller.select_mode_slot(PlayerActionController.SEED_SLOT), "slot 6 enters planting command")
 	assertions.equal(requests.size(), 1, "entering planting command requests the selector once")
 	assertions.truthy(controller.has_method("migrate_legacy_seed_quick_slot"), "controller exposes one-shot legacy seed migration")
@@ -162,6 +166,10 @@ func _test_hud_selection_survives_zero_quantity(assertions: TestAssert, tree: Sc
 	inventory.add_item("grain_seed", 2)
 	controller.configure(null, null, farming, null, null, inventory, null)
 	assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "HUD fixture selects grain independently")
+	assertions.truthy(
+		controller.switch_mode(PlayerActionController.ActionMode.FARMING),
+		"HUD seed fixture explicitly enters farming mode"
+	)
 	hud.configure_action_bar(controller, inventory)
 	assertions.equal(hud.get_active_plant_item_display(), "谷物种子 ×2", "HUD slot 6 shows selected seed and total quantity")
 	inventory.remove_item("grain_seed", 2)

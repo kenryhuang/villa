@@ -14,6 +14,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for _frame in 4:
 		await tree.process_frame
 		await tree.physics_frame
+	assertions.equal(
+		main.action_controller.get_action_mode(),
+		PlayerActionController.ActionMode.NONE,
+		"real Main starts without an action mode"
+	)
+	assertions.truthy(
+		not main.seed_selector_panel.visible,
+		"real Main does not open the seed selector at startup"
+	)
+	assertions.equal(
+		main.hud.get_palette_button_count(),
+		0,
+		"real Main hides shortcuts until P or B"
+	)
 
 	var routers: Array[Node] = []
 	_collect_routers(main, routers)
