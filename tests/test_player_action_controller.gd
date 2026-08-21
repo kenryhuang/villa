@@ -791,10 +791,19 @@ func _test_selection_and_transactions(
 		inventory,
 		farm_storage
 	)
+	var selector_requests: Array = []
+	controller.seed_selection_requested.connect(
+		func(cell: GridCell) -> void: selector_requests.append(cell)
+	)
+	assertions.equal(controller.get_action_mode(), -1, "controller starts without an action mode")
+	assertions.equal(controller.get_selected_slot(), -1, "controller starts without a selected slot")
 	assertions.truthy(controller.has_method("set_selected_plant_item_id"), "controller exposes explicit planting selection setter")
 	assertions.truthy(controller.has_method("get_last_action_failure_details"), "controller exposes general action failure details")
 	if controller.has_method("set_selected_plant_item_id"):
 		assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "authoritative seed mapping can be selected")
+		assertions.equal(controller.get_action_mode(), -1, "restoring a seed does not enter farming mode")
+		assertions.equal(controller.get_selected_slot(), -1, "restoring a seed does not select slot 6")
+		assertions.equal(selector_requests.size(), 0, "restoring a seed does not request the selector")
 		inventory.active_quick_item = "unknown_seed"
 		inventory.counts["grain_seed"] = 0
 		assertions.equal(controller.get_selected_plant_item_id(), "grain_seed", "explicit selection persists at zero quantity")
@@ -986,7 +995,9 @@ func _test_action_modes(
 		controller.free()
 		return
 
-	assertions.equal(controller.get_action_mode(), 0, "controller starts in farming mode")
+	assertions.equal(controller.get_action_mode(), -1, "controller starts without an action mode")
+	assertions.equal(controller.get_selected_slot(), -1, "controller starts without a selected slot")
+	assertions.equal(controller.slot_from_key(KEY_1), -1, "numeric shortcuts stay inactive before P or B")
 	for method_name in [
 		"get_building_category", "get_current_building_ids", "get_building_id_at",
 		"cycle_building_category", "set_building_category",
@@ -1002,9 +1013,9 @@ func _test_action_modes(
 		["workbench", "stone_kiln", "barn", "well"],
 		"basic category exposes four ordered buildings"
 	)
-	assertions.truthy(controller.switch_mode(1), "controller switches to building mode")
+	assertions.truthy(controller.switch_mode(PlayerActionController.ActionMode.BUILDING), "controller switches to building mode")
 	assertions.equal(
-		controller.get_mode_selected_slot(1),
+		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),
 		0,
 		"building mode defaults to first basic building"
 	)
@@ -1035,8 +1046,14 @@ func _test_action_modes(
 	assertions.truthy(controller.set_building_category("basic"), "category can be selected directly")
 	assertions.truthy(controller.select_mode_slot(3), "basic selection can be restored after category change")
 
-	assertions.truthy(controller.switch_mode(0), "controller switches back to farming")
+	var selector_requests: Array = []
+	controller.seed_selection_requested.connect(
+		func(cell: GridCell) -> void: selector_requests.append(cell)
+	)
+	assertions.truthy(controller.switch_mode(PlayerActionController.ActionMode.FARMING), "controller switches back to farming")
+	assertions.equal(selector_requests.size(), 0, "entering farming mode does not request the selector")
 	assertions.truthy(controller.select_mode_slot(5), "farming mode accepts slot six")
+	assertions.equal(selector_requests.size(), 1, "explicit slot six requests the selector exactly once")
 	assertions.truthy(not controller.select_mode_slot(6), "farming mode rejects slot seven")
 	assertions.equal(controller.slot_from_key(KEY_7), -1, "farming rejects key seven")
 	assertions.truthy(
@@ -1045,9 +1062,9 @@ func _test_action_modes(
 	)
 	assertions.equal(controller.get_selected_slot(), -1, "cancel clears active selection")
 
-	assertions.truthy(controller.switch_mode(1), "controller restores building mode")
+	assertions.truthy(controller.switch_mode(PlayerActionController.ActionMode.BUILDING), "controller restores building mode")
 	assertions.equal(
-		controller.get_mode_selected_slot(1),
+		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),
 		3,
 		"building mode remembers the last well selection"
 	)
@@ -1173,6 +1190,10 @@ func _test_pointer_contract(
 		"controller exposes keyboard slot mapping"
 	)
 	if controller.has_method("slot_from_key"):
+		assertions.truthy(
+			controller.switch_mode(PlayerActionController.ActionMode.FARMING),
+			"pointer fixture explicitly enters farming mode"
+		)
 		assertions.equal(controller.call("slot_from_key", KEY_1), 0, "key 1 selects first slot")
 		assertions.equal(controller.call("slot_from_key", KEY_6), 5, "key 6 selects seed slot")
 		assertions.equal(controller.call("slot_from_key", KEY_7), -1, "key 7 is not an action slot")

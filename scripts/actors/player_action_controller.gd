@@ -24,8 +24,9 @@ enum Action {
 }
 
 enum ActionMode {
-	FARMING,
-	BUILDING,
+	NONE = -1,
+	FARMING = 0,
+	BUILDING = 1,
 }
 
 const SEED_SLOT := 5
@@ -87,9 +88,9 @@ var gathering_controller: Variant
 var crop_data_override: CropData
 var _event_bus: Node
 
-var _action_mode := ActionMode.FARMING
-var _selected_slot := 0
-var _last_farming_slot := 0
+var _action_mode := ActionMode.NONE
+var _selected_slot := -1
+var _last_farming_slot := -1
 var _last_building_slot := 0
 var _building_category_index := 0
 var _pointer_position: Variant
@@ -195,7 +196,7 @@ func switch_mode(mode: ActionMode) -> bool:
 	_cancel_gathering("mode_changed")
 	if building_system != null and building_system.is_in_build_mode():
 		building_system.exit_preview_mode()
-	if grid_system != null:
+	if grid_system != null and _action_mode != ActionMode.NONE:
 		grid_system.clear_highlights()
 	_action_mode = mode
 	_selected_slot = (
@@ -203,10 +204,10 @@ func switch_mode(mode: ActionMode) -> bool:
 		if _action_mode == ActionMode.FARMING
 		else _last_building_slot
 	)
-	var activated := _activate_current_slot()
+	var activated := _activate_current_slot(false)
 	mode_changed.emit(_action_mode)
 	palette_changed.emit(_action_mode, _selected_slot)
-	return activated or (_action_mode == ActionMode.BUILDING and _selected_slot < 0)
+	return activated or _selected_slot < 0
 
 
 func get_action_mode() -> ActionMode:
@@ -346,7 +347,7 @@ func cancel_current_selection() -> bool:
 	return true
 
 
-func _activate_current_slot() -> bool:
+func _activate_current_slot(request_seed_selector: bool = true) -> bool:
 	if _selected_slot < 0:
 		return false
 	if _action_mode == ActionMode.BUILDING:
@@ -374,7 +375,7 @@ func _activate_current_slot() -> bool:
 	if _selected_slot < TOOL_BY_SLOT.size() and tool_system != null:
 		tool_system.switch_tool(TOOL_BY_SLOT[_selected_slot])
 	selection_changed.emit(_selected_slot, _farming_slot_label(_selected_slot))
-	if _selected_slot == SEED_SLOT:
+	if _selected_slot == SEED_SLOT and request_seed_selector:
 		seed_selection_requested.emit(null)
 	return true
 
@@ -397,6 +398,8 @@ func get_selected_slot() -> int:
 
 
 func slot_from_key(keycode: Key) -> int:
+	if _action_mode == ActionMode.NONE:
+		return -1
 	var index := -1
 	if keycode >= KEY_1 and keycode <= KEY_9:
 		index = int(keycode - KEY_1)
@@ -1171,9 +1174,6 @@ func set_selected_plant_item_id(plant_item_id: String) -> bool:
 		return true
 	_selected_plant_item_id = plant_item_id
 	plant_selection_changed.emit(plant_item_id)
-	# Ensure the action slot switches to SEED_SLOT so _plant() actually fires
-	if _selected_slot != SEED_SLOT:
-		select_slot(SEED_SLOT)
 	return true
 
 
