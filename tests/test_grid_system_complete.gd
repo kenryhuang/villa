@@ -60,8 +60,61 @@ func run(assertions: TestAssert) -> void:
 		BaseMaterial3D.CULL_DISABLED,
 		"highlight surface renders from the gameplay camera side"
 	)
+	var first_highlight_mesh := highlight.mesh
+	var first_highlight_material := highlight.material_override
+	assertions.truthy(
+		grid.highlight_cell(18, 14, Color.YELLOW),
+		"same cell highlights repeatedly"
+	)
+	assertions.truthy(
+		highlight.mesh == first_highlight_mesh,
+		"same-cell highlight reuses its mesh"
+	)
+	assertions.truthy(
+		highlight.material_override == first_highlight_material,
+		"same-cell highlight reuses its material"
+	)
+	assertions.truthy(
+		grid.highlight_cell(18, 14, Color.RED),
+		"same cell accepts a changed color"
+	)
+	assertions.truthy(
+		highlight.mesh == first_highlight_mesh,
+		"color changes do not rebuild geometry"
+	)
+	assertions.truthy(
+		highlight.material_override == first_highlight_material,
+		"color changes reuse material"
+	)
+	assertions.equal(
+		(highlight.material_override as StandardMaterial3D).albedo_color,
+		Color(1.0, 0.0, 0.0, 0.58),
+		"changed color reaches the reused material"
+	)
+	assertions.truthy(
+		grid.highlight_cell(19, 14, Color.RED),
+		"highlight moves to a neighboring cell"
+	)
+	assertions.truthy(
+		highlight.mesh != first_highlight_mesh,
+		"moving cells rebuilds geometry once"
+	)
+	assertions.equal(int(highlight.get_meta("gx", -1)), 19, "moved highlight stores x")
+	assertions.equal(int(highlight.get_meta("gz", -1)), 14, "moved highlight stores z")
+	var hidden_mesh := highlight.mesh
+	var hidden_material := highlight.material_override
 	grid.clear_highlights()
 	assertions.truthy(highlight != null and not highlight.visible, "clear hides the highlight")
+	assertions.truthy(
+		grid.highlight_cell(19, 14, Color.RED),
+		"hidden highlight restores"
+	)
+	assertions.truthy(highlight.visible, "restored highlight is visible")
+	assertions.truthy(highlight.mesh == hidden_mesh, "hide/show reuses mesh")
+	assertions.truthy(
+		highlight.material_override == hidden_material,
+		"hide/show reuses material"
+	)
 	assertions.truthy(not grid.highlight_cell(-1, 0, Color.YELLOW), "out-of-bounds highlight is rejected")
 
 	var farm_cell: GridCell = null

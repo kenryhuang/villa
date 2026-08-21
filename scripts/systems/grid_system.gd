@@ -585,30 +585,40 @@ func highlight_cell(gx: int, gz: int, color: Color) -> bool:
 	if highlight == null or terrain == null or not _is_in_bounds(gx, gz):
 		clear_highlights()
 		return false
-	var x0 := WORLD_ORIGIN_X + float(gx) * CELL_SIZE
-	var z0 := WORLD_ORIGIN_Z + float(gz) * CELL_SIZE
-	var x1 := x0 + CELL_SIZE
-	var z1 := z0 + CELL_SIZE
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var points := [
-		Vector3(x0, terrain.get_height_at(x0, z0) + HIGHLIGHT_LIFT, z0),
-		Vector3(x1, terrain.get_height_at(x1, z0) + HIGHLIGHT_LIFT, z0),
-		Vector3(x1, terrain.get_height_at(x1, z1) + HIGHLIGHT_LIFT, z1),
-		Vector3(x0, terrain.get_height_at(x0, z1) + HIGHLIGHT_LIFT, z1),
-	]
-	for point in points:
-		surface.add_vertex(point)
-	for index in [0, 2, 1, 0, 3, 2]:
-		surface.add_index(index)
-	highlight.mesh = surface.commit()
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = Color(color.r, color.g, color.b, minf(color.a, 0.58))
-	material.no_depth_test = true
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	highlight.material_override = material
+	var same_cell := (
+		highlight.mesh != null
+		and int(highlight.get_meta("gx", -1)) == gx
+		and int(highlight.get_meta("gz", -1)) == gz
+	)
+	if not same_cell:
+		var x0 := WORLD_ORIGIN_X + float(gx) * CELL_SIZE
+		var z0 := WORLD_ORIGIN_Z + float(gz) * CELL_SIZE
+		var x1 := x0 + CELL_SIZE
+		var z1 := z0 + CELL_SIZE
+		var surface := SurfaceTool.new()
+		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var points := [
+			Vector3(x0, terrain.get_height_at(x0, z0) + HIGHLIGHT_LIFT, z0),
+			Vector3(x1, terrain.get_height_at(x1, z0) + HIGHLIGHT_LIFT, z0),
+			Vector3(x1, terrain.get_height_at(x1, z1) + HIGHLIGHT_LIFT, z1),
+			Vector3(x0, terrain.get_height_at(x0, z1) + HIGHLIGHT_LIFT, z1),
+		]
+		for point in points:
+			surface.add_vertex(point)
+		for index in [0, 2, 1, 0, 3, 2]:
+			surface.add_index(index)
+		highlight.mesh = surface.commit()
+	var material := highlight.material_override as StandardMaterial3D
+	if material == null:
+		material = StandardMaterial3D.new()
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.no_depth_test = true
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		highlight.material_override = material
+	var display_color := Color(color.r, color.g, color.b, minf(color.a, 0.58))
+	if material.albedo_color != display_color:
+		material.albedo_color = display_color
 	highlight.set_meta("gx", gx)
 	highlight.set_meta("gz", gz)
 	highlight.visible = true
