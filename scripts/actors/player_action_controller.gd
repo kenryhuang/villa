@@ -858,8 +858,6 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 
 
 func _plant(cell: GridCell) -> bool:
-	if get_selected_plant_item_id().is_empty():
-		seed_selection_requested.emit(cell)
 	var preview := preview_plant_action(cell)
 	if not bool(preview.get("ok", false)):
 		_set_last_action_failure(preview, true)

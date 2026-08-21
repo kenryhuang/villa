@@ -849,6 +849,20 @@ func _test_selection_and_transactions(
 
 	assertions.truthy(controller.select_slot(5), "seed slot can be selected")
 	assertions.equal(controller.get_selected_slot(), 5, "seed selection is retained")
+	selector_requests.clear()
+	assertions.truthy(controller.set_selected_plant_item_id(""), "seed selection can be cleared while slot six stays active")
+	var empty_seed_farmland := GridCell.new()
+	empty_seed_farmland.state = GridCell.State.FARMLAND
+	assertions.truthy(
+		not controller.perform_cell_action(empty_seed_farmland),
+		"planting without a selected seed fails"
+	)
+	assertions.equal(
+		selector_requests.size(),
+		0,
+		"clicking farmland without a seed does not reopen the selector"
+	)
+	assertions.truthy(controller.set_selected_plant_item_id("grain_seed"), "seed selection restores after empty-seed regression")
 
 	assertions.truthy(
 		controller.has_method("deselect_slot"),
