@@ -30,6 +30,7 @@ class FixedDaySource:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	await _test_market_refresh_is_hidden_gated_and_visible_coalesced(assertions, tree)
 	await _test_main_owned_routing_contract(assertions, tree)
 	await _test_hud_market_sale_and_large_confirmation(assertions, tree)
 	await _test_order_delivery_updates_every_authority(assertions, tree)
@@ -42,6 +43,97 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_blueprint_service_is_idempotent(assertions, tree)
 	await _test_merged_notifications_navigate_to_target(assertions, tree)
 	await _test_every_modal_restores_original_pause(assertions, tree)
+
+
+func _test_market_refresh_is_hidden_gated_and_visible_coalesced(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state := tree.root.get_node("GameState")
+	var saved := _snapshot_wallet(game_state)
+	var original_pause := tree.paused
+	game_state.gold = 1000
+	var inventory := InventorySystemScript.new() as InventorySystem
+	var market := MarketSystemScript.new() as MarketSystem
+	var economy := EconomySystemScript.new() as EconomySystem
+	for node in [inventory, market, economy]:
+		tree.root.add_child(node)
+	assertions.truthy(
+		market.configure([
+			_market_definition("grain", 10, 20, 20, 10),
+			_market_definition("grain_seed", 4, 20, 20, 10),
+		]),
+		"market refresh-gating fixture configures the real market"
+	)
+	assertions.truthy(
+		economy.configure(inventory, game_state, market),
+		"market refresh-gating fixture configures the real economy"
+	)
+	assertions.truthy(
+		inventory.add_item("grain_seed", 3),
+		"market refresh-gating fixture owns tradable seeds"
+	)
+	var shop := ShopScene.instantiate()
+	tree.root.add_child(shop)
+	await tree.process_frame
+	assertions.truthy(shop.configure(inventory, economy, market), "market refresh-gating fixture configures real ShopUI")
+	shop.open("market")
+	shop.market_panel.select_category("crops")
+	shop.market_panel.select_item("grain_seed")
+	await tree.process_frame
+	var panel: MarketPanel = shop.market_panel
+	var trade: TradePanel = panel.trade_panel
+	var hidden_row_ids: Array[int] = _market_row_instance_ids(panel)
+	var hidden_quote: String = str(trade.player_quantity_label.text)
+	shop.close()
+	assertions.truthy(inventory.remove_item("grain_seed", 1), "hidden ShopUI mutation emits real inventory removal")
+	await tree.process_frame
+	assertions.equal(
+		_market_row_instance_ids(panel),
+		hidden_row_ids,
+		"hidden market keeps existing row instances until its authoritative refresh entry point"
+	)
+	assertions.equal(
+		trade.player_quantity_label.text,
+		hidden_quote,
+		"hidden trade panel keeps its existing quote until visible"
+	)
+	shop.open("market")
+	await tree.process_frame
+	var reopened_seed_row := _find_meta_control(panel.item_rows, "item_id", "grain_seed")
+	assertions.equal(
+		int(reopened_seed_row.get_meta("owned", -1)),
+		2,
+		"reopened market page reads the authoritative seed quantity"
+	)
+	assertions.equal(trade.player_quantity_label.text, "2", "reopened market reads the authoritative seed quantity")
+
+	var visible_row_ids: Array[int] = _market_row_instance_ids(panel)
+	var entered_row_ids: Array[int] = []
+	var row_enter_callback := func(child: Node) -> void:
+		if child.has_meta("item_id"):
+			entered_row_ids.append(child.get_instance_id())
+	panel.item_rows.child_entered_tree.connect(row_enter_callback)
+	assertions.truthy(inventory.add_item("grain_seed", 2), "visible coalescing fixture adds seeds")
+	assertions.truthy(inventory.remove_item("grain_seed", 1), "visible coalescing fixture removes seeds")
+	assertions.equal(
+		_market_row_instance_ids(panel),
+		visible_row_ids,
+		"same-frame authority changes do not rebuild market rows before the deferred frame"
+	)
+	await tree.process_frame
+	assertions.equal(
+		entered_row_ids.size(),
+		visible_row_ids.size(),
+		"same-frame authority changes perform one complete market-row rebuild"
+	)
+	assertions.equal(trade.player_quantity_label.text, "3", "coalesced trade quote reads the final authoritative quantity")
+	if panel.item_rows.child_entered_tree.is_connected(row_enter_callback):
+		panel.item_rows.child_entered_tree.disconnect(row_enter_callback)
+	shop.close()
+	tree.paused = original_pause
+	_free_nodes([shop, economy, market, inventory])
+	_restore_wallet(game_state, saved)
 
 
 func _test_order_contract_panels_follow_farm_storage(
@@ -815,6 +907,14 @@ func _find_meta_control(root_node: Node, key: String, value: String) -> Control:
 		if found != null:
 			return found
 	return null
+
+
+func _market_row_instance_ids(panel: MarketPanel) -> Array[int]:
+	var ids: Array[int] = []
+	for child in panel.item_rows.get_children():
+		if child.has_meta("item_id"):
+			ids.append(child.get_instance_id())
+	return ids
 
 
 func _snapshot_wallet(wallet: Node) -> Dictionary:

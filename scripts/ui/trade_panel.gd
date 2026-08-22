@@ -35,6 +35,7 @@ var _confirmation_snapshot: Dictionary = {}
 var _event_bus: Node
 var _refreshing_quote := false
 var _quote_refresh_queued := false
+var _quote_refresh_pending := false
 var _underlying_focus_modes: Dictionary = {}
 var _focus_before_confirmation: Control
 
@@ -86,6 +87,7 @@ func set_item(next_item_id: String) -> void:
 func refresh_quote() -> void:
 	if not is_node_ready() or _refreshing_quote:
 		return
+	_quote_refresh_pending = false
 	_refreshing_quote = true
 	var state := market_ref.get_item_state(item_id) if market_ref != null else {}
 	var stock := int(state.get("stock", 0))
@@ -549,6 +551,9 @@ func _on_authoritative_snapshot_changed() -> void:
 		var preflight := _trade_preflight(pending_quantity, pending_is_buy)
 		var reason := _localized_trade_failure(preflight)
 		_invalidate_confirmation(reason if not reason.is_empty() else "状态已变化，请重新确认")
+	_quote_refresh_pending = true
+	if not is_visible_in_tree():
+		return
 	if _quote_refresh_queued:
 		return
 	_quote_refresh_queued = true
@@ -557,7 +562,8 @@ func _on_authoritative_snapshot_changed() -> void:
 
 func _do_queued_quote_refresh() -> void:
 	_quote_refresh_queued = false
-	refresh_quote()
+	if is_inside_tree() and is_visible_in_tree() and _quote_refresh_pending:
+		refresh_quote()
 
 
 func _invalidate_confirmation(message: String) -> void:
@@ -622,4 +628,6 @@ func _clear_feedback() -> void:
 
 
 func _exit_tree() -> void:
+	_quote_refresh_queued = false
+	_quote_refresh_pending = false
 	_disconnect_authoritative_signals()

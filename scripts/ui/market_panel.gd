@@ -63,6 +63,7 @@ var _drawer_open := false
 var _logical_layout_size := Vector2.ZERO
 var _event_bus: Node
 var _authoritative_refresh_scheduled := false
+var _authoritative_refresh_pending := false
 
 
 func _enter_tree() -> void:
@@ -106,6 +107,7 @@ func configure(
 
 
 func refresh_market() -> void:
+	_authoritative_refresh_pending = false
 	_on_trade_snapshot_changed()
 
 
@@ -717,6 +719,9 @@ func _on_storage_changed(_changes: Dictionary) -> void:
 
 
 func _schedule_authoritative_refresh() -> void:
+	_authoritative_refresh_pending = true
+	if not is_visible_in_tree():
+		return
 	if _authoritative_refresh_scheduled:
 		return
 	_authoritative_refresh_scheduled = true
@@ -725,10 +730,11 @@ func _schedule_authoritative_refresh() -> void:
 
 func _flush_authoritative_refresh() -> void:
 	_authoritative_refresh_scheduled = false
-	if is_inside_tree():
-		_on_trade_snapshot_changed()
+	if is_inside_tree() and is_visible_in_tree() and _authoritative_refresh_pending:
+		refresh_market()
 
 
 func _exit_tree() -> void:
 	_authoritative_refresh_scheduled = false
+	_authoritative_refresh_pending = false
 	_disconnect_authoritative_signals()
