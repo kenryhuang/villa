@@ -7,9 +7,10 @@ const STAGE_COUNT := 4
 const VARIANT_COUNT := 3
 const LAYERS := ["back", "front"]
 
-const CROP_IDS: Array[String] = [
-	"carrot", "potato", "tomato", "strawberry", "blueberry",
-	"watermelon", "sunflower", "lavender", "pumpkin", "rose",
+const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose"]
+const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = [
+	"carrot", "strawberry", "blueberry",
+	"watermelon", "sunflower", "pumpkin",
 	"apple", "peach", "grape", "lemon",
 ]
 
@@ -27,9 +28,29 @@ static func stage_scene_path(crop_id: String, stage: int) -> String:
 
 
 func run(assertions: TestAssert) -> void:
-	for crop_id in CROP_IDS:
+	for crop_id in LEGACY_FOUR_STAGE_CROP_IDS:
 		_validate_painted_textures(crop_id, assertions)
 		_validate_stage_scenes(crop_id, assertions)
+	for crop_id in TWO_STAGE_CROP_IDS:
+		_validate_two_stage_crop(crop_id, assertions)
+
+
+func _validate_two_stage_crop(crop_id: String, assertions: TestAssert) -> void:
+	for stage in STAGE_COUNT:
+		for variant in VARIANT_COUNT:
+			for layer in LAYERS:
+				var path := texture_path(crop_id, stage, variant, layer)
+				var required := stage in [0, 3] and variant == 0
+				assertions.equal(ResourceLoader.exists(path), required, "%s exact two-stage texture contract: %s" % [crop_id, path])
+				if not required or not ResourceLoader.exists(path):
+					continue
+				var texture := load(path) as Texture2D
+				assertions.truthy(texture != null, "%s imports as Texture2D" % path)
+				if texture != null:
+					assertions.equal(texture.get_size(), Vector2(1024, 1024), "%s is 1024 square" % path)
+					assertions.truthy(texture.get_image().detect_alpha(), "%s contains alpha" % path)
+	for stage in STAGE_COUNT:
+		assertions.equal(ResourceLoader.exists(stage_scene_path(crop_id, stage)), stage in [0, 3], "%s exact two-stage scene contract at logical stage %d" % [crop_id, stage])
 
 
 func _validate_painted_textures(crop_id: String, assertions: TestAssert) -> void:

@@ -3,11 +3,13 @@ extends RefCounted
 ## Validate that all 14 non-grain crops have stage scenes with CropSpriteCluster
 ## and appropriate 3D mesh children. Follows test_grain_crop_models.gd pattern.
 
-const CROP_IDS: Array[String] = [
-	"carrot", "potato", "tomato", "strawberry", "blueberry",
-	"watermelon", "sunflower", "lavender", "pumpkin", "rose",
+const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose"]
+const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = [
+	"carrot", "strawberry", "blueberry",
+	"watermelon", "sunflower", "pumpkin",
 	"apple", "peach", "grape", "lemon",
 ]
+const CROP_IDS: Array[String] = TWO_STAGE_CROP_IDS + LEGACY_FOUR_STAGE_CROP_IDS
 
 const MINIMUM_MESH_COUNTS := [2, 3, 3, 3]
 const ClusterScript = preload("res://scripts/visual/crop_sprite_cluster.gd")
@@ -29,7 +31,7 @@ func _mesh_instances(root: Node) -> Array[MeshInstance3D]:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
-	for crop_id in CROP_IDS:
+	for crop_id in LEGACY_FOUR_STAGE_CROP_IDS:
 		for stage in 4:
 			var path := stage_scene_path(crop_id, stage)
 			assertions.truthy(ResourceLoader.exists(path), "%s stage %d scene exists" % [crop_id, stage])
@@ -60,6 +62,25 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				model.free()
 			else:
 				model.free()
+	for crop_id in TWO_STAGE_CROP_IDS:
+		for stage in [0, 3]:
+			var path := stage_scene_path(crop_id, stage)
+			assertions.truthy(ResourceLoader.exists(path), "%s two-stage scene exists" % path)
+			if not ResourceLoader.exists(path):
+				continue
+			var model := (load(path) as PackedScene).instantiate() as Node3D
+			assertions.truthy(model.get_script() == ClusterScript, "%s uses CropSpriteCluster" % path)
+			assertions.equal(_mesh_instances(model).size(), 0, "%s has no procedural crop meshes" % path)
+			assertions.equal(model.back_texture_paths.size(), 1, "%s owns one back sprite" % path)
+			assertions.equal(model.front_texture_paths.size(), 1, "%s owns one front sprite" % path)
+			model.configure_variant_seed(7)
+			tree.root.add_child(model)
+			assertions.equal(model.get_variant_index(), 0, "%s always selects variant zero" % path)
+			var back := model.get_node_or_null("BackLayer") as Sprite3D
+			var front := model.get_node_or_null("FrontLayer") as Sprite3D
+			assertions.truthy(back != null and back.visible and back.texture != null, "%s renders its back layer" % path)
+			assertions.truthy(front != null and front.visible and front.texture != null, "%s renders its front layer" % path)
+			model.free()
 
 	# Verify that default_crop_definitions assigns stage_scenes for all crops
 	# Only when Main script is accessible (not in isolated test context)
