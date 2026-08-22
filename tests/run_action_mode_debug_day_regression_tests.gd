@@ -16,7 +16,7 @@ func _run() -> void:
 	var assertions := TestAssertScript.new()
 	await MainWiringTest.new().run(assertions, self)
 	ControllerTest.new().run(assertions, self)
-	HudTest.new().run(assertions, self)
+	await HudTest.new().run(assertions, self)
 	SeasonTest.new().run(assertions)
 	DebugCropDayTest.new().run(assertions, self)
 	if assertions.failures.is_empty():

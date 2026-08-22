@@ -5,6 +5,7 @@ const ActionPaletteButtonScript = preload(
 	"res://scripts/ui/action_palette_button.gd"
 )
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const HudMessageBusScript = preload("res://scripts/ui/hud_message_bus.gd")
 
 
 class ToolDouble:
@@ -86,6 +87,22 @@ class EconomyDouble:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var hud = HudScene.instantiate()
 	tree.root.add_child(hud)
+	await tree.process_frame
+	var message_bus := HudMessageBusScript.new()
+	tree.root.add_child(message_bus)
+	assertions.truthy(hud.has_method("configure_message_bus"), "HUD exposes message bus configuration")
+	if not hud.has_method("configure_message_bus"):
+		hud.free()
+		message_bus.free()
+		return
+	assertions.truthy(hud.configure_message_bus(message_bus), "HUD accepts the session message bus")
+	assertions.truthy(hud.get_node_or_null("MessageStream") != null, "HUD authors the right message stream")
+	assertions.truthy(hud.get_node_or_null("BottomBar/ActionRow/ModeSwitch/FarmingModeButton") is Button, "HUD authors the farming mode mouse button")
+	assertions.truthy(hud.get_node_or_null("BottomBar/ActionRow/ModeSwitch/BuildingModeButton") is Button, "HUD authors the building mode mouse button")
+	assertions.truthy(not hud.has_node("BottomBar/ModeMenu"), "legacy mode popup is removed")
+	assertions.truthy(not hud.has_node("BottomBar/BuildFeedbackToast"), "legacy build toast is removed")
+	assertions.truthy(not hud.has_node("BottomBar/ActionHintToast"), "legacy action hint toast is removed")
+	assertions.truthy(not hud.has_node("UrgentSummaries"), "urgent summaries move into the message stream")
 	var debug_actions := hud.get_node_or_null("DebugActions")
 	var debug_panel_button := hud.get_node_or_null("DebugActions/DebugPanelButton")
 	var debug_reset_button := hud.get_node_or_null("DebugActions/DebugResetButton")
@@ -206,8 +223,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"selected building cost bar is authored"
 	)
 	assertions.truthy(
-		hud.get_node_or_null("BottomBar/BuildFeedbackToast") is PanelContainer,
-		"building feedback toast is authored"
+		hud.get_node_or_null("MessageStream") is PanelContainer,
+		"building feedback uses the message stream"
 	)
 	assertions.truthy(
 		hud.get_node_or_null("BottomBar/BuildCategoryBar") is HBoxContainer,
@@ -219,8 +236,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 	assertions.truthy(hud.has_signal("building_unlock_requested"), "HUD exposes blueprint deep-link signal")
 	assertions.truthy(
-		hud.get_node_or_null("BuildFeedbackTimer") is Timer,
-		"building feedback timer is authored"
+		not hud.has_node("BuildFeedbackTimer") and not hud.has_node("ActionHintTimer"),
+		"transient feedback timers are removed"
 	)
 	assertions.truthy(
 		hud.get_node("TopBar") is PanelContainer,
@@ -298,10 +315,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		0,
 		"startup HUD hides action shortcuts before P or B"
 	)
-	assertions.truthy(
-		controller.switch_mode(PlayerActionController.ActionMode.FARMING),
-		"HUD fixture explicitly enters farming mode"
-	)
+	await _click_button(hud.farming_mode_button, tree)
+	assertions.equal(controller.get_action_mode(), PlayerActionController.ActionMode.FARMING, "farming mouse button uses the controller mode path")
 	assertions.equal(hud.get_palette_button_count(), 6, "P reveals six farming shortcuts")
 	var mapping_handler := Callable(hud, "_on_quick_slot_mapping_changed")
 	assertions.truthy(
@@ -451,7 +466,6 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	var has_mode_palette_api := (
 		hud.has_method("rebuild_action_palette")
-		and hud.has_method("set_mode_menu_open")
 		and hud.has_method("get_palette_button_count")
 	)
 	assertions.truthy(has_mode_palette_api, "HUD exposes dynamic mode palette API")
@@ -463,16 +477,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		return
 
 	assertions.equal(hud.get_palette_button_count(), 6, "farming palette has six buttons")
-	assertions.truthy(
-		hud.mode_button is ActionPaletteButtonScript,
-		"mode switch uses the large tile"
-	)
-	if hud.mode_button is ActionPaletteButtonScript:
-		assertions.equal(
-			hud.mode_button.name_label.text,
-			"种植",
-			"mode button shows farming mode"
-		)
+	assertions.truthy(hud.farming_mode_button.toggle_mode and hud.building_mode_button.toggle_mode, "mode controls are persistent toggle buttons")
+	assertions.truthy(hud.farming_mode_button.button_pressed, "farming mouse button reflects active mode")
+	assertions.truthy(hud.farming_mode_button.text.contains("P") and hud.building_mode_button.text.contains("B"), "mode controls show keyboard shortcuts")
 	assertions.truthy(
 		hud.tool_label.get_theme_font_size("font_size") >= 28,
 		"selection text is readable"
@@ -495,10 +502,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			child is ActionPaletteButtonScript and child.icon_rect.texture != null,
 			"every farming palette button has an icon"
 		)
-	assertions.truthy(
-		controller.switch_mode(PlayerActionController.ActionMode.BUILDING),
-		"controller enters building mode for HUD"
-	)
+	await _click_button(hud.building_mode_button, tree)
+	assertions.equal(controller.get_action_mode(), PlayerActionController.ActionMode.BUILDING, "building mouse button uses the controller mode path")
 	assertions.truthy(controller.select_mode_slot(3), "affordable well can be selected")
 	assertions.equal(hud.tool_label.text, "水井", "building slot four shows the well label")
 	inventory.set_quick_slot(carrot_slot, PlayerActionController.SEED_SLOT)
@@ -510,12 +515,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(hud.get_palette_button_count(), 4, "current building category has four buttons")
 	assertions.equal(hud.build_category_bar.get_child_count(), 5, "building palette has five category buttons")
 	assertions.truthy(hud.build_category_bar.visible, "building categories appear only in building mode")
-	if hud.mode_button is ActionPaletteButtonScript:
-		assertions.equal(
-			hud.mode_button.name_label.text,
-			"建造",
-			"mode button shows building mode"
-		)
+	assertions.truthy(hud.building_mode_button.button_pressed, "building mouse button reflects active mode")
 	assertions.truthy(
 		hud.get_node("BottomBar/ActionRow").get_combined_minimum_size().x <= 1280.0,
 		"complete building palette fits a 1280-pixel-wide window"
@@ -554,22 +554,20 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 	assertions.truthy(
 		hud.has_method("show_build_feedback"),
-		"HUD exposes building feedback Toast"
+		"HUD keeps the building feedback adapter"
 	)
 	if hud.has_method("show_build_feedback"):
-		var toast = hud.get_node("BottomBar/BuildFeedbackToast")
 		hud.show_build_feedback("无法建造谷仓：木材还缺 58", {})
-		assertions.truthy(toast.visible, "building feedback Toast becomes visible")
 		assertions.equal(
-			toast.get_node("Message").text,
+			str(message_bus.get_recent()[-1].text),
 			"无法建造谷仓：木材还缺 58",
-			"building feedback Toast shows the specific reason"
+			"building feedback enters the message stream"
 		)
 		hud.show_build_feedback("无法建造谷仓：目标区域包含道路", {})
 		assertions.equal(
-			hud.get_node("BottomBar/BuildFeedbackToast"),
-			toast,
-			"repeated feedback reuses one Toast"
+			message_bus.get_recent().size(),
+			2,
+			"distinct feedback appends to one stream"
 		)
 
 	inventory.add_item("plank", 8)
@@ -599,9 +597,6 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		1,
 		"mouse selects fence through the shared controller API"
 	)
-	hud.set_mode_menu_open(true)
-	assertions.truthy(hud.mode_menu.visible, "mode menu can open above the palette")
-
 	var replacement_inventory = inventory_script.new()
 	tree.root.add_child(replacement_inventory)
 	replacement_inventory.add_item("grain_seed", 1)
@@ -679,13 +674,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"replacement selection",
 		"old controller selection emissions do nothing"
 	)
-	var toast = hud.get_node("BottomBar/BuildFeedbackToast")
-	toast.visible = false
+	var message_count_before_stale := message_bus.get_recent().size()
 	controller.inventory_changed.emit()
 	controller.mode_changed.emit(PlayerActionController.ActionMode.BUILDING)
 	controller.palette_changed.emit(PlayerActionController.ActionMode.BUILDING, 0)
 	controller.build_feedback_requested.emit("stale feedback", {})
-	assertions.truthy(not toast.visible, "old controller feedback emissions do nothing")
+	assertions.equal(message_bus.get_recent().size(), message_count_before_stale, "old controller feedback emissions do nothing")
 
 	controller.free()
 	replacement_controller.free()
@@ -693,3 +687,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	replacement_inventory.free()
 	season.free()
 	hud.free()
+	message_bus.free()
+
+
+func _click_button(button: Button, tree: SceneTree) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	button.gui_input.emit(press)
+	await tree.process_frame

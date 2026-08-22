@@ -59,7 +59,7 @@ func _run() -> void:
 	ToolActionTransactionTest.new().run(assertions, self)
 	PlayerActionControllerTest.new().run(assertions, self)
 	ActionPaletteButtonTest.new().run(assertions, self)
-	HudActionBarTest.new().run(assertions, self)
+	await HudActionBarTest.new().run(assertions, self)
 	GatheringControllerTest.new().run(assertions, self)
 	await GatheringVisualsTest.new().run(assertions, self)
 	await MainGatheringIntegrationTest.new().run(assertions, self)

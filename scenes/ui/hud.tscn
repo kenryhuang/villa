@@ -1,17 +1,18 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource path="res://scripts/ui/hud.gd" type="Script" id="1"]
-[ext_resource type="PackedScene" path="res://scenes/ui/action_palette_button.tscn" id="2_action"]
 [ext_resource type="Texture2D" path="res://assets/ui/material_icons/wood.svg" id="3_wood"]
 [ext_resource type="Texture2D" path="res://assets/ui/material_icons/stone.svg" id="4_stone"]
 [ext_resource type="Texture2D" path="res://assets/ui/material_icons/iron.svg" id="5_iron"]
 [ext_resource type="Texture2D" path="res://assets/ui/material_icons/glass.svg" id="6_glass"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud_message_stream.tscn" id="7_stream"]
+[ext_resource type="Theme" path="res://assets/ui/hud/hud_theme.tres" id="8_theme"]
 
 [sub_resource type="StyleBoxFlat" id="TopPanelStyle"]
 content_margin_left = 18.0
-content_margin_top = 12.0
+content_margin_top = 7.0
 content_margin_right = 18.0
-content_margin_bottom = 12.0
+content_margin_bottom = 7.0
 bg_color = Color(0.105, 0.145, 0.12, 0.9)
 border_width_left = 2
 border_width_top = 2
@@ -23,21 +24,8 @@ corner_radius_top_right = 12
 corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
-[sub_resource type="StyleBoxFlat" id="ToastPanelStyle"]
-content_margin_left = 18.0
-content_margin_top = 10.0
-content_margin_right = 18.0
-content_margin_bottom = 10.0
-bg_color = Color(0.29, 0.13, 0.12, 0.96)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.94, 0.48, 0.35, 1)
-corner_radius_top_left = 10
-corner_radius_top_right = 10
-corner_radius_bottom_right = 10
-corner_radius_bottom_left = 10
+[sub_resource type="ButtonGroup" id="ModeButtonGroup"]
+allow_unpress = false
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
@@ -89,23 +77,12 @@ theme_override_font_sizes/font_size = 20
 text = "通知 0"
 tooltip_text = "查看经营通知"
 
-[node name="UrgentSummaries" type="VBoxContainer" parent="."]
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -462.0
-offset_top = 164.0
-offset_right = -108.0
-offset_bottom = 276.0
-grow_horizontal = 0
-mouse_filter = 2
-theme_override_constants/separation = 4
-
 [node name="TopBar" type="PanelContainer" parent="."]
 offset_left = 20.0
 offset_top = 20.0
 offset_right = 1180.0
-offset_bottom = 92.0
+offset_bottom = 82.0
+theme = ExtResource("8_theme")
 theme_override_styles/panel = SubResource("TopPanelStyle")
 
 [node name="StatusRow" type="HBoxContainer" parent="TopBar"]
@@ -170,7 +147,10 @@ offset_left = 20.0
 offset_top = 104.0
 offset_right = 470.0
 offset_bottom = 162.0
+theme = ExtResource("8_theme")
 theme_override_styles/panel = SubResource("TopPanelStyle")
+
+[node name="MessageStream" parent="." instance=ExtResource("7_stream")]
 
 [node name="MaterialsRow" type="HBoxContainer" parent="MaterialsPanel"]
 layout_mode = 2
@@ -276,35 +256,8 @@ offset_right = 640.0
 offset_bottom = -18.0
 grow_horizontal = 2
 grow_vertical = 0
+theme = ExtResource("8_theme")
 theme_override_constants/separation = 6
-
-[node name="BuildFeedbackToast" type="PanelContainer" parent="BottomBar"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("ToastPanelStyle")
-
-[node name="Message" type="Label" parent="BottomBar/BuildFeedbackToast"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
-theme_override_colors/font_outline_color = Color(0.16, 0.06, 0.05, 1)
-theme_override_constants/outline_size = 3
-theme_override_font_sizes/font_size = 24
-text = "无法建造"
-horizontal_alignment = 1
-
-[node name="ActionHintToast" type="PanelContainer" parent="BottomBar"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("ToastPanelStyle")
-
-[node name="Message" type="Label" parent="BottomBar/ActionHintToast"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
-theme_override_colors/font_outline_color = Color(0.16, 0.06, 0.05, 1)
-theme_override_constants/outline_size = 3
-theme_override_font_sizes/font_size = 22
-text = ""
-horizontal_alignment = 1
 
 [node name="BuildCategoryBar" type="HBoxContainer" parent="BottomBar"]
 visible = false
@@ -373,36 +326,32 @@ theme_override_font_sizes/font_size = 28
 text = "锄头"
 horizontal_alignment = 1
 
-[node name="ModeMenu" type="PopupPanel" parent="BottomBar"]
-size = Vector2i(260, 140)
-
-[node name="VBox" type="VBoxContainer" parent="BottomBar/ModeMenu"]
-offset_left = 10.0
-offset_top = 10.0
-offset_right = 250.0
-offset_bottom = 130.0
-theme_override_constants/separation = 8
-
-[node name="FarmingModeButton" type="Button" parent="BottomBar/ModeMenu/VBox"]
-custom_minimum_size = Vector2(240, 56)
-layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "种植模式  P"
-
-[node name="BuildingModeButton" type="Button" parent="BottomBar/ModeMenu/VBox"]
-custom_minimum_size = Vector2(240, 56)
-layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "建造模式  B"
-
 [node name="ActionRow" type="HBoxContainer" parent="BottomBar"]
 layout_mode = 2
 theme_override_constants/separation = 6
 alignment = 1
 
-[node name="ModeButton" parent="BottomBar/ActionRow" instance=ExtResource("2_action")]
+[node name="ModeSwitch" type="HBoxContainer" parent="BottomBar/ActionRow"]
 layout_mode = 2
-toggle_mode = false
+theme_override_constants/separation = 4
+
+[node name="FarmingModeButton" type="Button" parent="BottomBar/ActionRow/ModeSwitch"]
+custom_minimum_size = Vector2(148, 56)
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ModeButtonGroup")
+theme_override_font_sizes/font_size = 21
+text = "种植  P"
+tooltip_text = "进入种植模式（P）"
+
+[node name="BuildingModeButton" type="Button" parent="BottomBar/ActionRow/ModeSwitch"]
+custom_minimum_size = Vector2(148, 56)
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ModeButtonGroup")
+theme_override_font_sizes/font_size = 21
+text = "建造  B"
+tooltip_text = "进入建造模式（B）"
 
 [node name="QuickBar" type="HBoxContainer" parent="BottomBar/ActionRow"]
 layout_mode = 2
@@ -456,11 +405,3 @@ text = "前往解锁"
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 text = "关闭"
-
-[node name="BuildFeedbackTimer" type="Timer" parent="."]
-wait_time = 2.5
-one_shot = true
-
-[node name="ActionHintTimer" type="Timer" parent="."]
-wait_time = 2.5
-one_shot = true

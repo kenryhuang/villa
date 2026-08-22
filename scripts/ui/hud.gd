@@ -17,6 +17,7 @@ const ActionPaletteButtonScene = preload(
 const ActionPaletteButtonScript = preload(
 	"res://scripts/ui/action_palette_button.gd"
 )
+const HudMessageBusScript = preload("res://scripts/ui/hud_message_bus.gd")
 const ACTION_NAMES := ["锄头", "浇水壶", "斧头", "镐", "鱼竿", "种苗"]
 const BUILDING_NAMES := ["谷仓", "温室", "风车", "鸡舍", "蜂箱", "水井", "工作台", "路灯", "围栏"]
 const FARMING_ICON_PATHS: Array[String] = [
@@ -40,7 +41,6 @@ const MATERIAL_ICON_PATHS := {
 	"iron": "res://assets/ui/material_icons/iron.svg",
 	"glass": "res://assets/ui/material_icons/glass.svg",
 }
-const MODE_MENU_CLOSE_DELAY := 0.15
 const COST_AVAILABLE_COLOR := Color(1.0, 0.945, 0.816, 1.0)
 const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 
@@ -55,23 +55,14 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var debug_reset_button: Button = $DebugActions/DebugResetButton
 @onready var market_button: Button = $EconomyActions/MarketButton
 @onready var notification_button: Button = $EconomyActions/NotificationButton
-@onready var urgent_summaries: VBoxContainer = $UrgentSummaries
-@onready var mode_menu: PopupPanel = $BottomBar/ModeMenu
-@onready var mode_menu_content: VBoxContainer = $BottomBar/ModeMenu/VBox
-@onready var farming_mode_button: Button = $BottomBar/ModeMenu/VBox/FarmingModeButton
-@onready var building_mode_button: Button = $BottomBar/ModeMenu/VBox/BuildingModeButton
-@onready var mode_button: Button = $BottomBar/ActionRow/ModeButton
+@onready var message_stream: PanelContainer = $MessageStream
+@onready var farming_mode_button: Button = $BottomBar/ActionRow/ModeSwitch/FarmingModeButton
+@onready var building_mode_button: Button = $BottomBar/ActionRow/ModeSwitch/BuildingModeButton
 @onready var quick_bar: HBoxContainer = $BottomBar/ActionRow/QuickBar
 @onready var tool_label: Label = $BottomBar/ToolLabel
 @onready var build_cost_bar: PanelContainer = $BottomBar/BuildCostBar
 @onready var building_cost_label: Label = $BottomBar/BuildCostBar/CostRow/BuildingLabel
 @onready var building_costs: HBoxContainer = $BottomBar/BuildCostBar/CostRow/Costs
-@onready var build_feedback_toast: PanelContainer = $BottomBar/BuildFeedbackToast
-@onready var build_feedback_label: Label = $BottomBar/BuildFeedbackToast/Message
-@onready var build_feedback_timer: Timer = $BuildFeedbackTimer
-@onready var action_hint_toast: PanelContainer = $BottomBar/ActionHintToast
-@onready var action_hint_label: Label = $BottomBar/ActionHintToast/Message
-@onready var action_hint_timer: Timer = $ActionHintTimer
 @onready var build_category_bar: HBoxContainer = $BottomBar/BuildCategoryBar
 @onready var build_category_buttons := {
 	"basic": $BottomBar/BuildCategoryBar/Basic,
@@ -98,9 +89,9 @@ var action_controller: Variant
 var inventory_ref: Variant
 var economy_ref: Variant
 var season_system_ref: Variant
-var _mode_menu_hover_token := 0
 var _economy_ui_unread_count := 0
 var notification_ref: EconomyNotificationSystem
+var message_bus: Node
 var _build_lock_service_id := ""
 var _seed_fallback_icons: Dictionary = {}
 
@@ -132,19 +123,14 @@ func _ready() -> void:
 
 	# 初始化显示
 	_init_display()
-	farming_mode_button.pressed.connect(
-		_on_mode_requested.bind(PlayerActionController.ActionMode.FARMING)
+	farming_mode_button.gui_input.connect(
+		_on_mode_pointer_input.bind(PlayerActionController.ActionMode.FARMING)
 	)
-	building_mode_button.pressed.connect(
-		_on_mode_requested.bind(PlayerActionController.ActionMode.BUILDING)
+	building_mode_button.gui_input.connect(
+		_on_mode_pointer_input.bind(PlayerActionController.ActionMode.BUILDING)
 	)
-	mode_button.pressed.connect(_on_mode_button_pressed)
-	mode_button.mouse_entered.connect(_on_mode_menu_mouse_entered)
-	mode_button.mouse_exited.connect(_on_mode_menu_mouse_exited)
-	mode_menu_content.mouse_entered.connect(_on_mode_menu_mouse_entered)
-	mode_menu_content.mouse_exited.connect(_on_mode_menu_mouse_exited)
-	build_feedback_timer.timeout.connect(_on_build_feedback_timeout)
-	action_hint_timer.timeout.connect(_on_action_hint_timeout)
+	if message_stream.has_signal("history_requested") and not message_stream.is_connected("history_requested", _on_notification_pressed):
+		message_stream.connect("history_requested", _on_notification_pressed)
 	for category_id in build_category_buttons:
 		build_category_buttons[category_id].pressed.connect(
 			_on_build_category_pressed.bind(category_id)
@@ -191,39 +177,29 @@ func configure_notifications(system: EconomyNotificationSystem) -> bool:
 	return true
 
 
+func configure_message_bus(bus: Node) -> bool:
+	if bus == null or not is_instance_valid(bus) or bus.get_script() != HudMessageBusScript:
+		return false
+	if not bool(message_stream.call("configure", bus)):
+		return false
+	message_bus = bus
+	return true
+
+
 func _refresh_notification_display() -> void:
 	if notification_ref == null:
 		return
 	_economy_ui_unread_count = notification_ref.get_unread_count()
 	var count_text := "9+" if _economy_ui_unread_count > 9 else str(_economy_ui_unread_count)
 	notification_button.text = "[通知 %s]" % count_text
-	for child in urgent_summaries.get_children():
-		child.free()
-	var urgent: Array[Dictionary] = []
-	for record in notification_ref.get_recent():
-		if bool(record.get("unread", false)) and EconomyNotificationSystem.is_urgent_kind(str(record.get("kind", ""))):
-			urgent.append(record)
-	for index in range(mini(2, urgent.size())):
-		var label := Label.new()
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		label.text = str(urgent[index].get("body", ""))
-		urgent_summaries.add_child(label)
-	if urgent.size() > 2:
-		var overflow := Label.new()
-		overflow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		overflow.text = "还有 %d 条经营提醒" % (urgent.size() - 2)
-		urgent_summaries.add_child(overflow)
 
 
 func get_urgent_summary_count() -> int:
-	return urgent_summaries.get_child_count() if urgent_summaries != null else 0
+	return 0
 
 
 func get_urgent_summary_text(index: int) -> String:
-	if urgent_summaries == null or index < 0 or index >= urgent_summaries.get_child_count():
-		return ""
-	var label := urgent_summaries.get_child(index) as Label
-	return label.text if label != null else ""
+	return "" if index >= 0 else ""
 
 
 func _init_display() -> void:
@@ -488,9 +464,7 @@ func rebuild_action_palette() -> void:
 	quick_bar.visible = has_active_mode
 	if not has_active_mode:
 		build_category_bar.visible = false
-		mode_button.configure(0, "选择模式", null)
-		mode_button.set_shortcut_visible(false)
-		mode_button.tooltip_text = "选择操作模式（P / B）"
+		_sync_mode_buttons(PlayerActionController.ActionMode.NONE)
 		_refresh_build_cost_bar(-1)
 		return
 	var building_mode := _is_building_mode()
@@ -509,14 +483,7 @@ func rebuild_action_palette() -> void:
 	build_category_bar.visible = building_mode
 	_refresh_build_category_buttons()
 	quick_bar.add_theme_constant_override("separation", 4 if building_mode else 8)
-	var mode_name := "建造" if building_mode else "种植"
-	mode_button.configure(
-		0,
-		mode_name,
-		_load_palette_icon(_building_icon_path("barn")) if building_mode else _active_plant_texture()
-	)
-	mode_button.set_shortcut_visible(false)
-	mode_button.tooltip_text = "当前：%s模式\n悬停选择模式（P / B）" % mode_name
+	_sync_mode_buttons(action_controller.get_action_mode())
 	for index in range(labels.size()):
 		var button = ActionPaletteButtonScene.instantiate()
 		button.name = "Slot%d" % (index + 1)
@@ -579,9 +546,9 @@ func _on_action_selection_changed(index: int, label: String) -> void:
 	refresh_action_bar()
 
 
-func _on_action_mode_changed(_mode: int) -> void:
+func _on_action_mode_changed(mode: int) -> void:
+	_sync_mode_buttons(mode)
 	rebuild_action_palette()
-	set_mode_menu_open(false)
 
 
 func _on_action_palette_changed(_mode: int, _selected_index: int) -> void:
@@ -684,39 +651,19 @@ func _seed_fallback_icon(item_id: String) -> Texture2D:
 func _on_mode_requested(mode: int) -> void:
 	if action_controller:
 		action_controller.switch_mode(mode)
-	set_mode_menu_open(false)
+	_sync_mode_buttons(action_controller.get_action_mode() if action_controller else PlayerActionController.ActionMode.NONE)
 
 
-func _on_mode_button_pressed() -> void:
-	set_mode_menu_open(not mode_menu.visible)
+func _on_mode_pointer_input(event: InputEvent, mode: int) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_on_mode_requested(mode)
 
 
-func _on_mode_menu_mouse_entered() -> void:
-	_mode_menu_hover_token += 1
-	set_mode_menu_open(true)
-
-
-func _on_mode_menu_mouse_exited() -> void:
-	_mode_menu_hover_token += 1
-	var expected_token := _mode_menu_hover_token
-	await get_tree().create_timer(MODE_MENU_CLOSE_DELAY).timeout
-	if expected_token == _mode_menu_hover_token:
-		set_mode_menu_open(false)
-
-
-func set_mode_menu_open(open: bool) -> void:
-	if mode_menu == null:
-		return
-	if not open:
-		mode_menu.hide()
-		return
-	var button_position := mode_button.get_screen_position()
-	var popup_size := Vector2i(260, 140)
-	var popup_position := Vector2i(
-		roundi(button_position.x),
-		roundi(button_position.y - popup_size.y - 6.0)
-	)
-	mode_menu.popup(Rect2i(popup_position, popup_size))
+func _sync_mode_buttons(mode: int) -> void:
+	if farming_mode_button != null:
+		farming_mode_button.set_pressed_no_signal(mode == PlayerActionController.ActionMode.FARMING)
+	if building_mode_button != null:
+		building_mode_button.set_pressed_no_signal(mode == PlayerActionController.ActionMode.BUILDING)
 
 
 func get_palette_button_count() -> int:
@@ -931,27 +878,13 @@ func get_material_count_text(item_id: String) -> String:
 
 
 func show_build_feedback(message: String, _details: Dictionary = {}) -> void:
-	build_feedback_label.text = message
-	build_feedback_toast.visible = true
-	build_feedback_timer.start()
+	if message_bus != null:
+		message_bus.call("publish", "building", "error", message, _details)
 
 
-func _on_build_feedback_timeout() -> void:
-	build_feedback_toast.visible = false
-
-
-func show_action_hint(text: String, duration := 2.5) -> void:
-	if action_hint_label == null or action_hint_toast == null or action_hint_timer == null:
-		return
-	action_hint_label.text = text
-	action_hint_toast.visible = true
-	action_hint_timer.wait_time = duration
-	action_hint_timer.start()
-
-
-func _on_action_hint_timeout() -> void:
-	if action_hint_toast != null:
-		action_hint_toast.visible = false
+func show_action_hint(text: String, _duration := 2.5) -> void:
+	if message_bus != null:
+		message_bus.call("publish", "action", "info", text)
 
 
 func _refresh_material_counts() -> void:

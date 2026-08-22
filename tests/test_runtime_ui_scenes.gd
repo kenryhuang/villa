@@ -45,9 +45,10 @@ func _run() -> void:
 		"TopBar/StatusRow/ExpBar",
 		"TopBar/StatusRow/SeasonLabel",
 		"TopBar/StatusRow/TimeLabel",
+		"MessageStream",
 		"BottomBar/ToolLabel",
-		"BottomBar/ModeMenu",
-		"BottomBar/ActionRow/ModeButton",
+		"BottomBar/ActionRow/ModeSwitch/FarmingModeButton",
+		"BottomBar/ActionRow/ModeSwitch/BuildingModeButton",
 		"BottomBar/ActionRow/QuickBar",
 	])
 	_check_scene("res://scenes/ui/inventory_ui.tscn", [
