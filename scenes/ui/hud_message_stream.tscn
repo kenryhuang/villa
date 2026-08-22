@@ -40,7 +40,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="Header" type="HBoxContainer" parent="Margin/Content"]
-custom_minimum_size = Vector2(304, 44)
+custom_minimum_size = Vector2(304, 42)
 layout_mode = 2
 theme_override_constants/separation = 8
 

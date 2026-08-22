@@ -105,6 +105,11 @@ func get_collapsed_header_height() -> float:
 	return COLLAPSED_HEIGHT
 
 
+func set_expanded_bottom(value: float) -> void:
+	_expanded_bottom = maxf(value, offset_top + 260.0)
+	_refresh_state()
+
+
 func get_message_ids() -> Array[String]:
 	var result: Array[String] = []
 	for child in message_list.get_children():

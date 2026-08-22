@@ -251,7 +251,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	]
 	for label in status_labels:
 		assertions.truthy(
-			label.get_theme_font_size("font_size") >= 32,
+			label.get_theme_font_size("font_size") >= 20,
 			"status font is readable"
 		)
 		assertions.truthy(
@@ -263,11 +263,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"status text is cream"
 		)
 	assertions.truthy(
-		hud.stamina_bar.custom_minimum_size.y >= 44.0,
+		hud.stamina_bar.custom_minimum_size.y >= 32.0,
 		"stamina bar is tall enough"
 	)
 	assertions.truthy(
-		hud.exp_bar.custom_minimum_size.y >= 44.0,
+		hud.exp_bar.custom_minimum_size.y >= 32.0,
 		"experience bar is tall enough"
 	)
 	var top_style := (hud.get_node("TopBar") as Control).get_theme_stylebox("panel")

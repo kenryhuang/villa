@@ -138,10 +138,35 @@ func _ready() -> void:
 	build_lock_unlock_button.pressed.connect(_on_build_unlock_pressed)
 	build_lock_close_button.pressed.connect(_hide_build_lock_detail)
 	set_notification_count(0)
+	var viewport := get_viewport()
+	if viewport != null and not viewport.size_changed.is_connected(_apply_responsive_layout):
+		viewport.size_changed.connect(_apply_responsive_layout)
+	call_deferred("_apply_responsive_layout")
 
 
 func _on_market_pressed() -> void:
 	market_requested.emit()
+
+
+func _apply_responsive_layout() -> void:
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var viewport_size := viewport.get_visible_rect().size
+	var right_margin := 18.0
+	var rail_width := clampf(viewport_size.x * 0.27, 280.0, 360.0)
+	message_stream.offset_left = -right_margin - rail_width
+	message_stream.offset_right = -right_margin
+	message_stream.offset_top = 18.0
+	var stream_left := viewport_size.x - right_margin - rail_width
+	var top_bar := $TopBar as Control
+	top_bar.offset_left = 20.0
+	top_bar.offset_top = 18.0
+	top_bar.offset_right = stream_left - 12.0
+	top_bar.offset_bottom = 80.0
+	var bottom_bar := $BottomBar as Control
+	var bottom_top := viewport_size.y + bottom_bar.offset_top
+	message_stream.call("set_expanded_bottom", bottom_top - 12.0)
 
 
 func _on_notification_pressed() -> void:

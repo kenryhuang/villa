@@ -3,6 +3,7 @@ extends SceneTree
 const TestAssertScript = preload("res://tests/test_assert.gd")
 const HudMessageBusTest = preload("res://tests/test_hud_message_bus.gd")
 const HudMessageStreamTest = preload("res://tests/test_hud_message_stream.gd")
+const HudResponsiveShellTest = preload("res://tests/test_hud_responsive_shell.gd")
 
 
 func _init() -> void:
@@ -13,6 +14,7 @@ func _run() -> void:
 	var assertions := TestAssertScript.new()
 	HudMessageBusTest.new().run(assertions, self)
 	HudMessageStreamTest.new().run(assertions, self)
+	await HudResponsiveShellTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d HUD shell checks" % assertions.checks)
 		quit(0)
