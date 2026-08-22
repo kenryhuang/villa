@@ -46,6 +46,11 @@ func _ready() -> void:
 	_apply_responsive_layout()
 
 
+func _enter_tree() -> void:
+	_event_bus = get_node_or_null("/root/EventBus")
+	_connect_authoritative_signals()
+
+
 func _exit_tree() -> void:
 	_refresh_scheduled = false
 	_disconnect_authoritative_signals()

@@ -21,6 +21,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_ensure_crop("lemon", "lemon_sapling", "柠檬", 5, [], "greenhouse_only", "tree", 3)
 	await _test_owned_seed_rows_and_selection(assertions, tree)
 	await _test_inventory_refresh_is_deferred_and_coalesced(assertions, tree)
+	await _test_reenter_reconnects_authoritative_events(assertions, tree)
 	await _test_controller_command_and_legacy_migration(assertions, tree)
 	await _test_hud_selection_survives_zero_quantity(assertions, tree)
 	await _test_topmost_escape_and_pause_restore(assertions, tree)
@@ -176,6 +177,51 @@ func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, t
 			(batched_row.get_node("Quantity") as Label).text,
 			"×%d" % (quantity_before_batch + 1),
 			"coalesced refresh shows the final authoritative quantity"
+		)
+	if panel.seed_rows.child_entered_tree.is_connected(row_enter_callback):
+		panel.seed_rows.child_entered_tree.disconnect(row_enter_callback)
+	_free_fixture(fixture)
+	await tree.process_frame
+
+
+func _test_reenter_reconnects_authoritative_events(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := await _make_fixture(tree)
+	var panel = fixture.panel
+	assertions.truthy(panel != null, "reenter refresh fixture instantiates the selector")
+	if panel == null:
+		_free_fixture(fixture)
+		return
+	var host: Node = fixture.host
+	host.remove_child(panel)
+	host.add_child(panel)
+	panel.open_for_cell(fixture.cell)
+	await tree.process_frame
+	var before_quantity: int = fixture.inventory.get_item_count("grain_seed")
+	var before_row_ids := _row_instance_ids(panel)
+	var rebuilt_row_instance_ids: Array[int] = []
+	var row_enter_callback := func(child: Node) -> void:
+		if child.has_meta("plant_item_id"):
+			rebuilt_row_instance_ids.append(child.get_instance_id())
+	panel.seed_rows.child_entered_tree.connect(row_enter_callback)
+	assertions.truthy(fixture.inventory.add_item("grain_seed", 1), "reentered selector receives a seed event")
+	assertions.equal(
+		_row_instance_ids(panel),
+		before_row_ids,
+		"reentered selector defers the seed row rebuild until the frame"
+	)
+	await tree.process_frame
+	assertions.equal(
+		rebuilt_row_instance_ids.size(),
+		before_row_ids.size(),
+		"reentered selector performs one complete deferred rebuild"
+	)
+	var row := _row(panel, "grain_seed")
+	assertions.truthy(row != null, "reentered selector keeps the changed seed row visible")
+	if row != null:
+		assertions.equal(
+			(row.get_node("Quantity") as Label).text,
+			"×%d" % (before_quantity + 1),
+			"reentered selector refreshes from the authoritative inventory"
 		)
 	if panel.seed_rows.child_entered_tree.is_connected(row_enter_callback):
 		panel.seed_rows.child_entered_tree.disconnect(row_enter_callback)
