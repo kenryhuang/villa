@@ -1,0 +1,41 @@
+extends RefCounted
+
+const BusScript := preload("res://scripts/ui/hud_message_bus.gd")
+const StreamScene := preload("res://scenes/ui/hud_message_stream.tscn")
+
+
+func run(assertions: TestAssert, tree: SceneTree) -> void:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1280, 720)
+	tree.root.add_child(viewport)
+	var bus := BusScript.new()
+	viewport.add_child(bus)
+	var stream = StreamScene.instantiate()
+	viewport.add_child(stream)
+	assertions.truthy(stream.get_script() != null, "stream scene loads its script")
+	if stream.get_script() == null:
+		viewport.free()
+		return
+	assertions.truthy(stream.configure(bus), "stream accepts real bus")
+	stream.set_collapsed(true)
+	bus.publish("debug", "debug", "推进到第 6 天", {"timestamp_msec": 1000})
+	assertions.truthy(stream.is_collapsed(), "new messages do not auto-expand")
+	assertions.equal(stream.get_unread_count(), 1, "collapsed stream increments unread")
+	assertions.equal(stream.get_message_card_count(), 1, "collapsed stream still records cards")
+	stream.set_collapsed(false)
+	stream.return_to_latest()
+	assertions.equal(stream.get_unread_count(), 0, "returning to latest clears unread")
+	assertions.near(stream.get_collapsed_header_height(), 62.0, 0.001, "collapsed header matches top HUD height")
+	bus.publish("farming", "success", "已播种", {"timestamp_msec": 2001})
+	assertions.equal(stream.get_message_ids(), ["hud-1", "hud-2"], "new records append at the bottom")
+	bus.publish("farming", "success", "已播种", {"timestamp_msec": 2500})
+	assertions.equal(stream.get_message_card_count(), 2, "merged records reuse the same card")
+	assertions.equal(stream.get_last_card_count(), 2, "merged card displays its count")
+	stream.set_following_latest(false)
+	bus.publish("building", "warning", "空间不足", {"timestamp_msec": 4000})
+	assertions.equal(stream.get_unread_count(), 1, "paused follow increments unread")
+	assertions.truthy(stream.is_return_latest_visible(), "paused follow exposes return-to-latest action")
+	assertions.truthy(stream.configure(bus), "reconfiguration remains supported")
+	bus.publish("debug", "debug", "single delivery", {"timestamp_msec": 6000})
+	assertions.equal(stream.get_message_card_count(), 4, "reconfiguration keeps one signal connection")
+	viewport.free()
