@@ -151,6 +151,11 @@ func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, t
 
 	var visible_row_ids := _row_instance_ids(panel)
 	var quantity_before_batch: int = fixture.inventory.get_item_count("grain_seed")
+	var rebuilt_row_instance_ids: Array[int] = []
+	var row_enter_callback := func(child: Node) -> void:
+		if child.has_meta("plant_item_id"):
+			rebuilt_row_instance_ids.append(child.get_instance_id())
+	panel.seed_rows.child_entered_tree.connect(row_enter_callback)
 	assertions.truthy(fixture.inventory.add_item("grain_seed", 2), "visible refresh fixture adds two seeds")
 	assertions.truthy(fixture.inventory.remove_item("grain_seed", 1), "visible refresh fixture removes one seed")
 	assertions.equal(
@@ -159,6 +164,11 @@ func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, t
 		"visible seed changes do not rebuild rows before the deferred frame"
 	)
 	await tree.process_frame
+	assertions.equal(
+		rebuilt_row_instance_ids.size(),
+		visible_row_ids.size(),
+		"coalesced seed changes perform exactly one complete row rebuild"
+	)
 	var batched_row := _row(panel, "grain_seed")
 	assertions.truthy(batched_row != null, "coalesced refresh keeps the seed row visible")
 	if batched_row != null:
@@ -167,6 +177,8 @@ func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, t
 			"×%d" % (quantity_before_batch + 1),
 			"coalesced refresh shows the final authoritative quantity"
 		)
+	if panel.seed_rows.child_entered_tree.is_connected(row_enter_callback):
+		panel.seed_rows.child_entered_tree.disconnect(row_enter_callback)
 	_free_fixture(fixture)
 	await tree.process_frame
 
