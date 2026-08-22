@@ -4,6 +4,7 @@ const MainScript = preload("res://scripts/main.gd")
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const SeasonSystemScript = preload("res://scripts/systems/season_system.gd")
 const CropDataScript = preload("res://scripts/data/crop_data.gd")
+const HudMessageBusScript = preload("res://scripts/ui/hud_message_bus.gd")
 
 
 class FarmingDouble:
@@ -26,6 +27,27 @@ class HudDouble:
 		hints.append(message)
 
 
+class DebugEditorDouble:
+	extends RefCounted
+
+	var result := {"ok": true, "message": "调试数据已应用"}
+
+	func apply(_draft: Dictionary) -> Dictionary:
+		return result.duplicate(true)
+
+	func snapshot() -> Dictionary:
+		return {}
+
+
+class DebugPanelDouble:
+	extends Node
+
+	var shown_results: Array[Dictionary] = []
+
+	func show_apply_result(result: Dictionary, _snapshot: Dictionary = {}) -> void:
+		shown_results.append(result.duplicate(true))
+
+
 class CropEventBus:
 	extends Node
 	signal crop_grew(gx: int, gz: int, stage: int)
@@ -44,6 +66,7 @@ class CropEventBus:
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_real_stage_advancement(assertions)
 	_test_main_coordinator_feedback(assertions, tree)
+	_test_debug_apply_feedback(assertions)
 
 
 func _test_real_stage_advancement(assertions: TestAssert) -> void:
@@ -122,6 +145,12 @@ func _test_real_stage_advancement(assertions: TestAssert) -> void:
 
 func _test_main_coordinator_feedback(assertions: TestAssert, tree: SceneTree) -> void:
 	var main := MainScript.new()
+	var has_bus_property := false
+	for property in main.get_property_list():
+		if str(property.get("name", "")) == "hud_message_bus":
+			has_bus_property = true
+			break
+	assertions.truthy(has_bus_property, "Main exposes the session HUD message bus")
 	assertions.truthy(
 		main.has_method("_advance_debug_crop_day"),
 		"Main exposes a crop-only debug day coordinator"
@@ -145,15 +174,23 @@ func _test_main_coordinator_feedback(assertions: TestAssert, tree: SceneTree) ->
 	main.season_system = clock
 	main.farming_system = farming
 	main.hud = hud
+	var message_bus := HudMessageBusScript.new()
+	main.add_child(message_bus)
+	if has_bus_property:
+		main.hud_message_bus = message_bus
 	assertions.truthy(main._advance_debug_crop_day(), "debug crop day succeeds with required systems")
 	assertions.equal(clock.current_day, 1, "debug crop day leaves the season calendar unchanged")
 	assertions.equal(clock.total_days, 1, "debug crop day leaves the authoritative day cursor unchanged")
 	assertions.equal(farming.advance_calls, 1, "debug crop day advances farming exactly once")
 	assertions.equal(formal_days.size(), 0, "debug crop day does not emit formal day_changed")
-	assertions.equal(hud.hints, ["推进了 2 株作物，其中 1 株成熟"], "debug crop day reports visible progress")
+	if has_bus_property:
+		assertions.equal(str(message_bus.get_recent()[-1].text), "推进了 2 株作物，其中 1 株成熟", "debug crop day reports visible progress")
+		assertions.equal(str(message_bus.get_recent()[-1].severity), "debug", "debug crop day uses debug severity")
+	assertions.equal(hud.hints, [], "debug crop day no longer uses a transient HUD hint")
 	farming.result = {"advanced": 0, "matured": 0}
 	assertions.truthy(main._advance_debug_crop_day(), "debug crop day handles an empty crop set")
-	assertions.equal(hud.hints[-1], "没有可推进的作物", "debug crop day reports an empty crop set")
+	if has_bus_property:
+		assertions.equal(str(message_bus.get_recent()[-1].text), "没有可推进的作物", "debug crop day reports an empty crop set")
 	main.farming_system = null
 	assertions.truthy(
 		not main._advance_debug_crop_day(),
@@ -164,3 +201,25 @@ func _test_main_coordinator_feedback(assertions: TestAssert, tree: SceneTree) ->
 	clock.free()
 	farming.free()
 	hud.free()
+
+
+func _test_debug_apply_feedback(assertions: TestAssert) -> void:
+	var main := MainScript.new()
+	var message_bus := HudMessageBusScript.new()
+	message_bus.name = "HudMessageBus"
+	main.add_child(message_bus)
+	main.hud_message_bus = message_bus
+	var editor := DebugEditorDouble.new()
+	var panel := DebugPanelDouble.new()
+	main.add_child(panel)
+	main.debug_state_editor = editor
+	main.debug_panel = panel
+	main._on_debug_panel_apply_requested({})
+	assertions.equal(str(message_bus.get_recent()[-1].severity), "success", "successful debug apply enters the stream")
+	assertions.equal(str(message_bus.get_recent()[-1].text), "调试数据已应用", "successful debug apply keeps its result text")
+	editor.result = {"ok": false, "reason": "invalid_gold"}
+	main._on_debug_panel_apply_requested({})
+	assertions.equal(str(message_bus.get_recent()[-1].severity), "error", "failed debug apply enters the stream")
+	assertions.truthy(str(message_bus.get_recent()[-1].text).contains("invalid_gold"), "failed debug apply includes its reason")
+	assertions.equal(panel.shown_results.size(), 2, "debug panel still receives both apply results")
+	main.free()

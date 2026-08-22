@@ -846,7 +846,8 @@ func _test_merged_notifications_navigate_to_target(assertions: TestAssert, tree:
 	assertions.equal(system.push("completed", "生产完成", "风车完成面粉 ×3", 3, "building", "windmill:4:5", 12.0), notification_id, "third production notice merges")
 	assertions.equal(system.get_recent().size(), 1, "three production events keep one record")
 	assertions.equal(int(system.get_recent()[0].count), 3, "merged record carries exact count three")
-	assertions.equal(ui.get_visible_toast_count(), 1, "merged production events keep one toast")
+	assertions.truthy(not ui.has_node("ToastStack"), "merged production events use the HUD message stream instead of a toast")
+	assertions.equal(ui.get_center_record_count(), 1, "merged production events keep one persistent history card")
 	var order_id := "tiejiang_zhang:iron_ore:1"
 	var contract_id := "lao_li:grain:1:3"
 	var order_notice := system.push("order_due", "订单临期", "铁匠订单即将到期", 3, "order", order_id, 20.0)

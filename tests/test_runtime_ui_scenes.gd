@@ -72,7 +72,12 @@ func _run() -> void:
 	_check_scene("res://scenes/ui/economy/contract_panel.tscn", ["Content/Details/DeliverButton"])
 	_check_scene("res://scenes/ui/economy/service_panel.tscn", ["ServiceScroll/ServiceCards"])
 	_check_scene("res://scenes/ui/economy/building_economy_ui.tscn", ["ScreenLayer/ModalLayer/BuildingPanel", "WorldRangeOverlay"])
-	_check_scene("res://scenes/ui/economy/economy_notification_ui.tscn", ["ToastStack", "NotificationCenter"])
+	_check_scene("res://scenes/ui/economy/economy_notification_ui.tscn", ["NotificationCenter"])
+	var notification_scene := load("res://scenes/ui/economy/economy_notification_ui.tscn") as PackedScene
+	if notification_scene != null:
+		var notification_instance := notification_scene.instantiate()
+		_check(not notification_instance.has_node("ToastStack"), "economy notification UI must not duplicate the HUD message stream")
+		notification_instance.free()
 	_check_scene("res://scenes/ui/debug_panel.tscn", [
 		"Overlay/Center/Panel/Layout/Tabs/PlayerState",
 		"Overlay/Center/Panel/Layout/Tabs/Inventory",

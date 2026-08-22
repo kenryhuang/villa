@@ -14,6 +14,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for _frame in 4:
 		await tree.process_frame
 		await tree.physics_frame
+	var hud_message_bus := main.get_node_or_null("HudMessageBus")
+	assertions.truthy(hud_message_bus != null, "Main owns the session HudMessageBus")
+	if hud_message_bus != null:
+		assertions.truthy(main.hud_message_bus == hud_message_bus, "Main exposes the same HudMessageBus instance")
+		assertions.truthy(main.hud.message_bus == hud_message_bus, "Main configures HUD with the session bus")
+		var before_debug: int = hud_message_bus.get_recent().size()
+		assertions.truthy(main._advance_debug_crop_day(), "real Main accepts N debug advancement")
+		assertions.equal(hud_message_bus.get_recent().size(), before_debug + 1, "N appends one message")
+		assertions.equal(str(hud_message_bus.get_recent()[-1].severity), "debug", "N uses debug severity")
+		main.action_controller.action_failure_hint.emit("种子库存不足")
+		assertions.equal(str(hud_message_bus.get_recent()[-1].severity), "warning", "action failures use warning severity")
+		assertions.equal(str(hud_message_bus.get_recent()[-1].text), "种子库存不足", "action failure text reaches the stream")
+		main.economy_notification_system.push("order_due", "订单临期", "订单即将到期", 2, "order", "order-test", 20.0)
+		var economy_record: Dictionary = hud_message_bus.get_recent()[-1]
+		assertions.equal(str(economy_record.source), "economy", "economy notification reaches the stream")
+		assertions.equal(str(economy_record.target_type), "order", "economy message keeps target type")
+		assertions.equal(str(economy_record.target_id), "order-test", "economy message keeps target id")
 	assertions.equal(
 		main.action_controller.get_action_mode(),
 		PlayerActionController.ActionMode.NONE,

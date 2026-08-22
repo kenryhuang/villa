@@ -25,6 +25,7 @@ const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd"
 const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
 const DebugStateEditorScript := preload("res://scripts/debug/debug_state_editor.gd")
 const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
+const HudMessageBusScript := preload("res://scripts/ui/hud_message_bus.gd")
 const NEW_GAME_STARTER_ITEMS := {
 	"grain_seed": 99,
 	"wood": 99,
@@ -80,6 +81,7 @@ var production_system: ProductionSystem
 var economy_progression_system: EconomyProgressionSystem
 var npc_economy_system: NpcEconomySystem
 var economy_notification_system: EconomyNotificationSystem
+var hud_message_bus: Node
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
@@ -145,8 +147,7 @@ func _advance_debug_crop_day() -> bool:
 		if advanced > 0
 		else "没有可推进的作物"
 	)
-	if hud != null:
-		hud.show_action_hint(message)
+	_publish_hud_message("debug", "debug", message)
 	return true
 
 
@@ -156,6 +157,10 @@ func _advance_debug_crop_day() -> bool:
 
 func _initialize_systems() -> void:
 	# 创建系统节点
+	hud_message_bus = HudMessageBusScript.new()
+	hud_message_bus.name = "HudMessageBus"
+	add_child(hud_message_bus)
+
 	grid_system = GRID_SYSTEM_SCENE.instantiate() as GridSystem
 	add_child(grid_system)
 
@@ -328,6 +333,9 @@ func _connect_systems() -> bool:
 		season_system
 	):
 		return false
+	var economy_message_callback := Callable(self, "_on_economy_notification_pushed")
+	if not economy_notification_system.notification_pushed.is_connected(economy_message_callback):
+		economy_notification_system.notification_pushed.connect(economy_message_callback)
 
 	# SaveManager 与每日协调器共享同一份市场状态
 	if not save_manager.has_method("configure_economy"):
@@ -371,9 +379,9 @@ func _connect_systems() -> bool:
 		if not event_bus.is_connected("item_added", callback):
 			event_bus.item_added.connect(callback)
 
-	# Show planting failure hints on the HUD
+	# Route planting failures into the unified HUD message stream.
 	if action_controller and action_controller.has_signal("action_failure_hint"):
-		var hint_callback := Callable(hud, "show_action_hint")
+		var hint_callback := Callable(self, "_on_action_failure_hint")
 		if not action_controller.action_failure_hint.is_connected(hint_callback):
 			action_controller.action_failure_hint.connect(hint_callback)
 
@@ -545,6 +553,8 @@ func _setup_ui() -> void:
 	# HUD 初始化
 	if hud:
 		hud.visible = true
+		if not hud.configure_message_bus(hud_message_bus):
+			push_error("Unable to configure HUD message bus.")
 		hud.configure_season_system(season_system)
 		hud.configure_action_bar(action_controller, inventory_system, economy_system)
 		hud.configure_debug_tools(OS.is_debug_build())
@@ -671,12 +681,38 @@ func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
 		return
 	var result: Dictionary = debug_state_editor.apply(draft)
 	if bool(result.get("ok", false)):
+		_publish_hud_message("debug", "success", str(result.get("message", "调试数据已应用")))
 		if hud != null:
 			hud.configure_season_system(season_system)
 			hud.refresh_action_bar()
 		debug_panel.show_apply_result(result, debug_state_editor.snapshot())
 		return
+	_publish_hud_message("debug", "error", "调试应用失败：%s" % str(result.get("reason", "unknown")))
 	debug_panel.show_apply_result(result)
+
+
+func _on_action_failure_hint(text: String) -> void:
+	_publish_hud_message("action", "warning", text)
+
+
+func _on_economy_notification_pushed(record: Dictionary, _merged: bool) -> void:
+	var kind := str(record.get("kind", ""))
+	_publish_hud_message(
+		"economy",
+		"warning" if EconomyNotificationSystemScript.is_urgent_kind(kind) else "info",
+		str(record.get("body", "")),
+		{
+			"target_type": str(record.get("target_type", "")),
+			"target_id": str(record.get("target_id", "")),
+			"game_time": "第%d天" % int(record.get("total_day", 0)),
+		}
+	)
+
+
+func _publish_hud_message(source: String, severity: String, text: String, metadata: Dictionary = {}) -> bool:
+	if hud_message_bus == null or not is_instance_valid(hud_message_bus):
+		return false
+	return bool(hud_message_bus.call("publish", source, severity, text, metadata))
 
 
 func _on_debug_panel_refresh_requested() -> void:
