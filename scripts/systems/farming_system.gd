@@ -1,6 +1,8 @@
 class_name FarmingSystem
 extends Node
 
+signal visual_asset_failed(stage_scene_path: String, reason: String)
+
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const GameStateScript = preload("res://scripts/core/game_state.gd")
@@ -850,9 +852,18 @@ func _instantiate_stage_visual(cell: GridCell, instance: CropInstance) -> Node3D
 	visual.set_meta("lifecycle_state", instance.lifecycle_state)
 	visual.set_meta("stage_scene", scene_path)
 	visual.set_meta("visual_seed", visual_seed)
+	if visual.has_signal("painted_asset_failed"):
+		visual.connect(
+			"painted_asset_failed",
+			Callable(self, "_on_painted_asset_failed").bind(scene_path)
+		)
 	_visual_parent().add_child(visual)
 	_apply_visual_state(visual, instance.lifecycle_state)
 	return visual
+
+
+func _on_painted_asset_failed(reason: String, stage_scene_path: String) -> void:
+	visual_asset_failed.emit(stage_scene_path, reason)
 
 
 func _instantiate_fallback_visual(cell: GridCell, instance: CropInstance) -> MeshInstance3D:

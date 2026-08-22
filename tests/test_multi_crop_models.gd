@@ -84,7 +84,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	# Verify that default_crop_definitions assigns stage_scenes for all crops
 	# Only when Main script is accessible (not in isolated test context)
-	var main_script = load("res://main.gd") if ResourceLoader.exists("res://main.gd") else null
+	var main_script = load("res://scripts/main.gd") if ResourceLoader.exists("res://scripts/main.gd") else null
 	if main_script != null and main_script.has_method("default_crop_definitions"):
 		var definitions = main_script.default_crop_definitions()
 		if definitions != null:
@@ -99,3 +99,22 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 						not crop.stage_scenes.is_empty(),
 						"%s has stage_scenes assigned" % crop.crop_id
 					)
+				if crop.crop_id in TWO_STAGE_CROP_IDS:
+					var seed_scene := stage_scene_path(crop.crop_id, 0)
+					var mature_scene := stage_scene_path(crop.crop_id, 3)
+					var seed_texture := texture_path(crop.crop_id, 0, "front")
+					var mature_texture := texture_path(crop.crop_id, 3, "front")
+					assertions.equal(
+						crop.stage_scenes,
+						[seed_scene, seed_scene, seed_scene, mature_scene],
+						"%s keeps four logical stages while using two visual scenes" % crop.crop_id
+					)
+					assertions.equal(
+						crop.stage_textures,
+						[seed_texture, seed_texture, seed_texture, mature_texture],
+						"%s keeps four logical stages while using two preview textures" % crop.crop_id
+					)
+
+
+static func texture_path(crop_id: String, stage: int, layer: String) -> String:
+	return "res://assets/crops/%s/painted/stage_%d/variant_0_%s.png" % [crop_id, stage, layer]

@@ -47,8 +47,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"front alpha uses opaque prepass"
 	)
 	cluster.free()
+	_test_sprite_only_missing_asset_fallback(assertions, tree)
 	_test_painted_scene_keeps_hidden_fallback_resources(assertions, tree)
 	_test_real_scene_fallback_tint_is_per_instance(assertions, tree)
+
+
+func _test_sprite_only_missing_asset_fallback(assertions: TestAssert, tree: SceneTree) -> void:
+	var cluster := ClusterScript.new() as CropSpriteCluster
+	cluster.back_texture_paths.assign(["res://assets/crops/missing_back.png"])
+	cluster.front_texture_paths.assign(["res://assets/crops/missing_front.png"])
+	var received := {"reason": ""}
+	cluster.painted_asset_failed.connect(func(reason: String) -> void: received.reason = reason)
+	tree.root.add_child(cluster)
+	var fallback := cluster.get_node_or_null("FallbackLayer") as Sprite3D
+	assertions.truthy(fallback != null and fallback.visible, "sprite-only crop exposes a checker fallback")
+	assertions.truthy(fallback != null and fallback.texture != null, "checker fallback owns a generated texture")
+	assertions.truthy(not str(received.reason).is_empty(), "missing painted asset emits a diagnostic signal")
+	cluster.free()
 
 
 func _test_painted_scene_keeps_hidden_fallback_resources(

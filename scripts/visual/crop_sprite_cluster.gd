@@ -1,6 +1,8 @@
 class_name CropSpriteCluster
 extends Node3D
 
+signal painted_asset_failed(reason: String)
+
 @export var back_texture_paths: Array[String] = []
 @export var front_texture_paths: Array[String] = []
 @export var canvas_world_height := 1.15
@@ -41,6 +43,17 @@ func _ensure_layers() -> void:
 		var front := Sprite3D.new()
 		front.name = "FrontLayer"
 		add_child(front)
+	if get_node_or_null("FallbackLayer") == null:
+		var fallback := Sprite3D.new()
+		fallback.name = "FallbackLayer"
+		fallback.texture = _checker_texture()
+		fallback.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		fallback.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+		fallback.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fallback.pixel_size = canvas_world_height / 16.0
+		fallback.position = Vector3(0.0, canvas_world_height * 0.5, 0.0)
+		fallback.visible = false
+		add_child(fallback)
 
 
 func _apply_variant() -> void:
@@ -91,9 +104,25 @@ func _show_fallback(reason: String) -> void:
 	($FrontLayer as Sprite3D).visible = false
 	_set_fallback_visible(true)
 	push_warning("CropSpriteCluster fallback: %s" % reason)
+	painted_asset_failed.emit(reason)
 
 
 func _set_fallback_visible(value: bool) -> void:
+	var has_mesh_fallback := false
 	for child in get_children():
 		if child is MeshInstance3D:
+			has_mesh_fallback = true
 			child.visible = value
+	var fallback := get_node_or_null("FallbackLayer") as Sprite3D
+	if fallback != null:
+		fallback.visible = value and not has_mesh_fallback
+
+
+func _checker_texture() -> Texture2D:
+	var image := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	var light := Color(0.95, 0.28, 0.72, 1.0)
+	var dark := Color(0.18, 0.05, 0.14, 1.0)
+	for y in 16:
+		for x in 16:
+			image.set_pixel(x, y, light if (x / 4 + y / 4) % 2 == 0 else dark)
+	return ImageTexture.create_from_image(image)

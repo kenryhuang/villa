@@ -45,6 +45,7 @@ const NEW_GAME_STARTER_ITEMS := {
 	"lamp": 99,
 }
 const NEW_GAME_STARTER_GOLD := 50_000
+const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose"]
 
 @export var load_save_on_start := true
 @export var save_slot := 0:
@@ -256,6 +257,8 @@ func _connect_systems() -> bool:
 
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))
+	if not farming_system.visual_asset_failed.is_connected(_on_crop_visual_asset_failed):
+		farming_system.visual_asset_failed.connect(_on_crop_visual_asset_failed)
 
 	# MarketSystem 使用静态市场目录创建运行时库存
 	var game_data = get_node_or_null("/root/GameData")
@@ -944,15 +947,28 @@ static func default_crop_definitions() -> Array[CropData]:
 		crop.growth_form = "annual" if crop.lifecycle_type == "annual_regrow" else crop.lifecycle_type
 		crop.tags.assign(row.get("tags", []))
 		crop.exp_reward = int(row.exp)
-		crop.stage_textures.assign(["seed", "sprout", "growing", "mature"])
-		crop.stage_scenes.assign([
-			"res://assets/crops/%s/%s_stage_0_seed.tscn" % [crop.crop_id, crop.crop_id],
-			"res://assets/crops/%s/%s_stage_1_sprout.tscn" % [crop.crop_id, crop.crop_id],
-			"res://assets/crops/%s/%s_stage_2_growing.tscn" % [crop.crop_id, crop.crop_id],
-			"res://assets/crops/%s/%s_stage_3_mature.tscn" % [crop.crop_id, crop.crop_id],
-		])
+		var seed_scene := "res://assets/crops/%s/%s_stage_0_seed.tscn" % [crop.crop_id, crop.crop_id]
+		var sprout_scene := "res://assets/crops/%s/%s_stage_1_sprout.tscn" % [crop.crop_id, crop.crop_id]
+		var growing_scene := "res://assets/crops/%s/%s_stage_2_growing.tscn" % [crop.crop_id, crop.crop_id]
+		var mature_scene := "res://assets/crops/%s/%s_stage_3_mature.tscn" % [crop.crop_id, crop.crop_id]
+		if crop.crop_id in TWO_STAGE_CROP_IDS:
+			var seed_texture := "res://assets/crops/%s/painted/stage_0/variant_0_front.png" % crop.crop_id
+			var mature_texture := "res://assets/crops/%s/painted/stage_3/variant_0_front.png" % crop.crop_id
+			crop.stage_textures.assign([seed_texture, seed_texture, seed_texture, mature_texture])
+			crop.stage_scenes.assign([seed_scene, seed_scene, seed_scene, mature_scene])
+		else:
+			crop.stage_textures.assign(["seed", "sprout", "growing", "mature"])
+			crop.stage_scenes.assign([seed_scene, sprout_scene, growing_scene, mature_scene])
 		definitions.append(crop)
 	return definitions
+
+
+func _on_crop_visual_asset_failed(stage_scene_path: String, reason: String) -> void:
+	_publish_hud_message(
+		"debug",
+		"warning",
+		"作物美术资源异常：%s（%s）" % [stage_scene_path.get_file(), reason]
+	)
 
 
 func _grant_new_game_items() -> void:
