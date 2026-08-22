@@ -1,6 +1,7 @@
 extends SceneTree
 
 const SeedSelectorPanelTest := preload("res://tests/test_seed_selector_panel.gd")
+const SeedCardTest := preload("res://tests/test_seed_card.gd")
 const TestAssertScript := preload("res://tests/test_assert.gd")
 
 
@@ -10,6 +11,7 @@ func _init() -> void:
 
 func _run() -> void:
 	var assertions := TestAssertScript.new()
+	SeedCardTest.new().run(assertions, self)
 	var suite := SeedSelectorPanelTest.new()
 	await suite.run(assertions, self)
 	await suite.run_responsive(assertions, self)
