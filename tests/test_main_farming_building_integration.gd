@@ -500,16 +500,55 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if farm_cell:
 		action_controller.select_slot(0)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player hoes cell")
-		action_controller.select_slot(5)
+		assertions.truthy(
+			action_controller.select_slot(PlayerActionController.SEED_SLOT),
+			"main seed slot opens the real selector"
+		)
+		assertions.truthy(main.seed_selector_panel.visible, "main seed selector opens for planting")
+		assertions.truthy(tree.paused, "main seed selector pauses lower gameplay input")
+		assertions.truthy(
+			main.seed_selector_panel.select_seed("grain_seed"),
+			"main seed selector confirms grain"
+		)
+		assertions.truthy(not main.seed_selector_panel.visible, "confirmed main seed selector closes")
+		assertions.truthy(not tree.paused, "confirmed main seed selector releases its modal pause")
+		var selector_row_ids_before: Array[int] = _business_row_instance_ids(
+			main.seed_selector_panel.seed_rows,
+			"plant_item_id"
+		)
+		var market_row_ids_before: Array[int] = _business_row_instance_ids(
+			main.shop_ui.market_panel.item_rows,
+			"item_id"
+		)
+		assertions.truthy(
+			not selector_row_ids_before.is_empty(),
+			"closed main selector exposes identified seed rows"
+		)
+		assertions.truthy(
+			not market_row_ids_before.is_empty(),
+			"hidden main market exposes identified item rows"
+		)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player plants grain")
+		assertions.truthy(farm_cell.crop_instance != null, "main planting commits a crop instance immediately")
 		assertions.equal(
 			main.inventory_system.get_item_count("grain_seed"),
 			98,
 			"main planting consumes one seed"
 		)
+		await tree.process_frame
+		assertions.equal(
+			_business_row_instance_ids(main.seed_selector_panel.seed_rows, "plant_item_id"),
+			selector_row_ids_before,
+			"closed main selector keeps seed row instances after planting"
+		)
+		assertions.equal(
+			_business_row_instance_ids(main.shop_ui.market_panel.item_rows, "item_id"),
+			market_row_ids_before,
+			"hidden main market keeps item row instances after planting"
+		)
 		action_controller.select_slot(1)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player waters grain")
-		var day_before_debug := main.season_system.total_days
+		var day_before_debug: int = int(main.season_system.total_days)
 		var next_day := InputEventKey.new()
 		next_day.keycode = KEY_N
 		next_day.pressed = true
@@ -1083,6 +1122,17 @@ func _cleanup_test_save_directory() -> void:
 	var directory_path := TEST_SAVE_DIR.trim_suffix("/")
 	if DirAccess.dir_exists_absolute(directory_path):
 		DirAccess.remove_absolute(directory_path)
+
+
+func _business_row_instance_ids(rows: Node, meta_key: String) -> Array[int]:
+	var ids: Array[int] = []
+	if rows == null:
+		return ids
+	for child_value in rows.get_children():
+		var child := child_value as Control
+		if child != null and child.has_meta(meta_key):
+			ids.append(child.get_instance_id())
+	return ids
 
 
 func _test_save_path(slot: int) -> String:

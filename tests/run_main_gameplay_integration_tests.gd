@@ -63,7 +63,7 @@ func _run() -> void:
 	GatheringControllerTest.new().run(assertions, self)
 	await GatheringVisualsTest.new().run(assertions, self)
 	await MainGatheringIntegrationTest.new().run(assertions, self)
-	MainFarmingBuildingIntegrationTest.new().run(assertions, self)
+	await MainFarmingBuildingIntegrationTest.new().run(assertions, self)
 	await BuildingEconomyUITest.new().run(assertions, self)
 	await EconomyUIIntegrationTest.new().run(assertions, self)
 	await MainPointerFarmingTest.new().run(assertions, self)
