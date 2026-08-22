@@ -128,6 +128,24 @@ func _test_market_refresh_is_hidden_gated_and_visible_coalesced(
 		"same-frame authority changes perform one complete market-row rebuild"
 	)
 	assertions.equal(trade.player_quantity_label.text, "3", "coalesced trade quote reads the final authoritative quantity")
+	assertions.truthy(not trade.buy_button.disabled, "visible trade starts buyable before the responsive hidden-state mutation")
+	panel.apply_responsive_layout(Vector2(1000, 720))
+	assertions.truthy(not trade.visible, "drawer catalog layout hides the real trade panel")
+	game_state.gold = 0
+	(tree.root.get_node("EventBus") as Node).gold_changed.emit(0)
+	await tree.process_frame
+	assertions.truthy(
+		not trade.buy_button.disabled,
+		"hidden responsive trade keeps its prior buy quote until it is shown"
+	)
+	panel.apply_responsive_layout(Vector2(1920, 1080))
+	assertions.truthy(trade.visible, "three-column layout shows the real trade panel again")
+	await tree.process_frame
+	assertions.truthy(trade.buy_button.disabled, "shown trade consumes the pending gold quote")
+	assertions.truthy(
+		trade.buy_button.tooltip_text.contains("金币不足"),
+		"shown trade exposes the refreshed insufficient-gold reason"
+	)
 	if panel.item_rows.child_entered_tree.is_connected(row_enter_callback):
 		panel.item_rows.child_entered_tree.disconnect(row_enter_callback)
 	shop.close()

@@ -41,6 +41,8 @@ var _focus_before_confirmation: Control
 
 
 func _enter_tree() -> void:
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.connect(_on_visibility_changed)
 	_connect_authoritative_signals()
 
 
@@ -552,6 +554,15 @@ func _on_authoritative_snapshot_changed() -> void:
 		var reason := _localized_trade_failure(preflight)
 		_invalidate_confirmation(reason if not reason.is_empty() else "状态已变化，请重新确认")
 	_quote_refresh_pending = true
+	_schedule_quote_refresh()
+
+
+func _on_visibility_changed() -> void:
+	if is_visible_in_tree() and _quote_refresh_pending:
+		_schedule_quote_refresh()
+
+
+func _schedule_quote_refresh() -> void:
 	if not is_visible_in_tree():
 		return
 	if _quote_refresh_queued:
@@ -630,4 +641,6 @@ func _clear_feedback() -> void:
 func _exit_tree() -> void:
 	_quote_refresh_queued = false
 	_quote_refresh_pending = false
+	if visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.disconnect(_on_visibility_changed)
 	_disconnect_authoritative_signals()
