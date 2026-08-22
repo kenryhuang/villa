@@ -20,6 +20,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_ensure_crop("carrot", "carrot_seed", "胡萝卜", 4, [0], "outdoor_or_greenhouse")
 	_ensure_crop("lemon", "lemon_sapling", "柠檬", 5, [], "greenhouse_only", "tree", 3)
 	await _test_owned_seed_rows_and_selection(assertions, tree)
+	await _test_inventory_refresh_is_deferred_and_coalesced(assertions, tree)
 	await _test_controller_command_and_legacy_migration(assertions, tree)
 	await _test_hud_selection_survives_zero_quantity(assertions, tree)
 	await _test_topmost_escape_and_pause_restore(assertions, tree)
@@ -114,6 +115,58 @@ func _test_owned_seed_rows_and_selection(assertions: TestAssert, tree: SceneTree
 	assertions.truthy(panel.select_seed("grain_seed"), "compatible seed can be explicitly confirmed")
 	assertions.equal(fixture.controller.get_selected_plant_item_id(), "grain_seed", "confirmation stores the plant item ID")
 	assertions.equal(fixture.inventory.get_item_count("grain_seed"), before, "selection never consumes or moves seed inventory")
+	_free_fixture(fixture)
+	await tree.process_frame
+
+
+func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := await _make_fixture(tree)
+	var panel = fixture.panel
+	assertions.truthy(panel != null, "refresh gating fixture instantiates the selector")
+	if panel == null:
+		_free_fixture(fixture)
+		return
+	panel.open_for_cell(fixture.cell)
+	await tree.process_frame
+	var hidden_row_ids := _row_instance_ids(panel)
+	var initial_grain_quantity: int = fixture.inventory.get_item_count("grain_seed")
+	panel.close()
+	assertions.truthy(fixture.inventory.remove_item("grain_seed", 1), "hidden refresh fixture removes one seed")
+	await tree.process_frame
+	assertions.equal(
+		_row_instance_ids(panel),
+		hidden_row_ids,
+		"hidden selector keeps existing seed row instances until reopened"
+	)
+	panel.open_for_cell(fixture.cell)
+	await tree.process_frame
+	var reopened_row := _row(panel, "grain_seed")
+	assertions.truthy(reopened_row != null, "reopened selector renders remaining seed row")
+	if reopened_row != null:
+		assertions.equal(
+			(reopened_row.get_node("Quantity") as Label).text,
+			"×%d" % (initial_grain_quantity - 1),
+			"reopened selector reads the authoritative seed quantity"
+		)
+
+	var visible_row_ids := _row_instance_ids(panel)
+	var quantity_before_batch: int = fixture.inventory.get_item_count("grain_seed")
+	assertions.truthy(fixture.inventory.add_item("grain_seed", 2), "visible refresh fixture adds two seeds")
+	assertions.truthy(fixture.inventory.remove_item("grain_seed", 1), "visible refresh fixture removes one seed")
+	assertions.equal(
+		_row_instance_ids(panel),
+		visible_row_ids,
+		"visible seed changes do not rebuild rows before the deferred frame"
+	)
+	await tree.process_frame
+	var batched_row := _row(panel, "grain_seed")
+	assertions.truthy(batched_row != null, "coalesced refresh keeps the seed row visible")
+	if batched_row != null:
+		assertions.equal(
+			(batched_row.get_node("Quantity") as Label).text,
+			"×%d" % (quantity_before_batch + 1),
+			"coalesced refresh shows the final authoritative quantity"
+		)
 	_free_fixture(fixture)
 	await tree.process_frame
 
@@ -380,6 +433,14 @@ func _row_ids(panel) -> Array[String]:
 		var item_id := str(row.get_meta("plant_item_id", ""))
 		if not item_id.is_empty():
 			result.append(item_id)
+	return result
+
+
+func _row_instance_ids(panel) -> Array[int]:
+	var result: Array[int] = []
+	for row in panel.seed_rows.get_children():
+		if row.has_meta("plant_item_id"):
+			result.append(row.get_instance_id())
 	return result
 
 

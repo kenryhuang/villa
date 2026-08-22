@@ -28,6 +28,8 @@ var target_cell: GridCell
 var _event_bus: Node
 var _fallback_icons: Dictionary = {}
 var _modal_coordinator = EconomyModalCoordinatorScript.new()
+var _refresh_pending := false
+var _refresh_scheduled := false
 
 
 func _ready() -> void:
@@ -42,6 +44,11 @@ func _ready() -> void:
 	if viewport != null and not viewport.size_changed.is_connected(_apply_responsive_layout):
 		viewport.size_changed.connect(_apply_responsive_layout)
 	_apply_responsive_layout()
+
+
+func _exit_tree() -> void:
+	_refresh_scheduled = false
+	_disconnect_authoritative_signals()
 
 
 func configure(
@@ -116,6 +123,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _refresh() -> void:
 	if seed_rows == null:
 		return
+	_refresh_pending = false
 	for child in seed_rows.get_children():
 		if child != empty_label:
 			child.free()
@@ -337,6 +345,16 @@ func _disconnect_authoritative_signals() -> void:
 func _on_inventory_item_changed(item_id: String, _quantity: int) -> void:
 	var item_data: Variant = GameDataScript.get_item(item_id)
 	if item_data is Dictionary and str((item_data as Dictionary).get("category", "")) == "seed":
+		_refresh_pending = true
+		if not visible or _refresh_scheduled:
+			return
+		_refresh_scheduled = true
+		_flush_deferred_refresh.call_deferred()
+
+
+func _flush_deferred_refresh() -> void:
+	_refresh_scheduled = false
+	if visible and is_inside_tree() and _refresh_pending:
 		_refresh()
 
 
