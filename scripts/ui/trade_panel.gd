@@ -44,6 +44,8 @@ func _enter_tree() -> void:
 	if not visibility_changed.is_connected(_on_visibility_changed):
 		visibility_changed.connect(_on_visibility_changed)
 	_connect_authoritative_signals()
+	if _quote_refresh_pending:
+		_schedule_quote_refresh()
 
 
 func _ready() -> void:
@@ -640,7 +642,6 @@ func _clear_feedback() -> void:
 
 func _exit_tree() -> void:
 	_quote_refresh_queued = false
-	_quote_refresh_pending = false
 	if visibility_changed.is_connected(_on_visibility_changed):
 		visibility_changed.disconnect(_on_visibility_changed)
 	_disconnect_authoritative_signals()

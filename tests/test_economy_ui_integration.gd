@@ -131,6 +131,32 @@ func _test_market_refresh_is_hidden_gated_and_visible_coalesced(
 		"same-frame authority changes perform one complete market-row rebuild"
 	)
 	assertions.equal(trade.player_quantity_label.text, "3", "coalesced trade quote reads the final authoritative quantity")
+	panel.apply_responsive_layout(Vector2(800, 720))
+	panel.open_details_drawer()
+	assertions.truthy(
+		trade.get_parent() == panel.narrow_detail_stack and trade.is_visible_in_tree(),
+		"narrow drawer reparents the real visible trade panel into the detail stack"
+	)
+	game_state.gold = 0
+	(tree.root.get_node("EventBus") as Node).gold_changed.emit(0)
+	assertions.truthy(
+		not trade.buy_button.disabled,
+		"same-frame narrow reparent fixture keeps the prior quote before deferred consumption"
+	)
+	panel.apply_responsive_layout(Vector2(1920, 1080))
+	assertions.truthy(
+		trade.get_parent() == panel.columns and trade.is_visible_in_tree(),
+		"three-column responsive transition reparents the real trade panel back into columns"
+	)
+	await tree.process_frame
+	assertions.truthy(trade.buy_button.disabled, "reparented trade consumes the pending gold quote exactly once")
+	assertions.truthy(
+		trade.buy_button.tooltip_text.contains("金币不足"),
+		"reparented trade exposes the final insufficient-gold reason"
+	)
+	game_state.gold = 1000
+	(tree.root.get_node("EventBus") as Node).gold_changed.emit(1000)
+	await tree.process_frame
 	assertions.truthy(not trade.buy_button.disabled, "visible trade starts buyable before the responsive hidden-state mutation")
 	panel.apply_responsive_layout(Vector2(1000, 720))
 	assertions.truthy(not trade.visible, "drawer catalog layout hides the real trade panel")
