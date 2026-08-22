@@ -5,6 +5,7 @@ const InventorySystemScript := preload("res://scripts/systems/inventory_system.g
 const FarmingSystemScript := preload("res://scripts/systems/farming_system.gd")
 const ControllerScript := preload("res://scripts/actors/player_action_controller.gd")
 const HudScene := preload("res://scenes/ui/hud.tscn")
+const SeedCardScript := preload("res://scripts/ui/seed_card.gd")
 
 const VIEWPORT_SIZES := [Vector2i(1920, 1080), Vector2i(640, 960)]
 var _registered_crop_ids: Array[String] = []
@@ -48,6 +49,10 @@ func run_responsive(assertions: TestAssert, tree: SceneTree) -> void:
 		var header := panel.get_node("Overlay/Center/Shell/Layout/Header") as Control
 		var list_scroll := panel.get_node("Overlay/Center/Shell/Layout/SeedScroll") as Control
 		var footer := panel.get_node("Overlay/Center/Shell/Layout/Footer") as Control
+		assertions.truthy(not panel.has_node("Overlay/Center/Shell/Layout/ColumnHeader"), "seed selector removes the dense table header")
+		assertions.truthy(panel.seed_rows is GridContainer, "seed selector owns a responsive card grid")
+		if panel.seed_rows is GridContainer:
+			assertions.equal(panel.seed_rows.columns, 2 if viewport_size.x >= 900 else 1, "seed selector chooses responsive card columns at %s" % viewport_size)
 		for control in [shell, header, list_scroll, footer]:
 			assertions.truthy(
 				viewport_rect.encloses((control as Control).get_global_rect()),
@@ -67,6 +72,7 @@ func run_responsive(assertions: TestAssert, tree: SceneTree) -> void:
 				shell.get_global_rect().encloses(row.get_global_rect()),
 				"seed row %s stays inside shell at %s" % [row.name, viewport_size]
 			)
+			assertions.truthy(row is SeedCardScript, "seed entry is a reusable card at %s" % viewport_size)
 			var previous_rect := Rect2()
 			for child_value in row.get_children():
 				var child := child_value as Control
@@ -103,17 +109,32 @@ func _test_owned_seed_rows_and_selection(assertions: TestAssert, tree: SceneTree
 	assertions.equal(_row(panel, "carrot_seed").get_meta("disabled_reason"), "wrong_season", "out-of-season seed keeps stable disabled reason")
 	assertions.equal(_row(panel, "lemon_sapling").get_meta("disabled_reason"), "greenhouse_required", "greenhouse seed keeps stable disabled reason")
 	assertions.equal(_row(panel, "grain_seed").get_meta("disabled_reason"), "", "compatible seed remains selectable")
+	var uses_cards := true
+	for item_id in _row_ids(panel):
+		uses_cards = uses_cards and _row(panel, item_id) is SeedCardScript
+	assertions.truthy(uses_cards, "all selector entries use the reusable seed card")
+	if not uses_cards:
+		_free_fixture(fixture)
+		await tree.process_frame
+		return
 	for item_id in _row_ids(panel):
 		var row := _row(panel, item_id)
-		assertions.truthy((row.get_node("Icon") as TextureRect).texture != null, "%s row has a visible icon" % item_id)
-		assertions.truthy(not (row.get_node("Name") as Label).text.is_empty(), "%s row shows a name" % item_id)
-		assertions.truthy((row.get_node("Quantity") as Label).text.begins_with("×"), "%s row shows quantity" % item_id)
-		assertions.truthy((row.get_node("Growth") as Label).text.contains("天"), "%s row shows first growth days" % item_id)
-		assertions.truthy(not (row.get_node("Seasons") as Label).text.is_empty(), "%s row shows seasons" % item_id)
-		assertions.truthy(not (row.get_node("Environment") as Label).text.is_empty(), "%s row shows environment" % item_id)
+		assertions.truthy(row is SeedCardScript, "%s uses the seed card component" % item_id)
+		assertions.truthy((row.get_node("Content/Icon") as TextureRect).texture != null, "%s card has a visible icon" % item_id)
+		assertions.truthy(not (row.get_node("Content/Details/NameRow/Name") as Label).text.is_empty(), "%s card shows a name" % item_id)
+		assertions.truthy(_quantity_label(row).text.begins_with("×"), "%s card shows quantity" % item_id)
+		var metadata := (row.get_node("Content/Details/Metadata") as Label).text
+		assertions.truthy(metadata.contains("天"), "%s card shows growth days" % item_id)
+		assertions.truthy(metadata.contains("·"), "%s card groups season and environment metadata" % item_id)
 	var before: int = fixture.inventory.get_item_count("grain_seed")
-	assertions.truthy(not panel.select_seed("carrot_seed"), "disabled target seed cannot be confirmed")
-	assertions.truthy(panel.select_seed("grain_seed"), "compatible seed can be explicitly confirmed")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	_row(panel, "carrot_seed").gui_input.emit(click)
+	assertions.truthy(panel.visible, "disabled whole-card click keeps the selector open")
+	assertions.truthy(((_row(panel, "carrot_seed").get_node("Content/Details/Status") as Label).text).contains("季节"), "disabled card keeps a clear red reason")
+	_row(panel, "grain_seed").gui_input.emit(click)
+	assertions.truthy(not panel.visible, "enabled whole-card click confirms and closes")
 	assertions.equal(fixture.controller.get_selected_plant_item_id(), "grain_seed", "confirmation stores the plant item ID")
 	assertions.equal(fixture.inventory.get_item_count("grain_seed"), before, "selection never consumes or moves seed inventory")
 	_free_fixture(fixture)
@@ -145,7 +166,7 @@ func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, t
 	assertions.truthy(reopened_row != null, "reopened selector renders remaining seed row")
 	if reopened_row != null:
 		assertions.equal(
-			(reopened_row.get_node("Quantity") as Label).text,
+			_quantity_label(reopened_row).text,
 			"×%d" % (initial_grain_quantity - 1),
 			"reopened selector reads the authoritative seed quantity"
 		)
@@ -174,7 +195,7 @@ func _test_inventory_refresh_is_deferred_and_coalesced(assertions: TestAssert, t
 	assertions.truthy(batched_row != null, "coalesced refresh keeps the seed row visible")
 	if batched_row != null:
 		assertions.equal(
-			(batched_row.get_node("Quantity") as Label).text,
+			_quantity_label(batched_row).text,
 			"×%d" % (quantity_before_batch + 1),
 			"coalesced refresh shows the final authoritative quantity"
 		)
@@ -219,7 +240,7 @@ func _test_reenter_reconnects_authoritative_events(assertions: TestAssert, tree:
 	assertions.truthy(row != null, "reentered selector keeps the changed seed row visible")
 	if row != null:
 		assertions.equal(
-			(row.get_node("Quantity") as Label).text,
+			_quantity_label(row).text,
 			"×%d" % (before_quantity + 1),
 			"reentered selector refreshes from the authoritative inventory"
 		)
@@ -351,13 +372,13 @@ func _test_off_tree_configure_binds_authoritative_events_on_ready(
 	var row := _row(panel, "grain_seed")
 	assertions.truthy(row != null, "off-tree configured selector refreshes initial rows on ready")
 	if row != null:
-		assertions.equal((row.get_node("Quantity") as Label).text, "×3", "off-tree configured selector shows initial quantity")
+		assertions.equal(_quantity_label(row).text, "×3", "off-tree configured selector shows initial quantity")
 	assertions.truthy(inventory.add_item("grain_seed", 2), "off-tree event fixture adds selected seed")
 	await tree.process_frame
 	row = _row(panel, "grain_seed")
 	assertions.truthy(row != null, "authoritative add event keeps the selected seed row visible")
 	if row != null:
-		assertions.equal((row.get_node("Quantity") as Label).text, "×5", "authoritative add event refreshes selector quantity")
+		assertions.equal(_quantity_label(row).text, "×5", "authoritative add event refreshes selector quantity")
 	assertions.truthy(inventory.remove_item("grain_seed", 5), "off-tree event fixture drains selected seed")
 	await tree.process_frame
 	assertions.truthy(_row(panel, "grain_seed") == null, "authoritative remove event removes zero-quantity seed row")
@@ -433,7 +454,7 @@ func _test_reconfigure_after_old_dependencies_are_freed(
 	var replacement_row := _row(panel, "grain_seed")
 	assertions.truthy(replacement_row != null, "reconfigured selector renders replacement inventory")
 	if replacement_row != null:
-		assertions.equal((replacement_row.get_node("Quantity") as Label).text, "×4", "reconfigured selector uses replacement quantity")
+		assertions.equal(_quantity_label(replacement_row).text, "×4", "reconfigured selector uses replacement quantity")
 	panel.close()
 	panel.free()
 	replacement_controller.free()
@@ -508,6 +529,11 @@ func _row(panel, plant_item_id: String) -> Control:
 		if str(row.get_meta("plant_item_id", "")) == plant_item_id:
 			return row
 	return null
+
+
+func _quantity_label(card: Control) -> Label:
+	var nested := card.get_node_or_null("Content/Details/NameRow/Quantity") as Label
+	return nested if nested != null else card.get_node_or_null("Quantity") as Label
 
 
 func _inventory_slot(inventory: InventorySystem, item_id: String) -> int:

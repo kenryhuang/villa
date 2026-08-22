@@ -357,7 +357,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"full inventory preserves represented output"
 	)
 	assertions.equal(
-		main.hud.build_feedback_label.text,
+		str(main.hud_message_bus.get_recent()[-1].text),
 		"资产库空间不足",
 		"full inventory gives explicit pickup feedback"
 	)
@@ -498,6 +498,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var farm_cell := _find_farm_cell(main.grid_system)
 	assertions.truthy(farm_cell != null, "main has a buildable farm cell")
 	if farm_cell:
+		assertions.truthy(main.inventory_system.add_item("carrot_seed", 1), "main card fixture owns a non-grain seed")
 		action_controller.select_slot(0)
 		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player hoes cell")
 		assertions.truthy(
@@ -506,10 +507,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.truthy(main.seed_selector_panel.visible, "main seed selector opens for planting")
 		assertions.truthy(tree.paused, "main seed selector pauses lower gameplay input")
-		assertions.truthy(
-			main.seed_selector_panel.select_seed("grain_seed"),
-			"main seed selector confirms grain"
-		)
+		var carrot_card: Control = null
+		for card_value in main.seed_selector_panel.seed_rows.get_children():
+			var card := card_value as Control
+			if str(card.get_meta("plant_item_id", "")) == "carrot_seed":
+				carrot_card = card
+				break
+		assertions.truthy(carrot_card != null, "main selector renders the owned carrot card")
+		if carrot_card != null:
+			var click := InputEventMouseButton.new()
+			click.button_index = MOUSE_BUTTON_LEFT
+			click.pressed = true
+			carrot_card.gui_input.emit(click)
+		assertions.equal(action_controller.get_selected_plant_item_id(), "carrot_seed", "whole-card input selects the non-grain seed synchronously")
 		assertions.truthy(not main.seed_selector_panel.visible, "confirmed main seed selector closes")
 		assertions.truthy(not tree.paused, "confirmed main seed selector releases its modal pause")
 		var selector_row_ids_before: Array[int] = _business_row_instance_ids(
@@ -528,11 +538,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			not market_row_ids_before.is_empty(),
 			"hidden main market exposes identified item rows"
 		)
-		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player plants grain")
+		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player plants carrot")
 		assertions.truthy(farm_cell.crop_instance != null, "main planting commits a crop instance immediately")
 		assertions.equal(
-			main.inventory_system.get_item_count("grain_seed"),
-			98,
+			main.inventory_system.get_item_count("carrot_seed"),
+			0,
 			"main planting consumes one seed"
 		)
 		await tree.process_frame
@@ -547,7 +557,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"hidden main market keeps item row instances after planting"
 		)
 		action_controller.select_slot(1)
-		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player waters grain")
+		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player waters carrot")
 		var day_before_debug: int = int(main.season_system.total_days)
 		var next_day := InputEventKey.new()
 		next_day.keycode = KEY_N
@@ -583,29 +593,29 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"second debug step displays the growing stage"
 		)
 		main._unhandled_input(next_day)
-		assertions.truthy(farm_cell.crop_instance.is_mature(), "third debug N matures main grain")
+		assertions.truthy(farm_cell.crop_instance.is_mature(), "third debug N matures main carrot")
 		assertions.equal(
 			main.season_system.total_days,
 			day_before_debug,
 			"repeated debug growth never advances the formal date"
 		)
-		var backpack_grain_before: int = main.inventory_system.get_item_count("grain")
-		var storage_grain_before: int = main.farm_storage_system.get_count("grain")
-		var expected_grain: int = int(
-			main.farming_system.preview_harvest(farm_cell).items.grain
+		var backpack_carrot_before: int = main.inventory_system.get_item_count("carrot")
+		var storage_carrot_before: int = main.farm_storage_system.get_count("carrot")
+		var expected_carrot: int = int(
+			main.farming_system.preview_harvest(farm_cell).items.carrot
 		)
-		assertions.truthy(expected_grain >= 2 and expected_grain <= 4, "main grain uses authored yield range")
+		assertions.truthy(expected_carrot >= 2 and expected_carrot <= 3, "main carrot uses authored yield range")
 		action_controller.select_slot(0)
-		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player harvests grain")
+		assertions.truthy(action_controller.perform_cell_action(farm_cell), "main player harvests carrot")
 		assertions.equal(
-			main.farm_storage_system.get_count("grain"),
-			storage_grain_before + expected_grain,
-			"main harvest adds grain to central storage"
+			main.farm_storage_system.get_count("carrot"),
+			storage_carrot_before + expected_carrot,
+			"main harvest adds carrot to central storage"
 		)
 		assertions.equal(
-			main.inventory_system.get_item_count("grain"),
-			backpack_grain_before,
-			"main harvest leaves backpack grain unchanged"
+			main.inventory_system.get_item_count("carrot"),
+			backpack_carrot_before,
+			"main harvest leaves backpack carrot unchanged"
 		)
 		assertions.equal(
 			farm_cell.state,

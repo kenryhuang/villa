@@ -3,6 +3,7 @@ extends CanvasLayer
 
 const GameDataScript := preload("res://scripts/core/game_data.gd")
 const EconomyModalCoordinatorScript := preload("res://scripts/ui/economy_modal_coordinator.gd")
+const SeedCardScene := preload("res://scenes/ui/seed_card.tscn")
 const SEASON_NAMES := ["春", "夏", "秋", "冬"]
 const REASON_LABELS := {
 	"no_seed": "库存不足",
@@ -16,7 +17,7 @@ const REASON_LABELS := {
 @onready var shell: PanelContainer = $Overlay/Center/Shell
 @onready var close_button: Button = $Overlay/Center/Shell/Layout/Header/CloseButton
 @onready var seed_scroll: ScrollContainer = $Overlay/Center/Shell/Layout/SeedScroll
-@onready var seed_rows: VBoxContainer = $Overlay/Center/Shell/Layout/SeedScroll/SeedRows
+@onready var seed_rows: GridContainer = $Overlay/Center/Shell/Layout/SeedScroll/SeedRows
 @onready var empty_label: Label = $Overlay/Center/Shell/Layout/SeedScroll/SeedRows/EmptyLabel
 @onready var selection_status: Label = $Overlay/Center/Shell/Layout/Footer/SelectionStatus
 @onready var footer_close_button: Button = $Overlay/Center/Shell/Layout/Footer/FooterCloseButton
@@ -179,70 +180,30 @@ func _entry_for(plant_item_id: String) -> Dictionary:
 	return {}
 
 
-func _create_seed_row(entry: Dictionary) -> HBoxContainer:
+func _create_seed_row(entry: Dictionary) -> Control:
 	var item_id := str(entry.plant_item_id)
 	var crop := entry.crop as CropData
 	var reason := _disabled_reason(item_id)
-	var row := HBoxContainer.new()
-	row.name = "Seed_%s" % item_id
-	row.custom_minimum_size = Vector2(0, 56)
-	row.add_theme_constant_override("separation", 8)
-	row.set_meta("plant_item_id", item_id)
-	row.set_meta("disabled_reason", reason)
-
-	var icon := TextureRect.new()
-	icon.name = "Icon"
-	icon.custom_minimum_size = Vector2(32, 40)
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture = _seed_icon(crop, item_id)
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(icon)
-
-	row.add_child(_metadata_label("Name", str(entry.item_data.get("name", crop.name)), 90, true))
-	row.add_child(_metadata_label("Quantity", "×%d" % int(entry.quantity), 34))
-	row.add_child(_metadata_label("Growth", "%d天" % crop.growth_days, 40))
-	row.add_child(_metadata_label("Seasons", _season_text(crop.seasons), 52))
-	row.add_child(_metadata_label("Environment", _environment_text(crop.environment), 64))
-	var reason_label := _metadata_label(
-		"Reason",
-		REASON_LABELS.get(reason, reason) if not reason.is_empty() else "可播种",
-		90,
-		true
+	var card := SeedCardScene.instantiate()
+	card.name = "Seed_%s" % item_id
+	card.configure({
+		"plant_item_id": item_id,
+		"display_name": str(entry.item_data.get("name", crop.name)),
+		"quantity": int(entry.quantity),
+		"growth_text": "成熟 %d 天" % crop.growth_days,
+		"season_text": _season_text(crop.seasons),
+		"environment_text": _environment_text(crop.environment),
+		"status_text": REASON_LABELS.get(reason, reason) if not reason.is_empty() else "当前可播种",
+		"disabled": not reason.is_empty(),
+		"disabled_reason": reason,
+		"icon": _seed_icon(crop, item_id),
+	})
+	card.set_selected(
+		action_controller_ref != null
+		and action_controller_ref.get_selected_plant_item_id() == item_id
 	)
-	reason_label.add_theme_color_override(
-		"font_color",
-		Color("#B65C4B") if not reason.is_empty() else Color("#39705A")
-	)
-	row.add_child(reason_label)
-
-	var select_button := Button.new()
-	select_button.name = "SelectButton"
-	select_button.custom_minimum_size = Vector2(64, 40)
-	select_button.text = "选择"
-	select_button.tooltip_text = REASON_LABELS.get(reason, reason) if not reason.is_empty() else "选择此种子"
-	select_button.disabled = not reason.is_empty()
-	select_button.pressed.connect(select_seed.bind(item_id))
-	row.add_child(select_button)
-	return row
-
-
-func _metadata_label(
-	label_name: String,
-	text_value: String,
-	minimum_width: float,
-	expand: bool = false
-) -> Label:
-	var label := Label.new()
-	label.name = label_name
-	label.custom_minimum_size = Vector2(minimum_width, 40)
-	label.text = text_value
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	label.tooltip_text = text_value
-	if expand:
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	return label
+	card.seed_selected.connect(select_seed)
+	return card
 
 
 func _disabled_reason(plant_item_id: String) -> String:
@@ -295,11 +256,11 @@ func _season_text(seasons: Array[int]) -> String:
 	for season in seasons:
 		if season >= 0 and season < SEASON_NAMES.size():
 			names.append(SEASON_NAMES[season])
-	return "/".join(names)
+	return " / ".join(names)
 
 
 func _environment_text(environment: String) -> String:
-	return "仅温室" if environment == "greenhouse_only" else "户外/温室"
+	return "仅温室" if environment == "greenhouse_only" else "露天与温室"
 
 
 func _seed_icon(crop: CropData, item_id: String) -> Texture2D:
@@ -369,7 +330,7 @@ func _on_plant_selection_changed(_plant_item_id: String) -> void:
 
 func _focus_first_command() -> void:
 	for row_value in seed_rows.get_children():
-		var button := (row_value as Node).get_node_or_null("SelectButton") as Button
+		var button := (row_value as Node).get_node_or_null("Content/SelectButton") as Button
 		if button != null and not button.disabled:
 			button.grab_focus()
 			return
@@ -380,7 +341,8 @@ func _apply_responsive_layout() -> void:
 	if shell == null or get_viewport() == null:
 		return
 	var viewport_size := Vector2(get_viewport().get_visible_rect().size)
+	seed_rows.columns = 2 if viewport_size.x >= 900.0 else 1
 	shell.custom_minimum_size = Vector2(
-		minf(820.0, maxf(320.0, viewport_size.x - 32.0)),
-		minf(700.0, maxf(420.0, viewport_size.y - 32.0))
+		minf(900.0, maxf(320.0, viewport_size.x - 32.0)),
+		minf(720.0, maxf(420.0, viewport_size.y - 32.0))
 	)

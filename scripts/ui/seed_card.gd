@@ -13,6 +13,7 @@ signal seed_selected(plant_item_id: String)
 var plant_item_id := ""
 var disabled := false
 var _selected := false
+var _pending_data: Dictionary = {}
 
 
 func _ready() -> void:
@@ -20,29 +21,38 @@ func _ready() -> void:
 		gui_input.connect(_on_card_gui_input)
 	if not select_button.pressed.is_connected(_request_selection):
 		select_button.pressed.connect(_request_selection)
+	if not _pending_data.is_empty():
+		_apply_configuration()
 	_update_style()
 
 
 func configure(data: Dictionary) -> void:
+	_pending_data = data.duplicate(true)
 	plant_item_id = str(data.get("plant_item_id", ""))
 	disabled = bool(data.get("disabled", false))
 	set_meta("plant_item_id", plant_item_id)
 	set_meta("disabled_reason", str(data.get("disabled_reason", "")))
-	name_label.text = str(data.get("display_name", plant_item_id))
-	quantity_label.text = "×%d" % int(data.get("quantity", 0))
+	if not is_node_ready():
+		return
+	_apply_configuration()
+
+
+func _apply_configuration() -> void:
+	name_label.text = str(_pending_data.get("display_name", plant_item_id))
+	quantity_label.text = "×%d" % int(_pending_data.get("quantity", 0))
 	metadata_label.text = "%s　·　%s　·　%s" % [
-		str(data.get("growth_text", "")),
-		str(data.get("season_text", "")),
-		str(data.get("environment_text", "")),
+		str(_pending_data.get("growth_text", "")),
+		str(_pending_data.get("season_text", "")),
+		str(_pending_data.get("environment_text", "")),
 	]
-	status_label.text = str(data.get("status_text", ""))
+	status_label.text = str(_pending_data.get("status_text", ""))
 	status_label.add_theme_color_override(
 		"font_color",
 		Color("e58b7c") if disabled else Color("7bd09a")
 	)
-	icon_rect.texture = data.get("icon") as Texture2D
+	icon_rect.texture = _pending_data.get("icon") as Texture2D
 	select_button.disabled = disabled
-	select_button.text = "不可用" if disabled else "选择"
+	select_button.text = "—" if disabled else "选"
 	select_button.tooltip_text = status_label.text
 	mouse_default_cursor_shape = Control.CURSOR_ARROW if disabled else Control.CURSOR_POINTING_HAND
 	_update_style()
