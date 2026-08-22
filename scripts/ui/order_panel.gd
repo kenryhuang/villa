@@ -46,6 +46,7 @@ var _npc_economy: NpcEconomySystem
 var _orders: Array[Dictionary] = []
 var _visible_orders: Array[Dictionary] = []
 var _refresh_queued := false
+var _refresh_pending := false
 
 
 static func status_for(order: Dictionary, owned: int, total_day: int) -> String:
@@ -72,6 +73,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_refresh_queued = false
+	_refresh_pending = false
 	_disconnect_runtime_signals()
 
 
@@ -138,6 +141,7 @@ func request_delivery(order_id: String) -> void:
 func refresh_orders() -> void:
 	if not is_node_ready():
 		return
+	_refresh_pending = false
 	var scroll_position := order_scroll.scroll_vertical
 	_orders.clear()
 	_visible_orders.clear()
@@ -382,6 +386,9 @@ func _on_inventory_changed(_item_id: String, _quantity: int) -> void:
 
 
 func _queue_refresh() -> void:
+	_refresh_pending = true
+	if not is_visible_in_tree():
+		return
 	if _refresh_queued:
 		return
 	_refresh_queued = true
@@ -390,11 +397,12 @@ func _queue_refresh() -> void:
 
 func _do_queued_refresh() -> void:
 	_refresh_queued = false
-	refresh_orders()
+	if is_inside_tree() and is_visible_in_tree() and _refresh_pending:
+		refresh_orders()
 
 
 func _on_storage_changed(_changes: Dictionary) -> void:
-	refresh_orders()
+	_queue_refresh()
 
 
 func _emit_unread_notification(target_type: String, target_id: String) -> void:

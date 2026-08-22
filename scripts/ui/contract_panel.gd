@@ -29,6 +29,7 @@ var _economy: EconomySystem
 var _contracts: Array[Dictionary] = []
 var _sign_in_progress := false
 var _refresh_queued := false
+var _refresh_pending := false
 
 
 static func safe_delivery_quantity(value: Variant, authoritative_quantity: int) -> int:
@@ -72,6 +73,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_refresh_queued = false
+	_refresh_pending = false
 	_disconnect_runtime_signals()
 
 
@@ -151,6 +154,7 @@ func request_delivery(contract_id: String, quantity: int) -> void:
 func refresh_contracts() -> void:
 	if not is_node_ready():
 		return
+	_refresh_pending = false
 	var active_scroll_position := active_scroll.scroll_vertical
 	var available_scroll_position := available_scroll.scroll_vertical
 	_contracts.clear()
@@ -416,6 +420,9 @@ func _on_inventory_changed(_item_id: String, _quantity: int) -> void:
 
 
 func _queue_refresh() -> void:
+	_refresh_pending = true
+	if not is_visible_in_tree():
+		return
 	if _refresh_queued:
 		return
 	_refresh_queued = true
@@ -424,11 +431,12 @@ func _queue_refresh() -> void:
 
 func _do_queued_refresh() -> void:
 	_refresh_queued = false
-	refresh_contracts()
+	if is_inside_tree() and is_visible_in_tree() and _refresh_pending:
+		refresh_contracts()
 
 
 func _on_storage_changed(_changes: Dictionary) -> void:
-	refresh_contracts()
+	_queue_refresh()
 
 
 func _emit_unread_notification(target_type: String, target_id: String) -> void:

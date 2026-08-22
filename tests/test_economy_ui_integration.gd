@@ -31,6 +31,9 @@ class FixedDaySource:
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await _test_market_refresh_is_hidden_gated_and_visible_coalesced(assertions, tree)
+	await _test_order_contract_hidden_refresh_waits_for_shop_entry(assertions, tree)
+	await _test_visible_order_refreshes_are_coalesced(assertions, tree)
+	await _test_visible_contract_refreshes_are_coalesced(assertions, tree)
 	await _test_main_owned_routing_contract(assertions, tree)
 	await _test_hud_market_sale_and_large_confirmation(assertions, tree)
 	await _test_order_delivery_updates_every_authority(assertions, tree)
@@ -154,6 +157,191 @@ func _test_market_refresh_is_hidden_gated_and_visible_coalesced(
 	_restore_wallet(game_state, saved)
 
 
+func _test_order_contract_hidden_refresh_waits_for_shop_entry(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state: Node = tree.root.get_node("GameState")
+	var saved: Dictionary = _snapshot_wallet(game_state)
+	var fixture: Dictionary = _order_contract_fixture(game_state)
+	for node in [
+		fixture.market, fixture.npc, fixture.inventory, fixture.storage,
+		fixture.router, fixture.economy,
+	]:
+		tree.root.add_child(node)
+	var shop: ShopUI = ShopScene.instantiate()
+	tree.root.add_child(shop)
+	await tree.process_frame
+	assertions.truthy(
+		shop.configure(fixture.inventory, fixture.economy, fixture.market, null, null, null, fixture.npc),
+		"order-contract hidden-refresh fixture configures real ShopUI"
+	)
+	assertions.truthy(
+		fixture.economy.sign_contract("lao_li:grain:1:3"),
+		"order-contract hidden-refresh fixture signs the real grain contract"
+	)
+	shop.open("orders")
+	shop.order_panel.select_order("tiejiang_zhang:iron_ore:1")
+	var order_row_ids: Array[int] = _order_row_instance_ids(shop.order_panel)
+	assertions.truthy(not order_row_ids.is_empty(), "orders page creates real identified order rows")
+	shop.select_tab("contracts")
+	shop.contract_panel.select_contract("lao_li:grain:1:3")
+	var contract_row_ids: Array[int] = _contract_row_instance_ids(shop.contract_panel)
+	assertions.truthy(not contract_row_ids.is_empty(), "contracts page creates real identified contract rows")
+	shop.close()
+	assertions.truthy(
+		fixture.inventory.remove_item("iron_ore", 1),
+		"hidden order mutation emits a real inventory removal"
+	)
+	assertions.truthy(
+		fixture.storage.remove_items({"grain": 5}),
+		"hidden contract mutation emits a real farm-storage change"
+	)
+	await tree.process_frame
+	assertions.equal(
+		_order_row_instance_ids(shop.order_panel),
+		order_row_ids,
+		"hidden orders keep existing real row instances until ShopUI reopens them"
+	)
+	assertions.equal(
+		_contract_row_instance_ids(shop.contract_panel),
+		contract_row_ids,
+		"hidden contracts keep existing real row instances until ShopUI reopens them"
+	)
+	shop.open("orders")
+	shop.order_panel.select_order("tiejiang_zhang:iron_ore:1")
+	assertions.equal(shop.order_panel.owned_label.text, "持有：9/10", "reopened orders read authoritative inventory ownership")
+	assertions.truthy(shop.order_panel.deliver_button.disabled, "reopened orders disable delivery for the authoritative shortage")
+	shop.select_tab("contracts")
+	shop.contract_panel.select_contract("lao_li:grain:1:3")
+	assertions.truthy(shop.contract_panel.deliver_button.disabled, "shown contracts disable delivery for the authoritative storage shortage")
+	assertions.truthy(
+		shop.contract_panel.deliver_button.tooltip_text.contains("缺少"),
+		"shown contracts expose the authoritative storage-shortage reason"
+	)
+	shop.close()
+	_free_nodes([
+		shop, fixture.economy, fixture.router, fixture.storage,
+		fixture.inventory, fixture.npc, fixture.market,
+	])
+	_restore_wallet(game_state, saved)
+
+
+func _test_visible_order_refreshes_are_coalesced(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state: Node = tree.root.get_node("GameState")
+	var saved: Dictionary = _snapshot_wallet(game_state)
+	var fixture: Dictionary = _order_contract_fixture(game_state)
+	for node in [
+		fixture.market, fixture.npc, fixture.inventory, fixture.storage,
+		fixture.router, fixture.economy,
+	]:
+		tree.root.add_child(node)
+	var shop: ShopUI = ShopScene.instantiate()
+	tree.root.add_child(shop)
+	await tree.process_frame
+	assertions.truthy(
+		shop.configure(fixture.inventory, fixture.economy, fixture.market, null, null, null, fixture.npc),
+		"visible order coalescing fixture configures real ShopUI"
+	)
+	shop.open("orders")
+	shop.order_panel.select_order("tiejiang_zhang:iron_ore:1")
+	var panel: OrderPanel = shop.order_panel
+	var row_ids: Array[int] = _order_row_instance_ids(panel)
+	var entered_row_ids: Array[int] = []
+	var row_enter_callback: Callable = func(child: Node) -> void:
+		if child.has_meta("order_id"):
+			entered_row_ids.append(child.get_instance_id())
+	panel.order_rows.child_entered_tree.connect(row_enter_callback)
+	assertions.truthy(fixture.inventory.add_item("iron_ore", 2), "visible orders receive the first real inventory event")
+	assertions.truthy(fixture.inventory.remove_item("iron_ore", 1), "visible orders receive the second same-frame inventory event")
+	assertions.equal(
+		_order_row_instance_ids(panel),
+		row_ids,
+		"same-frame order events do not rebuild rows before the deferred refresh"
+	)
+	await tree.process_frame
+	assertions.equal(
+		entered_row_ids.size(),
+		row_ids.size(),
+		"same-frame order events perform exactly one complete row rebuild"
+	)
+	assertions.equal(panel.owned_label.text, "持有：11/10", "coalesced orders display the final authoritative ownership")
+	if panel.order_rows.child_entered_tree.is_connected(row_enter_callback):
+		panel.order_rows.child_entered_tree.disconnect(row_enter_callback)
+	shop.close()
+	_free_nodes([
+		shop, fixture.economy, fixture.router, fixture.storage,
+		fixture.inventory, fixture.npc, fixture.market,
+	])
+	_restore_wallet(game_state, saved)
+
+
+func _test_visible_contract_refreshes_are_coalesced(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	var game_state: Node = tree.root.get_node("GameState")
+	var saved: Dictionary = _snapshot_wallet(game_state)
+	var fixture: Dictionary = _order_contract_fixture(game_state)
+	for node in [
+		fixture.market, fixture.npc, fixture.inventory, fixture.storage,
+		fixture.router, fixture.economy,
+	]:
+		tree.root.add_child(node)
+	var shop: ShopUI = ShopScene.instantiate()
+	tree.root.add_child(shop)
+	await tree.process_frame
+	assertions.truthy(
+		shop.configure(fixture.inventory, fixture.economy, fixture.market, null, null, null, fixture.npc),
+		"visible contract coalescing fixture configures real ShopUI"
+	)
+	assertions.truthy(
+		fixture.economy.sign_contract("lao_li:grain:1:3"),
+		"visible contract coalescing fixture signs the real contract"
+	)
+	shop.open("contracts")
+	await tree.process_frame
+	shop.contract_panel.select_contract("lao_li:grain:1:3")
+	var panel: ContractPanel = shop.contract_panel
+	var row_ids: Array[int] = _contract_row_instance_ids(panel)
+	var entered_row_ids: Array[int] = []
+	var active_enter_callback: Callable = func(child: Node) -> void:
+		if child.has_meta("contract_id"):
+			entered_row_ids.append(child.get_instance_id())
+	var available_enter_callback: Callable = func(child: Node) -> void:
+		if child.has_meta("contract_id"):
+			entered_row_ids.append(child.get_instance_id())
+	panel.active_list.child_entered_tree.connect(active_enter_callback)
+	panel.available_list.child_entered_tree.connect(available_enter_callback)
+	assertions.truthy(fixture.storage.add_items({"grain": 2}), "visible contracts receive the first real storage event")
+	assertions.truthy(fixture.storage.remove_items({"grain": 1}), "visible contracts receive the second same-frame storage event")
+	assertions.equal(
+		_contract_row_instance_ids(panel),
+		row_ids,
+		"same-frame contract events do not rebuild rows before the deferred refresh"
+	)
+	await tree.process_frame
+	assertions.equal(
+		entered_row_ids.size(),
+		row_ids.size(),
+		"same-frame contract events perform exactly one complete row rebuild"
+	)
+	assertions.truthy(not panel.deliver_button.disabled, "coalesced contracts display the final authoritative delivery state")
+	if panel.active_list.child_entered_tree.is_connected(active_enter_callback):
+		panel.active_list.child_entered_tree.disconnect(active_enter_callback)
+	if panel.available_list.child_entered_tree.is_connected(available_enter_callback):
+		panel.available_list.child_entered_tree.disconnect(available_enter_callback)
+	shop.close()
+	_free_nodes([
+		shop, fixture.economy, fixture.router, fixture.storage,
+		fixture.inventory, fixture.npc, fixture.market,
+	])
+	_restore_wallet(game_state, saved)
+
+
 func _test_order_contract_panels_follow_farm_storage(
 	assertions: TestAssert,
 	tree: SceneTree
@@ -181,10 +369,12 @@ func _test_order_contract_panels_follow_farm_storage(
 	assertions.truthy(not order_panel.deliver_button.disabled, "stored crop initially enables order delivery")
 	assertions.truthy(not contract_panel.deliver_button.disabled, "stored crop initially enables contract delivery")
 	assertions.truthy(fixture.storage.remove_items({"grain": 5}), "storage refresh fixture removes crop")
+	await tree.process_frame
 	assertions.equal(order_panel.owned_label.text, "持有：0/5", "storage removal refreshes order ownership")
 	assertions.truthy(order_panel.deliver_button.disabled, "storage removal disables order delivery")
 	assertions.truthy(contract_panel.deliver_button.disabled, "storage removal disables contract delivery")
 	assertions.truthy(fixture.storage.add_items({"grain": 5}), "storage refresh fixture restores crop")
+	await tree.process_frame
 	assertions.equal(order_panel.owned_label.text, "持有：5/5", "storage addition refreshes order ownership")
 	assertions.truthy(not order_panel.deliver_button.disabled, "storage addition enables order delivery")
 	assertions.truthy(not contract_panel.deliver_button.disabled, "storage addition enables contract delivery")
@@ -932,6 +1122,23 @@ func _market_row_instance_ids(panel: MarketPanel) -> Array[int]:
 	for child in panel.item_rows.get_children():
 		if child.has_meta("item_id"):
 			ids.append(child.get_instance_id())
+	return ids
+
+
+func _order_row_instance_ids(panel: OrderPanel) -> Array[int]:
+	var ids: Array[int] = []
+	for child in panel.order_rows.get_children():
+		if child.has_meta("order_id"):
+			ids.append(child.get_instance_id())
+	return ids
+
+
+func _contract_row_instance_ids(panel: ContractPanel) -> Array[int]:
+	var ids: Array[int] = []
+	for list in [panel.active_list, panel.available_list]:
+		for child in list.get_children():
+			if child.has_meta("contract_id"):
+				ids.append(child.get_instance_id())
 	return ids
 
 
