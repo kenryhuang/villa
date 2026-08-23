@@ -1,58 +1,9 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=2 format=3]
 
-[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="CropSpriteClusterScript"]
-[ext_resource path="res://assets/crops/strawberry/materials/stem_green.tres" type="Material" id="1"]
-[ext_resource path="res://assets/crops/strawberry/materials/leaf_green.tres" type="Material" id="2"]
-[ext_resource path="res://assets/crops/strawberry/materials/fruit_red.tres" type="Material" id="3"]
-[ext_resource path="res://assets/crops/strawberry/materials/seed_beige.tres" type="Material" id="4"]
-
-[sub_resource type="CylinderMesh" id="StemMesh"]
-material = ExtResource("1")
-top_radius = 0.02
-bottom_radius = 0.03
-height = 0.35
-radial_segments = 6
-rings = 1
-[sub_resource type="SphereMesh" id="BushMesh"]
-material = ExtResource("2")
-radius = 0.3
-height = 0.5
-radial_segments = 8
-rings = 4
-[sub_resource type="SphereMesh" id="FruitMesh"]
-material = ExtResource("3")
-radius = 0.04
-height = 0.07
-radial_segments = 8
-rings = 4
+[ext_resource path="res://scripts/visual/crop_sprite_cluster.gd" type="Script" id="1"]
 
 [node name="StrawberryStage3Mature" type="Node3D"]
-script = ExtResource("CropSpriteClusterScript")
-back_texture_paths = Array[String](["res://assets/crops/strawberry/painted/stage_3/variant_0_back.png", "res://assets/crops/strawberry/painted/stage_3/variant_1_back.png", "res://assets/crops/strawberry/painted/stage_3/variant_2_back.png"])
-front_texture_paths = Array[String](["res://assets/crops/strawberry/painted/stage_3/variant_0_front.png", "res://assets/crops/strawberry/painted/stage_3/variant_1_front.png", "res://assets/crops/strawberry/painted/stage_3/variant_2_front.png"])
-canvas_world_height = 0.75
-
-[node name="Stem1" type="MeshInstance3D" parent="."]
-position = Vector3(-0.1, 0.175, 0)
-mesh = SubResource("StemMesh")
-[node name="Stem2" type="MeshInstance3D" parent="."]
-position = Vector3(0.1, 0.175, 0.05)
-mesh = SubResource("StemMesh")
-[node name="BushMound" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.55, 0)
-mesh = SubResource("BushMesh")
-[node name="Fruit1" type="MeshInstance3D" parent="."]
-position = Vector3(-0.15, 0.5, 0.12)
-mesh = SubResource("FruitMesh")
-[node name="Fruit2" type="MeshInstance3D" parent="."]
-position = Vector3(0.2, 0.55, -0.08)
-mesh = SubResource("FruitMesh")
-[node name="Fruit3" type="MeshInstance3D" parent="."]
-position = Vector3(0.05, 0.65, 0.15)
-mesh = SubResource("FruitMesh")
-[node name="Fruit4" type="MeshInstance3D" parent="."]
-position = Vector3(-0.08, 0.45, -0.12)
-mesh = SubResource("FruitMesh")
-[node name="Fruit5" type="MeshInstance3D" parent="."]
-position = Vector3(0.12, 0.6, 0.08)
-mesh = SubResource("FruitMesh")
+script = ExtResource("1")
+back_texture_paths = Array[String](["res://assets/crops/strawberry/painted/stage_3/variant_0_back.png"])
+front_texture_paths = Array[String](["res://assets/crops/strawberry/painted/stage_3/variant_0_front.png"])
+canvas_world_height = 1.00
