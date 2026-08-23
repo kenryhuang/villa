@@ -11,10 +11,9 @@ const TWO_STAGE_CROP_IDS: Array[String] = [
 	"potato", "tomato", "lavender", "rose", "carrot",
 	"apple", "peach", "lemon", "grape",
 	"blueberry", "strawberry",
+	"watermelon", "pumpkin", "sunflower",
 ]
-const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = [
-	"watermelon", "sunflower", "pumpkin",
-]
+const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = []
 
 
 static func texture_path(crop_id: String, stage: int, variant: int, layer: String) -> String:

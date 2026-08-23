@@ -7,10 +7,9 @@ const TWO_STAGE_CROP_IDS: Array[String] = [
 	"potato", "tomato", "lavender", "rose", "carrot",
 	"apple", "peach", "lemon", "grape",
 	"blueberry", "strawberry",
+	"watermelon", "pumpkin", "sunflower",
 ]
-const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = [
-	"watermelon", "sunflower", "pumpkin",
-]
+const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = []
 const CROP_IDS: Array[String] = TWO_STAGE_CROP_IDS + LEGACY_FOUR_STAGE_CROP_IDS
 
 const MINIMUM_MESH_COUNTS := [2, 3, 3, 3]

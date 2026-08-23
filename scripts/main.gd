@@ -49,6 +49,7 @@ const TWO_STAGE_CROP_IDS: Array[String] = [
 	"potato", "tomato", "lavender", "rose", "carrot",
 	"apple", "peach", "lemon", "grape",
 	"blueberry", "strawberry",
+	"watermelon", "pumpkin", "sunflower",
 ]
 
 @export var load_save_on_start := true
