@@ -571,6 +571,9 @@ func _setup_ui() -> void:
 		var notification_callback := Callable(self, "_on_notifications_requested")
 		if not hud.notifications_requested.is_connected(notification_callback):
 			hud.notifications_requested.connect(notification_callback)
+		var inventory_callback := Callable(self, "_on_inventory_requested")
+		if not hud.inventory_requested.is_connected(inventory_callback):
+			hud.inventory_requested.connect(inventory_callback)
 		var unlock_callback := Callable(self, "_on_building_unlock_requested")
 		if hud.has_signal("building_unlock_requested") and not hud.building_unlock_requested.is_connected(unlock_callback):
 			hud.building_unlock_requested.connect(unlock_callback)
@@ -735,6 +738,21 @@ func _on_building_unlock_requested(service_id: String) -> void:
 func _on_notifications_requested() -> void:
 	if economy_notification_ui != null:
 		economy_notification_ui.toggle_center()
+
+
+func _on_inventory_requested() -> void:
+	if inventory_ui == null:
+		_publish_hud_message("inventory", "error", "背包界面尚未就绪")
+		return
+	if inventory_ui.visible:
+		inventory_ui.close()
+		return
+	for modal in [map_ui, build_ui, shop_ui, building_economy_ui]:
+		if modal != null and modal.has_method("close"):
+			modal.close()
+	if economy_notification_ui != null:
+		economy_notification_ui.hide_center()
+	inventory_ui.open()
 
 
 func open_economy_tab(tab_id: String, target_id: String = "") -> bool:

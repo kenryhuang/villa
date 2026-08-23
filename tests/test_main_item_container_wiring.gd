@@ -105,6 +105,30 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"Main InventoryUI receives the authoritative FarmStorageSystem"
 	)
 	assertions.truthy(
+		main.hud.has_signal("inventory_requested"),
+		"Main HUD exposes the backpack request"
+	)
+	if main.hud.has_signal("inventory_requested"):
+		assertions.truthy(
+			main.hud.is_connected(
+				"inventory_requested",
+				Callable(main, "_on_inventory_requested")
+			),
+			"Main connects the HUD backpack request"
+		)
+		var inventory_button := main.hud.get_node_or_null(
+			"EconomyActions/InventoryButton"
+		) as Button
+		assertions.truthy(inventory_button != null, "real Main exposes the backpack button")
+		if inventory_button != null:
+			assertions.truthy(not main.inventory_ui.visible, "backpack starts closed")
+			inventory_button.pressed.emit()
+			await tree.process_frame
+			assertions.truthy(main.inventory_ui.visible, "backpack button opens the panel")
+			inventory_button.pressed.emit()
+			await tree.process_frame
+			assertions.truthy(not main.inventory_ui.visible, "second backpack click closes the panel")
+	assertions.truthy(
 		main.seed_selector_panel.inventory_ref == main.inventory_system
 		and main.seed_selector_panel.farming_ref == main.farming_system
 		and main.seed_selector_panel.action_controller_ref == main.action_controller,

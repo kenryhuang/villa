@@ -99,6 +99,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(hud.get_node_or_null("MessageStream") != null, "HUD authors the right message stream")
 	assertions.truthy(hud.get_node_or_null("BottomBar/ActionRow/ModeSwitch/FarmingModeButton") is Button, "HUD authors the farming mode mouse button")
 	assertions.truthy(hud.get_node_or_null("BottomBar/ActionRow/ModeSwitch/BuildingModeButton") is Button, "HUD authors the building mode mouse button")
+	var inventory_button := hud.get_node_or_null("EconomyActions/InventoryButton") as Button
+	assertions.truthy(inventory_button is Button, "HUD authors a mouse-visible backpack button")
+	assertions.truthy(hud.has_signal("inventory_requested"), "HUD exposes the backpack request signal")
+	if inventory_button != null and hud.has_signal("inventory_requested"):
+		assertions.truthy(
+			inventory_button.text.contains("背包") and inventory_button.text.contains("I"),
+			"backpack button names the panel and keyboard shortcut"
+		)
+		var inventory_requests: Array[bool] = []
+		hud.inventory_requested.connect(func() -> void: inventory_requests.append(true))
+		inventory_button.pressed.emit()
+		await tree.process_frame
+		assertions.equal(inventory_requests.size(), 1, "clicking backpack emits one request")
 	assertions.truthy(not hud.has_node("BottomBar/ModeMenu"), "legacy mode popup is removed")
 	assertions.truthy(not hud.has_node("BottomBar/BuildFeedbackToast"), "legacy build toast is removed")
 	assertions.truthy(not hud.has_node("BottomBar/ActionHintToast"), "legacy action hint toast is removed")

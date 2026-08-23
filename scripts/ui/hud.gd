@@ -8,6 +8,7 @@ signal debug_panel_requested
 signal debug_reset_requested
 signal market_requested
 signal notifications_requested
+signal inventory_requested
 signal building_unlock_requested(service_id: String)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
@@ -55,6 +56,7 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var debug_reset_button: Button = $DebugActions/DebugResetButton
 @onready var market_button: Button = $EconomyActions/MarketButton
 @onready var notification_button: Button = $EconomyActions/NotificationButton
+@onready var inventory_button: Button = $EconomyActions/InventoryButton
 @onready var message_stream: PanelContainer = $MessageStream
 @onready var farming_mode_button: Button = $BottomBar/ActionRow/ModeSwitch/FarmingModeButton
 @onready var building_mode_button: Button = $BottomBar/ActionRow/ModeSwitch/BuildingModeButton
@@ -120,6 +122,8 @@ func _ready() -> void:
 		market_button.pressed.connect(_on_market_pressed)
 	if not notification_button.pressed.is_connected(_on_notification_pressed):
 		notification_button.pressed.connect(_on_notification_pressed)
+	if not inventory_button.pressed.is_connected(_on_inventory_pressed):
+		inventory_button.pressed.connect(_on_inventory_pressed)
 
 	# 初始化显示
 	_init_display()
@@ -146,6 +150,10 @@ func _ready() -> void:
 
 func _on_market_pressed() -> void:
 	market_requested.emit()
+
+
+func _on_inventory_pressed() -> void:
+	inventory_requested.emit()
 
 
 func _apply_responsive_layout() -> void:

@@ -51,7 +51,7 @@ text = "重置存档"
 [node name="EconomyActions" type="HBoxContainer" parent="."]
 offset_left = 484.0
 offset_top = 94.0
-offset_right = 768.0
+offset_right = 914.0
 offset_bottom = 144.0
 theme_override_constants/separation = 8
 
@@ -68,6 +68,13 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 20
 text = "通知 0"
 tooltip_text = "查看经营通知"
+
+[node name="InventoryButton" type="Button" parent="EconomyActions"]
+custom_minimum_size = Vector2(138, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "背包 I"
+tooltip_text = "打开背包（I / Tab）"
 
 [node name="TopBar" type="PanelContainer" parent="."]
 offset_left = 20.0

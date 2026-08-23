@@ -46,6 +46,7 @@ func _run() -> void:
 		"TopBar/StatusRow/SeasonLabel",
 		"TopBar/StatusRow/TimeLabel",
 		"MessageStream",
+		"EconomyActions/InventoryButton",
 		"BottomBar/ToolLabel",
 		"BottomBar/ActionRow/ModeSwitch/FarmingModeButton",
 		"BottomBar/ActionRow/ModeSwitch/BuildingModeButton",
