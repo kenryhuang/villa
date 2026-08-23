@@ -45,7 +45,7 @@ const NEW_GAME_STARTER_ITEMS := {
 	"lamp": 99,
 }
 const NEW_GAME_STARTER_GOLD := 50_000
-const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose"]
+const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose", "carrot"]
 
 @export var load_save_on_start := true
 @export var save_slot := 0:

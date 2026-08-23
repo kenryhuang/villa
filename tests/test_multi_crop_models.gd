@@ -3,9 +3,9 @@ extends RefCounted
 ## Validate that all 14 non-grain crops have stage scenes with CropSpriteCluster
 ## and appropriate 3D mesh children. Follows test_grain_crop_models.gd pattern.
 
-const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose"]
+const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose", "carrot"]
 const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = [
-	"carrot", "strawberry", "blueberry",
+	"strawberry", "blueberry",
 	"watermelon", "sunflower", "pumpkin",
 	"apple", "peach", "grape", "lemon",
 ]
