@@ -1132,26 +1132,26 @@ func _test_build_feedback_and_exhaustion(
 	)
 	assertions.equal(feedback_events[-1].code, "road", "placement emits specific feedback")
 	assertions.equal(feedback_events[-1].grid, Vector2i(6, 7), "placement feedback keeps grid")
+	assertions.equal(controller.get_selected_slot(), 0, "failed placement keeps building selected")
+	assertions.truthy(building.build_mode, "failed placement keeps preview available for retry")
 
 	building.placement_allowed = true
 	building.exhaust_after_place = false
-	var continued: BuildingInstance = controller.perform_build_action(8, 9)
-	assertions.truthy(continued != null, "successful placement returns an instance")
-	assertions.truthy(building.build_mode, "sufficient materials continue building preview")
-	assertions.equal(controller.get_selected_slot(), 0, "continuous build keeps selection")
-	continued.free()
-
-	building.exhaust_after_place = true
-	var exhausted: BuildingInstance = controller.perform_build_action(10, 11)
-	assertions.truthy(exhausted != null, "exhausting placement still succeeds")
-	assertions.truthy(not building.build_mode, "exhausted materials stop preview")
-	assertions.equal(controller.get_selected_slot(), -1, "exhausted materials clear selection")
+	var placed: BuildingInstance = controller.perform_build_action(8, 9)
+	assertions.truthy(placed != null, "successful placement returns an instance")
 	assertions.equal(
-		feedback_events[-1].code,
-		"continuous_build_exhausted",
-		"exhausted continuous build emits feedback"
+		controller.get_action_mode(),
+		PlayerActionController.ActionMode.BUILDING,
+		"successful placement keeps building mode"
 	)
-	exhausted.free()
+	assertions.truthy(not building.build_mode, "successful placement removes preview shadow")
+	assertions.equal(controller.get_selected_slot(), -1, "successful placement clears selection")
+	assertions.equal(
+		controller.get_mode_selected_slot(PlayerActionController.ActionMode.BUILDING),
+		-1,
+		"successful placement does not restore the building on mode changes"
+	)
+	placed.free()
 	controller.free()
 
 

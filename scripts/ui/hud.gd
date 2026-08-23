@@ -42,8 +42,6 @@ const MATERIAL_ICON_PATHS := {
 	"iron": "res://assets/ui/material_icons/iron.svg",
 	"glass": "res://assets/ui/material_icons/glass.svg",
 }
-const COST_AVAILABLE_COLOR := Color(1.0, 0.945, 0.816, 1.0)
-const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 
 @onready var stamina_bar: ProgressBar = $TopBar/StatusRow/StaminaBar
 @onready var gold_label: Label = $TopBar/StatusRow/GoldLabel
@@ -62,9 +60,6 @@ const COST_MISSING_COLOR := Color(1.0, 0.48, 0.38, 1.0)
 @onready var building_mode_button: Button = $BottomBar/ActionRow/ModeSwitch/BuildingModeButton
 @onready var quick_bar: HBoxContainer = $BottomBar/ActionRow/QuickBar
 @onready var tool_label: Label = $BottomBar/ToolLabel
-@onready var build_cost_bar: PanelContainer = $BottomBar/BuildCostBar
-@onready var building_cost_label: Label = $BottomBar/BuildCostBar/CostRow/BuildingLabel
-@onready var building_costs: HBoxContainer = $BottomBar/BuildCostBar/CostRow/Costs
 @onready var build_category_bar: HBoxContainer = $BottomBar/BuildCategoryBar
 @onready var build_category_buttons := {
 	"basic": $BottomBar/BuildCategoryBar/Basic,
@@ -498,7 +493,6 @@ func rebuild_action_palette() -> void:
 	if not has_active_mode:
 		build_category_bar.visible = false
 		_sync_mode_buttons(PlayerActionController.ActionMode.NONE)
-		_refresh_build_cost_bar(-1)
 		return
 	var building_mode := _is_building_mode()
 	var building_ids: Array = (
@@ -560,7 +554,6 @@ func refresh_action_bar() -> void:
 			button.set_build_state(_build_state_for_diagnostic(diagnostic))
 		else:
 			button.set_available(true)
-	_refresh_build_cost_bar(selected)
 
 
 func _on_quick_slot_pressed(index: int) -> void:
@@ -749,8 +742,8 @@ func _configure_building_button(button: Button, index: int) -> void:
 		)
 		var part := "%s %d/%d" % [
 			_item_display_name(str(item_id)),
-			required,
 			available,
+			required,
 		]
 		if available < required:
 			part += "（缺 %d）" % (required - available)
@@ -926,69 +919,6 @@ func _refresh_material_counts() -> void:
 		var label = _material_count_labels.get(item_id)
 		if label is Label:
 			label.text = str(count)
-
-
-func _refresh_build_cost_bar(selected_index: int) -> void:
-	if (
-		not _is_building_mode()
-		or selected_index < 0
-		or _building_id_at(selected_index).is_empty()
-	):
-		build_cost_bar.visible = false
-		return
-	var building_id := _building_id_at(selected_index)
-	var source: Dictionary = GameDataScript.get_building(building_id)
-	if source.is_empty():
-		build_cost_bar.visible = false
-		return
-	building_cost_label.text = "%s　占地 %d×%d" % [
-		str(source.get("name", building_id)),
-		int(source.get("footprint_x", 0)),
-		int(source.get("footprint_z", 0)),
-	]
-	for child in building_costs.get_children():
-		child.free()
-	for item_id in source.get("cost", {}):
-		building_costs.add_child(
-			_create_cost_entry(
-				str(item_id),
-				int(source.cost[item_id]),
-				inventory_ref.get_item_count(str(item_id)) if inventory_ref else 0
-			)
-		)
-	build_cost_bar.visible = true
-
-
-func _create_cost_entry(item_id: String, required: int, available: int) -> HBoxContainer:
-	var entry := HBoxContainer.new()
-	entry.add_theme_constant_override("separation", 4)
-	entry.tooltip_text = _item_display_name(item_id)
-	var icon := TextureRect.new()
-	icon.custom_minimum_size = Vector2(28, 28)
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture = _load_palette_icon(str(MATERIAL_ICON_PATHS.get(item_id, "")))
-	if icon.texture != null:
-		entry.add_child(icon)
-	else:
-		var fallback := Label.new()
-		fallback.custom_minimum_size = Vector2(28, 28)
-		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		fallback.text = _item_display_name(item_id).left(1)
-		fallback.tooltip_text = _item_display_name(item_id)
-		entry.add_child(fallback)
-	var amount := Label.new()
-	amount.add_theme_font_size_override("font_size", 22)
-	amount.add_theme_color_override(
-		"font_color",
-		COST_AVAILABLE_COLOR if available >= required else COST_MISSING_COLOR
-	)
-	amount.add_theme_color_override("font_outline_color", Color(0.09, 0.125, 0.098, 1))
-	amount.add_theme_constant_override("outline_size", 3)
-	amount.text = "%d/%d" % [required, available]
-	entry.add_child(amount)
-	return entry
 
 
 func set_quick_slot(index: int, item_name: String, quantity: int) -> void:

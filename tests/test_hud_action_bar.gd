@@ -232,8 +232,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				"%s has no visible name label" % item_id
 			)
 	assertions.truthy(
-		hud.get_node_or_null("BottomBar/BuildCostBar") is PanelContainer,
-		"selected building cost bar is authored"
+		hud.get_node_or_null("BottomBar/BuildCostBar") == null,
+		"building details are not permanently authored above the HUD"
 	)
 	assertions.truthy(
 		hud.get_node_or_null("MessageStream") is PanelContainer,
@@ -565,6 +565,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			unavailable_tile.tooltip_text.contains("木板"),
 			"missing building keeps localized cost tooltip"
 		)
+		assertions.truthy(
+			unavailable_tile.tooltip_text.contains("占地 2 × 2"),
+			"building tooltip includes its footprint"
+		)
+		assertions.truthy(
+			unavailable_tile.tooltip_text.contains("0/8")
+			and unavailable_tile.tooltip_text.contains("缺 8"),
+			"building tooltip includes available, required, and missing quantities"
+		)
 	assertions.truthy(
 		hud.has_method("show_build_feedback"),
 		"HUD keeps the building feedback adapter"
@@ -596,12 +605,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(unavailable_tile.build_state, "ready", "building becomes ready when cost is met")
 	assertions.truthy(controller.select_mode_slot(2), "affordable barn can be selected")
 	assertions.truthy(
-		hud.get_node("BottomBar/BuildCostBar").visible,
-		"selected building shows persistent cost bar"
-	)
-	assertions.truthy(
-		hud.get_node("BottomBar/BuildCostBar/CostRow/BuildingLabel").text.contains("占地 2×2"),
-		"cost bar shows building footprint"
+		unavailable_tile.tooltip_text.contains("谷仓")
+		and unavailable_tile.tooltip_text.contains("占地 2 × 2")
+		and unavailable_tile.tooltip_text.contains("木板 8/8"),
+		"ready building keeps all detail in the hover tooltip"
 	)
 	assertions.truthy(controller.set_building_category("decoration"), "HUD fixture selects decoration category")
 	(quick_bar.get_child(1) as Button).pressed.emit()

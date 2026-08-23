@@ -294,28 +294,6 @@ layout_mode = 2
 toggle_mode = true
 text = "装饰"
 
-[node name="BuildCostBar" type="PanelContainer" parent="BottomBar"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("TopPanelStyle")
-
-[node name="CostRow" type="HBoxContainer" parent="BottomBar/BuildCostBar"]
-layout_mode = 2
-theme_override_constants/separation = 14
-alignment = 1
-
-[node name="BuildingLabel" type="Label" parent="BottomBar/BuildCostBar/CostRow"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)
-theme_override_colors/font_outline_color = Color(0.0901961, 0.12549, 0.0980392, 1)
-theme_override_constants/outline_size = 3
-theme_override_font_sizes/font_size = 24
-text = "谷仓　占地 2×2"
-
-[node name="Costs" type="HBoxContainer" parent="BottomBar/BuildCostBar/CostRow"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
 [node name="ToolLabel" type="Label" parent="BottomBar"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)

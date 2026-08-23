@@ -440,19 +440,12 @@ func perform_build_action(gx: int, gz: int) -> BuildingInstance:
 		and _selected_slot >= 0
 	):
 		inventory_changed.emit()
-		var next_diagnostic := get_building_availability_diagnostic(_selected_slot)
-		if bool(next_diagnostic.get("allowed", false)):
-			building_system.enter_preview_mode(get_building_id_at(_selected_slot))
-		else:
-			if building_system.is_in_build_mode():
-				building_system.exit_preview_mode()
-			_selected_slot = -1
-			selection_changed.emit(-1, "未选择建筑")
-			palette_changed.emit(_action_mode, -1)
-			var exhausted := next_diagnostic.duplicate(true)
-			exhausted.code = "continuous_build_exhausted"
-			exhausted.message = "材料不足，已结束连续建造"
-			_emit_build_feedback(exhausted, "BuildSelectionRejected")
+		if building_system.is_in_build_mode():
+			building_system.exit_preview_mode()
+		_selected_slot = -1
+		_last_building_slot = -1
+		selection_changed.emit(-1, "未选择建筑")
+		palette_changed.emit(_action_mode, -1)
 	return placed
 
 
