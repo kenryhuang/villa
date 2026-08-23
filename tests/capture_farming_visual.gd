@@ -1,7 +1,14 @@
 extends SceneTree
 
-const CROPS := ["tomato", "potato", "rose", "lavender", "carrot"]
-const CROP_NAMES := ["番茄", "土豆", "玫瑰", "薰衣草", "胡萝卜"]
+const CROPS := [
+	"tomato", "potato", "rose", "lavender", "carrot", "apple", "peach",
+	"lemon", "grape", "blueberry", "strawberry", "watermelon", "pumpkin", "sunflower",
+]
+const CROP_NAMES := [
+	"番茄", "土豆", "玫瑰", "薰衣草", "胡萝卜", "苹果", "桃",
+	"柠檬", "葡萄", "蓝莓", "草莓", "西瓜", "南瓜", "向日葵",
+]
+const GALLERY_COLUMNS := 7
 const OUTPUT_DIR := "res://output/farming"
 
 
@@ -10,15 +17,15 @@ func _init() -> void:
 
 
 func _capture() -> void:
-	root.size = Vector2i(1600, 1000)
+	root.size = Vector2i(1920, 1080)
 	var gallery := _build_gallery()
 	root.add_child(gallery)
 	current_scene = gallery
 	var camera := gallery.get_node("Camera3D") as Camera3D
 	for _frame in 8:
 		await process_frame
-	await _save_view(camera, Vector3(0.0, 4.7, 8.2), "two_stage_front.png")
-	await _save_view(camera, Vector3(0.0, 4.7, -8.2), "two_stage_back.png")
+	await _save_view(camera, Vector3(0.0, 9.0, 15.5), "two_stage_front.png")
+	await _save_view(camera, Vector3(0.0, 9.0, -15.5), "two_stage_back.png")
 	quit(0)
 
 
@@ -42,13 +49,19 @@ func _build_gallery() -> Node3D:
 	var camera := Camera3D.new()
 	camera.name = "Camera3D"
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 8.5
+	camera.size = 12.5
 	camera.current = true
 	gallery.add_child(camera)
 	for crop_index in CROPS.size():
 		for stage_index in 2:
+			var band := crop_index / GALLERY_COLUMNS
+			var column := crop_index % GALLERY_COLUMNS
 			var stage := 0 if stage_index == 0 else 3
-			var position := Vector3(-6.0 + crop_index * 3.0, 0.0, 1.45 - stage_index * 2.9)
+			var position := Vector3(
+				-9.0 + column * 3.0,
+				0.0,
+				4.4 - band * 5.8 - stage_index * 2.25
+			)
 			_add_plot(gallery, position)
 			_add_crop(gallery, CROPS[crop_index], stage, position)
 			_add_label(
