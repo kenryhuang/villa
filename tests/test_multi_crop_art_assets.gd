@@ -7,11 +7,13 @@ const STAGE_COUNT := 4
 const VARIANT_COUNT := 3
 const LAYERS := ["back", "front"]
 
-const TWO_STAGE_CROP_IDS: Array[String] = ["potato", "tomato", "lavender", "rose", "carrot"]
+const TWO_STAGE_CROP_IDS: Array[String] = [
+	"potato", "tomato", "lavender", "rose", "carrot",
+	"apple", "peach", "lemon", "grape",
+]
 const LEGACY_FOUR_STAGE_CROP_IDS: Array[String] = [
 	"strawberry", "blueberry",
 	"watermelon", "sunflower", "pumpkin",
-	"apple", "peach", "grape", "lemon",
 ]
 
 
