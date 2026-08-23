@@ -1,7 +1,7 @@
 extends SceneTree
 
-const CROPS := ["tomato", "potato", "rose", "lavender"]
-const CROP_NAMES := ["番茄", "土豆", "玫瑰", "薰衣草"]
+const CROPS := ["tomato", "potato", "rose", "lavender", "carrot"]
+const CROP_NAMES := ["番茄", "土豆", "玫瑰", "薰衣草", "胡萝卜"]
 const OUTPUT_DIR := "res://output/farming"
 
 
@@ -42,13 +42,13 @@ func _build_gallery() -> Node3D:
 	var camera := Camera3D.new()
 	camera.name = "Camera3D"
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 7.0
+	camera.size = 8.5
 	camera.current = true
 	gallery.add_child(camera)
 	for crop_index in CROPS.size():
 		for stage_index in 2:
 			var stage := 0 if stage_index == 0 else 3
-			var position := Vector3(-4.5 + crop_index * 3.0, 0.0, 1.45 - stage_index * 2.9)
+			var position := Vector3(-6.0 + crop_index * 3.0, 0.0, 1.45 - stage_index * 2.9)
 			_add_plot(gallery, position)
 			_add_crop(gallery, CROPS[crop_index], stage, position)
 			_add_label(

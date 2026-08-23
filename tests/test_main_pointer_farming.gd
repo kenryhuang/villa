@@ -175,17 +175,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.equal(
 			main.action_controller.get_selected_slot(),
-			0,
-			"continuous placement keeps workbench selected"
+			-1,
+			"successful placement clears the selected building"
 		)
 		assertions.equal(
 			main.building_system.get_selected_building_id(),
-			"workbench",
-			"continuous placement restores workbench preview"
+			"",
+			"successful placement clears the building preview selection"
 		)
 		assertions.truthy(
-			main.building_system.is_in_build_mode(),
-			"continuous placement keeps build preview active"
+			not main.building_system.is_in_build_mode(),
+			"successful placement removes the build preview shadow"
 		)
 
 		main.action_controller.switch_mode(PlayerActionController.ActionMode.FARMING)
