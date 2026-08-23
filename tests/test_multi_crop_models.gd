@@ -72,9 +72,18 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 				continue
 			var model := (load(path) as PackedScene).instantiate() as Node3D
 			assertions.truthy(model.get_script() == ClusterScript, "%s uses CropSpriteCluster" % path)
+			assertions.equal(model.get_child_count(), 0, "%s serializes only the CropSpriteCluster root" % path)
 			assertions.equal(_mesh_instances(model).size(), 0, "%s has no procedural crop meshes" % path)
-			assertions.equal(model.back_texture_paths.size(), 1, "%s owns one back sprite" % path)
-			assertions.equal(model.front_texture_paths.size(), 1, "%s owns one front sprite" % path)
+			assertions.equal(
+				model.back_texture_paths,
+				[texture_path(crop_id, stage, "back")],
+				"%s owns exactly its variant-zero back sprite" % path
+			)
+			assertions.equal(
+				model.front_texture_paths,
+				[texture_path(crop_id, stage, "front")],
+				"%s owns exactly its variant-zero front sprite" % path
+			)
 			model.configure_variant_seed(7)
 			tree.root.add_child(model)
 			assertions.equal(model.get_variant_index(), 0, "%s always selects variant zero" % path)

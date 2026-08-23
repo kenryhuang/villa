@@ -50,7 +50,19 @@ func _validate_two_stage_crop(crop_id: String, assertions: TestAssert) -> void:
 				assertions.truthy(texture != null, "%s imports as Texture2D" % path)
 				if texture != null:
 					assertions.equal(texture.get_size(), Vector2(1024, 1024), "%s is 1024 square" % path)
-					assertions.truthy(texture.get_image().detect_alpha(), "%s contains alpha" % path)
+					var image := texture.get_image()
+					assertions.truthy(image.detect_alpha(), "%s contains alpha" % path)
+					assertions.truthy(image.get_used_rect().has_area(), "%s contains visible painted pixels" % path)
+					for corner in [
+						Vector2i(0, 0),
+						Vector2i(image.get_width() - 1, 0),
+						Vector2i(0, image.get_height() - 1),
+						Vector2i(image.get_width() - 1, image.get_height() - 1),
+					]:
+						assertions.truthy(
+							image.get_pixelv(corner).a <= 0.01,
+							"%s has a transparent corner at %s" % [path, corner]
+						)
 	for stage in STAGE_COUNT:
 		assertions.equal(ResourceLoader.exists(stage_scene_path(crop_id, stage)), stage in [0, 3], "%s exact two-stage scene contract at logical stage %d" % [crop_id, stage])
 
