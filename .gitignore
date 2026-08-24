@@ -4,6 +4,8 @@
 .worktrees/*
 !.worktrees/.gdignore
 .superpowers/
+.playwright-cli/
 
 # Temp files
 tmp/
+output/
