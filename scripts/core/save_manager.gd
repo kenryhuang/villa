@@ -13,6 +13,9 @@ const LEGACY_GRID_VERSIONS := [1, 2]
 const LEGACY_DEFAULT_SEASON := 0
 const MIN_SEASON := 0
 const MAX_SEASON := 3
+const DEFAULT_INVENTORY_SLOTS := 20
+const MIN_INVENTORY_SLOTS := 1
+const MAX_INVENTORY_SLOTS := 100
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const GameStateScript = preload("res://scripts/core/game_state.gd")
 const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
@@ -179,6 +182,7 @@ func _gather_save_data() -> Dictionary:
 	var inventory = _get_inventory_system()
 	if inventory:
 		data["inventory"] = {
+			"max_slots": int(inventory.max_slots),
 			"slots": inventory.slots,
 			"quick_mappings": inventory.quick_slot_mappings,
 		}
@@ -394,6 +398,7 @@ func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> 
 	# 背包
 	var inventory = _get_inventory_system()
 	if inventory and data.has("inventory"):
+		inventory.max_slots = int(data.inventory.get("max_slots", DEFAULT_INVENTORY_SLOTS))
 		inventory.restore_state(
 			data.inventory.get("slots", []),
 			data.inventory.get("quick_mappings", [-1, -1, -1, -1, -1, -1])
@@ -706,11 +711,21 @@ func _validate_save_data(data: Dictionary) -> bool:
 		if inventory == null or not data.inventory is Dictionary:
 			return false
 		var inventory_data := data.inventory as Dictionary
-		if not inventory_data.has("slots") or not inventory_data.has("quick_mappings"):
+		if (
+			not inventory_data.has("slots")
+			or not inventory_data.has("quick_mappings")
+			or not _integer_number_in_range(
+				inventory_data.get("max_slots"),
+				MIN_INVENTORY_SLOTS,
+				MAX_INVENTORY_SLOTS
+			)
+		):
 			return false
+		var target_max_slots := int(inventory_data.max_slots)
 		if inventory.normalize_saved_state(
 			inventory_data.slots,
-			inventory_data.quick_mappings
+			inventory_data.quick_mappings,
+			target_max_slots
 		) == null:
 			return false
 		for slot_value in inventory_data.slots:
@@ -1332,15 +1347,27 @@ func _normalize_inventory_migrations(migrated: Dictionary) -> Variant:
 	var inventory_data := inventory_value as Dictionary
 	if not inventory_data.has("slots") or not inventory_data.has("quick_mappings"):
 		return null
+	var target_max_slots_value: Variant = inventory_data.get(
+		"max_slots", DEFAULT_INVENTORY_SLOTS
+	)
+	if not _integer_number_in_range(
+		target_max_slots_value,
+		MIN_INVENTORY_SLOTS,
+		MAX_INVENTORY_SLOTS
+	):
+		return null
+	var target_max_slots := int(target_max_slots_value)
 	var inventory = _get_inventory_system()
 	if inventory == null or not inventory.has_method("normalize_saved_state"):
 		return null
 	var normalized: Variant = inventory.normalize_saved_state(
 		inventory_data.slots,
-		inventory_data.quick_mappings
+		inventory_data.quick_mappings,
+		target_max_slots
 	)
 	if not normalized is Dictionary:
 		return null
+	(normalized as Dictionary)["max_slots"] = target_max_slots
 	migrated["inventory"] = normalized
 	return migrated
 
@@ -1453,17 +1480,29 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 		return null
 	var source := value as Dictionary
 	if (
-		source.size() != 2
+		source.size() not in [2, 3]
 		or not source.get("slots") is Array
 		or not source.get("quick_mappings") is Array
 	):
 		return null
+	if source.size() == 3 and not source.has("max_slots"):
+		return null
+	var target_max_slots_value: Variant = source.get(
+		"max_slots", DEFAULT_INVENTORY_SLOTS
+	)
+	if not _integer_number_in_range(
+		target_max_slots_value,
+		MIN_INVENTORY_SLOTS,
+		MAX_INVENTORY_SLOTS
+	):
+		return null
+	var target_max_slots := int(target_max_slots_value)
 	var inventory = _get_inventory_system()
 	if inventory == null or not inventory.has_method("normalize_saved_state"):
 		return null
 	var slots := (source["slots"] as Array).duplicate(true)
 	var mappings_source := source["quick_mappings"] as Array
-	if slots.size() > int(inventory.get("max_slots")) or mappings_source.size() != 6:
+	if slots.size() > target_max_slots or mappings_source.size() != 6:
 		return null
 	var sanitized_mappings: Array[int] = []
 	for mapping_value in mappings_source:
@@ -1477,7 +1516,7 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 		else:
 			sanitized_mappings.append(mapped_index)
 	var normalized_source: Variant = inventory.call(
-		"normalize_saved_state", slots, sanitized_mappings
+		"normalize_saved_state", slots, sanitized_mappings, target_max_slots
 	)
 	if not normalized_source is Dictionary:
 		return null
@@ -1523,7 +1562,11 @@ func _migrate_legacy_inventory(value: Variant) -> Variant:
 		else:
 			mappings.append(mapped_index)
 	return {
-		"inventory": {"slots": slots, "quick_mappings": mappings},
+		"inventory": {
+			"max_slots": target_max_slots,
+			"slots": slots,
+			"quick_mappings": mappings,
+		},
 		"farm_storage_items": farm_items,
 	}
 

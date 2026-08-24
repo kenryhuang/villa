@@ -4,6 +4,8 @@ extends RefCounted
 const GameDataScript := preload("res://scripts/core/game_data.gd")
 const EconomyLimitsScript := preload("res://scripts/core/economy_limits.gd")
 const PlayerStateScript := preload("res://scripts/data/player_state.gd")
+const MIN_INVENTORY_SLOTS := 1
+const MAX_INVENTORY_SLOTS := 100
 
 var _game_state: Variant
 var _season: Variant
@@ -56,7 +58,10 @@ func configure(
 		or event_bus == null
 		or (
 			progression != null
-			and not _has_methods(progression, ["debug_unlock_gate_eligible_blueprints"])
+			and not _has_methods(
+				progression,
+				["debug_unlock_gate_eligible_blueprints", "to_dict", "from_dict"]
+			)
 		)
 	):
 		return false
@@ -98,9 +103,12 @@ func snapshot() -> Dictionary:
 			"quantity": int(_inventory.call("get_item_count", item_id)),
 		}
 	var player_state: Variant = _game_state.get("player_state")
+	var elapsed_days := maxi(0, int(_season.get("total_days")) - 1)
+	var days_per_season := int(_season.DAYS_PER_SEASON)
 	return {
 		"level": int(player_state.get("level")),
-		"elapsed_days": maxi(0, int(_season.get("total_days")) - 1),
+		"elapsed_days": elapsed_days,
+		"season": floori(float(elapsed_days) / float(days_per_season)) % 4,
 		"gold": int(_game_state.get("gold")),
 		"stamina": int(player_state.get("stamina")),
 		"max_stamina": int(player_state.get("max_stamina")),
@@ -124,6 +132,14 @@ func validate(draft: Dictionary) -> Dictionary:
 		EconomyLimitsScript.MAX_SAFE_DATE - 1
 	):
 		return _failure("invalid_elapsed_days")
+	if not _integer_in_range(draft.get("season"), 0, 3):
+		return _failure("invalid_season")
+	if not _integer_in_range(
+		draft.get("max_slots"),
+		MIN_INVENTORY_SLOTS,
+		MAX_INVENTORY_SLOTS
+	):
+		return _failure("invalid_max_slots")
 	if not _integer_in_range(
 		draft.get("gold"),
 		0,
@@ -154,26 +170,27 @@ func validate(draft: Dictionary) -> Dictionary:
 				"max_stack", GameDataScript.DEFAULT_MAX_STACK
 			)
 		)
-		var maximum := max_stack * int(_inventory.get("max_slots"))
+		var maximum := max_stack * MAX_INVENTORY_SLOTS
 		var quantity_value: Variant = (record as Dictionary).get("quantity")
 		if max_stack <= 0 or not _integer_in_range(quantity_value, 0, maximum):
 			return _failure("invalid_item_quantity", {"item_id": item_id})
 		var quantity := int(quantity_value)
 		if quantity > 0:
 			required_slots += ceili(float(quantity) / float(max_stack))
-	if required_slots > int(_inventory.get("max_slots")):
+	var target_max_slots := int(draft.get("max_slots"))
+	if required_slots > target_max_slots:
 		return _failure(
 			"inventory_capacity",
 			{
 				"required_slots": required_slots,
-				"available_slots": int(_inventory.get("max_slots")),
+				"available_slots": target_max_slots,
 			}
 		)
 	return {
 		"ok": true,
 		"reason": "",
 		"required_slots": required_slots,
-		"available_slots": int(_inventory.get("max_slots")),
+		"available_slots": target_max_slots,
 	}
 
 
@@ -186,15 +203,19 @@ func apply(draft: Dictionary) -> Dictionary:
 
 	var target_total_days := int(draft.get("elapsed_days")) + 1
 	var before := _capture_state()
-	var target_inventory := _build_target_inventory(draft.get("items") as Dictionary)
+	var target_max_slots := int(draft.get("max_slots"))
+	var target_inventory := _build_target_inventory(
+		draft.get("items") as Dictionary,
+		target_max_slots
+	)
 	if target_inventory.is_empty():
 		return _failure("transaction_failed")
 
 	if not bool(_production.call("sync_daily_cursor", target_total_days)):
-		_restore_cursors(before)
+		_restore_state(before)
 		return _failure("transaction_failed")
 	if not bool(_npc.call("sync_daily_cursor", target_total_days)):
-		_restore_cursors(before)
+		_restore_state(before)
 		return _failure("transaction_failed")
 	var resource_state: Variant = before.get("resources")
 	if not bool(
@@ -204,23 +225,13 @@ func apply(draft: Dictionary) -> Dictionary:
 			target_total_days
 		)
 	):
-		_restore_cursors(before)
-		_resources.call(
-			"restore_resource_dicts",
-			resource_state,
-			int(before.get("resource_day", before.get("total_days", 1)))
-		)
+		_restore_state(before)
 		return _failure("transaction_failed")
 	if (
 		target_total_days != int(before.economy_day)
 		and not bool(_economy.call("reset_order_state", target_total_days))
 	):
-		_restore_cursors(before)
-		_resources.call(
-			"restore_resource_dicts",
-			resource_state,
-			int(before.get("resource_day", before.get("total_days", 1)))
-		)
+		_restore_state(before)
 		return _failure("transaction_failed")
 
 	_market.set("last_settled_day", target_total_days)
@@ -237,6 +248,7 @@ func apply(draft: Dictionary) -> Dictionary:
 	)
 	player_state.set("stamina", int(draft.get("stamina")))
 	_game_state.set("gold", int(draft.get("gold")))
+	_inventory.set("max_slots", target_max_slots)
 	_inventory.call(
 		"restore_state",
 		target_inventory.get("slots"),
@@ -248,6 +260,7 @@ func apply(draft: Dictionary) -> Dictionary:
 			"debug_unlock_gate_eligible_blueprints"
 		)
 		if not bool(unlock_result.get("ok", false)):
+			_restore_state(before)
 			return _failure(str(unlock_result.get("reason", "transaction_failed")))
 		unlocked_blueprint_count = (unlock_result.get("blueprints", []) as Array).size()
 	_emit_success_events(before, draft)
@@ -279,6 +292,7 @@ func _capture_state() -> Dictionary:
 		"exp": int(player_state.get("exp")),
 		"stamina": int(player_state.get("stamina")),
 		"gold": int(_game_state.get("gold")),
+		"max_slots": int(_inventory.get("max_slots")),
 		"season": int(_season.get("current_season")),
 		"day": int(_season.get("current_day")),
 		"total_days": int(_season.get("total_days")),
@@ -296,6 +310,9 @@ func _capture_state() -> Dictionary:
 		"daily_day": int(_daily.get("last_simulated_day")),
 		"resource_day": int(_season.get("total_days")),
 		"resources": _resources.call("to_resource_dicts"),
+		"progression_state": (
+			_progression.call("to_dict") if _progression != null else null
+		),
 		"item_counts": _item_counts(),
 	}
 
@@ -311,7 +328,30 @@ func _restore_cursors(before: Dictionary) -> void:
 	_daily.set("last_simulated_day", int(before.daily_day))
 
 
-func _build_target_inventory(items: Dictionary) -> Dictionary:
+func _restore_state(before: Dictionary) -> void:
+	_restore_cursors(before)
+	_resources.call(
+		"restore_resource_dicts",
+		before.resources,
+		int(before.get("resource_day", before.get("total_days", 1)))
+	)
+	_season.set("current_season", int(before.season))
+	_season.set("current_day", int(before.day))
+	_season.set("total_days", int(before.total_days))
+	_season.set("hour", int(before.hour))
+	_season.set("minute", int(before.minute))
+	var player_state: Variant = _game_state.get("player_state")
+	player_state.set("level", int(before.level))
+	player_state.set("exp", int(before.exp))
+	player_state.set("stamina", int(before.stamina))
+	_game_state.set("gold", int(before.gold))
+	_inventory.set("max_slots", int(before.max_slots))
+	_inventory.call("restore_state", before.slots, before.quick_mappings)
+	if _progression != null and before.get("progression_state") is Dictionary:
+		_progression.call("from_dict", before.progression_state)
+
+
+func _build_target_inventory(items: Dictionary, target_max_slots: int) -> Dictionary:
 	var item_ids: Array[String] = []
 	for item_id_value in items:
 		item_ids.append(str(item_id_value))
@@ -329,9 +369,9 @@ func _build_target_inventory(items: Dictionary) -> Dictionary:
 			var stack_quantity := mini(quantity, max_stack)
 			slots.append({"item_id": item_id, "quantity": stack_quantity})
 			quantity -= stack_quantity
-	if slots.size() > int(_inventory.get("max_slots")):
+	if slots.size() > target_max_slots:
 		return {}
-	while slots.size() < int(_inventory.get("max_slots")):
+	while slots.size() < target_max_slots:
 		slots.append({})
 
 	var previous_quick_items: Array[String] = []

@@ -7,6 +7,10 @@ signal refresh_requested
 const EconomyLimitsScript := preload("res://scripts/core/economy_limits.gd")
 const PlayerStateScript := preload("res://scripts/data/player_state.gd")
 const PANEL_TEXT_COLOR := Color("513b2f")
+const SEASON_NAMES: Array[String] = ["春", "夏", "秋", "冬"]
+const DAYS_PER_SEASON := 7
+const SEASONS_PER_YEAR := 4
+const DEBUG_SEED_QUANTITY := 99
 const CATEGORY_NAMES := {
 	"seed": "种子",
 	"crop": "作物",
@@ -26,11 +30,14 @@ const CATEGORY_NAMES := {
 @onready var tabs: TabContainer = $Overlay/Center/Panel/Layout/Tabs
 @onready var level_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Level
 @onready var elapsed_days_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/ElapsedDays
+@onready var season_input: OptionButton = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Season
 @onready var gold_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Gold
 @onready var stamina_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Stamina
 @onready var search_input: LineEdit = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Search
 @onready var category_input: OptionButton = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Category
 @onready var show_empty_check: CheckBox = $Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/ShowEmpty
+@onready var max_slots_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots
+@onready var buy_all_seeds_button: Button = $Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton
 @onready var item_rows: VBoxContainer = $Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows
 @onready var status_label: Label = $Overlay/Center/Panel/Layout/Footer/Status
 @onready var refresh_button: Button = $Overlay/Center/Panel/Layout/Footer/RefreshButton
@@ -46,6 +53,7 @@ var _configured := false
 
 
 func _ready() -> void:
+	_configure_season_options()
 	tabs.set_tab_title(0, "角色状态")
 	tabs.set_tab_title(1, "资源库存")
 	close_button.pressed.connect(close)
@@ -55,7 +63,11 @@ func _ready() -> void:
 	search_input.text_changed.connect(_on_search_changed)
 	category_input.item_selected.connect(_on_category_selected)
 	show_empty_check.toggled.connect(_on_show_empty_toggled)
-	for input in [level_input, elapsed_days_input, gold_input, stamina_input]:
+	season_input.item_selected.connect(_on_season_selected)
+	elapsed_days_input.value_changed.connect(_on_elapsed_days_changed)
+	max_slots_input.value_changed.connect(_on_state_value_changed)
+	buy_all_seeds_button.pressed.connect(_on_buy_all_seeds_pressed)
+	for input in [level_input, gold_input, stamina_input]:
 		input.value_changed.connect(_on_state_value_changed)
 	visible = false
 
@@ -95,12 +107,16 @@ func refresh_from_snapshot(snapshot_value: Dictionary) -> void:
 	elapsed_days_input.min_value = 0
 	elapsed_days_input.max_value = EconomyLimitsScript.MAX_SAFE_DATE - 1
 	elapsed_days_input.value = int(_snapshot.elapsed_days)
+	_select_season(int(_snapshot.season))
 	gold_input.min_value = 0
 	gold_input.max_value = EconomyLimitsScript.MAX_SAFE_INTEGER
 	gold_input.value = int(_snapshot.gold)
 	stamina_input.min_value = 0
 	stamina_input.max_value = int(_snapshot.max_stamina)
 	stamina_input.value = int(_snapshot.stamina)
+	max_slots_input.min_value = 1
+	max_slots_input.max_value = 100
+	max_slots_input.value = int(_snapshot.max_slots)
 	_rebuild_item_rows(_snapshot.items as Dictionary)
 	_rebuild_category_filter()
 	search_input.text = ""
@@ -117,8 +133,10 @@ func build_draft() -> Dictionary:
 	var draft := _snapshot.duplicate(true)
 	draft["level"] = roundi(level_input.value)
 	draft["elapsed_days"] = roundi(elapsed_days_input.value)
+	draft["season"] = int(season_input.get_item_metadata(season_input.selected))
 	draft["gold"] = roundi(gold_input.value)
 	draft["stamina"] = roundi(stamina_input.value)
+	draft["max_slots"] = roundi(max_slots_input.value)
 	for item_id in _item_quantities:
 		if draft.items.has(item_id):
 			(draft.items[item_id] as Dictionary)["quantity"] = int(_item_quantities[item_id])
@@ -128,7 +146,7 @@ func build_draft() -> Dictionary:
 func show_apply_result(result: Dictionary, refreshed_snapshot: Dictionary = {}) -> void:
 	if bool(result.get("ok", false)):
 		if not refreshed_snapshot.is_empty():
-			_refresh_quantities_only(refreshed_snapshot.items as Dictionary)
+			refresh_from_snapshot(refreshed_snapshot)
 		status_label.text = str(
 			result.get("message", "调试数据已应用；尚未写入存档")
 		)
@@ -177,7 +195,11 @@ func _rebuild_item_rows(records: Dictionary) -> void:
 			var right_record := records[right] as Dictionary
 			return _item_sort_key(left_record) < _item_sort_key(right_record)
 	)
-	var max_slots := int(_snapshot.get("max_slots", 20))
+	var max_slots := (
+		roundi(max_slots_input.value)
+		if max_slots_input != null
+		else int(_snapshot.get("max_slots", 20))
+	)
 	var show_empty := show_empty_check.button_pressed if show_empty_check else false
 	for item_id in item_ids:
 		var record := (records[item_id] as Dictionary).duplicate(true)
@@ -276,7 +298,54 @@ func _on_item_quantity_changed(value: float, item_id: String) -> void:
 
 
 func _on_state_value_changed(_value: float) -> void:
+	if not _loading:
+		_refresh_item_quantity_limits(roundi(max_slots_input.value))
 	_mark_dirty()
+
+
+func _on_elapsed_days_changed(value: float) -> void:
+	if _loading:
+		return
+	_select_season(_season_for_elapsed(roundi(value)))
+	_mark_dirty()
+
+
+func _on_season_selected(index: int) -> void:
+	if _loading or index < 0:
+		return
+	var selected_season := int(season_input.get_item_metadata(index))
+	var elapsed_days := roundi(elapsed_days_input.value)
+	var days_per_year := DAYS_PER_SEASON * SEASONS_PER_YEAR
+	var year := floori(float(elapsed_days) / float(days_per_year))
+	var day_offset := elapsed_days % DAYS_PER_SEASON
+	elapsed_days_input.value = clampi(
+		year * days_per_year + selected_season * DAYS_PER_SEASON + day_offset,
+		0,
+		int(elapsed_days_input.max_value)
+	)
+	_mark_dirty()
+
+
+func _on_buy_all_seeds_pressed() -> void:
+	if not _configured:
+		return
+	var records := _draft_item_records()
+	for item_id in _item_records:
+		var record := _item_records[item_id] as Dictionary
+		if str(record.get("category", "")) != "seed":
+			continue
+		var target_quantity := maxi(
+			int(_item_quantities.get(item_id, record.get("quantity", 0))),
+			DEBUG_SEED_QUANTITY
+		)
+		_item_quantities[item_id] = target_quantity
+		if records.has(item_id):
+			(records[item_id] as Dictionary)["quantity"] = target_quantity
+	_rebuild_item_rows(records)
+	_rebuild_category_filter()
+	_apply_item_filters()
+	_mark_dirty()
+	status_label.text = "全部种子和树苗已在草稿中补到至少 99 个"
 
 
 func _on_search_changed(_text: String) -> void:
@@ -288,9 +357,32 @@ func _on_category_selected(_index: int) -> void:
 
 
 func _on_show_empty_toggled(_pressed: bool) -> void:
-	_rebuild_item_rows(_snapshot.items as Dictionary)
+	_rebuild_item_rows(_draft_item_records())
 	_rebuild_category_filter()
 	_apply_item_filters()
+
+
+func _draft_item_records() -> Dictionary:
+	var records := (_snapshot.items as Dictionary).duplicate(true)
+	for item_id in _item_quantities:
+		if records.has(item_id):
+			(records[item_id] as Dictionary)["quantity"] = int(_item_quantities[item_id])
+	return records
+
+
+func _refresh_item_quantity_limits(target_max_slots: int) -> void:
+	for child in item_rows.get_children():
+		var item_id := str(child.get_meta("item_id", ""))
+		if item_id.is_empty() or not _item_records.has(item_id):
+			continue
+		var quantity := child.get_node_or_null("Quantity") as SpinBox
+		if quantity == null:
+			continue
+		var record := _item_records[item_id] as Dictionary
+		var target_max := int(record.get("max_stack", 99)) * target_max_slots
+		# Never clamp a pending quantity when capacity is reduced; validation reports
+		# whether the complete compacted inventory fits the requested slot count.
+		quantity.max_value = maxi(int(quantity.max_value), target_max)
 
 
 func _on_apply_pressed() -> void:
@@ -327,6 +419,10 @@ func _failure_message(result: Dictionary) -> String:
 			return "等级超出允许范围"
 		"invalid_elapsed_days":
 			return "已过天数超出允许范围"
+		"invalid_season":
+			return "季节无效"
+		"invalid_max_slots":
+			return "背包格子数必须在 1–100 之间"
 		"invalid_gold":
 			return "金币数量无效"
 		"invalid_stamina":
@@ -341,9 +437,11 @@ func _valid_snapshot(value: Dictionary) -> bool:
 	return (
 		value.has("level")
 		and value.has("elapsed_days")
+		and value.has("season")
 		and value.has("gold")
 		and value.has("stamina")
 		and value.has("max_stamina")
+		and value.has("max_slots")
 		and value.get("items") is Dictionary
 	)
 
@@ -358,6 +456,24 @@ func _item_sort_key(record: Dictionary) -> String:
 
 func _safe_node_name(item_id: String) -> String:
 	return "Item_%s" % item_id.replace("/", "_").replace(":", "_")
+
+
+func _configure_season_options() -> void:
+	season_input.clear()
+	for season_index in range(SEASON_NAMES.size()):
+		season_input.add_item(SEASON_NAMES[season_index])
+		season_input.set_item_metadata(season_index, season_index)
+
+
+func _select_season(season: int) -> void:
+	for index in range(season_input.item_count):
+		if int(season_input.get_item_metadata(index)) == season:
+			season_input.select(index)
+			return
+
+
+func _season_for_elapsed(elapsed_days: int) -> int:
+	return floori(float(elapsed_days) / float(DAYS_PER_SEASON)) % SEASONS_PER_YEAR
 
 
 func _unhandled_input(event: InputEvent) -> void:

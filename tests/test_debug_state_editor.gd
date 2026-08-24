@@ -114,12 +114,34 @@ class EventBusDouble:
 	signal day_changed(total_day: int)
 
 
+class ProgressionDouble:
+	extends RefCounted
+	var fail_unlock := false
+	var state := {"unlocked_blueprints": ["starter"]}
+
+	func debug_unlock_gate_eligible_blueprints() -> Dictionary:
+		state = {"unlocked_blueprints": ["starter", "debug_mutation"]}
+		if fail_unlock:
+			return {"ok": false, "reason": "progression_failed"}
+		return {"ok": true, "blueprints": ["debug_mutation"]}
+
+	func to_dict() -> Dictionary:
+		return state.duplicate(true)
+
+	func from_dict(value: Dictionary) -> bool:
+		state = value.duplicate(true)
+		return true
+
+
 func run(assertions: TestAssert) -> void:
 	_test_snapshot(assertions)
 	_test_validation(assertions)
 	_test_unchanged_apply_emits_no_events(assertions)
 	_test_apply_player_and_inventory(assertions)
+	_test_apply_selected_season_and_inventory_capacity(assertions)
+	_test_capacity_shrink_rejects_without_data_loss(assertions)
 	_test_apply_rolls_back_on_cursor_failure(assertions)
+	_test_apply_rolls_back_on_progression_failure(assertions)
 	_test_direct_elapsed_day_jump(assertions)
 
 
@@ -147,6 +169,7 @@ func _test_unchanged_apply_emits_no_events(assertions: TestAssert) -> void:
 
 func _test_snapshot(assertions: TestAssert) -> void:
 	var fixture := _fixture()
+	fixture.season.current_season = 3
 	fixture.game_state.player_state.level = 3
 	fixture.game_state.player_state.exp = 250
 	assertions.truthy(fixture.inventory.add_item("wood", 12), "debug fixture adds wood")
@@ -154,6 +177,7 @@ func _test_snapshot(assertions: TestAssert) -> void:
 	var snapshot: Dictionary = fixture.editor.snapshot()
 	assertions.equal(snapshot.get("level"), 3, "snapshot reads level")
 	assertions.equal(snapshot.get("elapsed_days"), 8, "snapshot converts total day to elapsed day")
+	assertions.equal(snapshot.get("season"), 1, "snapshot derives season from authoritative elapsed days")
 	assertions.equal(snapshot.get("gold"), 700, "snapshot reads gold")
 	assertions.equal(snapshot.get("stamina"), 100, "snapshot reads stamina")
 	assertions.equal(
@@ -222,6 +246,37 @@ func _test_validation(assertions: TestAssert) -> void:
 		"invalid_gold",
 		"negative gold is rejected"
 	)
+
+	invalid = valid.duplicate(true)
+	invalid["season"] = 4
+	assertions.equal(
+		fixture.editor.validate(invalid).get("reason"),
+		"invalid_season",
+		"out-of-range seasons are rejected"
+	)
+
+	invalid = valid.duplicate(true)
+	invalid["season"] = 0
+	assertions.truthy(
+		bool(fixture.editor.validate(invalid).get("ok", false)),
+		"elapsed days remain authoritative when a redundant season value is stale"
+	)
+
+	invalid = valid.duplicate(true)
+	invalid["max_slots"] = 0
+	assertions.equal(
+		fixture.editor.validate(invalid).get("reason"),
+		"invalid_max_slots",
+		"zero inventory slots are rejected"
+	)
+
+	invalid = valid.duplicate(true)
+	invalid["max_slots"] = 101
+	assertions.equal(
+		fixture.editor.validate(invalid).get("reason"),
+		"invalid_max_slots",
+		"debug inventory capacity is capped at one hundred slots"
+	)
 	fixture.inventory.free()
 
 
@@ -277,6 +332,46 @@ func _test_apply_player_and_inventory(assertions: TestAssert) -> void:
 	fixture.inventory.free()
 
 
+func _test_apply_selected_season_and_inventory_capacity(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	assertions.truthy(fixture.inventory.add_item("wood", 12), "capacity fixture adds wood")
+	var season_events: Array[int] = []
+	fixture.event_bus.season_changed.connect(
+		func(value: int) -> void:
+			season_events.append(value)
+	)
+	var draft: Dictionary = fixture.editor.snapshot()
+	draft["elapsed_days"] = 15
+	draft["season"] = 2
+	draft["max_slots"] = 30
+	var result: Dictionary = fixture.editor.apply(draft)
+	assertions.truthy(bool(result.get("ok", false)), "season and capacity debug edits apply together")
+	assertions.equal(fixture.season.current_season, 2, "debug apply selects autumn")
+	assertions.equal(fixture.season.current_day, 2, "season selection preserves the day within season")
+	assertions.equal(fixture.season.total_days, 16, "season selection synchronizes total days")
+	assertions.equal(fixture.inventory.max_slots, 30, "debug apply changes inventory capacity")
+	assertions.equal(fixture.inventory.slots.size(), 30, "inventory storage resizes to target capacity")
+	assertions.equal(fixture.inventory.get_item_count("wood"), 12, "capacity expansion preserves items")
+	assertions.equal(season_events, [2], "season selection emits one season refresh")
+	fixture.inventory.free()
+
+
+func _test_capacity_shrink_rejects_without_data_loss(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	assertions.truthy(fixture.inventory.add_item("wood", 99), "shrink fixture adds wood")
+	assertions.truthy(fixture.inventory.add_item("stone", 1), "shrink fixture adds stone")
+	var draft: Dictionary = fixture.editor.snapshot()
+	draft["max_slots"] = 1
+	var result: Dictionary = fixture.editor.apply(draft)
+	assertions.equal(result.get("reason"), "inventory_capacity", "unsafe capacity shrink is rejected")
+	assertions.equal(result.get("required_slots"), 2, "capacity failure reports required compacted slots")
+	assertions.equal(result.get("available_slots"), 1, "capacity failure reports requested slots")
+	assertions.equal(fixture.inventory.max_slots, 20, "failed shrink preserves inventory capacity")
+	assertions.equal(fixture.inventory.get_item_count("wood"), 99, "failed shrink preserves wood")
+	assertions.equal(fixture.inventory.get_item_count("stone"), 1, "failed shrink preserves stone")
+	fixture.inventory.free()
+
+
 func _test_apply_rolls_back_on_cursor_failure(assertions: TestAssert) -> void:
 	var fixture := _fixture()
 	assertions.truthy(fixture.inventory.add_item("wood", 8), "rollback fixture adds wood")
@@ -299,6 +394,46 @@ func _test_apply_rolls_back_on_cursor_failure(assertions: TestAssert) -> void:
 	assertions.equal(fixture.production.current_day, 9, "failed transaction restores production cursor")
 	assertions.equal(fixture.npc.last_simulated_day, 9, "failed transaction restores NPC cursor")
 	assertions.equal(item_events, [], "failed transaction emits no inventory events")
+	fixture.inventory.free()
+
+
+func _test_apply_rolls_back_on_progression_failure(assertions: TestAssert) -> void:
+	var fixture := _fixture(true)
+	assertions.truthy(fixture.inventory.add_item("wood", 8), "progression rollback fixture adds wood")
+	var before_progression: Dictionary = fixture.progression.to_dict()
+	var before_resources: Array = fixture.resources.state.duplicate(true)
+	var before_economy: Dictionary = fixture.economy.to_dict()
+	var events := _record_state_events(fixture.event_bus)
+	var draft: Dictionary = fixture.editor.snapshot()
+	draft["elapsed_days"] = 15
+	draft["season"] = 2
+	draft["level"] = 5
+	draft["gold"] = 9999
+	draft["stamina"] = 12
+	draft["max_slots"] = 30
+	(draft.items.wood as Dictionary)["quantity"] = 40
+	fixture.progression.fail_unlock = true
+	var result: Dictionary = fixture.editor.apply(draft)
+	assertions.equal(result.get("reason"), "progression_failed", "progression failure rejects transaction")
+	assertions.equal(fixture.game_state.player_state.level, 1, "progression failure restores level")
+	assertions.equal(fixture.game_state.player_state.exp, 0, "progression failure restores experience")
+	assertions.equal(fixture.game_state.player_state.stamina, 100, "progression failure restores stamina")
+	assertions.equal(fixture.game_state.gold, 700, "progression failure restores gold")
+	assertions.equal(fixture.season.current_season, 1, "progression failure restores season")
+	assertions.equal(fixture.season.current_day, 2, "progression failure restores day")
+	assertions.equal(fixture.season.total_days, 9, "progression failure restores total days")
+	assertions.equal(fixture.inventory.max_slots, 20, "progression failure restores inventory capacity")
+	assertions.equal(fixture.inventory.slots.size(), 20, "progression failure restores inventory size")
+	assertions.equal(fixture.inventory.get_item_count("wood"), 8, "progression failure restores inventory")
+	assertions.equal(fixture.production.current_day, 9, "progression failure restores production cursor")
+	assertions.equal(fixture.npc.last_simulated_day, 9, "progression failure restores NPC cursor")
+	assertions.equal(fixture.market.last_settled_day, 9, "progression failure restores market cursor")
+	assertions.equal(fixture.daily.last_simulated_day, 9, "progression failure restores daily cursor")
+	assertions.equal(fixture.economy.to_dict(), before_economy, "progression failure restores economy")
+	assertions.equal(fixture.resources.state, before_resources, "progression failure restores resources")
+	assertions.equal(fixture.progression.to_dict(), before_progression, "progression failure restores progression")
+	for event_name in events:
+		assertions.equal((events[event_name] as Array).size(), 0, "progression failure emits no %s event" % event_name)
 	fixture.inventory.free()
 
 
@@ -390,7 +525,7 @@ func _record_state_events(event_bus: EventBusDouble) -> Dictionary:
 	return events
 
 
-func _fixture() -> Dictionary:
+func _fixture(with_progression := false) -> Dictionary:
 	var game_state := GameStateDouble.new()
 	var season := SeasonDouble.new()
 	var inventory := InventorySystemScript.new() as InventorySystem
@@ -401,6 +536,7 @@ func _fixture() -> Dictionary:
 	var daily := DailyDouble.new()
 	var resources := ResourceDouble.new()
 	var event_bus := EventBusDouble.new()
+	var progression: Variant = ProgressionDouble.new() if with_progression else null
 	var editor := DebugStateEditorScript.new()
 	var configured := editor.configure(
 		game_state,
@@ -412,7 +548,8 @@ func _fixture() -> Dictionary:
 		npc,
 		daily,
 		resources,
-		event_bus
+		event_bus,
+		progression
 	)
 	if not configured:
 		push_error("DebugStateEditor test fixture failed to configure")
@@ -428,4 +565,5 @@ func _fixture() -> Dictionary:
 		"daily": daily,
 		"resources": resources,
 		"event_bus": event_bus,
+		"progression": progression,
 	}

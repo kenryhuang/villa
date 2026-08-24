@@ -74,6 +74,10 @@ func configure(inv: InventorySystem, farm_storage: FarmStorageSystem = null) -> 
 	return true
 
 
+func refresh() -> void:
+	_refresh()
+
+
 func select_tab(tab_id: StringName) -> bool:
 	if tab_id != TAB_BACKPACK and tab_id != TAB_FARM_STORAGE:
 		return false

@@ -14,6 +14,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var snapshot := {
 		"level": 1,
 		"elapsed_days": 0,
+		"season": 0,
 		"gold": 100,
 		"stamina": 50,
 		"max_stamina": 100,
@@ -40,11 +41,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		return
 
 	assertions.truthy(not show_empty.button_pressed, "show empty is unchecked by default")
-	var visible_ids := panel.get_visible_item_ids()
+	var visible_ids: Array[String] = panel.get_visible_item_ids()
 	assertions.equal(visible_ids.size(), 2, "default hides zero-quantity items (got %d)" % visible_ids.size())
 
 	# build_draft should still include all items, even hidden ones
-	var draft := panel.build_draft()
+	var draft: Dictionary = panel.build_draft()
 	assertions.truthy(draft.items.has("wood"), "draft includes non-zero item wood")
 	assertions.truthy(draft.items.has("stone"), "draft includes zero-quantity item stone")
 	assertions.truthy(draft.items.has("iron_ingot"), "draft includes zero-quantity item iron_ingot")

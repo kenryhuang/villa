@@ -7,10 +7,13 @@ const REQUIRED_NODES: Array[String] = [
 	"Overlay/Center/Panel/Layout/Header/CloseButton",
 	"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Level",
 	"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/ElapsedDays",
+	"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Season",
 	"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Gold",
 	"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Stamina",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Search",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Category",
+	"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots",
+	"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows",
 	"Overlay/Center/Panel/Layout/Footer/Status",
 	"Overlay/Center/Panel/Layout/Footer/RefreshButton",
@@ -22,8 +25,15 @@ const REQUIRED_NODES: Array[String] = [
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var panel := DebugPanelScene.instantiate()
 	tree.root.add_child(panel)
+	var required_nodes_present := true
 	for node_path in REQUIRED_NODES:
-		assertions.truthy(panel.has_node(node_path), "debug panel authors %s" % node_path)
+		var has_required_node := panel.has_node(node_path)
+		assertions.truthy(has_required_node, "debug panel authors %s" % node_path)
+		required_nodes_present = required_nodes_present and has_required_node
+	if not required_nodes_present:
+		panel.queue_free()
+		await tree.process_frame
+		return
 	var snapshot := _snapshot()
 	assertions.truthy(panel.configure(snapshot), "debug panel accepts a complete snapshot")
 	panel.open()
@@ -57,21 +67,66 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"footer status stays dark on the cream panel"
 	)
 	assertions.truthy(panel.visible, "debug panel opens")
+	var elapsed_days := panel.get_node(
+		"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/ElapsedDays"
+	) as SpinBox
+	var season := panel.get_node(
+		"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Season"
+	) as OptionButton
+	var autumn_index := _option_index(season, "2")
+	assertions.truthy(autumn_index >= 0, "season selector offers autumn")
+	if autumn_index >= 0:
+		season.select(autumn_index)
+		season.item_selected.emit(autumn_index)
+		assertions.equal(roundi(elapsed_days.value), 15, "season selection preserves year and day")
+		assertions.equal(panel.build_draft().season, 2, "season selection enters the draft")
 
 	(panel.get_node("Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Level") as SpinBox).value = 4
-	(panel.get_node("Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/ElapsedDays") as SpinBox).value = 28
+	elapsed_days.value = 28
+	elapsed_days.value_changed.emit(elapsed_days.value)
+	assertions.equal(
+		int(season.get_item_metadata(season.selected)),
+		0,
+		"elapsed day changes synchronize the season selector"
+	)
 	(panel.get_node("Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Gold") as SpinBox).value = 9000
 	(panel.get_node("Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Stamina") as SpinBox).value = 23
+	var max_slots := panel.get_node(
+		"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots"
+	) as SpinBox
+	max_slots.value = 30
+	max_slots.value_changed.emit(max_slots.value)
 	var wood_editor := _item_editor(panel, "wood")
 	assertions.truthy(wood_editor != null, "wood row owns a quantity editor")
 	if wood_editor != null:
+		assertions.equal(
+			int(wood_editor.max_value),
+			2970,
+			"capacity expansion immediately raises item quantity editor limits"
+		)
 		wood_editor.value = 145
+	(panel.get_node("Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton") as Button).pressed.emit()
+	assertions.equal(panel.get_visible_item_ids().size(), 4, "buy-all reveals previously empty seed rows")
+	assertions.equal(
+		int(_item_editor(panel, "wood").max_value),
+		2970,
+		"buy-all row rebuild keeps the pending expanded capacity limit"
+	)
+	var show_empty := panel.get_node(
+		"Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/ShowEmpty"
+	) as CheckBox
+	show_empty.button_pressed = true
+	show_empty.toggled.emit(true)
 	var draft: Dictionary = panel.build_draft()
 	assertions.equal(draft.level, 4, "draft reads edited level")
 	assertions.equal(draft.elapsed_days, 28, "draft reads edited elapsed days")
+	assertions.equal(draft.season, 0, "draft reads synchronized season")
 	assertions.equal(draft.gold, 9000, "draft reads edited gold")
 	assertions.equal(draft.stamina, 23, "draft reads edited stamina")
-	assertions.equal((draft.items.wood as Dictionary).quantity, 145, "draft reads edited resource")
+	assertions.equal(draft.max_slots, 30, "draft reads edited inventory capacity")
+	assertions.equal((draft.items.wood as Dictionary).quantity, 145, "buy-all and row rebuild preserve other draft edits")
+	assertions.equal((draft.items.grain_seed as Dictionary).quantity, 120, "buy-all never reduces an existing seed surplus")
+	assertions.equal((draft.items.apple_sapling as Dictionary).quantity, 99, "show-empty rebuild preserves granted saplings")
 
 	var search := panel.get_node(
 		"Overlay/Center/Panel/Layout/Tabs/Inventory/Toolbar/Search"
@@ -90,7 +145,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	if seed_index >= 0:
 		category.select(seed_index)
 		category.item_selected.emit(seed_index)
-		assertions.equal(panel.get_visible_item_ids(), ["grain_seed"], "category filters item rows")
+		assertions.equal(
+			panel.get_visible_item_ids(),
+			["apple_sapling", "grain_seed"],
+			"category filters every purchased seed row"
+		)
 
 	var apply_requests: Array[Dictionary] = []
 	var refresh_requests: Array[bool] = []
@@ -114,6 +173,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var status := panel.get_node("Overlay/Center/Panel/Layout/Footer/Status") as Label
 	assertions.equal(status.text, "调试数据已应用；尚未写入存档", "success feedback stays visible")
 	assertions.equal((panel.build_draft().items.wood as Dictionary).quantity, 12, "success snapshot clears old draft")
+	assertions.equal(panel.build_draft().max_slots, 20, "success snapshot restores authoritative capacity")
 
 	(panel.get_node("Overlay/Center/Panel/Layout/Footer/CancelButton") as Button).pressed.emit()
 	assertions.truthy(not panel.visible, "cancel closes without another apply")
@@ -126,6 +186,7 @@ func _snapshot() -> Dictionary:
 	return {
 		"level": 2,
 		"elapsed_days": 8,
+		"season": 1,
 		"gold": 700,
 		"stamina": 75,
 		"max_stamina": 100,
@@ -133,7 +194,8 @@ func _snapshot() -> Dictionary:
 		"items": {
 			"wood": {"id": "wood", "name": "木材", "category": "material", "max_stack": 99, "quantity": 12},
 			"stone": {"id": "stone", "name": "石材", "category": "material", "max_stack": 99, "quantity": 8},
-			"grain_seed": {"id": "grain_seed", "name": "谷物种子", "category": "seed", "max_stack": 99, "quantity": 4},
+			"grain_seed": {"id": "grain_seed", "name": "谷物种子", "category": "seed", "max_stack": 99, "quantity": 120},
+			"apple_sapling": {"id": "apple_sapling", "name": "苹果树苗", "category": "seed", "max_stack": 99, "quantity": 0},
 		},
 	}
 

@@ -81,7 +81,10 @@ func _run() -> void:
 		notification_instance.free()
 	_check_scene("res://scenes/ui/debug_panel.tscn", [
 		"Overlay/Center/Panel/Layout/Tabs/PlayerState",
+		"Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields/Season",
 		"Overlay/Center/Panel/Layout/Tabs/Inventory",
+		"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots",
+		"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton",
 		"Overlay/Center/Panel/Layout/Footer/ApplyButton",
 	])
 	_check(ResourceLoader.exists("res://tests/run_economy_ui_tests.gd"), "economy UI integration runner exists")
@@ -138,6 +141,12 @@ func _check_inventory_planting_selection() -> void:
 	ui.open()
 	await process_frame
 	_check(ui.has_method("assign_planting_slot"), "inventory UI exposes planting-slot assignment")
+	_check(ui.has_method("refresh"), "inventory UI exposes an authoritative refresh entry point")
+	if ui.has_method("refresh"):
+		inventory.max_slots = 24
+		inventory.restore_state(inventory.slots, inventory.quick_slot_mappings)
+		ui.call("refresh")
+		_check(ui.inventory_grid.get_child_count() == 24, "inventory refresh rebuilds the resized backpack grid")
 	if not ui.has_method("assign_planting_slot"):
 		ui.free()
 		inventory.free()

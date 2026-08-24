@@ -696,6 +696,8 @@ func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
 		if hud != null:
 			hud.configure_season_system(season_system)
 			hud.refresh_action_bar()
+		if inventory_ui != null and inventory_ui.has_method("refresh"):
+			inventory_ui.call("refresh")
 		debug_panel.show_apply_result(result, debug_state_editor.snapshot())
 		return
 	_publish_hud_message("debug", "error", "调试应用失败：%s" % str(result.get("reason", "unknown")))

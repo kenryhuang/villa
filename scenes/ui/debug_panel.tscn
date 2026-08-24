@@ -157,6 +157,17 @@ allow_greater = false
 allow_lesser = false
 update_on_text_changed = true
 
+[node name="SeasonLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_font_sizes/font_size = 19
+text = "季节"
+vertical_alignment = 1
+
+[node name="Season" type="OptionButton" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
+custom_minimum_size = Vector2(300, 44)
+layout_mode = 2
+
 [node name="GoldLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/PlayerState/Fields"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
@@ -217,6 +228,38 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "显示空物品"
 tooltip_text = "勾选后显示数量为 0 的物品"
+
+[node name="DebugControls" type="HBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MaxSlotsLabel" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.318, 0.231, 0.184, 1)
+theme_override_font_sizes/font_size = 17
+text = "背包格子数"
+vertical_alignment = 1
+
+[node name="MaxSlots" type="SpinBox" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls"]
+custom_minimum_size = Vector2(150, 42)
+layout_mode = 2
+min_value = 1.0
+max_value = 100.0
+value = 20.0
+allow_greater = false
+allow_lesser = false
+update_on_text_changed = true
+
+[node name="Spacer" type="Control" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BuyAllSeedsButton" type="Button" parent="Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls"]
+custom_minimum_size = Vector2(220, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = "一键购买所有种子"
+tooltip_text = "调试赠送：每种种子和树苗补到 99 个，不扣金币，不影响市场"
 
 [node name="Columns" type="HBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Inventory"]
 layout_mode = 2

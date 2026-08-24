@@ -386,10 +386,16 @@ func restore_state(saved_slots: Variant, saved_quick_mappings: Variant) -> void:
 	_emit_changed_quick_items(previous_items)
 
 
-func normalize_saved_state(saved_slots: Variant, saved_quick_mappings: Variant) -> Variant:
+func normalize_saved_state(
+	saved_slots: Variant,
+	saved_quick_mappings: Variant,
+	target_max_slots := -1
+) -> Variant:
+	var slot_limit := max_slots if target_max_slots < 0 else int(target_max_slots)
 	if (
 		not saved_slots is Array
-		or saved_slots.size() > max_slots
+		or slot_limit <= 0
+		or saved_slots.size() > slot_limit
 		or not saved_quick_mappings is Array
 		or saved_quick_mappings.size() != QUICK_SLOT_COUNT
 	):
@@ -443,7 +449,7 @@ func normalize_saved_state(saved_slots: Variant, saved_quick_mappings: Variant) 
 			return null
 		mappings.append(slot_index)
 
-	while normalized.size() < max_slots:
+	while normalized.size() < slot_limit:
 		normalized.append({})
 		target_by_index.append("")
 	for target_id in migration_targets:

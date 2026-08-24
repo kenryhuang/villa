@@ -276,6 +276,7 @@ class StateTransitionOwnerDouble:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	_test_inventory_capacity_round_trip(assertions, tree)
 	_test_task7_non_economy_calendar_prevalidation(assertions, tree)
 	_test_task7_layoutless_canonical_storage_round_trip(assertions, tree)
 	_test_task7_unversioned_inventory_public_load(assertions, tree)
@@ -305,6 +306,59 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_task13_building_load_signals_are_transactional(assertions, tree)
 	_test_farm_storage_capacity_refreshes_after_committed_load(assertions, tree)
 	_test_main_wires_economy_runtime(assertions, tree)
+
+
+func _test_inventory_capacity_round_trip(
+	assertions: TestAssert,
+	tree: SceneTree
+) -> void:
+	_cleanup()
+	var manager := SaveManagerScript.new()
+	manager.name = "InventoryCapacitySaveManager"
+	manager.save_directory = TEST_SAVE_DIR
+	tree.root.add_child(manager)
+	var inventory := InventorySystemScript.new() as InventorySystem
+	inventory.name = "InventoryCapacityInventory"
+	tree.root.add_child(inventory)
+	inventory.max_slots = 30
+	var expanded_slots: Array[Dictionary] = []
+	expanded_slots.resize(30)
+	for index in range(expanded_slots.size()):
+		expanded_slots[index] = {}
+	for index in range(21):
+		expanded_slots[index] = {
+			"item_id": "wood",
+			"quantity": 99 if index < 20 else 1,
+		}
+	inventory.restore_state(expanded_slots, [0, -1, -1, -1, -1, -1])
+	assertions.truthy(manager.save_game(TEST_SLOT), "expanded debug inventory capacity saves")
+	inventory.max_slots = 20
+	inventory.reset_slots()
+	assertions.truthy(manager.load_game(TEST_SLOT), "expanded debug inventory capacity loads")
+	assertions.equal(inventory.max_slots, 30, "save restores expanded inventory capacity")
+	assertions.equal(inventory.slots.size(), 30, "save restores expanded inventory slot array")
+	assertions.equal(inventory.get_item_count("wood"), 1981, "expanded capacity load preserves items beyond slot twenty")
+
+	inventory.max_slots = 10
+	inventory.restore_state([{"item_id": "stone", "quantity": 7}], [-1, -1, -1, -1, -1, -1])
+	assertions.truthy(manager.save_game(TEST_SLOT), "shrunken debug inventory capacity saves")
+	inventory.max_slots = 20
+	inventory.reset_slots()
+	assertions.truthy(manager.load_game(TEST_SLOT), "shrunken debug inventory capacity loads")
+	assertions.equal(inventory.max_slots, 10, "save restores shrunken inventory capacity")
+	assertions.equal(inventory.slots.size(), 10, "save restores shrunken inventory slot array")
+	assertions.equal(inventory.get_item_count("stone"), 7, "shrunken capacity load preserves items")
+	var legacy_payload: Dictionary = manager._gather_save_data()
+	(legacy_payload.inventory as Dictionary).erase("max_slots")
+	_write_json(manager._save_path(TEST_SLOT), legacy_payload)
+	inventory.max_slots = 30
+	inventory.reset_slots()
+	assertions.truthy(manager.load_game(TEST_SLOT), "legacy save without capacity still loads")
+	assertions.equal(inventory.max_slots, 20, "legacy save defaults to the historical twenty slots")
+	assertions.equal(inventory.get_item_count("stone"), 7, "legacy capacity migration preserves items")
+	manager.clear_save(TEST_SLOT)
+	inventory.free()
+	manager.free()
 
 
 func _test_task7_non_economy_calendar_prevalidation(
