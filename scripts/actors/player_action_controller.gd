@@ -13,6 +13,7 @@ signal building_category_changed(category_id: String, category_index: int)
 signal seed_selection_requested(cell: GridCell)
 signal plant_selection_changed(plant_item_id: String)
 signal action_failure_hint(text: String)
+signal action_feedback_requested(text: String, severity: String, details: Dictionary)
 
 enum Action {
 	NONE,
@@ -964,47 +965,75 @@ func _current_plant_commit_failure(
 	return result
 
 
+func _harvest_success_text(items: Dictionary) -> String:
+	var parts: Array[String] = []
+	var item_ids: Array = items.keys()
+	item_ids.sort()
+	for item_id_value in item_ids:
+		var item_id := str(item_id_value)
+		var item_data: Variant = GameDataScript.get_item(item_id)
+		var display_name := (
+			str(item_data.get("name", item_id))
+			if item_data is Dictionary
+			else item_id
+		)
+		parts.append("%s ×%d" % [display_name, int(items[item_id])])
+	return "收获%s，已入仓" % "、".join(parts)
+
+
+func _fail_harvest(
+	reason: String,
+	items: Dictionary = {},
+	extra: Dictionary = {}
+) -> bool:
+	var details := {
+		"ok": false,
+		"reason": reason,
+		"items": items.duplicate(true),
+	}
+	details.merge(extra, true)
+	_set_last_action_failure(details)
+	var message := "收割失败，请重试"
+	var severity := "error"
+	if reason == "storage_capacity":
+		message = "仓库容量不足，还需 %d 容量" % int(
+			details.get("missing_capacity", 0)
+		)
+		severity = "warning"
+	action_feedback_requested.emit(message, severity, details.duplicate(true))
+	return false
+
+
 func _harvest(cell: GridCell) -> bool:
 	if farming_system == null or farm_storage_system == null:
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed"})
-		return false
+		return _fail_harvest("transaction_failed")
 	var preview := _preview_harvest(cell)
 	var items := _normalized_harvest_items(preview.get("items", {}))
 	if preview.is_empty() or items.is_empty():
-		_set_last_action_failure({"ok": false, "reason": "harvest_unavailable"})
-		return false
+		return _fail_harvest("harvest_unavailable")
 	var missing_capacity := int(farm_storage_system.call("get_missing_capacity", items))
 	if missing_capacity < 0:
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	if missing_capacity > 0:
-		_set_last_action_failure({
-			"ok": false,
-			"reason": "storage_capacity",
+		return _fail_harvest("storage_capacity", items, {
 			"storage_capacity": int(farm_storage_system.call("get_total_capacity")),
 			"storage_used": int(farm_storage_system.call("get_used_capacity")),
 			"missing_capacity": missing_capacity,
-			"items": items.duplicate(true),
 		})
-		return false
 	var transaction_token: Variant = farm_storage_system.call("begin_atomic_transaction")
 	if transaction_token == null:
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	if not bool(farm_storage_system.call("stage_add_items", transaction_token, items)):
 		farm_storage_system.call("rollback_atomic_transaction", transaction_token)
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	var farming_token: Variant = farming_system.call("prepare_harvest", cell, preview)
 	if farming_token == null:
 		farm_storage_system.call("rollback_atomic_transaction", transaction_token)
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	if not bool(farming_system.call("apply_prepared_harvest", farming_token)):
 		farming_system.call("rollback_prepared_harvest", farming_token)
 		farm_storage_system.call("rollback_atomic_transaction", transaction_token)
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	var storage_publication: Variant = farm_storage_system.call(
 		"seal_atomic_transaction",
 		transaction_token
@@ -1012,8 +1041,7 @@ func _harvest(cell: GridCell) -> bool:
 	if storage_publication == null:
 		farming_system.call("rollback_prepared_harvest", farming_token)
 		farm_storage_system.call("rollback_atomic_transaction", transaction_token)
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	var farming_publication: Variant = farming_system.call(
 		"seal_prepared_harvest",
 		farming_token
@@ -1021,22 +1049,25 @@ func _harvest(cell: GridCell) -> bool:
 	if farming_publication == null:
 		farming_system.call("rollback_prepared_harvest", farming_token)
 		farm_storage_system.call("cancel_sealed_transaction", storage_publication)
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	if (
 		not bool(farm_storage_system.call("can_arm_sealed_transaction", storage_publication))
 		or not bool(farming_system.call("can_arm_harvest_publication", farming_publication))
 	):
 		farming_system.call("cancel_harvest_publication", farming_publication)
 		farm_storage_system.call("cancel_sealed_transaction", storage_publication)
-		_set_last_action_failure({"ok": false, "reason": "transaction_failed", "items": items.duplicate(true)})
-		return false
+		return _fail_harvest("transaction_failed", items)
 	# No callback is allowed between these two infallible ownership transitions.
 	farm_storage_system.call("arm_sealed_transaction", storage_publication)
 	farming_system.call("arm_harvest_publication", farming_publication)
 	farm_storage_system.call("publish_sealed_transaction", storage_publication)
 	farming_system.call("publish_harvest_publication", farming_publication)
 	_last_action_failure_details.clear()
+	action_feedback_requested.emit(
+		_harvest_success_text(items),
+		"success",
+		{"ok": true, "reason": "", "items": items.duplicate(true)}
+	)
 	return true
 
 

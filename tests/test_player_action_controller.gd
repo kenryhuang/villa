@@ -294,6 +294,29 @@ class FalseReturningPublishStorage:
 		return false
 
 
+class InvalidCapacityStorage:
+	extends RefCounted
+
+	func get_missing_capacity(_items: Dictionary) -> int:
+		return -1
+
+	func get_total_capacity() -> int:
+		return 200
+
+	func get_used_capacity() -> int:
+		return 0
+
+
+class BeginFailureStorage:
+	extends InvalidCapacityStorage
+
+	func get_missing_capacity(_items: Dictionary) -> int:
+		return 0
+
+	func begin_atomic_transaction() -> Variant:
+		return null
+
+
 class BuildingDouble:
 	extends RefCounted
 
@@ -520,6 +543,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	_test_action_priority(assertions, controller_script)
 	_test_selection_and_transactions(assertions, tree, controller_script)
+	_test_harvest_failure_feedback(assertions, tree, controller_script)
 	_test_post_commit_false_is_not_reported_as_failure(assertions, tree, controller_script)
 	_test_action_modes(assertions, tree, controller_script)
 	_test_build_feedback_and_exhaustion(assertions, tree, controller_script)
@@ -529,6 +553,78 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_gathering_command_routing(assertions, tree, controller_script)
 	_test_output_pile_interaction(assertions, tree, controller_script)
 	_test_completed_building_click_in_build_mode(assertions, tree)
+
+
+func _test_harvest_failure_feedback(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var crop := CropData.new()
+	crop.crop_id = "grain"
+	crop.growth_days = 2
+	var cell := GridCell.new()
+	cell.state = GridCell.State.PLANTED
+	cell.crop_instance = CropInstance.new()
+	cell.crop_instance.crop_data = crop
+	cell.crop_instance.set_growth_state(2.0, CropInstance.LifecycleState.MATURE)
+	var farming := FarmingDouble.new()
+	farming.crop_data = crop
+	var controller = controller_script.new()
+	tree.root.add_child(controller)
+	controller.configure(
+		null,
+		null,
+		farming,
+		null,
+		null,
+		InventoryDouble.new(),
+		InvalidCapacityStorage.new()
+	)
+	var feedback: Array[Dictionary] = []
+	controller.action_feedback_requested.connect(
+		func(text: String, severity: String, details: Dictionary) -> void:
+			feedback.append({"text": text, "severity": severity, "details": details})
+	)
+
+	assertions.truthy(not controller._harvest(cell), "invalid storage preflight rejects harvest")
+	assertions.equal(cell.state, GridCell.State.PLANTED, "failed preflight preserves mature crop")
+	assertions.equal(feedback.size(), 1, "transaction failure emits one feedback")
+	if not feedback.is_empty():
+		assertions.equal(feedback[0].severity, "error", "transaction failure uses error severity")
+		assertions.equal(feedback[0].text, "收割失败，请重试", "transaction failure has actionable text")
+		assertions.truthy(
+			not str(feedback[0].text).contains("已入仓"),
+			"failed transaction never claims storage success"
+		)
+	controller.queue_free()
+
+	var begin_failure_controller = controller_script.new()
+	tree.root.add_child(begin_failure_controller)
+	begin_failure_controller.configure(
+		null,
+		null,
+		farming,
+		null,
+		null,
+		InventoryDouble.new(),
+		BeginFailureStorage.new()
+	)
+	var begin_feedback: Array[Dictionary] = []
+	begin_failure_controller.action_feedback_requested.connect(
+		func(text: String, severity: String, details: Dictionary) -> void:
+			begin_feedback.append({"text": text, "severity": severity, "details": details})
+	)
+	assertions.truthy(
+		not begin_failure_controller._harvest(cell),
+		"storage transaction startup failure rejects harvest"
+	)
+	assertions.equal(cell.state, GridCell.State.PLANTED, "startup failure preserves mature crop")
+	assertions.equal(begin_feedback.size(), 1, "startup failure emits one feedback")
+	if not begin_feedback.is_empty():
+		assertions.equal(begin_feedback[0].severity, "error", "startup failure uses error severity")
+		assertions.equal(begin_feedback[0].text, "收割失败，请重试", "startup failure is actionable")
+	begin_failure_controller.queue_free()
 
 
 func _test_post_commit_false_is_not_reported_as_failure(
@@ -791,6 +887,22 @@ func _test_selection_and_transactions(
 		inventory,
 		farm_storage
 	)
+	var action_feedback: Array[Dictionary] = []
+	var has_action_feedback: bool = controller.has_signal("action_feedback_requested")
+	assertions.truthy(
+		has_action_feedback,
+		"controller exposes structured action feedback"
+	)
+	if has_action_feedback:
+		controller.connect(
+			"action_feedback_requested",
+			func(text: String, severity: String, details: Dictionary) -> void:
+				action_feedback.append({
+					"text": text,
+					"severity": severity,
+					"details": details.duplicate(true),
+				})
+		)
 	var selector_requests: Array = []
 	controller.seed_selection_requested.connect(
 		func(cell: GridCell) -> void: selector_requests.append(cell)
@@ -907,6 +1019,18 @@ func _test_selection_and_transactions(
 		assertions.equal(capacity_failure.get("storage_capacity"), 200, "failure reports total storage capacity")
 		assertions.equal(capacity_failure.get("storage_used"), 200, "failure reports used storage capacity")
 		assertions.equal(capacity_failure.get("missing_capacity"), 1, "failure reports exact missing capacity")
+	assertions.equal(action_feedback.size(), 1, "full storage emits one harvest feedback")
+	if not action_feedback.is_empty():
+		assertions.equal(
+			action_feedback[-1].text,
+			"仓库容量不足，还需 1 容量",
+			"capacity feedback reports exact shortage"
+		)
+		assertions.equal(
+			action_feedback[-1].severity,
+			"warning",
+			"capacity feedback is a warning"
+		)
 
 	assertions.truthy(farm_storage.restore_items_unchecked({}), "harvest fixture clears central storage")
 	var inventory_changed_calls := 0
@@ -916,6 +1040,18 @@ func _test_selection_and_transactions(
 	assertions.equal(farm_storage.get_count("grain"), 1, "harvest adds crops to central storage")
 	assertions.equal(inventory_changed_calls, 0, "storage-only harvest emits no controller inventory change")
 	assertions.equal(mature.state, GridCell.State.FARMLAND, "harvest restores farmland")
+	assertions.equal(action_feedback.size(), 2, "successful harvest emits one additional feedback")
+	if action_feedback.size() >= 2:
+		assertions.equal(
+			action_feedback[-1].text,
+			"收获谷物 ×1，已入仓",
+			"success feedback uses localized committed quantity"
+		)
+		assertions.equal(
+			action_feedback[-1].severity,
+			"success",
+			"committed harvest uses success severity"
+		)
 	if controller.has_method("get_last_action_failure_details"):
 		assertions.equal(controller.get_last_action_failure_details(), {}, "successful harvest clears prior failure")
 
