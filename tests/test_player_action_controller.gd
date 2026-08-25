@@ -1068,6 +1068,29 @@ func _test_selection_and_transactions(
 	if controller.has_method("get_last_action_failure_details"):
 		assertions.equal(controller.get_last_action_failure_details(), {}, "successful harvest clears prior failure")
 
+	var mature_with_hoe := GridCell.new()
+	mature_with_hoe.state = GridCell.State.PLANTED
+	mature_with_hoe.crop_instance = CropInstance.new()
+	mature_with_hoe.crop_instance.crop_data = crop
+	mature_with_hoe.crop_instance.set_growth_state(
+		3.0,
+		CropInstance.LifecycleState.MATURE
+	)
+	assertions.truthy(controller.select_mode_slot(0), "fixture selects the hoe before mature harvest")
+	var hoe_uses_before := tools.used_targets.size()
+	assertions.truthy(
+		controller.perform_cell_action(mature_with_hoe),
+		"mature crop harvest takes priority over the selected hoe"
+	)
+	assertions.equal(
+		tools.used_targets.size(),
+		hoe_uses_before,
+		"mature crop harvest does not invoke the hoe"
+	)
+	assertions.equal(farm_storage.get_count("grain"), 2, "hoe-selected harvest enters storage")
+	assertions.equal(mature_with_hoe.state, GridCell.State.FARMLAND, "hoe-selected annual harvest restores farmland")
+	assertions.equal(action_feedback.size(), 3, "hoe-selected harvest emits committed feedback")
+
 	var mature_without_tool := GridCell.new()
 	mature_without_tool.state = GridCell.State.PLANTED
 	mature_without_tool.crop_instance = CropInstance.new()
@@ -1088,7 +1111,7 @@ func _test_selection_and_transactions(
 	)
 	assertions.equal(
 		farm_storage.get_count("grain"),
-		2,
+		3,
 		"tool-free harvest adds its exact crop yield to central storage"
 	)
 	assertions.equal(
@@ -1096,7 +1119,7 @@ func _test_selection_and_transactions(
 		GridCell.State.FARMLAND,
 		"tool-free annual harvest restores farmland"
 	)
-	assertions.equal(action_feedback.size(), 3, "tool-free harvest emits committed feedback")
+	assertions.equal(action_feedback.size(), 4, "tool-free harvest emits committed feedback")
 
 	controller.free()
 	farm_storage.free()
