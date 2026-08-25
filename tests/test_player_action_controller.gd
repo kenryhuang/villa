@@ -1010,19 +1010,10 @@ func _test_selection_and_transactions(
 	mature.crop_instance = CropInstance.new()
 	mature.crop_instance.crop_data = crop
 	mature.crop_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
-	var has_cell_hover_hint: bool = controller.has_method("cell_hover_hint")
-	assertions.truthy(has_cell_hover_hint, "controller exposes cell hover hint")
-	if has_cell_hover_hint:
-		assertions.equal(
-			controller.call("cell_hover_hint", mature),
-			"点击收割",
-			"mature crop exposes harvest hint"
-		)
-		assertions.equal(
-			controller.call("cell_hover_hint", farmland),
-			"",
-			"ordinary farmland has no hint"
-		)
+	assertions.truthy(
+		not controller.has_method("cell_hover_hint"),
+		"controller exposes no harvest text hint"
+	)
 	assertions.truthy(farm_storage.restore_items_unchecked({"grain": 200}), "harvest fixture fills central storage")
 	assertions.truthy(not controller.perform_cell_action(mature), "full storage blocks harvest")
 	assertions.equal(farming.harvest_calls, 0, "blocked harvest preserves crop")

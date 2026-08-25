@@ -522,12 +522,7 @@ func _process(_delta: float) -> void:
 	if _selected_slot < 0 and not _is_mature(cell):
 		grid_system.clear_highlights()
 		return
-	grid_system.highlight_cell(
-		cell.gx,
-		cell.gz,
-		_highlight_color(cell, ground_point),
-		cell_hover_hint(cell)
-	)
+	grid_system.highlight_cell(cell.gx, cell.gz, _highlight_color(cell, ground_point))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -853,10 +848,6 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 			else INVALID_COLOR
 		)
 	return INVALID_COLOR
-
-
-func cell_hover_hint(cell: GridCell) -> String:
-	return "点击收割" if _is_mature(cell) else ""
 
 
 func _plant(cell: GridCell) -> bool:

@@ -17,14 +17,4 @@ cast_shadow = 0
 visible = false
 cast_shadow = 0
 
-[node name="CellHint" type="Label3D" parent="GridCells"]
-visible = false
-billboard = 1
-fixed_size = true
-no_depth_test = true
-font_size = 28
-outline_size = 8
-modulate = Color(1, 0.95, 0.76, 1)
-text = "点击收割"
-
 [node name="GridData" type="Node" parent="."]
