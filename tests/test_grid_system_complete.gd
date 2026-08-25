@@ -54,6 +54,23 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(grid.highlight_cell(18, 14, Color.YELLOW), "valid cell can be highlighted")
 	var highlight := grid.get_node_or_null("GridCells/CellHighlight") as MeshInstance3D
 	assertions.truthy(highlight != null and highlight.visible, "highlight visual becomes visible")
+	var cell_hint := grid.get_node_or_null("GridCells/CellHint") as Label3D
+	assertions.truthy(cell_hint != null, "grid owns one reusable cell hint")
+	if cell_hint != null:
+		assertions.truthy(
+			grid.call("highlight_cell", 18, 14, Color.YELLOW, "点击收割"),
+			"highlight accepts hint text"
+		)
+		assertions.truthy(cell_hint.visible, "non-empty hint becomes visible")
+		assertions.equal(cell_hint.text, "点击收割", "hint shows exact harvest action")
+		var hint_id := cell_hint.get_instance_id()
+		assertions.truthy(
+			grid.call("highlight_cell", 18, 14, Color.RED, "点击收割"),
+			"same-cell hint updates"
+		)
+		assertions.equal(cell_hint.get_instance_id(), hint_id, "hint node is reused")
+		grid.clear_highlights()
+		assertions.truthy(not cell_hint.visible, "clearing hover hides hint")
 	var highlight_material := highlight.material_override as StandardMaterial3D
 	assertions.equal(
 		highlight_material.cull_mode,

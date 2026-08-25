@@ -297,7 +297,6 @@ func get_mode_selected_slot(mode: ActionMode) -> int:
 func should_show_cell_highlight() -> bool:
 	return (
 		_action_mode == ActionMode.FARMING
-		and _selected_slot >= 0
 		and _selected_slot not in [2, 3]
 	)
 
@@ -409,10 +408,12 @@ func slot_from_key(keycode: Key) -> int:
 
 
 func perform_cell_action(cell: GridCell) -> bool:
-	if _action_mode != ActionMode.FARMING or cell == null or _selected_slot < 0:
+	if _action_mode != ActionMode.FARMING or cell == null:
 		return false
 	if _is_mature(cell):
 		return _harvest(cell)
+	if _selected_slot < 0:
+		return false
 	if _selected_slot == SEED_SLOT:
 		return _plant(cell)
 	if _selected_slot in [0, 1] and tool_system != null:
@@ -511,9 +512,6 @@ func _process(_delta: float) -> void:
 	if not should_show_cell_highlight():
 		grid_system.clear_highlights()
 		return
-	if _selected_slot < 0:
-		grid_system.clear_highlights()
-		return
 	if not ground_point is Vector3:
 		grid_system.clear_highlights()
 		return
@@ -521,7 +519,15 @@ func _process(_delta: float) -> void:
 	if cell == null:
 		grid_system.clear_highlights()
 		return
-	grid_system.highlight_cell(cell.gx, cell.gz, _highlight_color(cell, ground_point))
+	if _selected_slot < 0 and not _is_mature(cell):
+		grid_system.clear_highlights()
+		return
+	grid_system.highlight_cell(
+		cell.gx,
+		cell.gz,
+		_highlight_color(cell, ground_point),
+		cell_hover_hint(cell)
+	)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -579,8 +585,6 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 		return false
 	_cancel_gathering("ground_clicked")
 	if not _point_in_player_range(ground_point):
-		return false
-	if _selected_slot < 0:
 		return false
 	return perform_cell_action(
 		grid_system.get_cell_at_world(ground_point.x, ground_point.z)
@@ -849,6 +853,10 @@ func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 			else INVALID_COLOR
 		)
 	return INVALID_COLOR
+
+
+func cell_hover_hint(cell: GridCell) -> String:
+	return "点击收割" if _is_mature(cell) else ""
 
 
 func _plant(cell: GridCell) -> bool:

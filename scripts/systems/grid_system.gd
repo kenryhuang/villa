@@ -580,7 +580,12 @@ func _build_grid_overlay() -> void:
 	overlay.material_override = material
 
 
-func highlight_cell(gx: int, gz: int, color: Color) -> bool:
+func highlight_cell(
+	gx: int,
+	gz: int,
+	color: Color,
+	hint_text: String = ""
+) -> bool:
 	var highlight := get_node_or_null("GridCells/CellHighlight") as MeshInstance3D
 	if highlight == null or terrain == null or not _is_in_bounds(gx, gz):
 		clear_highlights()
@@ -622,6 +627,17 @@ func highlight_cell(gx: int, gz: int, color: Color) -> bool:
 	highlight.set_meta("gx", gx)
 	highlight.set_meta("gz", gz)
 	highlight.visible = true
+	var hint := get_node_or_null("GridCells/CellHint") as Label3D
+	if hint != null:
+		var center_x := WORLD_ORIGIN_X + (float(gx) + 0.5) * CELL_SIZE
+		var center_z := WORLD_ORIGIN_Z + (float(gz) + 0.5) * CELL_SIZE
+		hint.position = Vector3(
+			center_x,
+			terrain.get_height_at(center_x, center_z) + 0.72,
+			center_z
+		)
+		hint.text = hint_text
+		hint.visible = not hint_text.is_empty()
 	return true
 
 
@@ -629,6 +645,9 @@ func clear_highlights() -> void:
 	var highlight := get_node_or_null("GridCells/CellHighlight") as MeshInstance3D
 	if highlight:
 		highlight.visible = false
+	var hint := get_node_or_null("GridCells/CellHint") as Label3D
+	if hint:
+		hint.visible = false
 
 
 func get_farmland_visual(gx: int, gz: int) -> FarmlandTile:

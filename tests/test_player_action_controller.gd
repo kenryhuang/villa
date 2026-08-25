@@ -1010,6 +1010,19 @@ func _test_selection_and_transactions(
 	mature.crop_instance = CropInstance.new()
 	mature.crop_instance.crop_data = crop
 	mature.crop_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
+	var has_cell_hover_hint: bool = controller.has_method("cell_hover_hint")
+	assertions.truthy(has_cell_hover_hint, "controller exposes cell hover hint")
+	if has_cell_hover_hint:
+		assertions.equal(
+			controller.call("cell_hover_hint", mature),
+			"点击收割",
+			"mature crop exposes harvest hint"
+		)
+		assertions.equal(
+			controller.call("cell_hover_hint", farmland),
+			"",
+			"ordinary farmland has no hint"
+		)
 	assertions.truthy(farm_storage.restore_items_unchecked({"grain": 200}), "harvest fixture fills central storage")
 	assertions.truthy(not controller.perform_cell_action(mature), "full storage blocks harvest")
 	assertions.equal(farming.harvest_calls, 0, "blocked harvest preserves crop")
@@ -1054,6 +1067,36 @@ func _test_selection_and_transactions(
 		)
 	if controller.has_method("get_last_action_failure_details"):
 		assertions.equal(controller.get_last_action_failure_details(), {}, "successful harvest clears prior failure")
+
+	var mature_without_tool := GridCell.new()
+	mature_without_tool.state = GridCell.State.PLANTED
+	mature_without_tool.crop_instance = CropInstance.new()
+	mature_without_tool.crop_instance.crop_data = crop
+	mature_without_tool.crop_instance.set_growth_state(
+		3.0,
+		CropInstance.LifecycleState.MATURE
+	)
+	assertions.truthy(controller.deselect_slot(), "fixture clears the farming slot before direct harvest")
+	assertions.equal(controller.get_selected_slot(), -1, "P mode can remain active without a tool")
+	assertions.truthy(
+		controller.should_show_cell_highlight(),
+		"P mode keeps mature-crop hover scanning active without a tool"
+	)
+	assertions.truthy(
+		controller.perform_cell_action(mature_without_tool),
+		"P mode harvests a mature crop without selecting a tool"
+	)
+	assertions.equal(
+		farm_storage.get_count("grain"),
+		2,
+		"tool-free harvest adds its exact crop yield to central storage"
+	)
+	assertions.equal(
+		mature_without_tool.state,
+		GridCell.State.FARMLAND,
+		"tool-free annual harvest restores farmland"
+	)
+	assertions.equal(action_feedback.size(), 3, "tool-free harvest emits committed feedback")
 
 	controller.free()
 	farm_storage.free()
