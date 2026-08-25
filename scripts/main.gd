@@ -392,6 +392,10 @@ func _connect_systems() -> bool:
 		var hint_callback := Callable(self, "_on_action_failure_hint")
 		if not action_controller.action_failure_hint.is_connected(hint_callback):
 			action_controller.action_failure_hint.connect(hint_callback)
+	if action_controller and action_controller.has_signal("action_feedback_requested"):
+		var feedback_callback := Callable(self, "_on_action_feedback_requested")
+		if not action_controller.action_feedback_requested.is_connected(feedback_callback):
+			action_controller.action_feedback_requested.connect(feedback_callback)
 
 	return true
 
@@ -706,6 +710,14 @@ func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
 
 func _on_action_failure_hint(text: String) -> void:
 	_publish_hud_message("action", "warning", text)
+
+
+func _on_action_feedback_requested(
+	text: String,
+	severity: String,
+	details: Dictionary
+) -> void:
+	_publish_hud_message("action", severity, text, details)
 
 
 func _on_economy_notification_pushed(record: Dictionary, _merged: bool) -> void:

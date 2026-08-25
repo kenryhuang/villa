@@ -26,6 +26,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		main.action_controller.action_failure_hint.emit("种子库存不足")
 		assertions.equal(str(hud_message_bus.get_recent()[-1].severity), "warning", "action failures use warning severity")
 		assertions.equal(str(hud_message_bus.get_recent()[-1].text), "种子库存不足", "action failure text reaches the stream")
+		main.action_controller.action_feedback_requested.emit(
+			"收获胡萝卜 ×3，已入仓",
+			"success",
+			{"items": {"carrot": 3}}
+		)
+		var harvest_record: Dictionary = hud_message_bus.get_recent()[-1]
+		assertions.equal(str(harvest_record.source), "action", "harvest uses action message source")
+		assertions.equal(str(harvest_record.severity), "success", "harvest keeps success severity")
+		assertions.equal(
+			str(harvest_record.text),
+			"收获胡萝卜 ×3，已入仓",
+			"harvest reaches the right message stream"
+		)
 		main.economy_notification_system.push("order_due", "订单临期", "订单即将到期", 2, "order", "order-test", 20.0)
 		var economy_record: Dictionary = hud_message_bus.get_recent()[-1]
 		assertions.equal(str(economy_record.source), "economy", "economy notification reaches the stream")
