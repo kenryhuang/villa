@@ -2396,6 +2396,42 @@ func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 			assertions.equal(str(crop_product.get("category", "")) if crop_product else "", "crop", "%s product category is crop" % crop_id)
 			if has_plant_lookup:
 				assertions.truthy(game_data.call("get_crop_for_plant_item", authored.plant_item_id) == crop, "%s planting lookup returns exact crop" % crop_id)
+			var harvest_grid := GridSystemScript.new()
+			var harvest_farming := FarmingSystemScript.new()
+			harvest_farming.configure(harvest_grid, null, null)
+			harvest_grid.set_cell_state(0, 0, GridCell.State.FARMLAND)
+			var planted := harvest_grid.plant_crop(0, 0, crop)
+			assertions.truthy(
+				planted != null,
+				"%s plants for harvest contract" % crop_id
+			)
+			if planted != null:
+				planted.set_growth_state(
+					float(crop.growth_days),
+					CropInstance.LifecycleState.MATURE
+				)
+				var harvest_preview: Dictionary = harvest_farming.preview_harvest(
+					harvest_grid.get_cell(0, 0)
+				)
+				assertions.truthy(
+					not harvest_preview.is_empty(),
+					"%s produces a mature harvest preview" % crop_id
+				)
+				assertions.truthy(
+					int(harvest_preview.get("items", {}).get(crop_id, 0)) > 0,
+					"%s routes its own crop product" % crop_id
+				)
+				assertions.equal(
+					int(harvest_preview.get("post_cell_state", -1)),
+					(
+						GridCell.State.FARMLAND
+						if crop.lifecycle_type == "annual"
+						else GridCell.State.PLANTED
+					),
+					"%s has the designed post-harvest state" % crop_id
+				)
+			harvest_farming.free()
+			harvest_grid.free()
 		if has_plant_lookup:
 			assertions.truthy(game_data.call("get_crop_for_plant_item", "unknown_seed") == null, "unknown planting item has no crop mapping")
 			var duplicate = CropDataScript.new()
