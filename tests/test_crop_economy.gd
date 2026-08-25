@@ -369,15 +369,10 @@ class HarvestGameState:
 		if storage != null:
 			saw_final_crop = (
 				cell != null
-				and cell.crop_instance != null
-				and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.GROWING
+				and cell.state == GridCell.State.FARMLAND
+				and cell.crop_instance == null
 			)
-			var visual := farming.get_crop_visual(cell)
-			saw_final_visual = (
-				visual != null
-				and int(visual.get_meta("lifecycle_state", -1))
-				== CropInstance.LifecycleState.GROWING
-			)
+			saw_final_visual = farming.get_crop_visual(cell) == null
 			var token := storage.begin_atomic_transaction()
 			var committed := (
 				token != null
@@ -488,34 +483,24 @@ class CoherentHarvestObserver:
 		calls += 1
 		saw_final_storage = storage.get_count("tomato") == expected_quantity
 		saw_final_crop = (
-			cell.crop_instance != null
-			and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.GROWING
+			cell.state == GridCell.State.FARMLAND
+			and cell.crop_instance == null
 		)
 		reentrant_storage_write_results.append(storage.add_items({"grain": 1}))
 		capacity.value = 205
 		storage.refresh_capacity()
 		refreshed_capacity = storage.get_total_capacity()
-		var visual := farming.get_crop_visual(cell)
-		saw_final_visual = (
-			visual != null
-			and int(visual.get_meta("lifecycle_state", -1))
-			== CropInstance.LifecycleState.GROWING
-		)
+		saw_final_visual = farming.get_crop_visual(cell) == null
 		saw_final_exp = state.exp_calls == 1 and state.exp_total == 7
 
 	func on_storage_changed(_changes: Dictionary) -> void:
 		storage_calls += 1
 		storage_listener_saw_final_crop = (
 			storage.get_count("tomato") == expected_quantity
-			and cell.crop_instance != null
-			and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.GROWING
+			and cell.state == GridCell.State.FARMLAND
+			and cell.crop_instance == null
 		)
-		var visual := farming.get_crop_visual(cell)
-		storage_listener_saw_final_visual = (
-			visual != null
-			and int(visual.get_meta("lifecycle_state", -1))
-			== CropInstance.LifecycleState.GROWING
-		)
+		storage_listener_saw_final_visual = farming.get_crop_visual(cell) == null
 		storage_listener_saw_final_exp = state.exp_calls == 1 and state.exp_total == 7
 
 
@@ -526,9 +511,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_runtime_growth_state_invariants(assertions)
 	_test_harvest_count_runtime_boundary(assertions, tree)
 	_test_harvest_returns_item_quantities(assertions)
-	_test_deterministic_tomato_yield_and_regrowth(assertions)
+	_test_deterministic_tomato_yield_and_cleanup(assertions)
 	_test_carrot_yield_and_removal(assertions)
-	_test_harvest_count_save_round_trip(assertions, tree)
+	_test_harvest_cleanup_save_round_trip(assertions, tree)
 	_test_controller_harvest_is_atomic(assertions, tree)
 	_test_game_state_exp_transaction_lifecycle(assertions, tree)
 	_test_game_state_exp_fifo_and_active_abandonment(assertions, tree)
@@ -549,7 +534,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_crop_data_validation(assertions)
 	_test_default_roster_and_item_catalog(assertions)
 	_test_perennial_harvest_and_greenhouse_rules(assertions)
-	_test_regrowing_crop_visual_remains(assertions)
+	_test_harvested_crop_visual_is_removed(assertions)
 	_test_roster_planting_uses_active_quick_item(assertions, tree)
 
 
@@ -816,22 +801,18 @@ func _test_harvest_count_runtime_boundary(assertions: TestAssert, tree: SceneTre
 	var once_instance = once_grid.plant_crop(8, 8, crop_data)
 	once_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
 	once_instance.harvest_count = EconomyLimitsScript.MAX_SAFE_INTEGER - 1
-	assertions.truthy(not _harvest(once_grid, 8, 8).is_empty(), "max-minus-one crop harvests once")
-	assertions.equal(once_instance.harvest_count, EconomyLimitsScript.MAX_SAFE_INTEGER, "last valid harvest reaches max count")
+	var once_result := _harvest(once_grid, 8, 8)
+	assertions.truthy(not once_result.is_empty(), "max-minus-one crop harvests once")
+	assertions.equal(once_result.get("post_harvest_count", -1), EconomyLimitsScript.MAX_SAFE_INTEGER, "last valid preview reaches max count")
+	assertions.equal(once_grid.get_cell(8, 8).state, FARMLAND, "last valid harvest leaves farmland")
+	assertions.truthy(once_grid.get_cell(8, 8).crop_instance == null, "last valid harvest clears the crop")
 	assertions.equal(once_events.harvested_events.size(), 1, "last valid harvest emits one event")
 	var max_saved: Variant = JSON.parse_string(JSON.stringify(once_grid.to_dict()))
 	var restored = GridSystemScript.new()
 	tree.root.add_child(restored)
-	assertions.truthy(restored.from_dict(max_saved), "max-count crop saves and restores")
-	var restored_instance = restored.get_cell(8, 8).crop_instance
-	assertions.equal(restored_instance.harvest_count, EconomyLimitsScript.MAX_SAFE_INTEGER, "restored crop retains max count")
-	restored_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
-	var restored_events := CropEventRecorder.new()
-	restored._event_bus = restored_events
-	var restored_before: Dictionary = restored_instance.to_dict().duplicate(true)
-	assertions.truthy(_harvest(restored, 8, 8).is_empty(), "restored max-count crop rejects next harvest")
-	assertions.equal(restored_instance.to_dict(), restored_before, "restored max-count rejection is atomic")
-	assertions.equal(restored_events.harvested_events, [], "restored max-count rejection emits no event")
+	assertions.truthy(restored.from_dict(max_saved), "harvested max-count plot saves and restores")
+	assertions.equal(restored.get_cell(8, 8).state, FARMLAND, "restored max-count plot remains farmland")
+	assertions.truthy(restored.get_cell(8, 8).crop_instance == null, "restored max-count plot remains empty")
 
 	var invalid_grid = GridSystemScript.new()
 	var invalid_events := CropEventRecorder.new()
@@ -860,18 +841,17 @@ func _test_harvest_count_runtime_boundary(assertions: TestAssert, tree: SceneTre
 	var transition_cell = transition_grid.get_cell(10, 10)
 	transition_cell.watered = true
 	transition_events.harvested_events.clear()
-	transition_crop.growth_days = 0
+	transition_crop.lifecycle_type = "unsupported"
 	var transition_before := transition_instance.to_dict().duplicate(true)
-	assertions.truthy(_harvest(transition_grid, 10, 10).is_empty(), "failed regrow transition rejects harvest")
-	assertions.equal(transition_instance.to_dict(), transition_before, "failed regrow transition preserves exact crop")
-	assertions.truthy(transition_cell.crop_instance == transition_instance, "failed regrow transition preserves instance")
-	assertions.equal(transition_cell.state, PLANTED, "failed regrow transition preserves cell")
-	assertions.truthy(transition_cell.watered, "failed regrow transition preserves cell water")
-	assertions.equal(transition_events.harvested_events, [], "failed regrow transition emits no event")
+	assertions.truthy(_harvest(transition_grid, 10, 10).is_empty(), "unsupported lifecycle rejects harvest")
+	assertions.equal(transition_instance.to_dict(), transition_before, "unsupported lifecycle preserves exact crop")
+	assertions.truthy(transition_cell.crop_instance == transition_instance, "unsupported lifecycle preserves instance")
+	assertions.equal(transition_cell.state, PLANTED, "unsupported lifecycle preserves cell")
+	assertions.truthy(transition_cell.watered, "unsupported lifecycle preserves cell water")
+	assertions.equal(transition_events.harvested_events, [], "unsupported lifecycle emits no event")
 
 	max_events.free()
 	once_events.free()
-	restored_events.free()
 	invalid_events.free()
 	transition_events.free()
 	max_grid.free()
@@ -917,7 +897,7 @@ func _test_harvest_returns_item_quantities(assertions: TestAssert) -> void:
 	grid.free()
 
 
-func _test_deterministic_tomato_yield_and_regrowth(assertions: TestAssert) -> void:
+func _test_deterministic_tomato_yield_and_cleanup(assertions: TestAssert) -> void:
 	var crop = CropDataScript.new()
 	crop.crop_id = "tomato"
 	crop.growth_days = 4
@@ -934,7 +914,7 @@ func _test_deterministic_tomato_yield_and_regrowth(assertions: TestAssert) -> vo
 	var result: Dictionary = _harvest(grid, 1, 1)
 	assertions.equal(result.get("items", {}), {"tomato": 3}, "tomato harvest has deterministic item quantities")
 	assertions.equal(result.get("exp", 0), 5, "tomato harvest keeps authored experience")
-	assertions.truthy(bool(result.get("regrowing", false)), "tomato harvest reports explicit lifecycle regrowth")
+	assertions.equal(result.get("regrowing", true), false, "tomato harvest reports no retained regrowth")
 	seed(42)
 	var repeat_grid = GridSystemScript.new()
 	repeat_grid.set_cell_state(1, 1, FARMLAND)
@@ -943,18 +923,9 @@ func _test_deterministic_tomato_yield_and_regrowth(assertions: TestAssert) -> vo
 	assertions.equal(_harvest(repeat_grid, 1, 1), result, "seed 42 yield repeats after recreating the crop")
 	repeat_grid.free()
 	var cell = grid.get_cell(1, 1)
-	assertions.equal(cell.state, PLANTED, "regrowing tomato remains planted")
-	assertions.truthy(cell.crop_instance == instance, "regrowth preserves the crop instance")
-	assertions.equal(instance.harvest_count, 1, "harvest increments persisted counter")
-	assertions.near(instance.growth_progress, 2.0, 0.001, "tomato resets to two-day regrowth phase")
-	if _has_property(instance, "lifecycle_state"):
-		assertions.equal(instance.get("lifecycle_state"), 0, "regrowing harvest returns crop to growing")
-	instance.advance_growth()
-	assertions.truthy(not instance.is_mature(), "tomato is not mature after one regrowth day")
-	instance.advance_growth()
-	assertions.truthy(instance.is_mature(), "tomato matures after exactly two regrowth days")
-	var second: Dictionary = _harvest(grid, 1, 1)
-	assertions.equal(second.get("items", {}), {"tomato": 2}, "next harvest uses incremented deterministic vector")
+	assertions.equal(cell.state, FARMLAND, "tomato harvest leaves cultivated farmland")
+	assertions.truthy(cell.crop_instance == null, "tomato harvest clears the crop instance")
+	assertions.truthy(_harvest(grid, 1, 1).is_empty(), "cleared tomato cannot be harvested again before replanting")
 	grid.free()
 
 
@@ -977,7 +948,7 @@ func _test_carrot_yield_and_removal(assertions: TestAssert) -> void:
 	grid.free()
 
 
-func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree) -> void:
+func _test_harvest_cleanup_save_round_trip(assertions: TestAssert, tree: SceneTree) -> void:
 	var crop = CropDataScript.new()
 	crop.crop_id = "save_tomato"
 	_set_property_if_present(crop, "plant_item_id", "save_tomato_seed")
@@ -1001,35 +972,15 @@ func _test_harvest_count_save_round_trip(assertions: TestAssert, tree: SceneTree
 	_harvest(grid, 4, 4)
 	var saved: Dictionary = grid.to_dict()
 	assertions.equal(saved.get("version", -1), 3, "crop grid save uses version three")
-	assertions.equal(saved.cells[0].crop.get("harvest_count", -1), 1, "grid save persists harvest count")
-	assertions.equal(saved.cells[0].crop.get("lifecycle_state", -1), 0, "grid save persists regrowing lifecycle")
+	assertions.equal(saved.cells[0].get("state", -1), FARMLAND, "grid save persists harvested farmland")
+	assertions.truthy(not saved.cells[0].has("crop"), "grid save omits the harvested crop")
 	var json_saved: Variant = JSON.parse_string(JSON.stringify(saved))
 	var restored = GridSystemScript.new()
 	tree.root.add_child(restored)
-	assertions.truthy(restored.from_dict(json_saved), "grid restores JSON numeric crop state")
-	var restored_instance = restored.get_cell(4, 4).crop_instance
-	assertions.truthy(restored_instance != null, "JSON crop instance restores")
-	if restored_instance:
-		assertions.equal(restored_instance.harvest_count, 1, "JSON integral float restores as harvest count")
-		assertions.near(restored_instance.growth_progress, 2.0, 0.001, "JSON regrowth progress restores")
-		assertions.equal(restored_instance.get("lifecycle_state"), 0, "JSON grid restore preserves lifecycle state")
-
-	var missing_lifecycle: Dictionary = saved.duplicate(true)
-	missing_lifecycle.cells[0].crop.erase("lifecycle_state")
-	assertions.truthy(not restored.from_dict(missing_lifecycle), "current grid save missing lifecycle rejects")
-	assertions.truthy(restored.get_cell(4, 4).crop_instance == restored_instance, "failed grid restore is atomic")
-	var missing_harvest_count: Dictionary = saved.duplicate(true)
-	missing_harvest_count.cells[0].crop.erase("harvest_count")
-	assertions.truthy(not restored.from_dict(missing_harvest_count), "current grid save missing harvest count rejects")
-	var invalid_lifecycle: Dictionary = saved.duplicate(true)
-	invalid_lifecycle.cells[0].crop.lifecycle_state = 4
-	assertions.truthy(not restored.from_dict(invalid_lifecycle), "grid rejects invalid crop lifecycle enum")
-	var contradictory_lifecycle: Dictionary = saved.duplicate(true)
-	contradictory_lifecycle.cells[0].crop.growth_progress = 4.0
-	assertions.truthy(not restored.from_dict(contradictory_lifecycle), "grid rejects growing crop at maturity")
-	var old_version: Dictionary = saved.duplicate(true)
-	old_version.version = 1
-	assertions.truthy(not restored.from_dict(old_version), "version one grid save rejects before deferred migration")
+	assertions.truthy(restored.from_dict(json_saved), "grid restores harvested farmland")
+	var restored_cell := restored.get_cell(4, 4)
+	assertions.equal(restored_cell.state, FARMLAND, "restored harvested plot stays cultivated")
+	assertions.truthy(restored_cell.crop_instance == null, "restored harvested plot stays empty")
 	grid.free()
 	restored.free()
 
@@ -1144,14 +1095,14 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	coherent.expected_quantity = 3
 	crop_events.crop_harvested.connect(coherent.on_harvested)
 	failing_storage.contents_changed.connect(coherent.on_storage_changed)
-	assertions.truthy(failing_controller._harvest(cell), "regrowing harvest succeeds after injected rollback")
+	assertions.truthy(failing_controller._harvest(cell), "harvest succeeds after injected rollback")
 	assertions.equal(failing_storage.get_items(), {"grain": 2, "potato": 1, "tomato": 3}, "harvest, exp callback, and crop listener writes all commit")
-	assertions.equal(inventory.get_item_count("tomato"), 0, "successful regrow harvest leaves backpack unchanged")
-	assertions.equal(instance.harvest_count, 1, "successful regrow harvest advances count once")
-	assertions.near(instance.growth_progress, 2.0, 0.001, "successful regrow harvest resets progress")
-	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "successful regrow harvest returns to growing")
-	assertions.equal(state.exp_calls, 1, "successful regrow harvest awards experience once")
-	assertions.equal(state.exp_total, 7, "successful regrow harvest awards exact experience")
+	assertions.equal(inventory.get_item_count("tomato"), 0, "successful harvest leaves backpack unchanged")
+	assertions.equal(cell.state, FARMLAND, "successful harvest leaves cultivated farmland")
+	assertions.truthy(cell.crop_instance == null, "successful harvest clears the crop")
+	assertions.truthy(farming.get_crop_visual(cell) == null, "successful harvest removes the crop visual")
+	assertions.equal(state.exp_calls, 1, "successful harvest awards experience once")
+	assertions.equal(state.exp_total, 7, "successful harvest awards exact experience")
 	assertions.equal(failing_recorder.local_contents, [{"tomato": 3}, {"grain": 1}, {"potato": 1}], "base storage notification precedes crop and exp reentrant notifications")
 	assertions.equal(failing_recorder.bus_contents, [{"tomato": 3}, {"grain": 1}, {"potato": 1}], "EventBus preserves base then reentrant order")
 	assertions.equal(failing_recorder.local_contents_read_only, [true, true, true], "local storage payloads remain immutable")
@@ -1170,17 +1121,17 @@ func _test_controller_harvest_is_atomic(assertions: TestAssert, tree: SceneTree)
 	assertions.equal(crop_events.cell_events.size(), 1, "successful harvest emits one cell event")
 	assertions.equal(coherent.calls, 1, "crop listener runs exactly once")
 	assertions.truthy(coherent.saw_final_storage, "crop listener observes final staged storage")
-	assertions.truthy(coherent.saw_final_crop, "crop listener observes final regrow state")
+	assertions.truthy(coherent.saw_final_crop, "crop listener observes final cleared farmland")
 	assertions.equal(coherent.reentrant_storage_write_results, [true], "crop listener can write unlocked storage")
 	assertions.equal(coherent.refreshed_capacity, 205, "crop listener can refresh unlocked storage capacity")
-	assertions.truthy(coherent.saw_final_visual, "crop listener observes finalized regrow visual")
+	assertions.truthy(coherent.saw_final_visual, "crop listener observes removed crop visual")
 	assertions.truthy(coherent.saw_final_exp, "crop listener observes finalized experience")
 	assertions.equal(state.storage_write_results, [true], "experience callback can commit an independent storage transaction")
 	assertions.truthy(state.saw_final_crop, "experience callback observes final crop state")
-	assertions.truthy(state.saw_final_visual, "experience callback observes final crop visual")
+	assertions.truthy(state.saw_final_visual, "experience callback observes removed crop visual")
 	assertions.equal(coherent.storage_calls, 3, "base and both reentrant storage listeners each run once")
 	assertions.truthy(coherent.storage_listener_saw_final_crop, "storage listener observes final storage and crop")
-	assertions.truthy(coherent.storage_listener_saw_final_visual, "storage listener observes finalized visual")
+	assertions.truthy(coherent.storage_listener_saw_final_visual, "storage listener observes removed visual")
 	assertions.truthy(coherent.storage_listener_saw_final_exp, "storage listener observes finalized experience")
 	assertions.equal(controller_events.inventory_changed_calls, 0, "successful storage harvest emits no inventory change")
 	assertions.equal(failing_controller.get_last_action_failure_details(), {}, "successful harvest clears failure details")
@@ -1560,16 +1511,17 @@ func _test_visual_reentrancy_observes_armed_commit(
 	events.exp_events.clear()
 	events.timeline.clear()
 
-	assertions.truthy(controller._harvest(cell), "regrow harvest survives visual reentrancy")
-	assertions.equal(visual_probe.probe_calls, 1, "stage replacement invokes one node-tree reentrant probe")
+	assertions.truthy(controller._harvest(cell), "clearing harvest survives visual reentrancy")
+	assertions.equal(visual_probe.probe_calls, 1, "visual removal invokes one node-tree reentrant probe")
 	assertions.truthy(visual_probe.saw_armed, "visual callback observes Farming past the commit point")
 	assertions.equal(visual_probe.owner_checks, [true], "visual callback retains committed publication ownership")
 	assertions.equal(visual_probe.cancel_checks, [false], "visual callback cannot roll back an armed publication")
 	assertions.equal(visual_probe.early_harvest_events, 0, "visual callback cannot publish old events early")
 	assertions.truthy((farming.get("_harvest_publication") as Dictionary).is_empty(), "controller consumes the armed publication")
 	assertions.equal(storage.get_items(), {"grain": 1}, "visual reentrancy keeps storage commit")
-	assertions.truthy(cell.crop_instance == instance, "visual reentrancy keeps regrow crop identity")
-	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "visual reentrancy keeps regrow state")
+	assertions.equal(cell.state, FARMLAND, "visual reentrancy keeps final farmland state")
+	assertions.truthy(cell.crop_instance == null, "visual reentrancy keeps crop cleared")
+	assertions.truthy(farming.get_crop_visual(cell) == null, "visual reentrancy keeps visual removed")
 	assertions.equal(state.player_state.exp, 7, "visual reentrancy keeps EXP commit")
 	assertions.equal(events.harvested_events.size(), 1, "visual reentrancy publishes harvest once")
 	assertions.equal(events.exp_events, [7], "visual reentrancy publishes EXP once")
@@ -2423,12 +2375,18 @@ func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 				)
 				assertions.equal(
 					int(harvest_preview.get("post_cell_state", -1)),
-					(
-						GridCell.State.FARMLAND
-						if crop.lifecycle_type == "annual"
-						else GridCell.State.PLANTED
-					),
-					"%s has the designed post-harvest state" % crop_id
+					GridCell.State.FARMLAND,
+					"%s harvest leaves cultivated farmland" % crop_id
+				)
+				assertions.equal(
+					harvest_preview.get("post_crop"),
+					null,
+					"%s harvest clears its crop" % crop_id
+				)
+				assertions.equal(
+					harvest_preview.get("regrowing", true),
+					false,
+					"%s harvest does not retain regrowth" % crop_id
 				)
 			harvest_farming.free()
 			harvest_grid.free()
@@ -2511,9 +2469,9 @@ func _test_perennial_harvest_and_greenhouse_rules(assertions: TestAssert) -> voi
 		var instance = grid.plant_crop(5, 5, crop)
 		_set_mature(instance, 5.0)
 		var result: Dictionary = _harvest(grid, 5, 5)
-		assertions.truthy(bool(result.get("regrowing", false)), "%s harvest reports persistent regrowth" % crop_id)
-		assertions.equal(grid.get_cell(5, 5).state, PLANTED, "%s remains planted after harvest" % crop_id)
-		assertions.truthy(grid.get_cell(5, 5).crop_instance == instance, "%s preserves perennial instance" % crop_id)
+		assertions.equal(result.get("regrowing", true), false, "%s harvest reports no retained regrowth" % crop_id)
+		assertions.equal(grid.get_cell(5, 5).state, FARMLAND, "%s harvest leaves cultivated farmland" % crop_id)
+		assertions.truthy(grid.get_cell(5, 5).crop_instance == null, "%s harvest clears the crop instance" % crop_id)
 		grid.free()
 
 	var lemon = CropDataScript.new()
@@ -2541,7 +2499,7 @@ func _test_perennial_harvest_and_greenhouse_rules(assertions: TestAssert) -> voi
 	grid.free()
 
 
-func _test_regrowing_crop_visual_remains(assertions: TestAssert) -> void:
+func _test_harvested_crop_visual_is_removed(assertions: TestAssert) -> void:
 	var crop = CropDataScript.new()
 	crop.crop_id = "visual_tomato"
 	crop.growth_days = 4
@@ -2557,10 +2515,12 @@ func _test_regrowing_crop_visual_remains(assertions: TestAssert) -> void:
 	var cell = grid.get_cell(9, 9)
 	var instance = farming.plant(cell, crop)
 	_set_mature(instance, 4.0)
-	assertions.truthy(farming.get_crop_visual(cell) != null, "regrowth fixture starts with a crop visual")
+	assertions.truthy(farming.get_crop_visual(cell) != null, "harvest fixture starts with a crop visual")
 	var result := farming.harvest(cell)
-	assertions.truthy(bool(result.get("regrowing", false)), "visual fixture harvest regrows")
-	assertions.truthy(farming.get_crop_visual(cell) != null, "regrowing crop visual remains after harvest")
+	assertions.equal(result.get("regrowing", true), false, "visual fixture harvest does not regrow")
+	assertions.equal(cell.state, FARMLAND, "visual fixture harvest leaves cultivated farmland")
+	assertions.truthy(cell.crop_instance == null, "visual fixture harvest clears the crop")
+	assertions.truthy(farming.get_crop_visual(cell) == null, "harvested crop visual is removed")
 	farming.free()
 	grid.free()
 

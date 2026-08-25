@@ -173,33 +173,17 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 		return {}
 	if data.lifecycle_type not in ["annual", "annual_regrow", "bush", "tree", "vine"]:
 		return {}
-	var regrowing := data.lifecycle_type in ["annual_regrow", "bush", "tree", "vine"]
-	var post_progress := 0.0
-	var post_lifecycle: Variant = null
-	var post_cell_state := GridCell.State.FARMLAND
-	var post_crop: Variant = null
-	if regrowing:
-		post_lifecycle = CropInstance.LifecycleState.GROWING
-		post_progress = maxf(0.0, float(data.growth_days - data.regrow_days))
-		if post_progress >= float(data.growth_days):
-			return {}
-		post_cell_state = GridCell.State.PLANTED
-		post_crop = before.crop.duplicate(true)
-		post_crop.growth_progress = post_progress
-		post_crop.lifecycle_state = post_lifecycle
-		post_crop.harvest_count = instance.harvest_count + 1
-		post_crop.is_watered_today = false
 	var harvest_seed := _harvest_seed()
 	return {
 		"items": {str(data.crop_id): instance.calculate_yield(cell.gx, cell.gz, harvest_seed)},
 		"exp": int(data.exp_reward),
 		"harvest_seed": harvest_seed,
-		"regrowing": regrowing,
-		"post_growth_progress": post_progress,
-		"post_lifecycle_state": post_lifecycle,
-		"post_cell_state": post_cell_state,
+		"regrowing": false,
+		"post_growth_progress": 0.0,
+		"post_lifecycle_state": null,
+		"post_cell_state": GridCell.State.FARMLAND,
 		"post_harvest_count": instance.harvest_count + 1,
-		"post_crop": post_crop,
+		"post_crop": null,
 		"before": before,
 	}
 
