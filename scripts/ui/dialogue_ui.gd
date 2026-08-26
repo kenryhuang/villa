@@ -3,6 +3,8 @@ extends Control
 
 ## 对话界面 - NPC 对话面板
 
+signal agent_dialogue_cancelled(villager_id: String, request_id: String)
+
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
 @onready var panel: PanelContainer = $DialoguePanel
@@ -14,6 +16,8 @@ var _current_villager_id: String = ""
 var _current_dialogue_index: int = 0
 var _dialogues: Array = []
 var _is_open := false
+var _agent_request_id := ""
+var _agent_buffer := ""
 
 
 func _ready() -> void:
@@ -48,14 +52,63 @@ func start_agent_dialogue(villager_id: String, speech: String) -> void:
 	var clean_speech := speech.strip_edges()
 	if clean_speech.is_empty():
 		return
+	begin_agent_dialogue(villager_id, "legacy-agent-dialogue")
+	finish_agent_dialogue("legacy-agent-dialogue", clean_speech)
+
+
+func begin_agent_dialogue(villager_id: String, request_id: String) -> void:
+	if villager_id.is_empty() or request_id.is_empty():
+		return
 	_current_villager_id = villager_id
 	_current_dialogue_index = 0
-	_dialogues = [{"text": clean_speech, "choices": []}]
+	_agent_request_id = request_id
+	_agent_buffer = ""
+	_dialogues = [{"text": "正在思考……", "choices": []}]
 	_is_open = true
 	visible = true
 	if panel:
 		panel.visible = true
 	_show_current_dialogue()
+
+
+func append_agent_dialogue(request_id: String, delta: String) -> void:
+	if request_id != _agent_request_id or delta.is_empty():
+		return
+	_agent_buffer += delta
+	if not _dialogues.is_empty():
+		(_dialogues[0] as Dictionary)["text"] = _agent_buffer
+	if text_label:
+		text_label.text = _agent_buffer
+
+
+func finish_agent_dialogue(request_id: String, speech: String) -> void:
+	if request_id != _agent_request_id:
+		return
+	var final_speech := speech.strip_edges()
+	if final_speech.is_empty():
+		final_speech = _agent_buffer.strip_edges()
+	if final_speech.is_empty():
+		final_speech = "……"
+	_agent_buffer = final_speech
+	_agent_request_id = ""
+	if not _dialogues.is_empty():
+		(_dialogues[0] as Dictionary)["text"] = final_speech
+	if text_label:
+		text_label.text = final_speech
+
+
+func fail_agent_dialogue(request_id: String, fallback: String) -> void:
+	if request_id != _agent_request_id:
+		return
+	var message := fallback.strip_edges()
+	if message.is_empty():
+		message = "我现在有点忙，晚些再聊吧。"
+	_agent_buffer = message
+	_agent_request_id = ""
+	if not _dialogues.is_empty():
+		(_dialogues[0] as Dictionary)["text"] = message
+	if text_label:
+		text_label.text = message
 
 
 func _show_current_dialogue() -> void:
@@ -99,10 +152,16 @@ func _on_choice_selected(choice: Dictionary) -> void:
 
 
 func close() -> void:
+	var cancelled_request := _agent_request_id
+	var cancelled_villager := _current_villager_id
+	_agent_request_id = ""
+	_agent_buffer = ""
 	_is_open = false
 	visible = false
 	if panel:
 		panel.visible = false
+	if not cancelled_request.is_empty():
+		agent_dialogue_cancelled.emit(cancelled_villager, cancelled_request)
 
 
 func _input(event: InputEvent) -> void:

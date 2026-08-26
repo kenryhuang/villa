@@ -10,17 +10,36 @@ class FakeGateway:
 	extends RefCounted
 	var requests: Array[Dictionary] = []
 	var callbacks: Dictionary = {}
+	var event_callbacks: Dictionary = {}
+	var cancellations: Array[String] = []
 
-	func request_decision(agent_id: String, request: Dictionary, callback: Callable) -> bool:
+	func request_decision(agent_id: String, request: Dictionary, callback: Callable, event_callback: Callable = Callable()) -> bool:
 		if callbacks.has(agent_id):
 			return false
 		requests.append({"agent_id": agent_id, "request": request.duplicate(true)})
 		callbacks[agent_id] = callback
+		event_callbacks[agent_id] = event_callback
+		return true
+
+	func emit_event(agent_id: String, event: Dictionary) -> void:
+		var callback: Callable = event_callbacks.get(agent_id, Callable())
+		if callback.is_valid():
+			callback.call(event)
+
+	func cancel_agent(agent_id: String, reason: String = "cancelled") -> bool:
+		if not callbacks.has(agent_id):
+			return false
+		cancellations.append(agent_id + ":" + reason)
+		var callback: Callable = callbacks[agent_id]
+		callbacks.erase(agent_id)
+		event_callbacks.erase(agent_id)
+		callback.call(false, {}, reason)
 		return true
 
 	func succeed(agent_id: String, response: Dictionary = {}) -> void:
 		var callback: Callable = callbacks.get(agent_id, Callable())
 		callbacks.erase(agent_id)
+		event_callbacks.erase(agent_id)
 		callback.call(true, response, "")
 
 
@@ -48,24 +67,33 @@ func _test_role_schedule_and_backpressure(assertions: TestAssert) -> void:
 	registry.load_defaults()
 	var gateway := FakeGateway.new()
 	var handled: Array[Dictionary] = []
+	var streamed: Array[Dictionary] = []
+	var failures: Array[Dictionary] = []
 	var scheduler := AgentSchedulerScript.new()
 	assertions.truthy(scheduler.configure(
 		registry,
 		gateway,
-		func(agent_id: String, trigger: String, game_minute: int, dialogue: String): return {"agent_id": agent_id, "trigger": trigger, "game_minute": game_minute, "dialogue_input": dialogue},
-		func(agent_id: String, response: Dictionary): handled.append({"agent_id": agent_id, "response": response})
+		func(agent_id: String, trigger: String, game_minute: int, dialogue: String): return {"request_id": "%s-%s-%d" % [agent_id, trigger, game_minute], "agent_id": agent_id, "trigger": trigger, "game_minute": game_minute, "dialogue_input": dialogue},
+		func(agent_id: String, response: Dictionary): handled.append({"agent_id": agent_id, "response": response}),
+		func(agent_id: String, event: Dictionary): streamed.append({"agent_id": agent_id, "event": event}),
+		func(agent_id: String, request_id: String, error: String): failures.append({"agent_id": agent_id, "request_id": request_id, "error": error})
 	), "scheduler configures")
 	scheduler.advance_to(60)
 	assertions.equal(gateway.requests.map(func(value): return value.agent_id), ["farmer_ahe", "lao_li"], "farmer and merchant are due by one hour")
 	scheduler.advance_to(600)
 	assertions.equal(gateway.requests.size(), 3, "time jump adds only the previously idle explorer")
 	assertions.equal(gateway.requests.filter(func(value): return value.agent_id == "farmer_ahe").size(), 1, "in-flight farmer is not duplicated")
-	assertions.truthy(scheduler.trigger_dialogue("farmer_ahe", "你好", 601), "dialogue queues behind in-flight decision")
-	gateway.succeed("farmer_ahe", {"tool_name": "wait"})
-	assertions.equal(gateway.requests.size(), 4, "queued dialogue dispatches immediately after current request")
+	var first_farmer_request_id := str(gateway.requests[0].request.get("request_id", ""))
+	assertions.truthy(scheduler.trigger_dialogue("farmer_ahe", "你好", 601), "dialogue replaces in-flight autonomous decision")
+	assertions.equal(gateway.cancellations, ["farmer_ahe:dialogue_replaced"], "dialogue cancels old Agent stream")
+	assertions.equal(failures.size(), 0, "replaced request callback is stale and ignored")
+	assertions.equal(gateway.requests.size(), 4, "replacement dialogue dispatches immediately")
 	assertions.equal(gateway.requests[3].request.trigger, "dialogue", "queued request keeps dialogue priority")
+	assertions.truthy(str(gateway.requests[3].request.request_id) != first_farmer_request_id, "replacement keeps a new request ID")
+	gateway.emit_event("farmer_ahe", {"event": "content.delta", "data": {"request_id": gateway.requests[3].request.request_id, "payload": {"delta": "你"}}})
+	assertions.equal(streamed.size(), 1, "matching stream event reaches runtime callback")
 	gateway.succeed("farmer_ahe", {"speech": "你好"})
-	assertions.equal(handled.size(), 2, "matching responses are handled")
+	assertions.equal(handled.size(), 1, "only replacement final response is handled")
 	gateway.succeed("lao_li", {"tool_name": "wait"})
 	scheduler.advance_to(600)
 	var explorer_count := gateway.requests.filter(func(value): return value.agent_id == "xuezhe_lin").size()

@@ -1,6 +1,9 @@
 extends Node
 
 signal dialogue_ready(agent_id: String, speech: String)
+signal dialogue_stream_started(agent_id: String, request_id: String)
+signal dialogue_stream_delta(agent_id: String, request_id: String, delta: String)
+signal dialogue_stream_failed(agent_id: String, request_id: String, error: String)
 
 const AgentRegistryScript = preload("res://scripts/ai_agent/agent_registry.gd")
 const AgentGatewayScript = preload("res://scripts/ai_agent/agent_gateway.gd")
@@ -15,6 +18,7 @@ const ActivityScript = preload("res://scripts/systems/npc_activity_system.gd")
 const KnowledgeScript = preload("res://scripts/systems/explorer_knowledge_registry.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
+const AgentSessionTraceScript = preload("res://scripts/ai_agent/agent_session_trace.gd")
 
 const VERSION := 2
 const GAME_MINUTES_PER_DAY := 1080
@@ -32,6 +36,7 @@ var scheduler = AgentSchedulerScript.new()
 var gateway: Node
 var session_id := "slot-0"
 var service_enabled := false
+var session_trace: Node = AgentSessionTraceScript.new()
 
 var _npc_economy: Variant
 var _market: Variant
@@ -40,6 +45,8 @@ var _hud_bus: Variant
 var _request_sequence := 0
 var _event_bus: Node
 var _save_manager: Variant
+var _store_agent_session := false
+var _request_triggers: Dictionary = {}
 
 
 func configure(
@@ -65,17 +72,31 @@ func configure(
 	gateway = AgentGatewayScript.new()
 	gateway.name = "AgentGateway"
 	add_child(gateway)
+	session_trace.name = "AgentSessionTrace"
+	add_child(session_trace)
 	var client_config := AgentClientConfigScript.load_file(client_config_path)
 	if not client_config.ok:
 		_publish("warning", "Agent 客户端配置不可用，远程决策已关闭：%s" % str(client_config.error), {})
-	elif bool(client_config.value.enabled):
-		service_enabled = gateway.configure(
-			str(client_config.value.service_url),
-			str(client_config.value.token),
-			1,
-			float(client_config.value.timeout_seconds)
-		)
-	if not scheduler.configure(registry, gateway, _build_request, _handle_response):
+	else:
+		_store_agent_session = bool(client_config.value.store_agent_session)
+		if bool(client_config.value.enabled):
+			service_enabled = gateway.configure(
+				str(client_config.value.service_url),
+				str(client_config.value.token),
+				1,
+				float(client_config.value.timeout_seconds)
+			)
+	if not session_trace.configure(_store_agent_session, session_id):
+		_publish("warning", "Agent 调试会话文件无法创建，已退回内存记录。", {})
+		session_trace.configure(false, session_id)
+	if not scheduler.configure(
+		registry,
+		gateway,
+		_build_request,
+		_handle_response,
+		_handle_stream_event,
+		_handle_stream_failure
+	):
 		return false
 	_connect_events()
 	if service_enabled:
@@ -105,12 +126,32 @@ func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 	return service_enabled and scheduler.trigger_dialogue(agent_id, text, _absolute_game_minute())
 
 
+func cancel_dialogue(agent_id: String, request_id: String) -> bool:
+	if str(_request_triggers.get(request_id, "")) != "dialogue":
+		return false
+	_request_triggers.erase(request_id)
+	return gateway != null and bool(gateway.call("cancel_agent", agent_id, "dialogue_closed"))
+
+
+func get_session_trace() -> Node:
+	return session_trace
+
+
 func is_agent_managed(agent_id: String) -> bool:
 	return registry.is_agent_managed(agent_id)
 
 
 func set_save_slot(slot: int) -> void:
-	session_id = "slot-%d" % maxi(0, slot)
+	var next_session_id := "slot-%d" % maxi(0, slot)
+	if session_id == next_session_id:
+		return
+	session_id = next_session_id
+	_request_triggers.clear()
+	if gateway != null:
+		gateway.bump_epoch()
+	if session_trace != null:
+		if not session_trace.configure(_store_agent_session, session_id):
+			session_trace.configure(false, session_id)
 
 
 func _on_save_completed(slot: int) -> void:
@@ -258,10 +299,39 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 		var item_id := str(definition.id)
 		market_snapshot[item_id] = _market.call("get_item_state", item_id)
 	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_registry.to_dict().farms.get(agent_id, []), "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot}
-	return AgentProtocolScript.make_decision_request("%s-%d" % [agent_id, _request_sequence], session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, perception_inbox.drain(agent_id), dialogue)
+	var request := AgentProtocolScript.make_decision_request("%s-%d" % [agent_id, _request_sequence], session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, perception_inbox.drain(agent_id), dialogue)
+	_request_triggers[str(request.request_id)] = trigger
+	return request
+
+
+func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
+	if not session_trace.accept_event(event):
+		_publish("warning", "%s 的 Agent 流事件无法记录。" % agent_id, {"agent_id": agent_id})
+		return
+	var data := event.data as Dictionary
+	var request_id := str(data.request_id)
+	var event_name := str(event.event)
+	var trigger := str(_request_triggers.get(request_id, ""))
+	if event_name == "stream.started" and trigger == "dialogue":
+		dialogue_stream_started.emit(agent_id, request_id)
+	elif event_name == "content.delta" and trigger == "dialogue":
+		dialogue_stream_delta.emit(agent_id, request_id, str((data.payload as Dictionary).get("delta", "")))
+	elif event_name == "stream.error":
+		if trigger == "dialogue":
+			dialogue_stream_failed.emit(agent_id, request_id, str((data.payload as Dictionary).get("code", "stream_error")))
+		_request_triggers.erase(request_id)
+	elif event_name == "stream.completed":
+		_request_triggers.erase(request_id)
+
+
+func _handle_stream_failure(agent_id: String, request_id: String, error: String) -> void:
+	if str(_request_triggers.get(request_id, "")) == "dialogue":
+		dialogue_stream_failed.emit(agent_id, request_id, error)
+	_request_triggers.erase(request_id)
 
 
 func _handle_response(agent_id: String, response: Dictionary) -> void:
+	_request_triggers.erase(str(response.get("request_id", "")))
 	var checked := validator.validate(response, registry, executor.world_revision)
 	if not checked.ok:
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})

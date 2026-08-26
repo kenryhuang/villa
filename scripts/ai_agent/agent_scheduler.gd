@@ -4,19 +4,30 @@ var _registry: Variant
 var _gateway: Variant
 var _build_request: Callable
 var _handle_response: Callable
+var _handle_stream_event: Callable
+var _handle_failure: Callable
 var _in_flight: Dictionary = {}
 var _pending: Dictionary = {}
 var _last_dispatched: Dictionary = {}
 var _current_minute := 0
 
 
-func configure(registry: Variant, gateway: Variant, build_request: Callable, handle_response: Callable) -> bool:
+func configure(
+	registry: Variant,
+	gateway: Variant,
+	build_request: Callable,
+	handle_response: Callable,
+	handle_stream_event: Callable = Callable(),
+	handle_failure: Callable = Callable()
+) -> bool:
 	if registry == null or gateway == null or not build_request.is_valid() or not handle_response.is_valid():
 		return false
 	_registry = registry
 	_gateway = gateway
 	_build_request = build_request
 	_handle_response = handle_response
+	_handle_stream_event = handle_stream_event
+	_handle_failure = handle_failure
 	return true
 
 
@@ -52,11 +63,16 @@ func trigger_dialogue(agent_id: String, text: String, game_minute: int) -> bool:
 
 
 func is_in_flight(agent_id: String) -> bool:
-	return bool(_in_flight.get(agent_id, false))
+	return _in_flight.has(agent_id)
 
 
 func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String, priority: int) -> bool:
 	if is_in_flight(agent_id):
+		if trigger == "dialogue" and _gateway.has_method("cancel_agent"):
+			_in_flight.erase(agent_id)
+			_pending.erase(agent_id)
+			_gateway.call("cancel_agent", agent_id, "dialogue_replaced")
+			return _dispatch(agent_id, trigger, game_minute, dialogue)
 		var current: Dictionary = _pending.get(agent_id, {})
 		if priority >= int(current.get("priority", -1)):
 			_pending[agent_id] = {"trigger": trigger, "game_minute": game_minute, "dialogue": dialogue, "priority": priority}
@@ -70,18 +86,39 @@ func _dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: St
 	var request: Dictionary = _build_request.call(agent_id, trigger, game_minute, dialogue)
 	if request.is_empty():
 		return false
-	var callback := Callable(self, "_on_gateway_response").bind(agent_id)
-	if not bool(_gateway.call("request_decision", agent_id, request, callback)):
+	var request_id := str(request.get("request_id", ""))
+	if request_id.is_empty():
 		return false
-	_in_flight[agent_id] = true
+	var callback := Callable(self, "_on_gateway_response").bind(agent_id, request_id)
+	var event_callback := Callable(self, "_on_gateway_event").bind(agent_id, request_id)
+	if not bool(_gateway.call("request_decision", agent_id, request, callback, event_callback)):
+		return false
+	_in_flight[agent_id] = request_id
 	_last_dispatched[agent_id] = game_minute
 	return true
 
 
-func _on_gateway_response(ok: bool, response: Dictionary, _error: String, agent_id: String) -> void:
+func _on_gateway_event(event: Dictionary, agent_id: String, request_id: String) -> void:
+	if str(_in_flight.get(agent_id, "")) != request_id:
+		return
+	if _handle_stream_event.is_valid():
+		_handle_stream_event.call(agent_id, event)
+
+
+func _on_gateway_response(
+	ok: bool,
+	response: Dictionary,
+	error: String,
+	agent_id: String,
+	request_id: String
+) -> void:
+	if str(_in_flight.get(agent_id, "")) != request_id:
+		return
 	_in_flight.erase(agent_id)
 	if ok:
 		_handle_response.call(agent_id, response)
+	elif _handle_failure.is_valid():
+		_handle_failure.call(agent_id, request_id, error)
 	if _pending.has(agent_id):
 		var pending: Dictionary = _pending[agent_id]
 		_pending.erase(agent_id)
