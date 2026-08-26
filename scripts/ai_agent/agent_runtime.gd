@@ -46,6 +46,7 @@ var _request_sequence := 0
 var _event_bus: Node
 var _save_manager: Variant
 var _store_agent_session := false
+var _agent_session_directory := AgentClientConfigScript.DEFAULT_SESSION_DIRECTORY
 var _request_triggers: Dictionary = {}
 
 
@@ -79,6 +80,7 @@ func configure(
 		_publish("warning", "Agent 客户端配置不可用，远程决策已关闭：%s" % str(client_config.error), {})
 	else:
 		_store_agent_session = bool(client_config.value.store_agent_session)
+		_agent_session_directory = str(client_config.value.agent_session_directory)
 		if bool(client_config.value.enabled):
 			service_enabled = gateway.configure(
 				str(client_config.value.service_url),
@@ -86,7 +88,7 @@ func configure(
 				1,
 				float(client_config.value.timeout_seconds)
 			)
-	if not session_trace.configure(_store_agent_session, session_id):
+	if not session_trace.configure(_store_agent_session, session_id, _agent_session_directory):
 		_publish("warning", "Agent 调试会话文件无法创建，已退回内存记录。", {})
 		session_trace.configure(false, session_id)
 	if not scheduler.configure(
@@ -150,7 +152,7 @@ func set_save_slot(slot: int) -> void:
 	if gateway != null:
 		gateway.bump_epoch()
 	if session_trace != null:
-		if not session_trace.configure(_store_agent_session, session_id):
+		if not session_trace.configure(_store_agent_session, session_id, _agent_session_directory):
 			session_trace.configure(false, session_id)
 
 

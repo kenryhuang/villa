@@ -10,9 +10,15 @@ const DialogueScene = preload("res://scenes/ui/dialogue_ui.tscn")
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var disabled_config_path := "user://agent-main-integration-disabled.json"
+	var trace_directory := "user://agent-main-trace-%d" % Time.get_ticks_usec()
 	var disabled_config := FileAccess.open(disabled_config_path, FileAccess.WRITE)
 	disabled_config.store_string(JSON.stringify({
-		"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10,
+		"enabled": false,
+		"service_url": "",
+		"token": "",
+		"timeout_seconds": 10,
+		"store_agent_session": true,
+		"agent_session_directory": trace_directory,
 	}))
 	disabled_config.close()
 	var market := MarketScript.new()
@@ -26,6 +32,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	market.configure(GameDataScript.get_market_items())
 	economy.configure(market, GameDataScript.get_npc_economy_profiles(), GameDataScript.get_population_demand_profiles())
 	assertions.truthy(runtime.configure(economy, market, season, null, disabled_config_path), "Agent runtime configures against authoritative systems")
+	assertions.truthy(
+		str(runtime.get_session_trace().get_log_path()).begins_with(trace_directory + "/"),
+		"runtime opens Agent trace in configured directory",
+	)
+	runtime.set_save_slot(3)
+	assertions.truthy(
+		str(runtime.get_session_trace().get_log_path()).begins_with(trace_directory + "/"),
+		"save-slot change preserves configured Agent trace directory",
+	)
 	assertions.truthy(not runtime.service_enabled, "disabled client configuration keeps remote decisions off")
 	assertions.truthy(economy.is_agent_managed("lao_li"), "merchant is removed from deterministic autonomy")
 	assertions.truthy(economy.is_agent_managed("xuezhe_lin"), "explorer is removed from deterministic autonomy")
@@ -57,3 +72,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	economy.free()
 	market.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(disabled_config_path))
+	var absolute_trace_directory := ProjectSettings.globalize_path(trace_directory)
+	if DirAccess.dir_exists_absolute(absolute_trace_directory):
+		for file_name in DirAccess.get_files_at(trace_directory):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(trace_directory.path_join(file_name)))
+		DirAccess.remove_absolute(absolute_trace_directory)
