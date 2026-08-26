@@ -436,7 +436,7 @@ created_game_time, supersedes?
 
 ## 16. 与现有经济和 NPC 的兼容
 
-- 老李和学者林标记为 `agent_managed` 后，仍执行确定性的被动日常消耗，但跳过 `NpcEconomySystem.simulate_day()` 中的自主购买、生产和出售，避免被两套系统重复操作。实现时须先把被动消耗与自主决策拆成两个明确阶段。
+- 老李和学者林标记为 `agent_managed` 后，跳过当前 `NpcEconomySystem.simulate_day()` 中的自主购买、生产和出售，避免被两套系统重复操作。现有系统尚无独立的被动日常消耗阶段；以后增加该阶段时，可以继续对 Agent-managed NPC 生效。
 - 二者继续复用原 `NpcEconomyState`，并正常参与市场结算和公共需求变化。
 - 阿禾新增独立的 `NpcEconomyState`、NPC 配置和农田数据。
 - 其他 NPC 保持现有确定性每日经济逻辑。
