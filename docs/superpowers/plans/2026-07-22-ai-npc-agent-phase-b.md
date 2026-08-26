@@ -8,6 +8,8 @@
 
 **Tech Stack:** Phase A protocol, TypeScript/Node.js, pinned Loom dependency, SQLite, OpenAI-compatible Chat Completions, Godot 4.7.
 
+**Configuration migration note (2026-08-26):** Current Agent service and Godot client settings use the ignored JSON files documented in `services/agent-service/README.md`. The tentative process-level configuration in this historical proposal is superseded.
+
 ## Global Constraints
 
 - Production dependencies contain no machine-local absolute paths.
@@ -47,11 +49,11 @@
 
 **Files:** Create `services/agent-service/src/tools/snapshot-tools.ts`, `src/providers/provider-factory.ts`, `tests/snapshot-tools.test.ts`, `tests/provider-factory.test.ts`; modify `src/server.ts`.
 
-**Interfaces:** Tools `inspect_visible_objects`, `inspect_local_inventory`, `inspect_relationship`, `recall_recent_events`, `recall_long_term_memory`, `inspect_schedule`, `inspect_active_quests`; `createProvider(env)`.
+**Interfaces:** Tools `inspect_visible_objects`, `inspect_local_inventory`, `inspect_relationship`, `recall_recent_events`, `recall_long_term_memory`, `inspect_schedule`, `inspect_active_quests`; `createProvider(config)`.
 
 - [ ] Write failing tests for tool allowlists, unavailable private data, malformed arguments, cancellation, missing-key startup, and custom base URL.
 - [ ] Run tests and verify RED.
-- [ ] Implement read-only tools over supplied snapshot/memory. Provider selection requires `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_BASE_URL`; service can still start in mock mode with `AGENT_SERVICE_MODE=mock`.
+- [ ] Implement read-only tools over supplied snapshot/memory. Provider selection requires `provider.api_key`, `provider.model`, and `provider.base_url` in the local service JSON; the current runtime has no mock Provider mode.
 - [ ] Run tests/typecheck and commit `feat: add bounded villager tools and provider`.
 
 ### Task 4: Mixed dialogue API

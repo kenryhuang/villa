@@ -6,10 +6,10 @@ Validated on 2026-08-26 with Godot 4.7.1 stable and Node.js 24.19 on branch `fea
 
 | Check | Result |
 |---|---|
-| `npm --prefix services/agent-service test` | Exit 0; 12/12 tests passed |
-| `godot --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 86/86 checks passed |
+| `npm --prefix services/agent-service test` | Exit 0; 16/16 tests passed |
+| `godot --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 100/100 checks passed |
 | `godot --headless --path . --quit-after 2` | Exit 0; main scene initialized without script errors |
-| `godot --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; explicitly skipped because no real Provider/service environment was configured |
+| `godot --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; explicitly skipped because no enabled local client configuration was present |
 
 The passing suites cover role-isolated Soul/goals/tools, strict protocol validation, real OpenAI-compatible HTTP behavior through local fake endpoints, authoritative headless world mutations, idempotency, stale revisions, scheduling, event coalescing, dialogue routing, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint checksum/path safety, and asynchronous memory sidecar coordination.
 
@@ -28,12 +28,11 @@ These failures are recorded rather than changed because they are outside the Age
 
 The connected test requires all of:
 
-- `AGENT_SERVICE_URL` pointing to a running Agent Service;
-- `AGENT_PROVIDER_BASE_URL`;
-- `AGENT_PROVIDER_API_KEY`;
-- `AGENT_PROVIDER_MODEL`.
+- `services/agent-service/config/agent-service.local.json` with a real Provider base URL, API key, and model;
+- `config/agent-client.local.json` with `enabled` set to `true` and the running service URL;
+- a running Agent Service.
 
-No credentials were present during this validation, so no public Provider request was made and no secret value was printed. With configuration present, the script performs health, session sync, one farmer decision, outcome persistence, and checkpoint export.
+No local credential configuration was present during this validation, so no public Provider request was made and no secret value was printed. With configuration present, the script performs health, session sync, one farmer decision, outcome persistence, and checkpoint export. Both local files are ignored by Git, and no environment-variable fallback exists.
 
 ## Intentional non-goals
 

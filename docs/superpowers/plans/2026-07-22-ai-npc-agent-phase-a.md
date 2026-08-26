@@ -8,6 +8,8 @@
 
 **Tech Stack:** Godot 4.7/GDScript, Node.js 22, TypeScript 5.8.3, Vitest 3.2.1, Ajv 8.17.1, Node built-in HTTP server.
 
+**Configuration migration note (2026-08-26):** This historical Phase A plan predates the real role-Agent runtime. Current service and Godot settings are read only from the ignored JSON files documented in `services/agent-service/README.md`; the old process-level configuration described during Phase A is superseded.
+
 ## Global Constraints
 
 - Protocol version is exactly `1` and every `POST` request carries an idempotency key.
@@ -275,7 +277,7 @@ interface ApiErrorBody {
 }
 ```
 
-Require `Authorization: Bearer <token>` in Phase A. Read the token from `AGENT_SERVICE_TOKEN`, defaulting to `test-session-token` only when the bind host is loopback. Require `X-Protocol-Version: 1`; decision `Idempotency-Key` equals `request_id`, while outcome `Idempotency-Key` equals `outcome_id`. Require the path NPC/decision ID to equal the body ID. Return `401` for missing/invalid authorization, `400` for schema/header errors, `409` for identity conflicts, `404` for unknown routes, `413` over the body limit, `200` for decisions, and `202` for outcomes. Bind `server.ts` to `AGENT_SERVICE_HOST` default `127.0.0.1` and `AGENT_SERVICE_PORT` default `8787`; refuse startup on a non-loopback host when `AGENT_SERVICE_TOKEN` is empty.
+The Phase A prototype required an `Authorization: Bearer <token>` header; this historical mock-service requirement is not part of the current role-Agent service. Require `X-Protocol-Version: 1`; decision `Idempotency-Key` equals `request_id`, while outcome `Idempotency-Key` equals `outcome_id`. Require the path NPC/decision ID to equal the body ID. Return `401` for missing/invalid authorization, `400` for schema/header errors, `409` for identity conflicts, `404` for unknown routes, `413` over the body limit, `200` for decisions, and `202` for outcomes. Current bind settings come from the local service JSON configuration, with loopback host `127.0.0.1` and port `8787` as defaults.
 
 - [ ] **Step 4: Run all service tests and build**
 
@@ -526,7 +528,7 @@ Expected: exit `1` with a connection failure, proving the test exercises the net
 
 - [ ] **Step 3: Document and ignore generated service output**
 
-Add `services/agent-service/node_modules/` and `services/agent-service/dist/` to `.gitignore`. Document exact setup, start, test, health check, environment variables, protocol fixture paths, and the statement that Phase A is a deterministic mock and does not use an LLM key.
+Add `services/agent-service/node_modules/` and `services/agent-service/dist/` to `.gitignore`. Document exact setup, start, test, health check, local JSON settings, protocol fixture paths, and the statement that Phase A is a deterministic mock and does not use an LLM key.
 
 - [ ] **Step 4: Run the complete local vertical slice**
 

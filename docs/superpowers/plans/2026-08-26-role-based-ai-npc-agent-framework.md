@@ -8,7 +8,7 @@
 
 **Tech Stack:** Godot 4.7/GDScript, Node.js 24, TypeScript 5, Node built-in HTTP/fetch and `node:sqlite`, OpenAI-compatible tool-calling HTTP API, repository SceneTree test harness.
 
-**Execution status (2026-08-26):** Tasks 1–8 are implemented. Offline Agent/service verification passes; the credential-dependent real Provider smoke is available and was skipped because no Provider environment was configured. Existing unrelated trade/save-suite baselines are recorded in `docs/validation/role-agent-framework-validation.md`.
+**Execution status (2026-08-26):** Tasks 1–8 are implemented. Offline Agent/service verification passes; the credential-dependent real Provider smoke is available and was skipped because no local Provider/client configuration was present. Agent settings have since migrated entirely to ignored JSON files as defined in `2026-08-26-agent-file-configuration.md`. Existing unrelated trade/save-suite baselines are recorded in `docs/validation/role-agent-framework-validation.md`.
 
 ---
 
@@ -17,7 +17,7 @@
 Service files are focused by responsibility:
 
 - `services/agent-service/src/protocol.ts`: closed request/response/tool types and runtime validation.
-- `services/agent-service/src/config.ts`: environment-only Provider and service configuration.
+- `services/agent-service/src/config.ts`: strict JSON Provider, service, and memory configuration.
 - `services/agent-service/src/provider.ts`: real OpenAI-compatible Provider adapter.
 - `services/agent-service/src/agents.ts`: role/profile registry and prompt/context construction.
 - `services/agent-service/src/memory.ts`: per-save, per-Agent SQLite event and long-term memory repository.
@@ -124,10 +124,10 @@ git commit -m "feat: define role agent protocol"
 
 - [ ] **Step 1: Write failing Provider and profile tests**
 
-Use a local Node HTTP server as the protocol test double. Assert missing environment variables fail fast, API keys stay in headers, tool schemas are role-filtered, and a valid Provider response becomes one `ActionIntent`:
+Use a local Node HTTP server as the protocol test double. Assert incomplete JSON configuration fails fast, API keys stay in headers, tool schemas are role-filtered, and a valid Provider response becomes one `ActionIntent`:
 
 ```ts
-assert.throws(() => loadConfig({}), /AGENT_PROVIDER_API_KEY/);
+assert.throws(() => loadConfigFile("missing.json", serviceRoot), /Unable to read/);
 assert.deepEqual(registry.get("lao_li").tools.includes("plant"), false);
 assert.deepEqual(registry.get("farmer_ahe").tools.includes("plant"), true);
 assert.equal((await provider.decide(request, context)).tool_name, "plant");
@@ -140,7 +140,7 @@ Expected: missing modules.
 
 - [ ] **Step 3: Implement configuration and the real adapter**
 
-Read `AGENT_PROVIDER_BASE_URL`, `AGENT_PROVIDER_API_KEY`, `AGENT_PROVIDER_MODEL`, optional timeout/token/temperature values, and never serialize the key. POST an OpenAI-compatible tool-calling request to `${baseUrl}/chat/completions`; pass identity, Soul, goals, snapshot, event delta, recalled memory, and role tool definitions. Accept only one command tool call or a `wait` result. Abort on timeout and reject plain-text commands.
+Read the Provider base URL, API key, model, timeout, output-token limit, and temperature from a strict local JSON configuration file, and never serialize the key outside the Authorization header. POST an OpenAI-compatible tool-calling request to `${baseUrl}/chat/completions`; pass identity, Soul, goals, snapshot, event delta, recalled memory, and role tool definitions. Accept only one command tool call or a `wait` result. Abort on timeout and reject plain-text commands.
 
 Create exact profiles:
 
@@ -398,7 +398,7 @@ git commit -m "feat: integrate role agents with game runtime"
 
 - [ ] **Step 1: Add a connected protocol acceptance script**
 
-The SceneTree script sends a deterministic snapshot to the running service, validates one intent, POSTs an outcome, exports a checkpoint, and prints `PASS: role agent service integration`. It reads service URL/token from environment and skips with an explicit message when no real Provider credentials are configured.
+The SceneTree script sends a deterministic snapshot to the running service, validates one intent, POSTs an outcome, exports a checkpoint, and prints `PASS: role agent service integration`. It reads the URL/token from `config/agent-client.local.json` and skips with an explicit message when the file is missing or disabled.
 
 - [ ] **Step 2: Run all offline verification**
 
@@ -414,7 +414,7 @@ Expected: all commands exit `0`.
 
 - [ ] **Step 3: Run opt-in real Provider smoke**
 
-Start the service with `AGENT_PROVIDER_BASE_URL`, `AGENT_PROVIDER_API_KEY`, and `AGENT_PROVIDER_MODEL`, then run `tests/agent_service_integration.gd`. Expected: health succeeds, a role-allowed structured intent returns, outcome persists, and checkpoint export succeeds. Never print credential values.
+Copy and edit `services/agent-service/config/agent-service.example.json` and `config/agent-client.example.json` into their ignored `.local.json` counterparts, start the service, then run `tests/agent_service_integration.gd`. Expected: health succeeds, a role-allowed structured intent returns, outcome persists, and checkpoint export succeeds. Never print credential values.
 
 - [ ] **Step 4: Record evidence and commit**
 

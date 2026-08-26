@@ -190,21 +190,23 @@ Provider 不承担持久会话。每次上下文都由 Agent Service 从权威�
 
 运行时只接入真实 Provider，不提供模拟 Provider。首个适配器采用现有详细设计约定的 OpenAI-compatible 结构化工具调用协议；其他协议以后通过相同接口增加适配器。配置至少包括：
 
-```yaml
-provider:
-  adapter: openai_compatible
-  base_url: ${AGENT_PROVIDER_BASE_URL}
-  api_key_env: AGENT_PROVIDER_API_KEY
-  model: ${AGENT_PROVIDER_MODEL}
-  timeout_ms: 10000
-  max_concurrency: 2
-  temperature: 0.4
-  max_output_tokens: 1200
+```json
+{
+  "provider": {
+    "base_url": "https://provider.example/v1",
+    "api_key": "replace-with-your-key",
+    "model": "replace-with-your-model",
+    "timeout_ms": 10000,
+    "temperature": 0.4,
+    "max_output_tokens": 1200
+  }
+}
 ```
 
 约束：
 
-- API key 只从环境变量读取，不进入仓库、存档、日志、trace 或 SQLite。
+- 服务从被 Git 忽略的 `services/agent-service/config/agent-service.local.json` 读取 Provider 配置，也可以通过 `--config` 指定其他 JSON 文件；不兼容环境变量配置。
+- API key 只存在于 TypeScript 服务的本地配置文件中，不进入 Godot、仓库、存档、日志、trace 或 SQLite。
 - 适配器必须返回统一结构化结果和用量信息。
 - Provider 超时、限流、拒绝、无效 JSON 或非法工具调用均不得产生世界写入。
 - 自动测试使用可编程的假 HTTP 端点验证协议、超时和错误处理；它不是运行时 Provider 实现。

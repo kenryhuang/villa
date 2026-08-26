@@ -1,6 +1,7 @@
 extends SceneTree
 
 const AgentProtocolScript = preload("res://scripts/ai_agent/agent_protocol.gd")
+const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
 
 var _base_url := ""
 var _token := ""
@@ -11,17 +12,13 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_base_url = OS.get_environment("AGENT_SERVICE_URL").strip_edges().trim_suffix("/")
-	_token = OS.get_environment("AGENT_SERVICE_TOKEN")
-	if (
-		_base_url.is_empty()
-		or OS.get_environment("AGENT_PROVIDER_BASE_URL").strip_edges().is_empty()
-		or OS.get_environment("AGENT_PROVIDER_API_KEY").strip_edges().is_empty()
-		or OS.get_environment("AGENT_PROVIDER_MODEL").strip_edges().is_empty()
-	):
-		print("SKIP: role agent service integration requires a running service and real Provider configuration")
+	var client_config := AgentClientConfigScript.load_file()
+	if not client_config.ok or not bool(client_config.value.enabled):
+		print("SKIP: role agent service integration requires config/agent-client.local.json with enabled=true")
 		quit(0)
 		return
+	_base_url = str(client_config.value.service_url)
+	_token = str(client_config.value.token)
 	var health := await _send("GET", "/health", {})
 	if not _expect_success(health, "health"):
 		return
