@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "decision_id": "decision-1",
+  "request_id": "request-1",
+  "agent_id": "farmer_ahe",
+  "expected_revision": 7,
+  "idempotency_key": "decision-1:plant",
+  "tool_name": "plant",
+  "tool_version": 1,
+  "arguments": {"plot": 0, "seed_item_id": "carrot_seed"},
+  "speech": "这块地适合种胡萝卜。",
+  "decision_summary": "有空地和种子"
+}

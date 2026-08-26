@@ -1,0 +1,10 @@
+{
+  "name": "villa-agent-service",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "start": "node --experimental-strip-types src/server.ts"
+  }
+}

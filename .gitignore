@@ -5,6 +5,9 @@
 !.worktrees/.gdignore
 .superpowers/
 .playwright-cli/
+services/agent-service/node_modules/
+services/agent-service/dist/
+services/agent-service/data/
 
 # Temp files
 tmp/
