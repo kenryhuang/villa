@@ -8,6 +8,7 @@
 services/agent-service/node_modules/
 services/agent-service/dist/
 services/agent-service/data/
+services/agent-service/config/agent-service.local.json
 
 # Temp files
 tmp/

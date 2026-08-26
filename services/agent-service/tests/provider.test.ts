@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigFile, type ProviderConfig } from "../src/config.ts";
 import { OpenAICompatibleProvider } from "../src/provider.ts";
 import { AgentRegistry } from "../src/agents.ts";
 import type { DecisionRequest } from "../src/protocol.ts";
@@ -13,10 +16,16 @@ const request: DecisionRequest = {
   snapshot: {inventory: {carrot_seed: 6}}, event_delta: [],
 };
 
-test("requires a complete real Provider configuration", () => {
-  assert.throws(() => loadConfig({}), /AGENT_PROVIDER_BASE_URL/);
-  assert.throws(() => loadConfig({AGENT_PROVIDER_BASE_URL: "http://localhost"}), /AGENT_PROVIDER_API_KEY/);
-});
+function configuredProvider(baseUrl: string, apiKey: string): {provider: ProviderConfig; cleanup: () => void} {
+  const root = mkdtempSync(join(tmpdir(), "villa-provider-config-"));
+  const path = join(root, "agent-service.json");
+  writeFileSync(path, JSON.stringify({
+    service: {},
+    provider: {base_url: baseUrl, api_key: apiKey, model: "test-model"},
+    memory: {database_path: "data/memory.sqlite", checkpoint_root: "data/checkpoints"},
+  }), "utf8");
+  return {provider: loadConfigFile(path, root).provider, cleanup: () => rmSync(root, {recursive: true, force: true})};
+}
 
 test("sends credentials only in the header and accepts one role tool", async () => {
   let capturedHeaders: Record<string, string | string[] | undefined> = {};
@@ -38,15 +47,12 @@ test("sends credentials only in the header and accepts one role tool", async () 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address === "object");
-  const config = loadConfig({
-    AGENT_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
-    AGENT_PROVIDER_API_KEY: "test-key",
-    AGENT_PROVIDER_MODEL: "test-model",
-  });
+  const config = configuredProvider(`http://127.0.0.1:${address.port}`, "test-key");
   const registry = AgentRegistry.loadDefault();
   const provider = new OpenAICompatibleProvider(config.provider);
   const intent = await provider.decide(request, registry.buildContext("farmer_ahe", request.snapshot, [], []));
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  config.cleanup();
   assert.equal(intent.tool_name, "plant");
   assert.equal(intent.expected_revision, 7);
   assert.equal(capturedHeaders.authorization, "Bearer test-key");
@@ -62,14 +68,13 @@ test("compresses selected events through the configured real Provider", async ()
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const provider = new OpenAICompatibleProvider(loadConfig({
-    AGENT_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
-    AGENT_PROVIDER_API_KEY: "memory-key", AGENT_PROVIDER_MODEL: "test-model",
-  }).provider);
+  const config = configuredProvider(`http://127.0.0.1:${address.port}`, "memory-key");
+  const provider = new OpenAICompatibleProvider(config.provider);
   const agent = AgentRegistry.loadDefault().get("farmer_ahe"); assert.ok(agent);
   const events: MemoryEvent[] = [{event_id: "harvest-1", kind: "harvest", game_minute: 600, importance: 7, payload: {carrot: 4}}];
   const memory = await provider.compactMemory(agent, events);
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  config.cleanup();
   assert.equal(memory.summary, "阿禾完成了首次胡萝卜丰收。");
   assert.equal(memory.importance, 8);
 });

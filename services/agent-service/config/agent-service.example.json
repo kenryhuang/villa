@@ -1,0 +1,18 @@
+{
+  "service": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "provider": {
+    "base_url": "https://provider.example/v1",
+    "api_key": "replace-with-your-key",
+    "model": "replace-with-your-model",
+    "timeout_ms": 30000,
+    "max_output_tokens": 1200,
+    "temperature": 0.4
+  },
+  "memory": {
+    "database_path": "data/agent-memory.sqlite",
+    "checkpoint_root": "data/checkpoints"
+  }
+}
