@@ -40,6 +40,7 @@ var _pending_caravan_departures: Array[Dictionary] = []
 var _is_configured := false
 var _is_simulating := false
 var _event_bus: Node
+var _agent_managed: Dictionary = {}
 
 
 func _ready() -> void:
@@ -103,6 +104,7 @@ func configure(
 		_essential_zero_streaks[item_id] = 0
 	_demand_tags.clear()
 	_pending_caravan_departures.clear()
+	_agent_managed.clear()
 	last_simulated_day = 0
 	_is_configured = true
 	return true
@@ -148,7 +150,8 @@ func simulate_day(
 	_demand_tags.clear()
 	for npc_id_value in _profiles.keys():
 		var npc_id := str(npc_id_value)
-		_simulate_npc(_states[npc_id], _profiles[npc_id])
+		if not bool(_agent_managed.get(npc_id, false)):
+			_simulate_npc(_states[npc_id], _profiles[npc_id])
 	_apply_population_demand(season_factors, event_factors)
 	_update_shortages_and_imports(total_day)
 	_is_simulating = false
@@ -215,6 +218,32 @@ func receive_item(npc_id: String, item_id: String, quantity: int) -> bool:
 		return false
 	state.inventory[item_id] = current + quantity
 	return true
+
+
+func set_agent_managed(npc_id: String, managed: bool) -> bool:
+	if not has_npc(npc_id):
+		return false
+	if managed:
+		_agent_managed[npc_id] = true
+	else:
+		_agent_managed.erase(npc_id)
+	return true
+
+
+func is_agent_managed(npc_id: String) -> bool:
+	return bool(_agent_managed.get(npc_id, false))
+
+
+func agent_buy(npc_id: String, item_id: String, quantity: int) -> bool:
+	if quantity <= 0 or not has_npc(npc_id) or not has_item(item_id):
+		return false
+	return _buy_bundle(_states[npc_id], {item_id: quantity})
+
+
+func agent_sell(npc_id: String, item_id: String, quantity: int) -> bool:
+	if quantity <= 0 or not has_npc(npc_id) or not has_item(item_id):
+		return false
+	return _sell_bundle(_states[npc_id], {item_id: quantity})
 
 
 func get_demand_tags() -> Dictionary:

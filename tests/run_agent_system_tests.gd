@@ -1,6 +1,7 @@
 extends SceneTree
 
 const AgentWorldStateTest = preload("res://tests/test_agent_world_state.gd")
+const AgentActionExecutionTest = preload("res://tests/test_agent_action_execution.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -12,6 +13,8 @@ func _run() -> void:
 	var assertions := TestAssertScript.new()
 	var test := AgentWorldStateTest.new()
 	test.run(assertions, self)
+	var action_test := AgentActionExecutionTest.new()
+	action_test.run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d Agent system checks" % assertions.checks)
 		quit(0)

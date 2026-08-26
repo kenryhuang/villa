@@ -664,13 +664,14 @@ func _test_day_cursor_and_snapshot_are_atomic(assertions: TestAssert) -> void:
 func _test_registered_profiles_and_determinism(assertions: TestAssert) -> void:
 	var profiles := GameDataScript.get_npc_economy_profiles()
 	var expected := {
+		"farmer_ahe": "阿禾",
 		"lao_li": "老李",
 		"xiao_hua": "小花",
 		"tiejiang_zhang": "铁匠张",
 		"afu_shui": "阿水",
 		"xuezhe_lin": "学者林",
 	}
-	assertions.equal(profiles.size(), expected.size(), "five important economy profiles are registered")
+	assertions.equal(profiles.size(), expected.size(), "six important economy profiles are registered")
 	for profile in profiles:
 		assertions.equal(profile.display_name, expected.get(profile.id), "%s uses stable ASCII id and Chinese display name" % profile.id)
 
