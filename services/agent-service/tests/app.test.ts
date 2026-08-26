@@ -27,9 +27,8 @@ test("serves health decision outcome and checkpoint routes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-app-"));
   const memory = new MemoryRepository(join(directory, "memory.sqlite"));
   const provider = {decide: async (request: DecisionRequest): Promise<ActionIntent> => ({
-    protocol_version: 1, decision_id: "d1", request_id: request.request_id, agent_id: request.agent_id,
-    expected_revision: request.world_revision, idempotency_key: "d1:wait", tool_name: "wait", tool_version: 1,
-    arguments: {}, decision_summary: "No urgent action",
+    protocol_version: 2, decision_id: "d1", request_id: request.request_id, agent_id: request.agent_id,
+    expected_revision: request.world_revision, actions: [], decision_summary: "No urgent action",
   })};
   const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -39,13 +38,15 @@ test("serves health decision outcome and checkpoint routes", async () => {
     const response = await fetch(base + path, body === undefined ? {} : {method: "POST", headers: {"content-type": "application/json", "x-session-id": "save-0"}, body: JSON.stringify(body)});
     return {status: response.status, body: await response.json() as Record<string, unknown>};
   };
-  assert.equal((await json("/health")).status, 200);
+  const health = await json("/health");
+  assert.equal(health.status, 200);
+  assert.equal(health.body.protocol_version, 2);
   assert.equal((await json("/v1/sessions/sync", {session_id: "save-0", session_epoch: 1})).status, 200);
-  const request = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v1/decision-request.json"), "utf8"));
+  const request = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8"));
   const decision = await json("/v1/agents/farmer_ahe/decide", request);
   assert.equal(decision.status, 200);
-  assert.equal(decision.body.tool_name, "wait");
-  const outcome = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v1/action-outcome.json"), "utf8"));
+  assert.deepEqual(decision.body.actions, []);
+  const outcome = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/action-outcome.json"), "utf8"));
   assert.equal((await json("/v1/agents/farmer_ahe/outcomes", outcome)).status, 202);
   assert.equal((await json("/v1/agents/farmer_ahe/outcomes", outcome)).status, 200);
   const exported = await json("/v1/checkpoints/export", {session_id: "save-0", checkpoint_id: "slot-0"});
@@ -61,9 +62,8 @@ test("scopes idempotency by session and rejects checkpoints outside its root", a
   const memory = new MemoryRepository(join(directory, "memory.sqlite"));
   let calls = 0;
   const provider = {decide: async (request: DecisionRequest): Promise<ActionIntent> => ({
-    protocol_version: 1, decision_id: `d${++calls}`, request_id: request.request_id, agent_id: request.agent_id,
-    expected_revision: request.world_revision, idempotency_key: `d${calls}:wait`, tool_name: "wait", tool_version: 1,
-    arguments: {}, decision_summary: "No urgent action",
+    protocol_version: 2, decision_id: `d${++calls}`, request_id: request.request_id, agent_id: request.agent_id,
+    expected_revision: request.world_revision, actions: [], decision_summary: "No urgent action",
   })};
   const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -73,7 +73,7 @@ test("scopes idempotency by session and rejects checkpoints outside its root", a
     const response = await fetch(base + path, {method: "POST", headers: {"content-type": "application/json", "x-session-id": sessionId}, body: JSON.stringify(body)});
     return {status: response.status, body: await response.json() as Record<string, unknown>};
   };
-  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v1/decision-request.json"), "utf8")) as DecisionRequest;
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
   await post("/v1/agents/farmer_ahe/decide", {...fixture, session_id: "save-a"}, "save-a");
   await post("/v1/agents/farmer_ahe/decide", {...fixture, session_id: "save-b"}, "save-b");
   assert.equal(calls, 2);
@@ -112,7 +112,7 @@ test("streams stable Agent events and replays only a cached final decision", asy
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address === "object");
   const base = `http://127.0.0.1:${address.port}`;
-  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v1/decision-request.json"), "utf8")) as DecisionRequest;
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
   const postStream = async () => {
     const response = await fetch(base + "/v1/agents/farmer_ahe/decide/stream", {
       method: "POST", headers: {"content-type": "application/json", accept: "text/event-stream"}, body: JSON.stringify(fixture),
@@ -127,7 +127,7 @@ test("streams stable Agent events and replays only a cached final decision", asy
     "tool_call.delta", "provider.output", "decision.final", "stream.completed",
   ]);
   assert.deepEqual(first.events.map((event) => event.data.sequence), [1, 2, 3, 4, 5, 6, 7, 8]);
-  assert.equal(first.events[6].data.payload.tool_name, "wait");
+  assert.equal(first.events[6].data.payload.actions[0].tool_name, "wait");
   const replay = await postStream();
   assert.deepEqual(replay.events.map((event) => event.name), ["decision.final", "stream.completed"]);
   assert.equal(providerCalls, 1);
@@ -152,7 +152,7 @@ test("emits stream.error without committing a failed decision", async () => {
   const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v1/decision-request.json"), "utf8")) as DecisionRequest;
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
   const response = await fetch(`http://127.0.0.1:${address.port}/v1/agents/farmer_ahe/decide/stream`, {
     method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(fixture),
   });
@@ -187,7 +187,7 @@ test("aborts the Provider when the streaming client disconnects", async () => {
   const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v1/decision-request.json"), "utf8")) as DecisionRequest;
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
   const controller = new AbortController();
   const response = await fetch(`http://127.0.0.1:${address.port}/v1/agents/farmer_ahe/decide/stream`, {
     method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(fixture), signal: controller.signal,
@@ -203,15 +203,18 @@ test("aborts the Provider when the streaming client disconnects", async () => {
 
 function makeWaitIntent(request: DecisionRequest): ActionIntent {
   return {
-    protocol_version: 1,
+    protocol_version: 2,
     decision_id: "stream-decision-1",
     request_id: request.request_id,
     agent_id: request.agent_id,
     expected_revision: request.world_revision,
-    idempotency_key: `${request.request_id}:wait`,
-    tool_name: "wait",
-    tool_version: 1,
-    arguments: {},
+    actions: [{
+      action_id: "call-1",
+      idempotency_key: `v2:${request.request_id}:0:call-1`,
+      tool_name: "wait",
+      tool_version: 1,
+      arguments: {},
+    }],
     decision_summary: "Wait for the next cycle",
   };
 }

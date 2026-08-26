@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AgentRegistry } from "./agents.ts";
 import { createApp } from "./app.ts";
 import { loadConfigFile, selectConfigPath } from "./config.ts";
-import { MemoryRepository } from "./memory.ts";
+import { MemoryRepository, removeLegacyCheckpointDatabases } from "./memory.ts";
 import { OpenAICompatibleProvider } from "./provider.ts";
 
 const serviceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -13,6 +13,7 @@ const config = loadConfigFile(selectConfigPath(process.argv, serviceRoot), servi
 const databasePath = config.databasePath;
 mkdirSync(dirname(databasePath), {recursive: true});
 const memory = new MemoryRepository(databasePath);
+if (memory.upgradedFromPreV2) removeLegacyCheckpointDatabases(config.checkpointRoot);
 const app = createApp({
   memory,
   registry: AgentRegistry.loadDefault(),

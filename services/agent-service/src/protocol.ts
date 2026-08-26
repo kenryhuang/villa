@@ -1,10 +1,12 @@
-export const PROTOCOL_VERSION = 1 as const;
+import {validToolArguments} from "./tool_contracts.ts";
+
+export const PROTOCOL_VERSION = 2 as const;
 
 export type Trigger = "schedule" | "event" | "dialogue" | "catch_up";
 export type OutcomeStatus = "accepted" | "in_progress" | "completed" | "rejected" | "failed";
 
 export interface DecisionRequest {
-  protocol_version: 1;
+  protocol_version: 2;
   request_id: string;
   session_id: string;
   session_epoch: number;
@@ -17,23 +19,29 @@ export interface DecisionRequest {
   dialogue_input?: string;
 }
 
-export interface ActionIntent {
-  protocol_version: 1;
-  decision_id: string;
-  request_id: string;
-  agent_id: string;
-  expected_revision: number;
+export interface ActionCommand {
+  action_id: string;
   idempotency_key: string;
   tool_name: string;
   tool_version: 1;
   arguments: Record<string, unknown>;
+}
+
+export interface ActionIntent {
+  protocol_version: 2;
+  decision_id: string;
+  request_id: string;
+  agent_id: string;
+  expected_revision: number;
+  actions: readonly ActionCommand[];
   speech?: string;
   decision_summary: string;
 }
 
 export interface ActionOutcome {
-  protocol_version: 1;
+  protocol_version: 2;
   decision_id: string;
+  action_id: string;
   idempotency_key: string;
   status: OutcomeStatus;
   failure_code?: string;
@@ -84,21 +92,42 @@ export function parseDecisionRequest(value: unknown): ParseResult<DecisionReques
 
 export function parseActionIntent(value: unknown, allowedTools: readonly string[]): ParseResult<ActionIntent> {
   if (!isRecord(value) || value.protocol_version !== PROTOCOL_VERSION) return failure("invalid_protocol_version");
-  for (const field of ["decision_id", "request_id", "agent_id", "idempotency_key", "tool_name"] as const) {
+  for (const field of ["decision_id", "request_id", "agent_id"] as const) {
     if (!isId(value[field])) return failure(`invalid_${field}`);
   }
-  if (value.tool_version !== 1) return failure("invalid_tool_version");
-  if (!allowedTools.includes(String(value.tool_name))) return failure("unauthorized_tool");
   if (!isNonNegativeInteger(value.expected_revision)) return failure("invalid_expected_revision");
-  if (!isRecord(value.arguments)) return failure("invalid_arguments");
+  if (!Array.isArray(value.actions) || value.actions.length > 3) return failure("invalid_actions");
+  const actionIds = new Set<string>();
+  const idempotencyKeys = new Set<string>();
+  const actions: ActionCommand[] = [];
+  for (const entry of value.actions) {
+    if (!isRecord(entry)) return failure("invalid_action");
+    for (const field of ["action_id", "idempotency_key", "tool_name"] as const) {
+      if (!isId(entry[field])) return failure(`invalid_${field}`);
+    }
+    const actionId = String(entry.action_id);
+    const idempotencyKey = String(entry.idempotency_key);
+    if (actionIds.has(actionId)) return failure("duplicate_action_id");
+    if (idempotencyKeys.has(idempotencyKey)) return failure("duplicate_idempotency_key");
+    actionIds.add(actionId);
+    idempotencyKeys.add(idempotencyKey);
+    if (entry.tool_version !== 1) return failure("invalid_tool_version");
+    const toolName = String(entry.tool_name);
+    if (!allowedTools.includes(toolName)) return failure("unauthorized_tool");
+    if (!validToolArguments(toolName, entry.arguments)) return failure("invalid_arguments");
+    actions.push(entry as unknown as ActionCommand);
+  }
+  if (actions.length > 1 && actions.some((action) => action.tool_name === "wait")) {
+    return failure("wait_must_be_exclusive");
+  }
   if (typeof value.decision_summary !== "string" || value.decision_summary.length > 500) return failure("invalid_decision_summary");
   if (value.speech !== undefined && (typeof value.speech !== "string" || value.speech.length > 500)) return failure("invalid_speech");
-  return { ok: true, value: value as unknown as ActionIntent };
+  return { ok: true, value: {...value, actions} as unknown as ActionIntent };
 }
 
 export function parseActionOutcome(value: unknown): ParseResult<ActionOutcome> {
   if (!isRecord(value) || value.protocol_version !== PROTOCOL_VERSION) return failure("invalid_protocol_version");
-  for (const field of ["decision_id", "idempotency_key"] as const) {
+  for (const field of ["decision_id", "action_id", "idempotency_key"] as const) {
     if (!isId(value[field])) return failure(`invalid_${field}`);
   }
   if (typeof value.status !== "string" || !OUTCOME_STATUSES.has(value.status as OutcomeStatus)) return failure("invalid_status");

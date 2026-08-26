@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -12,6 +12,16 @@ export interface MemoryEvent {
 }
 
 export interface CheckpointRecord { path: string; sha256: string; session_id: string; }
+
+const DATABASE_VERSION = 2;
+
+export function removeLegacyCheckpointDatabases(directory: string): void {
+  mkdirSync(directory, {recursive: true});
+  for (const entry of readdirSync(directory, {withFileTypes: true})) {
+    if (!entry.isFile() || !/\.sqlite(?:-(?:wal|shm))?$/.test(entry.name)) continue;
+    rmSync(join(directory, entry.name), {force: true});
+  }
+}
 
 export function scoreImportance(event: Record<string, unknown>): number {
   let score = 1;
@@ -29,11 +39,27 @@ export function scoreImportance(event: Record<string, unknown>): number {
 export class MemoryRepository {
   readonly #db: DatabaseSync;
   readonly path: string;
+  readonly upgradedFromPreV2: boolean;
 
   constructor(path: string) {
     this.path = path;
+    const existed = existsSync(path);
     this.#db = new DatabaseSync(path);
+    const versionRow = this.#db.prepare("PRAGMA user_version").get() as Record<string, unknown>;
+    const previousVersion = Number(versionRow.user_version ?? 0);
+    this.upgradedFromPreV2 = existed && previousVersion !== DATABASE_VERSION;
+    if (this.upgradedFromPreV2) this.#resetSchema();
     this.#initialize();
+  }
+
+  #resetSchema(): void {
+    this.#db.exec(`
+      DROP TABLE IF EXISTS memory_fts;
+      DROP TABLE IF EXISTS idempotency;
+      DROP TABLE IF EXISTS long_term_memories;
+      DROP TABLE IF EXISTS events;
+      DROP TABLE IF EXISTS sessions;
+    `);
   }
 
   #initialize(): void {
@@ -61,6 +87,7 @@ export class MemoryRepository {
       CREATE VIRTUAL TABLE memory_fts USING fts5(memory_id UNINDEXED, session_id UNINDEXED, agent_id UNINDEXED, summary);
       INSERT INTO memory_fts(memory_id, session_id, agent_id, summary)
         SELECT memory_id, session_id, agent_id, summary FROM long_term_memories WHERE valid=1;
+      PRAGMA user_version=2;
     `);
   }
 

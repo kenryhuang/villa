@@ -1,9 +1,52 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {DatabaseSync} from "node:sqlite";
 import test from "node:test";
-import { MemoryRepository, scoreImportance } from "../src/memory.ts";
+import * as MemoryModule from "../src/memory.ts";
+
+const {MemoryRepository, scoreImportance} = MemoryModule;
+
+test("clears every pre-v2 Agent table once and removes only checkpoint databases", () => {
+  const directory = mkdtempSync(join(tmpdir(), "villa-agent-v2-migration-"));
+  const databasePath = join(directory, "memory.sqlite");
+  const old = new MemoryRepository(databasePath);
+  old.syncSession("old-save", 1);
+  old.appendEvent("old-save", "farmer_ahe", {event_id: "old-event", kind: "decision", game_minute: 1, payload: {}});
+  old.storeLongTermMemory("old-save", "farmer_ahe", "old-memory", "旧记忆", 8, ["old-event"]);
+  old.storeIdempotent("old-key", {protocol_version: 1});
+  old.close();
+  const raw = new DatabaseSync(databasePath);
+  raw.exec("PRAGMA user_version=1");
+  raw.close();
+
+  const upgraded = new MemoryRepository(databasePath);
+  assert.equal(upgraded.upgradedFromPreV2, true);
+  assert.deepEqual(upgraded.recent("old-save", "farmer_ahe", 10), []);
+  assert.deepEqual(upgraded.longTermRecent("old-save", "farmer_ahe", 10), []);
+  assert.equal(upgraded.getIdempotent("old-key"), undefined);
+  upgraded.syncSession("new-save", 2);
+  upgraded.appendEvent("new-save", "farmer_ahe", {event_id: "new-event", kind: "decision", game_minute: 2, payload: {}});
+  upgraded.close();
+
+  const checkpointRoot = join(directory, "checkpoints");
+  mkdirSync(checkpointRoot);
+  for (const name of ["old.sqlite", "old.sqlite-wal", "old.sqlite-shm", "keep.txt"]) writeFileSync(join(checkpointRoot, name), name);
+  const removeLegacyCheckpointDatabases = (MemoryModule as Record<string, unknown>).removeLegacyCheckpointDatabases;
+  assert.equal(typeof removeLegacyCheckpointDatabases, "function");
+  if (typeof removeLegacyCheckpointDatabases === "function") removeLegacyCheckpointDatabases(checkpointRoot);
+  assert.equal(existsSync(join(checkpointRoot, "old.sqlite")), false);
+  assert.equal(existsSync(join(checkpointRoot, "old.sqlite-wal")), false);
+  assert.equal(existsSync(join(checkpointRoot, "old.sqlite-shm")), false);
+  assert.equal(existsSync(join(checkpointRoot, "keep.txt")), true);
+
+  const reopened = new MemoryRepository(databasePath);
+  assert.equal(reopened.upgradedFromPreV2, false);
+  assert.equal(reopened.recent("new-save", "farmer_ahe", 10).length, 1);
+  reopened.close();
+  rmSync(directory, {recursive: true, force: true});
+});
 
 test("isolates ordered memories and makes outcomes idempotent", () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-memory-"));

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { AgentRegistry } from "./agents.ts";
 import type { MemoryRepository } from "./memory.ts";
-import { parseActionOutcome, parseDecisionRequest, type ActionIntent, type DecisionRequest } from "./protocol.ts";
+import { PROTOCOL_VERSION, parseActionOutcome, parseDecisionRequest, type ActionIntent, type DecisionRequest } from "./protocol.ts";
 import type {ProviderTraceEvent} from "./provider_stream.ts";
 
 interface ProviderPort {
@@ -58,7 +58,10 @@ function storeDecision(
     event_id: `decision:${intent.decision_id}`,
     kind: "decision",
     game_minute: request.game_minute,
-    payload: {tool_name: intent.tool_name, decision_summary: intent.decision_summary},
+    payload: {
+      action_names: intent.actions.map((action) => action.tool_name),
+      decision_summary: intent.decision_summary,
+    },
   });
 }
 
@@ -89,7 +92,7 @@ export function createApp(dependencies: AppDependencies) {
     try {
       const url = new URL(request.url || "/", "http://localhost");
       if (request.method === "GET" && url.pathname === "/health") {
-        send(response, 200, {status: "ok", protocol_version: 1, provider: "configured"}); return;
+        send(response, 200, {status: "ok", protocol_version: PROTOCOL_VERSION, provider: "configured"}); return;
       }
       if (request.method !== "POST") { send(response, 404, {error: {code: "NOT_FOUND"}}); return; }
       const body = await readBody(request);
@@ -116,7 +119,7 @@ export function createApp(dependencies: AppDependencies) {
           if (response.destroyed || response.writableEnded) return;
           sequence += 1;
           const envelope = {
-            protocol_version: 1,
+            protocol_version: PROTOCOL_VERSION,
             stream_id: `${decisionRequest.request_id}:stream`,
             request_id: decisionRequest.request_id,
             agent_id: decisionRequest.agent_id,

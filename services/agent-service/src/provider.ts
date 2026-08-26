@@ -43,7 +43,7 @@ export class OpenAICompatibleProvider {
         tool_choice: "auto",
         tools: context.allowed_tools.map(toolDescription),
         messages: [
-          {role: "system", content: "You are a game NPC Agent. Use exactly one authorized tool. Never invent world assets."},
+          {role: "system", content: "You are a game NPC Agent. Use zero to three authorized tools in the exact order they should execute. Use no tool when no action is needed. Put travel or build last. Never invent world assets."},
           {role: "user", content: JSON.stringify(context)},
         ],
       };

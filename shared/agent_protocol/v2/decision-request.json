@@ -1,0 +1,12 @@
+{
+  "protocol_version": 2,
+  "request_id": "request-1",
+  "session_id": "save-0",
+  "session_epoch": 1,
+  "agent_id": "farmer_ahe",
+  "trigger": "schedule",
+  "game_minute": 480,
+  "world_revision": 7,
+  "snapshot": {"season": 0, "inventory": {"carrot_seed": 6}},
+  "event_delta": []
+}

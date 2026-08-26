@@ -171,19 +171,37 @@ export class AgentStreamAssembler {
 
   finish(request: DecisionRequest, allowedTools: readonly string[]): ProviderStreamResult {
     const tools = [...this.#tools.entries()].sort(([left], [right]) => left - right);
-    if (tools.length !== 1) throw new Error("provider_requires_exactly_one_tool_call");
-    const [, tool] = tools[0];
-    if (!tool.name || !tool.arguments) throw new Error("provider_incomplete_tool_call");
-    let args: unknown;
-    try { args = JSON.parse(tool.arguments); }
-    catch { throw new Error("provider_invalid_tool_arguments"); }
-    if (!validToolArguments(tool.name, args)) {
-      throw new Error("provider_invalid_intent:invalid_arguments");
+    if (tools.length > 3) throw new Error("provider_too_many_tool_calls");
+    const actions = tools.map(([index, tool]) => {
+      if (!tool.name || !tool.arguments) throw new Error("provider_incomplete_tool_call");
+      let args: unknown;
+      try { args = JSON.parse(tool.arguments); }
+      catch { throw new Error("provider_invalid_tool_arguments"); }
+      if (!allowedTools.includes(tool.name)) throw new Error("provider_invalid_intent:unauthorized_tool");
+      if (!validToolArguments(tool.name, args)) {
+        throw new Error("provider_invalid_intent:invalid_arguments");
+      }
+      const providerId = tool.id.trim();
+      const actionId = providerId && providerId.length <= 80 ? providerId : `action-${index}`;
+      return {
+        action_id: actionId,
+        idempotency_key: `v2:${request.request_id}:${index}:${actionId}`,
+        tool_name: tool.name,
+        tool_version: 1 as const,
+        arguments: args as Record<string, unknown>,
+      };
+    });
+    if (actions.length > 1 && actions.some((action) => action.tool_name === "wait")) {
+      throw new Error("provider_invalid_intent:wait_must_be_exclusive");
     }
     const rawMessage: ProviderRawMessage = {
       content: this.#content,
       reasoning_content: this.#reasoning,
-      tool_calls: [{id: tool.id, type: "function", function: {name: tool.name, arguments: tool.arguments}}],
+      tool_calls: tools.map(([, tool]) => ({
+        id: tool.id,
+        type: "function" as const,
+        function: {name: tool.name, arguments: tool.arguments},
+      })),
     };
     const rawOutput: ProviderRawOutput = {
       id: this.#responseId,
@@ -192,17 +210,16 @@ export class AgentStreamAssembler {
       ...(this.#usage ? {usage: this.#usage} : {}),
     };
     const intentValue: unknown = {
-      protocol_version: 1,
+      protocol_version: 2,
       decision_id: this.#responseId || `${request.request_id}:decision`,
       request_id: request.request_id,
       agent_id: request.agent_id,
       expected_revision: request.world_revision,
-      idempotency_key: `${request.request_id}:${tool.id || tool.name}`,
-      tool_name: tool.name,
-      tool_version: 1,
-      arguments: args,
+      actions,
       ...(this.#content ? {speech: this.#content} : {}),
-      decision_summary: `Selected ${tool.name} from current context`,
+      decision_summary: actions.length === 0
+        ? "Selected no action from current context"
+        : `Selected ${actions.map((action) => action.tool_name).join(", ")} from current context`,
     };
     const parsed = parseActionIntent(intentValue, allowedTools);
     if (!parsed.ok) throw new Error(`provider_invalid_intent:${parsed.error}`);

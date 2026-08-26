@@ -4,7 +4,7 @@ import {AgentStreamAssembler, decodeProviderSse} from "../src/provider_stream.ts
 import type {DecisionRequest} from "../src/protocol.ts";
 
 const request: DecisionRequest = {
-  protocol_version: 1,
+  protocol_version: 2,
   request_id: "stream-request-1",
   session_id: "stream-session",
   session_epoch: 1,
@@ -68,8 +68,10 @@ test("assembles interleaved reasoning content and fragmented tool arguments", ()
   });
   assert.equal(result.finishReason, "tool_calls");
   assert.deepEqual(result.usage, {total_tokens: 42});
-  assert.equal(result.intent.tool_name, "till");
-  assert.deepEqual(result.intent.arguments, {plot: 0});
+  assert.equal(result.intent.actions.length, 1);
+  assert.equal(result.intent.actions[0].tool_name, "till");
+  assert.deepEqual(result.intent.actions[0].arguments, {plot: 0});
+  assert.equal(result.intent.actions[0].idempotency_key, "v2:stream-request-1:0:call-1");
 });
 
 function assemblerFor(toolName: string, args: Record<string, unknown>): AgentStreamAssembler {
@@ -121,22 +123,39 @@ test("accepts exact Provider tool arguments for every contract shape", () => {
   ];
   for (const [toolName, args] of validCases) {
     assert.deepEqual(
-      assemblerFor(toolName, args).finish(request, [toolName]).intent.arguments,
+      assemblerFor(toolName, args).finish(request, [toolName]).intent.actions[0].arguments,
       args,
       `${toolName} accepts ${JSON.stringify(args)}`,
     );
   }
 });
 
-test("rejects incomplete or multiple final tool calls", () => {
-  const incomplete = new AgentStreamAssembler();
-  incomplete.accept({choices: [{delta: {content: "没有工具"}, finish_reason: "stop"}]});
-  assert.throws(() => incomplete.finish(request, ["wait"]), /exactly_one_tool_call/);
+test("accepts zero through three ordered calls and rejects larger or contradictory batches", () => {
+  const empty = new AgentStreamAssembler();
+  empty.accept({id: "empty-1", choices: [{delta: {content: "我先观察。"}, finish_reason: "stop"}]});
+  assert.deepEqual(empty.finish(request, ["wait"]).intent.actions, []);
 
-  const multiple = new AgentStreamAssembler();
-  multiple.accept({choices: [{delta: {tool_calls: [
-    {index: 0, id: "one", function: {name: "wait", arguments: "{}"}},
-    {index: 1, id: "two", function: {name: "wait", arguments: "{}"}},
+  const three = new AgentStreamAssembler();
+  three.accept({choices: [{delta: {tool_calls: [
+    {index: 2, id: "three", function: {name: "harvest", arguments: "{\"plot\":1}"}},
+    {index: 0, id: "one", function: {name: "till", arguments: "{\"plot\":0}"}},
+    {index: 1, id: "two", function: {name: "plant", arguments: "{\"plot\":0,\"seed_item_id\":\"carrot_seed\"}"}},
   ]}, finish_reason: "tool_calls"}]});
-  assert.throws(() => multiple.finish(request, ["wait"]), /exactly_one_tool_call/);
+  assert.deepEqual(
+    three.finish(request, ["till", "plant", "harvest"]).intent.actions.map((action) => action.tool_name),
+    ["till", "plant", "harvest"],
+  );
+
+  const four = new AgentStreamAssembler();
+  four.accept({choices: [{delta: {tool_calls: [0, 1, 2, 3].map((index) => ({
+    index, id: `call-${index}`, function: {name: "speak", arguments: "{}"},
+  }))}, finish_reason: "tool_calls"}]});
+  assert.throws(() => four.finish(request, ["speak"]), /provider_too_many_tool_calls/);
+
+  const waitThenSpeak = new AgentStreamAssembler();
+  waitThenSpeak.accept({choices: [{delta: {tool_calls: [
+    {index: 0, id: "wait", function: {name: "wait", arguments: "{}"}},
+    {index: 1, id: "speak", function: {name: "speak", arguments: "{}"}},
+  ]}, finish_reason: "tool_calls"}]});
+  assert.throws(() => waitThenSpeak.finish(request, ["wait", "speak"]), /wait_must_be_exclusive/);
 });

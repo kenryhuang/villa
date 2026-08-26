@@ -11,7 +11,7 @@ import type { DecisionRequest } from "../src/protocol.ts";
 import type { MemoryEvent } from "../src/memory.ts";
 
 const request: DecisionRequest = {
-  protocol_version: 1, request_id: "req-1", session_id: "save-0", session_epoch: 1,
+  protocol_version: 2, request_id: "req-1", session_id: "save-0", session_epoch: 1,
   agent_id: "farmer_ahe", trigger: "schedule", game_minute: 480, world_revision: 7,
   snapshot: {inventory: {carrot_seed: 6}}, event_delta: [],
 };
@@ -57,7 +57,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
   const intent = await provider.decide(request, {...context, allowed_tools: ALL_TOOLS});
   await new Promise<void>((resolve) => server.close(() => resolve()));
   config.cleanup();
-  assert.equal(intent.tool_name, "plant");
+  assert.equal(intent.actions[0].tool_name, "plant");
   assert.equal(intent.expected_revision, 7);
   assert.equal(capturedHeaders.authorization, "Bearer test-key");
   assert.equal(capturedBody.includes("test-key"), false);

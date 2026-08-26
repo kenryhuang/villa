@@ -1,0 +1,12 @@
+{
+  "protocol_version": 2,
+  "decision_id": "decision-1",
+  "action_id": "call-1",
+  "idempotency_key": "v2:request-1:0:call-1",
+  "status": "completed",
+  "committed_revision": 8,
+  "changed_entities": ["npc_farm:farmer_ahe:0", "npc_inventory:farmer_ahe"],
+  "resource_delta": {"carrot_seed": -1},
+  "hud_message": "阿禾播种了胡萝卜。",
+  "game_minute": 480
+}
