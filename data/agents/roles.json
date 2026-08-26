@@ -1,0 +1,20 @@
+[
+  {
+    "role_id": "farmer",
+    "goals": ["maintain_basic_reserve", "keep_crops_healthy", "earn_stable_profit", "experiment_carefully"],
+    "tools": ["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait"],
+    "decision_interval_hours": [1, 1]
+  },
+  {
+    "role_id": "merchant",
+    "goals": ["remain_solvent", "maximize_sustainable_profit", "protect_essential_stock", "maintain_relationships"],
+    "tools": ["buy", "sell", "propose_trade", "speak", "wait"],
+    "decision_interval_hours": [1, 2]
+  },
+  {
+    "role_id": "explorer",
+    "goals": ["remain_safe", "discover_unknowns", "verify_samples", "publish_reliable_knowledge"],
+    "tools": ["prepare_supplies", "travel", "survey", "collect_sample", "register_discovery", "sell", "speak", "wait"],
+    "decision_interval_hours": [2, 4]
+  }
+]
