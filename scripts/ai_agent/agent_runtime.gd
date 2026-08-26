@@ -14,6 +14,7 @@ const BuildingScript = preload("res://scripts/systems/npc_building_registry.gd")
 const ActivityScript = preload("res://scripts/systems/npc_activity_system.gd")
 const KnowledgeScript = preload("res://scripts/systems/explorer_knowledge_registry.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
 
 const VERSION := 2
 const GAME_MINUTES_PER_DAY := 1080
@@ -41,7 +42,13 @@ var _event_bus: Node
 var _save_manager: Variant
 
 
-func configure(npc_economy: Variant, market: Variant, season: Variant, hud_bus: Variant) -> bool:
+func configure(
+	npc_economy: Variant,
+	market: Variant,
+	season: Variant,
+	hud_bus: Variant,
+	client_config_path: String = AgentClientConfigScript.DEFAULT_PATH
+) -> bool:
 	if npc_economy == null or market == null or season == null or not registry.load_defaults():
 		return false
 	_npc_economy = npc_economy
@@ -58,9 +65,16 @@ func configure(npc_economy: Variant, market: Variant, season: Variant, hud_bus: 
 	gateway = AgentGatewayScript.new()
 	gateway.name = "AgentGateway"
 	add_child(gateway)
-	var service_url := OS.get_environment("AGENT_SERVICE_URL").strip_edges()
-	if not service_url.is_empty():
-		service_enabled = gateway.configure(service_url, OS.get_environment("AGENT_SERVICE_TOKEN"), 1)
+	var client_config := AgentClientConfigScript.load_file(client_config_path)
+	if not client_config.ok:
+		_publish("warning", "Agent 客户端配置不可用，远程决策已关闭：%s" % str(client_config.error), {})
+	elif bool(client_config.value.enabled):
+		service_enabled = gateway.configure(
+			str(client_config.value.service_url),
+			str(client_config.value.token),
+			1,
+			float(client_config.value.timeout_seconds)
+		)
 	if not scheduler.configure(registry, gateway, _build_request, _handle_response):
 		return false
 	_connect_events()

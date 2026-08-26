@@ -9,6 +9,12 @@ const DialogueScene = preload("res://scenes/ui/dialogue_ui.tscn")
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	var disabled_config_path := "user://agent-main-integration-disabled.json"
+	var disabled_config := FileAccess.open(disabled_config_path, FileAccess.WRITE)
+	disabled_config.store_string(JSON.stringify({
+		"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10,
+	}))
+	disabled_config.close()
 	var market := MarketScript.new()
 	var economy := NpcEconomyScript.new()
 	var season := SeasonScript.new()
@@ -19,7 +25,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(runtime)
 	market.configure(GameDataScript.get_market_items())
 	economy.configure(market, GameDataScript.get_npc_economy_profiles(), GameDataScript.get_population_demand_profiles())
-	assertions.truthy(runtime.configure(economy, market, season, null), "Agent runtime configures against authoritative systems")
+	assertions.truthy(runtime.configure(economy, market, season, null, disabled_config_path), "Agent runtime configures against authoritative systems")
+	assertions.truthy(not runtime.service_enabled, "disabled client configuration keeps remote decisions off")
 	assertions.truthy(economy.is_agent_managed("lao_li"), "merchant is removed from deterministic autonomy")
 	assertions.truthy(economy.is_agent_managed("xuezhe_lin"), "explorer is removed from deterministic autonomy")
 	assertions.truthy(economy.is_agent_managed("farmer_ahe"), "farmer is Agent managed")
@@ -27,7 +34,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var saved: Dictionary = runtime.to_dict()
 	var restored := AgentRuntimeScript.new()
 	tree.root.add_child(restored)
-	assertions.truthy(restored.configure(economy, market, season, null), "second runtime configures")
+	assertions.truthy(restored.configure(economy, market, season, null, disabled_config_path), "second runtime configures")
 	assertions.truthy(restored.from_dict(saved), "Agent world state restores")
 	assertions.equal(restored.to_dict(), saved, "Agent world state round trip is stable")
 	var save_manager = tree.root.get_node("SaveManager")
@@ -44,3 +51,4 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	season.free()
 	economy.free()
 	market.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(disabled_config_path))
