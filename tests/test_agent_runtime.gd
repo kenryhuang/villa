@@ -4,6 +4,7 @@ const AgentRegistryScript = preload("res://scripts/ai_agent/agent_registry.gd")
 const AgentPerceptionInboxScript = preload("res://scripts/ai_agent/agent_perception_inbox.gd")
 const AgentSchedulerScript = preload("res://scripts/ai_agent/agent_scheduler.gd")
 const AgentGatewayScript = preload("res://scripts/ai_agent/agent_gateway.gd")
+const AgentStreamClientScript = preload("res://scripts/ai_agent/agent_stream_client.gd")
 
 class FakeGateway:
 	extends RefCounted
@@ -27,6 +28,7 @@ func run(assertions: TestAssert, _tree: SceneTree) -> void:
 	_test_perception_coalescing(assertions)
 	_test_role_schedule_and_backpressure(assertions)
 	_test_gateway_configuration(assertions)
+	_test_stream_client_configuration(assertions)
 
 
 func _test_perception_coalescing(assertions: TestAssert) -> void:
@@ -77,3 +79,13 @@ func _test_gateway_configuration(assertions: TestAssert) -> void:
 	assertions.equal(gateway.session_epoch, 2, "gateway exposes active epoch")
 	gateway.cancel_all()
 	gateway.free()
+
+
+func _test_stream_client_configuration(assertions: TestAssert) -> void:
+	var client := AgentStreamClientScript.new()
+	assertions.truthy(not client.configure("ftp://localhost", "", 1, 10.0), "stream client rejects unsupported URL")
+	assertions.truthy(client.configure("http://127.0.0.1:8787/base/", "token", 2, 12.0), "stream client accepts HTTP service URL")
+	assertions.equal(client.session_epoch, 2, "stream client exposes active epoch")
+	assertions.equal(client.get_active_agent_ids(), [], "stream client begins without requests")
+	client.cancel_all()
+	client.free()

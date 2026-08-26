@@ -1,10 +1,12 @@
 extends Node
 
+const AgentStreamClientScript = preload("res://scripts/ai_agent/agent_stream_client.gd")
+
 var session_epoch := 0
 var _base_url := ""
 var _token := ""
 var _timeout_seconds := 10.0
-var _requests: Dictionary = {}
+var _stream_client: Node
 
 
 func configure(base_url: String, token: String, epoch: int, timeout_seconds: float = 10.0) -> bool:
@@ -15,26 +17,25 @@ func configure(base_url: String, token: String, epoch: int, timeout_seconds: flo
 	_token = token
 	session_epoch = epoch
 	_timeout_seconds = timeout_seconds
-	return true
+	if _stream_client == null:
+		_stream_client = AgentStreamClientScript.new()
+		_stream_client.name = "AgentStreamClient"
+		add_child(_stream_client)
+	return bool(_stream_client.call("configure", _base_url, _token, session_epoch, _timeout_seconds))
 
 
-func request_decision(agent_id: String, request_body: Dictionary, callback: Callable) -> bool:
-	if _base_url.is_empty() or agent_id.is_empty() or not callback.is_valid() or _requests.has(agent_id):
+func request_decision(
+	agent_id: String,
+	request_body: Dictionary,
+	callback: Callable,
+	event_callback: Callable = Callable()
+) -> bool:
+	if _base_url.is_empty() or _stream_client == null or not callback.is_valid():
 		return false
-	var request := HTTPRequest.new()
-	request.timeout = _timeout_seconds
-	add_child(request)
-	_requests[agent_id] = request
-	var headers := PackedStringArray(["Content-Type: application/json", "X-Session-Id: " + str(request_body.get("session_id", ""))])
-	if not _token.is_empty():
-		headers.append("Authorization: Bearer " + _token)
-	request.request_completed.connect(_on_request_completed.bind(agent_id, session_epoch, callback, request), CONNECT_ONE_SHOT)
-	var error := request.request(_base_url + "/v1/agents/" + agent_id.uri_encode() + "/decide", headers, HTTPClient.METHOD_POST, JSON.stringify(request_body))
-	if error != OK:
-		_requests.erase(agent_id)
-		request.queue_free()
-		return false
-	return true
+	var stream_callback := event_callback if event_callback.is_valid() else func(_event: Dictionary): pass
+	return bool(_stream_client.call(
+		"request_decision", agent_id, request_body, stream_callback, callback
+	))
 
 
 func report_outcome(agent_id: String, session_id: String, outcome: Dictionary) -> bool:
@@ -72,16 +73,21 @@ func import_checkpoint(record: Dictionary, callback: Callable) -> bool:
 
 func bump_epoch() -> int:
 	session_epoch += 1
-	cancel_all()
+	if _stream_client != null:
+		_stream_client.call("set_epoch", session_epoch)
 	return session_epoch
 
 
 func cancel_all() -> void:
-	for request_value in _requests.values():
-		var request := request_value as HTTPRequest
-		request.cancel_request()
-		request.queue_free()
-	_requests.clear()
+	if _stream_client != null:
+		_stream_client.call("cancel_all")
+
+
+func cancel_agent(agent_id: String, reason: String = "cancelled") -> bool:
+	return (
+		_stream_client != null
+		and bool(_stream_client.call("cancel_agent", agent_id, reason))
+	)
 
 
 func _request_json(path: String, body: Dictionary, callback: Callable) -> bool:
@@ -107,28 +113,3 @@ func _request_json(path: String, body: Dictionary, callback: Callable) -> bool:
 		request.queue_free()
 		return false
 	return true
-
-
-func _on_request_completed(
-	result: int,
-	response_code: int,
-	_headers: PackedStringArray,
-	body: PackedByteArray,
-	agent_id: String,
-	epoch: int,
-	callback: Callable,
-	request: HTTPRequest
-) -> void:
-	_requests.erase(agent_id)
-	request.queue_free()
-	if epoch != session_epoch:
-		callback.call(false, {}, "stale_session_epoch")
-		return
-	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
-		callback.call(false, {}, "http_%d_result_%d" % [response_code, result])
-		return
-	var value: Variant = JSON.parse_string(body.get_string_from_utf8())
-	if not value is Dictionary:
-		callback.call(false, {}, "invalid_json_response")
-		return
-	callback.call(true, (value as Dictionary).duplicate(true), "")

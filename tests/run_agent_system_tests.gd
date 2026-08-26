@@ -5,6 +5,7 @@ const AgentActionExecutionTest = preload("res://tests/test_agent_action_executio
 const AgentRuntimeTest = preload("res://tests/test_agent_runtime.gd")
 const AgentMainIntegrationTest = preload("res://tests/test_agent_main_integration.gd")
 const AgentClientConfigTest = preload("res://tests/test_agent_client_config.gd")
+const AgentStreamingTest = preload("res://tests/test_agent_streaming.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -16,6 +17,8 @@ func _run() -> void:
 	var assertions := TestAssertScript.new()
 	var config_test := AgentClientConfigTest.new()
 	config_test.run(assertions)
+	var streaming_test := AgentStreamingTest.new()
+	streaming_test.run(assertions)
 	var test := AgentWorldStateTest.new()
 	test.run(assertions, self)
 	var action_test := AgentActionExecutionTest.new()

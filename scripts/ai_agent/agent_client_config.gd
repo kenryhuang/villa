@@ -1,7 +1,8 @@
 extends RefCounted
 
 const DEFAULT_PATH := "res://config/agent-client.local.json"
-const ALLOWED_FIELDS := ["enabled", "service_url", "token", "timeout_seconds"]
+const REQUIRED_FIELDS := ["enabled", "service_url", "token", "timeout_seconds"]
+const ALLOWED_FIELDS := ["enabled", "service_url", "token", "timeout_seconds", "store_agent_session"]
 
 
 static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
@@ -15,9 +16,7 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 	if not parsed is Dictionary:
 		return _failure("invalid_json")
 	var data := parsed as Dictionary
-	if data.size() != ALLOWED_FIELDS.size():
-		return _failure("invalid_fields")
-	for field in ALLOWED_FIELDS:
+	for field in REQUIRED_FIELDS:
 		if not data.has(field):
 			return _failure("missing_" + field)
 	for field in data:
@@ -29,6 +28,8 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 		return _failure("invalid_connection_fields")
 	if typeof(data.timeout_seconds) not in [TYPE_INT, TYPE_FLOAT]:
 		return _failure("invalid_timeout_seconds")
+	if data.has("store_agent_session") and typeof(data.store_agent_session) != TYPE_BOOL:
+		return _failure("invalid_store_agent_session")
 	var timeout_seconds := float(data.timeout_seconds)
 	if not is_finite(timeout_seconds) or timeout_seconds < 0.1 or timeout_seconds > 120.0:
 		return _failure("invalid_timeout_seconds")
@@ -45,6 +46,7 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 			"service_url": service_url,
 			"token": str(data.token),
 			"timeout_seconds": timeout_seconds,
+			"store_agent_session": bool(data.get("store_agent_session", false)),
 		},
 	}
 

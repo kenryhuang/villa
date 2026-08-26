@@ -9,12 +9,14 @@ func run(assertions: TestAssert) -> void:
 		"service_url": "http://127.0.0.1:8787/",
 		"token": "local-token",
 		"timeout_seconds": 12.5,
+		"store_agent_session": true,
 	})
 	var loaded := AgentClientConfigScript.load_file(valid_path)
 	assertions.truthy(loaded.ok, "valid Agent client configuration loads")
 	assertions.equal(loaded.value.service_url, "http://127.0.0.1:8787", "service URL normalizes")
 	assertions.equal(loaded.value.token, "local-token", "service token loads")
 	assertions.near(loaded.value.timeout_seconds, 12.5, 0.001, "service timeout loads")
+	assertions.truthy(loaded.value.store_agent_session, "Agent session storage setting loads")
 
 	var disabled_path := _write_json("disabled", {
 		"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10,
@@ -22,6 +24,7 @@ func run(assertions: TestAssert) -> void:
 	var disabled := AgentClientConfigScript.load_file(disabled_path)
 	assertions.truthy(disabled.ok, "disabled Agent client configuration loads")
 	assertions.truthy(not disabled.value.enabled, "explicit disablement is preserved")
+	assertions.truthy(not disabled.value.store_agent_session, "missing Agent session storage defaults false")
 
 	assertions.truthy(
 		not AgentClientConfigScript.load_file("user://missing-agent-client-config.json").ok,
@@ -36,6 +39,7 @@ func run(assertions: TestAssert) -> void:
 		{"enabled": true, "service_url": "http://localhost:8787", "token": "", "timeout_seconds": 0.01},
 		{"enabled": "yes", "service_url": "http://localhost:8787", "token": "", "timeout_seconds": 10},
 		{"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10, "extra": true},
+		{"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10, "store_agent_session": "yes"},
 	]:
 		var invalid_path := _write_json("invalid-%d" % assertions.checks, fixture)
 		assertions.truthy(not AgentClientConfigScript.load_file(invalid_path).ok, "invalid Agent client configuration rejects")
