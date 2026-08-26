@@ -5,6 +5,8 @@ signal decision_stream_finished
 const AgentProtocolScript = preload("res://scripts/ai_agent/agent_protocol.gd")
 const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
 const AgentStreamClientScript = preload("res://scripts/ai_agent/agent_stream_client.gd")
+const AgentRegistryScript = preload("res://scripts/ai_agent/agent_registry.gd")
+const AgentActionValidatorScript = preload("res://scripts/ai_agent/agent_action_validator.gd")
 
 var _base_url := ""
 var _token := ""
@@ -67,14 +69,21 @@ func _run() -> void:
 		_fail("unexpected streaming event order: " + JSON.stringify(event_names))
 		return
 	var decision := {"ok": true, "code": 200, "body": streamed.response, "error": ""}
-	var parsed := AgentProtocolScript.parse_action_intent(
-		decision.body,
-		["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait"]
-	)
-	if not parsed.ok:
-		_fail("Provider returned invalid intent: " + str(parsed.error))
+	var registry = AgentRegistryScript.new()
+	if not registry.load_defaults():
+		_fail("unable to load Agent registry")
 		return
-	var intent := parsed.value as Dictionary
+	var checked := AgentActionValidatorScript.new().validate(decision.body, registry, 7)
+	if not checked.ok:
+		var argument_types := {}
+		for key in (decision.body.get("arguments", {}) as Dictionary):
+			argument_types[str(key)] = typeof(decision.body.arguments[key])
+		_fail(
+			"Provider returned invalid intent: %s; arguments=%s; types=%s"
+			% [str(checked.error), JSON.stringify(decision.body.get("arguments", {})), JSON.stringify(argument_types)]
+		)
+		return
+	var intent := checked.value as Dictionary
 	var outcome := {
 		"protocol_version": 1,
 		"decision_id": intent.decision_id,

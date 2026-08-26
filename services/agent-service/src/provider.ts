@@ -7,15 +7,7 @@ import {
   decodeProviderSse,
   type ProviderTraceEvent,
 } from "./provider_stream.ts";
-
-const toolDescription = (name: string) => ({
-  type: "function",
-  function: {
-    name,
-    description: `Role-authorized ${name} command. Return only arguments grounded in the supplied snapshot.`,
-    parameters: {type: "object", additionalProperties: true},
-  },
-});
+import {toolDescription} from "./tool_contracts.ts";
 
 export class OpenAICompatibleProvider {
   readonly #config: ProviderConfig;

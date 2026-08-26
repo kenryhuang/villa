@@ -57,7 +57,12 @@ func _exact_keys(arguments: Dictionary, expected: Array) -> bool:
 
 
 func _integer_in_range(value: Variant, minimum: int, maximum: int) -> bool:
-	return typeof(value) == TYPE_INT and int(value) >= minimum and int(value) <= maximum
+	if typeof(value) == TYPE_INT:
+		return int(value) >= minimum and int(value) <= maximum
+	if typeof(value) != TYPE_FLOAT:
+		return false
+	var numeric := float(value)
+	return is_finite(numeric) and numeric == floor(numeric) and numeric >= minimum and numeric <= maximum
 
 
 func _bounded_id(value: Variant) -> bool:

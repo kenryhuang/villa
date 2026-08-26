@@ -1,4 +1,5 @@
 import {parseActionIntent, type ActionIntent, type DecisionRequest} from "./protocol.ts";
+import {validToolArguments} from "./tool_contracts.ts";
 
 export type ProviderDelta =
   | {type: "reasoning"; delta: string}
@@ -176,6 +177,9 @@ export class AgentStreamAssembler {
     let args: unknown;
     try { args = JSON.parse(tool.arguments); }
     catch { throw new Error("provider_invalid_tool_arguments"); }
+    if (!validToolArguments(tool.name, args)) {
+      throw new Error("provider_invalid_intent:invalid_arguments");
+    }
     const rawMessage: ProviderRawMessage = {
       content: this.#content,
       reasoning_content: this.#reasoning,

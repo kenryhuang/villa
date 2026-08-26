@@ -29,6 +29,15 @@ func _test_validator(assertions: TestAssert) -> void:
 	assertions.equal(validator.validate(_intent("farmer_ahe", "buy", {"item_id": "wood", "quantity": 101}, 4, "p5"), registry, 4).error, "invalid_arguments", "oversized trade rejects")
 	assertions.equal(validator.validate(_intent("farmer_ahe", "build", {"building_type": "castle", "building_id": "x"}, 4, "p6"), registry, 4).error, "invalid_arguments", "arbitrary building type rejects")
 	assertions.equal(validator.validate(_intent("farmer_ahe", "till", {"plot": 0, "extra": true}, 4, "p7"), registry, 4).error, "invalid_arguments", "unexpected command fields reject")
+	var network_intent: Dictionary = JSON.parse_string(JSON.stringify(
+		_intent("farmer_ahe", "till", {"plot": 0}, 4, "network-integer")
+	))
+	assertions.equal(typeof(network_intent.arguments.plot), TYPE_FLOAT, "JSON transport decodes numeric arguments as floats")
+	assertions.truthy(validator.validate(network_intent, registry, 4).ok, "integer-valued JSON number passes")
+	var fractional_intent: Dictionary = JSON.parse_string(JSON.stringify(
+		_intent("farmer_ahe", "till", {"plot": 0.5}, 4, "network-fraction")
+	))
+	assertions.equal(validator.validate(fractional_intent, registry, 4).error, "invalid_arguments", "fractional JSON number rejects")
 
 
 func _test_real_farmer_flow(assertions: TestAssert, tree: SceneTree) -> void:

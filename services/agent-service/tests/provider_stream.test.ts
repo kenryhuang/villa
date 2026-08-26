@@ -53,8 +53,8 @@ test("assembles interleaved reasoning content and fragmented tool arguments", ()
   const emitted = [
     ...assembler.accept({id: "chat-1", choices: [{delta: {reasoning_content: "地块未"}, finish_reason: null}]}),
     ...assembler.accept({id: "chat-1", choices: [{delta: {reasoning_content: "开垦。", content: "我来"}, finish_reason: null}]}),
-    ...assembler.accept({id: "chat-1", choices: [{delta: {content: "整理土地。", tool_calls: [{index: 0, id: "call-1", type: "function", function: {name: "ti", arguments: "{\"plot_"}}]}, finish_reason: null}]}),
-    ...assembler.accept({id: "chat-1", choices: [{delta: {tool_calls: [{index: 0, function: {name: "ll", arguments: "index\":"}}]}, finish_reason: null}]}),
+    ...assembler.accept({id: "chat-1", choices: [{delta: {content: "整理土地。", tool_calls: [{index: 0, id: "call-1", type: "function", function: {name: "ti", arguments: "{\"pl"}}]}, finish_reason: null}]}),
+    ...assembler.accept({id: "chat-1", choices: [{delta: {tool_calls: [{index: 0, function: {name: "ll", arguments: "ot\":"}}]}, finish_reason: null}]}),
     ...assembler.accept({id: "chat-1", choices: [{delta: {tool_calls: [{index: 0, function: {arguments: "0}"}}]}, finish_reason: "tool_calls"}], usage: {total_tokens: 42}}),
   ];
   assert.deepEqual(emitted.map((event) => event.type), [
@@ -64,12 +64,68 @@ test("assembles interleaved reasoning content and fragmented tool arguments", ()
   assert.deepEqual(result.rawMessage, {
     content: "我来整理土地。",
     reasoning_content: "地块未开垦。",
-    tool_calls: [{id: "call-1", type: "function", function: {name: "till", arguments: "{\"plot_index\":0}"}}],
+    tool_calls: [{id: "call-1", type: "function", function: {name: "till", arguments: "{\"plot\":0}"}}],
   });
   assert.equal(result.finishReason, "tool_calls");
   assert.deepEqual(result.usage, {total_tokens: 42});
   assert.equal(result.intent.tool_name, "till");
-  assert.deepEqual(result.intent.arguments, {plot_index: 0});
+  assert.deepEqual(result.intent.arguments, {plot: 0});
+});
+
+function assemblerFor(toolName: string, args: Record<string, unknown>): AgentStreamAssembler {
+  const assembler = new AgentStreamAssembler();
+  assembler.accept({choices: [{delta: {tool_calls: [{
+    index: 0,
+    id: `call-${toolName}`,
+    function: {name: toolName, arguments: JSON.stringify(args)},
+  }]}, finish_reason: "tool_calls"}]});
+  return assembler;
+}
+
+test("rejects Provider tool arguments outside the authoritative contract", () => {
+  const invalidCases: Array<[string, Record<string, unknown>]> = [
+    ["till", {plot_index: "0"}],
+    ["plant", {plot: 0, seed_item_id: "invented_seed"}],
+    ["sell", {item_id: "salt", quantity: "4", price: "5"}],
+    ["build", {building_type: "castle", building_id: "home-1"}],
+    ["travel", {region_id: "moon", duration_minutes: 60}],
+    ["survey", {direction: "surroundings", purpose: "探索"}],
+    ["collect_sample", {discovery_id: "invented_discovery"}],
+    ["wait", {minutes: 30}],
+  ];
+  for (const [toolName, args] of invalidCases) {
+    assert.throws(
+      () => assemblerFor(toolName, args).finish(request, [toolName]),
+      /provider_invalid_intent:invalid_arguments/,
+      `${toolName} rejects ${JSON.stringify(args)}`,
+    );
+  }
+});
+
+test("accepts exact Provider tool arguments for every contract shape", () => {
+  const validCases: Array<[string, Record<string, unknown>]> = [
+    ["till", {plot: 0}],
+    ["harvest", {plot: 255}],
+    ["plant", {plot: 2, seed_item_id: "carrot_seed"}],
+    ["buy", {item_id: "salt", quantity: 4}],
+    ["sell", {item_id: "grain", quantity: 1}],
+    ["prepare_supplies", {item_id: "rope", quantity: 2}],
+    ["propose_trade", {item_id: "bread", quantity: 3}],
+    ["build", {building_type: "barn", building_id: "barn-1"}],
+    ["travel", {region_id: "creek", duration_minutes: 60}],
+    ["survey", {region_id: "forest"}],
+    ["collect_sample", {discovery_id: "crop:moonflower"}],
+    ["register_discovery", {discovery_id: "terrain:cliff"}],
+    ["speak", {}],
+    ["wait", {}],
+  ];
+  for (const [toolName, args] of validCases) {
+    assert.deepEqual(
+      assemblerFor(toolName, args).finish(request, [toolName]).intent.arguments,
+      args,
+      `${toolName} accepts ${JSON.stringify(args)}`,
+    );
+  }
 });
 
 test("rejects incomplete or multiple final tool calls", () => {

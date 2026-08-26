@@ -16,6 +16,11 @@ const request: DecisionRequest = {
   snapshot: {inventory: {carrot_seed: 6}}, event_delta: [],
 };
 
+const ALL_TOOLS = [
+  "till", "plant", "harvest", "build", "buy", "sell", "speak", "wait",
+  "propose_trade", "prepare_supplies", "travel", "survey", "collect_sample", "register_discovery",
+];
+
 function configuredProvider(baseUrl: string, apiKey: string): {provider: ProviderConfig; cleanup: () => void} {
   const root = mkdtempSync(join(tmpdir(), "villa-provider-config-"));
   const path = join(root, "agent-service.json");
@@ -48,15 +53,59 @@ test("sends credentials only in the header and accepts one role tool", async () 
   const config = configuredProvider(`http://127.0.0.1:${address.port}`, "test-key");
   const registry = AgentRegistry.loadDefault();
   const provider = new OpenAICompatibleProvider(config.provider);
-  const intent = await provider.decide(request, registry.buildContext("farmer_ahe", request.snapshot, [], []));
+  const context = registry.buildContext("farmer_ahe", request.snapshot, [], []);
+  const intent = await provider.decide(request, {...context, allowed_tools: ALL_TOOLS});
   await new Promise<void>((resolve) => server.close(() => resolve()));
   config.cleanup();
   assert.equal(intent.tool_name, "plant");
   assert.equal(intent.expected_revision, 7);
   assert.equal(capturedHeaders.authorization, "Bearer test-key");
   assert.equal(capturedBody.includes("test-key"), false);
-  assert.equal(JSON.parse(capturedBody).tool_choice, "auto");
-  assert.equal(JSON.parse(capturedBody).stream, true);
+  const providerBody = JSON.parse(capturedBody) as {
+    tool_choice: string;
+    stream: boolean;
+    tools: Array<{function: {name: string; parameters: Record<string, unknown>}}>;
+  };
+  assert.equal(providerBody.tool_choice, "auto");
+  assert.equal(providerBody.stream, true);
+  assert.deepEqual(providerBody.tools.map((tool) => tool.function.name), ALL_TOOLS);
+  const byName = new Map(providerBody.tools.map((tool) => [tool.function.name, tool.function.parameters]));
+  assert.deepEqual(byName.get("till"), {
+    type: "object",
+    properties: {plot: {type: "integer", minimum: 0, maximum: 255}},
+    required: ["plot"],
+    additionalProperties: false,
+  });
+  assert.deepEqual(byName.get("plant"), {
+    type: "object",
+    properties: {
+      plot: {type: "integer", minimum: 0, maximum: 255},
+      seed_item_id: {type: "string", enum: [
+        "tomato_seed", "carrot_seed", "potato_seed", "grain_seed",
+        "lavender_seed", "grape_seed", "lemon_sapling",
+      ]},
+    },
+    required: ["plot", "seed_item_id"],
+    additionalProperties: false,
+  });
+  assert.deepEqual(byName.get("sell"), {
+    type: "object",
+    properties: {
+      item_id: {type: "string", minLength: 1, maxLength: 80},
+      quantity: {type: "integer", minimum: 1, maximum: 100},
+    },
+    required: ["item_id", "quantity"],
+    additionalProperties: false,
+  });
+  assert.deepEqual(byName.get("survey"), {
+    type: "object",
+    properties: {region_id: {type: "string", enum: ["creek", "hills", "forest"]}},
+    required: ["region_id"],
+    additionalProperties: false,
+  });
+  assert.deepEqual(byName.get("wait"), {
+    type: "object", properties: {}, required: [], additionalProperties: false,
+  });
 });
 
 test("compresses selected events through the configured real Provider", async () => {
