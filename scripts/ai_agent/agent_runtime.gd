@@ -1,6 +1,6 @@
 extends Node
 
-signal dialogue_ready(agent_id: String, speech: String)
+signal dialogue_ready(agent_id: String, request_id: String, speech: String)
 signal dialogue_stream_started(agent_id: String, request_id: String)
 signal dialogue_stream_delta(agent_id: String, request_id: String, delta: String)
 signal dialogue_stream_failed(agent_id: String, request_id: String, error: String)
@@ -320,8 +320,6 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 		if trigger == "dialogue":
 			dialogue_stream_failed.emit(agent_id, request_id, str((data.payload as Dictionary).get("code", "stream_error")))
 		_request_triggers.erase(request_id)
-	elif event_name == "stream.completed":
-		_request_triggers.erase(request_id)
 
 
 func _handle_stream_failure(agent_id: String, request_id: String, error: String) -> void:
@@ -331,7 +329,9 @@ func _handle_stream_failure(agent_id: String, request_id: String, error: String)
 
 
 func _handle_response(agent_id: String, response: Dictionary) -> void:
-	_request_triggers.erase(str(response.get("request_id", "")))
+	var request_id := str(response.get("request_id", ""))
+	var trigger := str(_request_triggers.get(request_id, ""))
+	_request_triggers.erase(request_id)
 	var checked := validator.validate(response, registry, executor.world_revision)
 	if not checked.ok:
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
@@ -341,8 +341,8 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		_publish("warning", "%s 的动作失败：%s" % [agent_id, str(outcome.get("failure_code", "unknown"))], {"agent_id": agent_id})
 	else:
 		_publish_committed_outcome(agent_id, outcome)
-	if response.has("speech") and not str(response.speech).is_empty():
-		dialogue_ready.emit(agent_id, str(response.speech))
+	if trigger == "dialogue" and response.has("speech") and not str(response.speech).is_empty():
+		dialogue_ready.emit(agent_id, request_id, str(response.speech))
 	if service_enabled:
 		gateway.report_outcome(agent_id, session_id, outcome)
 

@@ -25,6 +25,7 @@ const GridPathfinderScript := preload("res://scripts/systems/grid_pathfinder.gd"
 const GatheringControllerScript := preload("res://scripts/systems/gathering_controller.gd")
 const DebugStateEditorScript := preload("res://scripts/debug/debug_state_editor.gd")
 const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
+const AgentDebugWindowScene := preload("res://scenes/ui/agent_debug_window.tscn")
 const HudMessageBusScript := preload("res://scripts/ui/hud_message_bus.gd")
 const AgentRuntimeScript := preload("res://scripts/ai_agent/agent_runtime.gd")
 const NEW_GAME_STARTER_ITEMS := {
@@ -106,6 +107,7 @@ var puzzle_system: PuzzleSystem
 var save_manager: Node
 var debug_state_editor: Variant
 var debug_panel: Variant
+var agent_debug_window: Variant
 var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModalCoordinator
 
 # 建筑容器
@@ -135,6 +137,16 @@ func _sync_save_slot() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if (
+		OS.is_debug_build()
+		and event is InputEventKey
+		and event.pressed
+		and not event.echo
+		and event.keycode == KEY_F8
+	):
+		_on_agent_debug_requested()
+		get_viewport().set_input_as_handled()
+		return
 	if (
 		OS.is_debug_build()
 		and event is InputEventKey
@@ -291,6 +303,14 @@ func _connect_systems() -> bool:
 	var agent_dialogue_callback := Callable(self, "_on_agent_dialogue_ready")
 	if not agent_runtime.is_connected("dialogue_ready", agent_dialogue_callback):
 		agent_runtime.connect("dialogue_ready", agent_dialogue_callback)
+	for signal_record in [
+		{"name": "dialogue_stream_started", "method": "_on_agent_dialogue_stream_started"},
+		{"name": "dialogue_stream_delta", "method": "_on_agent_dialogue_stream_delta"},
+		{"name": "dialogue_stream_failed", "method": "_on_agent_dialogue_stream_failed"},
+	]:
+		var callback := Callable(self, str(signal_record.method))
+		if not agent_runtime.is_connected(str(signal_record.name), callback):
+			agent_runtime.connect(str(signal_record.name), callback)
 
 	if not item_container_router.configure(inventory_system, farm_storage_system):
 		return false
@@ -609,6 +629,10 @@ func _setup_ui() -> void:
 		if hud.has_signal("building_unlock_requested") and not hud.building_unlock_requested.is_connected(unlock_callback):
 			hud.building_unlock_requested.connect(unlock_callback)
 	_setup_runtime_debug_tools()
+	if dialogue_ui and dialogue_ui.has_signal("agent_dialogue_cancelled"):
+		var cancel_agent_dialogue_callback := Callable(self, "_on_agent_dialogue_cancelled")
+		if not dialogue_ui.is_connected("agent_dialogue_cancelled", cancel_agent_dialogue_callback):
+			dialogue_ui.connect("agent_dialogue_cancelled", cancel_agent_dialogue_callback)
 
 	# 背包 UI
 	if inventory_ui:
@@ -705,12 +729,27 @@ func _setup_runtime_debug_tools() -> void:
 	var refresh_callback := Callable(self, "_on_debug_panel_refresh_requested")
 	if not debug_panel.refresh_requested.is_connected(refresh_callback):
 		debug_panel.refresh_requested.connect(refresh_callback)
+	var agent_debug_callback := Callable(self, "_on_agent_debug_requested")
+	if not debug_panel.agent_debug_requested.is_connected(agent_debug_callback):
+		debug_panel.agent_debug_requested.connect(agent_debug_callback)
+	agent_debug_window = AgentDebugWindowScene.instantiate()
+	agent_debug_window.name = "AgentDebugWindow"
+	add_child(agent_debug_window)
+	if not agent_debug_window.configure(agent_runtime.call("get_session_trace")):
+		agent_debug_window.queue_free()
+		agent_debug_window = null
+		push_error("Unable to configure Agent debug window.")
 
 
 func _on_debug_panel_requested() -> void:
 	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
 		return
 	debug_panel.open(debug_state_editor.snapshot())
+
+
+func _on_agent_debug_requested() -> void:
+	if OS.is_debug_build() and agent_debug_window != null:
+		agent_debug_window.toggle()
 
 
 func _on_debug_panel_apply_requested(draft: Dictionary) -> void:
@@ -1244,15 +1283,34 @@ func _on_dialogue_started(villager_id: String) -> void:
 		and bool(agent_runtime.call("is_agent_managed", villager_id))
 		and bool(agent_runtime.call("trigger_dialogue", villager_id))
 	):
-		_publish_hud_message("agent", "info", "%s 正在思考……" % villager_id)
 		return
 	if dialogue_ui:
 		dialogue_ui.start_dialogue(villager_id)
 
 
-func _on_agent_dialogue_ready(villager_id: String, speech: String) -> void:
-	if dialogue_ui and dialogue_ui.has_method("start_agent_dialogue"):
-		dialogue_ui.call("start_agent_dialogue", villager_id, speech)
+func _on_agent_dialogue_stream_started(villager_id: String, request_id: String) -> void:
+	if dialogue_ui and dialogue_ui.has_method("begin_agent_dialogue"):
+		dialogue_ui.call("begin_agent_dialogue", villager_id, request_id)
+
+
+func _on_agent_dialogue_stream_delta(_villager_id: String, request_id: String, delta: String) -> void:
+	if dialogue_ui and dialogue_ui.has_method("append_agent_dialogue"):
+		dialogue_ui.call("append_agent_dialogue", request_id, delta)
+
+
+func _on_agent_dialogue_stream_failed(_villager_id: String, request_id: String, _error: String) -> void:
+	if dialogue_ui and dialogue_ui.has_method("fail_agent_dialogue"):
+		dialogue_ui.call("fail_agent_dialogue", request_id, "我现在有点忙，晚些再聊吧。")
+
+
+func _on_agent_dialogue_ready(_villager_id: String, request_id: String, speech: String) -> void:
+	if dialogue_ui and dialogue_ui.has_method("finish_agent_dialogue"):
+		dialogue_ui.call("finish_agent_dialogue", request_id, speech)
+
+
+func _on_agent_dialogue_cancelled(villager_id: String, request_id: String) -> void:
+	if agent_runtime != null and agent_runtime.has_method("cancel_dialogue"):
+		agent_runtime.call("cancel_dialogue", villager_id, request_id)
 
 
 func _on_build_mode_entered() -> void:

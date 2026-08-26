@@ -1,0 +1,110 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/agent_debug_window.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="PanelStyle"]
+content_margin_left = 18.0
+content_margin_top = 18.0
+content_margin_right = 18.0
+content_margin_bottom = 18.0
+bg_color = Color(0.08, 0.09, 0.11, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.7, 0.58, 0.8)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="AgentDebugWindow" type="CanvasLayer"]
+layer = 60
+script = ExtResource("1_script")
+
+[node name="Overlay" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.025, 0.03, 0.62)
+
+[node name="Center" type="CenterContainer" parent="Overlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Overlay/Center"]
+custom_minimum_size = Vector2(1120, 680)
+layout_mode = 2
+theme_override_styles/panel = SubResource("PanelStyle")
+
+[node name="Margin" type="MarginContainer" parent="Overlay/Center/Panel"]
+layout_mode = 2
+
+[node name="Layout" type="VBoxContainer" parent="Overlay/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Overlay/Center/Panel/Margin/Layout"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Overlay/Center/Panel/Margin/Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.78, 0.96, 0.86, 1)
+theme_override_font_sizes/font_size = 22
+text = "Agent 流式调试"
+
+[node name="ClearButton" type="Button" parent="Overlay/Center/Panel/Margin/Layout/Header"]
+custom_minimum_size = Vector2(90, 38)
+layout_mode = 2
+text = "清空"
+
+[node name="CloseButton" type="Button" parent="Overlay/Center/Panel/Margin/Layout/Header"]
+custom_minimum_size = Vector2(90, 38)
+layout_mode = 2
+text = "关闭"
+
+[node name="Body" type="HSplitContainer" parent="Overlay/Center/Panel/Margin/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 310
+
+[node name="RequestList" type="ItemList" parent="Overlay/Center/Panel/Margin/Layout/Body"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+allow_reselect = true
+
+[node name="Details" type="VBoxContainer" parent="Overlay/Center/Panel/Margin/Layout/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Status" type="Label" parent="Overlay/Center/Panel/Margin/Layout/Body/Details"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72, 0.83, 0.78, 1)
+text = "尚无 Agent 请求"
+
+[node name="Tabs" type="TabContainer" parent="Overlay/Center/Panel/Margin/Layout/Body/Details"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Input" type="TextEdit" parent="Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs"]
+layout_mode = 2
+editable = false
+wrap_mode = 1
+
+[node name="Reasoning" type="TextEdit" parent="Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs"]
+layout_mode = 2
+editable = false
+wrap_mode = 1
+
+[node name="Output" type="TextEdit" parent="Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs"]
+layout_mode = 2
+editable = false
+wrap_mode = 1

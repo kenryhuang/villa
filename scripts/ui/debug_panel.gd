@@ -3,6 +3,7 @@ extends CanvasLayer
 
 signal apply_requested(draft: Dictionary)
 signal refresh_requested
+signal agent_debug_requested
 
 const EconomyLimitsScript := preload("res://scripts/core/economy_limits.gd")
 const PlayerStateScript := preload("res://scripts/data/player_state.gd")
@@ -41,6 +42,7 @@ const CATEGORY_NAMES := {
 @onready var item_rows: VBoxContainer = $Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows
 @onready var status_label: Label = $Overlay/Center/Panel/Layout/Footer/Status
 @onready var refresh_button: Button = $Overlay/Center/Panel/Layout/Footer/RefreshButton
+@onready var agent_debug_button: Button = $Overlay/Center/Panel/Layout/Footer/AgentDebugButton
 @onready var cancel_button: Button = $Overlay/Center/Panel/Layout/Footer/CancelButton
 @onready var apply_button: Button = $Overlay/Center/Panel/Layout/Footer/ApplyButton
 
@@ -60,6 +62,7 @@ func _ready() -> void:
 	cancel_button.pressed.connect(close)
 	apply_button.pressed.connect(_on_apply_pressed)
 	refresh_button.pressed.connect(_on_refresh_pressed)
+	agent_debug_button.pressed.connect(func(): agent_debug_requested.emit())
 	search_input.text_changed.connect(_on_search_changed)
 	category_input.item_selected.connect(_on_category_selected)
 	show_empty_check.toggled.connect(_on_show_empty_toggled)
