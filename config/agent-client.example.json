@@ -3,5 +3,6 @@
   "service_url": "http://127.0.0.1:8787",
   "token": "",
   "timeout_seconds": 10,
-  "store_agent_session": false
+  "store_agent_session": false,
+  "agent_session_directory": "user://agent_sessions"
 }

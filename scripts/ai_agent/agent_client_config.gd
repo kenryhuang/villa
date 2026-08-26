@@ -1,8 +1,16 @@
 extends RefCounted
 
 const DEFAULT_PATH := "res://config/agent-client.local.json"
+const DEFAULT_SESSION_DIRECTORY := "user://agent_sessions"
 const REQUIRED_FIELDS := ["enabled", "service_url", "token", "timeout_seconds"]
-const ALLOWED_FIELDS := ["enabled", "service_url", "token", "timeout_seconds", "store_agent_session"]
+const ALLOWED_FIELDS := [
+	"enabled",
+	"service_url",
+	"token",
+	"timeout_seconds",
+	"store_agent_session",
+	"agent_session_directory",
+]
 
 
 static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
@@ -30,6 +38,11 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 		return _failure("invalid_timeout_seconds")
 	if data.has("store_agent_session") and typeof(data.store_agent_session) != TYPE_BOOL:
 		return _failure("invalid_store_agent_session")
+	if data.has("agent_session_directory") and (
+		typeof(data.agent_session_directory) != TYPE_STRING
+		or str(data.agent_session_directory).strip_edges().is_empty()
+	):
+		return _failure("invalid_agent_session_directory")
 	var timeout_seconds := float(data.timeout_seconds)
 	if not is_finite(timeout_seconds) or timeout_seconds < 0.1 or timeout_seconds > 120.0:
 		return _failure("invalid_timeout_seconds")
@@ -47,6 +60,9 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 			"token": str(data.token),
 			"timeout_seconds": timeout_seconds,
 			"store_agent_session": bool(data.get("store_agent_session", false)),
+			"agent_session_directory": str(
+				data.get("agent_session_directory", DEFAULT_SESSION_DIRECTORY)
+			).strip_edges(),
 		},
 	}
 

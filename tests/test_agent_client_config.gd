@@ -10,13 +10,20 @@ func run(assertions: TestAssert) -> void:
 		"token": "local-token",
 		"timeout_seconds": 12.5,
 		"store_agent_session": true,
+		"agent_session_directory": "D:/UnityProject/villa/tmp",
 	})
 	var loaded := AgentClientConfigScript.load_file(valid_path)
 	assertions.truthy(loaded.ok, "valid Agent client configuration loads")
-	assertions.equal(loaded.value.service_url, "http://127.0.0.1:8787", "service URL normalizes")
-	assertions.equal(loaded.value.token, "local-token", "service token loads")
-	assertions.near(loaded.value.timeout_seconds, 12.5, 0.001, "service timeout loads")
-	assertions.truthy(loaded.value.store_agent_session, "Agent session storage setting loads")
+	if loaded.ok:
+		assertions.equal(loaded.value.service_url, "http://127.0.0.1:8787", "service URL normalizes")
+		assertions.equal(loaded.value.token, "local-token", "service token loads")
+		assertions.near(loaded.value.timeout_seconds, 12.5, 0.001, "service timeout loads")
+		assertions.truthy(loaded.value.store_agent_session, "Agent session storage setting loads")
+		assertions.equal(
+			loaded.value.agent_session_directory,
+			"D:/UnityProject/villa/tmp",
+			"Agent session directory loads",
+		)
 
 	var disabled_path := _write_json("disabled", {
 		"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10,
@@ -25,6 +32,16 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(disabled.ok, "disabled Agent client configuration loads")
 	assertions.truthy(not disabled.value.enabled, "explicit disablement is preserved")
 	assertions.truthy(not disabled.value.store_agent_session, "missing Agent session storage defaults false")
+	assertions.truthy(
+		disabled.value.has("agent_session_directory"),
+		"missing Agent session directory produces a compatibility value",
+	)
+	if disabled.value.has("agent_session_directory"):
+		assertions.equal(
+			disabled.value.agent_session_directory,
+			"user://agent_sessions",
+			"missing Agent session directory keeps compatibility default",
+		)
 
 	assertions.truthy(
 		not AgentClientConfigScript.load_file("user://missing-agent-client-config.json").ok,
@@ -40,6 +57,8 @@ func run(assertions: TestAssert) -> void:
 		{"enabled": "yes", "service_url": "http://localhost:8787", "token": "", "timeout_seconds": 10},
 		{"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10, "extra": true},
 		{"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10, "store_agent_session": "yes"},
+		{"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10, "agent_session_directory": ""},
+		{"enabled": false, "service_url": "", "token": "", "timeout_seconds": 10, "agent_session_directory": 42},
 	]:
 		var invalid_path := _write_json("invalid-%d" % assertions.checks, fixture)
 		assertions.truthy(not AgentClientConfigScript.load_file(invalid_path).ok, "invalid Agent client configuration rejects")
