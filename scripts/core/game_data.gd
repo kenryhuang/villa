@@ -368,6 +368,11 @@ static func get_all_buildings() -> Array:
 # ============================================================
 
 const VILLAGERS := {
+	"farmer_ahe": {
+		"id": "farmer_ahe", "name": "阿禾", "role": "农民",
+		"schedule": {6: "home", 8: "farm", 12: "farm", 13: "farm", 17: "wander", 19: "home", 21: "home"},
+		"affinity_rewards": {"order": 10, "gift": 6, "chat": 2},
+	},
 	"lao_li": {
 		"id": "lao_li", "name": "老李", "role": "杂货商",
 		"schedule": {6: "home", 8: "shop", 12: "shop", 13: "shop", 17: "wander", 19: "home", 21: "home", "8-12": "shop"},
@@ -406,6 +411,14 @@ static func get_all_villagers() -> Array:
 
 
 const NPC_ECONOMY_PROFILES := [
+	{
+		"id": "farmer_ahe", "display_name": "阿禾", "gold": 500,
+		"inventory": {"grain_seed": 8, "carrot_seed": 6, "potato_seed": 6},
+		"essential_targets": {"grain": 3},
+		"reserve_targets": {"grain_seed": 4, "carrot_seed": 3, "potato_seed": 3},
+		"production_recipes": [], "sale_targets": {"grain": 2, "carrot": 2, "potato": 2},
+		"investment_gold_threshold": 900, "import_buffer": false,
+	},
 	{
 		"id": "lao_li", "display_name": "老李", "gold": 800,
 		"inventory": {"salt": 8, "grain_seed": 6},
