@@ -5,6 +5,7 @@ import { loadConfig } from "../src/config.ts";
 import { OpenAICompatibleProvider } from "../src/provider.ts";
 import { AgentRegistry } from "../src/agents.ts";
 import type { DecisionRequest } from "../src/protocol.ts";
+import type { MemoryEvent } from "../src/memory.ts";
 
 const request: DecisionRequest = {
   protocol_version: 1, request_id: "req-1", session_id: "save-0", session_epoch: 1,
@@ -50,4 +51,25 @@ test("sends credentials only in the header and accepts one role tool", async () 
   assert.equal(intent.expected_revision, 7);
   assert.equal(capturedHeaders.authorization, "Bearer test-key");
   assert.equal(capturedBody.includes("test-key"), false);
+});
+
+test("compresses selected events through the configured real Provider", async () => {
+  const server: Server = createServer((_incoming, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({
+      id: "memory-1", choices: [{message: {content: JSON.stringify({summary: "阿禾完成了首次胡萝卜丰收。", importance: 8})}}],
+    }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const provider = new OpenAICompatibleProvider(loadConfig({
+    AGENT_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
+    AGENT_PROVIDER_API_KEY: "memory-key", AGENT_PROVIDER_MODEL: "test-model",
+  }).provider);
+  const agent = AgentRegistry.loadDefault().get("farmer_ahe"); assert.ok(agent);
+  const events: MemoryEvent[] = [{event_id: "harvest-1", kind: "harvest", game_minute: 600, importance: 7, payload: {carrot: 4}}];
+  const memory = await provider.compactMemory(agent, events);
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  assert.equal(memory.summary, "阿禾完成了首次胡萝卜丰收。");
+  assert.equal(memory.importance, 8);
 });

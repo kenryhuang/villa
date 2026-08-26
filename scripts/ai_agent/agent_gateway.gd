@@ -50,6 +50,26 @@ func report_outcome(agent_id: String, session_id: String, outcome: Dictionary) -
 	return request.request(_base_url + "/v1/agents/" + agent_id.uri_encode() + "/outcomes", headers, HTTPClient.METHOD_POST, JSON.stringify(outcome)) == OK
 
 
+func sync_session(session_id: String, reset: bool, callback: Callable = Callable()) -> bool:
+	return _request_json(
+		"/v1/sessions/sync",
+		{"session_id": session_id, "session_epoch": session_epoch, "reset": reset},
+		callback
+	)
+
+
+func export_checkpoint(session_id: String, checkpoint_id: String, callback: Callable) -> bool:
+	return _request_json(
+		"/v1/checkpoints/export",
+		{"session_id": session_id, "checkpoint_id": checkpoint_id},
+		callback
+	)
+
+
+func import_checkpoint(record: Dictionary, callback: Callable) -> bool:
+	return _request_json("/v1/checkpoints/import", record, callback)
+
+
 func bump_epoch() -> int:
 	session_epoch += 1
 	cancel_all()
@@ -62,6 +82,31 @@ func cancel_all() -> void:
 		request.cancel_request()
 		request.queue_free()
 	_requests.clear()
+
+
+func _request_json(path: String, body: Dictionary, callback: Callable) -> bool:
+	if _base_url.is_empty():
+		return false
+	var request := HTTPRequest.new()
+	request.timeout = _timeout_seconds
+	add_child(request)
+	var headers := PackedStringArray(["Content-Type: application/json"])
+	if not _token.is_empty():
+		headers.append("Authorization: Bearer " + _token)
+	request.request_completed.connect(
+		func(result: int, code: int, _headers: PackedStringArray, response_body: PackedByteArray):
+			var value: Variant = JSON.parse_string(response_body.get_string_from_utf8())
+			var success := result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300 and value is Dictionary
+			if callback.is_valid():
+				callback.call(success, value if value is Dictionary else {}, "" if success else "http_%d_result_%d" % [code, result])
+			request.queue_free(),
+		CONNECT_ONE_SHOT
+	)
+	var error := request.request(_base_url + path, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+	if error != OK:
+		request.queue_free()
+		return false
+	return true
 
 
 func _on_request_completed(

@@ -36,3 +36,31 @@ test("scores important events and round trips one session checkpoint", () => {
   source.close(); restored.close();
   rmSync(directory, {recursive: true, force: true});
 });
+
+test("compacts twenty important events into searchable long-term memory", () => {
+  const directory = mkdtempSync(join(tmpdir(), "villa-agent-compaction-"));
+  const repository = new MemoryRepository(join(directory, "memory.sqlite"));
+  repository.syncSession("save-a", 1);
+  for (let index = 0; index < 20; index += 1) {
+    repository.appendEvent("save-a", "xuezhe_lin", {
+      event_id: `discovery-${index}`, kind: "discovery", game_minute: index,
+      payload: {region: "north_creek", specimen: `sample-${index}`}, importance: 7,
+    });
+  }
+  assert.equal(repository.shouldCompact("save-a", "xuezhe_lin"), true);
+  const candidates = repository.compactionCandidates("save-a", "xuezhe_lin", 20);
+  assert.equal(candidates.length, 20);
+  repository.storeLongTermMemory(
+    "save-a", "xuezhe_lin", "memory-north-creek",
+    "学者林在北溪发现了一组新样本。", 8, candidates.map((event) => event.event_id),
+  );
+  assert.equal(repository.shouldCompact("save-a", "xuezhe_lin"), false);
+  assert.equal(repository.recall("save-a", "xuezhe_lin", "北溪", 5).length, 1);
+  assert.equal(repository.recall("save-a", "farmer_ahe", "北溪", 5).length, 0);
+  const checkpoint = repository.exportCheckpoint("save-a", directory, "with-memory");
+  const restored = new MemoryRepository(join(directory, "restored.sqlite"));
+  restored.importCheckpoint(checkpoint.path, checkpoint.sha256, "save-a");
+  assert.equal(restored.recall("save-a", "xuezhe_lin", "北溪", 5).length, 1);
+  repository.close(); restored.close();
+  rmSync(directory, {recursive: true, force: true});
+});

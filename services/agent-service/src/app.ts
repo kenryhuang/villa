@@ -1,10 +1,30 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { AgentRegistry } from "./agents.ts";
 import type { MemoryRepository } from "./memory.ts";
 import { parseActionOutcome, parseDecisionRequest, type ActionIntent, type DecisionRequest } from "./protocol.ts";
 
-interface ProviderPort { decide(request: DecisionRequest, context: ReturnType<AgentRegistry["buildContext"]>): Promise<ActionIntent>; }
+interface ProviderPort {
+  decide(request: DecisionRequest, context: ReturnType<AgentRegistry["buildContext"]>): Promise<ActionIntent>;
+  compactMemory?(agent: NonNullable<ReturnType<AgentRegistry["get"]>>, events: ReturnType<MemoryRepository["recent"]>): Promise<{summary: string; importance: number}>;
+}
 interface AppDependencies { memory: MemoryRepository; registry: AgentRegistry; provider: ProviderPort; checkpointRoot: string; }
+
+async function compactMemoryIfDue(dependencies: AppDependencies, sessionId: string, agentId: string): Promise<void> {
+  if (!dependencies.provider.compactMemory || !dependencies.memory.shouldCompact(sessionId, agentId)) return;
+  const agent = dependencies.registry.get(agentId);
+  const events = dependencies.memory.compactionCandidates(sessionId, agentId, 20);
+  if (!agent || events.length < 20) return;
+  try {
+    const compacted = await dependencies.provider.compactMemory(agent, events);
+    dependencies.memory.storeLongTermMemory(
+      sessionId, agentId, `memory:${sessionId}:${agentId}:${events[0].event_id}:${events.at(-1)?.event_id}`,
+      compacted.summary, compacted.importance, events.map((event) => event.event_id),
+    );
+  } catch {
+    // Raw events remain uncompacted and eligible for a later retry.
+  }
+}
 
 const send = (response: ServerResponse, status: number, body: unknown): void => {
   response.statusCode = status;
@@ -37,7 +57,8 @@ export function createApp(dependencies: AppDependencies) {
       if (url.pathname === "/v1/sessions/sync") {
         const record = body as Record<string, unknown>;
         if (!record || typeof record.session_id !== "string" || !Number.isSafeInteger(record.session_epoch)) throw new Error("invalid_session");
-        dependencies.memory.syncSession(record.session_id, Number(record.session_epoch));
+        if (record.reset === true) dependencies.memory.resetSession(record.session_id, Number(record.session_epoch));
+        else dependencies.memory.syncSession(record.session_id, Number(record.session_epoch));
         send(response, 200, {status: "synced"}); return;
       }
       const decisionMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)\/decide$/);
@@ -45,12 +66,16 @@ export function createApp(dependencies: AppDependencies) {
         const parsed = parseDecisionRequest(body);
         if (!parsed.ok) throw new Error(parsed.error);
         if (parsed.value.agent_id !== decisionMatch[1]) { send(response, 409, {error: {code: "AGENT_MISMATCH"}}); return; }
-        const cached = dependencies.memory.getIdempotent(`decision:${parsed.value.request_id}`);
+        const decisionKey = `decision:${parsed.value.session_id}:${parsed.value.request_id}`;
+        const cached = dependencies.memory.getIdempotent(decisionKey);
         if (cached) { send(response, 200, cached); return; }
-        const memories = dependencies.memory.recent(parsed.value.session_id, parsed.value.agent_id, 12);
+        const memories = [
+          ...dependencies.memory.longTermRecent(parsed.value.session_id, parsed.value.agent_id, 8),
+          ...dependencies.memory.recent(parsed.value.session_id, parsed.value.agent_id, 8),
+        ];
         const context = dependencies.registry.buildContext(parsed.value.agent_id, parsed.value.snapshot, parsed.value.event_delta, memories);
         const intent = await dependencies.provider.decide(parsed.value, context);
-        dependencies.memory.storeIdempotent(`decision:${parsed.value.request_id}`, intent);
+        dependencies.memory.storeIdempotent(decisionKey, intent);
         dependencies.memory.appendEvent(parsed.value.session_id, parsed.value.agent_id, {
           event_id: `decision:${intent.decision_id}`, kind: "decision", game_minute: parsed.value.game_minute,
           payload: {tool_name: intent.tool_name, decision_summary: intent.decision_summary},
@@ -61,16 +86,17 @@ export function createApp(dependencies: AppDependencies) {
       if (outcomeMatch) {
         const parsed = parseActionOutcome(body);
         if (!parsed.ok) throw new Error(parsed.error);
-        const key = `outcome:${parsed.value.idempotency_key}`;
-        if (dependencies.memory.getIdempotent(key)) { send(response, 200, {status: "duplicate"}); return; }
-        dependencies.memory.storeIdempotent(key, parsed.value);
         const sessionId = String(request.headers["x-session-id"] || "");
         if (!sessionId) throw new Error("missing_session_id");
+        const key = `outcome:${sessionId}:${parsed.value.idempotency_key}`;
+        if (dependencies.memory.getIdempotent(key)) { send(response, 200, {status: "duplicate"}); return; }
+        dependencies.memory.storeIdempotent(key, parsed.value);
         dependencies.memory.appendEvent(sessionId, outcomeMatch[1], {
           event_id: key, kind: parsed.value.status === "completed" ? "action_completed" : "action_result",
           game_minute: parsed.value.game_minute,
           payload: {status: parsed.value.status, resource_delta: parsed.value.resource_delta, changed_entities: parsed.value.changed_entities},
         });
+        await compactMemoryIfDue(dependencies, sessionId, outcomeMatch[1]);
         send(response, 202, {status: "accepted"}); return;
       }
       if (url.pathname === "/v1/checkpoints/export") {
@@ -81,7 +107,11 @@ export function createApp(dependencies: AppDependencies) {
       if (url.pathname === "/v1/checkpoints/import") {
         const record = body as Record<string, unknown>;
         if (typeof record?.session_id !== "string" || typeof record?.path !== "string" || typeof record?.sha256 !== "string") throw new Error("invalid_checkpoint_request");
-        dependencies.memory.importCheckpoint(record.path, record.sha256, record.session_id);
+        const root = resolve(dependencies.checkpointRoot);
+        const checkpointPath = resolve(record.path);
+        const checkpointRelative = relative(root, checkpointPath);
+        if (checkpointRelative.startsWith("..") || isAbsolute(checkpointRelative)) throw new Error("invalid_checkpoint_path");
+        dependencies.memory.importCheckpoint(checkpointPath, record.sha256, record.session_id);
         send(response, 200, {status: "imported"}); return;
       }
       send(response, 404, {error: {code: "NOT_FOUND"}});

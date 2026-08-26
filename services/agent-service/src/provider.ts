@@ -1,5 +1,6 @@
-import type { AgentContext } from "./agents.ts";
+import type { AgentContext, AgentDefinition } from "./agents.ts";
 import type { ProviderConfig } from "./config.ts";
+import type { MemoryEvent } from "./memory.ts";
 import { parseActionIntent, type ActionIntent, type DecisionRequest } from "./protocol.ts";
 
 const toolDescription = (name: string) => ({
@@ -44,7 +45,9 @@ export class OpenAICompatibleProvider {
       const payload = await response.json() as Record<string, unknown>;
       const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0];
       const message = choice?.message as Record<string, unknown> | undefined;
-      const call = (message?.tool_calls as Array<Record<string, unknown>> | undefined)?.[0];
+      const calls = message?.tool_calls as Array<Record<string, unknown>> | undefined;
+      if (!calls || calls.length !== 1) throw new Error("provider_requires_exactly_one_tool_call");
+      const call = calls[0];
       const fn = call?.function as Record<string, unknown> | undefined;
       if (!fn || typeof fn.name !== "string" || typeof fn.arguments !== "string") throw new Error("provider_missing_tool_call");
       let args: unknown;
@@ -65,6 +68,42 @@ export class OpenAICompatibleProvider {
       const parsed = parseActionIntent(intent, context.allowed_tools);
       if (!parsed.ok) throw new Error(`provider_invalid_intent:${parsed.error}`);
       return parsed.value;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async compactMemory(agent: AgentDefinition, events: MemoryEvent[]): Promise<{summary: string; importance: number}> {
+    if (events.length === 0) throw new Error("memory_compaction_requires_events");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.#config.timeoutMs);
+    try {
+      const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
+        ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
+      const response = await fetch(endpoint, {
+        method: "POST", signal: controller.signal,
+        headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
+        body: JSON.stringify({
+          model: this.#config.model, temperature: Math.min(0.3, this.#config.temperature),
+          max_tokens: Math.min(600, this.#config.maxOutputTokens), response_format: {type: "json_object"},
+          messages: [
+            {role: "system", content: "Compress verified NPC events into one factual long-term memory. Return JSON with summary and importance (1-10). Do not invent facts."},
+            {role: "user", content: JSON.stringify({agent: {id: agent.agent_id, soul: agent.soul, goals: agent.goals}, events})},
+          ],
+        }),
+      });
+      if (!response.ok) throw new Error(`provider_http_${response.status}`);
+      const payload = await response.json() as Record<string, unknown>;
+      const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0];
+      const message = choice?.message as Record<string, unknown> | undefined;
+      if (typeof message?.content !== "string") throw new Error("provider_missing_memory_content");
+      let value: unknown;
+      try { value = JSON.parse(message.content); } catch { throw new Error("provider_invalid_memory_json"); }
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("provider_invalid_memory");
+      const record = value as Record<string, unknown>;
+      if (typeof record.summary !== "string" || !record.summary.trim() || record.summary.length > 1200) throw new Error("provider_invalid_memory_summary");
+      if (!Number.isSafeInteger(record.importance) || Number(record.importance) < 1 || Number(record.importance) > 10) throw new Error("provider_invalid_memory_importance");
+      return {summary: record.summary.trim(), importance: Number(record.importance)};
     } finally {
       clearTimeout(timeout);
     }

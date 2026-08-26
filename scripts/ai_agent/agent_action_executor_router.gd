@@ -23,6 +23,42 @@ var _publish_hud: Callable
 var _outcomes: Dictionary = {}
 
 
+func to_dict() -> Dictionary:
+	return {"world_revision": world_revision, "outcomes": _outcomes.duplicate(true)}
+
+
+func validate_dict(value: Dictionary) -> bool:
+	if int(value.get("world_revision", -1)) < 0 or not value.get("outcomes") is Dictionary:
+		return false
+	for key in (value.outcomes as Dictionary):
+		var outcome_value: Variant = value.outcomes[key]
+		if (
+			typeof(key) != TYPE_STRING
+			or str(key).is_empty()
+			or not outcome_value is Dictionary
+		):
+			return false
+		var outcome := outcome_value as Dictionary
+		if (
+			str(outcome.get("idempotency_key", "")) != str(key)
+			or not str(outcome.get("status", "")) in ["accepted", "in_progress", "completed", "rejected", "failed"]
+			or int(outcome.get("committed_revision", -1)) < 0
+			or int(outcome.get("committed_revision", -1)) > int(value.world_revision)
+			or not outcome.get("changed_entities") is Array
+			or not outcome.get("resource_delta") is Dictionary
+		):
+			return false
+	return true
+
+
+func from_dict(value: Dictionary) -> bool:
+	if not validate_dict(value):
+		return false
+	world_revision = int(value.world_revision)
+	_outcomes = (value.outcomes as Dictionary).duplicate(true)
+	return true
+
+
 func configure(
 	registry: Variant,
 	farm: Variant,
@@ -55,7 +91,7 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 	if int(intent.get("expected_revision", -1)) != world_revision:
 		return _failure(intent, game_minute, "stale_world_revision")
 	var arguments: Dictionary = intent.get("arguments", {})
-	var result := _execute_tool(agent_id, tool_name, arguments, game_minute, idempotency_key)
+	var result := _execute_tool(agent_id, tool_name, arguments, game_minute, idempotency_key, str(intent.get("decision_id", "")))
 	if not result.ok:
 		return _failure(intent, game_minute, str(result.error))
 	if bool(result.get("mutated", false)):
@@ -89,14 +125,15 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 			if _buildings.call("add_building", str(record.agent_id), str(payload.building_type), str(payload.building_id), game_minute):
 				changed.append("npc_building:" + str(payload.building_id))
 		world_revision += 1
-		var outcome := {"status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
+		var outcome := {"protocol_version": 1, "decision_id": str(record.payload.get("decision_id", "")), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
+		_outcomes[str(record.activity_id)] = outcome.duplicate(true)
 		outcomes.append(outcome)
 		if _publish_hud.is_valid():
 			_publish_hud.call(message)
 	return outcomes
 
 
-func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String) -> Dictionary:
+func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String) -> Dictionary:
 	match tool_name:
 		"till":
 			var plot := int(arguments.get("plot", -1))
@@ -112,13 +149,13 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 		"travel":
 			var region_id := str(arguments.get("region_id", ""))
 			var duration := clampi(int(arguments.get("duration_minutes", 60)), 10, 240)
-			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id}):
+			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id, "decision_id": decision_id}):
 				return _error("travel_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s出发前往%s。" % [_display_name(agent_id), region_id], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"build":
 			var building_type := str(arguments.get("building_type", ""))
 			var building_id := str(arguments.get("building_id", key))
-			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id}):
+			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id}):
 				return _error("build_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s开始建造%s。" % [_display_name(agent_id), building_type], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"survey":
@@ -138,7 +175,9 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 			if item_id.is_empty() or not _economy.call("receive_item", agent_id, item_id, 1):
 				return _error("sample_unavailable")
 			return _success("%s采集了%s。" % [_display_name(agent_id), item_id], ["npc_inventory:" + agent_id], {item_id: 1})
-		"prepare_supplies", "propose_trade", "speak", "wait":
+		"prepare_supplies":
+			return _trade(agent_id, "buy", arguments)
+		"propose_trade", "speak", "wait":
 			return {"ok": true, "mutated": false, "message": "", "changed_entities": [], "resource_delta": {}}
 	return _error("unsupported_tool")
 

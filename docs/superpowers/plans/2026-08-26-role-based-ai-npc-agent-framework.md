@@ -8,6 +8,8 @@
 
 **Tech Stack:** Godot 4.7/GDScript, Node.js 24, TypeScript 5, Node built-in HTTP/fetch and `node:sqlite`, OpenAI-compatible tool-calling HTTP API, repository SceneTree test harness.
 
+**Execution status (2026-08-26):** Tasks 1–8 are implemented. Offline Agent/service verification passes; the credential-dependent real Provider smoke is available and was skipped because no Provider environment was configured. Existing unrelated trade/save-suite baselines are recorded in `docs/validation/role-agent-framework-validation.md`.
+
 ---
 
 ## File map

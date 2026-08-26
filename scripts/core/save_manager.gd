@@ -3,6 +3,7 @@ extends Node
 ## 存档系统 - JSON 格式存档/读档
 
 signal load_completed(slot: int)
+signal save_completed(slot: int)
 
 const SAVE_DIR = "user://villa_saves/"
 const SAVE_PREFIX = "save_"
@@ -159,6 +160,7 @@ func save_game(slot: int = 0) -> bool:
 	file.close()
 
 	print("Game saved to slot %d" % slot)
+	save_completed.emit(slot)
 	return true
 
 
@@ -529,9 +531,11 @@ func has_save(slot: int) -> bool:
 
 func clear_save(slot: int) -> bool:
 	var file_path := _save_path(slot)
-	if not FileAccess.file_exists(file_path):
-		return true
-	return DirAccess.remove_absolute(file_path) == OK
+	var removed := not FileAccess.file_exists(file_path) or DirAccess.remove_absolute(file_path) == OK
+	var agent_manifest := save_directory.path_join("save_%d.agent-memory.json" % slot)
+	if FileAccess.file_exists(agent_manifest):
+		removed = DirAccess.remove_absolute(agent_manifest) == OK and removed
+	return removed
 
 
 func _save_path(slot: int) -> String:
