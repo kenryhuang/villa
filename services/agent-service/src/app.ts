@@ -3,9 +3,16 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { AgentRegistry } from "./agents.ts";
 import type { MemoryRepository } from "./memory.ts";
 import { parseActionOutcome, parseDecisionRequest, type ActionIntent, type DecisionRequest } from "./protocol.ts";
+import type {ProviderTraceEvent} from "./provider_stream.ts";
 
 interface ProviderPort {
   decide(request: DecisionRequest, context: ReturnType<AgentRegistry["buildContext"]>): Promise<ActionIntent>;
+  streamDecision?(
+    request: DecisionRequest,
+    context: ReturnType<AgentRegistry["buildContext"]>,
+    emit: (event: ProviderTraceEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<ActionIntent>;
   compactMemory?(agent: NonNullable<ReturnType<AgentRegistry["get"]>>, events: ReturnType<MemoryRepository["recent"]>): Promise<{summary: string; importance: number}>;
 }
 interface AppDependencies { memory: MemoryRepository; registry: AgentRegistry; provider: ProviderPort; checkpointRoot: string; }
@@ -31,6 +38,38 @@ const send = (response: ServerResponse, status: number, body: unknown): void => 
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(JSON.stringify(body));
 };
+
+function decisionContext(dependencies: AppDependencies, request: DecisionRequest) {
+  const memories = [
+    ...dependencies.memory.longTermRecent(request.session_id, request.agent_id, 8),
+    ...dependencies.memory.recent(request.session_id, request.agent_id, 8),
+  ];
+  return dependencies.registry.buildContext(request.agent_id, request.snapshot, request.event_delta, memories);
+}
+
+function storeDecision(
+  dependencies: AppDependencies,
+  request: DecisionRequest,
+  decisionKey: string,
+  intent: ActionIntent,
+): void {
+  dependencies.memory.storeIdempotent(decisionKey, intent);
+  dependencies.memory.appendEvent(request.session_id, request.agent_id, {
+    event_id: `decision:${intent.decision_id}`,
+    kind: "decision",
+    game_minute: request.game_minute,
+    payload: {tool_name: intent.tool_name, decision_summary: intent.decision_summary},
+  });
+}
+
+function beginSse(response: ServerResponse): void {
+  response.statusCode = 200;
+  response.setHeader("content-type", "text/event-stream; charset=utf-8");
+  response.setHeader("cache-control", "no-cache, no-transform");
+  response.setHeader("connection", "keep-alive");
+  response.setHeader("x-accel-buffering", "no");
+  response.flushHeaders();
+}
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -61,6 +100,92 @@ export function createApp(dependencies: AppDependencies) {
         else dependencies.memory.syncSession(record.session_id, Number(record.session_epoch));
         send(response, 200, {status: "synced"}); return;
       }
+      const streamMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)\/decide\/stream$/);
+      if (streamMatch) {
+        const parsed = parseDecisionRequest(body);
+        if (!parsed.ok) throw new Error(parsed.error);
+        const decisionRequest = parsed.value;
+        if (decisionRequest.agent_id !== streamMatch[1]) {
+          send(response, 409, {error: {code: "AGENT_MISMATCH"}}); return;
+        }
+        const decisionKey = `decision:${decisionRequest.session_id}:${decisionRequest.request_id}`;
+        const cached = dependencies.memory.getIdempotent(decisionKey) as ActionIntent | undefined;
+        beginSse(response);
+        let sequence = 0;
+        const writeEvent = (name: string, payload: unknown): void => {
+          if (response.destroyed || response.writableEnded) return;
+          sequence += 1;
+          const envelope = {
+            protocol_version: 1,
+            stream_id: `${decisionRequest.request_id}:stream`,
+            request_id: decisionRequest.request_id,
+            agent_id: decisionRequest.agent_id,
+            sequence,
+            timestamp_msec: Date.now(),
+            payload,
+          };
+          response.write(`id: ${sequence}\nevent: ${name}\ndata: ${JSON.stringify(envelope)}\n\n`);
+        };
+        if (cached) {
+          writeEvent("decision.final", cached);
+          writeEvent("stream.completed", {status: "completed", cached: true});
+          response.end();
+          return;
+        }
+        writeEvent("stream.started", {trigger: decisionRequest.trigger});
+        const controller = new AbortController();
+        let finished = false;
+        const cancel = () => { if (!finished) controller.abort(); };
+        request.once("aborted", cancel);
+        response.once("close", cancel);
+        const heartbeat = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) response.write(": heartbeat\n\n");
+        }, 5_000);
+        try {
+          if (!dependencies.provider.streamDecision) throw new Error("provider_streaming_unavailable");
+          const emit = (event: ProviderTraceEvent): void => {
+            switch (event.type) {
+              case "input": writeEvent("provider.input", event.body); break;
+              case "reasoning": writeEvent("reasoning.delta", {delta: event.delta}); break;
+              case "content": writeEvent("content.delta", {delta: event.delta}); break;
+              case "tool_call": writeEvent("tool_call.delta", {
+                index: event.index,
+                ...(event.id !== undefined ? {id: event.id} : {}),
+                ...(event.name !== undefined ? {name: event.name} : {}),
+                ...(event.arguments !== undefined ? {arguments: event.arguments} : {}),
+              }); break;
+              case "output": writeEvent("provider.output", event.output); break;
+            }
+          };
+          const intent = await dependencies.provider.streamDecision(
+            decisionRequest,
+            decisionContext(dependencies, decisionRequest),
+            emit,
+            controller.signal,
+          );
+          if (!controller.signal.aborted) {
+            storeDecision(dependencies, decisionRequest, decisionKey, intent);
+            writeEvent("decision.final", intent);
+            writeEvent("stream.completed", {status: "completed", cached: false});
+          }
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            const message = error instanceof Error ? error.message : "unknown_error";
+            writeEvent("stream.error", {
+              code: message,
+              message,
+              retryable: message.includes("timeout") || message.startsWith("provider_http_5"),
+            });
+          }
+        } finally {
+          finished = true;
+          clearInterval(heartbeat);
+          request.removeListener("aborted", cancel);
+          response.removeListener("close", cancel);
+          if (!response.destroyed && !response.writableEnded) response.end();
+        }
+        return;
+      }
       const decisionMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)\/decide$/);
       if (decisionMatch) {
         const parsed = parseDecisionRequest(body);
@@ -69,17 +194,9 @@ export function createApp(dependencies: AppDependencies) {
         const decisionKey = `decision:${parsed.value.session_id}:${parsed.value.request_id}`;
         const cached = dependencies.memory.getIdempotent(decisionKey);
         if (cached) { send(response, 200, cached); return; }
-        const memories = [
-          ...dependencies.memory.longTermRecent(parsed.value.session_id, parsed.value.agent_id, 8),
-          ...dependencies.memory.recent(parsed.value.session_id, parsed.value.agent_id, 8),
-        ];
-        const context = dependencies.registry.buildContext(parsed.value.agent_id, parsed.value.snapshot, parsed.value.event_delta, memories);
+        const context = decisionContext(dependencies, parsed.value);
         const intent = await dependencies.provider.decide(parsed.value, context);
-        dependencies.memory.storeIdempotent(decisionKey, intent);
-        dependencies.memory.appendEvent(parsed.value.session_id, parsed.value.agent_id, {
-          event_id: `decision:${intent.decision_id}`, kind: "decision", game_minute: parsed.value.game_minute,
-          payload: {tool_name: intent.tool_name, decision_summary: intent.decision_summary},
-        });
+        storeDecision(dependencies, parsed.value, decisionKey, intent);
         send(response, 200, intent); return;
       }
       const outcomeMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)\/outcomes$/);
