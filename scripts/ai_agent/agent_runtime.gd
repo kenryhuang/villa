@@ -338,15 +338,16 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	if not checked.ok:
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
 		return
-	var outcome: Dictionary = executor.execute(checked.value, _absolute_game_minute())
-	if outcome.status in ["rejected", "failed"]:
-		_publish("warning", "%s 的动作失败：%s" % [agent_id, str(outcome.get("failure_code", "unknown"))], {"agent_id": agent_id})
-	else:
-		_publish_committed_outcome(agent_id, outcome)
+	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
+	for outcome in outcomes:
+		if outcome.status in ["rejected", "failed"]:
+			_publish("warning", "%s 的动作失败：%s" % [agent_id, str(outcome.get("failure_code", "unknown"))], {"agent_id": agent_id})
+		else:
+			_publish_committed_outcome(agent_id, outcome)
+		if service_enabled:
+			gateway.report_outcome(agent_id, session_id, outcome)
 	if trigger == "dialogue" and response.has("speech") and not str(response.speech).is_empty():
 		dialogue_ready.emit(agent_id, request_id, str(response.speech))
-	if service_enabled:
-		gateway.report_outcome(agent_id, session_id, outcome)
 
 
 func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:

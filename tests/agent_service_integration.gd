@@ -29,6 +29,9 @@ func _run() -> void:
 	var health := await _send("GET", "/health", {})
 	if not _expect_success(health, "health"):
 		return
+	if int(health.body.get("protocol_version", -1)) != 2:
+		_fail("Agent Service health did not advertise protocol v2")
+		return
 	var suffix := str(Time.get_ticks_msec())
 	var session_id := "acceptance-" + suffix
 	var request_id := "request-" + suffix
@@ -75,31 +78,31 @@ func _run() -> void:
 		return
 	var checked := AgentActionValidatorScript.new().validate(decision.body, registry, 7)
 	if not checked.ok:
-		var argument_types := {}
-		for key in (decision.body.get("arguments", {}) as Dictionary):
-			argument_types[str(key)] = typeof(decision.body.arguments[key])
 		_fail(
-			"Provider returned invalid intent: %s; arguments=%s; types=%s"
-			% [str(checked.error), JSON.stringify(decision.body.get("arguments", {})), JSON.stringify(argument_types)]
+			"Provider returned invalid v2 intent: %s; actions=%s"
+			% [str(checked.error), JSON.stringify(decision.body.get("actions", []))]
 		)
 		return
 	var intent := checked.value as Dictionary
-	var outcome := {
-		"protocol_version": 1,
-		"decision_id": intent.decision_id,
-		"idempotency_key": intent.idempotency_key,
-		"status": "completed",
-		"committed_revision": 8,
-		"changed_entities": ["acceptance:farmer_ahe"],
-		"resource_delta": {},
-		"hud_message": "Connected Provider acceptance outcome",
-		"game_minute": 480,
-	}
-	if not _expect_success(
-		await _send("POST", "/v1/agents/farmer_ahe/outcomes", outcome, session_id),
-		"outcome"
-	):
-		return
+	if not intent.actions.is_empty():
+		var first_action := intent.actions[0] as Dictionary
+		var outcome := {
+			"protocol_version": 2,
+			"decision_id": intent.decision_id,
+			"action_id": first_action.action_id,
+			"idempotency_key": first_action.idempotency_key,
+			"status": "completed",
+			"committed_revision": 8,
+			"changed_entities": ["acceptance:farmer_ahe"],
+			"resource_delta": {},
+			"hud_message": "Connected Provider acceptance outcome",
+			"game_minute": 480,
+		}
+		if not _expect_success(
+			await _send("POST", "/v1/agents/farmer_ahe/outcomes", outcome, session_id),
+			"outcome"
+		):
+			return
 	var checkpoint := await _send("POST", "/v1/checkpoints/export", {
 		"session_id": session_id, "checkpoint_id": "acceptance-" + suffix,
 	})
@@ -108,7 +111,7 @@ func _run() -> void:
 	if typeof(checkpoint.body.get("sha256")) != TYPE_STRING or str(checkpoint.body.sha256).length() != 64:
 		_fail("checkpoint export returned no checksum")
 		return
-	print("PASS: role agent service integration")
+	print("PASS: role agent service integration (v2 actions=%d)" % intent.actions.size())
 	quit(0)
 
 

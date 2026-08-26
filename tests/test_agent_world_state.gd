@@ -15,10 +15,10 @@ func run(assertions: TestAssert, _tree: SceneTree) -> void:
 
 
 func _test_protocol_and_profiles(assertions: TestAssert) -> void:
-	var text := FileAccess.get_file_as_string("res://shared/agent_protocol/v1/action-intent.json")
+	var text := FileAccess.get_file_as_string("res://shared/agent_protocol/v2/action-intent.json")
 	var parsed := AgentProtocolScript.parse_action_intent(JSON.parse_string(text), ["plant", "wait"])
 	assertions.truthy(parsed.ok, "Godot accepts role Agent intent fixture")
-	assertions.equal(parsed.value.tool_name, "plant", "Godot preserves command tool")
+	assertions.equal(parsed.value.actions[0].tool_name, "plant", "Godot preserves command tool")
 	assertions.truthy(not AgentProtocolScript.parse_action_intent(parsed.value, ["wait"]).ok, "Godot rejects unauthorized command")
 	var registry := AgentRegistryScript.new()
 	assertions.truthy(registry.load_defaults(), "Agent registry loads role data")

@@ -46,6 +46,28 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(economy.is_agent_managed("xuezhe_lin"), "explorer is removed from deterministic autonomy")
 	assertions.truthy(economy.is_agent_managed("farmer_ahe"), "farmer is Agent managed")
 	assertions.equal(runtime.farm_registry.get_plot("farmer_ahe", 11).plot_index, 11, "runtime creates twelve headless farmer plots")
+	var batch_response := {
+		"protocol_version": 2,
+		"decision_id": "runtime-batch",
+		"request_id": "runtime-request",
+		"agent_id": "farmer_ahe",
+		"expected_revision": 99,
+		"actions": [
+			{"action_id": "runtime-till", "idempotency_key": "v2:runtime:0:till", "tool_name": "till", "tool_version": 1, "arguments": {"plot": 0}},
+			{"action_id": "runtime-plant", "idempotency_key": "v2:runtime:1:plant", "tool_name": "plant", "tool_version": 1, "arguments": {"plot": 0, "seed_item_id": "carrot_seed"}},
+		],
+		"decision_summary": "prepare one crop",
+	}
+	runtime.call("_handle_response", "farmer_ahe", batch_response)
+	assertions.equal(runtime.farm_registry.get_plot("farmer_ahe", 0).state, "planted", "runtime executes every action in a v2 batch")
+	assertions.equal(runtime.executor.world_revision, 2, "runtime batch commits one revision per mutation")
+	var revision_before_empty: int = runtime.executor.world_revision
+	var empty_response := batch_response.duplicate(true)
+	empty_response.request_id = "runtime-empty-request"
+	empty_response.decision_id = "runtime-empty"
+	empty_response.actions = []
+	runtime.call("_handle_response", "farmer_ahe", empty_response)
+	assertions.equal(runtime.executor.world_revision, revision_before_empty, "empty runtime batch changes no world state")
 	var saved: Dictionary = runtime.to_dict()
 	var restored := AgentRuntimeScript.new()
 	tree.root.add_child(restored)

@@ -80,6 +80,20 @@ func configure(
 	return true
 
 
+func execute_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
+	var outcomes: Array[Dictionary] = []
+	for action_value in intent.get("actions", []):
+		var action := (action_value as Dictionary).duplicate(true)
+		action.agent_id = str(intent.get("agent_id", ""))
+		action.decision_id = str(intent.get("decision_id", ""))
+		action.expected_revision = int(intent.get("expected_revision", 0))
+		var outcome := execute(action, game_minute)
+		outcomes.append(outcome)
+		if str(outcome.get("status", "")) in ["rejected", "failed", "in_progress"]:
+			break
+	return outcomes
+
+
 func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 	var idempotency_key := str(intent.get("idempotency_key", ""))
 	if _outcomes.has(idempotency_key):
@@ -88,18 +102,25 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 	var tool_name := str(intent.get("tool_name", ""))
 	if not _registry.call("is_tool_allowed", agent_id, tool_name):
 		return _failure(intent, game_minute, "unauthorized_tool")
-	if int(intent.get("expected_revision", -1)) != world_revision:
-		return _failure(intent, game_minute, "stale_world_revision")
 	var arguments: Dictionary = intent.get("arguments", {})
-	var result := _execute_tool(agent_id, tool_name, arguments, game_minute, idempotency_key, str(intent.get("decision_id", "")))
+	var result := _execute_tool(
+		agent_id,
+		tool_name,
+		arguments,
+		game_minute,
+		idempotency_key,
+		str(intent.get("decision_id", "")),
+		str(intent.get("action_id", ""))
+	)
 	if not result.ok:
 		return _failure(intent, game_minute, str(result.error))
 	if bool(result.get("mutated", false)):
 		world_revision += 1
 	var status := str(result.get("status", "completed"))
 	var outcome := {
-		"protocol_version": 1,
+		"protocol_version": 2,
 		"decision_id": str(intent.get("decision_id", "")),
+		"action_id": str(intent.get("action_id", "")),
 		"idempotency_key": idempotency_key,
 		"status": status,
 		"committed_revision": world_revision,
@@ -125,7 +146,7 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 			if _buildings.call("add_building", str(record.agent_id), str(payload.building_type), str(payload.building_id), game_minute):
 				changed.append("npc_building:" + str(payload.building_id))
 		world_revision += 1
-		var outcome := {"protocol_version": 1, "decision_id": str(record.payload.get("decision_id", "")), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
+		var outcome := {"protocol_version": 2, "decision_id": str(record.payload.get("decision_id", "")), "action_id": str(record.payload.get("action_id", record.activity_id)), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
 		_outcomes[str(record.activity_id)] = outcome.duplicate(true)
 		outcomes.append(outcome)
 		if _publish_hud.is_valid():
@@ -133,7 +154,7 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 	return outcomes
 
 
-func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String) -> Dictionary:
+func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String) -> Dictionary:
 	match tool_name:
 		"till":
 			var plot := int(arguments.get("plot", -1))
@@ -149,13 +170,13 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 		"travel":
 			var region_id := str(arguments.get("region_id", ""))
 			var duration := clampi(int(arguments.get("duration_minutes", 60)), 10, 240)
-			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id, "decision_id": decision_id}):
+			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id, "decision_id": decision_id, "action_id": action_id}):
 				return _error("travel_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s出发前往%s。" % [_display_name(agent_id), region_id], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"build":
 			var building_type := str(arguments.get("building_type", ""))
 			var building_id := str(arguments.get("building_id", key))
-			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id}):
+			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id, "action_id": action_id}):
 				return _error("build_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s开始建造%s。" % [_display_name(agent_id), building_type], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"survey":
@@ -232,4 +253,4 @@ func _error(error: String) -> Dictionary:
 
 
 func _failure(intent: Dictionary, game_minute: int, error: String) -> Dictionary:
-	return {"protocol_version": 1, "decision_id": str(intent.get("decision_id", "")), "idempotency_key": str(intent.get("idempotency_key", "")), "status": "rejected", "failure_code": error, "committed_revision": world_revision, "changed_entities": [], "resource_delta": {}, "hud_message": "", "game_minute": game_minute}
+	return {"protocol_version": 2, "decision_id": str(intent.get("decision_id", "")), "action_id": str(intent.get("action_id", "")), "idempotency_key": str(intent.get("idempotency_key", "")), "status": "rejected", "failure_code": error, "committed_revision": world_revision, "changed_entities": [], "resource_delta": {}, "hud_message": "", "game_minute": game_minute}

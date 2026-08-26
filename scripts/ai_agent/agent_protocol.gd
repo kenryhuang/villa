@@ -1,6 +1,6 @@
 extends RefCounted
 
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
 
 
 static func parse_action_intent(value: Variant, allowed_tools: Array) -> Dictionary:
@@ -9,22 +9,49 @@ static func parse_action_intent(value: Variant, allowed_tools: Array) -> Diction
 	var data := value as Dictionary
 	if data.get("protocol_version") != PROTOCOL_VERSION:
 		return _failure("invalid_protocol_version")
-	for field in ["decision_id", "request_id", "agent_id", "idempotency_key", "tool_name"]:
+	for field in ["decision_id", "request_id", "agent_id"]:
 		if typeof(data.get(field)) != TYPE_STRING or str(data.get(field)).strip_edges().is_empty():
 			return _failure("invalid_" + field)
-	if data.get("tool_version") != 1:
-		return _failure("invalid_tool_version")
-	if not allowed_tools.has(str(data.tool_name)):
-		return _failure("unauthorized_tool")
 	if not _is_non_negative_integer(data.get("expected_revision")):
 		return _failure("invalid_expected_revision")
-	if not data.get("arguments") is Dictionary:
-		return _failure("invalid_arguments")
+	if not data.get("actions") is Array or data.actions.size() > 3:
+		return _failure("invalid_actions")
+	var action_ids := {}
+	var idempotency_keys := {}
+	var actions: Array[Dictionary] = []
+	for action_value in data.actions:
+		if not action_value is Dictionary:
+			return _failure("invalid_action")
+		var action := action_value as Dictionary
+		for field in ["action_id", "idempotency_key", "tool_name"]:
+			if typeof(action.get(field)) != TYPE_STRING or str(action.get(field)).strip_edges().is_empty():
+				return _failure("invalid_" + field)
+		var action_id := str(action.action_id)
+		var idempotency_key := str(action.idempotency_key)
+		if action_ids.has(action_id):
+			return _failure("duplicate_action_id")
+		if idempotency_keys.has(idempotency_key):
+			return _failure("duplicate_idempotency_key")
+		action_ids[action_id] = true
+		idempotency_keys[idempotency_key] = true
+		if action.get("tool_version") != 1:
+			return _failure("invalid_tool_version")
+		if not allowed_tools.has(str(action.tool_name)):
+			return _failure("unauthorized_tool")
+		if not action.get("arguments") is Dictionary:
+			return _failure("invalid_arguments")
+		actions.append(action.duplicate(true))
+	if actions.size() > 1:
+		for action in actions:
+			if str(action.tool_name) == "wait":
+				return _failure("wait_must_be_exclusive")
 	if typeof(data.get("decision_summary")) != TYPE_STRING or str(data.decision_summary).length() > 500:
 		return _failure("invalid_decision_summary")
 	if data.has("speech") and (typeof(data.speech) != TYPE_STRING or str(data.speech).length() > 500):
 		return _failure("invalid_speech")
-	return {"ok": true, "value": data.duplicate(true)}
+	var normalized := data.duplicate(true)
+	normalized.actions = actions
+	return {"ok": true, "value": normalized}
 
 
 static func make_decision_request(

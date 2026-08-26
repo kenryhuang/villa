@@ -7,7 +7,7 @@ const REGION_IDS := ["creek", "hills", "forest"]
 const DISCOVERY_IDS := ["crop:moonflower", "terrain:cliff", "crop:stardust_fruit"]
 
 
-func validate(intent: Variant, registry: Variant, current_revision: int) -> Dictionary:
+func validate(intent: Variant, registry: Variant, _current_revision: int) -> Dictionary:
 	if not intent is Dictionary:
 		return {"ok": false, "error": "invalid_envelope"}
 	var agent_id := str((intent as Dictionary).get("agent_id", ""))
@@ -19,10 +19,9 @@ func validate(intent: Variant, registry: Variant, current_revision: int) -> Dict
 	var parsed := AgentProtocolScript.parse_action_intent(intent, agent.get("tools", []))
 	if not parsed.ok:
 		return parsed
-	if int(parsed.value.expected_revision) != current_revision:
-		return {"ok": false, "error": "stale_world_revision"}
-	if not _valid_arguments(str(parsed.value.tool_name), parsed.value.arguments):
-		return {"ok": false, "error": "invalid_arguments"}
+	for action in parsed.value.actions:
+		if not _valid_arguments(str(action.tool_name), action.arguments):
+			return {"ok": false, "error": "invalid_arguments"}
 	return parsed
 
 

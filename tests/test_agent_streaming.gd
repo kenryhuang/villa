@@ -42,6 +42,10 @@ func _test_terminal_validation(assertions: TestAssert) -> void:
 	assertions.truthy(parser.feed(_event("decision.final", 1, {"tool_name": "wait"}).to_utf8_buffer()).ok, "first final is valid")
 	assertions.truthy(parser.feed(_event("stream.completed", 2, {"status": "completed"}).to_utf8_buffer()).ok, "completed follows final")
 	assertions.truthy(not parser.feed(_event("content.delta", 3, {"delta": "late"}).to_utf8_buffer()).ok, "events after completion reject")
+	var legacy = AgentSseParserScript.new()
+	var legacy_event := _event_value("stream.started", 1, {"trigger": "schedule"})
+	legacy_event.data.protocol_version = 1
+	assertions.truthy(not legacy.feed(("event: stream.started\ndata: %s\n\n" % JSON.stringify(legacy_event.data)).to_utf8_buffer()).ok, "v1 SSE envelope rejects")
 
 
 func _test_memory_trace(assertions: TestAssert) -> void:
@@ -98,7 +102,7 @@ func _event_value(name: String, sequence: int, payload: Dictionary) -> Dictionar
 
 func _envelope(sequence: int, payload: Dictionary) -> Dictionary:
 	return {
-		"protocol_version": 1,
+		"protocol_version": 2,
 		"stream_id": "request-1:stream",
 		"request_id": "request-1",
 		"agent_id": "farmer_ahe",

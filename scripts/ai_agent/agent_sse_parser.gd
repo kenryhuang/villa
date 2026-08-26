@@ -96,7 +96,7 @@ func _parse_record(source: String) -> Dictionary:
 
 
 func _validate_envelope(data: Dictionary) -> String:
-	if data.get("protocol_version") != 1:
+	if data.get("protocol_version") != 2:
 		return "invalid_protocol_version"
 	for field in ["stream_id", "request_id", "agent_id"]:
 		if typeof(data.get(field)) != TYPE_STRING or str(data.get(field)).is_empty():
