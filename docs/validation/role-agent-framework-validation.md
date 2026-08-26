@@ -1,17 +1,21 @@
 # Role-Based NPC Agent Framework Validation
 
-Validated on 2026-08-26 with Godot 4.7.1 stable and Node.js 24.19 on branch `feature/painted-production-buildings`.
+Validated on 2026-08-27 with Godot 4.7.1 stable and Node.js 24.19 on branch `feature/painted-production-buildings`.
 
 ## Passing evidence
 
 | Check | Result |
 |---|---|
-| `npm --prefix services/agent-service test` | Exit 0; 24/24 tests passed |
-| `godot_console --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 789/789 checks passed |
+| `npm --prefix services/agent-service test` | Exit 0; 25/25 tests passed |
+| `godot_console --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 813/813 checks passed |
 | `godot --headless --path . --quit-after 2` | Exit 0; main scene initialized without script errors |
-| `godot_console --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; real configured Provider decision passed the strict Godot tool validator, then outcome and checkpoint passed |
+| `godot_console --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; real Provider returned a valid protocol v2 decision with one action, then v2 outcome and checkpoint passed |
 
-The passing suites cover role-isolated Soul/goals/tools, exact Provider JSON Schemas, service-side tool argument validation, JSON integer transport into Godot, strict protocol validation, fragmented UTF-8 Provider SSE, reasoning/content/tool-call assembly, project SSE event ordering, disconnect cancellation, authoritative headless world mutations, idempotency, stale revisions, scheduling, streaming dialogue routing, bounded in-memory and NDJSON debug traces, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint checksum/path safety, and asynchronous memory sidecar coordination.
+The passing suites cover role-isolated Soul/goals/tools, exact Provider JSON Schemas, protocol v2 rejection of v1 traffic, zero-to-three ordered tool calls, empty decisions, per-action idempotency, fail-stop and in-progress-stop batch execution, current-state domain validation without global revision rejection or model retry, fragmented UTF-8 Provider SSE, streaming dialogue routing, bounded debug traces, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint safety, and asynchronous memory sidecar coordination.
+
+## Protocol v2 destructive migration
+
+Before the updated local service accepted any request, validation observed `PRAGMA user_version=2` and zero rows in `sessions`, `events`, `long_term_memories`, and `idempotency`. Six pre-v2 checkpoint SQLite files under the configured checkpoint root were removed. A non-SQLite preservation test proves checkpoint cleanup does not delete unrelated files, and a second v2 repository open proves the migration does not clear new data again.
 
 ## Existing repository baselines
 
@@ -32,7 +36,7 @@ The connected test requires all of:
 - `config/agent-client.local.json` with `enabled` set to `true` and the running service URL;
 - a running Agent Service.
 
-An ignored local credential configuration was used for the connected validation. No secret value was printed or persisted in trace output. The script verified health, session sync, `stream.started`, sanitized Provider input, optional reasoning/content/tool deltas, one Provider output, one final farmer intent accepted by `AgentActionValidator`, stream completion, outcome persistence, and checkpoint export. Additional real schedule requests produced `till {"plot":0}` for the farmer, `speak {}` for the merchant, and `survey {"region_id":"creek"}` for the explorer. Both local files are ignored by Git, and no environment-variable fallback exists.
+An ignored local credential configuration was used for the connected validation. No secret value was printed or persisted in trace output. The script verified protocol v2 health, session sync, `stream.started`, sanitized Provider input, optional reasoning/content/tool deltas, one Provider output, one final farmer batch accepted by `AgentActionValidator`, stream completion, per-action outcome persistence when non-empty, and checkpoint export. The observed real decision contained one valid action. Both local files are ignored by Git, and no environment-variable fallback exists.
 
 ## Intentional non-goals
 

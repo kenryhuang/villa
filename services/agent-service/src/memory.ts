@@ -53,13 +53,20 @@ export class MemoryRepository {
   }
 
   #resetSchema(): void {
-    this.#db.exec(`
-      DROP TABLE IF EXISTS memory_fts;
-      DROP TABLE IF EXISTS idempotency;
-      DROP TABLE IF EXISTS long_term_memories;
-      DROP TABLE IF EXISTS events;
-      DROP TABLE IF EXISTS sessions;
-    `);
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      this.#db.exec(`
+        DROP TABLE IF EXISTS memory_fts;
+        DROP TABLE IF EXISTS idempotency;
+        DROP TABLE IF EXISTS long_term_memories;
+        DROP TABLE IF EXISTS events;
+        DROP TABLE IF EXISTS sessions;
+      `);
+      this.#db.exec("COMMIT");
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   #initialize(): void {
