@@ -455,7 +455,10 @@ const NPC_ECONOMY_PROFILES := [
 	},
 	{
 		"id": "xuezhe_lin", "display_name": "学者林", "gold": 900,
-		"inventory": {"gold_ore": 2, "crystal": 1, "honey_cake": 1},
+		"inventory": {
+			"gold_ore": 2, "crystal": 1, "honey_cake": 1,
+			"rope": 2, "bread": 2,
+		},
 		"essential_targets": {"bread": 2},
 		"reserve_targets": {"crystal": 1, "honey_cake": 1},
 		"production_recipes": ["jewelry"], "sale_targets": {"jewelry": 1},

@@ -26,6 +26,7 @@ const GatheringControllerScript := preload("res://scripts/systems/gathering_cont
 const DebugStateEditorScript := preload("res://scripts/debug/debug_state_editor.gd")
 const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
 const HudMessageBusScript := preload("res://scripts/ui/hud_message_bus.gd")
+const AgentRuntimeScript := preload("res://scripts/ai_agent/agent_runtime.gd")
 const NEW_GAME_STARTER_ITEMS := {
 	"grain_seed": 99,
 	"wood": 99,
@@ -88,6 +89,7 @@ var economy_progression_system: EconomyProgressionSystem
 var npc_economy_system: NpcEconomySystem
 var economy_notification_system: EconomyNotificationSystem
 var hud_message_bus: Node
+var agent_runtime: Node
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
@@ -128,6 +130,8 @@ func _ready() -> void:
 func _sync_save_slot() -> void:
 	if save_manager != null:
 		save_manager.current_slot = save_slot
+	if agent_runtime != null and agent_runtime.has_method("set_save_slot"):
+		agent_runtime.call("set_save_slot", save_slot)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -184,6 +188,11 @@ func _initialize_systems() -> void:
 	npc_economy_system = NpcEconomySystemScript.new() as NpcEconomySystem
 	npc_economy_system.name = "NpcEconomySystem"
 	add_child(npc_economy_system)
+
+	agent_runtime = AgentRuntimeScript.new()
+	agent_runtime.name = "AgentRuntime"
+	add_child(agent_runtime)
+	agent_runtime.call("set_save_slot", save_slot)
 
 	daily_simulation_system = DailySimulationSystemScript.new()
 	daily_simulation_system.name = "DailySimulationSystem"
@@ -275,6 +284,13 @@ func _connect_systems() -> bool:
 		game_data.get_population_demand_profiles()
 	):
 		return false
+	if not bool(agent_runtime.call(
+		"configure", npc_economy_system, market_system, season_system, hud_message_bus
+	)):
+		return false
+	var agent_dialogue_callback := Callable(self, "_on_agent_dialogue_ready")
+	if not agent_runtime.is_connected("dialogue_ready", agent_dialogue_callback):
+		agent_runtime.connect("dialogue_ready", agent_dialogue_callback)
 
 	if not item_container_router.configure(inventory_system, farm_storage_system):
 		return false
@@ -364,6 +380,11 @@ func _connect_systems() -> bool:
 		farm_storage_system
 	))
 	if not save_manager_configured:
+		return false
+	if (
+		not save_manager.has_method("configure_agent_runtime")
+		or not bool(save_manager.call("configure_agent_runtime", agent_runtime))
+	):
 		return false
 	_connect_save_load_completed()
 	if not daily_simulation_system.configure(
@@ -1217,8 +1238,20 @@ func _on_debug_reset_requested() -> void:
 		push_error("Unable to reload the current scene: %s" % error_string(reload_error))
 
 func _on_dialogue_started(villager_id: String) -> void:
+	if (
+		agent_runtime != null
+		and bool(agent_runtime.call("is_agent_managed", villager_id))
+		and bool(agent_runtime.call("trigger_dialogue", villager_id))
+	):
+		_publish_hud_message("agent", "info", "%s 正在思考……" % villager_id)
+		return
 	if dialogue_ui:
 		dialogue_ui.start_dialogue(villager_id)
+
+
+func _on_agent_dialogue_ready(villager_id: String, speech: String) -> void:
+	if dialogue_ui and dialogue_ui.has_method("start_agent_dialogue"):
+		dialogue_ui.call("start_agent_dialogue", villager_id, speech)
 
 
 func _on_build_mode_entered() -> void:

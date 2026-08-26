@@ -44,6 +44,20 @@ func start_dialogue(villager_id: String) -> void:
 	_show_current_dialogue()
 
 
+func start_agent_dialogue(villager_id: String, speech: String) -> void:
+	var clean_speech := speech.strip_edges()
+	if clean_speech.is_empty():
+		return
+	_current_villager_id = villager_id
+	_current_dialogue_index = 0
+	_dialogues = [{"text": clean_speech, "choices": []}]
+	_is_open = true
+	visible = true
+	if panel:
+		panel.visible = true
+	_show_current_dialogue()
+
+
 func _show_current_dialogue() -> void:
 	if _current_dialogue_index >= _dialogues.size():
 		close()

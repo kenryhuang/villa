@@ -38,6 +38,7 @@ var _production_system: Variant
 var _notification_system: Variant
 var _state_transition_owner: Variant
 var _farm_storage_system: Variant
+var _agent_runtime: Variant
 var _restore_transaction_active := false
 var _restore_notification_participants: Array[Node] = []
 
@@ -126,6 +127,13 @@ func configure_economy(
 	_notification_system = notification_system
 	_state_transition_owner = state_transition_owner
 	_farm_storage_system = farm_storage_system
+	return true
+
+
+func configure_agent_runtime(agent_runtime: Variant) -> bool:
+	if not _has_methods(agent_runtime, ["to_dict", "from_dict", "validate_dict"]):
+		return false
+	_agent_runtime = agent_runtime
 	return true
 
 
@@ -245,6 +253,8 @@ func _gather_save_data() -> Dictionary:
 			data["production_upkeep"] = _production_system.call("to_dict")
 		if _has_valid_notification_configuration():
 			data["notifications"] = _notification_system.call("to_dict")
+	if _has_valid_agent_configuration():
+		data["agent_world"] = _agent_runtime.call("to_dict")
 
 	# 存档元数据
 	data["meta"] = {
@@ -375,6 +385,11 @@ func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> 
 		if not game_state.set_harvest_seed(int(data.harvest_seed)):
 			return false
 	if not _apply_economy_save_data(data):
+		return false
+	if data.has("agent_world") and (
+		not _has_valid_agent_configuration()
+		or not bool(_agent_runtime.call("from_dict", data["agent_world"]))
+	):
 		return false
 	if data.has("farm_storage"):
 		if (
@@ -656,6 +671,12 @@ func _validate_economy_save_data(data: Dictionary) -> bool:
 
 func _validate_save_data(data: Dictionary) -> bool:
 	if not _validate_economy_save_data(data):
+		return false
+	if data.has("agent_world") and (
+		not _has_valid_agent_configuration()
+		or not data["agent_world"] is Dictionary
+		or not bool(_agent_runtime.call("validate_dict", data["agent_world"]))
+	):
 		return false
 	var has_layout_snapshot := data.has("grid") or data.has("buildings")
 	if has_layout_snapshot:
@@ -1860,6 +1881,14 @@ func _has_valid_notification_configuration() -> bool:
 		and _has_methods(_notification_system, [
 			"to_dict", "from_dict", "validate_dict", "reset_notifications",
 		])
+	)
+
+
+func _has_valid_agent_configuration() -> bool:
+	return (
+		_agent_runtime != null
+		and is_instance_valid(_agent_runtime)
+		and _has_methods(_agent_runtime, ["to_dict", "from_dict", "validate_dict"])
 	)
 
 
