@@ -6,12 +6,12 @@ Validated on 2026-08-26 with Godot 4.7.1 stable and Node.js 24.19 on branch `fea
 
 | Check | Result |
 |---|---|
-| `npm --prefix services/agent-service test` | Exit 0; 16/16 tests passed |
-| `godot --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 100/100 checks passed |
+| `npm --prefix services/agent-service test` | Exit 0; 22/22 tests passed |
+| `godot --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 786/786 checks passed |
 | `godot --headless --path . --quit-after 2` | Exit 0; main scene initialized without script errors |
-| `godot --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; explicitly skipped because no enabled local client configuration was present |
+| `godot --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; real configured Provider streaming decision, outcome, and checkpoint passed |
 
-The passing suites cover role-isolated Soul/goals/tools, strict protocol validation, real OpenAI-compatible HTTP behavior through local fake endpoints, authoritative headless world mutations, idempotency, stale revisions, scheduling, event coalescing, dialogue routing, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint checksum/path safety, and asynchronous memory sidecar coordination.
+The passing suites cover role-isolated Soul/goals/tools, strict protocol validation, fragmented UTF-8 Provider SSE, reasoning/content/tool-call assembly, project SSE event ordering, disconnect cancellation, authoritative headless world mutations, idempotency, stale revisions, scheduling, streaming dialogue routing, bounded in-memory and NDJSON debug traces, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint checksum/path safety, and asynchronous memory sidecar coordination.
 
 ## Existing repository baselines
 
@@ -32,7 +32,7 @@ The connected test requires all of:
 - `config/agent-client.local.json` with `enabled` set to `true` and the running service URL;
 - a running Agent Service.
 
-No local credential configuration was present during this validation, so no public Provider request was made and no secret value was printed. With configuration present, the script performs health, session sync, one farmer decision, outcome persistence, and checkpoint export. Both local files are ignored by Git, and no environment-variable fallback exists.
+An ignored local credential configuration was used for the connected validation. No secret value was printed or persisted in trace output. The script verified health, session sync, `stream.started`, sanitized Provider input, optional reasoning/content/tool deltas, one Provider output, one final farmer intent, stream completion, outcome persistence, and checkpoint export. Both local files are ignored by Git, and no environment-variable fallback exists.
 
 ## Intentional non-goals
 

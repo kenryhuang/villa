@@ -13,7 +13,7 @@ Copy-Item ../../config/agent-client.example.json ../../config/agent-client.local
 
 Edit `config/agent-service.local.json` and set the Provider `base_url`, `api_key`, and `model`. The default service address is `http://127.0.0.1:8787`. The database and checkpoint paths are resolved relative to `services/agent-service`.
 
-Edit `../../config/agent-client.local.json` if Godot should use a different service address, token, or timeout. Set `enabled` to `false` to keep remote Agent decisions disabled explicitly.
+Edit `../../config/agent-client.local.json` if Godot should use a different service address, token, or timeout. Set `enabled` to `false` to keep remote Agent decisions disabled explicitly. `store_agent_session` defaults to `false`; when enabled, Godot appends credential-free stream events to `user://agent_sessions` and retains the newest 20 session files.
 
 Start the service:
 
@@ -40,15 +40,24 @@ HTTP endpoints:
 - `GET /health`
 - `POST /v1/sessions/sync`
 - `POST /v1/agents/:id/decide`
+- `POST /v1/agents/:id/decide/stream` (`text/event-stream`)
 - `POST /v1/agents/:id/outcomes`
 - `POST /v1/checkpoints/export`
 - `POST /v1/checkpoints/import`
+
+The streaming route emits project-owned `provider.input`, `reasoning.delta`, `content.delta`, `tool_call.delta`, `provider.output`, and final decision events. Partial or failed streams never commit a decision. In debug builds, press `F8` or use “Agent 调试” in the runtime debug panel to inspect the live Input/Reasoning/Output trace. Reasoning is never shown in normal dialogue or the HUD.
+
+To inspect raw SSE manually from Windows PowerShell while the service is running:
+
+```powershell
+curl.exe -N -H "Accept: text/event-stream" -H "Content-Type: application/json" --data-binary "@../../shared/agent_protocol/v1/decision-request.json" http://127.0.0.1:8787/v1/agents/farmer_ahe/decide/stream
+```
 
 On a successful game save, Godot asynchronously exports the current session memory and writes a `save_N.agent-memory.json` manifest beside the world save. Loading never waits for the service: a missing, corrupt, or unavailable checkpoint produces a HUD warning and continues with empty Agent memory. Deleting a save also deletes its manifest.
 
 Important raw events are scored immediately. Once an Agent accumulates 20 uncompacted high-value events, the configured real Provider condenses them into a factual long-term memory. Provider failure leaves every raw event intact for a later retry. Each decision context includes both recent raw events and that Agent's own long-term memories; session and Agent IDs isolate all reads.
 
-With both local configuration files present, the opt-in connected smoke test is:
+With both local configuration files present, the opt-in connected streaming smoke test is:
 
 ```powershell
 godot --headless --path ../.. --script res://tests/agent_service_integration.gd

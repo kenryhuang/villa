@@ -1,10 +1,14 @@
 extends SceneTree
 
+signal decision_stream_finished
+
 const AgentProtocolScript = preload("res://scripts/ai_agent/agent_protocol.gd")
 const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
+const AgentStreamClientScript = preload("res://scripts/ai_agent/agent_stream_client.gd")
 
 var _base_url := ""
 var _token := ""
+var _timeout_seconds := 10.0
 
 
 func _initialize() -> void:
@@ -19,6 +23,7 @@ func _run() -> void:
 		return
 	_base_url = str(client_config.value.service_url)
 	_token = str(client_config.value.token)
+	_timeout_seconds = float(client_config.value.timeout_seconds)
 	var health := await _send("GET", "/health", {})
 	if not _expect_success(health, "health"):
 		return
@@ -46,11 +51,22 @@ func _run() -> void:
 		},
 		[],
 	)
-	var decision := await _send(
-		"POST", "/v1/agents/farmer_ahe/decide", decision_request, session_id
-	)
-	if not _expect_success(decision, "decision"):
+	var streamed := await _request_decision_stream("farmer_ahe", decision_request)
+	if not streamed.ok:
+		_fail("streaming decision failed: " + str(streamed.error))
 		return
+	var event_names: Array = (streamed.events as Array).map(func(event): return str(event.event))
+	if (
+		event_names.size() < 5
+		or event_names[0] != "stream.started"
+		or event_names[1] != "provider.input"
+		or event_names.count("provider.output") != 1
+		or event_names.count("decision.final") != 1
+		or event_names[-1] != "stream.completed"
+	):
+		_fail("unexpected streaming event order: " + JSON.stringify(event_names))
+		return
+	var decision := {"ok": true, "code": 200, "body": streamed.response, "error": ""}
 	var parsed := AgentProtocolScript.parse_action_intent(
 		decision.body,
 		["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait"]
@@ -85,6 +101,28 @@ func _run() -> void:
 		return
 	print("PASS: role agent service integration")
 	quit(0)
+
+
+func _request_decision_stream(agent_id: String, body: Dictionary) -> Dictionary:
+	var client := AgentStreamClientScript.new()
+	root.add_child(client)
+	if not client.configure(_base_url, _token, 1, _timeout_seconds):
+		client.queue_free()
+		return {"ok": false, "response": {}, "events": [], "error": "stream_client_config"}
+	var result := {"ok": false, "response": {}, "events": [], "error": "not_completed"}
+	var event_callback := func(event: Dictionary):
+		(result.events as Array).append(event.duplicate(true))
+	var final_callback := func(ok: bool, response: Dictionary, error: String):
+		result.ok = ok
+		result.response = response.duplicate(true)
+		result.error = error
+		decision_stream_finished.emit()
+	if not client.request_decision(agent_id, body, event_callback, final_callback):
+		client.queue_free()
+		return {"ok": false, "response": {}, "events": [], "error": "stream_not_started"}
+	await decision_stream_finished
+	client.queue_free()
+	return result
 
 
 func _send(method: String, path: String, body: Dictionary, session_id: String = "") -> Dictionary:
