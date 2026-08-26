@@ -57,6 +57,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
   assert.equal(intent.expected_revision, 7);
   assert.equal(capturedHeaders.authorization, "Bearer test-key");
   assert.equal(capturedBody.includes("test-key"), false);
+  assert.equal(JSON.parse(capturedBody).tool_choice, "auto");
 });
 
 test("compresses selected events through the configured real Provider", async () => {

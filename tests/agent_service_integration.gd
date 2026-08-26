@@ -103,7 +103,7 @@ func _send(method: String, path: String, body: Dictionary, session_id: String = 
 		request.free()
 		return {"ok": false, "code": 0, "body": {}, "error": error_string(error)}
 	var completed: Array = await request.request_completed
-	request.free()
+	request.queue_free()
 	var response_body: Variant = JSON.parse_string((completed[3] as PackedByteArray).get_string_from_utf8())
 	return {
 		"ok": int(completed[0]) == HTTPRequest.RESULT_SUCCESS and int(completed[1]) >= 200 and int(completed[1]) < 300,

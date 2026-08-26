@@ -33,7 +33,7 @@ export class OpenAICompatibleProvider {
           model: this.#config.model,
           temperature: this.#config.temperature,
           max_tokens: this.#config.maxOutputTokens,
-          tool_choice: "required",
+          tool_choice: "auto",
           tools: context.allowed_tools.map(toolDescription),
           messages: [
             {role: "system", content: "You are a game NPC Agent. Use exactly one authorized tool. Never invent world assets."},
