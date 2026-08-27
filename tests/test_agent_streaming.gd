@@ -65,6 +65,8 @@ func _test_memory_trace(assertions: TestAssert) -> void:
 	assertions.equal(requests.size(), 1, "one stream becomes one trace request")
 	assertions.equal(requests[0].reasoning, "地块未开垦。", "reasoning accumulates verbatim")
 	assertions.equal(requests[0].content, "我来整理土地。", "content accumulates verbatim")
+	assertions.equal(trace.get_request("request-1").reasoning, "地块未开垦。", "single trace request materializes reasoning fragments")
+	assertions.truthy(not trace.get_request("request-1").has("reasoning_parts"), "public trace record hides internal reasoning fragments")
 	assertions.equal(requests[0].final.tool_name, "till", "final intent is retained")
 	assertions.equal(trace.get_log_path(), "", "memory-only trace creates no file")
 	trace.free()

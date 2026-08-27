@@ -76,9 +76,9 @@ func accept_event(event: Dictionary) -> bool:
 		"provider.input":
 			record.input = payload.duplicate(true)
 		"reasoning.delta":
-			record.reasoning = str(record.reasoning) + str(payload.get("delta", ""))
+			(record.reasoning_parts as Array).append(str(payload.get("delta", "")))
 		"content.delta":
-			record.content = str(record.content) + str(payload.get("delta", ""))
+			(record.content_parts as Array).append(str(payload.get("delta", "")))
 		"tool_call.delta":
 			(record.tool_deltas as Array).append(payload.duplicate(true))
 		"provider.output":
@@ -129,12 +129,15 @@ func finish_error(
 
 
 func get_requests() -> Array[Dictionary]:
-	return _requests.duplicate(true)
+	var result: Array[Dictionary] = []
+	for record in _requests:
+		result.append(_materialize_record(record))
+	return result
 
 
 func get_request(request_id: String) -> Dictionary:
 	var index := int(_request_indexes.get(request_id, -1))
-	return {} if index < 0 else (_requests[index] as Dictionary).duplicate(true)
+	return {} if index < 0 else _materialize_record(_requests[index])
 
 
 func get_log_path() -> String:
@@ -178,6 +181,8 @@ func _append_record(
 		"input": {},
 		"reasoning": "",
 		"content": "",
+		"reasoning_parts": [],
+		"content_parts": [],
 		"tool_deltas": [],
 		"output": {},
 		"final": {},
@@ -201,25 +206,37 @@ func _persist_terminal(request_id: String) -> void:
 
 
 func _disk_record(record: Dictionary) -> Dictionary:
+	var materialized := _materialize_record(record)
 	return {
 		"schema_version": RECORD_SCHEMA_VERSION,
-		"request_id": str(record.request_id),
-		"stream_id": str(record.stream_id),
-		"agent_id": str(record.agent_id),
-		"trigger": str(record.trigger),
-		"status": str(record.status),
-		"started_msec": int(record.started_msec),
-		"updated_msec": int(record.updated_msec),
-		"input": (record.input as Dictionary).duplicate(true),
+		"request_id": str(materialized.request_id),
+		"stream_id": str(materialized.stream_id),
+		"agent_id": str(materialized.agent_id),
+		"trigger": str(materialized.trigger),
+		"status": str(materialized.status),
+		"started_msec": int(materialized.started_msec),
+		"updated_msec": int(materialized.updated_msec),
+		"input": (materialized.input as Dictionary).duplicate(true),
 		"response": {
-			"reasoning_content": str(record.reasoning),
-			"content": str(record.content),
-			"tool_call_deltas": (record.tool_deltas as Array).duplicate(true),
-			"provider_output": (record.output as Dictionary).duplicate(true),
-			"decision": (record.final as Dictionary).duplicate(true),
-			"error": (record.error as Dictionary).duplicate(true),
+			"reasoning_content": str(materialized.reasoning),
+			"content": str(materialized.content),
+			"tool_call_deltas": (materialized.tool_deltas as Array).duplicate(true),
+			"provider_output": (materialized.output as Dictionary).duplicate(true),
+			"decision": (materialized.final as Dictionary).duplicate(true),
+			"error": (materialized.error as Dictionary).duplicate(true),
 		},
 	}
+
+
+func _materialize_record(record: Dictionary) -> Dictionary:
+	var result := record.duplicate(true)
+	if result.has("reasoning_parts"):
+		result.reasoning = "".join(PackedStringArray(result.reasoning_parts))
+		result.erase("reasoning_parts")
+	if result.has("content_parts"):
+		result.content = "".join(PackedStringArray(result.content_parts))
+		result.erase("content_parts")
+	return result
 
 
 func _trim_memory() -> void:

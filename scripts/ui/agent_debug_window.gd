@@ -11,6 +11,7 @@ extends CanvasLayer
 
 var _trace: Node
 var _selected_request_id := ""
+var _refresh_pending := false
 
 
 func _ready() -> void:
@@ -41,7 +42,8 @@ func configure(trace: Node) -> bool:
 	_trace = trace
 	_trace.connect("trace_updated", Callable(self, "_on_trace_updated"))
 	_trace.connect("trace_cleared", Callable(self, "_on_trace_cleared"))
-	_refresh_list()
+	if visible:
+		_refresh_list()
 	return true
 
 
@@ -69,12 +71,25 @@ func clear() -> void:
 func _on_trace_updated(request_id: String) -> void:
 	if _selected_request_id.is_empty():
 		_selected_request_id = request_id
-	_refresh_list()
+	_schedule_refresh()
 
 
 func _on_trace_cleared() -> void:
 	_selected_request_id = ""
-	_refresh_list()
+	_schedule_refresh()
+
+
+func _schedule_refresh() -> void:
+	if not visible or _refresh_pending:
+		return
+	_refresh_pending = true
+	call_deferred("_flush_trace_refresh")
+
+
+func _flush_trace_refresh() -> void:
+	_refresh_pending = false
+	if visible:
+		_refresh_list()
 
 
 func _refresh_list() -> void:

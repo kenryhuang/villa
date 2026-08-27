@@ -14,21 +14,27 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(window)
 	await tree.process_frame
 	assertions.truthy(window.configure(trace), "Agent debug window accepts session trace")
-	window.open()
 	trace.accept_event(_event("stream.started", 1, {"trigger": "dialogue"}))
 	trace.accept_event(_event("provider.input", 2, {"model": "test-model", "messages": [{"role": "user", "content": "你好"}]}))
-	trace.accept_event(_event("reasoning.delta", 3, {"delta": "先查看农场。"}))
-	trace.accept_event(_event("content.delta", 4, {"delta": "你好，今天适合耕种。"}))
-	trace.accept_event(_event("provider.output", 5, {"message": {"content": "你好，今天适合耕种。"}}))
-	trace.accept_event(_event("stream.error", 6, {"code": "provider_error"}))
-	await tree.process_frame
 	var list := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/RequestList") as ItemList
+	assertions.equal(list.item_count, 0, "hidden Agent debug window does not render streamed deltas")
+	window.open()
+	assertions.equal(list.item_count, 1, "opening Agent debug window renders accumulated trace")
 	var reasoning := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Reasoning") as TextEdit
+	trace.accept_event(_event("reasoning.delta", 3, {"delta": "先查看农场。"}))
+	trace.accept_event(_event("reasoning.delta", 4, {"delta": "再检查库存。"}))
+	assertions.equal(reasoning.text, "", "visible Agent debug deltas wait for one coalesced frame refresh")
+	await tree.process_frame
+	assertions.equal(reasoning.text, "先查看农场。再检查库存。", "coalesced refresh materializes every reasoning delta")
+	trace.accept_event(_event("content.delta", 5, {"delta": "你好，今天适合耕种。"}))
+	trace.accept_event(_event("provider.output", 6, {"message": {"content": "你好，今天适合耕种。"}}))
+	trace.accept_event(_event("stream.error", 7, {"code": "provider_error"}))
+	await tree.process_frame
 	var input := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Input") as TextEdit
 	var output := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Output") as TextEdit
 	assertions.equal(list.item_count, 1, "Agent debug window lists one request")
 	assertions.truthy(input.text.contains("test-model"), "Agent debug window shows raw input")
-	assertions.equal(reasoning.text, "先查看农场。", "Agent debug window streams raw reasoning")
+	assertions.equal(reasoning.text, "先查看农场。再检查库存。", "Agent debug window streams raw reasoning")
 	assertions.truthy(output.text.contains("今天适合耕种"), "Agent debug window shows raw output")
 	assertions.truthy(output.text.contains("provider_error"), "Agent debug window shows terminal error payload")
 	window.toggle()

@@ -18,11 +18,11 @@
 - Modify: `scripts/ai_agent/agent_session_trace.gd`
 - Modify: `scripts/ui/agent_debug_window.gd`
 
-- [ ] **Step 1: Add failing trace-fragment and hidden-render tests**
+- [x] **Step 1: Add failing trace-fragment and hidden-render tests**
 
 Extend the streaming test to feed multiple reasoning/content fragments and assert that `get_request()` still exposes joined `reasoning` and `content` strings and that the schema-v2 terminal record is unchanged. Change the debug-window test so trace events received while the window is hidden leave `ItemList.item_count == 0`; after `open()` the request appears. While visible, feed several deltas in one frame and assert the text view changes only after the deferred frame refresh.
 
-- [ ] **Step 2: Run the Agent suite and confirm RED**
+- [x] **Step 2: Run the Agent suite and confirm RED**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
@@ -30,7 +30,7 @@ godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
 
 Expected: the hidden window renders immediately and visible updates are not coalesced.
 
-- [ ] **Step 3: Store fragments and materialize public records**
+- [x] **Step 3: Store fragments and materialize public records**
 
 Replace per-delta string concatenation with internal arrays:
 
@@ -41,11 +41,11 @@ Replace per-delta string concatenation with internal arrays:
 
 Append delta strings in `accept_event()`. Add `_materialize_record(record)` that joins parts into the existing public `reasoning` and `content` fields and erases the internal arrays. Use it in `get_requests()`, `get_request()`, and `_disk_record()`.
 
-- [ ] **Step 4: Make debug rendering hidden-aware and frame-coalesced**
+- [x] **Step 4: Make debug rendering hidden-aware and frame-coalesced**
 
 Add `_refresh_pending`. `_on_trace_updated()` records selection but returns without rendering when hidden; otherwise it schedules exactly one deferred `_flush_trace_refresh()`. `open()` cancels the pending flag and refreshes synchronously. The deferred method refreshes only if still visible.
 
-- [ ] **Step 5: Run the Agent suite and commit**
+- [x] **Step 5: Run the Agent suite and commit**
 
 Run the Agent suite, expect PASS, then commit the focused performance change.
 
