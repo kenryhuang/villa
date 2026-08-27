@@ -10,6 +10,7 @@ class RuntimeDouble:
 	var trigger_result := true
 	var triggered: Array[String] = []
 	var cancelled: Array[Dictionary] = []
+	var applied_intervals: Array[Dictionary] = []
 
 	func is_agent_managed(agent_id: String) -> bool:
 		return agent_id in ["farmer_ahe", "lao_li", "xuezhe_lin"]
@@ -21,6 +22,33 @@ class RuntimeDouble:
 	func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 		cancelled.append({"agent_id": agent_id, "request_id": request_id})
 		return true
+
+	func get_agent_debug_settings() -> Array[Dictionary]:
+		return [
+			{"agent_id": "farmer_ahe", "display_name": "阿禾", "decision_interval_hours": 1},
+			{"agent_id": "lao_li", "display_name": "老李", "decision_interval_hours": 2},
+			{"agent_id": "xuezhe_lin", "display_name": "学者林", "decision_interval_hours": 4},
+		]
+
+	func apply_agent_debug_intervals(intervals: Dictionary) -> bool:
+		applied_intervals.append(intervals.duplicate(true))
+		return true
+
+
+class DebugPanelDouble:
+	extends Node
+
+	signal agent_settings_apply_requested(intervals: Dictionary)
+
+	var configured: Array[Dictionary] = []
+	var results: Array[bool] = []
+
+	func configure_agent_settings(settings: Array[Dictionary]) -> bool:
+		configured = settings.duplicate(true)
+		return true
+
+	func show_agent_settings_result(ok: bool) -> void:
+		results.append(ok)
 
 
 class DialogueDouble:
@@ -105,12 +133,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var runtime := RuntimeDouble.new()
 	var dialogue := DialogueDouble.new()
 	var hud := HudBusDouble.new()
+	var debug_panel := DebugPanelDouble.new()
 	main.player = player
 	main.npcs = npcs
 	main.world = null
 	main.agent_runtime = runtime
 	main.dialogue_ui = dialogue
 	main.hud_message_bus = hud
+	main.debug_panel = debug_panel
 	main.call("_setup_npcs")
 
 	var farmer = main.npcs.get_node("NpcNorthwest")
@@ -122,6 +152,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(main.call("get_agent_npc", "farmer_ahe"), farmer, "Main routes farmer by Agent ID")
 	assertions.equal(main.call("get_agent_npc", "lao_li"), merchant, "Main routes merchant by Agent ID")
 	assertions.equal(main.call("get_agent_npc", "xuezhe_lin"), explorer, "Main routes explorer by Agent ID")
+	assertions.truthy(main.has_method("_connect_agent_debug_settings"), "Main exposes focused Agent debug settings wiring")
+	if main.has_method("_connect_agent_debug_settings"):
+		assertions.truthy(main.call("_connect_agent_debug_settings"), "Main configures Agent debug settings")
+		assertions.equal(debug_panel.configured.size(), 3, "Main sends every Agent setting to debug panel")
+		debug_panel.agent_settings_apply_requested.emit({"farmer_ahe": 0, "lao_li": 2, "xuezhe_lin": 4})
+		assertions.equal(runtime.applied_intervals, [{"farmer_ahe": 0, "lao_li": 2, "xuezhe_lin": 4}], "Main routes Agent interval settings to runtime")
+		assertions.equal(debug_panel.results, [true], "Main returns Agent settings result to panel")
 
 	farmer.set_dialogue_busy(true)
 	main.call("_on_dialogue_started", "farmer_ahe")
@@ -214,3 +251,4 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	runtime.free()
 	dialogue.free()
 	hud.free()
+	debug_panel.free()

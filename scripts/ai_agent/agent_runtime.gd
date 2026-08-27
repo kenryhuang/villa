@@ -145,6 +145,39 @@ func is_agent_managed(agent_id: String) -> bool:
 	return registry.is_agent_managed(agent_id)
 
 
+func get_agent_display_name(agent_id: String) -> String:
+	var agent: Dictionary = registry.get_agent(agent_id)
+	return str(agent.get("display_name", agent_id))
+
+
+func get_agent_debug_settings() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for agent_id_value in registry.get_agent_ids():
+		var agent_id := str(agent_id_value)
+		result.append({
+			"agent_id": agent_id,
+			"display_name": get_agent_display_name(agent_id),
+			"decision_interval_hours": scheduler.get_decision_interval_hours(agent_id),
+		})
+	return result
+
+
+func apply_agent_debug_intervals(intervals: Dictionary) -> bool:
+	var agent_ids: Array = registry.get_agent_ids()
+	if intervals.size() != agent_ids.size():
+		return false
+	for agent_id_value in agent_ids:
+		var agent_id := str(agent_id_value)
+		var value: Variant = intervals.get(agent_id)
+		if typeof(value) != TYPE_INT or int(value) < 0 or int(value) > AgentSchedulerScript.MAX_DEBUG_INTERVAL_HOURS:
+			return false
+	for agent_id_value in agent_ids:
+		var agent_id := str(agent_id_value)
+		if not scheduler.set_decision_interval_hours(agent_id, int(intervals[agent_id])):
+			return false
+	return true
+
+
 func set_save_slot(slot: int) -> void:
 	var next_session_id := "slot-%d" % maxi(0, slot)
 	if session_id == next_session_id:

@@ -4,6 +4,7 @@ extends CanvasLayer
 signal apply_requested(draft: Dictionary)
 signal refresh_requested
 signal agent_debug_requested
+signal agent_settings_apply_requested(intervals: Dictionary)
 
 const EconomyLimitsScript := preload("res://scripts/core/economy_limits.gd")
 const PlayerStateScript := preload("res://scripts/data/player_state.gd")
@@ -40,6 +41,9 @@ const CATEGORY_NAMES := {
 @onready var max_slots_input: SpinBox = $Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots
 @onready var buy_all_seeds_button: Button = $Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton
 @onready var item_rows: VBoxContainer = $Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows
+@onready var agent_interval_rows: VBoxContainer = $Overlay/Center/Panel/Layout/Tabs/Agent/IntervalRows
+@onready var agent_status_label: Label = $Overlay/Center/Panel/Layout/Tabs/Agent/AgentStatus
+@onready var apply_agent_settings_button: Button = $Overlay/Center/Panel/Layout/Tabs/Agent/ApplyAgentSettingsButton
 @onready var status_label: Label = $Overlay/Center/Panel/Layout/Footer/Status
 @onready var refresh_button: Button = $Overlay/Center/Panel/Layout/Footer/RefreshButton
 @onready var agent_debug_button: Button = $Overlay/Center/Panel/Layout/Footer/AgentDebugButton
@@ -52,17 +56,20 @@ var _item_records := {}
 var _all_item_ids: Array[String] = []
 var _loading := false
 var _configured := false
+var _agent_intervals: Dictionary = {}
 
 
 func _ready() -> void:
 	_configure_season_options()
 	tabs.set_tab_title(0, "角色状态")
 	tabs.set_tab_title(1, "资源库存")
+	tabs.set_tab_title(2, "Agent")
 	close_button.pressed.connect(close)
 	cancel_button.pressed.connect(close)
 	apply_button.pressed.connect(_on_apply_pressed)
 	refresh_button.pressed.connect(_on_refresh_pressed)
 	agent_debug_button.pressed.connect(func(): agent_debug_requested.emit())
+	apply_agent_settings_button.pressed.connect(_on_apply_agent_settings_pressed)
 	search_input.text_changed.connect(_on_search_changed)
 	category_input.item_selected.connect(_on_category_selected)
 	show_empty_check.toggled.connect(_on_show_empty_toggled)
@@ -81,6 +88,47 @@ func configure(snapshot_value: Dictionary) -> bool:
 	_configured = true
 	refresh_from_snapshot(snapshot_value)
 	return true
+
+
+func configure_agent_settings(settings: Array) -> bool:
+	var validated: Array[Dictionary] = []
+	var seen := {}
+	for value in settings:
+		if not value is Dictionary:
+			return false
+		var record := value as Dictionary
+		var agent_id := str(record.get("agent_id", ""))
+		var display_name := str(record.get("display_name", ""))
+		var hours: Variant = record.get("decision_interval_hours")
+		if (
+			agent_id.is_empty()
+			or display_name.is_empty()
+			or seen.has(agent_id)
+			or typeof(hours) != TYPE_INT
+			or int(hours) < 0
+			or int(hours) > 168
+		):
+			return false
+		seen[agent_id] = true
+		validated.append(record.duplicate(true))
+	if validated.is_empty():
+		return false
+	for child in agent_interval_rows.get_children():
+		child.free()
+	_agent_intervals.clear()
+	for record in validated:
+		var agent_id := str(record.agent_id)
+		var hours := int(record.decision_interval_hours)
+		_agent_intervals[agent_id] = hours
+		agent_interval_rows.add_child(_create_agent_interval_row(record))
+	agent_status_label.text = "设置仅影响当前运行，不写入存档。"
+	agent_status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+	return true
+
+
+func show_agent_settings_result(ok: bool) -> void:
+	agent_status_label.text = "Agent 自动触发间隔已应用。" if ok else "Agent 自动触发间隔无效，未应用。"
+	agent_status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR if ok else Color("b65c4b"))
 
 
 func open(snapshot_value: Dictionary = {}) -> void:
@@ -260,6 +308,34 @@ func _create_item_row(record: Dictionary, max_slots: int) -> HBoxContainer:
 	return row
 
 
+func _create_agent_interval_row(record: Dictionary) -> HBoxContainer:
+	var agent_id := str(record.agent_id)
+	var row := HBoxContainer.new()
+	row.set_meta("agent_id", agent_id)
+	row.custom_minimum_size.y = 46
+	row.add_theme_constant_override("separation", 16)
+	var label := Label.new()
+	label.name = "Name"
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.text = "%s  (%s)" % [str(record.display_name), agent_id]
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+	row.add_child(label)
+	var interval := SpinBox.new()
+	interval.name = "Interval"
+	interval.custom_minimum_size.x = 180
+	interval.min_value = 0
+	interval.max_value = 168
+	interval.step = 1
+	interval.value = int(record.decision_interval_hours)
+	interval.allow_greater = false
+	interval.allow_lesser = false
+	interval.update_on_text_changed = true
+	interval.value_changed.connect(_on_agent_interval_changed.bind(agent_id))
+	row.add_child(interval)
+	return row
+
+
 func _rebuild_category_filter() -> void:
 	category_input.clear()
 	category_input.add_item("全部")
@@ -401,6 +477,16 @@ func _on_apply_pressed() -> void:
 func _on_refresh_pressed() -> void:
 	if _configured:
 		refresh_requested.emit()
+
+
+func _on_agent_interval_changed(value: float, agent_id: String) -> void:
+	_agent_intervals[agent_id] = roundi(value)
+	agent_status_label.text = "存在尚未应用的 Agent 设置"
+	agent_status_label.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+
+
+func _on_apply_agent_settings_pressed() -> void:
+	agent_settings_apply_requested.emit(_agent_intervals.duplicate(true))
 
 
 func _mark_dirty() -> void:

@@ -295,6 +295,38 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
+[node name="Agent" type="VBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Hint" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/Agent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+theme_override_font_sizes/font_size = 16
+text = "单位为游戏小时；0 表示关闭自动触发，玩家主动对话不受影响。"
+autowrap_mode = 2
+
+[node name="IntervalRows" type="VBoxContainer" parent="Overlay/Center/Panel/Layout/Tabs/Agent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Spacer" type="Control" parent="Overlay/Center/Panel/Layout/Tabs/Agent"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="AgentStatus" type="Label" parent="Overlay/Center/Panel/Layout/Tabs/Agent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.482, 0.404, 0.345, 1)
+theme_override_font_sizes/font_size = 16
+text = "设置仅影响当前运行，不写入存档。"
+
+[node name="ApplyAgentSettingsButton" type="Button" parent="Overlay/Center/Panel/Layout/Tabs/Agent"]
+custom_minimum_size = Vector2(240, 44)
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_font_sizes/font_size = 18
+text = "应用 Agent 设置"
+
 [node name="Footer" type="HBoxContainer" parent="Overlay/Center/Panel/Layout"]
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2

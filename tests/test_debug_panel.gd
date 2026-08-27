@@ -15,6 +15,9 @@ const REQUIRED_NODES: Array[String] = [
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows",
+	"Overlay/Center/Panel/Layout/Tabs/Agent/IntervalRows",
+	"Overlay/Center/Panel/Layout/Tabs/Agent/AgentStatus",
+	"Overlay/Center/Panel/Layout/Tabs/Agent/ApplyAgentSettingsButton",
 	"Overlay/Center/Panel/Layout/Footer/Status",
 	"Overlay/Center/Panel/Layout/Footer/RefreshButton",
 	"Overlay/Center/Panel/Layout/Footer/CancelButton",
@@ -36,6 +39,15 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		return
 	var snapshot := _snapshot()
 	assertions.truthy(panel.configure(snapshot), "debug panel accepts a complete snapshot")
+	var has_agent_configuration := panel.has_method("configure_agent_settings")
+	assertions.truthy(has_agent_configuration, "debug panel exposes Agent interval configuration")
+	assertions.truthy(panel.has_signal("agent_settings_apply_requested"), "debug panel exposes Agent settings apply signal")
+	if has_agent_configuration:
+		assertions.truthy(panel.configure_agent_settings([
+			{"agent_id": "farmer_ahe", "display_name": "阿禾", "decision_interval_hours": 1},
+			{"agent_id": "lao_li", "display_name": "老李", "decision_interval_hours": 2},
+			{"agent_id": "xuezhe_lin", "display_name": "学者林", "decision_interval_hours": 4},
+		]), "debug panel accepts three Agent interval records")
 	panel.open()
 	await tree.process_frame
 	assertions.equal(panel.get_visible_item_ids().size(), 3, "debug panel authors every item row")
@@ -165,6 +177,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	(panel.get_node("Overlay/Center/Panel/Layout/Footer/RefreshButton") as Button).pressed.emit()
 	assertions.equal(apply_requests.size(), 1, "apply emits one complete draft")
 	assertions.equal(refresh_requests.size(), 1, "refresh emits one snapshot request")
+	if has_agent_configuration and panel.has_signal("agent_settings_apply_requested"):
+		var agent_requests: Array[Dictionary] = []
+		panel.agent_settings_apply_requested.connect(func(intervals: Dictionary): agent_requests.append(intervals))
+		var farmer_interval := _agent_interval_editor(panel, "farmer_ahe")
+		assertions.truthy(farmer_interval != null, "Agent interval rows retain Agent identity")
+		if farmer_interval != null:
+			farmer_interval.value = 0
+		(panel.get_node("Overlay/Center/Panel/Layout/Tabs/Agent/ApplyAgentSettingsButton") as Button).pressed.emit()
+		assertions.equal(agent_requests.size(), 1, "Agent settings button emits one focused request")
+		if not agent_requests.is_empty():
+			assertions.equal(agent_requests[0], {"farmer_ahe": 0, "lao_li": 2, "xuezhe_lin": 4}, "Agent settings request contains every interval")
 
 	panel.show_apply_result(
 		{"ok": true, "message": "调试数据已应用；尚未写入存档"},
@@ -207,6 +230,14 @@ func _item_editor(panel: Node, item_id: String) -> SpinBox:
 	for row in rows.get_children():
 		if str(row.get_meta("item_id", "")) == item_id:
 			return row.get_node_or_null("Quantity") as SpinBox
+	return null
+
+
+func _agent_interval_editor(panel: Node, agent_id: String) -> SpinBox:
+	var rows := panel.get_node("Overlay/Center/Panel/Layout/Tabs/Agent/IntervalRows")
+	for row in rows.get_children():
+		if str(row.get_meta("agent_id", "")) == agent_id:
+			return row.get_node_or_null("Interval") as SpinBox
 	return null
 
 

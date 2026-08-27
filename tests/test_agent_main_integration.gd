@@ -55,6 +55,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"save-slot change preserves configured Agent trace directory",
 	)
 	assertions.truthy(not runtime.service_enabled, "disabled client configuration keeps remote decisions off")
+	var agent_settings: Array[Dictionary] = runtime.get_agent_debug_settings()
+	assertions.equal(agent_settings.size(), 3, "runtime exposes all Agent debug settings")
+	assertions.equal(agent_settings[0].display_name, "阿禾", "runtime settings use Agent display names")
+	assertions.truthy(runtime.apply_agent_debug_intervals({"farmer_ahe": 0, "lao_li": 4, "xuezhe_lin": 12}), "runtime applies complete Agent interval overrides")
+	assertions.equal(runtime.scheduler.get_decision_interval_hours("farmer_ahe"), 0, "runtime applies zero automatic interval")
+	assertions.equal(runtime.scheduler.get_decision_interval_hours("lao_li"), 4, "runtime applies merchant automatic interval")
+	assertions.truthy(not runtime.apply_agent_debug_intervals({"farmer_ahe": 1}), "runtime rejects incomplete Agent interval maps")
 	assertions.truthy(economy.is_agent_managed("lao_li"), "merchant is removed from deterministic autonomy")
 	assertions.truthy(economy.is_agent_managed("xuezhe_lin"), "explorer is removed from deterministic autonomy")
 	assertions.truthy(economy.is_agent_managed("farmer_ahe"), "farmer is Agent managed")

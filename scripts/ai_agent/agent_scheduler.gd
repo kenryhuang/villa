@@ -9,7 +9,10 @@ var _handle_failure: Callable
 var _in_flight: Dictionary = {}
 var _pending: Dictionary = {}
 var _last_dispatched: Dictionary = {}
+var _decision_interval_overrides: Dictionary = {}
 var _current_minute := 0
+
+const MAX_DEBUG_INTERVAL_HOURS := 168
 
 
 func configure(
@@ -28,6 +31,7 @@ func configure(
 	_handle_response = handle_response
 	_handle_stream_event = handle_stream_event
 	_handle_failure = handle_failure
+	_decision_interval_overrides.clear()
 	return true
 
 
@@ -38,9 +42,10 @@ func advance_to(game_minute: int) -> int:
 	var dispatched := 0
 	for agent_id_value in _registry.call("get_agent_ids"):
 		var agent_id := str(agent_id_value)
-		var agent: Dictionary = _registry.call("get_agent", agent_id)
-		var range_value: Array = agent.get("decision_interval_hours", [1, 1])
-		var interval := maxi(60, int(range_value[0]) * 60)
+		var interval_hours := get_decision_interval_hours(agent_id)
+		if interval_hours <= 0:
+			continue
+		var interval := interval_hours * 60
 		var last := int(_last_dispatched.get(agent_id, 0))
 		if game_minute - last < interval:
 			continue
@@ -64,6 +69,23 @@ func trigger_dialogue(agent_id: String, text: String, game_minute: int) -> bool:
 
 func is_in_flight(agent_id: String) -> bool:
 	return _in_flight.has(agent_id)
+
+
+func set_decision_interval_hours(agent_id: String, hours: int) -> bool:
+	if not _registry.call("is_agent_managed", agent_id) or hours < 0 or hours > MAX_DEBUG_INTERVAL_HOURS:
+		return false
+	_decision_interval_overrides[agent_id] = hours
+	return true
+
+
+func get_decision_interval_hours(agent_id: String) -> int:
+	if not _registry.call("is_agent_managed", agent_id):
+		return -1
+	if _decision_interval_overrides.has(agent_id):
+		return int(_decision_interval_overrides[agent_id])
+	var agent: Dictionary = _registry.call("get_agent", agent_id)
+	var range_value: Array = agent.get("decision_interval_hours", [1, 1])
+	return maxi(1, int(range_value[0]))
 
 
 func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String, priority: int) -> bool:

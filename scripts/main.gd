@@ -757,6 +757,8 @@ func _setup_runtime_debug_tools() -> void:
 	var agent_debug_callback := Callable(self, "_on_agent_debug_requested")
 	if not debug_panel.agent_debug_requested.is_connected(agent_debug_callback):
 		debug_panel.agent_debug_requested.connect(agent_debug_callback)
+	if not _connect_agent_debug_settings():
+		push_error("Unable to configure Agent debug settings.")
 	agent_debug_window = AgentDebugWindowScene.instantiate()
 	agent_debug_window.name = "AgentDebugWindow"
 	add_child(agent_debug_window)
@@ -770,6 +772,31 @@ func _on_debug_panel_requested() -> void:
 	if not OS.is_debug_build() or debug_panel == null or debug_state_editor == null:
 		return
 	debug_panel.open(debug_state_editor.snapshot())
+	debug_panel.configure_agent_settings(agent_runtime.call("get_agent_debug_settings"))
+
+
+func _connect_agent_debug_settings() -> bool:
+	if (
+		debug_panel == null
+		or agent_runtime == null
+		or not debug_panel.has_method("configure_agent_settings")
+		or not debug_panel.has_signal("agent_settings_apply_requested")
+		or not agent_runtime.has_method("get_agent_debug_settings")
+		or not agent_runtime.has_method("apply_agent_debug_intervals")
+	):
+		return false
+	if not bool(debug_panel.call("configure_agent_settings", agent_runtime.call("get_agent_debug_settings"))):
+		return false
+	var callback := Callable(self, "_on_agent_settings_apply_requested")
+	if not debug_panel.is_connected("agent_settings_apply_requested", callback):
+		debug_panel.connect("agent_settings_apply_requested", callback)
+	return true
+
+
+func _on_agent_settings_apply_requested(intervals: Dictionary) -> void:
+	var ok := bool(agent_runtime.call("apply_agent_debug_intervals", intervals))
+	if debug_panel != null and debug_panel.has_method("show_agent_settings_result"):
+		debug_panel.call("show_agent_settings_result", ok)
 
 
 func _on_agent_debug_requested() -> void:

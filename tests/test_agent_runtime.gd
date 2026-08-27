@@ -46,6 +46,7 @@ class FakeGateway:
 func run(assertions: TestAssert, _tree: SceneTree) -> void:
 	_test_perception_coalescing(assertions)
 	_test_role_schedule_and_backpressure(assertions)
+	_test_interval_overrides(assertions)
 	_test_gateway_configuration(assertions)
 	_test_stream_client_configuration(assertions)
 
@@ -99,6 +100,34 @@ func _test_role_schedule_and_backpressure(assertions: TestAssert) -> void:
 	scheduler.advance_to(600)
 	var explorer_count := gateway.requests.filter(func(value): return value.agent_id == "xuezhe_lin").size()
 	assertions.equal(explorer_count, 1, "large time jump creates one explorer catch-up decision")
+
+
+func _test_interval_overrides(assertions: TestAssert) -> void:
+	var registry := AgentRegistryScript.new()
+	registry.load_defaults()
+	var gateway := FakeGateway.new()
+	var scheduler := AgentSchedulerScript.new()
+	assertions.truthy(scheduler.configure(
+		registry,
+		gateway,
+		func(agent_id: String, trigger: String, game_minute: int, dialogue: String): return {"request_id": "%s-%s-%d" % [agent_id, trigger, game_minute], "dialogue_input": dialogue},
+		func(_agent_id: String, _response: Dictionary): pass
+	), "interval scheduler configures")
+	assertions.equal(scheduler.get_decision_interval_hours("farmer_ahe"), 1, "farmer exposes configured default interval")
+	assertions.equal(scheduler.get_decision_interval_hours("xuezhe_lin"), 2, "explorer exposes configured default interval")
+	assertions.truthy(not scheduler.set_decision_interval_hours("missing", 1), "unknown Agent interval rejects")
+	assertions.truthy(not scheduler.set_decision_interval_hours("farmer_ahe", -1), "negative Agent interval rejects")
+	assertions.truthy(not scheduler.set_decision_interval_hours("farmer_ahe", 169), "Agent interval above one week rejects")
+	for agent_id in registry.get_agent_ids():
+		assertions.truthy(scheduler.set_decision_interval_hours(str(agent_id), 0), "zero interval disables one Agent schedule")
+	assertions.equal(scheduler.advance_to(10_000), 0, "zero intervals disable every automatic decision")
+	assertions.truthy(scheduler.trigger_dialogue("farmer_ahe", "你好", 10_001), "zero automatic interval does not disable dialogue")
+	assertions.equal(gateway.requests[-1].request.dialogue_input, "你好", "disabled automatic Agent receives player dialogue")
+	gateway.succeed("farmer_ahe", {})
+	scheduler.advance_to(0)
+	assertions.truthy(scheduler.set_decision_interval_hours("farmer_ahe", 3), "positive Agent interval override applies")
+	assertions.equal(scheduler.advance_to(179), 0, "three-hour override is not due before 180 minutes")
+	assertions.equal(scheduler.advance_to(180), 1, "three-hour override dispatches at 180 minutes")
 
 
 func _test_gateway_configuration(assertions: TestAssert) -> void:

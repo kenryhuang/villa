@@ -101,7 +101,7 @@ Expect all Agent checks to pass and commit the bounded-stream change.
 - Modify: `scenes/ui/debug_panel.tscn`
 - Modify: `scripts/main.gd`
 
-- [ ] **Step 1: Write failing scheduler override tests**
+- [x] **Step 1: Write failing scheduler override tests**
 
 Require:
 
@@ -112,11 +112,11 @@ func get_decision_interval_hours(agent_id: String) -> int
 
 Assert unknown IDs and values outside `0..168` reject, zero prevents `advance_to()` dispatch, a positive override changes the next automatic eligibility, and `trigger_dialogue()` still dispatches when the override is zero.
 
-- [ ] **Step 2: Run the Agent suite and confirm RED**
+- [x] **Step 2: Run the Agent suite and confirm RED**
 
 Expected: scheduler interval methods are missing.
 
-- [ ] **Step 3: Implement scheduler and runtime APIs**
+- [x] **Step 3: Implement scheduler and runtime APIs**
 
 Store overrides in `_decision_interval_overrides`. Automatic scheduling uses the override when present and skips zero. Runtime exposes:
 
@@ -127,11 +127,11 @@ func apply_agent_debug_intervals(intervals: Dictionary) -> bool
 
 Each settings record contains `agent_id`, `display_name`, and `decision_interval_hours`.
 
-- [ ] **Step 4: Write failing debug-panel UI tests**
+- [x] **Step 4: Write failing debug-panel UI tests**
 
 Add an Agent tab with `IntervalRows`, `AgentStatus`, and `ApplyAgentSettingsButton`. Configure it with the three runtime records, edit one SpinBox to zero, press Apply, and assert one `agent_settings_apply_requested` signal containing all three integer values.
 
-- [ ] **Step 5: Implement the Agent tab and Main wiring**
+- [x] **Step 5: Implement the Agent tab and Main wiring**
 
 Add:
 
@@ -143,7 +143,7 @@ func show_agent_settings_result(ok: bool) -> void
 
 Main refreshes settings whenever the panel opens and routes the dedicated signal to `AgentRuntime.apply_agent_debug_intervals()`. It displays success/failure in the Agent tab without applying or saving player-state drafts.
 
-- [ ] **Step 6: Run Agent and debug-panel suites, then commit**
+- [x] **Step 6: Run Agent and debug-panel suites, then commit**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
