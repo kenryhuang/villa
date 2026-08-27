@@ -427,6 +427,17 @@ class InteractionDouble:
 		interactions += 1
 
 
+class DialogueTargetDouble:
+	extends Node3D
+
+	var allow_dialogue := false
+	var dialogue_attempts := 0
+
+	func start_dialogue() -> bool:
+		dialogue_attempts += 1
+		return allow_dialogue
+
+
 class GatheringDouble:
 	extends RefCounted
 
@@ -550,9 +561,48 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_farming_plant_rules(assertions)
 	_test_plant_preview_failure_reasons(assertions, tree, controller_script)
 	_test_pointer_contract(assertions, tree, controller_script)
+	_test_dialogue_target_routing(assertions, tree, controller_script)
 	_test_gathering_command_routing(assertions, tree, controller_script)
 	_test_output_pile_interaction(assertions, tree, controller_script)
 	_test_completed_building_click_in_build_mode(assertions, tree)
+
+
+func _test_dialogue_target_routing(
+	assertions: TestAssert,
+	tree: SceneTree,
+	controller_script: Script
+) -> void:
+	var controller = controller_script.new()
+	var target := DialogueTargetDouble.new()
+	var body := StaticBody3D.new()
+	var prompt_area := Area3D.new()
+	target.add_child(body)
+	target.add_child(prompt_area)
+	tree.root.add_child(controller)
+	tree.root.add_child(target)
+	assertions.equal(
+		controller.call("_find_interaction_target", body),
+		target,
+		"NPC body resolves to the dialogue target"
+	)
+	assertions.equal(
+		controller.call("_find_interaction_target", prompt_area),
+		target,
+		"prompt area resolves to the same dialogue target"
+	)
+	assertions.truthy(
+		not controller.perform_target_interaction(target),
+		"rejected NPC click remains rejected"
+	)
+	assertions.equal(target.dialogue_attempts, 1, "rejected dialogue is attempted once")
+	target.allow_dialogue = true
+	assertions.truthy(
+		controller.perform_target_interaction(target),
+		"accepted NPC click uses the shared dialogue entry"
+	)
+	assertions.equal(target.dialogue_attempts, 2, "accepted dialogue is attempted once")
+	target.free()
+	controller.free()
 
 
 func _test_harvest_failure_feedback(

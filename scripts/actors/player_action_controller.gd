@@ -473,8 +473,8 @@ func perform_target_interaction(target: Node) -> bool:
 			return false
 		return bool(gathering_controller.call("request_gather", target))
 	if target.has_method("start_dialogue"):
-		target.start_dialogue()
-		return true
+		var dialogue_result: Variant = target.call("start_dialogue")
+		return bool(dialogue_result) if dialogue_result is bool else true
 	if target.has_method("interact"):
 		target.interact(player_ref)
 		return true
