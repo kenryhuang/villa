@@ -63,6 +63,17 @@ function storeDecision(
       decision_summary: intent.decision_summary,
     },
   });
+  if (request.trigger === "dialogue" && request.dialogue_input?.trim()) {
+    dependencies.memory.appendEvent(request.session_id, request.agent_id, {
+      event_id: `dialogue:${intent.decision_id}`,
+      kind: "dialogue",
+      game_minute: request.game_minute,
+      payload: {
+        player_text: request.dialogue_input,
+        agent_speech: intent.speech ?? intent.decision_summary,
+      },
+    });
+  }
 }
 
 function beginSse(response: ServerResponse): void {

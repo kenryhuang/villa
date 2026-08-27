@@ -108,6 +108,41 @@ test("sends credentials only in the header and accepts one role tool", async () 
   });
 });
 
+test("includes the exact player dialogue in the Provider prompt", async () => {
+  let capturedBody = "";
+  const server: Server = createServer((incoming, response) => {
+    incoming.setEncoding("utf8");
+    incoming.on("data", (chunk) => { capturedBody += chunk; });
+    incoming.on("end", () => {
+      response.setHeader("content-type", "text/event-stream");
+      response.end([
+        `data: ${JSON.stringify({id: "dialogue-1", choices: [{delta: {content: "价格很稳定。"}, finish_reason: "stop"}]})}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const config = configuredProvider(`http://127.0.0.1:${address.port}`, "dialogue-key");
+  const provider = new OpenAICompatibleProvider(config.provider);
+  const dialogueRequest: DecisionRequest = {
+    ...request,
+    request_id: "dialogue-request-1",
+    trigger: "dialogue",
+    dialogue_input: "今天胡萝卜价格怎么样？",
+  };
+  const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", request.snapshot, [], []);
+  await provider.decide(dialogueRequest, context);
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  config.cleanup();
+  const providerBody = JSON.parse(capturedBody) as {messages: Array<{role: string; content: string}>};
+  const userMessage = providerBody.messages.find((message) => message.role === "user");
+  const systemMessage = providerBody.messages.find((message) => message.role === "system");
+  assert.ok(userMessage);
+  assert.equal(JSON.parse(userMessage.content).dialogue_input, "今天胡萝卜价格怎么样？");
+  assert.match(systemMessage?.content || "", /in character/i);
+});
+
 test("compresses selected events through the configured real Provider", async () => {
   const server: Server = createServer((_incoming, response) => {
     response.setHeader("content-type", "application/json");

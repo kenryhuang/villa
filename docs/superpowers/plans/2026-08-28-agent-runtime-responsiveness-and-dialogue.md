@@ -160,15 +160,15 @@ Expected: both suites pass.
 - Modify: `services/agent-service/src/provider.ts`
 - Modify: `services/agent-service/src/app.ts`
 
-- [ ] **Step 1: Write a failing Provider prompt test**
+- [x] **Step 1: Write a failing Provider prompt test**
 
 Send a dialogue-triggered request with `dialogue_input: "今天胡萝卜价格怎么样？"`, capture the OpenAI-compatible request body, and assert its user message parses to an object containing the exact dialogue input. Assert the system prompt asks for an in-character conversational response.
 
-- [ ] **Step 2: Write a failing dialogue-memory route test**
+- [x] **Step 2: Write a failing dialogue-memory route test**
 
 Return an intent with `speech: "今天价格稳定。"`, complete the streamed request, then assert `memory.recent(session, agent, 8)` contains exactly one `dialogue` event whose payload has both `player_text` and `agent_speech`. Replay the cached request and assert no duplicate event is added.
 
-- [ ] **Step 3: Run Node tests and confirm RED**
+- [x] **Step 3: Run Node tests and confirm RED**
 
 ```powershell
 npm test
@@ -176,7 +176,7 @@ npm test
 
 Run from `services/agent-service`. Expected: Provider input omits dialogue text and no dialogue memory event exists.
 
-- [ ] **Step 4: Implement Provider input and idempotent dialogue memory**
+- [x] **Step 4: Implement Provider input and idempotent dialogue memory**
 
 For dialogue triggers, include `{context, dialogue_input: request.dialogue_input}` in the JSON user message and add a dialogue-specific system instruction. In `storeDecision()`, append:
 
@@ -191,7 +191,7 @@ For dialogue triggers, include `{context, dialogue_input: request.dialogue_input
 
 only when the trigger is dialogue and input is non-empty. `appendEvent()` supplies idempotency.
 
-- [ ] **Step 5: Run Node tests and commit**
+- [x] **Step 5: Run Node tests and commit**
 
 Expect the complete Agent Service suite to pass.
 

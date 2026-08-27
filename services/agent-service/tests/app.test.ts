@@ -135,6 +135,49 @@ test("streams stable Agent events and replays only a cached final decision", asy
   memory.close(); rmSync(directory, {recursive: true, force: true});
 });
 
+test("stores one idempotent dialogue memory event with both speakers", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "villa-agent-dialogue-memory-"));
+  const memory = new MemoryRepository(join(directory, "memory.sqlite"));
+  const provider = {
+    decide: async (request: DecisionRequest): Promise<ActionIntent> => makeWaitIntent(request),
+    streamDecision: async (request: DecisionRequest): Promise<ActionIntent> => ({
+      protocol_version: 2,
+      decision_id: "dialogue-decision-1",
+      request_id: request.request_id,
+      agent_id: request.agent_id,
+      expected_revision: request.world_revision,
+      actions: [],
+      speech: "今天价格稳定。",
+      decision_summary: "回答玩家的价格问题",
+    }),
+  };
+  const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
+  const dialogueRequest: DecisionRequest = {
+    ...fixture,
+    request_id: "dialogue-memory-request-1",
+    trigger: "dialogue",
+    dialogue_input: "今天胡萝卜价格怎么样？",
+  };
+  const post = async () => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/agents/farmer_ahe/decide/stream`, {
+      method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(dialogueRequest),
+    });
+    await response.text();
+  };
+  await post();
+  await post();
+  const dialogueEvents = memory.recent(dialogueRequest.session_id, dialogueRequest.agent_id, 8)
+    .filter((event) => event.kind === "dialogue");
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  memory.close(); rmSync(directory, {recursive: true, force: true});
+  assert.equal(dialogueEvents.length, 1);
+  assert.equal(dialogueEvents[0].payload.player_text, "今天胡萝卜价格怎么样？");
+  assert.equal(dialogueEvents[0].payload.agent_speech, "今天价格稳定。");
+});
+
 test("emits stream.error without committing a failed decision", async () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-stream-error-"));
   const memory = new MemoryRepository(join(directory, "memory.sqlite"));

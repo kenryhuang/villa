@@ -34,6 +34,14 @@ export class OpenAICompatibleProvider {
     try {
       const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
         ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
+      const isDialogue = request.trigger === "dialogue";
+      const systemContent = [
+        "You are a game NPC Agent. Use zero to three authorized tools in the exact order they should execute. Use no tool when no action is needed. Put travel or build last. Never invent world assets.",
+        ...(isDialogue ? ["The player is speaking to you directly. Reply in character using the Agent soul and speech style, and answer the player's dialogue input."] : []),
+      ].join(" ");
+      const userContent = isDialogue
+        ? {context, dialogue_input: request.dialogue_input ?? ""}
+        : context;
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
         temperature: this.#config.temperature,
@@ -43,8 +51,8 @@ export class OpenAICompatibleProvider {
         tool_choice: "auto",
         tools: context.allowed_tools.map(toolDescription),
         messages: [
-          {role: "system", content: "You are a game NPC Agent. Use zero to three authorized tools in the exact order they should execute. Use no tool when no action is needed. Put travel or build last. Never invent world assets."},
-          {role: "user", content: JSON.stringify(context)},
+          {role: "system", content: systemContent},
+          {role: "user", content: JSON.stringify(userContent)},
         ],
       };
       emit({type: "input", body: structuredClone(providerBody)});
