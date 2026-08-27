@@ -8,6 +8,19 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const DialogueScene = preload("res://scenes/ui/dialogue_ui.tscn")
 
 
+class DialogueLifecycleSpy:
+	extends RefCounted
+
+	var cancelled: Array[Array] = []
+	var closed: Array[Array] = []
+
+	func on_cancelled(villager_id: String, request_id: String) -> void:
+		cancelled.append([villager_id, request_id])
+
+	func on_closed(villager_id: String, request_id: String) -> void:
+		closed.append([villager_id, request_id])
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var disabled_config_path := "user://agent-main-integration-disabled.json"
 	var trace_directory := "user://agent-main-trace-%d" % Time.get_ticks_usec()
@@ -87,7 +100,72 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(dialogue.has_method("finish_agent_dialogue"), "Dialogue UI exposes streaming finish")
 	assertions.truthy(dialogue.has_method("fail_agent_dialogue"), "Dialogue UI exposes streaming failure")
 	assertions.truthy(dialogue.has_signal("agent_dialogue_cancelled"), "Dialogue UI exposes streaming cancellation")
-	dialogue.free()
+	assertions.truthy(dialogue.has_signal("agent_dialogue_closed"), "Dialogue UI exposes request-scoped close")
+	var fail_argument_count := -1
+	for method_record in dialogue.get_method_list():
+		if str(method_record.name) == "fail_agent_dialogue":
+			fail_argument_count = (method_record.args as Array).size()
+			break
+	assertions.equal(fail_argument_count, 1, "stream failure API accepts only request ID")
+	if dialogue.has_signal("agent_dialogue_closed") and fail_argument_count == 1:
+		var lifecycle_spy := DialogueLifecycleSpy.new()
+		dialogue.agent_dialogue_cancelled.connect(lifecycle_spy.on_cancelled)
+		dialogue.agent_dialogue_closed.connect(lifecycle_spy.on_closed)
+		tree.root.add_child(dialogue)
+		dialogue.begin_agent_dialogue("farmer_ahe", "request-a")
+		dialogue.append_agent_dialogue("request-a", "你好")
+		dialogue.finish_agent_dialogue("request-a", "你好，今天适合播种。")
+		dialogue.close()
+		assertions.equal(
+			lifecycle_spy.closed,
+			[["farmer_ahe", "request-a"]],
+			"completed dialogue closes with original identity"
+		)
+		assertions.equal(lifecycle_spy.cancelled.size(), 0, "completed dialogue is not cancelled")
+
+		dialogue.begin_agent_dialogue("lao_li", "request-b")
+		dialogue.close()
+		assertions.equal(
+			lifecycle_spy.cancelled,
+			[["lao_li", "request-b"]],
+			"in-flight close cancels original request"
+		)
+		assertions.equal(
+			lifecycle_spy.closed[-1],
+			["lao_li", "request-b"],
+			"in-flight close also unlocks original NPC"
+		)
+
+		dialogue.begin_agent_dialogue("xuezhe_lin", "request-c")
+		assertions.truthy(
+			bool(dialogue.call("fail_agent_dialogue", "request-c")),
+			"matching failure closes incomplete dialogue"
+		)
+		assertions.truthy(not dialogue.visible, "failed Agent dialogue is hidden")
+		dialogue.append_agent_dialogue("request-c", "迟到文本")
+		assertions.truthy(not dialogue.visible, "late delta cannot reopen failed dialogue")
+		assertions.equal(
+			lifecycle_spy.closed[-1],
+			["xuezhe_lin", "request-c"],
+			"failure closes with original request identity"
+		)
+
+		dialogue.begin_agent_dialogue("farmer_ahe", "request-d")
+		dialogue.begin_agent_dialogue("lao_li", "request-e")
+		assertions.equal(
+			lifecycle_spy.cancelled[-1],
+			["farmer_ahe", "request-d"],
+			"new Agent dialogue cancels the stream it replaces"
+		)
+		assertions.equal(
+			lifecycle_spy.closed[-1],
+			["farmer_ahe", "request-d"],
+			"new Agent dialogue unlocks the NPC it replaces"
+		)
+		dialogue.close()
+		dialogue.free()
+	else:
+		dialogue.free()
 	restored.free()
 	runtime.free()
 	season.free()

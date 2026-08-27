@@ -456,6 +456,9 @@ func perform_target_interaction(target: Node) -> bool:
 		return false
 	if target.is_in_group("building_output_pile"):
 		return false
+	if target.has_method("start_dialogue"):
+		var dialogue_result: Variant = target.call("start_dialogue")
+		return bool(dialogue_result) if dialogue_result is bool else true
 	if _action_mode == ActionMode.BUILDING:
 		if (
 			target.has_method("can_open_economy_panel")
@@ -472,9 +475,6 @@ func perform_target_interaction(target: Node) -> bool:
 		if gathering_controller == null:
 			return false
 		return bool(gathering_controller.call("request_gather", target))
-	if target.has_method("start_dialogue"):
-		var dialogue_result: Variant = target.call("start_dialogue")
-		return bool(dialogue_result) if dialogue_result is bool else true
 	if target.has_method("interact"):
 		target.interact(player_ref)
 		return true
@@ -589,6 +589,8 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:
 	if target == null:
 		return false
+	if target.has_method("start_dialogue"):
+		return perform_target_interaction(target)
 	if _action_mode == ActionMode.BUILDING:
 		return (
 			_point_in_player_range(hit_position)

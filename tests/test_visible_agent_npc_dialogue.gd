@@ -26,10 +26,22 @@ class RuntimeDouble:
 class DialogueDouble:
 	extends Node
 
+	signal agent_dialogue_cancelled(villager_id: String, request_id: String)
+	signal agent_dialogue_closed(villager_id: String, request_id: String)
+
 	var fixed_dialogue_calls := 0
+	var failed_requests: Array[Array] = []
+	var begun_requests: Array[Array] = []
 
 	func start_dialogue(_villager_id: String) -> void:
 		fixed_dialogue_calls += 1
+
+	func fail_agent_dialogue(request_id: String, fallback: String = "__omitted__") -> bool:
+		failed_requests.append([request_id, fallback])
+		return true
+
+	func begin_agent_dialogue(villager_id: String, request_id: String) -> void:
+		begun_requests.append([villager_id, request_id])
 
 
 class HudBusDouble:
@@ -135,6 +147,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		)
 		assertions.equal(hud.records[0].metadata.agent_id, "lao_li", "warning identifies failed Agent")
 
+	main.call("_on_agent_dialogue_stream_started", "farmer_ahe", "dialogue-request-1")
+	assertions.equal(
+		dialogue.begun_requests,
+		[["farmer_ahe", "dialogue-request-1"]],
+		"stream start records the active Agent request"
+	)
 	main.call("_on_agent_dialogue_cancelled", "farmer_ahe", "dialogue-request-1")
 	assertions.equal(
 		runtime.cancelled,
@@ -144,6 +162,52 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	main.call("_on_agent_dialogue_closed", "farmer_ahe", "dialogue-request-1")
 	assertions.truthy(not farmer.is_dialogue_busy(), "closing dialogue unlocks only its NPC")
 	assertions.truthy(not merchant.is_dialogue_busy(), "merchant remains in its own unlocked state")
+
+	farmer.set_dialogue_busy(true)
+	main.call("_on_agent_dialogue_stream_started", "farmer_ahe", "dialogue-request-current")
+	var cancellation_count_before_stale := runtime.cancelled.size()
+	main.call("_on_agent_dialogue_cancelled", "farmer_ahe", "dialogue-request-stale")
+	main.call("_on_agent_dialogue_closed", "farmer_ahe", "dialogue-request-stale")
+	assertions.equal(
+		runtime.cancelled.size(),
+		cancellation_count_before_stale,
+		"stale close cannot cancel the current request"
+	)
+	assertions.truthy(farmer.is_dialogue_busy(), "stale close cannot unlock the current request")
+	main.call("_on_agent_dialogue_closed", "farmer_ahe", "dialogue-request-current")
+	assertions.truthy(not farmer.is_dialogue_busy(), "matching close unlocks the current request")
+
+	merchant.set_dialogue_busy(true)
+	explorer.set_dialogue_busy(true)
+	main.call("_on_agent_dialogue_stream_failed", "xuezhe_lin", "dialogue-request-2", "timeout")
+	assertions.equal(
+		dialogue.failed_requests,
+		[["dialogue-request-2", "__omitted__"]],
+		"stream failure clears dialogue without fallback speech"
+	)
+	assertions.truthy(not explorer.is_dialogue_busy(), "stream failure unlocks failed explorer")
+	assertions.truthy(merchant.is_dialogue_busy(), "explorer failure does not unlock merchant")
+	assertions.equal(hud.records.size(), 2, "stream failure publishes one additional warning")
+	if hud.records.size() >= 2:
+		assertions.equal(hud.records[1].message, "Agent 服务不可用，请稍后再试。", "stream failure uses shared warning")
+		assertions.equal(hud.records[1].metadata.agent_id, "xuezhe_lin", "stream warning identifies explorer")
+
+	assertions.truthy(
+		main.has_method("_connect_agent_dialogue_ui"),
+		"Main exposes focused Agent dialogue lifecycle wiring"
+	)
+	if main.has_method("_connect_agent_dialogue_ui"):
+		main.call("_connect_agent_dialogue_ui")
+		farmer.set_dialogue_busy(true)
+		main.call("_on_agent_dialogue_stream_started", "farmer_ahe", "dialogue-request-3")
+		dialogue.agent_dialogue_cancelled.emit("farmer_ahe", "dialogue-request-3")
+		dialogue.agent_dialogue_closed.emit("farmer_ahe", "dialogue-request-3")
+		assertions.equal(
+			runtime.cancelled[-1],
+			{"agent_id": "farmer_ahe", "request_id": "dialogue-request-3"},
+			"wired cancel signal reaches Agent runtime"
+		)
+		assertions.truthy(not farmer.is_dialogue_busy(), "wired close signal unlocks farmer")
 
 	main.free()
 	fixture_root.free()

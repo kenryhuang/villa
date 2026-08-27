@@ -4,6 +4,7 @@ extends Control
 ## 对话界面 - NPC 对话面板
 
 signal agent_dialogue_cancelled(villager_id: String, request_id: String)
+signal agent_dialogue_closed(villager_id: String, request_id: String)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 
@@ -18,6 +19,7 @@ var _dialogues: Array = []
 var _is_open := false
 var _agent_request_id := ""
 var _agent_buffer := ""
+var _agent_stream_pending := false
 
 
 func _ready() -> void:
@@ -39,6 +41,9 @@ func start_dialogue(villager_id: String) -> void:
 		return
 
 	_current_villager_id = villager_id
+	_agent_request_id = ""
+	_agent_buffer = ""
+	_agent_stream_pending = false
 	_current_dialogue_index = 0
 	_is_open = true
 	visible = true
@@ -59,10 +64,15 @@ func start_agent_dialogue(villager_id: String, speech: String) -> void:
 func begin_agent_dialogue(villager_id: String, request_id: String) -> void:
 	if villager_id.is_empty() or request_id.is_empty():
 		return
+	if _is_open and not _agent_request_id.is_empty():
+		if request_id == _agent_request_id:
+			return
+		close()
 	_current_villager_id = villager_id
 	_current_dialogue_index = 0
 	_agent_request_id = request_id
 	_agent_buffer = ""
+	_agent_stream_pending = true
 	_dialogues = [{"text": "正在思考……", "choices": []}]
 	_is_open = true
 	visible = true
@@ -72,7 +82,7 @@ func begin_agent_dialogue(villager_id: String, request_id: String) -> void:
 
 
 func append_agent_dialogue(request_id: String, delta: String) -> void:
-	if request_id != _agent_request_id or delta.is_empty():
+	if request_id != _agent_request_id or not _agent_stream_pending or delta.is_empty():
 		return
 	_agent_buffer += delta
 	if not _dialogues.is_empty():
@@ -82,7 +92,7 @@ func append_agent_dialogue(request_id: String, delta: String) -> void:
 
 
 func finish_agent_dialogue(request_id: String, speech: String) -> void:
-	if request_id != _agent_request_id:
+	if request_id != _agent_request_id or not _agent_stream_pending:
 		return
 	var final_speech := speech.strip_edges()
 	if final_speech.is_empty():
@@ -90,25 +100,20 @@ func finish_agent_dialogue(request_id: String, speech: String) -> void:
 	if final_speech.is_empty():
 		final_speech = "……"
 	_agent_buffer = final_speech
-	_agent_request_id = ""
+	_agent_stream_pending = false
 	if not _dialogues.is_empty():
 		(_dialogues[0] as Dictionary)["text"] = final_speech
 	if text_label:
 		text_label.text = final_speech
 
 
-func fail_agent_dialogue(request_id: String, fallback: String) -> void:
-	if request_id != _agent_request_id:
-		return
-	var message := fallback.strip_edges()
-	if message.is_empty():
-		message = "我现在有点忙，晚些再聊吧。"
-	_agent_buffer = message
-	_agent_request_id = ""
-	if not _dialogues.is_empty():
-		(_dialogues[0] as Dictionary)["text"] = message
-	if text_label:
-		text_label.text = message
+func fail_agent_dialogue(request_id: String) -> bool:
+	if request_id != _agent_request_id or not _agent_stream_pending:
+		return false
+	var failed_villager := _current_villager_id
+	_clear_agent_dialogue_state()
+	agent_dialogue_closed.emit(failed_villager, request_id)
+	return true
 
 
 func _show_current_dialogue() -> void:
@@ -152,16 +157,26 @@ func _on_choice_selected(choice: Dictionary) -> void:
 
 
 func close() -> void:
-	var cancelled_request := _agent_request_id
-	var cancelled_villager := _current_villager_id
+	var closed_request := _agent_request_id
+	var closed_villager := _current_villager_id
+	var should_cancel := _agent_stream_pending and not closed_request.is_empty()
+	_clear_agent_dialogue_state()
+	if should_cancel:
+		agent_dialogue_cancelled.emit(closed_villager, closed_request)
+	if not closed_request.is_empty():
+		agent_dialogue_closed.emit(closed_villager, closed_request)
+
+
+func _clear_agent_dialogue_state() -> void:
 	_agent_request_id = ""
 	_agent_buffer = ""
+	_agent_stream_pending = false
+	_current_villager_id = ""
+	_dialogues.clear()
 	_is_open = false
 	visible = false
 	if panel:
 		panel.visible = false
-	if not cancelled_request.is_empty():
-		agent_dialogue_cancelled.emit(cancelled_villager, cancelled_request)
 
 
 func _input(event: InputEvent) -> void:

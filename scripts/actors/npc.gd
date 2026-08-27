@@ -19,6 +19,7 @@ var _event_bus
 var _agent_dialogue_enabled := false
 var _dialogue_busy := false
 var _prompt_tween: Tween
+var _prompt_visible_state := false
 
 const INTERACTION_DISTANCE := 3.0
 const PROMPT_INTERACTION_LAYER := 64
@@ -85,6 +86,9 @@ func _set_dialogue_prompt_visible(value: bool) -> void:
 		dialogue_prompt_hit_area.input_ray_pickable = value
 	if dialogue_prompt == null:
 		return
+	if value == _prompt_visible_state and dialogue_prompt.visible == value:
+		return
+	_prompt_visible_state = value
 	if _prompt_tween != null and _prompt_tween.is_valid():
 		_prompt_tween.kill()
 	if not value:
@@ -98,7 +102,7 @@ func _set_dialogue_prompt_visible(value: bool) -> void:
 		return
 	dialogue_prompt.visible = true
 	if dialogue_prompt_icon != null:
-		dialogue_prompt_icon.modulate.a = 0.0
+		dialogue_prompt_icon.modulate.a = 0.22
 		_prompt_tween = create_tween()
 		_prompt_tween.tween_property(dialogue_prompt_icon, "modulate:a", 1.0, 0.14)
 

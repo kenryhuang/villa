@@ -601,6 +601,17 @@ func _test_dialogue_target_routing(
 		"accepted NPC click uses the shared dialogue entry"
 	)
 	assertions.equal(target.dialogue_attempts, 2, "accepted dialogue is attempted once")
+	assertions.truthy(
+		controller.call("_try_interaction_hit", target, Vector3(99.0, 0.0, 99.0)),
+		"dialogue target owns the single three-metre range check"
+	)
+	assertions.equal(target.dialogue_attempts, 3, "shared hit routing reaches NPC range validation once")
+	controller.set("_action_mode", PlayerActionController.ActionMode.BUILDING)
+	assertions.truthy(
+		controller.call("_try_interaction_hit", target, Vector3(99.0, 0.0, 99.0)),
+		"visible Agent NPC remains clickable while building mode is active"
+	)
+	assertions.equal(target.dialogue_attempts, 4, "building mode still reaches NPC range validation once")
 	target.free()
 	controller.free()
 

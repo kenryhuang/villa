@@ -120,6 +120,7 @@ var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModa
 var buildings_container: Node3D
 var _world_navigation_blockers: Dictionary = {}
 var _agent_npcs: Dictionary = {}
+var _agent_dialogue_requests: Dictionary = {}
 
 
 func _ready() -> void:
@@ -593,6 +594,7 @@ func _set_resource_navigation_blocker(resource: Node, active: bool) -> void:
 
 func _setup_npcs() -> void:
 	_agent_npcs.clear()
+	_agent_dialogue_requests.clear()
 	for node_name in AGENT_NPC_BINDINGS:
 		var binding: Dictionary = AGENT_NPC_BINDINGS[node_name]
 		var npc = npcs.get_node_or_null(str(node_name)) if npcs != null else null
@@ -655,10 +657,7 @@ func _setup_ui() -> void:
 		if hud.has_signal("building_unlock_requested") and not hud.building_unlock_requested.is_connected(unlock_callback):
 			hud.building_unlock_requested.connect(unlock_callback)
 	_setup_runtime_debug_tools()
-	if dialogue_ui and dialogue_ui.has_signal("agent_dialogue_cancelled"):
-		var cancel_agent_dialogue_callback := Callable(self, "_on_agent_dialogue_cancelled")
-		if not dialogue_ui.is_connected("agent_dialogue_cancelled", cancel_agent_dialogue_callback):
-			dialogue_ui.connect("agent_dialogue_cancelled", cancel_agent_dialogue_callback)
+	_connect_agent_dialogue_ui()
 
 	# 背包 UI
 	if inventory_ui:
@@ -1315,6 +1314,7 @@ func _on_dialogue_started(villager_id: String) -> void:
 		):
 			return
 		_set_agent_npc_busy(villager_id, false)
+		_agent_dialogue_requests.erase(villager_id)
 		_publish_agent_service_unavailable(villager_id)
 		return
 	if dialogue_ui:
@@ -1322,6 +1322,7 @@ func _on_dialogue_started(villager_id: String) -> void:
 
 
 func _on_agent_dialogue_stream_started(villager_id: String, request_id: String) -> void:
+	_agent_dialogue_requests[villager_id] = request_id
 	if dialogue_ui and dialogue_ui.has_method("begin_agent_dialogue"):
 		dialogue_ui.call("begin_agent_dialogue", villager_id, request_id)
 
@@ -1331,23 +1332,51 @@ func _on_agent_dialogue_stream_delta(_villager_id: String, request_id: String, d
 		dialogue_ui.call("append_agent_dialogue", request_id, delta)
 
 
-func _on_agent_dialogue_stream_failed(_villager_id: String, request_id: String, _error: String) -> void:
+func _on_agent_dialogue_stream_failed(villager_id: String, request_id: String, _error: String) -> void:
+	var active_request := str(_agent_dialogue_requests.get(villager_id, ""))
+	if not active_request.is_empty() and active_request != request_id:
+		return
 	if dialogue_ui and dialogue_ui.has_method("fail_agent_dialogue"):
-		dialogue_ui.call("fail_agent_dialogue", request_id, "我现在有点忙，晚些再聊吧。")
+		dialogue_ui.call("fail_agent_dialogue", request_id)
+	_agent_dialogue_requests.erase(villager_id)
+	_set_agent_npc_busy(villager_id, false)
+	_publish_agent_service_unavailable(villager_id)
 
 
-func _on_agent_dialogue_ready(_villager_id: String, request_id: String, speech: String) -> void:
+func _on_agent_dialogue_ready(villager_id: String, request_id: String, speech: String) -> void:
+	if str(_agent_dialogue_requests.get(villager_id, "")) != request_id:
+		return
 	if dialogue_ui and dialogue_ui.has_method("finish_agent_dialogue"):
 		dialogue_ui.call("finish_agent_dialogue", request_id, speech)
 
 
 func _on_agent_dialogue_cancelled(villager_id: String, request_id: String) -> void:
+	if str(_agent_dialogue_requests.get(villager_id, "")) != request_id:
+		return
 	if agent_runtime != null and agent_runtime.has_method("cancel_dialogue"):
 		agent_runtime.call("cancel_dialogue", villager_id, request_id)
 
 
-func _on_agent_dialogue_closed(villager_id: String, _request_id: String) -> void:
+func _on_agent_dialogue_closed(villager_id: String, request_id: String) -> void:
+	if str(_agent_dialogue_requests.get(villager_id, "")) != request_id:
+		return
+	_agent_dialogue_requests.erase(villager_id)
 	_set_agent_npc_busy(villager_id, false)
+
+
+func _connect_agent_dialogue_ui() -> void:
+	if dialogue_ui == null or not is_instance_valid(dialogue_ui):
+		return
+	for signal_record in [
+		{"name": "agent_dialogue_cancelled", "method": "_on_agent_dialogue_cancelled"},
+		{"name": "agent_dialogue_closed", "method": "_on_agent_dialogue_closed"},
+	]:
+		var signal_name := str(signal_record.name)
+		if not dialogue_ui.has_signal(signal_name):
+			continue
+		var callback := Callable(self, str(signal_record.method))
+		if not dialogue_ui.is_connected(signal_name, callback):
+			dialogue_ui.connect(signal_name, callback)
 
 
 func _on_build_mode_entered() -> void:

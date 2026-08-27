@@ -52,13 +52,18 @@ func run(assertions, tree: SceneTree) -> void:
 
 	var hit_area := scene_npc.get_node_or_null("DialoguePrompt/HitArea") as Area3D
 	assertions.truthy(hit_area != null, "dialogue prompt authors one click area")
-	assertions.truthy(bool(scene_npc.call("configure_agent", player, "farmer_ahe")), "Agent binding succeeds")
-	scene_npc.dialogue_started.connect(spy.on_dialogue_started)
 	scene_npc.global_position = Vector3(4.0, 1.0, -2.0)
 	player.global_position = scene_npc.global_position + Vector3(3.0, 20.0, 0.0)
+	assertions.truthy(bool(scene_npc.call("configure_agent", player, "farmer_ahe")), "Agent binding succeeds")
+	scene_npc.dialogue_started.connect(spy.on_dialogue_started)
 	scene_npc.call("refresh_dialogue_prompt")
 	assertions.truthy(bool(scene_npc.call("is_player_in_dialogue_range")), "XZ range ignores height")
 	assertions.truthy(prompt.visible, "prompt appears at three metres")
+	var prompt_icon := scene_npc.get_node_or_null("DialoguePrompt/Icon") as Sprite3D
+	assertions.truthy(prompt_icon != null, "dialogue prompt authors a billboard icon")
+	if prompt_icon != null:
+		assertions.truthy(prompt_icon.modulate.a > 0.0, "clickable prompt is never fully invisible")
+		assertions.truthy(prompt_icon.modulate.a < 1.0, "unchanged refresh preserves prompt fade-in")
 	if hit_area != null:
 		assertions.equal(hit_area.collision_layer, 64, "visible prompt is ray-pickable")
 		assertions.truthy(hit_area.input_ray_pickable, "visible prompt accepts ray input")
