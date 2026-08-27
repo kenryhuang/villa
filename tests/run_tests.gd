@@ -46,7 +46,7 @@ func _run() -> void:
 	CameraMathTest.new().run(assertions)
 	PlayerLogicTest.new().run(assertions)
 	PlayerVisualTest.new().run(assertions)
-	NpcLogicTest.new().run(assertions)
+	NpcLogicTest.new().run(assertions, self)
 	ProjectileLogicTest.new().run(assertions)
 	SmokeTest.new().run(assertions)
 	VegetationBuilderTest.new().run(assertions)

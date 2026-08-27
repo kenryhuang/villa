@@ -16,12 +16,21 @@ var _current_state: String = "IDLE"
 var _target_position: Vector3 = Vector3.ZERO
 var _player_ref
 var _event_bus
+var _agent_dialogue_enabled := false
+var _dialogue_busy := false
+var _prompt_tween: Tween
 
 const INTERACTION_DISTANCE := 3.0
+const PROMPT_INTERACTION_LAYER := 64
+
+@onready var dialogue_prompt: Node3D = get_node_or_null("DialoguePrompt")
+@onready var dialogue_prompt_icon: Sprite3D = get_node_or_null("DialoguePrompt/Icon")
+@onready var dialogue_prompt_hit_area: Area3D = get_node_or_null("DialoguePrompt/HitArea")
 
 
 func _ready() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
+	_set_dialogue_prompt_visible(false)
 
 	# 注册到 VillagerSystem
 	var villager_system = get_node_or_null("/root/VillagerSystem")
@@ -31,6 +40,67 @@ func _ready() -> void:
 
 func configure(player: Node3D) -> void:
 	_player_ref = player
+	refresh_dialogue_prompt()
+
+
+func configure_agent(player: Node3D, agent_id: String) -> bool:
+	configure(player)
+	if agent_id.is_empty():
+		return false
+	villager_id = agent_id
+	_agent_dialogue_enabled = true
+	refresh_dialogue_prompt()
+	return true
+
+
+func is_player_in_dialogue_range() -> bool:
+	if _player_ref == null or not is_instance_valid(_player_ref):
+		return false
+	return Vector2(global_position.x, global_position.z).distance_to(
+		Vector2(_player_ref.global_position.x, _player_ref.global_position.z)
+	) <= INTERACTION_DISTANCE
+
+
+func set_dialogue_busy(value: bool) -> void:
+	_dialogue_busy = value
+	refresh_dialogue_prompt()
+
+
+func is_dialogue_busy() -> bool:
+	return _dialogue_busy
+
+
+func refresh_dialogue_prompt() -> void:
+	_set_dialogue_prompt_visible(
+		_agent_dialogue_enabled
+		and health > 0
+		and not _dialogue_busy
+		and is_player_in_dialogue_range()
+	)
+
+
+func _set_dialogue_prompt_visible(value: bool) -> void:
+	if dialogue_prompt_hit_area != null:
+		dialogue_prompt_hit_area.collision_layer = PROMPT_INTERACTION_LAYER if value else 0
+		dialogue_prompt_hit_area.input_ray_pickable = value
+	if dialogue_prompt == null:
+		return
+	if _prompt_tween != null and _prompt_tween.is_valid():
+		_prompt_tween.kill()
+	if not value:
+		dialogue_prompt.visible = false
+		if dialogue_prompt_icon != null:
+			dialogue_prompt_icon.modulate.a = 0.0
+		return
+	if dialogue_prompt.visible:
+		if dialogue_prompt_icon != null:
+			dialogue_prompt_icon.modulate.a = 1.0
+		return
+	dialogue_prompt.visible = true
+	if dialogue_prompt_icon != null:
+		dialogue_prompt_icon.modulate.a = 0.0
+		_prompt_tween = create_tween()
+		_prompt_tween.tween_property(dialogue_prompt_icon, "modulate:a", 1.0, 0.14)
 
 
 func take_hit(damage: int, direction: Vector3) -> void:
@@ -41,6 +111,7 @@ func take_hit(damage: int, direction: Vector3) -> void:
 		knockback_velocity = direction.normalized() * float(damage)
 	if health == 0 and not _defeated_emitted:
 		_defeated_emitted = true
+		refresh_dialogue_prompt()
 		defeated.emit(self)
 
 
@@ -93,6 +164,7 @@ func _physics_process(delta: float) -> void:
 			_move_toward_target(delta)
 		"IDLE", "SLEEPING":
 			velocity = Vector3.ZERO
+	refresh_dialogue_prompt()
 
 
 func _move_toward_target(delta: float) -> void:
@@ -122,17 +194,15 @@ func _move_toward_target(delta: float) -> void:
 	move_and_slide()
 
 
-func start_dialogue() -> void:
-	if _player_ref == null:
-		return
-
-	var dist = global_position.distance_to(_player_ref.global_position)
-	if dist > INTERACTION_DISTANCE:
-		return
-
+func start_dialogue() -> bool:
+	if (
+		not _agent_dialogue_enabled
+		or health <= 0
+		or _dialogue_busy
+		or not is_player_in_dialogue_range()
+	):
+		return false
+	_dialogue_busy = true
+	refresh_dialogue_prompt()
 	dialogue_started.emit(villager_id)
-
-	# 增加好感度
-	var villager_system = get_node_or_null("/root/VillagerSystem")
-	if villager_system:
-		villager_system.add_affinity(villager_id, 1)
+	return true

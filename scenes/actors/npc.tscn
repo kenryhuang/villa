@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource path="res://scripts/actors/npc.gd" type="Script" id="1"]
+[ext_resource path="res://assets/ui/dialogue_prompt.svg" type="Texture2D" id="2_prompt"]
 
 [sub_resource type="StandardMaterial3D" id="NpcMaterial"]
 albedo_color = Color(1, 0.16, 0.08, 1)
@@ -15,6 +16,9 @@ height = 1.22
 radius = 0.34
 height = 1.22
 
+[sub_resource type="SphereShape3D" id="DialoguePromptShape"]
+radius = 0.42
+
 [node name="Npc" type="CharacterBody3D"]
 collision_layer = 4
 collision_mask = 19
@@ -25,3 +29,24 @@ mesh = SubResource("NpcMesh")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("NpcShape")
+
+[node name="DialoguePrompt" type="Node3D" parent="."]
+visible = false
+position = Vector3(0, 1.45, 0)
+
+[node name="Icon" type="Sprite3D" parent="DialoguePrompt"]
+texture = ExtResource("2_prompt")
+pixel_size = 0.0075
+billboard = 1
+shaded = false
+double_sided = true
+
+[node name="HitArea" type="Area3D" parent="DialoguePrompt"]
+collision_layer = 0
+collision_mask = 0
+input_ray_pickable = false
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DialoguePrompt/HitArea"]
+shape = SubResource("DialoguePromptShape")
