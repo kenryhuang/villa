@@ -1,6 +1,10 @@
 extends Node
 
 const AgentSseParserScript = preload("res://scripts/ai_agent/agent_sse_parser.gd")
+const AgentStreamEventQueueScript = preload("res://scripts/ai_agent/agent_stream_event_queue.gd")
+
+const MAX_CHUNKS_PER_STREAM_FRAME := 4
+const MAX_EVENTS_PER_STREAM_FRAME := 32
 
 var session_epoch := 0
 var _base_url := ""
@@ -52,6 +56,7 @@ func request_decision(
 	_streams[agent_id] = {
 		"client": client,
 		"parser": AgentSseParserScript.new(),
+		"event_queue": AgentStreamEventQueueScript.new(),
 		"request": request_body.duplicate(true),
 		"event_callback": event_callback,
 		"final_callback": final_callback,
@@ -110,6 +115,9 @@ func _poll_stream(agent_id: String) -> void:
 	if Time.get_ticks_msec() - int(state.last_activity_msec) > int(_timeout_seconds * 1000.0):
 		_finish(agent_id, false, {}, "stream_idle_timeout")
 		return
+	var event_budget := _dispatch_queued_events(agent_id, state, MAX_EVENTS_PER_STREAM_FRAME)
+	if not _streams.has(agent_id) or event_budget <= 0:
+		return
 	var client := state.client as HTTPClient
 	var poll_error := client.poll()
 	if poll_error != OK:
@@ -153,39 +161,54 @@ func _poll_stream(agent_id: String) -> void:
 				_finish(agent_id, false, {}, "http_%d" % response_code)
 				return
 			state.response_started = true
-		while client.get_status() == HTTPClient.STATUS_BODY:
+		var chunks_read := 0
+		while client.get_status() == HTTPClient.STATUS_BODY and chunks_read < MAX_CHUNKS_PER_STREAM_FRAME:
 			var chunk := client.read_response_body_chunk()
 			if chunk.is_empty():
 				break
+			chunks_read += 1
 			state.last_activity_msec = Time.get_ticks_msec()
 			var parsed: Dictionary = (state.parser as RefCounted).call("feed", chunk)
 			if not parsed.ok:
 				_finish(agent_id, false, {}, str(parsed.error))
 				return
-			for event_value in parsed.events:
-				var event := event_value as Dictionary
-				var event_callback := state.event_callback as Callable
-				event_callback.call(event.duplicate(true))
-				var event_name := str(event.event)
-				if event_name == "decision.final":
-					state.final = (event.data as Dictionary).payload.duplicate(true)
-				elif event_name == "stream.error":
-					_finish(agent_id, false, {}, str((event.data as Dictionary).payload.get("code", "stream_error")))
-					return
-				elif event_name == "stream.completed":
-					if (state.final as Dictionary).is_empty():
-						_finish(agent_id, false, {}, "completed_without_final")
-					else:
-						_finish(agent_id, true, state.final, "")
-					return
+			if not (state.event_queue as RefCounted).call("push_many", parsed.events):
+				_finish(agent_id, false, {}, "invalid_stream_event_queue")
+				return
+			event_budget = _dispatch_queued_events(agent_id, state, event_budget)
+			if not _streams.has(agent_id) or event_budget <= 0:
+				return
 		_streams[agent_id] = state
 		return
 	if (
 		bool(state.request_sent)
 		and bool(state.response_started)
+		and (state.event_queue as RefCounted).call("is_empty")
 		and status in [HTTPClient.STATUS_CONNECTED, HTTPClient.STATUS_DISCONNECTED]
 	):
 		_finish(agent_id, false, {}, "incomplete_stream")
+
+
+func _dispatch_queued_events(agent_id: String, state: Dictionary, budget: int) -> int:
+	var events: Array = (state.event_queue as RefCounted).call("drain", budget)
+	for event_value in events:
+		var event := event_value as Dictionary
+		var event_callback := state.event_callback as Callable
+		event_callback.call(event.duplicate(true))
+		var event_name := str(event.event)
+		if event_name == "decision.final":
+			state.final = (event.data as Dictionary).payload.duplicate(true)
+			_streams[agent_id] = state
+		elif event_name == "stream.error":
+			_finish(agent_id, false, {}, str((event.data as Dictionary).payload.get("code", "stream_error")))
+			return 0
+		elif event_name == "stream.completed":
+			if (state.final as Dictionary).is_empty():
+				_finish(agent_id, false, {}, "completed_without_final")
+			else:
+				_finish(agent_id, true, state.final, "")
+			return 0
+	return budget - events.size()
 
 
 func _finish(agent_id: String, ok: bool, response: Dictionary, error: String) -> void:

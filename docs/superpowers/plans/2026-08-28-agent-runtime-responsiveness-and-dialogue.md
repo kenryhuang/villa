@@ -57,7 +57,7 @@ Run the Agent suite, expect PASS, then commit the focused performance change.
 - Modify: `tests/run_agent_system_tests.gd`
 - Modify: `scripts/ai_agent/agent_stream_client.gd`
 
-- [ ] **Step 1: Write failing queue behavior tests**
+- [x] **Step 1: Write failing queue behavior tests**
 
 Specify this API:
 
@@ -70,11 +70,11 @@ func size() -> int
 
 Assert that `drain(32)` returns the first 32 of 40 events in order, leaves eight queued, rejects non-dictionary events, and never drains when the limit is non-positive. Register the test in `run_agent_system_tests.gd`.
 
-- [ ] **Step 2: Run the Agent suite and confirm RED**
+- [x] **Step 2: Run the Agent suite and confirm RED**
 
 Expected: preload fails because `agent_stream_event_queue.gd` does not exist.
 
-- [ ] **Step 3: Implement the FIFO queue and integrate frame budgets**
+- [x] **Step 3: Implement the FIFO queue and integrate frame budgets**
 
 Add constants to `AgentStreamClient`:
 
@@ -85,7 +85,7 @@ const MAX_EVENTS_PER_STREAM_FRAME := 32
 
 Each stream state owns an event queue. `_poll_stream()` first dispatches queued events up to the event budget, reads at most four chunks, pushes parsed events, then spends the remaining event budget. It must defer incomplete-response detection until the queue is empty. Terminal event handling remains ordered and calls `_finish()` exactly once.
 
-- [ ] **Step 4: Run the Agent suite and commit**
+- [x] **Step 4: Run the Agent suite and commit**
 
 Expect all Agent checks to pass and commit the bounded-stream change.
 
