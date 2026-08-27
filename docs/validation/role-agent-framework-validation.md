@@ -1,30 +1,49 @@
 # Role-Based NPC Agent Framework Validation
 
-Validated on 2026-08-27 with Godot 4.7.1 stable and Node.js 24.19 on branch `feature/painted-production-buildings`.
+Validated through 2026-08-28 with Godot 4.7.1 stable and Node.js 24.19 on branch `feature/painted-production-buildings`.
 
 ## Passing evidence
 
 | Check | Result |
 |---|---|
-| `npm --prefix services/agent-service test` | Exit 0; 25/25 tests passed |
-| `godot_console --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 865/865 checks passed |
+| `npm --prefix services/agent-service test` | Exit 0; 27/27 tests passed |
+| `godot_console --headless --path . --script res://tests/run_agent_system_tests.gd` | Exit 0; 957/957 checks passed |
+| `godot_console --headless --path . --script res://tests/run_debug_panel_tests.gd` | Exit 0; 253/253 checks passed |
 | `godot_console --headless --path . --script res://tests/run_player_action_controller_tests.gd` | Exit 0; 226/226 checks passed |
 | `godot_console --headless --path . --editor --quit` | Exit 0; new prompt SVG imported and all changed scripts compiled |
 | `godot_console --headless --path . --quit-after 3` | Exit 0; main scene initialized without script errors |
 | `godot_console --headless --path . --script res://tests/agent_service_integration.gd` | Exit 0; real Provider returned a valid protocol v2 decision with one action, then v2 outcome and checkpoint passed |
 
-The passing suites cover role-isolated Soul/goals/tools, exact Provider JSON Schemas, protocol v2 rejection of v1 traffic, zero-to-three ordered tool calls, empty decisions, per-action idempotency, fail-stop and in-progress-stop batch execution, current-state domain validation without global revision rejection or model retry, fragmented UTF-8 Provider SSE, streaming dialogue routing, bounded debug traces, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint safety, and asynchronous memory sidecar coordination.
+The passing suites cover role-isolated Soul/goals/tools, exact Provider JSON Schemas, protocol v2 rejection of v1 traffic, zero-to-three ordered tool calls, empty decisions, per-action idempotency, fail-stop and in-progress-stop batch execution, current-state domain validation without global revision rejection or model retry, fragmented UTF-8 Provider SSE, streaming dialogue routing, bounded debug traces, per-Agent runtime scheduling controls, fixed-size multi-turn conversations, world save round trips, session-isolated SQLite memory, Provider-backed long-term memory compaction, checkpoint safety, and asynchronous memory sidecar coordination.
+
+## Runtime responsiveness and scheduling
+
+Disabling `store_agent_session` removes file writes but does not remove Provider work, SSE parsing, debug tracing, or UI rendering. The observed stalls came from three main-thread amplification paths rather than autonomous Agent simulation itself:
+
+- trace deltas repeatedly rebuilt ever-growing reasoning/content strings;
+- the hidden F8 window still serialized and rendered the full trace after every delta;
+- each `AgentStreamClient._process()` drained all currently available chunks and decoded events in one frame.
+
+Trace sessions now retain fragments internally and materialize complete records only when read or persisted. The debug window skips rendering while hidden and coalesces visible updates to one deferred refresh. Stream clients process at most four network chunks and 32 decoded events per Agent per frame, preserving FIFO order across later frames.
+
+The F8 Agent tab now exposes one runtime-only decision interval per managed Agent in game hours. Values are clamped to `0..168`; `0` disables that Agent's automatic scheduler trigger without disabling player-initiated dialogue. Applying the controls updates the scheduler immediately and does not modify configuration files or save data.
 
 ## Visible Agent NPC dialogue
 
-The 2026-08-27 feature validation additionally proves:
+The visible-NPC and multi-turn-dialogue validation proves:
 
 - `Actors/Npcs/NpcNorthwest`, `NpcSouth`, and `NpcEast` bind by node name to `farmer_ahe`, `lao_li`, and `xuezhe_lin`; child ordering is not used.
 - The real NPC scene enables its hand-painted billboard prompt at XZ distance `<= 3.0`, ignores Y-axis height, and disables prompt visibility, layer-64 collision, and ray picking together when out of range or busy.
 - NPC body and prompt-area hits resolve through the existing `PlayerActionController` parent walk to the same `start_dialogue()` method; a rejected interaction is no longer reported as successful.
-- A managed NPC never falls back to `VillagerSystem` text. Request-start and stream failures close the incomplete Agent dialogue, publish `Agent 服务不可用，请稍后再试。` through `HudMessageBus`, and unlock only the matching NPC.
-- Completed dialogue close retains the original Agent/request identity without cancelling; in-flight close cancels with that identity and then unlocks. Main rejects stale same-Agent close/cancel IDs, and a second Agent stream cancels/closes the stream it replaces, so no old event can unlock the wrong active request. Late deltas after close or failure cannot reopen the panel.
+- Every managed NPC has an always-visible billboarded Agent display name. Its dialogue icon remains range-gated and clickable through the existing interaction routing.
+- Clicking the icon opens a fixed `760 x 420` conversation window without starting a Provider request. The window has scrollable per-NPC history, multiline input, Enter-to-send, Shift+Enter newline, a send button, and a close button. Closing and reopening the same NPC preserves history for the current runtime.
+- Submitting non-empty text starts exactly one Agent dialogue request with the exact player message and disables the composer while pending. Streaming deltas update one pending Agent history entry; completion or failure re-enables input so the player can continue the conversation.
+- A managed NPC never falls back to `VillagerSystem` text. Request-start and stream failures keep the conversation available for retry, publish `Agent 服务不可用，请稍后再试。` through `HudMessageBus`, and retain the matching NPC lock until the player closes the window.
+- Completed dialogue close does not cancel; in-flight close cancels with the exact Agent/request identity and then unlocks. Main rejects stale request deltas, completions, closes, and cancels, so old events cannot update or unlock another conversation.
+- Dialogue speech is emitted before world-action validation, using `speech`, then `decision_summary`, then `……`. A valid reply therefore remains visible even when one accompanying world action fails its current-state constraints.
 - Existing autonomous scheduling, Protocol v2 validation/execution, authoritative world mutations, outcome reporting, and F8 raw trace coverage remain in the same passing Agent suite.
+
+The TypeScript Provider prompt now includes `dialogue_input` verbatim for dialogue triggers and explicitly requests an in-character response. After a successful response, the service stores one idempotent memory event containing the complete `player_text` and `agent_speech`; it does not persist one database row per stream delta.
 
 The short headless main-scene startup was intentionally network-passive: it verified scene wiring and parse/runtime startup without initiating player dialogue, changing the configured Agent database, or claiming a real Provider conversation.
 
@@ -34,7 +53,9 @@ Before the updated local service accepted any request, validation observed `PRAG
 
 ## Existing repository baselines
 
-`godot_console --headless --path . --script res://tests/run_tests.gd` still reports the same four pre-existing failures out of 3084 checks: three order/contract persistence assertions and one shared `VillagerSystem` count assertion (`expected 5, got 6`). The new 30 NPC prompt/range checks in that aggregate pass; these unrelated failures were present before the visible-NPC implementation and were not changed.
+`godot_console --headless --path . --script res://tests/run_tests.gd` still reports the same four pre-existing failures out of 3089 checks: three order/contract persistence assertions and one shared `VillagerSystem` count assertion (`expected 5, got 6`). The updated NPC prompt/name checks in that aggregate pass; these unrelated failures were present before this implementation and were not changed.
+
+`godot_console --headless --path . --script res://tests/run_main_gameplay_integration_tests.gd` reports two existing fixture failures out of 1786 checks: the automatic seed-map inventory assertion and the initial contract-delivery availability assertion. No Agent/NPC dialogue assertion fails in that suite.
 
 Two broader suites fail identically on `main` and this feature branch when run with the same console binary:
 

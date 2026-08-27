@@ -54,10 +54,9 @@ text = "×"
 tooltip_text = "关闭对话"
 
 [node name="History" type="RichTextLabel" parent="DialoguePanel/Margin/VBox"]
-custom_minimum_size = Vector2(0, 270)
+custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
 size_flags_vertical = 3
-bbcode_enabled = true
 fit_content = false
 scroll_active = true
 scroll_following = true

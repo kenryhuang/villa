@@ -33,6 +33,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var send := dialogue.get_node("DialoguePanel/Margin/VBox/Composer/SendButton") as Button
 	var close_button := dialogue.get_node("DialoguePanel/Margin/VBox/Header/CloseButton") as Button
 	var history_view := dialogue.get_node("DialoguePanel/Margin/VBox/History") as RichTextLabel
+	assertions.truthy(not history_view.bbcode_enabled, "Agent dialogue history renders player and Provider text literally")
+	assertions.truthy(history_view.custom_minimum_size.y <= 220.0, "Agent dialogue controls fit inside the fixed panel height")
 	var submitted: Array[Array] = []
 	var cancelled: Array[Array] = []
 	var closed: Array[Array] = []

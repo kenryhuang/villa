@@ -248,11 +248,11 @@ Expected: both suites pass without script errors or leaked dialogue nodes.
 - Modify: `docs/validation/role-agent-framework-validation.md`
 - Modify: `docs/superpowers/plans/2026-08-28-agent-runtime-responsiveness-and-dialogue.md`
 
-- [ ] **Step 1: Document the verified behavior and root cause**
+- [x] **Step 1: Document the verified behavior and root cause**
 
 Record the trace/render/SSE budgets, interval semantics, dialogue flow, Provider input propagation, and exact test results.
 
-- [ ] **Step 2: Run all relevant tests from clean processes**
+- [x] **Step 2: Run all relevant tests from clean processes**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
@@ -264,6 +264,6 @@ git diff --check
 
 Expected: every suite exits zero and the diff check reports no whitespace errors.
 
-- [ ] **Step 3: Review the final diff and commit**
+- [x] **Step 3: Review the final diff and commit**
 
 Confirm only the planned Agent runtime, UI, service, tests, and documentation changed. Commit any final validation documentation, then verify the worktree is clean.
