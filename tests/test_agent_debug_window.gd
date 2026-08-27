@@ -3,7 +3,6 @@ extends RefCounted
 const AgentDebugWindowScene = preload("res://scenes/ui/agent_debug_window.tscn")
 const AgentSessionTraceScript = preload("res://scripts/ai_agent/agent_session_trace.gd")
 const DebugPanelScene = preload("res://scenes/ui/debug_panel.tscn")
-const DialogueScene = preload("res://scenes/ui/dialogue_ui.tscn")
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -50,20 +49,6 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	(debug_panel.get_node("Overlay/Center/Panel/Layout/Footer/AgentDebugButton") as Button).pressed.emit()
 	assertions.equal(requests.size(), 1, "runtime debug panel requests Agent debug window")
 
-	var dialogue = DialogueScene.instantiate()
-	tree.root.add_child(dialogue)
-	await tree.process_frame
-	var cancelled: Array[String] = []
-	dialogue.agent_dialogue_cancelled.connect(func(_agent_id: String, request_id: String): cancelled.append(request_id))
-	dialogue.begin_agent_dialogue("farmer_ahe", "dialogue-1")
-	assertions.equal(dialogue.text_label.text, "正在思考……", "streaming dialogue starts immediately")
-	dialogue.append_agent_dialogue("dialogue-1", "你")
-	dialogue.append_agent_dialogue("dialogue-1", "好")
-	assertions.equal(dialogue.text_label.text, "你好", "dialogue appends content deltas")
-	dialogue.close()
-	assertions.equal(cancelled, ["dialogue-1"], "closing dialogue requests stream cancellation")
-
-	dialogue.queue_free()
 	debug_panel.queue_free()
 	window.queue_free()
 	trace.queue_free()

@@ -209,31 +209,31 @@ Expect the complete Agent Service suite to pass.
 - Modify: `scripts/ai_agent/agent_runtime.gd`
 - Modify: `scripts/main.gd`
 
-- [ ] **Step 1: Write failing NPC nameplate tests**
+- [x] **Step 1: Write failing NPC nameplate tests**
 
 Require a billboarded `Nameplate` Label3D. Configure the NPC with `configure_agent(player, "farmer_ahe", "阿禾")` and assert the name remains visible both inside and outside dialogue range while the dialogue icon remains range-gated.
 
-- [ ] **Step 2: Write failing dialogue composer tests**
+- [x] **Step 2: Write failing dialogue composer tests**
 
 Require `open_agent_dialogue(agent_id, display_name)`, a fixed-size panel, scrollable History, multiline MessageInput, SendButton, and CloseButton. Assert opening does not emit a request; empty input rejects; Enter/send emits `agent_message_submitted` with exact text; input disables while pending; streaming builds one Agent history entry; completion re-enables input; close/reopen preserves history; and close during a request emits cancellation.
 
-- [ ] **Step 3: Write failing Main lifecycle tests**
+- [x] **Step 3: Write failing Main lifecycle tests**
 
 Change the runtime double to retain submitted text. Assert NPC click opens the composer without calling `trigger_dialogue`, submitting calls it once with exact text, start/delta/complete update the same request, synchronous failure leaves the window open, and close unlocks only the matching NPC.
 
-- [ ] **Step 4: Run the Agent suite and confirm RED**
+- [x] **Step 4: Run the Agent suite and confirm RED**
 
 Expected: nameplate, composer APIs, input controls, and submit routing are absent.
 
-- [ ] **Step 5: Implement NPC nameplates and dialogue UI state**
+- [x] **Step 5: Implement NPC nameplates and dialogue UI state**
 
 Pass profile display names from Main through `configure_agent()`. Add per-Agent history records with `role` and `text`, one pending request ID, stale-request guards, automatic bottom scrolling, and focused multiline input. Keep history on close but clear current view/request state.
 
-- [ ] **Step 6: Rewire Main and make dialogue speech validation-independent**
+- [x] **Step 6: Rewire Main and make dialogue speech validation-independent**
 
 NPC click calls `open_agent_dialogue()` only. Connect `agent_message_submitted` to a handler that calls `AgentRuntime.trigger_dialogue(agent_id, text)`. Stream callbacks update the open conversation. Runtime emits final dialogue speech before action validation, using `speech`, then `decision_summary`, then `……`, so invalid world actions cannot swallow valid conversation text.
 
-- [ ] **Step 7: Run Agent and gameplay integration suites, then commit**
+- [x] **Step 7: Run Agent and gameplay integration suites, then commit**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd

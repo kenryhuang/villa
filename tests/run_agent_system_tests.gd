@@ -8,6 +8,7 @@ const AgentClientConfigTest = preload("res://tests/test_agent_client_config.gd")
 const AgentStreamingTest = preload("res://tests/test_agent_streaming.gd")
 const AgentStreamEventQueueTest = preload("res://tests/test_agent_stream_event_queue.gd")
 const AgentDebugWindowTest = preload("res://tests/test_agent_debug_window.gd")
+const AgentDialogueUiTest = preload("res://tests/test_agent_dialogue_ui.gd")
 const VisibleAgentNpcDialogueTest = preload("res://tests/test_visible_agent_npc_dialogue.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
@@ -34,6 +35,8 @@ func _run() -> void:
 	integration_test.run(assertions, self)
 	var debug_window_test := AgentDebugWindowTest.new()
 	await debug_window_test.run(assertions, self)
+	var dialogue_ui_test := AgentDialogueUiTest.new()
+	await dialogue_ui_test.run(assertions, self)
 	var visible_npc_test := VisibleAgentNpcDialogueTest.new()
 	visible_npc_test.run(assertions, self)
 	if assertions.failures.is_empty():

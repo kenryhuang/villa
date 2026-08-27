@@ -128,6 +128,10 @@ func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 	return service_enabled and scheduler.trigger_dialogue(agent_id, text, _absolute_game_minute())
 
 
+func get_in_flight_request_id(agent_id: String) -> String:
+	return scheduler.get_in_flight_request_id(agent_id)
+
+
 func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 	if str(_request_triggers.get(request_id, "")) != "dialogue":
 		return false
@@ -372,6 +376,13 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	var request_id := str(response.get("request_id", ""))
 	var trigger := str(_request_triggers.get(request_id, ""))
 	_request_triggers.erase(request_id)
+	if trigger == "dialogue":
+		var speech := str(response.get("speech", "")).strip_edges()
+		if speech.is_empty():
+			speech = str(response.get("decision_summary", "")).strip_edges()
+		if speech.is_empty():
+			speech = "……"
+		dialogue_ready.emit(agent_id, request_id, speech)
 	var checked := validator.validate(response, registry, executor.world_revision)
 	if not checked.ok:
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
@@ -384,8 +395,6 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 			_publish_committed_outcome(agent_id, outcome)
 		if service_enabled:
 			gateway.report_outcome(agent_id, session_id, outcome)
-	if trigger == "dialogue" and response.has("speech") and not str(response.speech).is_empty():
-		dialogue_ready.emit(agent_id, request_id, str(response.speech))
 
 
 func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:

@@ -603,7 +603,8 @@ func _setup_npcs() -> void:
 			continue
 		var agent_id := str(binding.agent_id)
 		_place_on_terrain(npc, binding.spawn as Vector2)
-		if not bool(npc.call("configure_agent", player, agent_id)):
+		var display_name := str(agent_runtime.call("get_agent_display_name", agent_id))
+		if not bool(npc.call("configure_agent", player, agent_id, display_name)):
 			push_error("Unable to bind visible NPC %s to Agent %s" % [node_name, agent_id])
 			continue
 		_agent_npcs[agent_id] = npc
@@ -1336,26 +1337,38 @@ func _on_dialogue_started(villager_id: String) -> void:
 			and is_instance_valid(agent_runtime)
 			and agent_runtime.has_method("is_agent_managed")
 			and bool(agent_runtime.call("is_agent_managed", villager_id))
-			and agent_runtime.has_method("trigger_dialogue")
-			and bool(agent_runtime.call("trigger_dialogue", villager_id))
+			and dialogue_ui != null
+			and dialogue_ui.has_method("open_agent_dialogue")
+			and bool(dialogue_ui.call(
+				"open_agent_dialogue",
+				villager_id,
+				agent_runtime.call("get_agent_display_name", villager_id)
+			))
 		):
 			return
 		_set_agent_npc_busy(villager_id, false)
-		_agent_dialogue_requests.erase(villager_id)
-		_publish_agent_service_unavailable(villager_id)
 		return
 	if dialogue_ui:
 		dialogue_ui.start_dialogue(villager_id)
 
 
 func _on_agent_dialogue_stream_started(villager_id: String, request_id: String) -> void:
+	var active_request := str(_agent_dialogue_requests.get(villager_id, ""))
+	if active_request == request_id:
+		return
+	if not active_request.is_empty():
+		return
 	_agent_dialogue_requests[villager_id] = request_id
 	if dialogue_ui and dialogue_ui.has_method("begin_agent_dialogue"):
 		dialogue_ui.call("begin_agent_dialogue", villager_id, request_id)
 
 
 func _on_agent_dialogue_stream_delta(_villager_id: String, request_id: String, delta: String) -> void:
-	if dialogue_ui and dialogue_ui.has_method("append_agent_dialogue"):
+	if (
+		str(_agent_dialogue_requests.get(_villager_id, "")) == request_id
+		and dialogue_ui
+		and dialogue_ui.has_method("append_agent_dialogue")
+	):
 		dialogue_ui.call("append_agent_dialogue", request_id, delta)
 
 
@@ -1366,7 +1379,6 @@ func _on_agent_dialogue_stream_failed(villager_id: String, request_id: String, _
 	if dialogue_ui and dialogue_ui.has_method("fail_agent_dialogue"):
 		dialogue_ui.call("fail_agent_dialogue", request_id)
 	_agent_dialogue_requests.erase(villager_id)
-	_set_agent_npc_busy(villager_id, false)
 	_publish_agent_service_unavailable(villager_id)
 
 
@@ -1375,6 +1387,24 @@ func _on_agent_dialogue_ready(villager_id: String, request_id: String, speech: S
 		return
 	if dialogue_ui and dialogue_ui.has_method("finish_agent_dialogue"):
 		dialogue_ui.call("finish_agent_dialogue", request_id, speech)
+	_agent_dialogue_requests.erase(villager_id)
+
+
+func _on_agent_message_submitted(villager_id: String, message: String) -> void:
+	if (
+		agent_runtime != null
+		and agent_runtime.has_method("trigger_dialogue")
+		and bool(agent_runtime.call("trigger_dialogue", villager_id, message))
+	):
+		var request_id := str(agent_runtime.call("get_in_flight_request_id", villager_id))
+		if not request_id.is_empty():
+			_agent_dialogue_requests[villager_id] = request_id
+			if dialogue_ui != null and dialogue_ui.has_method("begin_agent_dialogue"):
+				dialogue_ui.call("begin_agent_dialogue", villager_id, request_id)
+			return
+	if dialogue_ui != null and dialogue_ui.has_method("fail_agent_submission"):
+		dialogue_ui.call("fail_agent_submission", villager_id, AGENT_SERVICE_UNAVAILABLE_MESSAGE)
+	_publish_agent_service_unavailable(villager_id)
 
 
 func _on_agent_dialogue_cancelled(villager_id: String, request_id: String) -> void:
@@ -1385,7 +1415,10 @@ func _on_agent_dialogue_cancelled(villager_id: String, request_id: String) -> vo
 
 
 func _on_agent_dialogue_closed(villager_id: String, request_id: String) -> void:
-	if str(_agent_dialogue_requests.get(villager_id, "")) != request_id:
+	var active_request := str(_agent_dialogue_requests.get(villager_id, ""))
+	if not request_id.is_empty() and not active_request.is_empty() and active_request != request_id:
+		return
+	if request_id.is_empty() and not active_request.is_empty():
 		return
 	_agent_dialogue_requests.erase(villager_id)
 	_set_agent_npc_busy(villager_id, false)
@@ -1395,6 +1428,7 @@ func _connect_agent_dialogue_ui() -> void:
 	if dialogue_ui == null or not is_instance_valid(dialogue_ui):
 		return
 	for signal_record in [
+		{"name": "agent_message_submitted", "method": "_on_agent_message_submitted"},
 		{"name": "agent_dialogue_cancelled", "method": "_on_agent_dialogue_cancelled"},
 		{"name": "agent_dialogue_closed", "method": "_on_agent_dialogue_closed"},
 	]:

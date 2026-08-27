@@ -30,9 +30,20 @@ mesh = SubResource("NpcMesh")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("NpcShape")
 
+[node name="Nameplate" type="Label3D" parent="."]
+position = Vector3(0, 1.25, 0)
+pixel_size = 0.006
+billboard = 1
+no_depth_test = true
+text = "NPC"
+font_size = 30
+outline_size = 8
+modulate = Color(1, 0.96, 0.82, 1)
+outline_modulate = Color(0.16, 0.1, 0.06, 0.9)
+
 [node name="DialoguePrompt" type="Node3D" parent="."]
 visible = false
-position = Vector3(0, 1.45, 0)
+position = Vector3(0, 1.72, 0)
 
 [node name="Icon" type="Sprite3D" parent="DialoguePrompt"]
 texture = ExtResource("2_prompt")

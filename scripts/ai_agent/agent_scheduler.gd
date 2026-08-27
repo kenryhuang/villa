@@ -71,6 +71,10 @@ func is_in_flight(agent_id: String) -> bool:
 	return _in_flight.has(agent_id)
 
 
+func get_in_flight_request_id(agent_id: String) -> String:
+	return str(_in_flight.get(agent_id, ""))
+
+
 func set_decision_interval_hours(agent_id: String, hours: int) -> bool:
 	if not _registry.call("is_agent_managed", agent_id) or hours < 0 or hours > MAX_DEBUG_INTERVAL_HOURS:
 		return false

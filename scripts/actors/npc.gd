@@ -27,6 +27,7 @@ const PROMPT_INTERACTION_LAYER := 64
 @onready var dialogue_prompt: Node3D = get_node_or_null("DialoguePrompt")
 @onready var dialogue_prompt_icon: Sprite3D = get_node_or_null("DialoguePrompt/Icon")
 @onready var dialogue_prompt_hit_area: Area3D = get_node_or_null("DialoguePrompt/HitArea")
+@onready var nameplate: Label3D = get_node_or_null("Nameplate")
 
 
 func _ready() -> void:
@@ -44,11 +45,14 @@ func configure(player: Node3D) -> void:
 	refresh_dialogue_prompt()
 
 
-func configure_agent(player: Node3D, agent_id: String) -> bool:
+func configure_agent(player: Node3D, agent_id: String, display_name: String = "") -> bool:
 	configure(player)
 	if agent_id.is_empty():
 		return false
 	villager_id = agent_id
+	if nameplate != null:
+		nameplate.text = display_name if not display_name.strip_edges().is_empty() else agent_id
+		nameplate.visible = health > 0
 	_agent_dialogue_enabled = true
 	refresh_dialogue_prompt()
 	return true
@@ -115,6 +119,8 @@ func take_hit(damage: int, direction: Vector3) -> void:
 		knockback_velocity = direction.normalized() * float(damage)
 	if health == 0 and not _defeated_emitted:
 		_defeated_emitted = true
+		if nameplate != null:
+			nameplate.visible = false
 		refresh_dialogue_prompt()
 		defeated.emit(self)
 
