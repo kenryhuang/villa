@@ -131,8 +131,10 @@ func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 	if str(_request_triggers.get(request_id, "")) != "dialogue":
 		return false
-	_request_triggers.erase(request_id)
-	return gateway != null and bool(gateway.call("cancel_agent", agent_id, "dialogue_closed"))
+	var cancelled := gateway != null and bool(gateway.call("cancel_agent", agent_id, "dialogue_closed"))
+	if not cancelled:
+		_request_triggers.erase(request_id)
+	return cancelled
 
 
 func get_session_trace() -> Node:
@@ -325,7 +327,10 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 
 
 func _handle_stream_failure(agent_id: String, request_id: String, error: String) -> void:
-	if str(_request_triggers.get(request_id, "")) == "dialogue":
+	var trigger := str(_request_triggers.get(request_id, ""))
+	if not session_trace.finish_error(agent_id, request_id, error, trigger):
+		_publish("warning", "%s 的 Agent 失败会话无法记录。" % agent_id, {"agent_id": agent_id})
+	if trigger == "dialogue":
 		dialogue_stream_failed.emit(agent_id, request_id, error)
 	_request_triggers.erase(request_id)
 

@@ -30,7 +30,7 @@ Godot accepts forward slashes in the configured Windows path. The configuration 
 
 This prevents a save-slot change from silently restoring the old `user://agent_sessions` directory.
 
-`AgentSessionTrace` continues to create the configured directory recursively, name files by session and timestamp, flush every accepted non-heartbeat SSE event, and retain at most 20 NDJSON files. With the local configuration, files are created directly as:
+`AgentSessionTrace` continues to create the configured directory recursively, name files by session and timestamp, and retain at most 20 NDJSON files. It now flushes one aggregated record when a request completes or fails, as specified by `2026-08-27-agent-session-trace-aggregation-design.md`. With the local configuration, files are created directly as:
 
 ```text
 D:/UnityProject/villa/tmp/<session-id>-<timestamp>.ndjson
@@ -53,13 +53,12 @@ Automated coverage will verify:
 - an empty or non-string field is rejected;
 - initial runtime configuration passes the configured directory to the trace collector;
 - changing save slots keeps using the configured directory;
-- trace retention and immediate NDJSON flushing continue to work in a temporary test directory.
+- trace retention and terminal aggregated NDJSON flushing work in a temporary test directory.
 
 The implementation will also run the existing Agent-focused Godot test suite to detect configuration or lifecycle regressions.
 
 ## Out of Scope
 
 - moving or deleting historical trace files;
-- changing the NDJSON event schema;
 - changing the in-memory request limit or the 20-file retention limit;
 - changing Agent scheduling, Provider calls, or stale-world-revision handling.

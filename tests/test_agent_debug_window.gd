@@ -20,6 +20,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	trace.accept_event(_event("reasoning.delta", 3, {"delta": "先查看农场。"}))
 	trace.accept_event(_event("content.delta", 4, {"delta": "你好，今天适合耕种。"}))
 	trace.accept_event(_event("provider.output", 5, {"message": {"content": "你好，今天适合耕种。"}}))
+	trace.accept_event(_event("stream.error", 6, {"code": "provider_error"}))
 	await tree.process_frame
 	var list := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/RequestList") as ItemList
 	var reasoning := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Reasoning") as TextEdit
@@ -29,6 +30,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(input.text.contains("test-model"), "Agent debug window shows raw input")
 	assertions.equal(reasoning.text, "先查看农场。", "Agent debug window streams raw reasoning")
 	assertions.truthy(output.text.contains("今天适合耕种"), "Agent debug window shows raw output")
+	assertions.truthy(output.text.contains("provider_error"), "Agent debug window shows terminal error payload")
 	window.toggle()
 	assertions.truthy(not window.visible, "Agent debug window toggle closes")
 	window.toggle()

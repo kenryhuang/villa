@@ -7,9 +7,11 @@ signal trace_cleared
 const MAX_REQUESTS := 100
 const MAX_SESSION_FILES := 20
 const DEFAULT_DIRECTORY := "user://agent_sessions"
+const RECORD_SCHEMA_VERSION := 2
 
 var _requests: Array[Dictionary] = []
 var _request_indexes: Dictionary = {}
+var _terminal_requests: Dictionary = {}
 var _store_to_disk := false
 var _directory := DEFAULT_DIRECTORY
 var _log_path := ""
@@ -24,6 +26,7 @@ func configure(
 	close()
 	_requests.clear()
 	_request_indexes.clear()
+	_terminal_requests.clear()
 	_store_to_disk = store_to_disk
 	_directory = directory
 	_log_path = ""
@@ -50,27 +53,17 @@ func accept_event(event: Dictionary) -> bool:
 		return false
 	var data := event.data as Dictionary
 	var request_id := str(data.request_id)
+	if _terminal_requests.has(request_id):
+		return true
 	var index := int(_request_indexes.get(request_id, -1))
 	if index < 0:
-		index = _requests.size()
-		_request_indexes[request_id] = index
-		_requests.append({
-			"request_id": request_id,
-			"stream_id": str(data.stream_id),
-			"agent_id": str(data.agent_id),
-			"trigger": "",
-			"started_msec": int(data.timestamp_msec),
-			"updated_msec": int(data.timestamp_msec),
-			"status": "streaming",
-			"input": {},
-			"reasoning": "",
-			"content": "",
-			"tool_deltas": [],
-			"output": {},
-			"final": {},
-		})
-		_trim_memory()
-		index = int(_request_indexes.get(request_id, -1))
+		index = _append_record(
+			request_id,
+			str(data.get("stream_id", "")),
+			str(data.get("agent_id", "")),
+			"",
+			int(data.get("timestamp_msec", 0))
+		)
 		if index < 0:
 			return false
 	var record := _requests[index]
@@ -96,11 +89,41 @@ func accept_event(event: Dictionary) -> bool:
 			record.status = "completed"
 		"stream.error":
 			record.status = "error"
-			record.output = payload.duplicate(true)
+			record.error = payload.duplicate(true)
 	_requests[index] = record
-	if _log_file != null:
-		_log_file.store_line(JSON.stringify(event))
-		_log_file.flush()
+	if event_name in ["stream.completed", "stream.error"]:
+		_persist_terminal(request_id)
+	trace_updated.emit(request_id)
+	return true
+
+
+func finish_error(
+	agent_id: String,
+	request_id: String,
+	error: String,
+	trigger: String = "",
+	timestamp_msec: int = -1
+) -> bool:
+	if agent_id.strip_edges().is_empty() or request_id.strip_edges().is_empty():
+		return false
+	if _terminal_requests.has(request_id):
+		return true
+	var resolved_timestamp := timestamp_msec
+	if resolved_timestamp < 0:
+		resolved_timestamp = int(Time.get_unix_time_from_system() * 1000.0)
+	var index := int(_request_indexes.get(request_id, -1))
+	if index < 0:
+		index = _append_record(request_id, "", agent_id, trigger, resolved_timestamp)
+		if index < 0:
+			return false
+	var record := _requests[index]
+	if str(record.trigger).is_empty():
+		record.trigger = trigger
+	record.updated_msec = resolved_timestamp
+	record.status = "error"
+	record.error = {"code": error if not error.is_empty() else "unknown_error"}
+	_requests[index] = record
+	_persist_terminal(request_id)
 	trace_updated.emit(request_id)
 	return true
 
@@ -133,6 +156,70 @@ func close() -> void:
 
 func _exit_tree() -> void:
 	close()
+
+
+func _append_record(
+	request_id: String,
+	stream_id: String,
+	agent_id: String,
+	trigger: String,
+	timestamp_msec: int
+) -> int:
+	var index := _requests.size()
+	_request_indexes[request_id] = index
+	_requests.append({
+		"request_id": request_id,
+		"stream_id": stream_id,
+		"agent_id": agent_id,
+		"trigger": trigger,
+		"started_msec": timestamp_msec,
+		"updated_msec": timestamp_msec,
+		"status": "streaming",
+		"input": {},
+		"reasoning": "",
+		"content": "",
+		"tool_deltas": [],
+		"output": {},
+		"final": {},
+		"error": {},
+	})
+	_trim_memory()
+	return int(_request_indexes.get(request_id, -1))
+
+
+func _persist_terminal(request_id: String) -> void:
+	if _terminal_requests.has(request_id):
+		return
+	var index := int(_request_indexes.get(request_id, -1))
+	if index < 0:
+		return
+	_terminal_requests[request_id] = true
+	if _log_file == null:
+		return
+	_log_file.store_line(JSON.stringify(_disk_record(_requests[index])))
+	_log_file.flush()
+
+
+func _disk_record(record: Dictionary) -> Dictionary:
+	return {
+		"schema_version": RECORD_SCHEMA_VERSION,
+		"request_id": str(record.request_id),
+		"stream_id": str(record.stream_id),
+		"agent_id": str(record.agent_id),
+		"trigger": str(record.trigger),
+		"status": str(record.status),
+		"started_msec": int(record.started_msec),
+		"updated_msec": int(record.updated_msec),
+		"input": (record.input as Dictionary).duplicate(true),
+		"response": {
+			"reasoning_content": str(record.reasoning),
+			"content": str(record.content),
+			"tool_call_deltas": (record.tool_deltas as Array).duplicate(true),
+			"provider_output": (record.output as Dictionary).duplicate(true),
+			"decision": (record.final as Dictionary).duplicate(true),
+			"error": (record.error as Dictionary).duplicate(true),
+		},
+	}
 
 
 func _trim_memory() -> void:

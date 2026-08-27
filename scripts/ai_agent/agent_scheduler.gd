@@ -69,9 +69,12 @@ func is_in_flight(agent_id: String) -> bool:
 func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String, priority: int) -> bool:
 	if is_in_flight(agent_id):
 		if trigger == "dialogue" and _gateway.has_method("cancel_agent"):
+			var replaced_request_id := str(_in_flight.get(agent_id, ""))
 			_in_flight.erase(agent_id)
 			_pending.erase(agent_id)
 			_gateway.call("cancel_agent", agent_id, "dialogue_replaced")
+			if _handle_failure.is_valid():
+				_handle_failure.call(agent_id, replaced_request_id, "dialogue_replaced")
 			return _dispatch(agent_id, trigger, game_minute, dialogue)
 		var current: Dictionary = _pending.get(agent_id, {})
 		if priority >= int(current.get("priority", -1)):

@@ -130,6 +130,7 @@ func _render_request(record: Dictionary) -> void:
 		"tool_call_deltas": record.get("tool_deltas", []),
 		"provider_output": record.get("output", {}),
 		"action_intent": record.get("final", {}),
+		"error": record.get("error", {}),
 	}, "\t")
 	call_deferred("_scroll_views_to_end")
 
