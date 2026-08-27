@@ -28,6 +28,12 @@ const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
 const AgentDebugWindowScene := preload("res://scenes/ui/agent_debug_window.tscn")
 const HudMessageBusScript := preload("res://scripts/ui/hud_message_bus.gd")
 const AgentRuntimeScript := preload("res://scripts/ai_agent/agent_runtime.gd")
+const AGENT_NPC_BINDINGS := {
+	"NpcNorthwest": {"agent_id": "farmer_ahe", "spawn": Vector2(-3.0, -2.0)},
+	"NpcSouth": {"agent_id": "lao_li", "spawn": Vector2(3.0, -3.0)},
+	"NpcEast": {"agent_id": "xuezhe_lin", "spawn": Vector2(4.0, 2.0)},
+}
+const AGENT_SERVICE_UNAVAILABLE_MESSAGE := "Agent 服务不可用，请稍后再试。"
 const NEW_GAME_STARTER_ITEMS := {
 	"grain_seed": 99,
 	"wood": 99,
@@ -113,6 +119,7 @@ var building_economy_modal := EconomyModalCoordinatorScript.new() as EconomyModa
 # 建筑容器
 var buildings_container: Node3D
 var _world_navigation_blockers: Dictionary = {}
+var _agent_npcs: Dictionary = {}
 
 
 func _ready() -> void:
@@ -585,22 +592,41 @@ func _set_resource_navigation_blocker(resource: Node, active: bool) -> void:
 
 
 func _setup_npcs() -> void:
-	# 村民初始位置和配置
-	var villager_ids = ["lao_li", "xiao_hua", "tiejiang_zhang", "afu_shui", "xuezhe_lin"]
-	var spawn_points = [
-		Vector2(-3.0, -2.0),
-		Vector2(3.0, -3.0),
-		Vector2(4.0, 2.0),
-		Vector2(-5.0, 3.0),
-		Vector2(2.0, 5.0),
-	]
+	_agent_npcs.clear()
+	for node_name in AGENT_NPC_BINDINGS:
+		var binding: Dictionary = AGENT_NPC_BINDINGS[node_name]
+		var npc = npcs.get_node_or_null(str(node_name)) if npcs != null else null
+		if npc == null:
+			push_error("Missing visible Agent NPC node: %s" % node_name)
+			continue
+		var agent_id := str(binding.agent_id)
+		_place_on_terrain(npc, binding.spawn as Vector2)
+		if not bool(npc.call("configure_agent", player, agent_id)):
+			push_error("Unable to bind visible NPC %s to Agent %s" % [node_name, agent_id])
+			continue
+		_agent_npcs[agent_id] = npc
+		var callback := Callable(self, "_on_dialogue_started")
+		if not npc.dialogue_started.is_connected(callback):
+			npc.dialogue_started.connect(callback)
 
-	for i in range(mini(npcs.get_child_count(), villager_ids.size())):
-		var npc = npcs.get_child(i)
-		_place_on_terrain(npc, spawn_points[i])
-		npc.configure(player)
-		npc.villager_id = villager_ids[i]
-		npc.dialogue_started.connect(_on_dialogue_started)
+
+func get_agent_npc(agent_id: String) -> Node:
+	return _agent_npcs.get(agent_id) as Node
+
+
+func _set_agent_npc_busy(agent_id: String, busy: bool) -> void:
+	var npc := get_agent_npc(agent_id)
+	if npc != null and is_instance_valid(npc) and npc.has_method("set_dialogue_busy"):
+		npc.call("set_dialogue_busy", busy)
+
+
+func _publish_agent_service_unavailable(agent_id: String) -> void:
+	_publish_hud_message(
+		"agent",
+		"warning",
+		AGENT_SERVICE_UNAVAILABLE_MESSAGE,
+		{"agent_id": agent_id}
+	)
 
 
 func _setup_ui() -> void:
@@ -1278,11 +1304,18 @@ func _on_debug_reset_requested() -> void:
 		push_error("Unable to reload the current scene: %s" % error_string(reload_error))
 
 func _on_dialogue_started(villager_id: String) -> void:
-	if (
-		agent_runtime != null
-		and bool(agent_runtime.call("is_agent_managed", villager_id))
-		and bool(agent_runtime.call("trigger_dialogue", villager_id))
-	):
+	if _agent_npcs.has(villager_id):
+		if (
+			agent_runtime != null
+			and is_instance_valid(agent_runtime)
+			and agent_runtime.has_method("is_agent_managed")
+			and bool(agent_runtime.call("is_agent_managed", villager_id))
+			and agent_runtime.has_method("trigger_dialogue")
+			and bool(agent_runtime.call("trigger_dialogue", villager_id))
+		):
+			return
+		_set_agent_npc_busy(villager_id, false)
+		_publish_agent_service_unavailable(villager_id)
 		return
 	if dialogue_ui:
 		dialogue_ui.start_dialogue(villager_id)
@@ -1311,6 +1344,10 @@ func _on_agent_dialogue_ready(_villager_id: String, request_id: String, speech: 
 func _on_agent_dialogue_cancelled(villager_id: String, request_id: String) -> void:
 	if agent_runtime != null and agent_runtime.has_method("cancel_dialogue"):
 		agent_runtime.call("cancel_dialogue", villager_id, request_id)
+
+
+func _on_agent_dialogue_closed(villager_id: String, _request_id: String) -> void:
+	_set_agent_npc_busy(villager_id, false)
 
 
 func _on_build_mode_entered() -> void:

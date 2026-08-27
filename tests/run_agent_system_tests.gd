@@ -7,6 +7,7 @@ const AgentMainIntegrationTest = preload("res://tests/test_agent_main_integratio
 const AgentClientConfigTest = preload("res://tests/test_agent_client_config.gd")
 const AgentStreamingTest = preload("res://tests/test_agent_streaming.gd")
 const AgentDebugWindowTest = preload("res://tests/test_agent_debug_window.gd")
+const VisibleAgentNpcDialogueTest = preload("res://tests/test_visible_agent_npc_dialogue.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -30,6 +31,8 @@ func _run() -> void:
 	integration_test.run(assertions, self)
 	var debug_window_test := AgentDebugWindowTest.new()
 	await debug_window_test.run(assertions, self)
+	var visible_npc_test := VisibleAgentNpcDialogueTest.new()
+	visible_npc_test.run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d Agent system checks" % assertions.checks)
 		quit(0)
