@@ -142,6 +142,10 @@ func run(assertions: TestAssert) -> void:
 		assertions.equal(economy.state.inventory.carrot_seed, 1, "committed plant consumes one NPC seed")
 		assertions.truthy(first_cell.crop_instance != null, "visible farm uses real CropInstance")
 		assertions.truthy(not farm.has_pending_work("farmer_ahe"), "completed batch clears queue")
+		var saved: Dictionary = farm.to_dict()
+		assertions.truthy(farm.validate_dict(saved), "visible farm save validates")
+		assertions.truthy(farm.from_dict(saved), "visible farm mapping and queue restore")
+		assertions.equal(farm.to_dict(), saved, "visible farm save round trip is stable")
 
 	farm.free()
 	farming.free()

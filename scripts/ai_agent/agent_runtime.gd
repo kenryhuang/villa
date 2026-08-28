@@ -20,7 +20,7 @@ const GameDataScript = preload("res://scripts/core/game_data.gd")
 const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
 const AgentSessionTraceScript = preload("res://scripts/ai_agent/agent_session_trace.gd")
 
-const VERSION := 2
+const VERSION := 3
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
 
@@ -49,6 +49,7 @@ var _save_manager: Variant
 var _store_agent_session := false
 var _agent_session_directory := AgentClientConfigScript.DEFAULT_SESSION_DIRECTORY
 var _request_triggers: Dictionary = {}
+var _farm_port: Variant
 
 
 func _init() -> void:
@@ -71,13 +72,19 @@ func configure(
 	_market = market
 	_season = season
 	_hud_bus = hud_bus
-	if farm_registry.get_plot("farmer_ahe", 0).is_empty() and not farm_registry.configure_farm("farmer_ahe", 12):
+	if _farm_port != null:
+		farm_registry = _farm_port
+	elif farm_registry.get_plot("farmer_ahe", 0).is_empty() and not farm_registry.configure_farm("farmer_ahe", 12):
 		return false
 	for agent_id in registry.get_agent_ids():
 		if not bool(_npc_economy.call("set_agent_managed", agent_id, true)):
 			return false
 	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy):
 		return false
+	if farm_registry.has_signal("work_finished"):
+		var callback := Callable(self, "_on_farm_work_finished")
+		if not farm_registry.is_connected("work_finished", callback):
+			farm_registry.connect("work_finished", callback)
 	gateway = AgentGatewayScript.new()
 	gateway.name = "AgentGateway"
 	add_child(gateway)
@@ -111,6 +118,13 @@ func configure(
 	_connect_events()
 	if service_enabled:
 		gateway.sync_session(session_id, false)
+	return true
+
+
+func set_farm_port(farm_port: Variant) -> bool:
+	if farm_port == null or not farm_port.has_method("get_snapshot") or not farm_port.has_method("queue_batch"):
+		return false
+	_farm_port = farm_port
 	return true
 
 
@@ -151,6 +165,20 @@ func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 
 func get_session_trace() -> Node:
 	return session_trace
+
+
+func record_farm_lifecycle(event_name: String, record: Dictionary) -> bool:
+	var request_id := str(record.get("request_id", ""))
+	return (
+		not request_id.is_empty()
+		and session_trace.has_method("record_action_event")
+		and bool(session_trace.call("record_action_event", request_id, event_name, {
+			"action_id": str(record.get("action_id", "")),
+			"idempotency_key": str(record.get("idempotency_key", "")),
+			"tool_name": str(record.get("tool_name", "")),
+			"arguments": (record.get("arguments", {}) as Dictionary).duplicate(true),
+		}))
+	)
 
 
 func is_agent_managed(agent_id: String) -> bool:
@@ -276,21 +304,35 @@ func to_dict() -> Dictionary:
 
 
 func validate_dict(value: Dictionary) -> bool:
-	if value.get("version") != VERSION or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
+	var version := int(value.get("version", 0))
+	if version not in [2, VERSION] or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
 		return false
-	var farm = FarmScript.new()
+	var farm = FarmScript.new() if _farm_port == null or version == 2 else farm_registry
 	var buildings = BuildingScript.new()
 	var activities = ActivityScript.new()
 	var knowledge = KnowledgeScript.new()
-	return executor.validate_dict(value.executor) and value.get("farm") is Dictionary and farm.from_dict(value.farm) and value.get("buildings") is Dictionary and buildings.from_dict(value.buildings) and value.get("activities") is Dictionary and activities.from_dict(value.activities) and value.get("knowledge") is Dictionary and knowledge.from_dict(value.knowledge)
+	var farm_valid := false
+	if value.get("farm") is Dictionary:
+		farm_valid = (
+			bool(farm.call("validate_dict", value.farm))
+			if farm.has_method("validate_dict")
+			else bool(farm.call("from_dict", value.farm))
+		)
+	return executor.validate_dict(value.executor) and farm_valid and value.get("buildings") is Dictionary and buildings.from_dict(value.buildings) and value.get("activities") is Dictionary and activities.from_dict(value.activities) and value.get("knowledge") is Dictionary and knowledge.from_dict(value.knowledge)
 
 
 func from_dict(value: Dictionary) -> bool:
 	if not validate_dict(value):
 		return false
 	var before := to_dict()
-	if not farm_registry.from_dict(value.farm) or not building_registry.from_dict(value.buildings) or not activity_system.from_dict(value.activities) or not knowledge_registry.from_dict(value.knowledge) or not executor.from_dict(value.executor):
-		farm_registry.from_dict(before.farm)
+	var restore_farm := true
+	if _farm_port != null and int(value.version) == 2:
+		farm_registry.call("clear_pending_work")
+	else:
+		restore_farm = bool(farm_registry.call("from_dict", value.farm))
+	if not restore_farm or not building_registry.from_dict(value.buildings) or not activity_system.from_dict(value.activities) or not knowledge_registry.from_dict(value.knowledge) or not executor.from_dict(value.executor):
+		if farm_registry.has_method("from_dict"):
+			farm_registry.call("from_dict", before.farm)
 		building_registry.from_dict(before.buildings)
 		activity_system.from_dict(before.activities)
 		knowledge_registry.from_dict(before.knowledge)
@@ -339,6 +381,12 @@ func _queue_market_event(item_id: String, payload: Dictionary, priority: int) ->
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
+	if (
+		trigger != "dialogue"
+		and farm_registry.has_method("has_pending_work")
+		and bool(farm_registry.call("has_pending_work", agent_id))
+	):
+		return {}
 	_request_sequence += 1
 	var state = _npc_economy.call("get_npc_state", agent_id)
 	if state == null:
@@ -347,7 +395,12 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	for definition in GameDataScript.get_market_items():
 		var item_id := str(definition.id)
 		market_snapshot[item_id] = _market.call("get_item_state", item_id)
-	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_registry.to_dict().farms.get(agent_id, []), "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot}
+	var farm_snapshot: Variant = (
+		farm_registry.call("get_snapshot", agent_id, game_minute)
+		if farm_registry.has_method("get_snapshot")
+		else farm_registry.to_dict().farms.get(agent_id, [])
+	)
+	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot}
 	var request := AgentProtocolScript.make_decision_request("%s-%s-%d" % [agent_id, _request_namespace, _request_sequence], session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, perception_inbox.drain(agent_id), dialogue)
 	_request_triggers[str(request.request_id)] = trigger
 	return request
@@ -397,6 +450,12 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		return
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
 	for outcome in outcomes:
+		if str(outcome.get("status", "")) == "in_progress":
+			record_farm_lifecycle("queued", {
+				"request_id": request_id,
+				"action_id": str(outcome.get("action_id", "")),
+				"idempotency_key": str(outcome.get("idempotency_key", "")),
+			})
 		if outcome.status in ["rejected", "failed"]:
 			_publish("warning", "%s 的动作失败：%s" % [agent_id, str(outcome.get("failure_code", "unknown"))], {"agent_id": agent_id})
 		else:
@@ -414,6 +473,18 @@ func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:
 		"decision_id": str(outcome.get("decision_id", "")),
 		"changed_entities": outcome.get("changed_entities", []).duplicate(),
 	})
+
+
+func _on_farm_work_finished(intent: Dictionary, result: Dictionary) -> void:
+	var outcome := executor.finalize_queued_action(intent, result, _absolute_game_minute())
+	record_farm_lifecycle("committed" if bool(result.get("ok", false)) else "rejected", intent)
+	var agent_id := str(intent.get("agent_id", "farmer_ahe"))
+	if str(outcome.get("status", "")) in ["rejected", "failed"]:
+		_publish("warning", "%s 的动作失败：%s" % [agent_id, str(outcome.get("failure_code", "unknown"))], {"agent_id": agent_id})
+	else:
+		_publish_committed_outcome(agent_id, outcome)
+	if service_enabled:
+		gateway.report_outcome(agent_id, session_id, outcome)
 
 
 func _publish(severity: String, text: String, metadata: Dictionary) -> void:

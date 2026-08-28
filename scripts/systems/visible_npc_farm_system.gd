@@ -130,6 +130,7 @@ func queue_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
 			break
 		var record := {
 			"agent_id": agent_id,
+			"request_id": str(intent.get("request_id", "")),
 			"decision_id": str(action.decision_id),
 			"action_id": str(action.get("action_id", "")),
 			"idempotency_key": key,
@@ -200,15 +201,72 @@ func to_dict() -> Dictionary:
 
 
 func restore_queue(value: Dictionary) -> bool:
-	if int(value.get("version", 0)) != 1 or str(value.get("agent_id", "")) != _agent_id:
+	if not validate_dict(value) or str(value.get("agent_id", "")) != _agent_id:
 		return false
-	if not value.get("work_queue", []) is Array or not value.get("finished", {}) is Dictionary:
+	var coordinates: Array[Vector2i] = []
+	var plots: Array[Dictionary] = []
+	for plot_value in value.plots:
+		var plot := plot_value as Dictionary
+		var coordinate_values: Array = plot.coordinate
+		var coordinate := Vector2i(int(coordinate_values[0]), int(coordinate_values[1]))
+		coordinates.append(coordinate)
+		plots.append({"plot_index": int(plot.plot_index), "coordinate": coordinate})
+	_grid.release_cells(_agent_id)
+	if not _grid.reserve_cells(_agent_id, coordinates):
 		return false
+	_anchor = Vector2i(int(value.anchor[0]), int(value.anchor[1]))
+	_plots = plots
 	_work_queue.assign((value.work_queue as Array).duplicate(true))
 	_finished = (value.finished as Dictionary).duplicate(true)
 	if not _work_queue.is_empty():
 		work_available.emit()
 	return true
+
+
+func validate_dict(value: Dictionary) -> bool:
+	if (
+		int(value.get("version", 0)) != 1
+		or typeof(value.get("agent_id")) != TYPE_STRING
+		or not value.get("anchor", null) is Array
+		or (value.anchor as Array).size() != 2
+		or not value.get("plots", null) is Array
+		or (value.plots as Array).size() != PLOT_COUNT
+		or not value.get("work_queue", null) is Array
+		or not value.get("finished", null) is Dictionary
+	):
+		return false
+	var seen: Dictionary = {}
+	for index in range(PLOT_COUNT):
+		var plot_value: Variant = value.plots[index]
+		if not plot_value is Dictionary:
+			return false
+		var plot := plot_value as Dictionary
+		if int(plot.get("plot_index", -1)) != index or not plot.get("coordinate", null) is Array:
+			return false
+		var coordinate_values := plot.coordinate as Array
+		if coordinate_values.size() != 2:
+			return false
+		var coordinate := Vector2i(int(coordinate_values[0]), int(coordinate_values[1]))
+		if _grid == null or _grid.get_cell(coordinate.x, coordinate.y) == null or seen.has(coordinate):
+			return false
+		seen[coordinate] = true
+	for record_value in value.work_queue:
+		if (
+			not record_value is Dictionary
+			or str((record_value as Dictionary).get("agent_id", "")) != str(value.agent_id)
+			or str((record_value as Dictionary).get("idempotency_key", "")).is_empty()
+			or str((record_value as Dictionary).get("tool_name", "")) not in ["till", "plant", "harvest"]
+		):
+			return false
+	return true
+
+
+func from_dict(value: Dictionary) -> bool:
+	return restore_queue(value)
+
+
+func clear_pending_work() -> void:
+	_work_queue.clear()
 
 
 func _validate_projected(action: Dictionary, projected: Array[Dictionary], seed_counts: Dictionary) -> Dictionary:

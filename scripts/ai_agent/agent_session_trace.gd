@@ -144,6 +144,23 @@ func get_log_path() -> String:
 	return _log_path
 
 
+func record_action_event(request_id: String, event_name: String, metadata: Dictionary) -> bool:
+	var index := int(_request_indexes.get(request_id, -1))
+	if index < 0 or event_name.strip_edges().is_empty():
+		return false
+	var record := _requests[index]
+	if not record.has("action_events"):
+		record.action_events = []
+	(record.action_events as Array).append({
+		"event": event_name,
+		"timestamp_msec": int(Time.get_unix_time_from_system() * 1000.0),
+		"metadata": metadata.duplicate(true),
+	})
+	_requests[index] = record
+	trace_updated.emit(request_id)
+	return true
+
+
 func clear() -> void:
 	_requests.clear()
 	_request_indexes.clear()
@@ -187,6 +204,7 @@ func _append_record(
 		"output": {},
 		"final": {},
 		"error": {},
+		"action_events": [],
 	})
 	_trim_memory()
 	return int(_request_indexes.get(request_id, -1))
@@ -224,6 +242,7 @@ func _disk_record(record: Dictionary) -> Dictionary:
 			"provider_output": (materialized.output as Dictionary).duplicate(true),
 			"decision": (materialized.final as Dictionary).duplicate(true),
 			"error": (materialized.error as Dictionary).duplicate(true),
+			"action_events": (materialized.get("action_events", []) as Array).duplicate(true),
 		},
 	}
 

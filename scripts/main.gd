@@ -28,6 +28,8 @@ const DebugPanelScene := preload("res://scenes/ui/debug_panel.tscn")
 const AgentDebugWindowScene := preload("res://scenes/ui/agent_debug_window.tscn")
 const HudMessageBusScript := preload("res://scripts/ui/hud_message_bus.gd")
 const AgentRuntimeScript := preload("res://scripts/ai_agent/agent_runtime.gd")
+const VisibleNpcFarmSystemScript := preload("res://scripts/systems/visible_npc_farm_system.gd")
+const NpcFarmActionControllerScript := preload("res://scripts/actors/npc_farm_action_controller.gd")
 const AGENT_NPC_BINDINGS := {
 	"NpcNorthwest": {
 		"agent_id": "farmer_ahe",
@@ -116,6 +118,8 @@ var npc_economy_system: NpcEconomySystem
 var economy_notification_system: EconomyNotificationSystem
 var hud_message_bus: Node
 var agent_runtime: Node
+var visible_npc_farm_system: VisibleNpcFarmSystem
+var npc_farm_action_controller: NpcFarmActionController
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
@@ -233,6 +237,15 @@ func _initialize_systems() -> void:
 	add_child(agent_runtime)
 	agent_runtime.call("set_save_slot", save_slot)
 
+	visible_npc_farm_system = VisibleNpcFarmSystemScript.new() as VisibleNpcFarmSystem
+	visible_npc_farm_system.name = "VisibleNpcFarmSystem"
+	add_child(visible_npc_farm_system)
+
+	npc_farm_action_controller = NpcFarmActionControllerScript.new() as NpcFarmActionController
+	npc_farm_action_controller.name = "NpcFarmActionController"
+	add_child(npc_farm_action_controller)
+	npc_farm_action_controller.work_state_changed.connect(_on_npc_farm_work_state_changed)
+
 	daily_simulation_system = DailySimulationSystemScript.new()
 	daily_simulation_system.name = "DailySimulationSystem"
 	add_child(daily_simulation_system)
@@ -322,6 +335,18 @@ func _connect_systems() -> bool:
 		game_data.get_npc_economy_profiles(),
 		game_data.get_population_demand_profiles()
 	):
+		return false
+	var visible_farm_ready := visible_npc_farm_system.configure(
+		grid_system,
+		farming_system,
+		npc_economy_system,
+		game_data,
+		"farmer_ahe",
+		Vector3(-3.0, 0.0, -2.0)
+	)
+	if not visible_farm_ready:
+		_publish_hud_message("agent", "warning", "阿禾的专属农田无法创建，本轮仅保留对话功能。")
+	if not bool(agent_runtime.call("set_farm_port", visible_npc_farm_system)):
 		return false
 	if not bool(agent_runtime.call(
 		"configure", npc_economy_system, market_system, season_system, hud_message_bus
@@ -486,6 +511,8 @@ func _on_save_load_completed(_slot: int) -> void:
 	if farming_system != null and farming_system.has_method("sync_growth_clock"):
 		farming_system.call("sync_growth_clock")
 	_initialize_plant_selection()
+	if npc_farm_action_controller != null:
+		npc_farm_action_controller.resume()
 	if (
 		farm_storage_system != null
 		and (
@@ -636,10 +663,27 @@ func _setup_npcs() -> void:
 		var callback := Callable(self, "_on_dialogue_started")
 		if not npc.dialogue_started.is_connected(callback):
 			npc.dialogue_started.connect(callback)
+	var farmer_npc := get_agent_npc("farmer_ahe")
+	if (
+		farmer_npc != null
+		and visible_npc_farm_system != null
+		and visible_npc_farm_system.get_plot_count("farmer_ahe") == 20
+		and not npc_farm_action_controller.configure(
+			visible_npc_farm_system,
+			farmer_npc,
+			farmer_npc.get("farm_action_visual")
+		)
+	):
+		_publish_hud_message("agent", "warning", "阿禾的可见农务控制器无法启动。")
 
 
 func get_agent_npc(agent_id: String) -> Node:
 	return _agent_npcs.get(agent_id) as Node
+
+
+func _on_npc_farm_work_state_changed(state: String, record: Dictionary) -> void:
+	if agent_runtime != null and agent_runtime.has_method("record_farm_lifecycle"):
+		agent_runtime.call("record_farm_lifecycle", state, record)
 
 
 func _set_agent_npc_busy(agent_id: String, busy: bool) -> void:
