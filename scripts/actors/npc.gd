@@ -20,6 +20,7 @@ var _agent_dialogue_enabled := false
 var _dialogue_busy := false
 var _prompt_tween: Tween
 var _prompt_visible_state := false
+var _agent_work_arrived := false
 
 const INTERACTION_DISTANCE := 3.0
 const PROMPT_INTERACTION_LAYER := 64
@@ -30,6 +31,7 @@ const PROMPT_INTERACTION_LAYER := 64
 @onready var nameplate: Label3D = get_node_or_null("Nameplate")
 @onready var placeholder_mesh: MeshInstance3D = get_node_or_null("Mesh")
 @onready var npc_visual: Sprite3D = get_node_or_null("NpcVisual")
+@onready var farm_action_visual: Node3D = get_node_or_null("FarmActionVisual")
 
 
 func _ready() -> void:
@@ -146,6 +148,8 @@ func take_hit(damage: int, direction: Vector3) -> void:
 
 
 func set_target_location(location: String) -> void:
+	if _current_state == "AGENT_WORK":
+		return
 	# 根据位置名称设置目标点
 	# 实际位置由场景中的 Marker3D 定义
 	match location:
@@ -190,7 +194,7 @@ func _random_wander_point() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	match _current_state:
-		"MOVING_TO_HOME", "WORKING", "WANDERING":
+		"MOVING_TO_HOME", "WORKING", "WANDERING", "AGENT_WORK":
 			_move_toward_target(delta)
 		"IDLE", "SLEEPING":
 			velocity = Vector3.ZERO
@@ -225,7 +229,9 @@ func _move_toward_target(delta: float) -> void:
 
 	if dist < 0.5:
 		velocity = Vector3.ZERO
-		if _current_state == "MOVING_TO_HOME":
+		if _current_state == "AGENT_WORK":
+			_agent_work_arrived = true
+		elif _current_state == "MOVING_TO_HOME":
 			_current_state = "SLEEPING"
 		elif _current_state == "WANDERING":
 			# 到达后随机选新目标
@@ -243,6 +249,38 @@ func _move_toward_target(delta: float) -> void:
 		rotation.y = lerp_angle(rotation.y, atan2(direction.x, direction.z), 1.0 - exp(-8.0 * delta))
 
 	move_and_slide()
+
+
+func begin_agent_work(target: Vector3) -> bool:
+	if health <= 0:
+		return false
+	_target_position = target
+	_target_position.y = global_position.y
+	_agent_work_arrived = false
+	_current_state = "AGENT_WORK"
+	return true
+
+
+func has_agent_work_target() -> bool:
+	return _current_state == "AGENT_WORK"
+
+
+func is_agent_work_arrived() -> bool:
+	return _agent_work_arrived
+
+
+func stop_agent_work() -> void:
+	if _current_state == "AGENT_WORK":
+		_current_state = "IDLE"
+	velocity = Vector3.ZERO
+	_agent_work_arrived = false
+
+
+func face_world_point(target: Vector3) -> void:
+	var direction := target - global_position
+	direction.y = 0.0
+	if direction.length_squared() > 0.0001:
+		rotation.y = atan2(direction.x, direction.z)
 
 
 func start_dialogue() -> bool:
