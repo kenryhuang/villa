@@ -102,9 +102,32 @@ func _arrive() -> void:
 	_state = "animating"
 	work_state_changed.emit("arrived", _current.duplicate(true))
 	work_state_changed.emit(_state, _current.duplicate(true))
-	if _visual == null or not _visual.has_method("play") or not bool(_visual.call("play", str(_current.tool_name))):
+	if (
+		_visual == null
+		or not _visual.has_method("play")
+		or not bool(_visual.call(
+			"play",
+			str(_current.tool_name),
+			_action_texture(_current)
+		))
+	):
 		var timer := get_tree().create_timer(1.0)
 		timer.timeout.connect(_on_visual_finished, CONNECT_ONE_SHOT)
+
+
+func _action_texture(record: Dictionary) -> Texture2D:
+	if str(record.get("tool_name", "")) != "plant":
+		return null
+	var seed_item_id := str((record.get("arguments", {}) as Dictionary).get("seed_item_id", ""))
+	var crop_id := seed_item_id
+	if crop_id.ends_with("_seed"):
+		crop_id = crop_id.trim_suffix("_seed")
+	elif crop_id.ends_with("_sapling"):
+		crop_id = crop_id.trim_suffix("_sapling")
+	if crop_id.is_empty():
+		return null
+	var texture_path := "res://assets/crops/%s/painted/stage_0/variant_0_front.png" % crop_id
+	return load(texture_path) as Texture2D if ResourceLoader.exists(texture_path) else null
 
 
 func _on_visual_finished() -> void:

@@ -63,9 +63,11 @@ class FakeVisual:
 	extends Node
 	signal finished
 	var played := false
+	var received_texture: Texture2D
 
-	func play(_action: String, _texture: Texture2D = null) -> bool:
+	func play(_action: String, texture: Texture2D = null) -> bool:
 		played = true
+		received_texture = texture
 		return true
 
 
@@ -89,6 +91,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	tree.root.add_child(visual)
 	tree.root.add_child(controller)
 	assertions.truthy(controller.configure(farm, actor, visual), "farm action controller configures")
+	assertions.truthy(
+		controller.call("_action_texture", {
+			"tool_name": "plant",
+			"arguments": {"seed_item_id": "carrot_seed"},
+		}) != null,
+		"plant feedback resolves the selected hand-painted seed texture"
+	)
 	await tree.process_frame
 	assertions.equal(controller.get_work_state(), "moving", "queued work starts movement")
 	assertions.truthy(actor.moving, "controller gives actor a movement target")
