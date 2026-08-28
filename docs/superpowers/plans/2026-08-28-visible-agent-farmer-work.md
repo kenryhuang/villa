@@ -1,6 +1,6 @@
 # Visible Agent Farmer Work Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Give Ahe a visible, world-backed 20-plot farm with queued movement/action feedback, and make all crops mature in about 30 real seconds through the authoritative game clock.
 
@@ -43,7 +43,7 @@
 - Test: `tests/test_crop_economy.gd`
 - Test: `tests/test_seed_selector_panel.gd`
 
-- [ ] **Step 1: Write failing minute-growth tests**
+- [x] **Step 1: Write failing minute-growth tests**
 
 Add tests that create an unwatered crop with `growth_duration_minutes = 108`, advance 107 then 1 game minute, and assert it matures only at 108. Repeat with a watered crop at 71 then 1 minute. Assert no elapsed time leaves progress unchanged and stage/maturity events emit only on transitions.
 
@@ -57,7 +57,7 @@ Add tests that create an unwatered crop with `growth_duration_minutes = 108`, ad
 	assertions.truthy(instance.is_mature(), "crop matures at 108 game minutes")
 ```
 
-- [ ] **Step 2: Run the focused farming suite and verify RED**
+- [x] **Step 2: Run the focused farming suite and verify RED**
 
 Run:
 
@@ -67,7 +67,7 @@ godot_console --headless --path . --script res://tests/run_tests.gd
 
 Expected: new assertions fail because `growth_duration_minutes` and `advance_growth_minutes` do not exist.
 
-- [ ] **Step 3: Add duration fields and elapsed-minute growth**
+- [x] **Step 3: Add duration fields and elapsed-minute growth**
 
 Add to `CropData`:
 
@@ -91,11 +91,11 @@ func advance_game_minutes(minutes: int, watered_multiplier: float = 1.0) -> bool
 
 Add `FarmingSystem.advance_growth_minutes(minutes)` and a synchronized absolute-minute cursor. Connect `EventBus.time_changed`, calculate elapsed minutes from `SeasonSystem`, and call the method. Remove the growth increment from `on_day_changed` while keeping environment and water reset behavior.
 
-- [ ] **Step 4: Restore repeat-crop harvest semantics with tests first**
+- [x] **Step 4: Restore repeat-crop harvest semantics with tests first**
 
 Change the harvest preview expectations so annual crops produce `post_crop = null`, while `annual_regrow`, `bush`, `tree`, and `vine` preserve a crop dictionary with progress zero, `GROWING`, incremented harvest count, and farmland state `PLANTED`. Verify transaction rollback restores the mature state exactly.
 
-- [ ] **Step 5: Update default data and UI**
+- [x] **Step 5: Update default data and UI**
 
 Set both duration fields to `108` for every row created by `Main.default_crop_definitions()`. Replace the seed panel day text with:
 
@@ -103,7 +103,7 @@ Set both duration fields to `108` for every row created by `Main.default_crop_de
 "growth_text": "成熟约 30 秒 · 浇水约 20 秒",
 ```
 
-- [ ] **Step 6: Run relevant tests and commit**
+- [x] **Step 6: Run relevant tests and commit**
 
 Run the aggregate tests, confirm only the recorded four baseline failures remain, then commit:
 
@@ -122,7 +122,7 @@ git commit -m "feat: grow crops on a thirty-second clock"
 - Modify: `scripts/actors/player_action_controller.gd`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Write failing reservation and mapping tests**
+- [x] **Step 1: Write failing reservation and mapping tests**
 
 Test a wished-for API:
 
@@ -137,11 +137,11 @@ Test a wished-for API:
 
 Also assert deterministic row-major coordinates, all 20 cells are valid wasteland on initialization, failure is atomic when no full rectangle exists, and snapshots reflect real farmland/crop state.
 
-- [ ] **Step 2: Run the Agent suite and verify RED**
+- [x] **Step 2: Run the Agent suite and verify RED**
 
 Run the Agent test runner. Expected: missing script/API failures only.
 
-- [ ] **Step 3: Add owner reservations to GridSystem**
+- [x] **Step 3: Add owner reservations to GridSystem**
 
 Implement:
 
@@ -157,19 +157,19 @@ func can_actor_use_cell(gx: int, gz: int, actor_id: String) -> bool
 
 Reservation must prevalidate the complete list before changing `_cell_reservations`.
 
-- [ ] **Step 4: Implement deterministic real-farm selection**
+- [x] **Step 4: Implement deterministic real-farm selection**
 
 Create `VisibleNpcFarmSystem` with `FARM_WIDTH = 5`, `FARM_HEIGHT = 4`, `PLOT_COUNT = 20`. Search anchors by distance from the spawn grid coordinate and coordinate tie-breaker; accept only a full rectangle of in-bounds wasteland cells below the slope threshold and not already reserved. Reserve all 20 cells atomically and expose row-major mapping.
 
-- [ ] **Step 5: Enforce player restrictions**
+- [x] **Step 5: Enforce player restrictions**
 
 Make player previews pass actor ID `player` and return `reserved_plot` when a cell has another owner. Add the same ownership check for every building footprint in `BuildingSystem.diagnose_placement`. Internal load/rollback methods continue to bypass player ownership.
 
-- [ ] **Step 6: Derive snapshots from real cells**
+- [x] **Step 6: Derive snapshots from real cells**
 
 Implement `get_snapshot(agent_id, absolute_game_minute)` returning 20 records with coordinate, world position, state, crop, normalized progress, remaining minutes, season validity, and queue reservation.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 Run Agent and targeted farming/building tests, then commit:
 
@@ -189,7 +189,7 @@ git commit -m "feat: reserve Ahe's visible farm"
 - Test: `tests/test_agent_action_execution.gd`
 - Test: `tests/test_agent_runtime.gd`
 
-- [ ] **Step 1: Write failing projected-batch and completion tests**
+- [x] **Step 1: Write failing projected-batch and completion tests**
 
 Assert zero actions is legal, one-to-three farm actions queue in order, `till` then `plant` on the same plot validates against projected state, plot indices above 19 reject, and a queued result is `in_progress` without mutating grid or inventory.
 
@@ -203,11 +203,11 @@ Assert zero actions is legal, one-to-three farm actions queue in order, `till` t
 	assertions.equal(cell.state, GridCell.State.WASTELAND, "queue does not mutate soil")
 ```
 
-- [ ] **Step 2: Run Agent tests and verify RED**
+- [x] **Step 2: Run Agent tests and verify RED**
 
 Expected: existing executor commits immediately and stops after the first in-progress result.
 
-- [ ] **Step 3: Add queue APIs and projected validation**
+- [x] **Step 3: Add queue APIs and projected validation**
 
 Implement on `VisibleNpcFarmSystem`:
 
@@ -225,11 +225,11 @@ func has_pending_work(agent_id: String) -> bool
 
 Projected validation simulates plot state and reserved seed counts across the batch without mutating authority.
 
-- [ ] **Step 4: Commit through existing authoritative systems**
+- [x] **Step 4: Commit through existing authoritative systems**
 
 At completion, till through the grid transition, plant through `FarmingSystem.preview_plant/commit_plant` plus an NPC economy snapshot rollback, and harvest through `FarmingSystem` prepared-publication APIs plus NPC inventory receipt. Never deduct or produce inventory at queue time.
 
-- [ ] **Step 5: Route asynchronous outcomes through Executor and Runtime**
+- [x] **Step 5: Route asynchronous outcomes through Executor and Runtime**
 
 The executor delegates farmer tools to `queue_batch`, stores initial `in_progress` outcomes, and adds:
 
@@ -239,11 +239,11 @@ func finalize_queued_action(intent: Dictionary, result: Dictionary, game_minute:
 
 `AgentRuntime` handles `work_finished`, reports the completed/rejected outcome, publishes final HUD text, and suppresses only Ahe's scheduled automatic requests while `has_pending_work` is true. Dialogue triggers bypass suppression.
 
-- [ ] **Step 6: Restrict validator plots to 0–19**
+- [x] **Step 6: Restrict validator plots to 0–19**
 
 Update farm-tool argument validation to use `0, 19`, leaving other integer ranges unchanged.
 
-- [ ] **Step 7: Run Agent tests and commit**
+- [x] **Step 7: Run Agent tests and commit**
 
 ```powershell
 git add -- scripts/systems/visible_npc_farm_system.gd scripts/ai_agent/agent_action_executor_router.gd scripts/ai_agent/agent_runtime.gd scripts/ai_agent/agent_action_validator.gd tests
@@ -261,15 +261,15 @@ git commit -m "feat: queue real Agent farm actions"
 - Modify: `scenes/actors/npc.tscn`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Write failing NPC work movement tests**
+- [x] **Step 1: Write failing NPC work movement tests**
 
 Assert the NPC exposes `begin_agent_work`, reaches a nearby target without changing farm state, reports arrival, can stop independently of dialogue busy state, and emits a blocked result after no distance progress. Test the controller state order `moving → animating → completion` and that completion happens after the configured feedback duration.
 
-- [ ] **Step 2: Run Agent tests and verify RED**
+- [x] **Step 2: Run Agent tests and verify RED**
 
 Expected: missing controller, movement, and visual methods.
 
-- [ ] **Step 3: Add dedicated Agent-work movement to Npc**
+- [x] **Step 3: Add dedicated Agent-work movement to Npc**
 
 Add an `AGENT_WORK` state and APIs:
 
@@ -283,11 +283,11 @@ func face_world_point(target: Vector3) -> void
 
 Reuse the existing velocity path and four-direction visual synchronization. Do not alter dialogue range or dialogue busy state.
 
-- [ ] **Step 4: Build the focused action controller**
+- [x] **Step 4: Build the focused action controller**
 
 The controller receives the farm port and actor, consumes `peek_work`, chooses an adjacent reachable interaction point, drives movement, tracks distance progress, starts the action visual at arrival, and calls `complete_work` only after feedback finishes. Use a short stall timeout and return `path_blocked` without retry.
 
-- [ ] **Step 5: Build lightweight visual feedback**
+- [x] **Step 5: Build lightweight visual feedback**
 
 Create a Node3D child with a Sprite3D action icon and procedural particles. Reuse the hoe PNG, use the selected seed texture for planting, and add the basket SVG for harvest. Expose:
 
@@ -300,7 +300,7 @@ func is_playing() -> bool
 
 Use tweens for the icon arc/body dip and approximately one second duration. Asset fallback keeps the tween and never blocks completion.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 ```powershell
 git add -- scripts/actors/npc.gd scripts/actors/npc_farm_action_controller.gd scripts/visual/npc_farm_action_visual.gd scenes/actors/npc.tscn assets/ui/action_icons/harvest_basket.svg tests/test_npc_farm_action_controller.gd tests/run_agent_system_tests.gd
@@ -317,27 +317,27 @@ git commit -m "feat: animate Ahe's farm work"
 - Modify: `tests/test_agent_world_state.gd`
 - Modify: `tests/test_visible_agent_npc_dialogue.gd`
 
-- [ ] **Step 1: Write failing Main and save/load tests**
+- [x] **Step 1: Write failing Main and save/load tests**
 
 Assert Main creates/configures the farm after the world grid, binds Ahe after `_setup_npcs`, injects the farm into `AgentRuntime`, and resumes a persisted uncommitted action without duplicating resources. Add a version-2 migration fixture whose detached farm is discarded while inventory and other Agent state survive.
 
-- [ ] **Step 2: Run Agent tests and verify RED**
+- [x] **Step 2: Run Agent tests and verify RED**
 
 Expected: Main has no visible farm/controller and Agent save version is still 2.
 
-- [ ] **Step 3: Wire creation and binding order**
+- [x] **Step 3: Wire creation and binding order**
 
 Create the farm system and action controller in `_initialize_systems`, configure the farm after Grid/Farming/NPC economy, inject it into AgentRuntime, and bind the `farmer_ahe` visible NPC after `_setup_npcs`. Publish `farm_unavailable` without disabling dialogue if no rectangle is found.
 
-- [ ] **Step 4: Persist version 3 Agent farm state**
+- [x] **Step 4: Persist version 3 Agent farm state**
 
 Store farm anchor/mapping and queued uncommitted records under `agent_world.farm`. Restore grid and NPC economy first, synchronize the farming clock, restore the Agent farm, then resume the visible controller. A version-2 record is accepted by discarding its detached farm section and creating a fresh visible mapping.
 
-- [ ] **Step 5: Add debug lifecycle records**
+- [x] **Step 5: Add debug lifecycle records**
 
 Record `queued`, `moving`, `arrived`, `animating`, `committed`, `rejected`, and `cancelled` metadata in the in-memory Agent trace. Player messages remain limited to concise start and final outcomes.
 
-- [ ] **Step 6: Run integration tests and commit**
+- [x] **Step 6: Run integration tests and commit**
 
 ```powershell
 git add -- scripts/main.gd scripts/ai_agent/agent_runtime.gd scripts/core/save_manager.gd tests
@@ -349,7 +349,7 @@ git commit -m "feat: persist Ahe's visible farm work"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-28-visible-agent-farmer-work.md`
 
-- [ ] **Step 1: Run fresh Agent tests**
+- [x] **Step 1: Run fresh Agent tests**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
@@ -357,7 +357,7 @@ godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
 
 Expected: all Agent checks pass.
 
-- [ ] **Step 2: Run the full suite**
+- [x] **Step 2: Run the full suite**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_tests.gd
@@ -365,15 +365,15 @@ godot_console --headless --path . --script res://tests/run_tests.gd
 
 Expected: no failures beyond the recorded baseline of three economy/order-contract checks and one villager-count check.
 
-- [ ] **Step 3: Perform real-time growth acceptance**
+- [x] **Step 3: Perform real-time growth acceptance**
 
 Run a non-headless probe in `main.tscn`, plant an unwatered and watered crop, capture at start, around 20 seconds, and around 30 seconds, and verify their mature transitions and displayed models.
 
-- [ ] **Step 4: Perform visible work acceptance**
+- [x] **Step 4: Perform visible work acceptance**
 
 Queue till, plant, and harvest actions for Ahe in the real main scene. Capture movement and each action effect, confirm no mutation before arrival, and confirm the final grid/crop/NPC inventory state afterward. Delete temporary probes.
 
-- [ ] **Step 5: Verify repository state and update this plan**
+- [x] **Step 5: Verify repository state and update this plan**
 
 Mark completed checkboxes, then run:
 
@@ -382,7 +382,7 @@ git diff --check
 git status --short
 ```
 
-- [ ] **Step 6: Commit the completed plan record**
+- [x] **Step 6: Commit the completed plan record**
 
 ```powershell
 git add -- docs/superpowers/plans/2026-08-28-visible-agent-farmer-work.md
