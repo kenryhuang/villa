@@ -37,6 +37,7 @@ const PLANT_FAILURE_LABELS := {
 	"plot_unavailable": "地块不可播种",
 	"no_seed": "种子库存不足",
 	"invalid_seed_mapping": "种植资料无效",
+	"reserved_plot": "这是阿禾的专属农田",
 }
 const BuildingCatalogScript = preload("res://scripts/core/building_catalog.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
@@ -409,6 +410,11 @@ func slot_from_key(keycode: Key) -> int:
 
 func perform_cell_action(cell: GridCell) -> bool:
 	if _action_mode != ActionMode.FARMING or cell == null:
+		return false
+	if not _player_can_use_cell(cell):
+		var failure := {"ok": false, "reason": "reserved_plot"}
+		_set_last_action_failure(failure, true)
+		action_failure_hint.emit("这是阿禾的专属农田")
 		return false
 	if _is_mature(cell):
 		return _harvest(cell)
@@ -833,6 +839,8 @@ func _cancel_gathering(reason: String) -> void:
 func _highlight_color(cell: GridCell, ground_point: Vector3) -> Color:
 	if not _point_in_player_range(ground_point):
 		return INVALID_COLOR
+	if not _player_can_use_cell(cell):
+		return INVALID_COLOR
 	if _is_mature(cell):
 		return MATURE_COLOR
 	if _selected_slot == 1:
@@ -910,6 +918,9 @@ func preview_plant_action(cell: GridCell) -> Dictionary:
 		"crop_data": null,
 		"plant_item_id": plant_item_id,
 	}
+	if not _player_can_use_cell(cell):
+		result.reason = "reserved_plot"
+		return result
 	if farming_system == null or not farming_system.has_method("preview_plant"):
 		return result
 	var farming_preview: Variant = farming_system.call("preview_plant", cell, plant_item_id)
@@ -927,6 +938,17 @@ func preview_plant_action(cell: GridCell) -> Dictionary:
 		result.ok = false
 		result.reason = "no_seed"
 	return result
+
+
+func _player_can_use_cell(cell: GridCell) -> bool:
+	return (
+		cell != null
+		and (
+			grid_system == null
+			or not grid_system.has_method("can_actor_use_cell")
+			or bool(grid_system.call("can_actor_use_cell", cell.gx, cell.gz, "player"))
+		)
+	)
 
 
 func get_last_plant_failure_details() -> Dictionary:

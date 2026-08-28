@@ -226,6 +226,21 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 				"out_of_bounds",
 				"无法建造%s：目标区域超出地图范围" % resolved.display_name
 			)
+		if (
+			grid_system_ref.has_method("can_actor_use_cell")
+			and not bool(grid_system_ref.call(
+				"can_actor_use_cell", cell_data.x, cell_data.y, "player"
+			))
+		):
+			return _blocked_diagnostic(
+				resolved,
+				gx,
+				gz,
+				cell_data,
+				cell.state,
+				"reserved_plot",
+				"无法建造%s：这是阿禾的专属农田" % resolved.display_name
+			)
 		if not is_finite(grid_system_ref.get_terrain_height_at_cell(cell_data.x, cell_data.y)):
 			return _blocked_diagnostic(
 				resolved,

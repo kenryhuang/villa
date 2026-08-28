@@ -1,6 +1,7 @@
 extends SceneTree
 
 const CropTimingTest = preload("res://tests/test_crop_timing.gd")
+const VisibleNpcFarmSystemTest = preload("res://tests/test_visible_npc_farm_system.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -11,6 +12,7 @@ func _init() -> void:
 func _run() -> void:
 	var assertions := TestAssertScript.new()
 	CropTimingTest.new().run(assertions)
+	VisibleNpcFarmSystemTest.new().run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d visible farmer checks" % assertions.checks)
 		quit(0)

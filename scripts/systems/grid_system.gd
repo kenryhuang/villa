@@ -22,6 +22,7 @@ var _event_bus
 var _road_route: Array[Dictionary] = []
 var _blocked_regions: Array[Dictionary] = []
 var _navigation_blockers: Dictionary = {}
+var _cell_reservations: Dictionary = {}
 var _navigation_revision := 0
 var _crop_harvest_receipt_owner: WeakRef
 var _crop_harvest_receipt: Dictionary = {}
@@ -47,6 +48,7 @@ func configure(
 	_blocked_regions.assign(blocked_regions)
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	_navigation_blockers.clear()
+	_cell_reservations.clear()
 	_navigation_revision = 0
 	_initialize_cells()
 	_build_grid_overlay()
@@ -191,6 +193,49 @@ func can_farm_at(gx: int, gz: int) -> bool:
 	if cell == null or cell.slope > SLOPE_THRESHOLD:
 		return false
 	return cell.state == GridCell.State.WASTELAND
+
+
+func reserve_cells(owner_id: String, cells: Array[Vector2i]) -> bool:
+	if owner_id.strip_edges().is_empty() or cells.is_empty():
+		return false
+	var pending := {}
+	for coordinate in cells:
+		var cell := get_cell(coordinate.x, coordinate.y)
+		var key := cell_key(coordinate.x, coordinate.y)
+		if (
+			cell == null
+			or pending.has(key)
+			or (_cell_reservations.has(key) and str(_cell_reservations[key]) != owner_id)
+		):
+			return false
+		pending[key] = owner_id
+	for key in pending:
+		_cell_reservations[key] = owner_id
+	return true
+
+
+func release_cells(owner_id: String) -> void:
+	if owner_id.is_empty():
+		return
+	var owned_keys: Array[int] = []
+	for key in _cell_reservations:
+		if str(_cell_reservations[key]) == owner_id:
+			owned_keys.append(int(key))
+	for key in owned_keys:
+		_cell_reservations.erase(key)
+
+
+func get_cell_owner(gx: int, gz: int) -> String:
+	return str(_cell_reservations.get(cell_key(gx, gz), ""))
+
+
+func is_reserved_for(gx: int, gz: int, owner_id: String) -> bool:
+	return not owner_id.is_empty() and get_cell_owner(gx, gz) == owner_id
+
+
+func can_actor_use_cell(gx: int, gz: int, actor_id: String) -> bool:
+	var owner_id := get_cell_owner(gx, gz)
+	return owner_id.is_empty() or owner_id == actor_id
 
 
 func is_cell_available(gx: int, gz: int, required_state: int) -> bool:
