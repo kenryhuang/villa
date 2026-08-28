@@ -190,7 +190,7 @@ func _create_seed_row(entry: Dictionary) -> Control:
 		"plant_item_id": item_id,
 		"display_name": str(entry.item_data.get("name", crop.name)),
 		"quantity": int(entry.quantity),
-		"growth_text": "成熟 %d 天" % crop.growth_days,
+		"growth_text": "成熟约 30 秒 · 浇水约 20 秒",
 		"season_text": _season_text(crop.seasons),
 		"environment_text": _environment_text(crop.environment),
 		"status_text": REASON_LABELS.get(reason, reason) if not reason.is_empty() else "当前可播种",

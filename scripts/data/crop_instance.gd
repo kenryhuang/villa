@@ -148,6 +148,32 @@ func advance_growth() -> bool:
 	return old_stage != get_current_stage() or old_state != _lifecycle_state
 
 
+func advance_game_minutes(minutes: int, watered_multiplier: float = 1.0) -> bool:
+	if (
+		crop_data == null
+		or lifecycle_state != LifecycleState.GROWING
+		or minutes <= 0
+		or not is_finite(watered_multiplier)
+		or watered_multiplier <= 0.0
+	):
+		return false
+	var duration := maxi(1, int(crop_data.growth_duration_minutes))
+	var advance := (
+		float(crop_data.growth_days)
+		* float(minutes)
+		* watered_multiplier
+		/ float(duration)
+	)
+	var maturity := float(crop_data.growth_days)
+	var next_progress := minf(growth_progress + advance, maturity)
+	var next_state := (
+		LifecycleState.MATURE
+		if next_progress >= maturity
+		else LifecycleState.GROWING
+	)
+	return set_growth_state(next_progress, next_state)
+
+
 func is_mature() -> bool:
 	return lifecycle_state == LifecycleState.MATURE
 

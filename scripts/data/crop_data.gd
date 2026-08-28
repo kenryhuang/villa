@@ -12,6 +12,8 @@ const LIFECYCLE_TYPES := [&"annual", &"annual_regrow", &"bush", &"tree", &"vine"
 @export_enum("outdoor_or_greenhouse", "greenhouse_only") var environment := "outdoor_or_greenhouse"
 @export_enum("annual", "annual_regrow", "bush", "tree", "vine") var lifecycle_type := "annual"
 @export var growth_days := 3
+@export_range(1, 100000, 1) var growth_duration_minutes := 108
+@export_range(1, 100000, 1) var regrow_duration_minutes := 108
 @export var seasons: Array[int] = []
 @export var seed_price := 0
 @export var sell_price := 0
@@ -32,7 +34,7 @@ func is_valid() -> bool:
 		return false
 	if environment not in ENVIRONMENTS or lifecycle_type not in LIFECYCLE_TYPES:
 		return false
-	if growth_days <= 0:
+	if growth_days <= 0 or growth_duration_minutes <= 0 or regrow_duration_minutes <= 0:
 		return false
 	if yield_min <= 0 or yield_max < yield_min or regrow_days < 0 or regrow_days > growth_days:
 		return false

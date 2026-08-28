@@ -124,7 +124,8 @@ func _test_owned_seed_rows_and_selection(assertions: TestAssert, tree: SceneTree
 		assertions.truthy(not (row.get_node("Content/Details/NameRow/Name") as Label).text.is_empty(), "%s card shows a name" % item_id)
 		assertions.truthy(_quantity_label(row).text.begins_with("×"), "%s card shows quantity" % item_id)
 		var metadata := (row.get_node("Content/Details/Metadata") as Label).text
-		assertions.truthy(metadata.contains("天"), "%s card shows growth days" % item_id)
+		assertions.truthy(metadata.contains("成熟约 30 秒"), "%s card shows real-time growth" % item_id)
+		assertions.truthy(metadata.contains("浇水约 20 秒"), "%s card shows watering bonus" % item_id)
 		assertions.truthy(metadata.contains("·"), "%s card groups season and environment metadata" % item_id)
 	var before: int = fixture.inventory.get_item_count("grain_seed")
 	var click := InputEventMouseButton.new()

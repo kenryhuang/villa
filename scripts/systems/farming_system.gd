@@ -22,6 +22,9 @@ var _harvest_publication: Dictionary = {}
 var _farming_event_queue: Array[Array] = []
 var _is_dispatching_farming_events := false
 var _farming_event_dispatch_suspended := false
+var _last_growth_game_minute := -1
+
+const GAME_MINUTES_PER_DAY := 18 * 60
 
 
 static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
@@ -40,6 +43,11 @@ func configure(gs, ss, gs_state) -> bool:
 	if _event_bus == null and gs is GridSystem:
 		_event_bus = (gs as GridSystem)._event_bus
 	_game_data = get_node_or_null("/root/GameData") if is_inside_tree() else null
+	if _event_bus != null and _event_bus.has_signal("time_changed"):
+		var callback := Callable(self, "_on_time_changed")
+		if not _event_bus.is_connected("time_changed", callback):
+			_event_bus.connect("time_changed", callback)
+	sync_growth_clock()
 	return true
 
 
@@ -174,16 +182,24 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 	if data.lifecycle_type not in ["annual", "annual_regrow", "bush", "tree", "vine"]:
 		return {}
 	var harvest_seed := _harvest_seed()
+	var regrowing := data.lifecycle_type in ["annual_regrow", "bush", "tree", "vine"]
+	var post_crop: Variant = null
+	if regrowing:
+		post_crop = (before.crop as Dictionary).duplicate(true)
+		post_crop.growth_progress = 0.0
+		post_crop.is_watered_today = false
+		post_crop.harvest_count = instance.harvest_count + 1
+		post_crop.lifecycle_state = CropInstance.LifecycleState.GROWING
 	return {
 		"items": {str(data.crop_id): instance.calculate_yield(cell.gx, cell.gz, harvest_seed)},
 		"exp": int(data.exp_reward),
 		"harvest_seed": harvest_seed,
-		"regrowing": false,
+		"regrowing": regrowing,
 		"post_growth_progress": 0.0,
-		"post_lifecycle_state": null,
-		"post_cell_state": GridCell.State.FARMLAND,
+		"post_lifecycle_state": CropInstance.LifecycleState.GROWING if regrowing else null,
+		"post_cell_state": GridCell.State.PLANTED if regrowing else GridCell.State.FARMLAND,
 		"post_harvest_count": instance.harvest_count + 1,
-		"post_crop": null,
+		"post_crop": post_crop,
 		"before": before,
 	}
 
@@ -645,6 +661,73 @@ func get_all_planted_cells() -> Array:
 	return result
 
 
+func advance_growth_minutes(minutes: int) -> void:
+	if minutes <= 0:
+		return
+	for cell in get_all_planted_cells():
+		if is_paused_greenhouse_cell(cell):
+			continue
+		var instance: CropInstance = cell.crop_instance
+		if instance == null or instance.lifecycle_state != CropInstance.LifecycleState.GROWING:
+			continue
+		if _apply_environment_transition(cell):
+			_update_visual(cell, instance)
+		if instance.lifecycle_state != CropInstance.LifecycleState.GROWING:
+			continue
+		var old_stage := instance.get_current_stage()
+		var old_state := instance.lifecycle_state
+		var multiplier := 1.5 if cell.watered or instance.is_watered_today else 1.0
+		if not instance.advance_game_minutes(minutes, multiplier):
+			continue
+		var next_stage := instance.get_current_stage()
+		if next_stage != old_stage:
+			_update_visual(cell, instance)
+			_queue_farming_event_batch([{
+				"signal": &"crop_grew",
+				"args": [cell.gx, cell.gz, next_stage],
+			}])
+		if (
+			old_state == CropInstance.LifecycleState.GROWING
+			and instance.lifecycle_state == CropInstance.LifecycleState.MATURE
+		):
+			_queue_farming_event_batch([{
+				"signal": &"crop_matured",
+				"args": [cell.gx, cell.gz],
+			}])
+
+
+func sync_growth_clock(absolute_game_minute: int = -1) -> void:
+	_last_growth_game_minute = (
+		maxi(0, absolute_game_minute)
+		if absolute_game_minute >= 0
+		else _absolute_game_minute()
+	)
+
+
+func advance_growth_to_absolute_minute(absolute_game_minute: int) -> void:
+	var current := maxi(0, absolute_game_minute)
+	if _last_growth_game_minute < 0 or current <= _last_growth_game_minute:
+		_last_growth_game_minute = current
+		return
+	var elapsed := current - _last_growth_game_minute
+	_last_growth_game_minute = current
+	advance_growth_minutes(elapsed)
+
+
+func _on_time_changed(_hour: int, _minute: int) -> void:
+	advance_growth_to_absolute_minute(_absolute_game_minute())
+
+
+func _absolute_game_minute() -> int:
+	if season_system == null:
+		return 0
+	return (
+		maxi(0, int(season_system.total_days) - 1) * GAME_MINUTES_PER_DAY
+		+ maxi(0, int(season_system.hour) - 6) * 60
+		+ maxi(0, int(season_system.minute))
+	)
+
+
 func on_day_changed(_day: int) -> void:
 	for cell in get_all_planted_cells():
 		var instance: CropInstance = cell.crop_instance
@@ -654,8 +737,6 @@ func on_day_changed(_day: int) -> void:
 		var old_stage: int = instance.get_current_stage()
 		var old_lifecycle: int = instance.lifecycle_state
 		var environment_changed := _apply_environment_transition(cell)
-		if instance.lifecycle_state == CropInstance.LifecycleState.GROWING:
-			instance.advance_growth()
 		_clear_water(cell)
 		var new_stage: int = instance.get_current_stage()
 		if environment_changed or new_stage != old_stage:

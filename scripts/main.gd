@@ -483,6 +483,8 @@ func _connect_save_load_completed() -> void:
 
 
 func _on_save_load_completed(_slot: int) -> void:
+	if farming_system != null and farming_system.has_method("sync_growth_clock"):
+		farming_system.call("sync_growth_clock")
 	_initialize_plant_selection()
 	if (
 		farm_storage_system != null
@@ -1114,6 +1116,8 @@ static func default_crop_definitions() -> Array[CropData]:
 		crop.environment = str(row.environment)
 		crop.lifecycle_type = str(row.lifecycle_type)
 		crop.growth_days = int(row.days)
+		crop.growth_duration_minutes = 108
+		crop.regrow_duration_minutes = 108
 		crop.yield_min = int(row.yield[0])
 		crop.yield_max = int(row.yield[1])
 		crop.regrow_days = int(row.get("regrow", 0))

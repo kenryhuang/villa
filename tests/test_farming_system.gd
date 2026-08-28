@@ -191,18 +191,21 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(instance != null, "plant returns instance")
 	assertions.equal(cell.state, PLANTED, "cell is planted")
 
-	# Water and day change
+	# Watered continuous growth, then daily water reset.
 	farming.water(cell)
+	farming.advance_growth_minutes(36)
 	farming.on_day_changed(2)
-	assertions.near(cell.crop_instance.growth_progress, 1.5, 0.001, "watered daily growth")
+	assertions.near(cell.crop_instance.growth_progress, 1.5, 0.001, "watered minute growth")
 	assertions.truthy(not cell.watered, "cell water resets")
 
-	# Second day - unwatered
+	# Unwatered growth no longer depends on a day boundary.
+	farming.advance_growth_minutes(36)
 	farming.on_day_changed(3)
-	assertions.near(cell.crop_instance.growth_progress, 2.5, 0.001, "unwatered adds 1.0")
+	assertions.near(cell.crop_instance.growth_progress, 2.5, 0.001, "unwatered minute growth adds 1.0")
 
-	# Third day - watered to mature
+	# A final watered interval clamps at maturity.
 	farming.water(cell)
+	farming.advance_growth_minutes(12)
 	farming.on_day_changed(4)
 	assertions.near(cell.crop_instance.growth_progress, 3.0, 0.001, "watered growth clamps at maturity")
 	assertions.truthy(cell.crop_instance.growth_progress >= crop_data.growth_days, "crop is mature")
@@ -271,6 +274,7 @@ func _test_stage_only_growth_change(assertions: TestAssert) -> void:
 	var cell = grid.get_cell(5, 5)
 	farming.plant(cell, crop_data)
 
+	farming.advance_growth_minutes(36)
 	farming.on_day_changed(2)
 
 	assertions.equal(
@@ -287,6 +291,7 @@ func _test_stage_only_growth_change(assertions: TestAssert) -> void:
 	grid.set_cell_state(6, 6, FARMLAND)
 	var mature_cell = grid.get_cell(6, 6)
 	farming.plant(mature_cell, mature_crop)
+	farming.advance_growth_minutes(108)
 	farming.on_day_changed(3)
 	assertions.equal(event_bus.matured_events, [Vector2i(6, 6)], "growing to mature emits crop_matured once")
 	farming.on_day_changed(4)
@@ -350,8 +355,9 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	)
 	season.current_season = SeasonSystemScript.Season.SUMMER
 	farming.on_day_changed(4)
+	farming.advance_growth_minutes(27)
 	assertions.equal(bush_instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "in-season dormant bush restores active state")
-	assertions.near(bush_instance.growth_progress, 2.0, 0.001, "restored bush grows on the same daily tick")
+	assertions.near(bush_instance.growth_progress, 2.0, 0.001, "restored bush grows from elapsed minutes")
 
 	grid.set_cell_state(13, 13, FARMLAND)
 	var greenhouse_annual: CropData = _make_crop_data("greenhouse_annual", 3)
@@ -368,6 +374,7 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	assertions.truthy(not greenhouse_cell.watered and not greenhouse_instance.is_watered_today, "paused greenhouse clears daily water")
 	farming.set_greenhouse_cells([Vector2i(13, 13)])
 	farming.on_day_changed(6)
+	farming.advance_growth_minutes(36)
 	assertions.near(greenhouse_instance.growth_progress, 1.0, 0.001, "active greenhouse ignores season")
 	greenhouse_instance.set_growth_state(3.0, CropInstance.LifecycleState.MATURE)
 	farming.set_greenhouse_cells([], [Vector2i(13, 13)])
@@ -384,6 +391,7 @@ func _test_environment_lifecycle_transitions(assertions: TestAssert) -> void:
 	assertions.equal(greenhouse_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "ordinary annual is immediately reassessed after greenhouse removal")
 	var lemon_instance: CropInstance = farming.plant(lemon_cell, lemon)
 	farming.on_day_changed(8)
+	farming.advance_growth_minutes(36)
 	assertions.near(lemon_instance.growth_progress, 1.0, 0.001, "greenhouse-only crop grows in active greenhouse")
 	farming.set_greenhouse_cells([])
 	assertions.equal(lemon_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "greenhouse demolition immediately withers greenhouse-only crop")
@@ -485,9 +493,9 @@ func _test_exact_harvest_post_states(assertions: TestAssert) -> void:
 	var regrow_instance: CropInstance = farming.plant(regrow_cell, regrow)
 	regrow_instance.set_growth_state(4.0, CropInstance.LifecycleState.MATURE)
 	var regrow_preview: Dictionary = farming.preview_harvest(regrow_cell)
-	assertions.equal(regrow_preview.get("post_crop", "missing"), null, "regrow preview clears the crop")
-	assertions.equal(regrow_preview.get("post_lifecycle_state", "missing"), null, "regrow preview has no post lifecycle")
-	assertions.equal(regrow_preview.get("post_cell_state", -1), GridCell.State.FARMLAND, "regrow preview returns farmland")
+	assertions.truthy(regrow_preview.get("post_crop") is Dictionary, "regrow preview preserves the crop")
+	assertions.equal(regrow_preview.get("post_lifecycle_state", "missing"), CropInstance.LifecycleState.GROWING, "regrow preview restarts growth")
+	assertions.equal(regrow_preview.get("post_cell_state", -1), GridCell.State.PLANTED, "regrow preview remains planted")
 	assertions.equal(regrow_preview.get("post_growth_progress", -1.0), 0.0, "regrow preview has zero post progress")
 
 	farming.free()
@@ -521,8 +529,8 @@ func _test_deterministic_harvest_transaction(assertions: TestAssert) -> void:
 	assertions.equal(first, second, "preview remains byte-for-byte equal after capacity rejection")
 	assertions.equal(instance.harvest_count, 0, "real capacity rejection does not change harvest count")
 	assertions.equal(first.get("post_growth_progress", -1.0), 0.0, "preview includes cleared growth progress")
-	assertions.equal(first.get("post_lifecycle_state", "missing"), null, "preview includes cleared lifecycle")
-	assertions.equal(first.get("post_cell_state", -1), GridCell.State.FARMLAND, "preview includes farmland post state")
+	assertions.equal(first.get("post_lifecycle_state", "missing"), CropInstance.LifecycleState.GROWING, "preview includes restarted lifecycle")
+	assertions.equal(first.get("post_cell_state", -1), GridCell.State.PLANTED, "preview includes planted post state")
 	assertions.truthy(first.get("before", {}).get("crop", null) is Dictionary, "preview includes a stable before snapshot")
 	var mature_visual := farming.get_crop_visual(cell)
 	var mature_color := _fallback_color(mature_visual)
@@ -577,8 +585,10 @@ func _test_deterministic_harvest_transaction(assertions: TestAssert) -> void:
 		assertions.truthy(farming.rollback_prepared_harvest(recovered_token), "recovered harvest can cancel")
 	var committed: Dictionary = farming.commit_harvest(cell, first)
 	assertions.equal(committed.get("items", {}), first.items, "commit returns previewed items")
-	assertions.equal(cell.state, GridCell.State.FARMLAND, "successful commit leaves cultivated farmland")
-	assertions.truthy(cell.crop_instance == null, "successful commit clears the crop")
+	assertions.equal(cell.state, GridCell.State.PLANTED, "successful repeat commit remains planted")
+	assertions.truthy(cell.crop_instance == instance, "successful repeat commit preserves the crop")
+	assertions.equal(instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "successful repeat commit restarts growth")
+	assertions.equal(instance.harvest_count, 1, "successful repeat commit increments harvest count")
 	assertions.equal(event_bus.harvest_events.size(), 1, "successful commit emits one harvest event")
 	assertions.equal(event_bus.cell_events.size(), 1, "successful commit emits one cell event")
 	var after_commit := grid.get_crop_snapshot(15, 15)
@@ -655,13 +665,13 @@ func _test_reentrant_harvest_observes_final_state(assertions: TestAssert) -> voi
 	regrow_observer.state = state
 	event_bus.crop_harvested.connect(regrow_observer.on_harvested)
 
-	assertions.truthy(not farming.harvest(regrow_cell).is_empty(), "former-regrow crop harvest commits before notification")
-	assertions.equal(regrow_observer.observed_exp, annual.exp_reward + regrow.exp_reward, "former-regrow listener observes committed experience")
-	assertions.equal(regrow_observer.observed_cell_state, GridCell.State.FARMLAND, "former-regrow listener observes cleared farmland")
-	assertions.equal(regrow_observer.observed_visual_state, -1, "former-regrow listener observes removed harvest visual")
-	assertions.truthy(regrow_observer.replanted != null, "former-regrow listener can replant the cleared farmland")
-	assertions.equal(regrow_cell.crop_instance.crop_data.crop_id, "turnip", "former-regrow replant owns the final crop")
-	assertions.truthy(farming.get_crop_visual(regrow_cell) != null, "former-regrow replant keeps its replacement visual")
+	assertions.truthy(not farming.harvest(regrow_cell).is_empty(), "repeat crop harvest commits before notification")
+	assertions.equal(regrow_observer.observed_exp, annual.exp_reward + regrow.exp_reward, "repeat listener observes committed experience")
+	assertions.equal(regrow_observer.observed_cell_state, GridCell.State.PLANTED, "repeat listener observes retained planting")
+	assertions.equal(regrow_observer.observed_visual_state, CropInstance.LifecycleState.GROWING, "repeat listener observes restarted crop visual")
+	assertions.truthy(regrow_observer.replanted == null, "repeat listener cannot replace the retained crop")
+	assertions.equal(regrow_cell.crop_instance.crop_data.crop_id, "tomato", "repeat crop remains authoritative")
+	assertions.truthy(farming.get_crop_visual(regrow_cell) != null, "repeat crop keeps its visual")
 
 	event_bus.free()
 	farming.free()
