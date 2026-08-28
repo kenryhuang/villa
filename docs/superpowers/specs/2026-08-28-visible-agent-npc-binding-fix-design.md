@@ -1,50 +1,40 @@
-# Visible Agent NPC Binding Fix Design
+# Visible Agent NPC Presentation Fix Design
 
 ## Problem
 
-`NpcNorthwest` and `NpcEast` do not reliably appear as their intended Agent characters. They can lack a readable nameplate and their nearby dialogue prompt can appear absent.
+All three visible NPCs are correctly bound to their Agents and can open Agent dialogue when their bodies are clicked. `NpcNorthwest` and `NpcEast`, however, do not render their names or nearby dialogue icons; only Lao Li does.
 
-The full scene configures all three Agent IDs correctly after startup, but each NPC enters the scene tree with the scene default `villager_id` of `lao_li`. NPC child `_ready()` callbacks also run before `Main` creates `VillagerSystem`, so their attempted self-registration cannot succeed. Later Agent configuration changes the node property but does not register the node with the newly created system.
+Rendered-scene diagnostics show that every nameplate has the correct text and is visible in the scene tree. Under the GL Compatibility renderer, only one of the three transparent `Label3D` instances is drawn while all three share the same render priority. Assigning distinct priorities makes all three names render immediately.
 
-Rendered-scene diagnostics show that every nameplate has the right text and is visible in the scene tree, but the GL Compatibility renderer draws only one of the three transparent `Label3D` instances while they share the same render priority. Giving the three labels distinct priorities makes all names render immediately.
-
-The dialogue prompt is also too close to the nameplate. When it becomes visible, the two elements overlap, and the prompt can be hidden by the player or world geometry from common approach angles.
+The dialogue prompt uses the same default priority across all NPC instances, still participates in depth testing, and sits close enough to overlap the nameplate. This makes it vulnerable to the same priority conflict and to concealment by the player or world geometry.
 
 ## Selected Approach
 
-Give every NPC instance its final `villager_id` in `main.tscn`, before the child `_ready()` callbacks run:
+Keep the existing Agent binding, click interaction, dialogue transport, NPC identity, and range calculation unchanged.
 
-- `NpcNorthwest`: `farmer_ahe`
-- `NpcSouth`: `lao_li`
-- `NpcEast`: `xuezhe_lin`
-
-Keep the existing Agent binding in `Main` as the authoritative runtime association and display-name setup. After Agent configuration, `Main` explicitly registers each node with the already-created `VillagerSystem`, using the same Agent ID.
-
-Assign a distinct visual priority pair to every binding: one priority for the nameplate and the next priority for its prompt. Keep the nameplate visible while the dialogue prompt is active. Move the prompt above the nameplate and render its icon without depth testing, so the player model, terrain, other Agent labels, and the nameplate cannot conceal it.
+Assign a distinct visual priority pair to every Agent NPC binding: one priority for the nameplate and the next priority for its prompt. Keep the nameplate visible while the prompt is active. Move the prompt above the nameplate and disable depth testing for the icon so the player model, terrain, other Agent labels, and the nameplate cannot conceal it.
 
 ## Runtime Flow
 
-1. Godot instantiates the three NPC scene instances with distinct exported IDs.
-2. `Main` creates `VillagerSystem` during its own initialization.
-3. `Main._setup_npcs()` positions each NPC, binds the corresponding Agent, assigns its display name and visual priority pair, enables Agent dialogue, and registers the node with `VillagerSystem` under its correct ID.
-4. The NPC continuously evaluates horizontal distance to the player.
-5. Within the existing three-metre interaction distance, the dialogue icon appears above the always-visible nameplate and remains clickable.
-6. Leaving the interaction range hides only the dialogue icon; the nameplate remains visible.
+1. `Main._setup_npcs()` positions each NPC and resolves its Agent display name as before.
+2. `Main` preserves the existing three-argument `Npc.configure_agent()` contract, then passes the binding's visual priority to `Npc.configure_agent_visual_priority()`.
+3. The NPC applies that priority to its nameplate and the next priority to its dialogue icon.
+4. The nameplate remains visible whenever the NPC is alive.
+5. Within the existing three-metre range, the prompt appears above the nameplate and remains clickable.
+6. Leaving range hides only the prompt.
 
 ## Scope
 
-This fix does not change Agent scheduling, dialogue transport, NPC models, interaction distance, or the legacy villager registration API. It only corrects instance identity, registration timing, and presentation of the existing dialogue affordance.
+This fix changes presentation only. It does not alter Agent scheduling, dialogue transport, NPC registration, click handling, interaction distance, or character models.
 
 ## Verification
 
 Automated regression coverage will verify:
 
-- The three main-scene instances carry distinct expected IDs before `Main` performs Agent configuration.
-- `VillagerSystem` receives one registration for each expected Agent NPC ID.
-- Agent configuration preserves the expected IDs and display names.
-- The three nameplates use distinct render priorities.
-- At interaction range, both the nameplate and dialogue prompt are visible.
-- The prompt is positioned above the nameplate and uses the intended depth/render ordering.
-- Leaving interaction range hides the prompt without hiding the nameplate.
+- The three Agent bindings declare distinct nameplate priorities.
+- Agent configuration applies the expected name and prompt priority pair to every NPC.
+- At interaction range, both the nameplate and prompt remain visible.
+- The prompt is above the nameplate and ignores world depth.
+- Leaving range hides the prompt without hiding the nameplate.
 
-A full-scene visual probe will then place the player near Northwest and East independently and confirm that the correct name and complete dialogue icon are visible in rendered output.
+A rendered full-scene probe will confirm that all three names appear at once and that approaching Northwest and East shows a complete speech-bubble icon above their names.

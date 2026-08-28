@@ -29,9 +29,21 @@ const AgentDebugWindowScene := preload("res://scenes/ui/agent_debug_window.tscn"
 const HudMessageBusScript := preload("res://scripts/ui/hud_message_bus.gd")
 const AgentRuntimeScript := preload("res://scripts/ai_agent/agent_runtime.gd")
 const AGENT_NPC_BINDINGS := {
-	"NpcNorthwest": {"agent_id": "farmer_ahe", "spawn": Vector2(-3.0, -2.0)},
-	"NpcSouth": {"agent_id": "lao_li", "spawn": Vector2(3.0, -3.0)},
-	"NpcEast": {"agent_id": "xuezhe_lin", "spawn": Vector2(4.0, 2.0)},
+	"NpcNorthwest": {
+		"agent_id": "farmer_ahe",
+		"spawn": Vector2(-3.0, -2.0),
+		"visual_priority": 1,
+	},
+	"NpcSouth": {
+		"agent_id": "lao_li",
+		"spawn": Vector2(3.0, -3.0),
+		"visual_priority": 3,
+	},
+	"NpcEast": {
+		"agent_id": "xuezhe_lin",
+		"spawn": Vector2(4.0, 2.0),
+		"visual_priority": 5,
+	},
 }
 const AGENT_SERVICE_UNAVAILABLE_MESSAGE := "Agent 服务不可用，请稍后再试。"
 const NEW_GAME_STARTER_ITEMS := {
@@ -607,6 +619,7 @@ func _setup_npcs() -> void:
 		if not bool(npc.call("configure_agent", player, agent_id, display_name)):
 			push_error("Unable to bind visible NPC %s to Agent %s" % [node_name, agent_id])
 			continue
+		npc.call("configure_agent_visual_priority", int(binding.visual_priority))
 		_agent_npcs[agent_id] = npc
 		var callback := Callable(self, "_on_dialogue_started")
 		if not npc.dialogue_started.is_connected(callback):

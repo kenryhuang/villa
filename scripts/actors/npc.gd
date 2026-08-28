@@ -58,6 +58,13 @@ func configure_agent(player: Node3D, agent_id: String, display_name: String = ""
 	return true
 
 
+func configure_agent_visual_priority(visual_priority: int) -> void:
+	if nameplate != null:
+		nameplate.render_priority = visual_priority
+	if dialogue_prompt_icon != null:
+		dialogue_prompt_icon.render_priority = visual_priority + 1
+
+
 func is_player_in_dialogue_range() -> bool:
 	if _player_ref == null or not is_instance_valid(_player_ref):
 		return false

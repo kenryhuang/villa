@@ -155,6 +155,16 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		"xuezhe_lin",
 		"east NPC is explorer Xuezhe Lin"
 	)
+	var visual_priorities := [
+		int((bindings.NpcNorthwest as Dictionary).get("visual_priority", -1)),
+		int((bindings.NpcSouth as Dictionary).get("visual_priority", -1)),
+		int((bindings.NpcEast as Dictionary).get("visual_priority", -1)),
+	]
+	assertions.equal(
+		visual_priorities,
+		[1, 3, 5],
+		"Agent NPCs declare distinct nameplate priorities"
+	)
 
 	var fixture_root := Node3D.new()
 	var player := PlayerDouble.new()
@@ -186,6 +196,32 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(farmer.villager_id, "farmer_ahe", "farmer scene node receives Agent ID")
 	assertions.equal(merchant.villager_id, "lao_li", "merchant scene node receives Agent ID")
 	assertions.equal(explorer.villager_id, "xuezhe_lin", "explorer scene node receives Agent ID")
+	var expected_priorities := {"farmer_ahe": 1, "lao_li": 3, "xuezhe_lin": 5}
+	for npc in [farmer, merchant, explorer]:
+		var nameplate := npc.get_node("Nameplate") as Label3D
+		var prompt := npc.get_node("DialoguePrompt") as Node3D
+		var prompt_icon := npc.get_node("DialoguePrompt/Icon") as Sprite3D
+		var expected_priority := int(expected_priorities[npc.villager_id])
+		assertions.equal(
+			nameplate.render_priority,
+			expected_priority,
+			"%s receives a unique nameplate priority" % npc.villager_id
+		)
+		assertions.equal(
+			prompt_icon.render_priority,
+			expected_priority + 1,
+			"%s prompt renders above its nameplate" % npc.villager_id
+		)
+		assertions.truthy(
+			prompt_icon.no_depth_test,
+			"%s prompt ignores world depth" % npc.villager_id
+		)
+		assertions.near(
+			prompt.position.y,
+			2.05,
+			0.001,
+			"%s prompt clears its nameplate" % npc.villager_id
+		)
 	var farmer_nameplate := farmer.get_node_or_null("Nameplate") as Label3D
 	assertions.truthy(farmer_nameplate != null, "visible Agent NPC owns a nameplate")
 	if farmer_nameplate != null:
