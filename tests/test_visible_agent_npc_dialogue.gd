@@ -115,6 +115,15 @@ class HudBusDouble:
 		return true
 
 
+class PlayerDouble:
+	extends Node3D
+
+	var movement_blocks: Array[bool] = []
+
+	func set_movement_input_blocked(blocked: bool) -> void:
+		movement_blocks.append(blocked)
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var main_script: Script = MainScript
 	var script_constants: Dictionary = main_script.get_script_constant_map()
@@ -148,7 +157,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	)
 
 	var fixture_root := Node3D.new()
-	var player := Node3D.new()
+	var player := PlayerDouble.new()
 	var npcs := Node3D.new()
 	fixture_root.add_child(player)
 	fixture_root.add_child(npcs)
@@ -202,6 +211,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		farmer.set_dialogue_busy(true)
 		main.call("_on_dialogue_started", "farmer_ahe")
 		assertions.equal(dialogue.opened, [["farmer_ahe", "阿禾"]], "NPC click opens composer immediately")
+		assertions.equal(player.movement_blocks, [true], "opening Agent dialogue blocks player movement")
 		assertions.equal(runtime.triggered.size(), 0, "opening composer sends no empty Agent request")
 		dialogue.agent_message_submitted.emit("farmer_ahe", "今天适合种什么？")
 		assertions.equal(runtime.triggered, [{"agent_id": "farmer_ahe", "text": "今天适合种什么？"}], "player submission sends exact dialogue text")
@@ -216,16 +226,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		assertions.truthy(farmer.is_dialogue_busy(), "completed turn keeps NPC reserved while window is open")
 		dialogue.agent_dialogue_closed.emit("farmer_ahe", "")
 		assertions.truthy(not farmer.is_dialogue_busy(), "closing completed conversation unlocks NPC")
+		assertions.equal(player.movement_blocks, [true, false], "closing Agent dialogue rearms player movement")
 
 		runtime.trigger_result = false
 		merchant.set_dialogue_busy(true)
 		main.call("_on_dialogue_started", "lao_li")
+		assertions.truthy(not player.movement_blocks.is_empty() and player.movement_blocks[-1], "merchant dialogue also blocks player movement")
 		dialogue.agent_message_submitted.emit("lao_li", "今天行情如何？")
 		assertions.equal(dialogue.failed_submissions, [["lao_li", "Agent 服务不可用，请稍后再试。"]], "synchronous request failure stays visible in composer")
 		assertions.truthy(merchant.is_dialogue_busy(), "request failure keeps NPC reserved while conversation remains open")
 		assertions.equal(hud.records.size(), 1, "request failure publishes one warning")
 		dialogue.agent_dialogue_closed.emit("lao_li", "")
 		assertions.truthy(not merchant.is_dialogue_busy(), "closing failed conversation unlocks NPC")
+		assertions.truthy(not player.movement_blocks.is_empty() and not player.movement_blocks[-1], "closing failed conversation rearms player movement")
 
 		runtime.trigger_result = true
 		explorer.set_dialogue_busy(true)

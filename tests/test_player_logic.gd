@@ -51,6 +51,27 @@ func run(assertions) -> void:
 			"missing camera-right data keeps a neutral speed scale"
 		)
 
+	var has_dialogue_movement_gate := (
+		player.has_method("set_movement_input_blocked")
+		and player.has_method("filter_movement_input")
+	)
+	assertions.truthy(has_dialogue_movement_gate, "player exposes a dialogue-safe movement input gate")
+	if has_dialogue_movement_gate:
+		player.velocity = Vector3(2.0, 0.0, 1.0)
+		assertions.truthy(player.start_auto_path([Vector3(3.0, 0.0, 0.0)]), "dialogue movement gate fixture starts auto movement")
+		player.call("set_movement_input_blocked", true)
+		assertions.equal(player.call("filter_movement_input", Vector2.RIGHT), Vector2.ZERO, "dialogue blocks held D movement input")
+		assertions.truthy(not player.has_auto_movement(), "dialogue stops active automatic movement")
+		assertions.equal(Vector2(player.velocity.x, player.velocity.z), Vector2.ZERO, "dialogue immediately stops planar velocity")
+		Input.action_press("move_right")
+		Input.action_press("jump")
+		Input.action_press("sprint")
+		player.call("set_movement_input_blocked", false)
+		assertions.truthy(not Input.is_action_pressed("move_right"), "closing dialogue clears stale movement action state")
+		assertions.truthy(not Input.is_action_pressed("jump"), "closing dialogue clears stale jump action state")
+		assertions.truthy(not Input.is_action_pressed("sprint"), "closing dialogue clears stale sprint action state")
+		assertions.equal(player.call("filter_movement_input", Vector2.RIGHT), Vector2.RIGHT, "closing dialogue immediately restores player control")
+
 	var finished := []
 	var blocked := []
 	var manual := []

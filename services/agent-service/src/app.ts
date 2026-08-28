@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { AgentRegistry } from "./agents.ts";
@@ -16,6 +17,11 @@ interface ProviderPort {
   compactMemory?(agent: NonNullable<ReturnType<AgentRegistry["get"]>>, events: ReturnType<MemoryRepository["recent"]>): Promise<{summary: string; importance: number}>;
 }
 interface AppDependencies { memory: MemoryRepository; registry: AgentRegistry; provider: ProviderPort; checkpointRoot: string; }
+
+function decisionCacheKey(request: DecisionRequest): string {
+  const fingerprint = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+  return `decision:${request.session_id}:${request.request_id}:${fingerprint}`;
+}
 
 async function compactMemoryIfDue(dependencies: AppDependencies, sessionId: string, agentId: string): Promise<void> {
   if (!dependencies.provider.compactMemory || !dependencies.memory.shouldCompact(sessionId, agentId)) return;
@@ -122,7 +128,7 @@ export function createApp(dependencies: AppDependencies) {
         if (decisionRequest.agent_id !== streamMatch[1]) {
           send(response, 409, {error: {code: "AGENT_MISMATCH"}}); return;
         }
-        const decisionKey = `decision:${decisionRequest.session_id}:${decisionRequest.request_id}`;
+        const decisionKey = decisionCacheKey(decisionRequest);
         const cached = dependencies.memory.getIdempotent(decisionKey) as ActionIntent | undefined;
         beginSse(response);
         let sequence = 0;
@@ -205,7 +211,7 @@ export function createApp(dependencies: AppDependencies) {
         const parsed = parseDecisionRequest(body);
         if (!parsed.ok) throw new Error(parsed.error);
         if (parsed.value.agent_id !== decisionMatch[1]) { send(response, 409, {error: {code: "AGENT_MISMATCH"}}); return; }
-        const decisionKey = `decision:${parsed.value.session_id}:${parsed.value.request_id}`;
+        const decisionKey = decisionCacheKey(parsed.value);
         const cached = dependencies.memory.getIdempotent(decisionKey);
         if (cached) { send(response, 200, cached); return; }
         const context = decisionContext(dependencies, parsed.value);

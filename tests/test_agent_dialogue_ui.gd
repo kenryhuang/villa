@@ -43,6 +43,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	dialogue.agent_dialogue_closed.connect(func(agent_id: String, request_id: String): closed.append([agent_id, request_id]))
 	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
 	assertions.truthy(dialogue.visible, "click flow opens Agent dialogue immediately")
+	assertions.equal(dialogue.get_viewport().gui_get_focus_owner(), input, "opening Agent dialogue focuses its text editor")
 	assertions.equal((dialogue.get_node("DialoguePanel/Margin/VBox/Header/NameLabel") as Label).text, "阿禾", "Agent dialogue header shows display name")
 	input.text = "   "
 	send.pressed.emit()
@@ -60,6 +61,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(history_view.text.contains("今天价格稳定。"), "streamed Agent reply appears in scrollable history")
 	close_button.pressed.emit()
 	assertions.truthy(not dialogue.visible, "Agent dialogue close button hides the panel")
+	assertions.truthy(dialogue.get_viewport().gui_get_focus_owner() != input, "closing Agent dialogue releases text input focus")
 	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
 	assertions.truthy(history_view.text.contains("今天胡萝卜价格怎么样？"), "reopening restores player history")
 	assertions.truthy(history_view.text.contains("今天价格稳定。"), "reopening restores Agent history")

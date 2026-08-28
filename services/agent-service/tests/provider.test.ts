@@ -135,12 +135,24 @@ test("includes the exact player dialogue in the Provider prompt", async () => {
   await provider.decide(dialogueRequest, context);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   config.cleanup();
-  const providerBody = JSON.parse(capturedBody) as {messages: Array<{role: string; content: string}>};
+  const providerBody = JSON.parse(capturedBody) as {
+    messages: Array<{role: string; content: string}>;
+    tools?: unknown;
+    tool_choice?: unknown;
+  };
   const userMessage = providerBody.messages.find((message) => message.role === "user");
   const systemMessage = providerBody.messages.find((message) => message.role === "system");
   assert.ok(userMessage);
-  assert.equal(JSON.parse(userMessage.content).dialogue_input, "今天胡萝卜价格怎么样？");
+  const dialoguePayload = JSON.parse(userMessage.content) as {
+    dialogue_input: string;
+    context: {allowed_tools: string[]};
+  };
+  assert.equal(dialoguePayload.dialogue_input, "今天胡萝卜价格怎么样？");
+  assert.deepEqual(dialoguePayload.context.allowed_tools, []);
+  assert.equal("tools" in providerBody, false);
+  assert.equal("tool_choice" in providerBody, false);
   assert.match(systemMessage?.content || "", /in character/i);
+  assert.match(systemMessage?.content || "", /do not call tools/i);
 });
 
 test("compresses selected events through the configured real Provider", async () => {

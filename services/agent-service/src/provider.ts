@@ -35,26 +35,30 @@ export class OpenAICompatibleProvider {
       const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
         ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
       const isDialogue = request.trigger === "dialogue";
-      const systemContent = [
-        "You are a game NPC Agent. Use zero to three authorized tools in the exact order they should execute. Use no tool when no action is needed. Put travel or build last. Never invent world assets.",
-        ...(isDialogue ? ["The player is speaking to you directly. Reply in character using the Agent soul and speech style, and answer the player's dialogue input."] : []),
-      ].join(" ");
-      const userContent = isDialogue
-        ? {context, dialogue_input: request.dialogue_input ?? ""}
+      const providerContext = isDialogue
+        ? {...context, allowed_tools: []}
         : context;
+      const systemContent = isDialogue
+        ? "You are a game NPC Agent speaking directly with the player. Reply immediately in character using the Agent soul and speech style. Answer the player's dialogue input in one to three concise sentences. Do not call tools or plan world actions. Never invent world assets."
+        : "You are a game NPC Agent. Use zero to three authorized tools in the exact order they should execute. Use no tool when no action is needed. Put travel or build last. Never invent world assets.";
+      const userContent = isDialogue
+        ? {context: providerContext, dialogue_input: request.dialogue_input ?? ""}
+        : providerContext;
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
         temperature: this.#config.temperature,
         max_tokens: this.#config.maxOutputTokens,
         stream: true,
         stream_options: {include_usage: true},
-        tool_choice: "auto",
-        tools: context.allowed_tools.map(toolDescription),
         messages: [
           {role: "system", content: systemContent},
           {role: "user", content: JSON.stringify(userContent)},
         ],
       };
+      if (!isDialogue) {
+        providerBody.tool_choice = "auto";
+        providerBody.tools = providerContext.allowed_tools.map(toolDescription);
+      }
       emit({type: "input", body: structuredClone(providerBody)});
       const response = await fetch(endpoint, {
         method: "POST",
@@ -68,7 +72,7 @@ export class OpenAICompatibleProvider {
       for await (const chunk of decodeProviderSse(response.body)) {
         for (const event of assembler.accept(chunk)) emit(event);
       }
-      const result = assembler.finish(request, context.allowed_tools);
+      const result = assembler.finish(request, providerContext.allowed_tools);
       emit({type: "output", output: result.rawOutput});
       return result.intent;
     } finally {

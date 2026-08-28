@@ -1345,6 +1345,7 @@ func _on_dialogue_started(villager_id: String) -> void:
 				agent_runtime.call("get_agent_display_name", villager_id)
 			))
 		):
+			_set_player_dialogue_movement_blocked(true)
 			return
 		_set_agent_npc_busy(villager_id, false)
 		return
@@ -1422,6 +1423,12 @@ func _on_agent_dialogue_closed(villager_id: String, request_id: String) -> void:
 		return
 	_agent_dialogue_requests.erase(villager_id)
 	_set_agent_npc_busy(villager_id, false)
+	_set_player_dialogue_movement_blocked(false)
+
+
+func _set_player_dialogue_movement_blocked(blocked: bool) -> void:
+	if player != null and is_instance_valid(player) and player.has_method("set_movement_input_blocked"):
+		player.call("set_movement_input_blocked", blocked)
 
 
 func _connect_agent_dialogue_ui() -> void:

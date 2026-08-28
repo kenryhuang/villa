@@ -92,6 +92,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(restored.configure(economy, market, season, null, disabled_config_path), "second runtime configures")
 	assertions.truthy(restored.from_dict(saved), "Agent world state restores")
 	assertions.equal(restored.to_dict(), saved, "Agent world state round trip is stable")
+	var first_runtime_request: Dictionary = runtime.call("_build_request", "lao_li", "dialogue", 100, "第一条问题")
+	var second_runtime_request: Dictionary = restored.call("_build_request", "lao_li", "dialogue", 100, "第一条问题")
+	assertions.truthy(
+		str(first_runtime_request.request_id) != str(second_runtime_request.request_id),
+		"separate game runtimes never reuse the same Agent request ID",
+	)
 	var save_manager = tree.root.get_node("SaveManager")
 	assertions.truthy(save_manager.configure_agent_runtime(runtime), "SaveManager accepts Agent runtime")
 	assertions.truthy(runtime.configure_save_manager(save_manager), "runtime coordinates asynchronous memory sidecars")

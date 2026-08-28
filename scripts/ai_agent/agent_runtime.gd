@@ -43,11 +43,19 @@ var _market: Variant
 var _season: Variant
 var _hud_bus: Variant
 var _request_sequence := 0
+var _request_namespace := ""
 var _event_bus: Node
 var _save_manager: Variant
 var _store_agent_session := false
 var _agent_session_directory := AgentClientConfigScript.DEFAULT_SESSION_DIRECTORY
 var _request_triggers: Dictionary = {}
+
+
+func _init() -> void:
+	_request_namespace = "%x-%x" % [
+		int(Time.get_unix_time_from_system() * 1_000_000.0),
+		get_instance_id(),
+	]
 
 
 func configure(
@@ -340,7 +348,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 		var item_id := str(definition.id)
 		market_snapshot[item_id] = _market.call("get_item_state", item_id)
 	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_registry.to_dict().farms.get(agent_id, []), "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot}
-	var request := AgentProtocolScript.make_decision_request("%s-%d" % [agent_id, _request_sequence], session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, perception_inbox.drain(agent_id), dialogue)
+	var request := AgentProtocolScript.make_decision_request("%s-%s-%d" % [agent_id, _request_namespace, _request_sequence], session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, perception_inbox.drain(agent_id), dialogue)
 	_request_triggers[str(request.request_id)] = trigger
 	return request
 

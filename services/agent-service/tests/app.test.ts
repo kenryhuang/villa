@@ -135,6 +135,52 @@ test("streams stable Agent events and replays only a cached final decision", asy
   memory.close(); rmSync(directory, {recursive: true, force: true});
 });
 
+test("does not replay a decision when the same request id carries different dialogue input", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "villa-agent-request-fingerprint-"));
+  const memory = new MemoryRepository(join(directory, "memory.sqlite"));
+  let providerCalls = 0;
+  const provider = {
+    decide: async (request: DecisionRequest): Promise<ActionIntent> => makeWaitIntent(request),
+    streamDecision: async (request: DecisionRequest): Promise<ActionIntent> => {
+      providerCalls += 1;
+      return {
+        protocol_version: 2,
+        decision_id: `dialogue-${providerCalls}`,
+        request_id: request.request_id,
+        agent_id: request.agent_id,
+        expected_revision: request.world_revision,
+        actions: [],
+        speech: request.dialogue_input || "",
+        decision_summary: "Answered current dialogue input",
+      };
+    },
+  };
+  const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
+  const postDialogue = async (dialogueInput: string) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/agents/farmer_ahe/decide/stream`, {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({...fixture, trigger: "dialogue", dialogue_input: dialogueInput}),
+    });
+    return parseProjectSse(await response.text());
+  };
+  const first = await postDialogue("第一条问题");
+  const second = await postDialogue("第二条问题");
+  const replay = await postDialogue("第二条问题");
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  memory.close(); rmSync(directory, {recursive: true, force: true});
+  const finalSpeech = (events: ReturnType<typeof parseProjectSse>) =>
+    events.find((event) => event.name === "decision.final")?.data.payload.speech;
+  assert.equal(finalSpeech(first), "第一条问题");
+  assert.equal(finalSpeech(second), "第二条问题");
+  assert.equal(finalSpeech(replay), "第二条问题");
+  assert.equal(providerCalls, 2);
+  assert.deepEqual(replay.map((event) => event.name), ["decision.final", "stream.completed"]);
+});
+
 test("stores one idempotent dialogue memory event with both speakers", async () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-dialogue-memory-"));
   const memory = new MemoryRepository(join(directory, "memory.sqlite"));

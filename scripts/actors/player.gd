@@ -28,11 +28,20 @@ const LATERAL_MOVEMENT_SPEED_SCALE := 0.67
 const AUTO_WAYPOINT_TOLERANCE := 0.15
 const AUTO_STALL_SECONDS := 0.5
 const AUTO_PROGRESS_EPSILON := 0.01
+const DIALOGUE_MOVEMENT_ACTIONS := [
+	&"move_left",
+	&"move_right",
+	&"move_forward",
+	&"move_back",
+	&"jump",
+	&"sprint",
+]
 
 var _auto_path: Array[Vector3] = []
 var _auto_path_index := 0
 var _auto_stall_elapsed := 0.0
 var _auto_last_distance := INF
+var _movement_input_blocked := false
 @onready var player_visual: PlayerVisual = $PlayerVisual
 
 
@@ -49,16 +58,18 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= gravity * delta
 
 	# 跳跃
-	if is_on_floor() and Input.is_action_just_pressed("jump"):
+	if not _movement_input_blocked and is_on_floor() and Input.is_action_just_pressed("jump"):
 		velocity.y = jump_velocity
 
 	# 奔跑
-	_is_sprinting = Input.is_action_pressed("sprint")
+	_is_sprinting = not _movement_input_blocked and Input.is_action_pressed("sprint")
 	if _is_sprinting and not is_on_floor():
 		_is_sprinting = false
 
 	# 移动
-	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input_vector := filter_movement_input(
+		Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	)
 	var direction := Vector3.ZERO
 	var using_auto_movement := has_auto_movement()
 	if input_vector.length_squared() > 0.0001:
@@ -124,6 +135,27 @@ func stop_auto_movement(_reason: String) -> void:
 	_auto_last_distance = INF
 	velocity.x = 0.0
 	velocity.z = 0.0
+
+
+func set_movement_input_blocked(blocked: bool) -> void:
+	if _movement_input_blocked == blocked:
+		return
+	_movement_input_blocked = blocked
+	if blocked:
+		stop_auto_movement("dialogue_open")
+		return
+	_release_dialogue_movement_actions()
+
+
+func filter_movement_input(input_vector: Vector2) -> Vector2:
+	if _movement_input_blocked:
+		return Vector2.ZERO
+	return input_vector
+
+
+func _release_dialogue_movement_actions() -> void:
+	for action in DIALOGUE_MOVEMENT_ACTIONS:
+		Input.action_release(action)
 
 
 func has_auto_movement() -> bool:
