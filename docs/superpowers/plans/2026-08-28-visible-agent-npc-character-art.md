@@ -1,6 +1,6 @@
 # Visible Agent NPC Character Art Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the three Agent NPC capsules with role-specific, hand-painted, four-direction static sprites while preserving all existing interaction and dialogue behavior.
 
@@ -17,7 +17,7 @@
 - Create: `assets/characters/npcs/lao_li/lao_li_directions.png`
 - Create: `assets/characters/npcs/xuezhe_lin/xuezhe_lin_directions.png`
 
-- [ ] **Step 1: Generate Ahe's atlas**
+- [x] **Step 1: Generate Ahe's atlas**
 
 Use the image generation tool with this prompt and save its PNG output at the exact farmer path:
 
@@ -25,7 +25,7 @@ Use the image generation tool with this prompt and save its PNG output at the ex
 Create a transparent-background 2x2 orthographic character direction atlas for a cozy hand-painted farming game. The same young adult woman farmer named Ahe appears once in each equal cell, full body, neutral standing pose, identical scale and ground alignment. Cell order: top-left back view, top-right right-facing profile, bottom-left front view, bottom-right left-facing profile. She wears a warm green headscarf, cream work shirt, brown-green apron, sturdy brown boots, and a small seed satchel. Earthy green, wheat, cream, and brown palette. Practical, dependable, friendly expression. Lightly chibi proportions matching a polished hand-painted isometric farm-game character. No held tools, no walking pose, no animation smear, no text, no labels, no borders, no grid lines, no shadows outside the character, and no scenery. Preserve real transparency everywhere outside the four figures. Keep generous separation between cells and keep every figure fully inside its cell.
 ```
 
-- [ ] **Step 2: Generate Lao Li's atlas**
+- [x] **Step 2: Generate Lao Li's atlas**
 
 Use this prompt and save its PNG output at the exact merchant path:
 
@@ -33,7 +33,7 @@ Use this prompt and save its PNG output at the exact merchant path:
 Create a transparent-background 2x2 orthographic character direction atlas for a cozy hand-painted farming game. The same middle-aged male merchant named Lao Li appears once in each equal cell, full body, neutral standing pose, identical scale and ground alignment. Cell order: top-left back view, top-right right-facing profile, bottom-left front view, bottom-right left-facing profile. He has a neat small moustache and wears a chestnut vest over a cream shirt, dark trousers, practical shoes, a waist ledger, and a coin pouch. Chestnut, burgundy, brass, cream, and charcoal palette. Slightly broad silhouette, friendly but shrewd expression. Lightly chibi proportions matching a polished hand-painted isometric farm-game character. No held items, no walking pose, no animation smear, no text, no labels, no borders, no grid lines, no shadows outside the character, and no scenery. Preserve real transparency everywhere outside the four figures. Keep generous separation between cells and keep every figure fully inside its cell.
 ```
 
-- [ ] **Step 3: Generate Scholar Lin's atlas**
+- [x] **Step 3: Generate Scholar Lin's atlas**
 
 Use this prompt and save its PNG output at the exact explorer path:
 
@@ -41,11 +41,11 @@ Use this prompt and save its PNG output at the exact explorer path:
 Create a transparent-background 2x2 orthographic character direction atlas for a cozy hand-painted farming game. The same young adult male explorer-scholar named Scholar Lin appears once in each equal cell, full body, neutral standing pose, identical scale and ground alignment. Cell order: top-left back view, top-right right-facing profile, bottom-left front view, bottom-right left-facing profile. He wears a teal-blue short field coat, round glasses, dark practical trousers, leather boots, a light backpack, a rolled map secured to the pack, and a small notebook pouch. Teal, navy, parchment, leather brown, and muted gold palette. Slim field-ready silhouette, curious but careful expression. Lightly chibi proportions matching a polished hand-painted isometric farm-game character. No held items, no walking pose, no animation smear, no text, no labels, no borders, no grid lines, no shadows outside the character, and no scenery. Preserve real transparency everywhere outside the four figures. Keep generous separation between cells and keep every figure fully inside its cell.
 ```
 
-- [ ] **Step 4: Inspect all atlases**
+- [x] **Step 4: Inspect all atlases**
 
 Open each PNG at original detail and verify: true transparent background; exactly four complete figures; specified cell order; consistent scale and ground line; no text, border, grid, scenery, cropped limbs, or animation pose. Regenerate only the failing atlas if any requirement is violated.
 
-- [ ] **Step 5: Commit the art assets**
+- [x] **Step 5: Commit the art assets**
 
 ```powershell
 git add -- assets/characters/npcs/farmer_ahe/farmer_ahe_directions.png assets/characters/npcs/lao_li/lao_li_directions.png assets/characters/npcs/xuezhe_lin/xuezhe_lin_directions.png
@@ -59,7 +59,7 @@ git commit -m "feat: add role-specific Agent NPC art"
 - Create: `tests/test_npc_visual.gd`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Add a failing component-contract test**
+- [x] **Step 1: Add a failing component-contract test**
 
 Create `tests/test_npc_visual.gd` with a dynamic script load so a missing implementation produces an assertion failure rather than a parser error:
 
@@ -92,7 +92,7 @@ const NpcVisualTest = preload("res://tests/test_npc_visual.gd")
 	npc_visual_test.run(assertions)
 ```
 
-- [ ] **Step 2: Run the suite and verify the missing-component failure**
+- [x] **Step 2: Run the suite and verify the missing-component failure**
 
 Run:
 
@@ -102,7 +102,7 @@ godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
 
 Expected: FAIL only the new `NpcVisual script exists` assertion.
 
-- [ ] **Step 3: Add the minimal component contract**
+- [x] **Step 3: Add the minimal component contract**
 
 Create `scripts/visual/npc_visual.gd`:
 
@@ -127,11 +127,11 @@ func get_last_direction() -> String:
 	return _last_direction
 ```
 
-- [ ] **Step 4: Run the suite and verify the contract passes**
+- [x] **Step 4: Run the suite and verify the contract passes**
 
 Run the Agent suite. Expected: PASS with four additional component-contract checks.
 
-- [ ] **Step 5: Extend the test with failing atlas and direction behavior**
+- [x] **Step 5: Extend the test with failing atlas and direction behavior**
 
 Append helpers and assertions to `tests/test_npc_visual.gd`:
 
@@ -164,11 +164,11 @@ Before freeing `visual`, assert:
 	assertions.truthy(visual.visible, "valid configuration shows the sprite")
 ```
 
-- [ ] **Step 6: Run the suite and verify behavior assertions fail**
+- [x] **Step 6: Run the suite and verify behavior assertions fail**
 
 Run the Agent suite. Expected: FAIL because `configure` still returns false and direction/region state is not implemented.
 
-- [ ] **Step 7: Implement atlas validation and static direction selection**
+- [x] **Step 7: Implement atlas validation and static direction selection**
 
 Replace `scripts/visual/npc_visual.gd` with:
 
@@ -240,7 +240,7 @@ func _apply_direction() -> void:
 	region_rect = Rect2(Vector2(cell * _cell_size), Vector2(_cell_size))
 ```
 
-- [ ] **Step 8: Run the focused suite**
+- [x] **Step 8: Run the focused suite**
 
 Run the Agent suite. Expected: PASS with all new atlas and direction checks.
 
@@ -252,7 +252,7 @@ Run the Agent suite. Expected: PASS with all new atlas and direction checks.
 - Modify: `scripts/main.gd`
 - Modify: `tests/test_visible_agent_npc_dialogue.gd`
 
-- [ ] **Step 1: Add failing integration assertions**
+- [x] **Step 1: Add failing integration assertions**
 
 In `tests/test_visible_agent_npc_dialogue.gd`, assert exact binding paths and, after `_setup_npcs()`, assert each configured NPC has a visible `NpcVisual`, hidden placeholder mesh, and matching texture resource path:
 
@@ -294,11 +294,11 @@ In `tests/test_visible_agent_npc_dialogue.gd`, assert exact binding paths and, a
 	fallback_npc.free()
 ```
 
-- [ ] **Step 2: Run the focused suite and verify integration failures**
+- [x] **Step 2: Run the focused suite and verify integration failures**
 
 Run the Agent suite. Expected: FAIL because bindings lack `visual_path`, the scene lacks `NpcVisual`, and capsules remain visible.
 
-- [ ] **Step 3: Add the visual node and fallback control**
+- [x] **Step 3: Add the visual node and fallback control**
 
 In `scenes/actors/npc.tscn`, add the script resource, increase `load_steps`, and add:
 
@@ -353,7 +353,7 @@ func _sync_visual_motion() -> void:
 	))
 ```
 
-- [ ] **Step 4: Map and configure the three atlases in Main**
+- [x] **Step 4: Map and configure the three atlases in Main**
 
 Add `visual_path` to each `AGENT_NPC_BINDINGS` entry in `scripts/main.gd` using the exact paths from Step 1. After visual priority configuration, add:
 
@@ -365,11 +365,11 @@ Add `visual_path` to each `AGENT_NPC_BINDINGS` entry in `scripts/main.gd` using 
 
 Do not `continue` after a visual failure: Agent routing and body-click dialogue must remain available through the capsule fallback.
 
-- [ ] **Step 5: Run the focused Agent suite**
+- [x] **Step 5: Run the focused Agent suite**
 
 Run the Agent suite. Expected: PASS with all role-asset and fallback integration checks.
 
-- [ ] **Step 6: Commit runtime integration**
+- [x] **Step 6: Commit runtime integration**
 
 ```powershell
 git add -- scripts/visual/npc_visual.gd scripts/actors/npc.gd scripts/main.gd scenes/actors/npc.tscn tests/test_npc_visual.gd tests/test_visible_agent_npc_dialogue.gd tests/run_agent_system_tests.gd
@@ -381,7 +381,7 @@ git commit -m "feat: render role-specific Agent NPCs"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-28-visible-agent-npc-character-art.md`
 
-- [ ] **Step 1: Run the focused Agent suite fresh**
+- [x] **Step 1: Run the focused Agent suite fresh**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
@@ -389,7 +389,7 @@ godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
 
 Expected: all Agent checks pass.
 
-- [ ] **Step 2: Run the full suite against the recorded baseline**
+- [x] **Step 2: Run the full suite against the recorded baseline**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_tests.gd
@@ -397,11 +397,11 @@ godot_console --headless --path . --script res://tests/run_tests.gd
 
 Expected: no failures beyond the recorded baseline of four checks: three economy order/contract state checks and one villager-count check.
 
-- [ ] **Step 3: Capture initial and four-direction views**
+- [x] **Step 3: Capture initial and four-direction views**
 
 Use a temporary non-headless Godot probe to capture all three NPCs in the initial scene, then move each NPC in camera-relative front, back, left, and right directions long enough to select its static direction. Confirm role silhouettes, scale, transparency, grounding, nameplate clearance, dialogue prompt clearance, and direction correctness. Delete the probe before completion.
 
-- [ ] **Step 4: Verify repository state**
+- [x] **Step 4: Verify repository state**
 
 ```powershell
 git diff --check
@@ -410,7 +410,7 @@ git status --short
 
 Expected: no whitespace errors and only the implementation-plan completion update remains uncommitted.
 
-- [ ] **Step 5: Commit the completed plan record**
+- [x] **Step 5: Commit the completed plan record**
 
 ```powershell
 git add -- docs/superpowers/plans/2026-08-28-visible-agent-npc-character-art.md
