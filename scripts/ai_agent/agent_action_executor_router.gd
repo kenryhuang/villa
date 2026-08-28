@@ -82,7 +82,22 @@ func configure(
 
 func execute_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
 	var outcomes: Array[Dictionary] = []
-	for action_value in intent.get("actions", []):
+	var actions: Array = intent.get("actions", [])
+	var index := 0
+	while index < actions.size():
+		var source_action: Dictionary = actions[index]
+		if _uses_visible_farm(source_action):
+			var farm_actions: Array[Dictionary] = []
+			while index < actions.size() and _uses_visible_farm(actions[index]):
+				farm_actions.append((actions[index] as Dictionary).duplicate(true))
+				index += 1
+			var queued := _queue_visible_farm(intent, farm_actions, game_minute)
+			outcomes.append_array(queued)
+			if not queued.is_empty() and str(queued[-1].get("status", "")) in ["rejected", "failed"]:
+				break
+			continue
+		var action_value = actions[index]
+		index += 1
 		var action := (action_value as Dictionary).duplicate(true)
 		action.agent_id = str(intent.get("agent_id", ""))
 		action.decision_id = str(intent.get("decision_id", ""))
@@ -91,6 +106,86 @@ func execute_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
 		outcomes.append(outcome)
 		if str(outcome.get("status", "")) in ["rejected", "failed", "in_progress"]:
 			break
+	return outcomes
+
+
+func finalize_queued_action(intent: Dictionary, result: Dictionary, game_minute: int) -> Dictionary:
+	var key := str(intent.get("idempotency_key", ""))
+	var outcome: Dictionary
+	if bool(result.get("ok", false)):
+		world_revision += 1
+		outcome = {
+			"protocol_version": 2,
+			"decision_id": str(intent.get("decision_id", "")),
+			"action_id": str(intent.get("action_id", "")),
+			"idempotency_key": key,
+			"status": "completed",
+			"committed_revision": world_revision,
+			"changed_entities": result.get("changed_entities", []),
+			"resource_delta": result.get("resource_delta", {}),
+			"hud_message": str(result.get("message", "")),
+			"game_minute": game_minute,
+		}
+	else:
+		outcome = _failure(intent, game_minute, str(result.get("error", "work_failed")))
+	_outcomes[key] = outcome.duplicate(true)
+	if not str(outcome.hud_message).is_empty() and _publish_hud.is_valid():
+		_publish_hud.call(str(outcome.hud_message))
+	return outcome
+
+
+func _uses_visible_farm(action: Dictionary) -> bool:
+	return (
+		_farm != null
+		and _farm.has_method("queue_batch")
+		and str(action.get("tool_name", "")) in ["till", "plant", "harvest"]
+	)
+
+
+func _queue_visible_farm(
+	intent: Dictionary,
+	actions: Array[Dictionary],
+	game_minute: int
+) -> Array[Dictionary]:
+	var pending_actions: Array[Dictionary] = []
+	var outcomes: Array[Dictionary] = []
+	for source in actions:
+		var action := source.duplicate(true)
+		action.agent_id = str(intent.get("agent_id", ""))
+		action.decision_id = str(intent.get("decision_id", ""))
+		action.expected_revision = int(intent.get("expected_revision", 0))
+		var key := str(action.get("idempotency_key", ""))
+		if _outcomes.has(key):
+			outcomes.append((_outcomes[key] as Dictionary).duplicate(true))
+		else:
+			pending_actions.append(action)
+	if pending_actions.is_empty():
+		return outcomes
+	var queued_intent := intent.duplicate(true)
+	queued_intent.actions = pending_actions
+	var results: Array = _farm.call("queue_batch", queued_intent, game_minute)
+	for result_index in range(results.size()):
+		var action := pending_actions[result_index]
+		var result: Dictionary = results[result_index]
+		if not bool(result.get("ok", false)):
+			var failure := _failure(action, game_minute, str(result.get("error", "queue_rejected")))
+			_outcomes[str(action.idempotency_key)] = failure.duplicate(true)
+			outcomes.append(failure)
+			break
+		var outcome := {
+			"protocol_version": 2,
+			"decision_id": str(action.decision_id),
+			"action_id": str(action.get("action_id", "")),
+			"idempotency_key": str(action.idempotency_key),
+			"status": "in_progress",
+			"committed_revision": world_revision,
+			"changed_entities": [],
+			"resource_delta": {},
+			"hud_message": "",
+			"game_minute": game_minute,
+		}
+		_outcomes[str(action.idempotency_key)] = outcome.duplicate(true)
+		outcomes.append(outcome)
 	return outcomes
 
 

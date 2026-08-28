@@ -5,6 +5,40 @@ const GridSystemScript = preload("res://scripts/systems/grid_system.gd")
 const FarmingSystemScript = preload("res://scripts/systems/farming_system.gd")
 
 
+class FakeNpcState:
+	extends RefCounted
+	var inventory := {"carrot_seed": 2}
+
+	func to_dict() -> Dictionary:
+		return {"inventory": inventory.duplicate(true)}
+
+	func from_dict(value: Dictionary) -> bool:
+		inventory = (value.get("inventory", {}) as Dictionary).duplicate(true)
+		return true
+
+
+class FakeEconomy:
+	extends RefCounted
+	var state := FakeNpcState.new()
+
+	func get_npc_state(agent_id: String):
+		return state if agent_id == "farmer_ahe" else null
+
+	func receive_item(agent_id: String, item_id: String, quantity: int) -> bool:
+		if agent_id != "farmer_ahe" or quantity <= 0:
+			return false
+		state.inventory[item_id] = int(state.inventory.get(item_id, 0)) + quantity
+		return true
+
+
+class FakeGameData:
+	extends Node
+	var crop: CropData
+
+	func get_crop_for_plant_item(item_id: String) -> CropData:
+		return crop if crop != null and crop.plant_item_id == item_id else null
+
+
 func run(assertions: TestAssert) -> void:
 	var exists := ResourceLoader.exists(SCRIPT_PATH)
 	assertions.truthy(exists, "visible NPC farm system script exists")
@@ -18,6 +52,18 @@ func run(assertions: TestAssert) -> void:
 	var grid := GridSystemScript.new()
 	var farming := FarmingSystemScript.new()
 	farming.configure(grid, null, null)
+	var economy := FakeEconomy.new()
+	var game_data := FakeGameData.new()
+	var crop := CropData.new()
+	crop.crop_id = "carrot"
+	crop.plant_item_id = "carrot_seed"
+	crop.name = "胡萝卜"
+	crop.growth_days = 3
+	crop.growth_duration_minutes = 108
+	crop.yield_min = 2
+	crop.yield_max = 2
+	crop.seasons = []
+	game_data.crop = crop
 	assertions.truthy(
 		farm.has_method("configure")
 		and farm.has_method("get_plot_count")
@@ -28,7 +74,7 @@ func run(assertions: TestAssert) -> void:
 	)
 	if farm.has_method("configure"):
 		assertions.truthy(
-			farm.configure(grid, farming, null, null, "farmer_ahe", Vector3(-3.0, 0.0, -2.0)),
+			farm.configure(grid, farming, economy, game_data, "farmer_ahe", Vector3(-3.0, 0.0, -2.0)),
 			"Ahe visible farm configures near her spawn"
 		)
 		assertions.equal(farm.get_plot_count("farmer_ahe"), 20, "Ahe owns twenty plots")
@@ -73,6 +119,31 @@ func run(assertions: TestAssert) -> void:
 		)
 		controller.queue_free()
 
+		var batch := {
+			"agent_id": "farmer_ahe",
+			"decision_id": "decision-farm",
+			"expected_revision": 0,
+			"actions": [
+				{"action_id": "till", "idempotency_key": "v2:till", "tool_name": "till", "arguments": {"plot": 0}},
+				{"action_id": "plant", "idempotency_key": "v2:plant", "tool_name": "plant", "arguments": {"plot": 0, "seed_item_id": "carrot_seed"}},
+			],
+		}
+		var queued: Array = farm.queue_batch(batch, 10)
+		assertions.equal(queued.size(), 2, "dependent till and plant queue together")
+		assertions.equal(str(queued[0].status), "in_progress", "queued till reports in progress")
+		assertions.equal(first_cell.state, GridCell.State.WASTELAND, "queue does not mutate real soil")
+		assertions.equal(economy.state.inventory.carrot_seed, 2, "queue does not consume seed")
+		assertions.truthy(farm.mark_work_started("v2:till"), "front work starts")
+		assertions.truthy(farm.complete_work("v2:till").ok, "arrival commits till")
+		assertions.equal(first_cell.state, GridCell.State.FARMLAND, "committed till changes real grid")
+		assertions.truthy(farm.mark_work_started("v2:plant"), "dependent plant starts next")
+		assertions.truthy(farm.complete_work("v2:plant").ok, "arrival commits plant")
+		assertions.equal(first_cell.state, GridCell.State.PLANTED, "committed plant changes real grid")
+		assertions.equal(economy.state.inventory.carrot_seed, 1, "committed plant consumes one NPC seed")
+		assertions.truthy(first_cell.crop_instance != null, "visible farm uses real CropInstance")
+		assertions.truthy(not farm.has_pending_work("farmer_ahe"), "completed batch clears queue")
+
 	farm.free()
 	farming.free()
 	grid.free()
+	game_data.free()

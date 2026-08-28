@@ -28,9 +28,9 @@ func validate(intent: Variant, registry: Variant, _current_revision: int) -> Dic
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 	match tool_name:
 		"till", "harvest":
-			return _exact_keys(arguments, ["plot"]) and _integer_in_range(arguments.plot, 0, 255)
+			return _exact_keys(arguments, ["plot"]) and _integer_in_range(arguments.plot, 0, 19)
 		"plant":
-			return _exact_keys(arguments, ["plot", "seed_item_id"]) and _integer_in_range(arguments.plot, 0, 255) and str(arguments.seed_item_id) in SEED_IDS
+			return _exact_keys(arguments, ["plot", "seed_item_id"]) and _integer_in_range(arguments.plot, 0, 19) and str(arguments.seed_item_id) in SEED_IDS
 		"buy", "sell", "prepare_supplies", "propose_trade":
 			return _exact_keys(arguments, ["item_id", "quantity"]) and _bounded_id(arguments.item_id) and _integer_in_range(arguments.quantity, 1, 100)
 		"build":
