@@ -165,6 +165,39 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		[1, 3, 5],
 		"Agent NPCs declare distinct nameplate priorities"
 	)
+	var expected_visual_paths := {
+		"farmer_ahe": (
+			"res://assets/characters/npcs/farmer_ahe/farmer_ahe_directions.png"
+		),
+		"lao_li": "res://assets/characters/npcs/lao_li/lao_li_directions.png",
+		"xuezhe_lin": (
+			"res://assets/characters/npcs/xuezhe_lin/xuezhe_lin_directions.png"
+		),
+	}
+	for binding_value in bindings.values():
+		var binding := binding_value as Dictionary
+		var agent_id := str(binding.agent_id)
+		var visual_path := str(binding.get("visual_path", ""))
+		assertions.equal(
+			visual_path,
+			str(expected_visual_paths.get(agent_id, "")),
+			"%s maps to its role art" % agent_id
+		)
+		if visual_path.is_empty():
+			continue
+		var atlas := load(visual_path) as Texture2D
+		assertions.truthy(atlas != null, "%s role atlas loads" % agent_id)
+		if atlas != null:
+			assertions.equal(
+				atlas.get_width() % 2,
+				0,
+				"%s atlas width divides into two cells" % agent_id
+			)
+			assertions.equal(
+				atlas.get_height() % 2,
+				0,
+				"%s atlas height divides into two cells" % agent_id
+			)
 
 	var fixture_root := Node3D.new()
 	var player := PlayerDouble.new()
@@ -196,6 +229,22 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(farmer.villager_id, "farmer_ahe", "farmer scene node receives Agent ID")
 	assertions.equal(merchant.villager_id, "lao_li", "merchant scene node receives Agent ID")
 	assertions.equal(explorer.villager_id, "xuezhe_lin", "explorer scene node receives Agent ID")
+	for npc in [farmer, merchant, explorer]:
+		var visual := npc.get_node_or_null("NpcVisual") as Sprite3D
+		assertions.truthy(
+			visual != null and visual.visible,
+			"%s role sprite is visible" % npc.villager_id
+		)
+		assertions.truthy(
+			not (npc.get_node("Mesh") as MeshInstance3D).visible,
+			"%s capsule is hidden" % npc.villager_id
+		)
+		if visual != null and visual.texture != null:
+			assertions.equal(
+				visual.texture.resource_path,
+				str(expected_visual_paths[npc.villager_id]),
+				"%s loads its own atlas" % npc.villager_id
+			)
 	var expected_priorities := {"farmer_ahe": 1, "lao_li": 3, "xuezhe_lin": 5}
 	for npc in [farmer, merchant, explorer]:
 		var nameplate := npc.get_node("Nameplate") as Label3D
@@ -217,8 +266,14 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"%s prompt ignores world depth" % npc.villager_id
 		)
 		assertions.near(
+			nameplate.position.y,
+			1.55,
+			0.001,
+			"%s nameplate clears its character art" % npc.villager_id
+		)
+		assertions.near(
 			prompt.position.y,
-			2.05,
+			2.25,
 			0.001,
 			"%s prompt clears its nameplate" % npc.villager_id
 		)
@@ -300,6 +355,23 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			"wired cancel signal reaches Agent runtime"
 		)
 		assertions.truthy(not farmer.is_dialogue_busy(), "wired close signal unlocks farmer")
+
+	var fallback_npc = NpcScene.instantiate()
+	tree.root.add_child(fallback_npc)
+	assertions.truthy(
+		fallback_npc.has_method("configure_agent_visual"),
+		"NPC exposes visual fallback configuration"
+	)
+	if fallback_npc.has_method("configure_agent_visual"):
+		assertions.truthy(
+			not fallback_npc.configure_agent_visual(null),
+			"missing atlas rejects role art"
+		)
+		assertions.truthy(
+			(fallback_npc.get_node("Mesh") as MeshInstance3D).visible,
+			"missing atlas keeps capsule fallback visible"
+		)
+	fallback_npc.free()
 
 	main.free()
 	fixture_root.free()

@@ -10,6 +10,7 @@ const AgentStreamEventQueueTest = preload("res://tests/test_agent_stream_event_q
 const AgentDebugWindowTest = preload("res://tests/test_agent_debug_window.gd")
 const AgentDialogueUiTest = preload("res://tests/test_agent_dialogue_ui.gd")
 const VisibleAgentNpcDialogueTest = preload("res://tests/test_visible_agent_npc_dialogue.gd")
+const NpcVisualTest = preload("res://tests/test_npc_visual.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -39,6 +40,8 @@ func _run() -> void:
 	await dialogue_ui_test.run(assertions, self)
 	var visible_npc_test := VisibleAgentNpcDialogueTest.new()
 	visible_npc_test.run(assertions, self)
+	var npc_visual_test := NpcVisualTest.new()
+	npc_visual_test.run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d Agent system checks" % assertions.checks)
 		quit(0)

@@ -28,6 +28,8 @@ const PROMPT_INTERACTION_LAYER := 64
 @onready var dialogue_prompt_icon: Sprite3D = get_node_or_null("DialoguePrompt/Icon")
 @onready var dialogue_prompt_hit_area: Area3D = get_node_or_null("DialoguePrompt/HitArea")
 @onready var nameplate: Label3D = get_node_or_null("Nameplate")
+@onready var placeholder_mesh: MeshInstance3D = get_node_or_null("Mesh")
+@onready var npc_visual: Sprite3D = get_node_or_null("NpcVisual")
 
 
 func _ready() -> void:
@@ -63,6 +65,17 @@ func configure_agent_visual_priority(visual_priority: int) -> void:
 		nameplate.render_priority = visual_priority
 	if dialogue_prompt_icon != null:
 		dialogue_prompt_icon.render_priority = visual_priority + 1
+
+
+func configure_agent_visual(atlas: Texture2D) -> bool:
+	var configured := (
+		npc_visual != null
+		and npc_visual.has_method("configure")
+		and bool(npc_visual.call("configure", atlas))
+	)
+	if placeholder_mesh != null:
+		placeholder_mesh.visible = not configured
+	return configured
 
 
 func is_player_in_dialogue_range() -> bool:
@@ -181,7 +194,28 @@ func _physics_process(delta: float) -> void:
 			_move_toward_target(delta)
 		"IDLE", "SLEEPING":
 			velocity = Vector3.ZERO
+	_sync_visual_motion()
 	refresh_dialogue_prompt()
+
+
+func _sync_visual_motion() -> void:
+	if npc_visual == null:
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var camera_right := camera.global_basis.x
+	camera_right.y = 0.0
+	var camera_forward := -camera.global_basis.z
+	camera_forward.y = 0.0
+	if camera_right.length_squared() <= 0.0001 or camera_forward.length_squared() <= 0.0001:
+		return
+	camera_right = camera_right.normalized()
+	camera_forward = camera_forward.normalized()
+	npc_visual.call("sync_motion", Vector2(
+		velocity.dot(camera_right),
+		-velocity.dot(camera_forward)
+	))
 
 
 func _move_toward_target(delta: float) -> void:

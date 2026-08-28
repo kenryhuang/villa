@@ -33,16 +33,23 @@ const AGENT_NPC_BINDINGS := {
 		"agent_id": "farmer_ahe",
 		"spawn": Vector2(-3.0, -2.0),
 		"visual_priority": 1,
+		"visual_path": (
+			"res://assets/characters/npcs/farmer_ahe/farmer_ahe_directions.png"
+		),
 	},
 	"NpcSouth": {
 		"agent_id": "lao_li",
 		"spawn": Vector2(3.0, -3.0),
 		"visual_priority": 3,
+		"visual_path": "res://assets/characters/npcs/lao_li/lao_li_directions.png",
 	},
 	"NpcEast": {
 		"agent_id": "xuezhe_lin",
 		"spawn": Vector2(4.0, 2.0),
 		"visual_priority": 5,
+		"visual_path": (
+			"res://assets/characters/npcs/xuezhe_lin/xuezhe_lin_directions.png"
+		),
 	},
 }
 const AGENT_SERVICE_UNAVAILABLE_MESSAGE := "Agent 服务不可用，请稍后再试。"
@@ -620,6 +627,9 @@ func _setup_npcs() -> void:
 			push_error("Unable to bind visible NPC %s to Agent %s" % [node_name, agent_id])
 			continue
 		npc.call("configure_agent_visual_priority", int(binding.visual_priority))
+		var atlas := load(str(binding.visual_path)) as Texture2D
+		if not bool(npc.call("configure_agent_visual", atlas)):
+			push_error("Unable to configure visual for Agent NPC %s" % agent_id)
 		_agent_npcs[agent_id] = npc
 		var callback := Callable(self, "_on_dialogue_started")
 		if not npc.dialogue_started.is_connected(callback):

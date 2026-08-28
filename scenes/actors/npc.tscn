@@ -1,7 +1,8 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource path="res://scripts/actors/npc.gd" type="Script" id="1"]
 [ext_resource path="res://assets/ui/dialogue_prompt.svg" type="Texture2D" id="2_prompt"]
+[ext_resource path="res://scripts/visual/npc_visual.gd" type="Script" id="3_npc_visual"]
 
 [sub_resource type="StandardMaterial3D" id="NpcMaterial"]
 albedo_color = Color(1, 0.16, 0.08, 1)
@@ -27,11 +28,16 @@ script = ExtResource("1")
 [node name="Mesh" type="MeshInstance3D" parent="."]
 mesh = SubResource("NpcMesh")
 
+[node name="NpcVisual" type="Sprite3D" parent="."]
+visible = false
+position = Vector3(0, 0.66, 0)
+script = ExtResource("3_npc_visual")
+
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("NpcShape")
 
 [node name="Nameplate" type="Label3D" parent="."]
-position = Vector3(0, 1.25, 0)
+position = Vector3(0, 1.55, 0)
 pixel_size = 0.006
 billboard = 1
 no_depth_test = true
@@ -43,7 +49,7 @@ outline_modulate = Color(0.16, 0.1, 0.06, 0.9)
 
 [node name="DialoguePrompt" type="Node3D" parent="."]
 visible = false
-position = Vector3(0, 2.05, 0)
+position = Vector3(0, 2.25, 0)
 
 [node name="Icon" type="Sprite3D" parent="DialoguePrompt"]
 texture = ExtResource("2_prompt")
