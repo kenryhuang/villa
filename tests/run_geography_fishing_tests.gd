@@ -8,6 +8,7 @@ const BuildingEconomyEffectsTest = preload(
 )
 const FishingDataTest = preload("res://tests/test_fishing_data.gd")
 const FishingSystemTest = preload("res://tests/test_fishing_system.gd")
+const FishingMainIntegrationTest = preload("res://tests/test_fishing_main_integration.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -21,6 +22,7 @@ func _run() -> void:
 	BuildingEconomyEffectsTest.new().run(assertions, self)
 	FishingDataTest.new().run(assertions)
 	FishingSystemTest.new().run(assertions)
+	FishingMainIntegrationTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d geography and fishing checks" % assertions.checks)
 		quit(0)

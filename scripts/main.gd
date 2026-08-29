@@ -15,6 +15,7 @@ const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_sys
 const GeographicQueryServiceScript := preload(
 	"res://scripts/systems/geographic_query_service.gd"
 )
+const FishingSystemScript := preload("res://scripts/systems/fishing_system.gd")
 const ItemContainerRouterScript := preload("res://scripts/systems/item_container_router.gd")
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 const EconomyProgressionSystemScript := preload(
@@ -127,6 +128,7 @@ var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
 var geographic_query_service: RefCounted
+var fishing_system: Node
 var item_container_router: ItemContainerRouterScript
 var building_system: BuildingSystem
 var tool_system: ToolSystem
@@ -148,6 +150,7 @@ var buildings_container: Node3D
 var _world_navigation_blockers: Dictionary = {}
 var _agent_npcs: Dictionary = {}
 var _agent_dialogue_requests: Dictionary = {}
+var _player_movement_blocks: Dictionary = {}
 
 
 func _ready() -> void:
@@ -265,6 +268,10 @@ func _initialize_systems() -> void:
 	farm_storage_system.configure()
 
 	geographic_query_service = GeographicQueryServiceScript.new()
+
+	fishing_system = FishingSystemScript.new()
+	fishing_system.name = "FishingSystem"
+	add_child(fishing_system)
 
 	item_container_router = ItemContainerRouterScript.new()
 	item_container_router.name = "ItemContainerRouter"
@@ -418,6 +425,30 @@ func _connect_systems() -> bool:
 
 	# Tool and progression share the same authoritative wallet and inventory.
 	tool_system.configure(grid_system, inventory_system, player, farming_system)
+	if not bool(fishing_system.call(
+		"configure",
+		grid_system,
+		geographic_query_service,
+		inventory_system,
+		game_data,
+		int(world.WORLD_GENERATION_SEED)
+	)):
+		return false
+	if not bool(fishing_system.call(
+		"set_cast_cost_callback",
+		Callable(tool_system, "commit_fishing_cast_cost")
+	)):
+		return false
+	if not _register_fishing_spots():
+		return false
+	for signal_record in [
+		{"name": "session_state_changed", "method": "_on_fishing_session_state_changed"},
+		{"name": "catch_settled", "method": "_on_fishing_catch_settled"},
+		{"name": "session_failed", "method": "_on_fishing_session_failed"},
+	]:
+		var callback := Callable(self, str(signal_record.method))
+		if not fishing_system.is_connected(str(signal_record.name), callback):
+			fishing_system.connect(str(signal_record.name), callback)
 	if not economy_progression_system.configure(
 		tool_system,
 		production_system,
@@ -512,6 +543,26 @@ func _connect_systems() -> bool:
 func cancel_transient_actions(reason: String = "save_restore") -> void:
 	if gathering_controller != null:
 		gathering_controller.cancel_current(reason)
+	if fishing_system != null:
+		fishing_system.call("cancel", reason)
+
+
+func _register_fishing_spots() -> bool:
+	if world == null or not world.has_method("get_fishing_spot_nodes"):
+		return false
+	var count := 0
+	for spot_node_value in world.call("get_fishing_spot_nodes"):
+		var spot_node := spot_node_value as Node
+		if spot_node == null or not spot_node.has_method("get_spot_data"):
+			return false
+		var data: Resource = spot_node.call("get_spot_data")
+		if data == null or not bool(fishing_system.call("register_spot", data)):
+			return false
+		var callback := Callable(self, "_on_fishing_spot_interaction_requested")
+		if not spot_node.is_connected("interaction_requested", callback):
+			spot_node.connect("interaction_requested", callback)
+		count += 1
+	return count >= 3 and count <= 5
 
 
 func _connect_save_load_completed() -> void:
@@ -586,6 +637,9 @@ func _setup_player() -> void:
 	)
 	if not action_controller.configure_gathering(gathering_controller):
 		push_error("Unable to configure player gathering actions.")
+		return
+	if not action_controller.configure_fishing(fishing_system):
+		push_error("Unable to configure player fishing actions.")
 		return
 	if not gathering_feedback.bind(gathering_controller, tool_swing_visual, action_controller):
 		push_error("Unable to configure gathering feedback.")
@@ -1513,8 +1567,65 @@ func _on_agent_dialogue_closed(villager_id: String, request_id: String) -> void:
 
 
 func _set_player_dialogue_movement_blocked(blocked: bool) -> void:
+	_set_player_movement_block("dialogue", blocked)
+
+
+func _set_player_movement_block(reason: String, blocked: bool) -> void:
+	if blocked:
+		_player_movement_blocks[reason] = true
+	else:
+		_player_movement_blocks.erase(reason)
 	if player != null and is_instance_valid(player) and player.has_method("set_movement_input_blocked"):
-		player.call("set_movement_input_blocked", blocked)
+		player.call("set_movement_input_blocked", not _player_movement_blocks.is_empty())
+
+
+func _on_fishing_spot_interaction_requested(spot_node: Node, _player_value: Variant) -> void:
+	if fishing_system == null or season_system == null or spot_node == null:
+		return
+	var data: Resource = spot_node.call("get_spot_data")
+	if data == null:
+		return
+	var result: Dictionary = fishing_system.call(
+		"start_cast",
+		str(data.get("spot_id")),
+		player.global_position,
+		int(season_system.total_days),
+		int(season_system.hour),
+		int(season_system.minute)
+	)
+	if not bool(result.get("ok", false)):
+		_publish_hud_message("fishing", "warning", _fishing_failure_text(str(result.get("reason", "invalid_request"))))
+
+
+func _on_fishing_session_state_changed(_previous: int, next: int, _session_id: int) -> void:
+	_set_player_movement_block("fishing", next != FishingSystemScript.SessionState.IDLE)
+
+
+func _on_fishing_catch_settled(_spot_id: String, item_id: String, quantity: int) -> void:
+	var definition: Variant = GameDataScript.get_item(item_id)
+	var display_name := str((definition as Dictionary).get("name", item_id)) if definition is Dictionary else item_id
+	_publish_hud_message("fishing", "success", "钓到了%s ×%d，已放入背包" % [display_name, quantity])
+
+
+func _on_fishing_session_failed(_spot_id: String, reason: String) -> void:
+	if reason in ["tool_changed", "mode_changed", "selection_cancelled", "save_restore", "restore"]:
+		return
+	_publish_hud_message("fishing", "warning", _fishing_failure_text(reason))
+
+
+func _fishing_failure_text(reason: String) -> String:
+	return {
+		"unknown_spot": "只能在标记的岸边鱼点钓鱼",
+		"too_far": "请靠近鱼点后再投竿",
+		"water_required": "这个鱼点暂时无法下竿",
+		"cast_blocked": "投竿线路被挡住了",
+		"inventory_full": "背包已满，无法钓鱼",
+		"depleted": "这个鱼点今天已经枯竭",
+		"no_candidates": "当前季节和时段没有鱼群",
+		"missed_bite": "鱼儿脱钩了",
+		"cast_cost_failed": "体力不足或鱼竿已损坏",
+		"settlement_failed": "收获入库失败，请整理背包",
+	}.get(reason, "现在无法钓鱼")
 
 
 func _connect_agent_dialogue_ui() -> void:

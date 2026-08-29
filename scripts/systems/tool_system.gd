@@ -510,16 +510,28 @@ func _has_property(target: Variant, property_name: String) -> bool:
 
 
 func _use_fishing_rod(target: Variant) -> bool:
-	# 钓鱼 → 随机获得鱼
-	if inventory_ref:
-		# Phase 3 实现钓鱼小游戏，这里先给基础奖励
-		var amount := randi_range(1, 3)
-		var snapshot := _inventory_snapshot()
-		if not inventory_ref.add_item("fiber", amount):
-			_restore_inventory(snapshot)
-			return false
-		return true
 	return false
+
+
+func commit_fishing_cast_cost() -> bool:
+	if current_tool != ToolType.FISHING_ROD:
+		return false
+	var durability := get_durability("fishing_rod")
+	var game_state = _game_state()
+	var stamina_cost := int(TOOL_STAMINA_COST[ToolType.FISHING_ROD])
+	if (
+		durability.is_empty()
+		or int(durability.current) <= 0
+		or game_state == null
+		or int(game_state.player_state.stamina) < stamina_cost
+	):
+		return false
+	game_state.player_state.stamina = int(game_state.player_state.stamina) - stamina_cost
+	tool_durability["fishing_rod"]["current"] = int(durability.current) - 1
+	if _event_bus != null:
+		_event_bus.stamina_changed.emit(int(game_state.player_state.stamina))
+	_emit_durability_changed("fishing_rod")
+	return true
 
 
 func get_current_tool_name() -> String:

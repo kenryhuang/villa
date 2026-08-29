@@ -44,6 +44,10 @@ func _init() -> void:
 	set_process(false)
 
 
+func _process(delta: float) -> void:
+	advance_realtime(delta)
+
+
 func configure(
 	grid: GridSystem,
 	geography: RefCounted,
@@ -379,6 +383,7 @@ func _transition_to(next_state: int, duration: float) -> void:
 	var previous := _state
 	_state = next_state as SessionState
 	_seconds_remaining = maxf(duration, 0.0)
+	set_process(_state != SessionState.IDLE)
 	session_state_changed.emit(previous, _state, int(_active_session.get("session_id", 0)))
 
 
@@ -395,6 +400,7 @@ func _finish_to_idle() -> void:
 	_state = SessionState.IDLE
 	_seconds_remaining = 0.0
 	_active_session.clear()
+	set_process(false)
 	session_state_changed.emit(previous, _state, session_id)
 
 

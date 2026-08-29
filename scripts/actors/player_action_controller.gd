@@ -87,6 +87,7 @@ var tool_system: Variant
 var inventory_system: Variant
 var farm_storage_system: Variant
 var gathering_controller: Variant
+var fishing_system: Variant
 var crop_data_override: CropData
 var _event_bus: Node
 
@@ -165,6 +166,19 @@ func configure_gathering(controller: Variant) -> bool:
 	return true
 
 
+func configure_fishing(system: Variant) -> bool:
+	if (
+		system == null
+		or not system.has_method("is_session_active")
+		or not system.has_method("get_session_snapshot")
+		or not system.has_method("reel")
+		or not system.has_method("cancel")
+	):
+		return false
+	fishing_system = system
+	return true
+
+
 func sync_auto_equipped_tool(tool_id: String) -> bool:
 	var slot := 2 if tool_id == "axe" else (3 if tool_id == "pickaxe" else -1)
 	if slot < 0:
@@ -196,6 +210,7 @@ func switch_mode(mode: ActionMode) -> bool:
 	if mode not in [ActionMode.FARMING, ActionMode.BUILDING]:
 		return false
 	_cancel_gathering("mode_changed")
+	_cancel_fishing("mode_changed")
 	if building_system != null and building_system.is_in_build_mode():
 		building_system.exit_preview_mode()
 	if grid_system != null and _action_mode != ActionMode.NONE:
@@ -272,6 +287,8 @@ func select_mode_slot(index: int) -> bool:
 	if index < 0 or index >= slot_count:
 		return false
 	_cancel_gathering("tool_changed")
+	if index != _selected_slot:
+		_cancel_fishing("tool_changed")
 	_clear_tree_hover()
 	if _action_mode == ActionMode.BUILDING:
 		var diagnostic := get_building_availability_diagnostic(index)
@@ -333,8 +350,9 @@ func cancel_current_selection() -> bool:
 	_clear_tree_hover()
 	var gathering_was_active := _gathering_is_active()
 	_cancel_gathering("selection_cancelled")
+	var fishing_was_active := _cancel_fishing("selection_cancelled")
 	if _selected_slot < 0:
-		return gathering_was_active
+		return gathering_was_active or fishing_was_active
 	if _action_mode == ActionMode.BUILDING:
 		if building_system != null and building_system.is_in_build_mode():
 			building_system.exit_preview_mode()
@@ -462,6 +480,12 @@ func perform_target_interaction(target: Node) -> bool:
 		return false
 	if target.is_in_group("building_output_pile"):
 		return false
+	if target.is_in_group("fishing_spot"):
+		if _action_mode != ActionMode.FARMING or _selected_slot != 4:
+			return false
+		if target.has_method("interact"):
+			return bool(target.call("interact", player_ref))
+		return false
 	if target.has_method("start_dialogue"):
 		var dialogue_result: Variant = target.call("start_dialogue")
 		return bool(dialogue_result) if dialogue_result is bool else true
@@ -563,6 +587,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	if _pointer_over_ui():
 		return false
+	if try_reel_active_fishing():
+		return true
 	var ground_point = _raycast_to_ground(pointer_position)
 	var interaction_hit := _raycast_to_interaction(pointer_position)
 	if not interaction_hit.is_empty():
@@ -590,6 +616,20 @@ func _perform_pointer_action(pointer_position: Variant = null) -> bool:
 	return perform_cell_action(
 		grid_system.get_cell_at_world(ground_point.x, ground_point.z)
 	)
+
+
+func try_reel_active_fishing() -> bool:
+	if fishing_system == null or not bool(fishing_system.call("is_session_active")):
+		return false
+	var snapshot: Dictionary = fishing_system.call("get_session_snapshot")
+	fishing_system.call("reel", int(snapshot.get("session_id", -1)))
+	return true
+
+
+func _cancel_fishing(reason: String) -> bool:
+	if fishing_system == null or not bool(fishing_system.call("is_session_active")):
+		return false
+	return bool(fishing_system.call("cancel", reason))
 
 
 func _try_interaction_hit(target: Node, hit_position: Vector3) -> bool:

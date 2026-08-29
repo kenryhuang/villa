@@ -2,6 +2,8 @@ class_name GameWorld
 extends Node3D
 
 const ResourceNodeScript = preload("res://scripts/world/resource_node.gd")
+const FishingSpotScene = preload("res://scenes/world/fishing_spot.tscn")
+const FishingSpotDataScript = preload("res://scripts/data/fishing_spot_data.gd")
 const WORLD_GENERATION_SEED := 0x56494c4c41
 const WATER_REGIONS: Array[Rect2] = [
 	Rect2(-16.0, -5.0, 1.0, 10.0),
@@ -30,6 +32,7 @@ const RETIRED_GATHERABLE_TREE_IDS := {
 @onready var vegetation: VegetationBuilder = $Vegetation
 @onready var resource_nodes: Node3D = $ResourceNodes
 @onready var water: Node3D = $Water
+@onready var fishing_spots: Node3D = $FishingSpots
 
 
 func _ready() -> void:
@@ -43,6 +46,7 @@ func _ready() -> void:
 		route.append(point.duplicate())
 	vegetation.build(terrain, route)
 	generate_resource_nodes(terrain)
+	generate_fishing_spots(terrain)
 
 
 func get_height_at(world_x: float, world_z: float) -> float:
@@ -61,6 +65,56 @@ func get_blocked_regions() -> Array[Dictionary]:
 			"rect": rect,
 		})
 	return regions
+
+
+static func fishing_spot_definitions() -> Array[Dictionary]:
+	return [
+		{"spot_id": "east-creek-01", "water_body_id": "east_creek", "fish_table_id": "creek", "stand_cell": Vector2i(32, 10), "water_cell": Vector2i(33, 10), "max_distance": 2.0, "daily_capacity": 3},
+		{"spot_id": "east-creek-02", "water_body_id": "east_creek", "fish_table_id": "creek", "stand_cell": Vector2i(32, 16), "water_cell": Vector2i(33, 16), "max_distance": 2.0, "daily_capacity": 3},
+		{"spot_id": "west-creek-01", "water_body_id": "west_creek", "fish_table_id": "creek", "stand_cell": Vector2i(3, 10), "water_cell": Vector2i(2, 10), "max_distance": 2.0, "daily_capacity": 3},
+		{"spot_id": "west-creek-02", "water_body_id": "west_creek", "fish_table_id": "creek", "stand_cell": Vector2i(3, 16), "water_cell": Vector2i(2, 16), "max_distance": 2.0, "daily_capacity": 3},
+	]
+
+
+func generate_fishing_spots(terrain_source: Variant = null) -> int:
+	if fishing_spots == null:
+		return 0
+	for definition in fishing_spot_definitions():
+		var spot_id := str(definition.spot_id)
+		if fishing_spots.get_node_or_null(NodePath(spot_id)) != null:
+			continue
+		var data := FishingSpotDataScript.new()
+		data.spot_id = spot_id
+		data.water_body_id = str(definition.water_body_id)
+		data.fish_table_id = str(definition.fish_table_id)
+		data.stand_cell = definition.stand_cell
+		data.water_cell = definition.water_cell
+		data.max_distance = float(definition.max_distance)
+		data.daily_capacity = int(definition.daily_capacity)
+		var node := FishingSpotScene.instantiate() as Area3D
+		if node == null or not bool(node.call("configure", data)):
+			if node != null:
+				node.free()
+			continue
+		var water_cell: Vector2i = definition.water_cell
+		var point := Vector2(
+			GridSystem.WORLD_ORIGIN_X + (float(water_cell.x) + 0.5) * GridSystem.CELL_SIZE,
+			GridSystem.WORLD_ORIGIN_Z + (float(water_cell.y) + 0.5) * GridSystem.CELL_SIZE
+		)
+		var height := float(terrain_source.call("get_height_at", point.x, point.y)) if terrain_source != null and terrain_source.has_method("get_height_at") else 0.0
+		node.position = Vector3(point.x, height + 0.08, point.y)
+		fishing_spots.add_child(node)
+	return fishing_spots.get_child_count()
+
+
+func get_fishing_spot_nodes() -> Array[Node]:
+	var result: Array[Node] = []
+	if fishing_spots == null:
+		return result
+	for child in fishing_spots.get_children():
+		if child is Node and child.is_in_group("fishing_spot"):
+			result.append(child)
+	return result
 
 
 static func generated_resource_definitions(
