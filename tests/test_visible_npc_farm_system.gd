@@ -52,6 +52,31 @@ func run(assertions: TestAssert) -> void:
 	var grid := GridSystemScript.new()
 	var farming := FarmingSystemScript.new()
 	farming.configure(grid, null, null)
+	var blocked_tree_cell := Vector2i(15, 12)
+	grid.set_navigation_blocker("test-tree", blocked_tree_cell, true)
+	assertions.truthy(
+		grid.has_method("is_navigation_cell_blocked"),
+		"grid exposes indexed navigation occupancy"
+	)
+	if grid.has_method("is_navigation_cell_blocked"):
+		assertions.truthy(
+			grid.call("is_navigation_cell_blocked", blocked_tree_cell),
+			"indexed occupancy reports a registered tree footprint"
+		)
+		var moved_tree_cell := blocked_tree_cell + Vector2i(1, 0)
+		grid.set_navigation_blocker("moving-tree", blocked_tree_cell, true)
+		grid.set_navigation_blocker("moving-tree", moved_tree_cell, true)
+		grid.set_navigation_blocker("test-tree", Vector2i.ZERO, false)
+		assertions.truthy(
+			not grid.call("is_navigation_cell_blocked", blocked_tree_cell),
+			"moving and removing blockers releases the old indexed cell"
+		)
+		assertions.truthy(
+			grid.call("is_navigation_cell_blocked", moved_tree_cell),
+			"moving a blocker occupies its new indexed cell"
+		)
+		grid.set_navigation_blocker("moving-tree", Vector2i.ZERO, false)
+		grid.set_navigation_blocker("test-tree", blocked_tree_cell, true)
 	var economy := FakeEconomy.new()
 	var game_data := FakeGameData.new()
 	var crop := CropData.new()
@@ -101,6 +126,10 @@ func run(assertions: TestAssert) -> void:
 				return unique,
 			[]
 		).size(), 20, "all visible farm coordinates are unique")
+		assertions.truthy(
+			blocked_tree_cell not in coordinates,
+			"visible farm never covers a tree navigation footprint"
+		)
 		var snapshot: Array = farm.get_snapshot("farmer_ahe", 0)
 		assertions.equal(snapshot.size(), 20, "Agent snapshot exposes all real plots")
 		assertions.equal(str((snapshot[0] as Dictionary).get("state", "")), "untilled", "fresh plot snapshot is untilled")
@@ -144,8 +173,26 @@ func run(assertions: TestAssert) -> void:
 		assertions.truthy(not farm.has_pending_work("farmer_ahe"), "completed batch clears queue")
 		var saved: Dictionary = farm.to_dict()
 		assertions.truthy(farm.validate_dict(saved), "visible farm save validates")
+		var original_crop_coordinate: Vector2i = farm.get_plot("farmer_ahe", 0).coordinate
+		var restored_blocker: Vector2i = farm.get_plot("farmer_ahe", 19).coordinate
+		grid.set_navigation_blocker("restored-tree", restored_blocker, true)
 		assertions.truthy(farm.from_dict(saved), "visible farm mapping and queue restore")
-		assertions.equal(farm.to_dict(), saved, "visible farm save round trip is stable")
+		var restored_coordinates: Array[Vector2i] = []
+		for plot_index in range(20):
+			restored_coordinates.append(farm.get_plot("farmer_ahe", plot_index).coordinate)
+		assertions.truthy(
+			restored_blocker not in restored_coordinates,
+			"restored farm relocates away from a newly occupied tree footprint"
+		)
+		assertions.truthy(
+			farm.get_plot_cell("farmer_ahe", 0).crop_instance != null,
+			"farm relocation carries the real planted crop to its stable plot index"
+		)
+		assertions.equal(
+			grid.get_cell(original_crop_coordinate.x, original_crop_coordinate.y).state,
+			GridCell.State.WASTELAND,
+			"farm relocation clears the previous physical footprint"
+		)
 
 	farm.free()
 	farming.free()

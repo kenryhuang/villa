@@ -35,6 +35,13 @@ func run(assertions: TestAssert) -> void:
 		"NpcVisual accepts a two-by-two atlas"
 	)
 	assertions.equal(visual.get_last_direction(), "s", "NpcVisual begins facing front")
+	var constants: Dictionary = visual_script.get_script_constant_map()
+	assertions.near(
+		float(constants.get("TARGET_CELL_WORLD_HEIGHT", 0.0)),
+		1.08,
+		0.001,
+		"NPC visible height is normalized to the Player silhouette"
+	)
 	assertions.equal(
 		visual.region_rect,
 		Rect2(0, 200, 200, 200),

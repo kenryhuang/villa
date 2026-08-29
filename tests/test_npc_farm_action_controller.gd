@@ -2,6 +2,7 @@ extends RefCounted
 
 const ControllerScript = preload("res://scripts/actors/npc_farm_action_controller.gd")
 const NpcScene = preload("res://scenes/actors/npc.tscn")
+const ActionVisualScript = preload("res://scripts/visual/npc_farm_action_visual.gd")
 
 
 class FakeFarm:
@@ -72,6 +73,33 @@ class FakeVisual:
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
+	var action_visual = ActionVisualScript.new()
+	tree.root.add_child(action_visual)
+	await tree.process_frame
+	var icon_cases := [
+		{"action": "till", "texture": null, "height": 0.38},
+		{
+			"action": "plant",
+			"texture": load("res://assets/crops/carrot/painted/stage_0/variant_0_front.png") as Texture2D,
+			"height": 0.42,
+		},
+		{"action": "harvest", "texture": null, "height": 0.32},
+	]
+	for icon_case in icon_cases:
+		assertions.truthy(
+			action_visual.play(str(icon_case.action), icon_case.texture),
+			"%s feedback starts" % icon_case.action
+		)
+		var icon: Sprite3D = action_visual.get("_icon")
+		assertions.near(
+			icon.pixel_size * float(icon.texture.get_height()),
+			float(icon_case.height),
+			0.001,
+			"%s feedback uses a character-scale normalized height" % icon_case.action
+		)
+		action_visual.cancel()
+	action_visual.queue_free()
+
 	var npc = NpcScene.instantiate()
 	tree.root.add_child(npc)
 	for method_name in [

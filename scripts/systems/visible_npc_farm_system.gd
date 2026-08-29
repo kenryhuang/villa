@@ -14,6 +14,7 @@ var _farming: FarmingSystem
 var _economy: Variant
 var _game_data: Variant
 var _agent_id := ""
+var _spawn_grid := Vector2i(-1, -1)
 var _anchor := Vector2i(-1, -1)
 var _plots: Array[Dictionary] = []
 var _work_queue: Array[Dictionary] = []
@@ -38,6 +39,7 @@ func configure(
 		_farming.set("_game_data", _game_data)
 	_agent_id = agent_id
 	var spawn_grid := _grid.world_to_grid(spawn_position.x, spawn_position.z)
+	_spawn_grid = spawn_grid
 	var anchor := _select_anchor(spawn_grid)
 	if anchor.x < 0:
 		return false
@@ -211,10 +213,21 @@ func restore_queue(value: Dictionary) -> bool:
 		var coordinate := Vector2i(int(coordinate_values[0]), int(coordinate_values[1]))
 		coordinates.append(coordinate)
 		plots.append({"plot_index": int(plot.plot_index), "coordinate": coordinate})
+	var next_anchor := Vector2i(int(value.anchor[0]), int(value.anchor[1]))
+	var relocation_sources: Array[Vector2i] = []
+	if not _coordinates_clear(coordinates):
+		relocation_sources = coordinates.duplicate()
+		next_anchor = _select_anchor(_spawn_grid)
+		if next_anchor.x < 0:
+			return false
+		coordinates = _coordinates_for_anchor(next_anchor)
+		plots = _plots_for_coordinates(coordinates)
 	_grid.release_cells(_agent_id)
 	if not _grid.reserve_cells(_agent_id, coordinates):
 		return false
-	_anchor = Vector2i(int(value.anchor[0]), int(value.anchor[1]))
+	if not relocation_sources.is_empty():
+		_relocate_world_state(relocation_sources, coordinates)
+	_anchor = next_anchor
 	_plots = plots
 	_work_queue.assign((value.work_queue as Array).duplicate(true))
 	_finished = (value.finished as Dictionary).duplicate(true)
@@ -440,6 +453,7 @@ func _valid_anchor(anchor: Vector2i) -> bool:
 				cell == null
 				or cell.state != GridCell.State.WASTELAND
 				or cell.slope > GridSystem.SLOPE_THRESHOLD
+				or not _grid.is_navigation_cell_walkable(coordinate)
 				or not _grid.can_actor_use_cell(coordinate.x, coordinate.y, _agent_id)
 			):
 				return false
@@ -447,21 +461,69 @@ func _valid_anchor(anchor: Vector2i) -> bool:
 
 
 func _apply_anchor(anchor: Vector2i) -> bool:
-	var coordinates: Array[Vector2i] = []
-	var plots: Array[Dictionary] = []
-	for row in range(FARM_HEIGHT):
-		for column in range(FARM_WIDTH):
-			var coordinate := anchor + Vector2i(column, row)
-			coordinates.append(coordinate)
-			plots.append({
-				"plot_index": row * FARM_WIDTH + column,
-				"coordinate": coordinate,
-			})
+	var coordinates := _coordinates_for_anchor(anchor)
+	var plots := _plots_for_coordinates(coordinates)
 	if not _grid.reserve_cells(_agent_id, coordinates):
 		return false
 	_anchor = anchor
 	_plots = plots
 	return true
+
+
+func _coordinates_for_anchor(anchor: Vector2i) -> Array[Vector2i]:
+	var coordinates: Array[Vector2i] = []
+	for row in range(FARM_HEIGHT):
+		for column in range(FARM_WIDTH):
+			coordinates.append(anchor + Vector2i(column, row))
+	return coordinates
+
+
+func _plots_for_coordinates(coordinates: Array[Vector2i]) -> Array[Dictionary]:
+	var plots: Array[Dictionary] = []
+	for index in range(coordinates.size()):
+		plots.append({"plot_index": index, "coordinate": coordinates[index]})
+	return plots
+
+
+func _coordinates_clear(coordinates: Array[Vector2i]) -> bool:
+	if coordinates.size() != PLOT_COUNT:
+		return false
+	for coordinate in coordinates:
+		if (
+			_grid.get_cell(coordinate.x, coordinate.y) == null
+			or not _grid.is_navigation_cell_walkable(coordinate)
+		):
+			return false
+	return true
+
+
+func _relocate_world_state(
+	source_coordinates: Array[Vector2i],
+	target_coordinates: Array[Vector2i]
+) -> void:
+	var snapshots: Array[Dictionary] = []
+	for coordinate in source_coordinates:
+		var source := _grid.get_cell(coordinate.x, coordinate.y)
+		snapshots.append({
+			"state": source.state,
+			"watered": source.watered,
+			"crop_instance": source.crop_instance,
+		})
+	for coordinate in source_coordinates:
+		var source := _grid.get_cell(coordinate.x, coordinate.y)
+		source.state = GridCell.State.WASTELAND
+		source.watered = false
+		source.crop_instance = null
+	for index in range(target_coordinates.size()):
+		var target_coordinate := target_coordinates[index]
+		var target := _grid.get_cell(target_coordinate.x, target_coordinate.y)
+		var snapshot := snapshots[index]
+		target.state = int(snapshot.state) as GridCell.State
+		target.watered = bool(snapshot.watered)
+		target.crop_instance = snapshot.crop_instance
+	_grid.rebuild_farmland_visuals()
+	_farming.rebuild_visuals()
+	_grid.notify_navigation_state_changed()
 
 
 func _populate_crop_snapshot(record: Dictionary, cell: GridCell) -> void:

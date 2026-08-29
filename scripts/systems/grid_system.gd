@@ -22,6 +22,7 @@ var _event_bus
 var _road_route: Array[Dictionary] = []
 var _blocked_regions: Array[Dictionary] = []
 var _navigation_blockers: Dictionary = {}
+var _navigation_blocked_cells: Dictionary = {}
 var _cell_reservations: Dictionary = {}
 var _navigation_revision := 0
 var _crop_harvest_receipt_owner: WeakRef
@@ -48,6 +49,7 @@ func configure(
 	_blocked_regions.assign(blocked_regions)
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	_navigation_blockers.clear()
+	_navigation_blocked_cells.clear()
 	_cell_reservations.clear()
 	_navigation_revision = 0
 	_initialize_cells()
@@ -274,13 +276,35 @@ func set_navigation_blocker(blocker_id: String, cell: Vector2i, active: bool) ->
 			return false
 		if _navigation_blockers.get(blocker_id) == cell:
 			return false
+		if _navigation_blockers.has(blocker_id):
+			_decrement_navigation_blocked_cell(_navigation_blockers[blocker_id])
 		_navigation_blockers[blocker_id] = cell
+		_increment_navigation_blocked_cell(cell)
 	else:
 		if not _navigation_blockers.has(blocker_id):
 			return false
+		_decrement_navigation_blocked_cell(_navigation_blockers[blocker_id])
 		_navigation_blockers.erase(blocker_id)
 	notify_navigation_state_changed()
 	return true
+
+
+func is_navigation_cell_blocked(cell: Vector2i) -> bool:
+	return int(_navigation_blocked_cells.get(cell_key(cell.x, cell.y), 0)) > 0
+
+
+func _increment_navigation_blocked_cell(cell: Vector2i) -> void:
+	var key := cell_key(cell.x, cell.y)
+	_navigation_blocked_cells[key] = int(_navigation_blocked_cells.get(key, 0)) + 1
+
+
+func _decrement_navigation_blocked_cell(cell: Vector2i) -> void:
+	var key := cell_key(cell.x, cell.y)
+	var remaining := int(_navigation_blocked_cells.get(key, 0)) - 1
+	if remaining > 0:
+		_navigation_blocked_cells[key] = remaining
+	else:
+		_navigation_blocked_cells.erase(key)
 
 
 func is_navigation_cell_walkable(cell: Vector2i) -> bool:
@@ -294,10 +318,7 @@ func is_navigation_cell_walkable(cell: Vector2i) -> bool:
 	var grid_cell := get_cell(cell.x, cell.y)
 	if grid_cell == null or not _state_is_navigation_walkable(grid_cell.state):
 		return false
-	for blocked_cell in _navigation_blockers.values():
-		if blocked_cell == cell:
-			return false
-	return true
+	return not is_navigation_cell_blocked(cell)
 
 
 func notify_navigation_state_changed() -> void:

@@ -3,7 +3,7 @@ extends Sprite3D
 
 const DEFAULT_DIRECTION := "s"
 const GRID_SIZE := Vector2i(2, 2)
-const TARGET_CELL_WORLD_HEIGHT := 1.35
+const TARGET_CELL_WORLD_HEIGHT := 1.08
 const MOVEMENT_THRESHOLD_SQUARED := 0.0025
 const DIRECTION_CELLS := {
 	"n": Vector2i(0, 0),

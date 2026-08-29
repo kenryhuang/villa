@@ -6,6 +6,16 @@ signal finished
 const DURATION := 1.0
 const HOE_TEXTURE := preload("res://assets/ui/action_icons/hoe.png")
 const BASKET_TEXTURE := preload("res://assets/ui/action_icons/harvest_basket.svg")
+const ICON_WORLD_HEIGHTS := {
+	"till": 0.38,
+	"plant": 0.42,
+	"harvest": 0.32,
+}
+const ICON_MOTION := {
+	"till": {"start": Vector3(0.18, 1.08, 0.0), "finish": Vector3(0.28, 0.62, 0.0)},
+	"plant": {"start": Vector3(0.16, 0.78, 0.0), "finish": Vector3(0.18, 0.30, 0.0)},
+	"harvest": {"start": Vector3(0.18, 0.52, 0.0), "finish": Vector3(0.20, 0.96, 0.0)},
+}
 
 var _icon: Sprite3D
 var _particles: CPUParticles3D
@@ -18,7 +28,7 @@ func _ready() -> void:
 	_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_icon.no_depth_test = true
 	_icon.shaded = false
-	_icon.pixel_size = 0.006
+	_icon.pixel_size = 0.001
 	_icon.position = Vector3(0.0, 1.75, 0.0)
 	_icon.visible = false
 	add_child(_icon)
@@ -45,14 +55,19 @@ func play(action_name: String, item_texture: Texture2D = null) -> bool:
 		if item_texture != null
 		else BASKET_TEXTURE if action_name == "harvest" else HOE_TEXTURE
 	)
-	_icon.position = Vector3(0.0, 1.55, 0.0)
-	_icon.scale = Vector3.ONE * 0.75
+	if _icon.texture == null or _icon.texture.get_height() <= 0:
+		_playing = false
+		return false
+	var motion: Dictionary = ICON_MOTION[action_name]
+	_icon.pixel_size = float(ICON_WORLD_HEIGHTS[action_name]) / float(_icon.texture.get_height())
+	_icon.position = motion.start
+	_icon.scale = Vector3.ONE * 0.82
 	_icon.modulate.a = 0.0
 	_icon.visible = true
 	_particles.emitting = true
 	_tween = create_tween()
 	_tween.set_parallel(true)
-	_tween.tween_property(_icon, "position:y", 2.05, DURATION * 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_tween.tween_property(_icon, "position", motion.finish, DURATION * 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	_tween.tween_property(_icon, "scale", Vector3.ONE, DURATION * 0.35)
 	_tween.tween_property(_icon, "modulate:a", 1.0, DURATION * 0.2)
 	_tween.chain().tween_property(_icon, "modulate:a", 0.0, DURATION * 0.35)

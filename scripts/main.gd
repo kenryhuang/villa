@@ -320,6 +320,8 @@ func _connect_systems() -> bool:
 		for point in RoadBuilder.MAIN_ROUTE:
 			route.append(point.duplicate())
 		grid_system.configure(terrain, route, world.get_blocked_regions())
+		# Visible farm selection must see every tree/resource footprint.
+		_register_resource_navigation()
 
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))
