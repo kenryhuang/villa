@@ -7,6 +7,9 @@ const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const ItemContainerRouterScript = preload("res://scripts/systems/item_container_router.gd")
+const GeographicQueryServiceScript = preload(
+	"res://scripts/systems/geographic_query_service.gd"
+)
 
 const DAY_START_MINUTES := 6 * 60
 const ROLLOVER_THRESHOLD_MINUTES := 18 * 60
@@ -27,6 +30,7 @@ var _farming_system: FarmingSystem
 var _building_system: BuildingSystem
 var _inventory_system: InventorySystem
 var _item_container_router: ItemContainerRouterScript
+var _geographic_query_service: RefCounted
 var _router_required := false
 var _routed_input_isolated := false
 var _progression_system: Variant
@@ -61,7 +65,8 @@ func configure(
 	farming_system: FarmingSystem,
 	building_system: BuildingSystem = null,
 	inventory_system: InventorySystem = null,
-	item_container_router: ItemContainerRouterScript = null
+	item_container_router: ItemContainerRouterScript = null,
+	geography: RefCounted = null
 ) -> bool:
 	if grid_system == null or farming_system == null:
 		return false
@@ -70,6 +75,12 @@ func configure(
 	_farming_system = farming_system
 	_building_system = building_system
 	_inventory_system = inventory_system
+	if geography != null:
+		_geographic_query_service = geography
+	elif _geographic_query_service == null:
+		_geographic_query_service = GeographicQueryServiceScript.new()
+	if _geographic_query_service.get_grid() != _grid_system:
+		_geographic_query_service.configure(_grid_system)
 	_item_container_router = null
 	_router_required = item_container_router != null
 	_routed_input_isolated = false
@@ -82,6 +93,17 @@ func configure(
 	register_existing_buildings()
 	_refresh_greenhouse_cells()
 	return true
+
+
+func set_geographic_query_service(service: RefCounted) -> bool:
+	if service == null or service.get_grid() != _grid_system:
+		return false
+	_geographic_query_service = service
+	return true
+
+
+func get_geographic_query_service() -> RefCounted:
+	return _geographic_query_service
 
 
 func set_item_container_router(router: ItemContainerRouterScript) -> bool:
@@ -1086,40 +1108,26 @@ func passive_output_for(id: String, day: int, flowers: int) -> Dictionary:
 
 
 func count_nearby_mature_flowers(building: BuildingInstance) -> int:
-	if building == null or _grid_system == null:
+	if building == null or _geographic_query_service == null:
 		return 0
 	var config := _effect_config(building)
 	var radius := float(config.get("flower_radius", 4))
 	var cap := maxi(0, int(config.get("flower_cap", 4)))
 	var center := _building_center(building)
-	var count := 0
-	for cell in _grid_system._cells.values():
-		if not cell is GridCell or cell.crop_instance == null:
-			continue
-		if Vector2(cell.gx, cell.gz).distance_to(center) > radius + 0.0001:
-			continue
-		if cell.crop_instance.is_mature() and _crop_has_flower_tag(cell.crop_instance.crop_data):
-			count += 1
-			if count >= cap:
-				return cap
-	return count
+	return _geographic_query_service.mature_flowers_near(center, radius, cap).size()
 
 
 func is_water_connected(building: BuildingInstance) -> bool:
-	if building == null or _grid_system == null or not _has_effect(building, "irrigation"):
+	if (
+		building == null
+		or _geographic_query_service == null
+		or not _has_effect(building, "irrigation")
+	):
 		return false
 	var footprint := _footprint_for(building)
-	for x in range(building.grid_x, building.grid_x + footprint.x):
-		for z in [building.grid_z - 1, building.grid_z + footprint.y]:
-			var cell := _grid_system.get_cell(x, z)
-			if cell != null and cell.state == GridCell.State.WATER:
-				return true
-	for z in range(building.grid_z, building.grid_z + footprint.y):
-		for x in [building.grid_x - 1, building.grid_x + footprint.x]:
-			var cell := _grid_system.get_cell(x, z)
-			if cell != null and cell.state == GridCell.State.WATER:
-				return true
-	return false
+	return _geographic_query_service.footprint_borders_natural_water(
+		Vector2i(building.grid_x, building.grid_z), footprint
+	)
 
 
 func get_irrigated_cells(building: BuildingInstance) -> Array[Vector2i]:

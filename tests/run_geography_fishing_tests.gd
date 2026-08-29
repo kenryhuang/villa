@@ -3,6 +3,9 @@ extends SceneTree
 const GeographicQueryServiceTest = preload(
 	"res://tests/test_geographic_query_service.gd"
 )
+const BuildingEconomyEffectsTest = preload(
+	"res://tests/test_building_economy_effects.gd"
+)
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -13,6 +16,7 @@ func _init() -> void:
 func _run() -> void:
 	var assertions := TestAssertScript.new()
 	GeographicQueryServiceTest.new().run(assertions)
+	BuildingEconomyEffectsTest.new().run(assertions, self)
 	if assertions.failures.is_empty():
 		print("PASS: %d geography and fishing checks" % assertions.checks)
 		quit(0)

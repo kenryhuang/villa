@@ -7,6 +7,9 @@ const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const BuildingDataScript = preload("res://scripts/data/building_data.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const GeographicQueryServiceScript = preload(
+	"res://scripts/systems/geographic_query_service.gd"
+)
 const BUILDING_SYSTEM_SCENE = preload("res://scenes/systems/building_system.tscn")
 const BUILD_UI_SCENE = preload("res://scenes/ui/build_ui.tscn")
 
@@ -65,6 +68,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_waterwheel_geometry_and_daily_order(assertions)
 	_test_maintenance_disables_and_restores_daily_coverage(assertions)
 	_test_waterwheel_placement_rule(assertions, tree)
+	_test_shared_geographic_authority(assertions, tree)
 	_test_greenhouse_mapping_and_season_protection(assertions)
 	_test_authoritative_greenhouse_crop_and_wheel_scope(assertions)
 	_test_barn_collection_is_atomic(assertions)
@@ -137,7 +141,7 @@ func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
 	var farming := _farming(grid)
 	var production := _production(grid, farming)
 	var hive := _building("beehive", 10, 10, true)
-	for position in [Vector2i(14, 10), Vector2i(13, 12), Vector2i(10, 6), Vector2i(7, 8), Vector2i(13, 13)]:
+	for position in [Vector2i(14, 10), Vector2i(13, 12), Vector2i(11, 7), Vector2i(7, 8), Vector2i(13, 13)]:
 		_add_mature_flower(grid, position)
 	production.register_building(hive)
 	assertions.equal(production.count_nearby_mature_flowers(hive), 4, "hive counts Euclidean-radius mature flowers and caps at four")
@@ -148,10 +152,10 @@ func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
 
 	var blocked := _building("beehive", 20, 20, true)
 	blocked.producer_state.outputs = {"honey": 1, "wood": 1, "stone": 1}
-	_add_mature_flower(grid, Vector2i(20, 16))
-	_add_mature_flower(grid, Vector2i(20, 17))
-	_add_mature_flower(grid, Vector2i(20, 18))
-	_add_mature_flower(grid, Vector2i(20, 19))
+	_add_mature_flower(grid, Vector2i(21, 17))
+	_add_mature_flower(grid, Vector2i(21, 18))
+	_add_mature_flower(grid, Vector2i(21, 19))
+	_add_mature_flower(grid, Vector2i(21, 20))
 	production.register_building(blocked)
 	production.finish_daily_outputs(4)
 	assertions.equal(blocked.producer_state.outputs, {"honey": 1, "wood": 1, "stone": 1}, "full hive storage pauses the complete output without loss")
@@ -204,6 +208,7 @@ func _test_waterwheel_geometry_and_daily_order(assertions: TestAssert) -> void:
 	var crop_data := CropData.new()
 	crop_data.crop_id = "test_crop"
 	crop_data.growth_days = 3
+	crop_data.growth_duration_minutes = 3
 	crop_data.seasons.assign([SeasonSystem.Season.SPRING])
 	crop_data.stage_textures.assign(["seed", "mature"])
 	near.crop_instance = CropInstance.new()
@@ -219,8 +224,9 @@ func _test_waterwheel_geometry_and_daily_order(assertions: TestAssert) -> void:
 	production.apply_daily_effects(2)
 	assertions.truthy(near.watered and near.crop_instance.is_watered_today, "waterwheel waters planted cells before growth")
 	assertions.truthy(not distant.watered, "waterwheel leaves distant cells dry")
-	farming.on_day_changed(2)
+	farming.advance_growth_minutes(1)
 	assertions.near(near.crop_instance.growth_progress, 1.5, 0.001, "waterwheel irrigation affects same-day crop growth")
+	farming.on_day_changed(2)
 	production.apply_daily_effects(2)
 	assertions.truthy(not near.watered, "same-day effect replay is idempotent after farming clears water")
 	var well := _building("well", 3, 3, false)
@@ -278,6 +284,52 @@ func _test_waterwheel_placement_rule(assertions: TestAssert, tree: SceneTree) ->
 		grid.get_cell(9, 10).state = GridCell.State.WASTELAND
 		assertions.equal(building_system.restore_buildings([saved]), 0, "waterwheel restore rejects a location that no longer borders water")
 	assertions.truthy(not building_system.can_place("waterwheel", 0, 0), "waterwheel footprint at map edge still needs a valid border")
+
+
+func _test_shared_geographic_authority(assertions: TestAssert, tree: SceneTree) -> void:
+	var grid := _grid()
+	var farming := _farming(grid)
+	var geography := GeographicQueryServiceScript.new()
+	assertions.truthy(geography.configure(grid), "shared geography fixture configures")
+	var building_system := _track(BUILDING_SYSTEM_SCENE.instantiate()) as BuildingSystem
+	tree.root.add_child(building_system)
+	assertions.truthy(
+		building_system.configure(grid, EconomyDouble.new()),
+		"shared placement fixture configures"
+	)
+	var production := _production(grid, farming)
+	assertions.truthy(
+		building_system.set_geographic_query_service(geography),
+		"placement accepts shared geography"
+	)
+	assertions.truthy(
+		production.set_geographic_query_service(geography),
+		"production accepts shared geography"
+	)
+	assertions.truthy(
+		building_system.get_geographic_query_service() == geography,
+		"placement retains shared geography identity"
+	)
+	assertions.truthy(
+		production.get_geographic_query_service() == geography,
+		"production retains shared geography identity"
+	)
+	grid.get_cell(9, 9).state = GridCell.State.WATER
+	assertions.equal(
+		building_system.diagnose_placement("waterwheel", 10, 10).code,
+		"water_required",
+		"shared shoreline authority rejects diagonal water"
+	)
+	grid.get_cell(9, 10).state = GridCell.State.WATER
+	var diagnostic := building_system.diagnose_placement("waterwheel", 10, 10)
+	assertions.truthy(bool(diagnostic.allowed), "shared shoreline authority accepts edge water")
+	assertions.equal(
+		diagnostic.get("water_anchor", Vector2i(-1, -1)),
+		Vector2i(9, 10),
+		"successful waterwheel diagnostic exposes stable water anchor"
+	)
+	var wheel := _building("waterwheel", 10, 10, false)
+	assertions.truthy(production.is_water_connected(wheel), "production consumes shared shoreline result")
 
 
 func _test_greenhouse_mapping_and_season_protection(assertions: TestAssert) -> void:

@@ -13,11 +13,15 @@ signal building_construction_stage_changed(instance: BuildingInstance, stage: in
 signal building_construction_completed(instance: BuildingInstance)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
+const GeographicQueryServiceScript = preload(
+	"res://scripts/systems/geographic_query_service.gd"
+)
 const BUILDABLE_STATES := [GridCell.State.WASTELAND, GridCell.State.FARMLAND]
 
 var grid_system_ref: GridSystem
 var economy_ref: Variant
 var progression_ref: Variant
+var geographic_query_service: RefCounted
 var buildings_container: Node3D
 var _event_bus: Node
 var _in_build_mode := false
@@ -45,17 +49,35 @@ func configure(
 	grid_sys: GridSystem,
 	economy: Variant,
 	container: Node3D = null,
-	progression: Variant = null
+	progression: Variant = null,
+	geography: RefCounted = null
 ) -> bool:
 	grid_system_ref = grid_sys
 	economy_ref = economy
 	progression_ref = progression
+	if geography != null:
+		geographic_query_service = geography
+	elif geographic_query_service == null:
+		geographic_query_service = GeographicQueryServiceScript.new()
+	if geographic_query_service.get_grid() != grid_system_ref:
+		geographic_query_service.configure(grid_system_ref)
 	_ensure_scene_nodes()
 	buildings_container = container if container != null else _default_buildings_container
 	return (
 		grid_system_ref != null and economy_ref != null and buildings_container != null
 		and (progression_ref == null or progression_ref.has_method("is_blueprint_unlocked"))
 	)
+
+
+func set_geographic_query_service(service: RefCounted) -> bool:
+	if service == null or service.get_grid() != grid_system_ref:
+		return false
+	geographic_query_service = service
+	return true
+
+
+func get_geographic_query_service() -> RefCounted:
+	return geographic_query_service
 
 
 func enter_preview_mode(building: Variant) -> bool:
@@ -266,6 +288,10 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 	var availability := diagnose_availability(resolved)
 	availability.building_id = resolved.building_id
 	availability.grid = Vector2i(gx, gz)
+	if resolved.effect_type == "irrigation" and bool(availability.allowed):
+		availability.water_anchor = geographic_query_service.water_anchor(
+			Vector2i(gx, gz), resolved.footprint
+		)
 	return availability
 
 
@@ -769,19 +795,13 @@ func _footprint_cells(data: BuildingData, gx: int, gz: int) -> Array[Vector2i]:
 
 
 func _footprint_borders_water(data: BuildingData, gx: int, gz: int) -> bool:
-	if grid_system_ref == null:
-		return false
-	for x in range(gx, gx + data.footprint.x):
-		for z in [gz - 1, gz + data.footprint.y]:
-			var cell := grid_system_ref.get_cell(x, z)
-			if cell != null and cell.state == GridCell.State.WATER:
-				return true
-	for z in range(gz, gz + data.footprint.y):
-		for x in [gx - 1, gx + data.footprint.x]:
-			var cell := grid_system_ref.get_cell(x, z)
-			if cell != null and cell.state == GridCell.State.WATER:
-				return true
-	return false
+	return (
+		data != null
+		and geographic_query_service != null
+		and geographic_query_service.footprint_borders_natural_water(
+			Vector2i(gx, gz), data.footprint
+		)
+	)
 
 
 func _saved_footprint_borders_water(
@@ -790,15 +810,13 @@ func _saved_footprint_borders_water(
 	gz: int,
 	grid_data: Dictionary
 ) -> bool:
-	for x in range(gx, gx + data.footprint.x):
-		for z in [gz - 1, gz + data.footprint.y]:
-			if grid_system_ref.saved_cell_state(grid_data, x, z) == GridCell.State.WATER:
-				return true
-	for z in range(gz, gz + data.footprint.y):
-		for x in [gx - 1, gx + data.footprint.x]:
-			if grid_system_ref.saved_cell_state(grid_data, x, z) == GridCell.State.WATER:
-				return true
-	return false
+	return (
+		data != null
+		and geographic_query_service != null
+		and geographic_query_service.footprint_borders_saved_water(
+			Vector2i(gx, gz), data.footprint, grid_data
+		)
+	)
 
 
 func _is_integer_number(value: Variant) -> bool:

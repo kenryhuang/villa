@@ -12,6 +12,9 @@ const DailySimulationSystemScript := preload(
 )
 const ProductionSystemScript := preload("res://scripts/systems/production_system.gd")
 const FarmStorageSystemScript := preload("res://scripts/systems/farm_storage_system.gd")
+const GeographicQueryServiceScript := preload(
+	"res://scripts/systems/geographic_query_service.gd"
+)
 const ItemContainerRouterScript := preload("res://scripts/systems/item_container_router.gd")
 const NpcEconomySystemScript := preload("res://scripts/systems/npc_economy_system.gd")
 const EconomyProgressionSystemScript := preload(
@@ -123,6 +126,7 @@ var npc_farm_action_controller: NpcFarmActionController
 var daily_simulation_system: Node
 var inventory_system: InventorySystem
 var farm_storage_system: FarmStorageSystem
+var geographic_query_service: RefCounted
 var item_container_router: ItemContainerRouterScript
 var building_system: BuildingSystem
 var tool_system: ToolSystem
@@ -260,6 +264,8 @@ func _initialize_systems() -> void:
 	add_child(farm_storage_system)
 	farm_storage_system.configure()
 
+	geographic_query_service = GeographicQueryServiceScript.new()
+
 	item_container_router = ItemContainerRouterScript.new()
 	item_container_router.name = "ItemContainerRouter"
 	add_child(item_container_router)
@@ -322,6 +328,8 @@ func _connect_systems() -> bool:
 		grid_system.configure(terrain, route, world.get_blocked_regions())
 		# Visible farm selection must see every tree/resource footprint.
 		_register_resource_navigation()
+	if not geographic_query_service.configure(grid_system):
+		return false
 
 	# FarmingSystem 依赖 GridSystem + SeasonSystem + GameState
 	farming_system.configure(grid_system, season_system, get_node_or_null("/root/GameState"))
@@ -381,7 +389,11 @@ func _connect_systems() -> bool:
 
 	# Building and production share one authoritative registry and player inventory.
 	if not building_system.configure(
-		grid_system, economy_system, buildings_container, economy_progression_system
+		grid_system,
+		economy_system,
+		buildings_container,
+		economy_progression_system,
+		geographic_query_service
 	):
 		return false
 	if not building_system.building_instance_removed.is_connected(_on_economy_building_removed):
@@ -399,7 +411,8 @@ func _connect_systems() -> bool:
 		farming_system,
 		building_system,
 		inventory_system,
-		item_container_router
+		item_container_router,
+		geographic_query_service
 	):
 		return false
 

@@ -11,6 +11,10 @@ func configure(grid: GridSystem) -> bool:
 	return _grid != null
 
 
+func get_grid() -> GridSystem:
+	return _grid
+
+
 func footprint_borders_natural_water(origin: Vector2i, size: Vector2i) -> bool:
 	return not _bordering_water_cells(origin, size).is_empty()
 
@@ -33,6 +37,24 @@ func water_anchor(origin: Vector2i, size: Vector2i) -> Vector2i:
 		return left.x < right.x
 	)
 	return cells[0]
+
+
+func footprint_borders_saved_water(
+	origin: Vector2i,
+	size: Vector2i,
+	grid_data: Dictionary
+) -> bool:
+	if _grid == null or size.x <= 0 or size.y <= 0:
+		return false
+	for gx in range(origin.x, origin.x + size.x):
+		for gz in [origin.y - 1, origin.y + size.y]:
+			if _grid.saved_cell_state(grid_data, gx, gz) == GridCell.State.WATER:
+				return true
+	for gz in range(origin.y, origin.y + size.y):
+		for gx in [origin.x - 1, origin.x + size.x]:
+			if _grid.saved_cell_state(grid_data, gx, gz) == GridCell.State.WATER:
+				return true
+	return false
 
 
 func mature_flowers_near(
