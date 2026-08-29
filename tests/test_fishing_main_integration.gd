@@ -6,6 +6,9 @@ const FishingSpotDataScript = preload("res://scripts/data/fishing_spot_data.gd")
 const PlayerActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const InventorySystemScript = preload("res://scripts/systems/inventory_system.gd")
+const MainScript = preload("res://scripts/main.gd")
+const InventoryUIScript = preload("res://scripts/ui/inventory_ui.gd")
+const MapUIScene = preload("res://scenes/ui/map_ui.tscn")
 
 class FishingRecorder:
 	extends Node
@@ -34,6 +37,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_authored_world_spots(assertions)
 	_test_spot_node_and_controller_routing(assertions, tree)
 	_test_reel_owns_active_click(assertions, tree)
+	_test_interact_reels_and_blocking_ui_cancels(assertions, tree)
+	_test_session_feedback_text(assertions)
 	_test_tool_cost_has_no_placeholder_reward(assertions, tree)
 
 
@@ -87,6 +92,55 @@ func _test_reel_owns_active_click(assertions: TestAssert, tree: SceneTree) -> vo
 	fishing.free()
 
 
+func _test_interact_reels_and_blocking_ui_cancels(assertions: TestAssert, tree: SceneTree) -> void:
+	var controller := PlayerActionControllerScript.new()
+	var fishing := FishingRecorder.new()
+	tree.root.add_child(controller)
+	tree.root.add_child(fishing)
+	controller.configure_fishing(fishing)
+	fishing.active = true
+	var event := InputEventAction.new()
+	event.action = &"interact"
+	event.pressed = true
+	controller.call("_unhandled_input", event)
+	assertions.equal(fishing.reel_calls, 1, "interact action reels the active fishing session")
+	var main := MainScript.new()
+	main.fishing_system = fishing
+	main.call("_cancel_fishing_for_blocking_ui")
+	assertions.equal(fishing.cancel_calls, 1, "opening blocking UI cancels the fishing session")
+	var inventory_ui := InventoryUIScript.new()
+	var map_ui := MapUIScene.instantiate()
+	tree.root.add_child(inventory_ui)
+	tree.root.add_child(map_ui)
+	main.inventory_ui = inventory_ui
+	main.map_ui = map_ui
+	main.call("_connect_blocking_ui_fishing_cancellation")
+	fishing.active = true
+	var inventory_key := InputEventKey.new()
+	inventory_key.keycode = KEY_I
+	inventory_key.pressed = true
+	inventory_ui.call("_unhandled_input", inventory_key)
+	assertions.equal(fishing.cancel_calls, 2, "I shortcut cancels fishing through the real inventory open path")
+	fishing.active = true
+	var map_key := InputEventKey.new()
+	map_key.keycode = KEY_M
+	map_key.pressed = true
+	map_ui.call("_unhandled_input", map_key)
+	assertions.equal(fishing.cancel_calls, 3, "M shortcut cancels fishing through the real map open path")
+	controller.free()
+	inventory_ui.free()
+	map_ui.free()
+	fishing.free()
+	main.free()
+
+
+func _test_session_feedback_text(assertions: TestAssert) -> void:
+	assertions.truthy(
+		"收杆" in MainScript.fishing_state_message(3),
+		"bite window exposes an explicit reel prompt"
+	)
+
+
 func _test_tool_cost_has_no_placeholder_reward(assertions: TestAssert, tree: SceneTree) -> void:
 	var inventory := InventorySystemScript.new()
 	var tools := ToolSystemScript.new()
@@ -101,6 +155,7 @@ func _test_tool_cost_has_no_placeholder_reward(assertions: TestAssert, tree: Sce
 	if game_state != null:
 		var stamina_before := int(game_state.player_state.stamina)
 		var durability_before := int(tools.get_durability("fishing_rod").current)
+		assertions.truthy(tools.can_commit_fishing_cast_cost(), "tool exposes side-effect-free fishing cost preflight")
 		assertions.truthy(tools.commit_fishing_cast_cost(), "fishing system can atomically commit rod cost")
 		assertions.equal(game_state.player_state.stamina, stamina_before - 5, "cast cost spends fishing stamina once")
 		assertions.equal(tools.get_durability("fishing_rod").current, durability_before - 1, "cast cost spends one rod durability")

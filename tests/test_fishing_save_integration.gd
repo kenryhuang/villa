@@ -14,6 +14,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var fishing: Node = fixture.fishing
 	var manager: Node = fixture.manager
 	assertions.truthy(manager.configure_fishing_runtime(fishing), "save manager accepts fishing participant")
+	var legacy_unique: Array = manager.call("_legacy_fishing_unique_items", {
+		"inventory": {"slots": [{"item_id": "drift_bottle", "quantity": 1}]},
+	})
+	assertions.equal(legacy_unique, ["drift_bottle"], "legacy inventory ownership backfills the unique fishing catch")
 	var durable := {
 		"version": 1,
 		"spots": {"creek-save": {"success_count": 2, "cast_sequence": 5, "reset_day": 4}},
@@ -60,6 +64,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 func _fixture(tree: SceneTree) -> Dictionary:
 	var grid := GridSystemScript.new()
+	grid.get_cell(5, 6).state = GridCell.State.WATER
 	grid.get_cell(5, 8).state = GridCell.State.WATER
 	var geography := GeographicQueryServiceScript.new()
 	geography.configure(grid)
@@ -67,6 +72,7 @@ func _fixture(tree: SceneTree) -> Dictionary:
 	var fishing := FishingSystemScript.new()
 	tree.root.add_child(fishing)
 	fishing.configure(grid, geography, inventory, GameDataScript, 33)
+	fishing.set_cast_cost_callbacks(func() -> bool: return true, func() -> bool: return true)
 	var spot := FishingSpotDataScript.new()
 	spot.spot_id = "creek-save"
 	spot.water_body_id = "save-water"

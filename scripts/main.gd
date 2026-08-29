@@ -435,7 +435,8 @@ func _connect_systems() -> bool:
 	)):
 		return false
 	if not bool(fishing_system.call(
-		"set_cast_cost_callback",
+		"set_cast_cost_callbacks",
+		Callable(tool_system, "can_commit_fishing_cast_cost"),
 		Callable(tool_system, "commit_fishing_cast_cost")
 	)):
 		return false
@@ -821,6 +822,7 @@ func _setup_ui() -> void:
 	# 地图 UI
 	if map_ui:
 		map_ui.configure(player)
+	_connect_blocking_ui_fishing_cancellation()
 
 	# 经济中心兼容沿用 ShopUI 场景，由 Main 注入权威系统引用。
 	if shop_ui and not shop_ui.configure(
@@ -1023,6 +1025,7 @@ func _on_inventory_requested() -> void:
 	if inventory_ui.visible:
 		inventory_ui.close()
 		return
+	_cancel_fishing_for_blocking_ui()
 	for modal in [map_ui, build_ui, shop_ui, building_economy_ui]:
 		if modal != null and modal.has_method("close"):
 			modal.close()
@@ -1060,6 +1063,7 @@ func open_economy_tab(tab_id: String, target_id: String = "") -> bool:
 				return false
 		if panel == null or not panel.has_method(select_method):
 			return false
+	_cancel_fishing_for_blocking_ui()
 	for modal in [inventory_ui, map_ui, build_ui, building_economy_ui]:
 		if modal != null and modal.has_method("close"):
 			modal.close()
@@ -1080,6 +1084,7 @@ func open_building_economy(building: BuildingInstance) -> bool:
 		or not building_economy_ui.has_method("open_for")
 	):
 		return false
+	_cancel_fishing_for_blocking_ui()
 	for modal in [inventory_ui, map_ui, build_ui, shop_ui]:
 		if modal != null and modal.has_method("close"):
 			modal.close()
@@ -1438,10 +1443,7 @@ func _on_building_output_collection_requested(
 func _on_building_interacted(building: BuildingInstance, _player: Node) -> void:
 	if building == null or not building.can_open_economy_panel():
 		return
-	for modal in [inventory_ui, map_ui, build_ui, shop_ui]:
-		if modal != null and modal.has_method("close"):
-			modal.close()
-	building_economy_ui.open_for(building)
+	open_building_economy(building)
 
 
 func _prepare_debug_reload() -> void:
@@ -1604,6 +1606,33 @@ func _on_fishing_spot_interaction_requested(spot_node: Node, _player_value: Vari
 
 func _on_fishing_session_state_changed(_previous: int, next: int, _session_id: int) -> void:
 	_set_player_movement_block("fishing", next != FishingSystemScript.SessionState.IDLE)
+	var message := fishing_state_message(next)
+	if not message.is_empty():
+		_publish_hud_message("fishing", "info", message)
+
+
+static func fishing_state_message(state: int) -> String:
+	return {
+		FishingSystemScript.SessionState.CASTING: "正在投竿…",
+		FishingSystemScript.SessionState.WAITING_BITE: "浮漂入水，等待鱼儿咬钩…",
+		FishingSystemScript.SessionState.BITE_WINDOW: "咬钩了！点击左键或按 E 收杆",
+	}.get(state, "")
+
+
+func _cancel_fishing_for_blocking_ui() -> void:
+	if fishing_system != null and bool(fishing_system.call("is_session_active")):
+		fishing_system.call("cancel", "blocking_ui")
+
+
+func _connect_blocking_ui_fishing_cancellation() -> void:
+	var callback := Callable(self, "_cancel_fishing_for_blocking_ui")
+	for modal in [inventory_ui, map_ui]:
+		if (
+			modal != null
+			and modal.has_signal("blocking_opened")
+			and not modal.is_connected("blocking_opened", callback)
+		):
+			modal.connect("blocking_opened", callback)
 
 
 func _on_fishing_catch_settled(_spot_id: String, item_id: String, quantity: int) -> void:
@@ -1613,7 +1642,7 @@ func _on_fishing_catch_settled(_spot_id: String, item_id: String, quantity: int)
 
 
 func _on_fishing_session_failed(_spot_id: String, reason: String) -> void:
-	if reason in ["tool_changed", "mode_changed", "selection_cancelled", "save_restore", "restore"]:
+	if reason in ["tool_changed", "mode_changed", "selection_cancelled", "save_restore", "restore", "blocking_ui"]:
 		return
 	_publish_hud_message("fishing", "warning", _fishing_failure_text(reason))
 
@@ -1625,6 +1654,7 @@ func _fishing_failure_text(reason: String) -> String:
 		"water_required": "这个鱼点暂时无法下竿",
 		"cast_blocked": "投竿线路被挡住了",
 		"inventory_full": "背包已满，无法钓鱼",
+		"tool_unavailable": "请装备可用的鱼竿并确认体力充足",
 		"depleted": "这个鱼点今天已经枯竭",
 		"no_candidates": "当前季节和时段没有鱼群",
 		"missed_bite": "鱼儿脱钩了",

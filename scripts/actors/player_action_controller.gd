@@ -556,6 +556,9 @@ func _process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("interact") and try_reel_active_fishing():
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_P and switch_mode(ActionMode.FARMING):
 			get_viewport().set_input_as_handled()

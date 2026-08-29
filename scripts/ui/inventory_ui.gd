@@ -3,6 +3,8 @@ extends Control
 
 ## 背包与中央农场仓库界面。
 
+signal blocking_opened
+
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const PLANTING_QUICK_SLOT := 5
 const TAB_BACKPACK := &"backpack"
@@ -235,11 +237,14 @@ func toggle() -> void:
 
 
 func open() -> void:
+	var was_open := _is_open
 	_is_open = true
 	visible = true
 	_sync_tab_visibility()
 	_refresh_backpack()
 	_refresh_storage()
+	if not was_open:
+		blocking_opened.emit()
 
 
 func close() -> void:

@@ -64,6 +64,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_daily_cursor_can_rewind_for_loaded_day(assertions)
 	_test_loaded_maintenance_refreshes_greenhouse_on_cursor_sync(assertions)
 	_test_beehive_flowers_and_storage_pause(assertions)
+	_test_beehive_flower_ownership(assertions)
 	_test_coop_feed_is_atomic(assertions)
 	_test_waterwheel_geometry_and_daily_order(assertions)
 	_test_maintenance_disables_and_restores_daily_coverage(assertions)
@@ -81,11 +82,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 func _test_passive_output_helper(assertions: TestAssert) -> void:
 	var production := _production()
-	assertions.equal(production.passive_output_for("beehive", 1, 4), {}, "beehive rests on odd days")
-	assertions.equal(production.passive_output_for("beehive", 2, 0), {"honey": 1}, "beehive makes base honey every even day")
-	assertions.equal(production.passive_output_for("beehive", 2, 3), {"honey": 1}, "three flowers do not reach hive bonus")
-	assertions.equal(production.passive_output_for("beehive", 2, 4), {"honey": 2, "beeswax": 1}, "four flowers reach capped hive bonus")
-	assertions.equal(production.passive_output_for("beehive", 2, 99), {"honey": 2, "beeswax": 1}, "hive bonus remains capped")
+	assertions.equal(production.passive_output_for("beehive", 1, 4, 2), {}, "beehive rests on odd days")
+	assertions.equal(production.passive_output_for("beehive", 2, 0, 0), {}, "beehive stops without mature flowers")
+	assertions.equal(production.passive_output_for("beehive", 2, 1, 1), {"honey": 1}, "one flower makes one honey")
+	assertions.equal(production.passive_output_for("beehive", 2, 3, 2), {"honey": 2}, "two to three flowers make two honey")
+	assertions.equal(production.passive_output_for("beehive", 2, 4, 1), {"honey": 2}, "one flower species cannot make wax")
+	assertions.equal(production.passive_output_for("beehive", 2, 4, 2), {"honey": 2, "beeswax": 1}, "four flowers from two species make wax")
 	assertions.equal(production.passive_output_for("chicken_coop", 3, 0), {"egg": 2}, "coop helper returns approved daily egg output")
 	assertions.equal(production.passive_output_for("well", 2, 0), {}, "manual well has no passive output")
 
@@ -159,6 +161,21 @@ func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
 	production.register_building(blocked)
 	production.finish_daily_outputs(4)
 	assertions.equal(blocked.producer_state.outputs, {"honey": 1, "wood": 1, "stone": 1}, "full hive storage pauses the complete output without loss")
+
+
+func _test_beehive_flower_ownership(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var production := _production(grid, _farming(grid))
+	var far_hive := _building("beehive", 8, 10, true)
+	var nearest_hive := _building("beehive", 11, 10, true)
+	var second_hive := _building("beehive", 14, 10, true)
+	_add_mature_flower(grid, Vector2i(12, 10), "rose")
+	for hive in [far_hive, nearest_hive, second_hive]:
+		production.register_building(hive)
+	production.finish_daily_outputs(2)
+	assertions.equal(nearest_hive.producer_state.outputs, {"honey": 1}, "nearest hive owns the shared flower")
+	assertions.equal(second_hive.producer_state.outputs, {"honey": 1}, "second-nearest hive also owns the shared flower")
+	assertions.equal(far_hive.producer_state.outputs, {}, "one flower never feeds a third hive")
 
 
 func _test_coop_feed_is_atomic(assertions: TestAssert) -> void:
@@ -664,9 +681,9 @@ func _building(id: String, gx: int, gz: int, with_state: bool) -> BuildingInstan
 	return building
 
 
-func _add_mature_flower(grid: GridSystem, position: Vector2i) -> void:
+func _add_mature_flower(grid: GridSystem, position: Vector2i, crop_id: String = "") -> void:
 	var flower := CropData.new()
-	flower.crop_id = "flower_%d_%d" % [position.x, position.y]
+	flower.crop_id = crop_id if not crop_id.is_empty() else "flower_%d_%d" % [position.x, position.y]
 	flower.category = "flower"
 	flower.growth_days = 1
 	var instance := CropInstance.new()

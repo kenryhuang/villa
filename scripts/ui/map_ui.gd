@@ -3,6 +3,8 @@ extends Control
 
 ## 地图界面 - 显示探索状态和玩家位置
 
+signal blocking_opened
+
 @onready var map_texture: TextureRect = $MapTexture
 @onready var player_marker: Sprite2D = $MapTexture/PlayerMarker
 
@@ -19,9 +21,12 @@ func configure(player: Node3D) -> void:
 
 
 func open() -> void:
+	var was_open := _is_open
 	_is_open = true
 	visible = true
 	_update_map()
+	if not was_open:
+		blocking_opened.emit()
 
 
 func close() -> void:

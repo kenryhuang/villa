@@ -659,10 +659,15 @@ func finish_daily_outputs(total_day: int) -> void:
 	if total_day <= _last_finished_outputs_day:
 		return
 	_last_finished_outputs_day = total_day
+	var beehive_flowers := _beehive_flower_assignments()
 	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
 			continue
-		_finish_passive_building(building, total_day)
+		_finish_passive_building(
+			building,
+			total_day,
+			beehive_flowers.get(building_key(building), [])
+		)
 		refresh_indicator(building)
 
 
@@ -1153,12 +1158,17 @@ static func _finite_number_in_range(value: Variant, minimum: float, maximum: flo
 	return is_finite(number) and number >= minimum and number <= maximum
 
 
-func passive_output_for(id: String, day: int, flowers: int) -> Dictionary:
+func passive_output_for(id: String, day: int, flowers: int, flower_species: int = 0) -> Dictionary:
 	match id:
 		"beehive":
-			if day % 2 != 0:
+			if day % 2 != 0 or flowers <= 0:
 				return {}
-			return {"honey": 2, "beeswax": 1} if mini(flowers, 4) >= 4 else {"honey": 1}
+			if flowers == 1:
+				return {"honey": 1}
+			var output := {"honey": 2}
+			if flowers >= 4 and flower_species >= 2:
+				output["beeswax"] = 1
+			return output
 		"chicken_coop":
 			return {"egg": 2}
 	return {}
@@ -1167,11 +1177,75 @@ func passive_output_for(id: String, day: int, flowers: int) -> Dictionary:
 func count_nearby_mature_flowers(building: BuildingInstance) -> int:
 	if building == null or _geographic_query_service == null:
 		return 0
+	var assignments := _beehive_flower_assignments()
+	var key := building_key(building)
+	if assignments.has(key):
+		return (assignments[key] as Array).size()
 	var config := _effect_config(building)
 	var radius := float(config.get("flower_radius", 4))
 	var cap := maxi(0, int(config.get("flower_cap", 4)))
 	var center := _building_center(building)
 	return _geographic_query_service.mature_flowers_near(center, radius, cap).size()
+
+
+func _beehive_flower_assignments() -> Dictionary:
+	var result := {}
+	if _geographic_query_service == null:
+		return result
+	var hives: Array[BuildingInstance] = []
+	for building in _valid_registered_buildings():
+		if (
+			_building_is_active(building)
+			and building.building_id == "beehive"
+			and not is_maintenance_paused(building)
+		):
+			hives.append(building)
+			result[building_key(building)] = []
+	hives.sort_custom(func(left: BuildingInstance, right: BuildingInstance) -> bool:
+		return building_key(left) < building_key(right)
+	)
+	for flower in _geographic_query_service.mature_flowers():
+		var flower_position := Vector2(flower.gx, flower.gz)
+		var candidates: Array[Dictionary] = []
+		for hive in hives:
+			var radius := float(_effect_config(hive).get("flower_radius", 4))
+			var distance := flower_position.distance_squared_to(_building_center(hive))
+			if distance <= radius * radius + 0.0001:
+				candidates.append({
+					"building": hive,
+					"distance": distance,
+					"key": building_key(hive),
+				})
+		candidates.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+			if not is_equal_approx(float(left.distance), float(right.distance)):
+				return float(left.distance) < float(right.distance)
+			return str(left.key) < str(right.key)
+		)
+		var owners := 0
+		for candidate in candidates:
+			var key := str(candidate.key)
+			var assigned := result[key] as Array
+			assigned.append(flower)
+			owners += 1
+			if owners >= 2:
+				break
+	for hive in hives:
+		var key := building_key(hive)
+		var center := _building_center(hive)
+		var assigned := result[key] as Array
+		assigned.sort_custom(func(left: GridCell, right: GridCell) -> bool:
+			var left_distance := Vector2(left.gx, left.gz).distance_squared_to(center)
+			var right_distance := Vector2(right.gx, right.gz).distance_squared_to(center)
+			if not is_equal_approx(left_distance, right_distance):
+				return left_distance < right_distance
+			if left.gz != right.gz:
+				return left.gz < right.gz
+			return left.gx < right.gx
+		)
+		var cap := maxi(0, int(_effect_config(hive).get("flower_cap", 4)))
+		if assigned.size() > cap:
+			assigned.resize(cap)
+	return result
 
 
 func is_water_connected(building: BuildingInstance) -> bool:
@@ -1487,7 +1561,11 @@ func _on_building_completed(building: BuildingInstance) -> void:
 	register_building(building)
 
 
-func _finish_passive_building(building: BuildingInstance, total_day: int) -> void:
+func _finish_passive_building(
+	building: BuildingInstance,
+	total_day: int,
+	assigned_flowers: Array = []
+) -> void:
 	if is_maintenance_paused(building):
 		return
 	var id := building.building_id
@@ -1496,7 +1574,12 @@ func _finish_passive_building(building: BuildingInstance, total_day: int) -> voi
 		return
 	var output := {}
 	if id == "beehive":
-		output = passive_output_for(id, total_day, count_nearby_mature_flowers(building))
+		var species := {}
+		for flower_value in assigned_flowers:
+			var flower := flower_value as GridCell
+			if flower != null and flower.crop_instance != null:
+				species[str(flower.crop_instance.crop_data.crop_id)] = true
+		output = passive_output_for(id, total_day, assigned_flowers.size(), species.size())
 	elif id == "chicken_coop":
 		output = passive_output_for(id, total_day, 0)
 	else:

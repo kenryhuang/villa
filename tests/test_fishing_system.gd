@@ -12,6 +12,7 @@ func run(assertions: TestAssert) -> void:
 	_test_spot_validation(assertions)
 	_test_preflight_failures(assertions)
 	_test_state_machine_and_settlement(assertions)
+	_test_capacity_reservation_and_tool_preflight(assertions)
 	_test_determinism_depletion_and_reset(assertions)
 	_test_empty_candidate_rejection(assertions)
 
@@ -24,6 +25,22 @@ func _test_spot_validation(assertions: TestAssert) -> void:
 	spot = _spot()
 	spot.water_cell = spot.stand_cell
 	assertions.truthy(not spot.is_valid(), "stand and water cells must differ")
+	var grid := GridSystemScript.new()
+	var geography := GeographicQueryServiceScript.new()
+	geography.configure(grid)
+	var fishing := FishingSystemScript.new()
+	var inventory := InventorySystemScript.new()
+	fishing.configure(grid, geography, inventory, GameDataScript, 1)
+	fishing.set_cast_cost_callbacks(func() -> bool: return true, func() -> bool: return true)
+	spot = _spot()
+	assertions.truthy(not fishing.register_spot(spot), "spot registration rejects a non-water target")
+	grid.get_cell(spot.water_cell.x, spot.water_cell.y).state = GridCell.State.WATER
+	assertions.truthy(not fishing.register_spot(spot), "spot registration requires a natural shoreline stand")
+	grid.get_cell(5, 6).state = GridCell.State.WATER
+	assertions.truthy(fishing.register_spot(spot), "spot registration accepts an authored shoreline and water target")
+	fishing.free()
+	inventory.free()
+	grid.free()
 
 
 func _test_preflight_failures(assertions: TestAssert) -> void:
@@ -48,9 +65,11 @@ func _test_state_machine_and_settlement(assertions: TestAssert) -> void:
 	var fixture := _fixture()
 	var fishing: Node = fixture.fishing
 	var cost_calls := {"count": 0}
-	fishing.set_cast_cost_callback(func() -> bool:
-		cost_calls.count += 1
-		return true
+	fishing.set_cast_cost_callbacks(
+		func() -> bool: return true,
+		func() -> bool:
+			cost_calls.count += 1
+			return true
 	)
 	var started: Dictionary = fishing.start_cast("creek-01", fixture.player_position, 1, 8, 0)
 	assertions.truthy(started.ok, "valid shoreline cast starts")
@@ -73,6 +92,44 @@ func _test_state_machine_and_settlement(assertions: TestAssert) -> void:
 	assertions.truthy(fishing.cancel("tool_changed"), "active cast can be cancelled")
 	assertions.equal(fishing.get_session_state(), FishingSystemScript.SessionState.IDLE, "cancel returns directly to idle")
 	assertions.equal(fishing.reel(int(cancelled.session_id)).reason, "stale_session", "cancelled session cannot settle")
+	_free_fixture(fixture)
+
+
+func _test_capacity_reservation_and_tool_preflight(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	fixture.inventory.max_slots = 1
+	fixture.inventory.reset_slots()
+	fixture.fishing.set_cast_cost_callbacks(func() -> bool: return true, func() -> bool: return true)
+	var started: Dictionary = fixture.fishing.start_cast("creek-01", fixture.player_position, 1, 8, 0)
+	assertions.truthy(started.ok, "valid cast reserves one reward capacity")
+	assertions.truthy(not fixture.inventory.add_item("wood", 1), "other writes cannot consume reserved fishing capacity")
+	assertions.truthy(fixture.fishing.cancel("test"), "reservation fixture cancels")
+	assertions.truthy(fixture.inventory.add_item("wood", 1), "cancellation releases reserved capacity")
+	_free_fixture(fixture)
+
+	fixture = _fixture()
+	fixture.inventory.max_slots = 2
+	fixture.inventory.reset_slots()
+	fixture.fishing.set_cast_cost_callbacks(func() -> bool: return true, func() -> bool: return true)
+	started = fixture.fishing.start_cast("creek-01", fixture.player_position, 1, 8, 0)
+	var rollback_slots: Array = fixture.inventory.slots.duplicate(true)
+	var rollback_mappings: Array = fixture.inventory.quick_slot_mappings.duplicate()
+	assertions.truthy(fixture.inventory.add_item("wood", 1), "parallel transaction can use unreserved capacity")
+	fixture.inventory.restore_state(rollback_slots, rollback_mappings)
+	fixture.fishing.advance_realtime(0.5)
+	_advance_to_bite(fixture.fishing)
+	assertions.truthy(
+		fixture.fishing.reel(int(started.session_id)).get("ok", false),
+		"unrelated inventory rollback preserves the fishing capacity reservation"
+	)
+	_free_fixture(fixture)
+
+	fixture = _fixture()
+	fixture.fishing.set_cast_cost_callbacks(func() -> bool: return false, func() -> bool: return true)
+	var rejected: Dictionary = fixture.fishing.start_cast("creek-01", fixture.player_position, 1, 8, 0)
+	assertions.equal(rejected.get("reason"), "tool_unavailable", "broken rod or low stamina rejects before session start")
+	assertions.equal(fixture.fishing.get_session_state(), FishingSystemScript.SessionState.IDLE, "tool preflight failure never locks player input")
+	assertions.equal(fixture.fishing.to_dict().spots["creek-01"].cast_sequence, 0, "tool preflight failure does not consume cast sequence")
 	_free_fixture(fixture)
 
 
@@ -109,12 +166,14 @@ func _test_empty_candidate_rejection(assertions: TestAssert) -> void:
 
 func _fixture(world_seed: int = 77, game_data: Variant = GameDataScript) -> Dictionary:
 	var grid := GridSystemScript.new()
+	grid.get_cell(5, 6).state = GridCell.State.WATER
 	grid.get_cell(5, 8).state = GridCell.State.WATER
 	var geography := GeographicQueryServiceScript.new()
 	geography.configure(grid)
 	var inventory := InventorySystemScript.new()
 	var fishing := FishingSystemScript.new()
 	fishing.configure(grid, geography, inventory, game_data, world_seed)
+	fishing.set_cast_cost_callbacks(func() -> bool: return true, func() -> bool: return true)
 	fishing.register_spot(_spot())
 	var stand_world := grid.grid_to_world(5, 5)
 	return {

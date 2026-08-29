@@ -514,24 +514,31 @@ func _use_fishing_rod(target: Variant) -> bool:
 
 
 func commit_fishing_cast_cost() -> bool:
-	if current_tool != ToolType.FISHING_ROD:
+	if not can_commit_fishing_cast_cost():
 		return false
 	var durability := get_durability("fishing_rod")
 	var game_state = _game_state()
 	var stamina_cost := int(TOOL_STAMINA_COST[ToolType.FISHING_ROD])
-	if (
-		durability.is_empty()
-		or int(durability.current) <= 0
-		or game_state == null
-		or int(game_state.player_state.stamina) < stamina_cost
-	):
-		return false
 	game_state.player_state.stamina = int(game_state.player_state.stamina) - stamina_cost
 	tool_durability["fishing_rod"]["current"] = int(durability.current) - 1
 	if _event_bus != null:
 		_event_bus.stamina_changed.emit(int(game_state.player_state.stamina))
 	_emit_durability_changed("fishing_rod")
 	return true
+
+
+func can_commit_fishing_cast_cost() -> bool:
+	if current_tool != ToolType.FISHING_ROD:
+		return false
+	var durability := get_durability("fishing_rod")
+	var game_state = _game_state()
+	var stamina_cost := int(TOOL_STAMINA_COST[ToolType.FISHING_ROD])
+	return (
+		not durability.is_empty()
+		and int(durability.current) > 0
+		and game_state != null
+		and int(game_state.player_state.stamina) >= stamina_cost
+	)
 
 
 func get_current_tool_name() -> String:

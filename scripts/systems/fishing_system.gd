@@ -37,6 +37,7 @@ var _active_session: Dictionary = {}
 var _seconds_remaining := 0.0
 var _next_session_id := 1
 var _closed_sessions: Dictionary = {}
+var _cast_cost_preflight_callback := Callable()
 var _cast_cost_callback := Callable()
 
 
@@ -72,10 +73,11 @@ func configure(
 	return true
 
 
-func set_cast_cost_callback(callback: Callable) -> bool:
-	if not callback.is_valid():
+func set_cast_cost_callbacks(preflight_callback: Callable, commit_callback: Callable) -> bool:
+	if not preflight_callback.is_valid() or not commit_callback.is_valid():
 		return false
-	_cast_cost_callback = callback
+	_cast_cost_preflight_callback = preflight_callback
+	_cast_cost_callback = commit_callback
 	return true
 
 
@@ -88,6 +90,10 @@ func register_spot(spot: Resource) -> bool:
 		or _spots.has(spot.spot_id)
 		or _grid.get_cell(spot.stand_cell.x, spot.stand_cell.y) == null
 		or _grid.get_cell(spot.water_cell.x, spot.water_cell.y) == null
+		or _grid.get_cell(spot.water_cell.x, spot.water_cell.y).state != GridCell.State.WATER
+		or not bool(_geography.call(
+			"footprint_borders_natural_water", spot.stand_cell, Vector2i.ONE
+		))
 	):
 		return false
 	_spots[spot.spot_id] = spot.duplicate_data()
@@ -138,7 +144,11 @@ func start_cast(
 	if item_id.is_empty():
 		failure.reason = "no_candidates"
 		return failure
-	if not _inventory.can_add_item(item_id, 1):
+	if not _preflight_cast_cost():
+		failure.reason = "tool_unavailable"
+		return failure
+	var capacity_reservation: Variant = _inventory.reserve_item_capacity(item_id, 1)
+	if capacity_reservation == null:
 		failure.reason = "inventory_full"
 		return failure
 	durable_state.cast_sequence = next_sequence
@@ -150,6 +160,7 @@ func start_cast(
 		"item_id": item_id,
 		"total_day": total_day,
 		"cast_sequence": next_sequence,
+		"capacity_reservation": capacity_reservation,
 	}
 	_transition_to(SessionState.CASTING, CAST_SECONDS)
 	return {"ok": true, "reason": "", "session_id": session_id, "item_id": item_id}
@@ -174,6 +185,7 @@ func advance_realtime(delta: float) -> void:
 			SessionState.WAITING_BITE:
 				_transition_to(SessionState.BITE_WINDOW, BITE_WINDOW_SECONDS)
 			SessionState.BITE_WINDOW:
+				_release_capacity_reservation()
 				_mark_closed_session()
 				var spot_id := str(_active_session.get("spot_id", ""))
 				session_failed.emit(spot_id, "missed_bite")
@@ -202,8 +214,9 @@ func reel(session_id: int) -> Dictionary:
 		spot == null
 		or durable_state == null
 		or int(durable_state.success_count) >= spot.daily_capacity
-		or not _inventory.add_item(item_id, 1)
+		or not _commit_capacity_reservation()
 	):
+		_release_capacity_reservation()
 		_mark_closed_session()
 		session_failed.emit(spot_id, "settlement_failed")
 		_transition_to(SessionState.COOLDOWN, COOLDOWN_SECONDS)
@@ -238,6 +251,7 @@ func is_session_active() -> bool:
 
 func get_session_snapshot() -> Dictionary:
 	var result := _active_session.duplicate(true)
+	result.erase("capacity_reservation")
 	result["state"] = _state
 	result["seconds_remaining"] = _seconds_remaining
 	return result
@@ -305,11 +319,15 @@ func from_dict(value: Dictionary) -> bool:
 	return true
 
 
-func reset_state() -> bool:
+func reset_state(unique_items: Array = []) -> bool:
 	cancel("reset")
 	for spot_id in _spots:
 		_spot_states[spot_id] = _new_spot_state(0)
 	_unique_catches.clear()
+	for item_id_value in unique_items:
+		var item_id := str(item_id_value)
+		if _is_unique_item(item_id):
+			_unique_catches[item_id] = true
 	return true
 
 
@@ -391,7 +409,26 @@ func _bite_wait_seconds() -> float:
 
 
 func _commit_cast_cost() -> bool:
-	return not _cast_cost_callback.is_valid() or bool(_cast_cost_callback.call())
+	return _cast_cost_callback.is_valid() and bool(_cast_cost_callback.call())
+
+
+func _preflight_cast_cost() -> bool:
+	return _cast_cost_preflight_callback.is_valid() and bool(_cast_cost_preflight_callback.call())
+
+
+func _commit_capacity_reservation() -> bool:
+	var token: Variant = _active_session.get("capacity_reservation")
+	if token == null or not _inventory.commit_item_capacity_reservation(token):
+		return false
+	_active_session.erase("capacity_reservation")
+	return true
+
+
+func _release_capacity_reservation() -> void:
+	var token: Variant = _active_session.get("capacity_reservation")
+	if token != null:
+		_inventory.release_item_capacity_reservation(token)
+	_active_session.erase("capacity_reservation")
 
 
 func _transition_to(next_state: int, duration: float) -> void:
@@ -410,6 +447,7 @@ func _fail_and_idle(reason: String) -> void:
 
 
 func _finish_to_idle() -> void:
+	_release_capacity_reservation()
 	var previous := _state
 	var session_id := int(_active_session.get("session_id", 0))
 	_state = SessionState.IDLE

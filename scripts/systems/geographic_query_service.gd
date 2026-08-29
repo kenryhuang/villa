@@ -94,6 +94,28 @@ func mature_flowers_near(
 	return result
 
 
+func mature_flowers() -> Array[GridCell]:
+	var result: Array[GridCell] = []
+	if _grid == null:
+		return result
+	for value in _grid._cells.values():
+		var cell := value as GridCell
+		if (
+			cell != null
+			and cell.state == GridCell.State.PLANTED
+			and cell.crop_instance != null
+			and cell.crop_instance.is_mature()
+			and _crop_is_flower(cell.crop_instance.crop_data)
+		):
+			result.append(cell)
+	result.sort_custom(func(left: GridCell, right: GridCell) -> bool:
+		if left.gz != right.gz:
+			return left.gz < right.gz
+		return left.gx < right.gx
+	)
+	return result
+
+
 func is_clear_cast_line(from_cell: Vector2i, target_cell: Vector2i) -> bool:
 	if _grid == null or _grid.get_cell(from_cell.x, from_cell.y) == null:
 		return false

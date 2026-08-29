@@ -20,6 +20,7 @@ var _mapping_transaction_items: Array[String] = []
 var _restore_notification_transaction_active := false
 var _restore_notification_items: Array[String] = []
 var _restore_notification_item_deltas: Dictionary = {}
+var _capacity_reservations: Dictionary = {}
 
 
 func _init() -> void:
@@ -37,15 +38,9 @@ func add_item(item_id: String, quantity: int = 1) -> bool:
 	var item_data = GameDataScript.get_item(item_id)
 	if item_data == null:
 		return false
-	var max_stack := int(item_data.get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
-	var capacity := 0
-	for slot in slots:
-		if slot.is_empty():
-			capacity += max_stack
-		elif slot.get("item_id", "") == item_id:
-			capacity += maxi(0, max_stack - int(slot.get("quantity", 0)))
-	if capacity < quantity:
+	if not _can_fit_after_reservations(item_id, quantity):
 		return false
+	var max_stack := int(item_data.get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
 	var previous_items := _snapshot_quick_items()
 
 	# 1. 尝试堆叠到已有槽位
@@ -153,19 +148,85 @@ func get_item_count(item_id: String) -> int:
 
 
 func can_add_item(item_id: String, quantity: int = 1) -> bool:
-	if item_id.is_empty() or quantity <= 0:
+	return _can_fit_after_reservations(item_id, quantity)
+
+
+func reserve_item_capacity(item_id: String, quantity: int = 1) -> Variant:
+	if not _can_fit_after_reservations(item_id, quantity):
+		return null
+	var token := RefCounted.new()
+	_capacity_reservations[token.get_instance_id()] = {
+		"token": token,
+		"item_id": item_id,
+		"quantity": quantity,
+	}
+	return token
+
+
+func has_item_capacity_reservation(token: Variant) -> bool:
+	return token is RefCounted and _capacity_reservations.has(token.get_instance_id())
+
+
+func release_item_capacity_reservation(token: Variant) -> bool:
+	if not has_item_capacity_reservation(token):
 		return false
-	var item_data = GameDataScript.get_item(item_id)
-	if item_data == null:
+	_capacity_reservations.erase(token.get_instance_id())
+	return true
+
+
+func commit_item_capacity_reservation(token: Variant) -> bool:
+	if not has_item_capacity_reservation(token):
 		return false
-	var max_stack := int(item_data.get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
-	var capacity := 0
-	for slot in slots:
-		if slot.is_empty():
-			capacity += max_stack
-		elif slot.get("item_id", "") == item_id:
-			capacity += maxi(0, max_stack - int(slot.get("quantity", 0)))
-		if capacity >= quantity:
+	var token_id := int(token.get_instance_id())
+	var reservation := (_capacity_reservations[token_id] as Dictionary).duplicate(true)
+	_capacity_reservations.erase(token_id)
+	if add_item(str(reservation.item_id), int(reservation.quantity)):
+		return true
+	reservation["token"] = token
+	_capacity_reservations[token_id] = reservation
+	return false
+
+
+func _can_fit_after_reservations(item_id: String, quantity: int) -> bool:
+	if item_id.is_empty() or quantity <= 0 or GameDataScript.get_item(item_id) == null:
+		return false
+	var simulated: Array = slots.duplicate(true)
+	var reservation_ids: Array = _capacity_reservations.keys()
+	reservation_ids.sort()
+	for reservation_id in reservation_ids:
+		var reservation := _capacity_reservations[reservation_id] as Dictionary
+		if not _simulate_add_to_slots(
+			simulated,
+			str(reservation.get("item_id", "")),
+			int(reservation.get("quantity", 0))
+		):
+			return false
+	return _simulate_add_to_slots(simulated, item_id, quantity)
+
+
+func _simulate_add_to_slots(simulated: Array, item_id: String, quantity: int) -> bool:
+	var item_data: Variant = GameDataScript.get_item(item_id)
+	if not item_data is Dictionary or quantity <= 0:
+		return false
+	var max_stack := int((item_data as Dictionary).get("max_stack", GameDataScript.DEFAULT_MAX_STACK))
+	var remaining := quantity
+	for index in range(simulated.size()):
+		var slot := simulated[index] as Dictionary
+		if slot.get("item_id", "") != item_id:
+			continue
+		var added := mini(remaining, maxi(0, max_stack - int(slot.get("quantity", 0))))
+		if added > 0:
+			slot["quantity"] = int(slot.get("quantity", 0)) + added
+			remaining -= added
+		if remaining <= 0:
+			return true
+	for index in range(simulated.size()):
+		if not (simulated[index] as Dictionary).is_empty():
+			continue
+		var added := mini(remaining, max_stack)
+		simulated[index] = {"item_id": item_id, "quantity": added}
+		remaining -= added
+		if remaining <= 0:
 			return true
 	return false
 
@@ -185,6 +246,16 @@ func preflight_add_items(requested: Dictionary) -> Dictionary:
 	if requested.is_empty():
 		return result
 	var simulated: Array = slots.duplicate(true)
+	var reservation_ids: Array = _capacity_reservations.keys()
+	reservation_ids.sort()
+	for reservation_id in reservation_ids:
+		var reservation := _capacity_reservations[reservation_id] as Dictionary
+		if not _simulate_add_to_slots(
+			simulated,
+			str(reservation.get("item_id", "")),
+			int(reservation.get("quantity", 0))
+		):
+			return result
 	for slot in simulated:
 		if (slot as Dictionary).is_empty():
 			result.available_slots += 1
@@ -202,7 +273,7 @@ func preflight_add_items(requested: Dictionary) -> Dictionary:
 			return result
 		result.requested_quantity += quantity
 		var remaining_for_slots := quantity
-		for slot_value in slots:
+		for slot_value in simulated:
 			var slot := slot_value as Dictionary
 			if slot.get("item_id", "") == item_id:
 				remaining_for_slots -= mini(remaining_for_slots, maxi(0, max_stack - int(slot.get("quantity", 0))))
@@ -489,6 +560,7 @@ func normalize_saved_state(
 
 
 func reset_slots() -> void:
+	_capacity_reservations.clear()
 	var previous_items := _snapshot_quick_items()
 	slots.clear()
 	slots.resize(max_slots)

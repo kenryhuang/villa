@@ -415,8 +415,8 @@ func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> 
 		):
 			return false
 	elif _has_valid_fishing_configuration():
-		# Legacy saves predate authored fishing spots and begin with fresh daily state.
-		if not bool(_fishing_system.call("reset_state")):
+		# Legacy saves begin with fresh spots but preserve already owned unique catches.
+		if not bool(_fishing_system.call("reset_state", _legacy_fishing_unique_items(data))):
 			return false
 	if data.has("farm_storage"):
 		if (
@@ -1935,6 +1935,23 @@ func _has_valid_fishing_configuration() -> bool:
 			"to_dict", "from_dict", "validate_dict", "cancel", "reset_state",
 		])
 	)
+
+
+func _legacy_fishing_unique_items(data: Dictionary) -> Array:
+	var result: Array = []
+	var discovered: Variant = data.get("discovered_collectibles", [])
+	if discovered is Array and "drift_bottle" in discovered:
+		result.append("drift_bottle")
+	var inventory_value: Variant = data.get("inventory")
+	if inventory_value is Dictionary:
+		var slots_value: Variant = (inventory_value as Dictionary).get("slots", [])
+		if slots_value is Array:
+			for slot_value in slots_value:
+				if slot_value is Dictionary and str((slot_value as Dictionary).get("item_id", "")) == "drift_bottle":
+					if not result.has("drift_bottle"):
+						result.append("drift_bottle")
+					break
+	return result
 
 
 func _has_injected_season_system() -> bool:
