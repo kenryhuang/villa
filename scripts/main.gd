@@ -500,6 +500,11 @@ func _connect_systems() -> bool:
 	if not save_manager_configured:
 		return false
 	if (
+		not save_manager.has_method("configure_fishing_runtime")
+		or not bool(save_manager.call("configure_fishing_runtime", fishing_system))
+	):
+		return false
+	if (
 		not save_manager.has_method("configure_agent_runtime")
 		or not bool(save_manager.call("configure_agent_runtime", agent_runtime))
 		or not bool(agent_runtime.call("configure_save_manager", save_manager))

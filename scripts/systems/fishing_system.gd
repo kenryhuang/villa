@@ -252,7 +252,7 @@ func to_dict() -> Dictionary:
 
 
 func validate_dict(value: Dictionary) -> bool:
-	if int(value.get("version", -1)) != SAVE_VERSION:
+	if not _is_integer_in_range(value.get("version"), SAVE_VERSION, SAVE_VERSION):
 		return false
 	var states: Variant = value.get("spots")
 	var unique_values: Variant = value.get("unique_catches")
@@ -270,10 +270,9 @@ func validate_dict(value: Dictionary) -> bool:
 		if state.keys().size() != 3 or not state.has_all(["success_count", "cast_sequence", "reset_day"]):
 			return false
 		if (
-			not _is_nonnegative_int(state.success_count)
-			or int(state.success_count) > spot.daily_capacity
-			or not _is_nonnegative_int(state.cast_sequence)
-			or not _is_nonnegative_int(state.reset_day)
+			not _is_integer_in_range(state.success_count, 0, spot.daily_capacity)
+			or not _is_integer_in_range(state.cast_sequence, 0, 0x7fffffff)
+			or not _is_integer_in_range(state.reset_day, 0, 0x7fffffff)
 		):
 			return false
 	var seen := {}
@@ -291,10 +290,26 @@ func from_dict(value: Dictionary) -> bool:
 	if not validate_dict(value):
 		return false
 	cancel("restore")
-	_spot_states = (value.spots as Dictionary).duplicate(true)
+	var normalized_states := {}
+	for spot_id_value in (value.spots as Dictionary):
+		var state := (value.spots as Dictionary)[spot_id_value] as Dictionary
+		normalized_states[str(spot_id_value)] = {
+			"success_count": int(state.success_count),
+			"cast_sequence": int(state.cast_sequence),
+			"reset_day": int(state.reset_day),
+		}
+	_spot_states = normalized_states
 	_unique_catches.clear()
 	for item_id in value.unique_catches:
 		_unique_catches[str(item_id)] = true
+	return true
+
+
+func reset_state() -> bool:
+	cancel("reset")
+	for spot_id in _spots:
+		_spot_states[spot_id] = _new_spot_state(0)
+	_unique_catches.clear()
 	return true
 
 
@@ -443,5 +458,11 @@ func _is_unique_item(item_id: String) -> bool:
 	return false
 
 
-func _is_nonnegative_int(value: Variant) -> bool:
-	return typeof(value) == TYPE_INT and int(value) >= 0
+func _is_integer_in_range(value: Variant, minimum: int, maximum: int) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+		and float(value) >= float(minimum)
+		and float(value) <= float(maximum)
+	)

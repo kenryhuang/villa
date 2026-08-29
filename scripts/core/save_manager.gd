@@ -40,6 +40,7 @@ var _notification_system: Variant
 var _state_transition_owner: Variant
 var _farm_storage_system: Variant
 var _agent_runtime: Variant
+var _fishing_system: Variant
 var _restore_transaction_active := false
 var _restore_notification_participants: Array[Node] = []
 
@@ -138,11 +139,21 @@ func configure_agent_runtime(agent_runtime: Variant) -> bool:
 	return true
 
 
+func configure_fishing_runtime(fishing_system: Variant) -> bool:
+	if not _has_methods(fishing_system, [
+		"to_dict", "from_dict", "validate_dict", "cancel", "reset_state",
+	]):
+		return false
+	_fishing_system = fishing_system
+	return true
+
+
 # ============================================================
 # 存档
 # ============================================================
 
 func save_game(slot: int = 0) -> bool:
+	_cancel_transient_actions_for_restore()
 	var data = _gather_save_data()
 	if data.is_empty():
 		return false
@@ -257,6 +268,8 @@ func _gather_save_data() -> Dictionary:
 			data["notifications"] = _notification_system.call("to_dict")
 	if _has_valid_agent_configuration():
 		data["agent_world"] = _agent_runtime.call("to_dict")
+	if _has_valid_fishing_configuration():
+		data["fishing_state"] = _fishing_system.call("to_dict")
 
 	# 存档元数据
 	data["meta"] = {
@@ -373,6 +386,8 @@ func _end_restore_transaction(commit_changes: bool) -> void:
 
 
 func _cancel_transient_actions_for_restore() -> void:
+	if _has_valid_fishing_configuration():
+		_fishing_system.call("cancel", "save_restore")
 	if (
 		_state_transition_owner != null
 		and is_instance_valid(_state_transition_owner)
@@ -393,6 +408,16 @@ func _apply_migrated_save_data(data: Dictionary, replace_game_state := true) -> 
 		or not bool(_agent_runtime.call("from_dict", data["agent_world"]))
 	):
 		return false
+	if data.has("fishing_state"):
+		if (
+			not _has_valid_fishing_configuration()
+			or not bool(_fishing_system.call("from_dict", data["fishing_state"]))
+		):
+			return false
+	elif _has_valid_fishing_configuration():
+		# Legacy saves predate authored fishing spots and begin with fresh daily state.
+		if not bool(_fishing_system.call("reset_state")):
+			return false
 	if data.has("farm_storage"):
 		if (
 			not _has_valid_farm_storage_configuration()
@@ -680,6 +705,12 @@ func _validate_save_data(data: Dictionary) -> bool:
 		not _has_valid_agent_configuration()
 		or not data["agent_world"] is Dictionary
 		or not bool(_agent_runtime.call("validate_dict", data["agent_world"]))
+	):
+		return false
+	if data.has("fishing_state") and (
+		not _has_valid_fishing_configuration()
+		or not data["fishing_state"] is Dictionary
+		or not bool(_fishing_system.call("validate_dict", data["fishing_state"]))
 	):
 		return false
 	var has_layout_snapshot := data.has("grid") or data.has("buildings")
@@ -1893,6 +1924,16 @@ func _has_valid_agent_configuration() -> bool:
 		_agent_runtime != null
 		and is_instance_valid(_agent_runtime)
 		and _has_methods(_agent_runtime, ["to_dict", "from_dict", "validate_dict"])
+	)
+
+
+func _has_valid_fishing_configuration() -> bool:
+	return (
+		_fishing_system != null
+		and is_instance_valid(_fishing_system)
+		and _has_methods(_fishing_system, [
+			"to_dict", "from_dict", "validate_dict", "cancel", "reset_state",
+		])
 	)
 
 
