@@ -43,4 +43,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	card.gui_input.emit(click)
 	assertions.equal(selected, ["grain_seed"], "disabled card ignores whole-card click")
 	assertions.truthy(card.get_node("Content/Details/Status").get_theme_color("font_color").r > 0.6, "disabled reason uses an error color")
+	assertions.truthy(
+		(card.get_node("Content/Icon") as TextureRect).modulate.v < 0.75,
+		"disabled seed card visibly greys its icon"
+	)
+	assertions.truthy(
+		(card.get_node("Content/Details/NameRow/Name") as Label).modulate.v < 0.8,
+		"disabled seed card visibly greys its primary text"
+	)
 	card.free()

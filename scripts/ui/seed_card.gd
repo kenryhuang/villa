@@ -51,6 +51,11 @@ func _apply_configuration() -> void:
 		Color("e58b7c") if disabled else Color("7bd09a")
 	)
 	icon_rect.texture = _pending_data.get("icon") as Texture2D
+	var content_tint := Color(0.56, 0.56, 0.56, 0.82) if disabled else Color.WHITE
+	icon_rect.modulate = content_tint
+	name_label.modulate = content_tint
+	quantity_label.modulate = content_tint
+	metadata_label.modulate = content_tint
 	select_button.disabled = disabled
 	select_button.text = "—" if disabled else "选"
 	select_button.tooltip_text = status_label.text
@@ -80,14 +85,14 @@ func _update_style() -> void:
 	style.content_margin_top = 12.0
 	style.content_margin_right = 14.0
 	style.content_margin_bottom = 12.0
-	style.bg_color = Color(0.075, 0.105, 0.082, 0.94 if not disabled else 0.78)
+	style.bg_color = Color(0.11, 0.11, 0.11, 0.82) if disabled else Color(0.075, 0.105, 0.082, 0.94)
 	style.border_width_left = 2
 	style.border_width_top = 2
 	style.border_width_right = 2
 	style.border_width_bottom = 2
 	style.border_color = Color("d5ad58") if _selected else Color(0.49, 0.42, 0.24, 0.9)
 	if disabled:
-		style.border_color = Color(0.47, 0.31, 0.27, 0.86)
+		style.border_color = Color(0.34, 0.34, 0.34, 0.86)
 	style.corner_radius_top_left = 9
 	style.corner_radius_top_right = 9
 	style.corner_radius_bottom_left = 9

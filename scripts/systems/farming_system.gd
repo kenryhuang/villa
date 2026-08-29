@@ -77,6 +77,25 @@ func is_paused_greenhouse_cell(cell: GridCell) -> bool:
 	return cell != null and _paused_greenhouse_cells.has(GridSystemScript.cell_key(cell.gx, cell.gz))
 
 
+func preview_seed_selection(plant_item_id: String) -> Dictionary:
+	var result := {"ok": false, "reason": "invalid_seed_mapping", "crop_data": null}
+	var data_source = _resolve_game_data()
+	var crop_data: CropData = (
+		data_source.get_crop_for_plant_item(plant_item_id)
+		if data_source != null and data_source.has_method("get_crop_for_plant_item")
+		else null
+	)
+	if crop_data == null:
+		return result
+	result.crop_data = crop_data
+	if crop_data.environment != "greenhouse_only" and not _is_current_season_allowed(crop_data):
+		result.reason = "wrong_season"
+		return result
+	result.ok = true
+	result.reason = ""
+	return result
+
+
 func preview_plant(cell: GridCell, plant_item_id: String) -> Dictionary:
 	var result := {"ok": false, "reason": "invalid_seed_mapping", "crop_data": null}
 	var data_source = _resolve_game_data()
@@ -182,24 +201,16 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 	if data.lifecycle_type not in ["annual", "annual_regrow", "bush", "tree", "vine"]:
 		return {}
 	var harvest_seed := _harvest_seed()
-	var regrowing := data.lifecycle_type in ["annual_regrow", "bush", "tree", "vine"]
-	var post_crop: Variant = null
-	if regrowing:
-		post_crop = (before.crop as Dictionary).duplicate(true)
-		post_crop.growth_progress = 0.0
-		post_crop.is_watered_today = false
-		post_crop.harvest_count = instance.harvest_count + 1
-		post_crop.lifecycle_state = CropInstance.LifecycleState.GROWING
 	return {
 		"items": {str(data.crop_id): instance.calculate_yield(cell.gx, cell.gz, harvest_seed)},
 		"exp": int(data.exp_reward),
 		"harvest_seed": harvest_seed,
-		"regrowing": regrowing,
+		"regrowing": false,
 		"post_growth_progress": 0.0,
-		"post_lifecycle_state": CropInstance.LifecycleState.GROWING if regrowing else null,
-		"post_cell_state": GridCell.State.PLANTED if regrowing else GridCell.State.FARMLAND,
+		"post_lifecycle_state": null,
+		"post_cell_state": GridCell.State.FARMLAND,
 		"post_harvest_count": instance.harvest_count + 1,
-		"post_crop": post_crop,
+		"post_crop": null,
 		"before": before,
 	}
 

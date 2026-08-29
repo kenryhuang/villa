@@ -67,6 +67,7 @@ func configure(
 		or not is_instance_valid(farming)
 		or not is_instance_valid(action_controller)
 		or not farming.has_method("preview_plant")
+		or not farming.has_method("preview_seed_selection")
 		or not action_controller.has_method("set_selected_plant_item_id")
 	):
 		return false
@@ -184,6 +185,11 @@ func _create_seed_row(entry: Dictionary) -> Control:
 	var item_id := str(entry.plant_item_id)
 	var crop := entry.crop as CropData
 	var reason := _disabled_reason(item_id)
+	var available_status := (
+		"请选择温室周围的专用种植格"
+		if crop.environment == "greenhouse_only"
+		else "当前可播种"
+	)
 	var card := SeedCardScene.instantiate()
 	card.name = "Seed_%s" % item_id
 	card.configure({
@@ -193,7 +199,7 @@ func _create_seed_row(entry: Dictionary) -> Control:
 		"growth_text": "成熟约 30 秒 · 浇水约 20 秒",
 		"season_text": _season_text(crop.seasons),
 		"environment_text": _environment_text(crop.environment),
-		"status_text": REASON_LABELS.get(reason, reason) if not reason.is_empty() else "当前可播种",
+		"status_text": REASON_LABELS.get(reason, reason) if not reason.is_empty() else available_status,
 		"disabled": not reason.is_empty(),
 		"disabled_reason": reason,
 		"icon": _seed_icon(crop, item_id),
@@ -212,7 +218,14 @@ func _disabled_reason(plant_item_id: String) -> String:
 	if _crop_for(plant_item_id) == null:
 		return "invalid_seed_mapping"
 	if target_cell == null:
-		return ""
+		var selection_preview: Variant = farming_ref.preview_seed_selection(plant_item_id)
+		if not selection_preview is Dictionary:
+			return "invalid_seed_mapping"
+		return (
+			""
+			if bool((selection_preview as Dictionary).get("ok", false))
+			else str((selection_preview as Dictionary).get("reason", "invalid_seed_mapping"))
+		)
 	var preview: Variant = farming_ref.preview_plant(target_cell, plant_item_id)
 	if not preview is Dictionary:
 		return "invalid_seed_mapping"

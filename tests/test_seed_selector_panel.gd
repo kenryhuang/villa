@@ -21,6 +21,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_ensure_crop("carrot", "carrot_seed", "胡萝卜", 4, [0], "outdoor_or_greenhouse")
 	_ensure_crop("lemon", "lemon_sapling", "柠檬", 5, [], "greenhouse_only", "tree", 3)
 	await _test_owned_seed_rows_and_selection(assertions, tree)
+	await _test_keyboard_open_filters_current_season(assertions, tree)
 	await _test_inventory_refresh_is_deferred_and_coalesced(assertions, tree)
 	await _test_reenter_reconnects_authoritative_events(assertions, tree)
 	await _test_controller_command_and_legacy_migration(assertions, tree)
@@ -138,6 +139,36 @@ func _test_owned_seed_rows_and_selection(assertions: TestAssert, tree: SceneTree
 	assertions.truthy(not panel.visible, "enabled whole-card click confirms and closes")
 	assertions.equal(fixture.controller.get_selected_plant_item_id(), "grain_seed", "confirmation stores the plant item ID")
 	assertions.equal(fixture.inventory.get_item_count("grain_seed"), before, "selection never consumes or moves seed inventory")
+	_free_fixture(fixture)
+	await tree.process_frame
+
+
+func _test_keyboard_open_filters_current_season(assertions: TestAssert, tree: SceneTree) -> void:
+	var fixture := await _make_fixture(tree)
+	var panel = fixture.panel
+	panel.open_for_cell()
+	await tree.process_frame
+	var carrot := _row(panel, "carrot_seed")
+	var lemon := _row(panel, "lemon_sapling")
+	assertions.equal(
+		carrot.get_meta("disabled_reason"),
+		"wrong_season",
+		"keyboard-open selector disables an out-of-season outdoor seed"
+	)
+	assertions.truthy(
+		(carrot.get_node("Content/SelectButton") as Button).disabled,
+		"keyboard-open selector prevents choosing an out-of-season outdoor seed"
+	)
+	assertions.equal(
+		lemon.get_meta("disabled_reason"),
+		"",
+		"keyboard-open selector keeps greenhouse-only seed selectable before choosing a plot"
+	)
+	var greenhouse_hint := (lemon.get_node("Content/Details/Status") as Label).text
+	assertions.truthy(
+		greenhouse_hint.contains("温室") and greenhouse_hint.contains("种植格"),
+		"greenhouse-only seed explains where it can be planted"
+	)
 	_free_fixture(fixture)
 	await tree.process_frame
 
