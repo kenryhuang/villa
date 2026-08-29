@@ -2040,6 +2040,17 @@ func _test_controller_plant_mapping_signal_is_atomic(
 	tree.root.add_child(controller)
 	controller.crop_data_override = crop
 	controller.configure(null, grid, farming, null, null, inventory, null)
+	assertions.equal(
+		controller.get_selected_plant_item_id(),
+		"grain_seed",
+		"legacy seed quick slot migrates to independent seed selection"
+	)
+	assertions.equal(
+		inventory.get_quick_item(PlayerActionControllerScript.SEED_SLOT),
+		"",
+		"legacy seed migration releases the sixth quick slot"
+	)
+	recorder.events.clear()
 	assertions.truthy(
 		not controller._plant(grid.get_cell(2, 2)),
 		"injected plant failure rolls inventory back"
@@ -2049,8 +2060,8 @@ func _test_controller_plant_mapping_signal_is_atomic(
 	assertions.truthy(controller._plant(grid.get_cell(2, 2)), "successful plant follows rollback")
 	assertions.equal(
 		recorder.events,
-		[{"quick_index": 5, "item_id": ""}],
-		"successful plant emits one committed mapping signal"
+		[],
+		"successful plant leaves independent seed selection out of quick-slot mappings"
 	)
 	controller.free()
 	inventory.free()
@@ -2097,6 +2108,17 @@ func _test_controller_plant_exact_preview_and_notifications(
 	var controller = PlayerActionControllerScript.new()
 	tree.root.add_child(controller)
 	controller.configure(null, grid, season_gateway, null, null, inventory, null)
+	assertions.equal(
+		controller.get_selected_plant_item_id(),
+		"grain_seed",
+		"exact planting fixture migrates the selected seed independently"
+	)
+	assertions.equal(
+		inventory.get_quick_item(PlayerActionControllerScript.SEED_SLOT),
+		"",
+		"exact planting fixture releases the legacy seed quick slot"
+	)
+	mapping_events.events.clear()
 	var removal_observer := PlantRemovalObserver.new()
 	removal_observer.farming = farming
 	removal_observer.inventory = inventory
@@ -2135,11 +2157,8 @@ func _test_controller_plant_exact_preview_and_notifications(
 	assertions.equal(inventory.get_item_count("grain_seed"), 2, "successful listener inventory mutation is retained")
 	assertions.equal(
 		mapping_events.events,
-		[
-			{"quick_index": PlayerActionControllerScript.SEED_SLOT, "item_id": ""},
-			{"quick_index": PlayerActionControllerScript.SEED_SLOT, "item_id": "grain_seed"},
-		],
-		"successful planting publishes the committed removal before the listener's retained mapping change"
+		[],
+		"successful planting and listener refill preserve independent seed selection"
 	)
 
 	event_bus.item_removed.disconnect(removal_observer.on_removed)

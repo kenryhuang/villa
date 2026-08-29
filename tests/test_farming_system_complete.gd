@@ -51,6 +51,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	grid.set_cell_state(10, 10, GridCell.State.FARMLAND)
 	var cell := grid.get_cell(10, 10)
 	var crop := _make_crop("winter_test", 2, [SeasonSystemScript.Season.SUMMER])
+	crop.growth_duration_minutes = 2
 	var instance: CropInstance = farming.plant(cell, crop)
 	assertions.truthy(instance != null, "complete system plants a crop")
 	assertions.equal(farming.get_visual_count(), 1, "plant creates one visual")
@@ -66,12 +67,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	instance = farming.plant(cell, crop)
 	assertions.truthy(instance != null, "greenhouse fixture replants after clearing")
 	farming.water(cell)
-	farming.on_day_changed(3)
+	farming.advance_growth_minutes(1)
 	assertions.near(instance.growth_progress, 1.5, 0.001, "greenhouse crop ignores season")
-	farming.on_day_changed(4)
+	farming.advance_growth_minutes(1)
 	assertions.near(instance.growth_progress, 2.0, 0.001, "growth clamps at maturity")
 	assertions.truthy(instance.is_mature(), "crop reports mature")
-	farming.on_day_changed(5)
+	farming.advance_growth_minutes(1)
 	assertions.near(instance.growth_progress, 2.0, 0.001, "mature crop stops advancing")
 
 	var visual := farming.get_crop_visual(cell) as MeshInstance3D

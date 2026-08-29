@@ -73,6 +73,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 
 	crop.crop_id = "grain"
 	crop.growth_days = 3
+	crop.growth_duration_minutes = 3
 	crop.stage_textures.assign(["seed", "sprout", "growing", "mature"])
 	var stage_scenes: Array[String] = []
 	for path in STAGE_PATHS:
@@ -101,7 +102,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			FarmingSystem.crop_visual_seed(cell, crop.crop_id),
 			"visual stores deterministic seed"
 		)
-	farming.on_day_changed(2)
+	farming.advance_growth_minutes(1)
 	visual = farming.get_crop_visual(cell)
 	assertions.equal(visual.get_meta("stage_scene", ""), STAGE_PATHS[1], "growth replaces seed with sprout model")
 	farming.free()
