@@ -74,6 +74,12 @@ const ITEMS := {
 	"peach": {"id": "peach", "name": "桃子", "category": "crop", "sell_price": 18, "buy_price": 0, "base_price": 21, "target_stock": 25, "initial_stock": 20, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
 	"grape": {"id": "grape", "name": "葡萄", "category": "crop", "sell_price": 17, "buy_price": 0, "base_price": 20, "target_stock": 28, "initial_stock": 22, "daily_liquidity": 11, "volatility": "seasonal", "max_stack": 99},
 	"lemon": {"id": "lemon", "name": "柠檬", "category": "crop", "sell_price": 20, "buy_price": 0, "base_price": 24, "target_stock": 20, "initial_stock": 14, "daily_liquidity": 8, "volatility": "seasonal", "max_stack": 99},
+	# 鱼类
+	"creek_crucian": {"id": "creek_crucian", "name": "溪鲫", "category": "fish", "tags": ["fish", "common_fish"], "sell_price": 16, "buy_price": 22, "base_price": 19, "target_stock": 32, "initial_stock": 24, "daily_liquidity": 14, "volatility": "perishable", "max_stack": 99},
+	"river_perch": {"id": "river_perch", "name": "河鲈", "category": "fish", "tags": ["fish", "common_fish"], "sell_price": 23, "buy_price": 31, "base_price": 27, "target_stock": 24, "initial_stock": 17, "daily_liquidity": 10, "volatility": "seasonal", "max_stack": 99},
+	"carp": {"id": "carp", "name": "鲤鱼", "category": "fish", "tags": ["fish", "common_fish"], "sell_price": 28, "buy_price": 36, "base_price": 32, "target_stock": 22, "initial_stock": 15, "daily_liquidity": 9, "volatility": "seasonal", "max_stack": 99},
+	"rainbow_trout": {"id": "rainbow_trout", "name": "虹鳟", "category": "fish", "tags": ["fish", "rare_fish"], "sell_price": 43, "buy_price": 57, "base_price": 50, "target_stock": 12, "initial_stock": 7, "daily_liquidity": 4, "volatility": "rare", "max_stack": 99},
+	"night_catfish": {"id": "night_catfish", "name": "夜鲶", "category": "fish", "tags": ["fish", "rare_fish"], "sell_price": 50, "buy_price": 66, "base_price": 58, "target_stock": 10, "initial_stock": 6, "daily_liquidity": 3, "volatility": "rare", "max_stack": 99},
 	# 材料
 	"wood": {"id": "wood", "name": "木材", "category": "material", "sell_price": 12, "buy_price": 16, "base_price": 14, "target_stock": 80, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
 	"stone": {"id": "stone", "name": "石头", "category": "material", "sell_price": 12, "buy_price": 16, "base_price": 14, "target_stock": 80, "initial_stock": 60, "daily_liquidity": 30, "volatility": "essential", "max_stack": 99},
@@ -117,6 +123,8 @@ const ITEMS := {
 	"fruit_juice": {"id": "fruit_juice", "name": "果汁", "category": "product", "sell_price": 90, "buy_price": 114, "base_price": 102, "target_stock": 18, "initial_stock": 12, "daily_liquidity": 7, "volatility": "perishable", "max_stack": 99},
 	"bread": {"id": "bread", "name": "面包", "category": "product", "sell_price": 102, "buy_price": 130, "base_price": 116, "target_stock": 30, "initial_stock": 24, "daily_liquidity": 14, "volatility": "essential", "max_stack": 99},
 	"honey_cake": {"id": "honey_cake", "name": "蜂蜜蛋糕", "category": "product", "sell_price": 222, "buy_price": 282, "base_price": 252, "target_stock": 14, "initial_stock": 10, "daily_liquidity": 5, "volatility": "luxury", "max_stack": 99},
+	"grilled_fish": {"id": "grilled_fish", "name": "烤鱼", "category": "product", "sell_price": 63, "buy_price": 81, "base_price": 72, "target_stock": 24, "initial_stock": 16, "daily_liquidity": 10, "volatility": "perishable", "max_stack": 99},
+	"pickled_fish": {"id": "pickled_fish", "name": "腌鱼", "category": "product", "sell_price": 106, "buy_price": 134, "base_price": 120, "target_stock": 18, "initial_stock": 11, "daily_liquidity": 7, "volatility": "crafted", "max_stack": 99},
 	# 稀有
 	"moonflower": {"id": "moonflower", "name": "月光花", "category": "rare", "sell_price": 50, "buy_price": 0, "base_price": 60, "target_stock": 8, "initial_stock": 5, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
 	"stardust_fruit": {"id": "stardust_fruit", "name": "星尘果", "category": "rare", "sell_price": 80, "buy_price": 0, "base_price": 95, "target_stock": 6, "initial_stock": 4, "daily_liquidity": 2, "volatility": "rare", "max_stack": 1},
@@ -126,6 +134,7 @@ const ITEMS := {
 # values follow the documented processing ladders, so every recipe can be
 # evaluated by the same market and arbitrage simulation.
 const INVENTORY_ONLY_ITEMS := {
+	"drift_bottle": {"id": "drift_bottle", "name": "漂流瓶", "category": "collectible", "tags": ["fishing_collectible"], "sell_price": 0, "buy_price": 0, "base_price": 0, "max_stack": 1},
 	"wooden_crate": {"id": "wooden_crate", "name": "木箱", "category": "crafted_good", "sell_price": 136, "buy_price": 172, "base_price": 154, "target_stock": 16, "initial_stock": 9, "daily_liquidity": 7, "volatility": "crafted", "max_stack": 99},
 	"furniture": {"id": "furniture", "name": "家具", "category": "crafted_good", "sell_price": 407, "buy_price": 517, "base_price": 462, "target_stock": 7, "initial_stock": 3, "daily_liquidity": 3, "volatility": "crafted", "max_stack": 99},
 	"farm_tools": {"id": "farm_tools", "name": "农具", "category": "crafted_good", "sell_price": 192, "buy_price": 244, "base_price": 218, "target_stock": 12, "initial_stock": 6, "daily_liquidity": 5, "volatility": "crafted", "max_stack": 99},
@@ -138,8 +147,34 @@ const INVENTORY_ONLY_ITEMS := {
 	"jewelry": {"id": "jewelry", "name": "珠宝", "category": "crafted_good", "sell_price": 299, "buy_price": 381, "base_price": 340, "target_stock": 5, "initial_stock": 2, "daily_liquidity": 2, "volatility": "luxury", "max_stack": 99},
 }
 
+# Season values follow SeasonSystem.Season: spring=0, summer=1, autumn=2, winter=3.
+# Hour ranges use inclusive start and exclusive end. An end of 24 includes 23:59.
+const FISHING_TABLES := {
+	"creek": [
+		{"item_id": "creek_crucian", "weight": 48.0, "seasons": [0, 1, 2, 3], "hour_ranges": [[6, 22]], "unique": false},
+		{"item_id": "river_perch", "weight": 25.0, "seasons": [0, 1], "hour_ranges": [[6, 10], [16, 20]], "unique": false},
+		{"item_id": "carp", "weight": 22.0, "seasons": [1, 2], "hour_ranges": [[10, 20]], "unique": false},
+		{"item_id": "rainbow_trout", "weight": 8.0, "seasons": [2, 3], "hour_ranges": [[6, 10]], "unique": false},
+		{"item_id": "night_catfish", "weight": 7.0, "seasons": [1, 2], "hour_ranges": [[20, 24]], "unique": false},
+		{"item_id": "drift_bottle", "weight": 1.0, "seasons": [0, 1, 2, 3], "hour_ranges": [[0, 24]], "unique": true},
+	],
+}
+
 static func get_item(item_id: String):
 	return ITEMS.get(item_id, INVENTORY_ONLY_ITEMS.get(item_id, null))
+
+
+static func item_matches_tag(item_id: String, tag: String) -> bool:
+	if item_id.is_empty() or tag.is_empty():
+		return false
+	var item: Variant = get_item(item_id)
+	if not item is Dictionary:
+		return false
+	var definition := item as Dictionary
+	if str(definition.get("category", "")) == tag:
+		return true
+	var tags: Variant = definition.get("tags", [])
+	return tags is Array and tag in tags
 
 static func get_all_items() -> Array:
 	var result := []

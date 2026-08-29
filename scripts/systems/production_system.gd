@@ -228,19 +228,11 @@ func preflight_recipe(
 	if state.jobs.size() >= state.max_queue_slots:
 		failure.reason = "queue_full"
 		return failure
-	var required := _multiplied_counts(recipe.inputs, batches)
-	if required.is_empty() or int(recipe.duration_minutes) > MAX_SAFE_INTEGER / batches:
+	var resolution := _resolve_recipe_inputs(recipe, batches, inventory)
+	if not bool(resolution.get("valid", false)) or int(recipe.duration_minutes) > MAX_SAFE_INTEGER / batches:
 		return failure
-	var missing := {}
-	for item_id in required:
-		var available := (
-			_item_container_router.get_count(str(item_id))
-			if is_instance_valid(_item_container_router)
-			else inventory.get_item_count(str(item_id))
-		)
-		var shortfall := int(required[item_id]) - available
-		if shortfall > 0:
-			missing[item_id] = shortfall
+	var required: Dictionary = resolution.get("inputs", {})
+	var missing: Dictionary = resolution.get("missing", {})
 	if not missing.is_empty():
 		failure.reason = "missing_inputs"
 		failure.missing = missing
@@ -253,6 +245,71 @@ func preflight_recipe(
 		"outputs": _multiplied_counts(recipe.outputs, batches),
 		"duration_minutes": int(recipe.duration_minutes) * batches,
 	}
+
+
+func _resolve_recipe_inputs(
+	recipe: Dictionary,
+	batches: int,
+	inventory: InventorySystem
+) -> Dictionary:
+	var direct_inputs: Variant = recipe.get("inputs", {})
+	var selector_values: Variant = recipe.get("input_selectors", [])
+	if not direct_inputs is Dictionary or not selector_values is Array:
+		return {"valid": false, "inputs": {}, "missing": {}}
+	var required := _multiplied_counts(direct_inputs as Dictionary, batches)
+	if (direct_inputs as Dictionary).size() > 0 and required.is_empty():
+		return {"valid": false, "inputs": {}, "missing": {}}
+	var missing := {}
+	for item_id in required:
+		var shortfall := int(required[item_id]) - _available_recipe_input(str(item_id), inventory)
+		if shortfall > 0:
+			missing[item_id] = shortfall
+	var candidate_ids: Array[String] = []
+	for definition_value in GameDataScript.get_all_items():
+		if not definition_value is Dictionary:
+			continue
+		var candidate_id := str((definition_value as Dictionary).get("id", ""))
+		if not candidate_id.is_empty() and not candidate_id in candidate_ids:
+			candidate_ids.append(candidate_id)
+	candidate_ids.sort()
+	for selector_value in selector_values:
+		if not selector_value is Dictionary:
+			return {"valid": false, "inputs": {}, "missing": {}}
+		var selector := selector_value as Dictionary
+		var tag := str(selector.get("tag", ""))
+		var base_quantity := int(selector.get("quantity", 0))
+		if (
+			tag.is_empty()
+			or base_quantity <= 0
+			or base_quantity > MAX_SAFE_INTEGER / batches
+		):
+			return {"valid": false, "inputs": {}, "missing": {}}
+		var remaining := base_quantity * batches
+		for candidate_id in candidate_ids:
+			if remaining <= 0:
+				break
+			if not GameDataScript.item_matches_tag(candidate_id, tag):
+				continue
+			var available := _available_recipe_input(candidate_id, inventory) - int(required.get(candidate_id, 0))
+			var chosen := mini(maxi(available, 0), remaining)
+			if chosen <= 0:
+				continue
+			required[candidate_id] = int(required.get(candidate_id, 0)) + chosen
+			remaining -= chosen
+		if remaining > 0:
+			var missing_key := "tag:%s" % tag
+			missing[missing_key] = int(missing.get(missing_key, 0)) + remaining
+	if required.is_empty():
+		return {"valid": false, "inputs": {}, "missing": {}}
+	return {"valid": true, "inputs": required, "missing": missing}
+
+
+func _available_recipe_input(item_id: String, inventory: InventorySystem) -> int:
+	return (
+		_item_container_router.get_count(item_id)
+		if is_instance_valid(_item_container_router)
+		else inventory.get_item_count(item_id)
+	)
 
 
 func start_recipe(

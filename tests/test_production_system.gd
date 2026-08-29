@@ -226,6 +226,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_owned_nodes.clear()
 	_test_state_round_trip(assertions)
 	_test_queue_lifecycle(assertions)
+	_test_tagged_recipe_inputs(assertions)
 	_test_freed_registered_buildings_are_pruned(assertions)
 	_test_unfinished_building_lifecycle(assertions)
 	_test_start_failures_are_atomic(assertions)
@@ -605,6 +606,37 @@ func _test_queue_lifecycle(assertions: TestAssert) -> void:
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 0, "multi-batch waits full duration")
 	production.advance_minutes(1)
 	assertions.equal(workbench.producer_state.get_output_count("plank"), 2, "multi-batch stores multiplied output")
+
+
+func _test_tagged_recipe_inputs(assertions: TestAssert) -> void:
+	var production := _production()
+	var workshop := _building("food_workshop")
+	var inventory := _inventory()
+	inventory.add_item("salt", 1)
+	inventory.add_item("river_perch", 1)
+	inventory.add_item("creek_crucian", 1)
+	inventory.add_item("rainbow_trout", 2)
+	var preflight := production.preflight_recipe(workshop, "grilled_fish", 1, inventory)
+	assertions.truthy(bool(preflight.get("ok", false)), "tagged fish recipe resolves available common fish")
+	assertions.equal(
+		preflight.get("inputs"),
+		{"salt": 1, "creek_crucian": 1, "river_perch": 1},
+		"tagged recipe locks concrete fish stacks in stable item-id order"
+	)
+	assertions.truthy(production.start_recipe(workshop, "grilled_fish", 1, inventory), "resolved tagged recipe starts")
+	assertions.equal(inventory.get_item_count("salt"), 0, "tagged recipe consumes concrete salt")
+	assertions.equal(inventory.get_item_count("creek_crucian"), 0, "tagged recipe consumes first common fish")
+	assertions.equal(inventory.get_item_count("river_perch"), 0, "tagged recipe consumes second common fish")
+	assertions.equal(inventory.get_item_count("rainbow_trout"), 2, "tagged recipe preserves rare fish")
+	production.advance_minutes(int(RecipeDatabaseScript.get_recipe("grilled_fish").duration_minutes))
+	assertions.equal(workshop.producer_state.outputs, {"grilled_fish": 2}, "tagged recipe completes normally")
+
+	var shortage_inventory := _inventory()
+	shortage_inventory.add_item("salt", 1)
+	shortage_inventory.add_item("creek_crucian", 1)
+	var shortage := production.preflight_recipe(_building("food_workshop"), "grilled_fish", 1, shortage_inventory)
+	assertions.equal(shortage.get("reason"), "missing_inputs", "tag shortage uses normal missing-input failure")
+	assertions.equal(shortage.get("missing"), {"tag:common_fish": 1}, "tag shortage reports the missing common-fish quantity")
 
 
 func _test_unfinished_building_lifecycle(assertions: TestAssert) -> void:

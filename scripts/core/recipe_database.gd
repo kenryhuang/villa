@@ -27,6 +27,8 @@ static var _recipes: Dictionary = {
 	"fruit_juice": _recipe("fruit_juice", "果汁", "food_workshop", {"strawberry": 3, "glass_bottle": 1}, {"fruit_juice": 1}, FOOD_DURATION_MINUTES, 1),
 	"bread": _recipe("bread", "面包", "food_workshop", {"flour": 2, "egg": 1}, {"bread": 2}, FOOD_DURATION_MINUTES, 1),
 	"honey_cake": _recipe("honey_cake", "蜂蜜蛋糕", "food_workshop", {"flour": 2, "egg": 1, "honey": 1}, {"honey_cake": 1}, FOOD_DURATION_MINUTES, 2),
+	"grilled_fish": _recipe("grilled_fish", "烤鱼", "food_workshop", {"salt": 1}, {"grilled_fish": 2}, FOOD_DURATION_MINUTES, 1, [{"tag": "common_fish", "quantity": 2}]),
+	"pickled_fish": _recipe("pickled_fish", "腌鱼", "food_workshop", {"salt": 1, "glass_jar": 1}, {"pickled_fish": 1}, FOOD_DURATION_MINUTES, 1, [{"tag": "common_fish", "quantity": 2}]),
 	"wooden_crate": _recipe("wooden_crate", "木箱", "workbench", {"plank": 2, "rope": 1}, {"wooden_crate": 1}, DURABLE_DURATION_MINUTES, 1),
 	"furniture": _recipe("furniture", "家具", "workbench", {"plank": 4, "cloth": 2}, {"furniture": 1}, DURABLE_DURATION_MINUTES, 2),
 	"farm_tools": _recipe("farm_tools", "农具", "workbench", {"iron_ingot": 2, "plank": 1}, {"farm_tools": 1}, DURABLE_DURATION_MINUTES, 1),
@@ -47,7 +49,8 @@ static func _recipe(
 	inputs: Dictionary,
 	outputs: Dictionary,
 	duration_minutes: int,
-	unlock_tier: int
+	unlock_tier: int,
+	input_selectors: Array = []
 ) -> Dictionary:
 	return {
 		"id": id,
@@ -57,6 +60,7 @@ static func _recipe(
 		"outputs": outputs,
 		"duration_minutes": duration_minutes,
 		"unlock_tier": unlock_tier,
+		"input_selectors": input_selectors,
 	}
 
 

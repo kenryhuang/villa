@@ -6,6 +6,7 @@ const GeographicQueryServiceTest = preload(
 const BuildingEconomyEffectsTest = preload(
 	"res://tests/test_building_economy_effects.gd"
 )
+const FishingDataTest = preload("res://tests/test_fishing_data.gd")
 const TestAssertScript = preload("res://tests/test_assert.gd")
 
 
@@ -17,6 +18,7 @@ func _run() -> void:
 	var assertions := TestAssertScript.new()
 	GeographicQueryServiceTest.new().run(assertions)
 	BuildingEconomyEffectsTest.new().run(assertions, self)
+	FishingDataTest.new().run(assertions)
 	if assertions.failures.is_empty():
 		print("PASS: %d geography and fishing checks" % assertions.checks)
 		quit(0)

@@ -51,6 +51,8 @@ const FAMILY_BY_ITEM := {
 	"sachet": "textile",
 	"bread": "food",
 	"honey_cake": "food",
+	"grilled_fish": "food",
+	"pickled_fish": "bottle",
 	"bouquet": "food",
 	"honey": "small",
 	"beeswax": "small",
