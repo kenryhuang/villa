@@ -848,6 +848,10 @@ func _setup_ui() -> void:
 		var building_unlock_callback := Callable(self, "_on_building_unlock_requested")
 		if not building_economy_ui.is_connected("unlock_requested", building_unlock_callback):
 			building_economy_ui.connect("unlock_requested", building_unlock_callback)
+	if building_economy_ui != null and building_economy_ui.has_signal("greenhouse_planting_requested"):
+		var greenhouse_callback := Callable(self, "_on_greenhouse_planting_requested")
+		if not building_economy_ui.is_connected("greenhouse_planting_requested", greenhouse_callback):
+			building_economy_ui.connect("greenhouse_planting_requested", greenhouse_callback)
 	if economy_notification_ui and not economy_notification_ui.configure(
 		economy_notification_system,
 		self
@@ -1098,6 +1102,18 @@ func close_economy_modal() -> void:
 		building_economy_ui.close()
 	if economy_notification_ui != null:
 		economy_notification_ui.hide_center()
+
+
+func _on_greenhouse_planting_requested(_building: BuildingInstance) -> void:
+	if action_controller == null:
+		return
+	action_controller.switch_mode(PlayerActionController.ActionMode.FARMING)
+	action_controller.select_mode_slot(0)
+	_publish_hud_message(
+		"building",
+		"info",
+		"温室的 8 个种植格已高亮：先用锄头开垦，再选择种苗播种"
+	)
 
 
 func navigate_economy_target(target_type: String, target_id: String) -> bool:

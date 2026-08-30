@@ -9,11 +9,14 @@ const FIELD_LABELS := {
 	"feed_days": "可用天数", "daily_egg_output": "每日鸡蛋",
 	"water_connected": "连接水源", "irrigation_radius": "灌溉半径",
 	"covered_farmland": "覆盖农田", "covered_greenhouses": "覆盖温室",
-	"planting_cells": "种植格数", "season_protection": "季节保护",
+	"growth_multiplier": "生长速度", "planting_cells": "种植格数",
+	"tilled_cells": "已开垦", "planted_cells": "已播种", "mature_cells": "已成熟",
+	"season_protection": "季节保护",
 	"crop_maturity_days": "作物成熟", "waterwheel_connected": "连接水车",
 	"planting_hint": "种植提示", "nearby_buildings": "附近建筑",
 	"pending_outputs": "待收产物", "total_capacity": "总容量",
 	"output_table": "产出预览", "next_settlement": "下次结算",
+	"cycle_status": "工作状态", "cycle_progress": "本轮进度", "cycle_remaining": "剩余时间",
 	"maintenance": "维护状态", "stored_capacity": "仓储容量", "depth_tier": "开采深度",
 }
 
@@ -30,6 +33,7 @@ class ViewData:
 
 
 signal snapshot_changed(state: String)
+signal planting_requested(building: BuildingInstance)
 
 
 @onready var summary_fields: VBoxContainer = $SummaryFields
@@ -38,6 +42,7 @@ signal snapshot_changed(state: String)
 @onready var storage_list: VBoxContainer = $StorageList
 @onready var collect_all_button: Button = $Actions/CollectAllButton
 @onready var range_preview_button: Button = $Actions/RangePreviewButton
+@onready var start_planting_button: Button = $Actions/StartPlantingButton
 @onready var feedback_label: Label = $FeedbackLabel
 
 var view_data := ViewData.new()
@@ -59,6 +64,8 @@ func _ready() -> void:
 		collect_all_button.pressed.connect(request_collect_all)
 	if not range_preview_button.toggled.is_connected(set_range_preview):
 		range_preview_button.toggled.connect(set_range_preview)
+	if not start_planting_button.pressed.is_connected(request_start_planting):
+		start_planting_button.pressed.connect(request_start_planting)
 	_render()
 
 
@@ -164,14 +171,31 @@ func request_collect_group_item(source_key: String, item_id: String) -> void:
 
 func set_range_preview(enabled: bool) -> void:
 	var building := _building()
-	_range_preview_enabled = enabled and building != null and building.building_id == "waterwheel"
+	_range_preview_enabled = (
+		enabled
+		and building != null
+		and building.building_id in ["waterwheel", "greenhouse"]
+	)
 	if _range_overlay != null:
 		if _range_preview_enabled and _production != null:
-			_range_overlay.show_cells(_production.get_irrigated_cells(building), _grid)
+			if building.building_id == "greenhouse":
+				_range_overlay.show_cells(
+					_production.get_greenhouse_cells(building),
+					_grid,
+					WorldRangeOverlay.GREENHOUSE_COLOR
+				)
+			else:
+				_range_overlay.show_cells(_production.get_irrigated_cells(building), _grid)
 		else:
 			_range_overlay.clear()
 	if is_node_ready():
 		range_preview_button.set_pressed_no_signal(_range_preview_enabled)
+
+
+func request_start_planting() -> void:
+	var building := _building()
+	if building != null and building.building_id == "greenhouse":
+		planting_requested.emit(building)
 
 
 func refresh_snapshot() -> void:
@@ -232,19 +256,25 @@ func _view_data_for(building: BuildingInstance) -> ViewData:
 				"irrigation_radius": float(config.get("radius", 4)),
 				"covered_farmland": irrigated.size(),
 				"covered_greenhouses": _production.get_covered_greenhouses(building).size(),
+				"growth_multiplier": 1.5,
 				"range_cells": irrigated.duplicate(),
 			}
 			result.actions = ["range_preview"]
 		"greenhouse":
 			result.kind = "greenhouse"
+			var plots: Dictionary = _production.get_greenhouse_plot_snapshot(building)
 			result.fields = {
-				"planting_cells": int(config.get("planting_cells", _production.get_greenhouse_cells(building).size())),
+				"planting_cells": int(plots.get("total", config.get("planting_cells", 8))),
+				"tilled_cells": int(plots.get("tilled", 0)),
+				"planted_cells": int(plots.get("planted", 0)),
+				"mature_cells": int(plots.get("mature", 0)),
 				"water_connected": _production.is_greenhouse_water_connected(building),
 				"season_protection": true,
 				"crop_maturity_days": _greenhouse_crop_maturity(building),
 				"waterwheel_connected": _production.is_greenhouse_water_connected(building),
-				"planting_hint": "温室只提供环境，仍需播种",
+				"planting_hint": "高亮格需先用锄头开垦，再选择种苗",
 			}
+			result.actions = ["range_preview", "start_planting"]
 		"barn":
 			result.kind = "barn"
 			var nearby := _nearby_output_groups(building)
@@ -257,12 +287,16 @@ func _view_data_for(building: BuildingInstance) -> ViewData:
 			result.actions = ["collect"]
 		"lumberyard", "quarry", "mine":
 			result.kind = "resource"
+			var cycle: Dictionary = _production.get_resource_cycle_snapshot(building)
+			result.state = str(cycle.get("status", "running")).replace("_", "-")
 			var quantity := 0
 			for value in result.storage.values():
 				quantity += int(value)
 			result.fields = {
 				"output_table": _resource_output_table(config),
-				"next_settlement": _production.get_current_day() + 1,
+				"cycle_status": str(cycle.get("status", "running")),
+				"cycle_progress": {"current": int(cycle.get("progress_minutes", 0)), "maximum": int(cycle.get("duration_minutes", 1))},
+				"cycle_remaining": int(cycle.get("remaining_minutes", 0)),
 				"maintenance": {"due_day": int(snapshot.get("maintenance_due_day", -1)), "paused": bool(snapshot.get("maintenance_paused", false))},
 				"stored_capacity": {"used": quantity, "maximum": int(snapshot.get("storage_quantity_capacity", 0))},
 			}
@@ -307,7 +341,9 @@ func _render() -> void:
 	collect_all_button.visible = "collect" in view_data.actions
 	collect_all_button.disabled = int(view_data.fields.get("pending_outputs", 0)) <= 0 if view_data.kind == "barn" else view_data.storage.is_empty()
 	range_preview_button.visible = "range_preview" in view_data.actions
+	range_preview_button.text = "显示种植区" if view_data.kind == "greenhouse" else "范围预览"
 	range_preview_button.set_pressed_no_signal(_range_preview_enabled)
+	start_planting_button.visible = "start_planting" in view_data.actions
 	feedback_label.text = failure_message
 
 
@@ -376,7 +412,7 @@ func _nearby_output_groups(barn: BuildingInstance) -> Dictionary:
 func _resource_output_table(config: Dictionary) -> Dictionary:
 	if config.has("depth_outputs"):
 		return (config.get("depth_outputs", {}) as Dictionary).duplicate(true)
-	var result: Dictionary = (config.get("daily_output", {}) as Dictionary).duplicate(true)
+	var result: Dictionary = (config.get("cycle_output", {}) as Dictionary).duplicate(true)
 	if config.has("bonus_output"):
 		result["bonus"] = (config.get("bonus_output", {}) as Dictionary).duplicate(true)
 	return result
@@ -421,6 +457,17 @@ func _field_value(field_name: String, value: Variant) -> String:
 		"irrigation_radius":
 			var radius := float(value)
 			return "%d格" % roundi(radius) if is_equal_approx(radius, float(roundi(radius))) else "%.1f格" % radius
+		"growth_multiplier":
+			return "%.1f×" % float(value)
+		"cycle_status":
+			return {"running": "运行中", "output_full": "暂存已满", "maintenance_paused": "维护暂停"}.get(str(value), str(value))
+		"cycle_progress":
+			var progress := value as Dictionary if value is Dictionary else {}
+			return "%d/%d 游戏分钟" % [int(progress.get("current", 0)), int(progress.get("maximum", 0))]
+		"cycle_remaining":
+			var minutes := int(value)
+			var seconds := ceili(float(minutes) / 3.6)
+			return "%d 游戏分钟（约 %d 秒）" % [minutes, seconds]
 		"next_output", "next_settlement":
 			return "第%d天" % int(value)
 		"feed_days":

@@ -56,6 +56,12 @@ layout_mode = 2
 toggle_mode = true
 text = "范围预览"
 
+[node name="StartPlantingButton" type="Button" parent="Actions"]
+visible = false
+custom_minimum_size = Vector2(170, 48)
+layout_mode = 2
+text = "开始种植"
+
 [node name="FeedbackLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.71, 0.36, 0.29, 1)

@@ -2,19 +2,24 @@ class_name WorldRangeOverlay
 extends Node3D
 
 const CELL_COLOR := Color(0.16, 0.72, 0.66, 0.36)
+const GREENHOUSE_COLOR := Color(0.42, 0.86, 0.38, 0.42)
 const CELL_SIZE := 0.92
 const CELL_LIFT := 0.055
 
 var cells: Array[Vector2i] = []
 
 
-func show_cells(next_cells: Array[Vector2i], grid_system: GridSystem = null) -> void:
+func show_cells(
+	next_cells: Array[Vector2i],
+	grid_system: GridSystem = null,
+	color: Color = CELL_COLOR
+) -> void:
 	clear()
 	for cell in next_cells:
 		if cell not in cells:
 			cells.append(cell)
 	for cell in cells:
-		add_child(_cell_mesh(cell, grid_system))
+		add_child(_cell_mesh(cell, grid_system, color))
 
 
 func clear() -> void:
@@ -28,14 +33,14 @@ func _exit_tree() -> void:
 	clear()
 
 
-func _cell_mesh(cell: Vector2i, grid_system: GridSystem) -> MeshInstance3D:
+func _cell_mesh(cell: Vector2i, grid_system: GridSystem, color: Color) -> MeshInstance3D:
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "RangeCell_%d_%d" % [cell.x, cell.y]
 	var mesh := PlaneMesh.new()
 	mesh.size = Vector2(CELL_SIZE, CELL_SIZE)
 	var material := StandardMaterial3D.new()
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = CELL_COLOR
+	material.albedo_color = color
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	material.no_depth_test = false

@@ -1414,6 +1414,30 @@ func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Diction
 	return result
 
 
+func get_greenhouse_plot_snapshot(greenhouse: BuildingInstance) -> Dictionary:
+	var cells := get_greenhouse_cells(greenhouse)
+	var result := {
+		"total": cells.size(),
+		"tilled": 0,
+		"planted": 0,
+		"mature": 0,
+		"cells": cells.duplicate(),
+	}
+	if _grid_system == null:
+		return result
+	for position in cells:
+		var cell := _grid_system.get_cell(position.x, position.y)
+		if cell == null:
+			continue
+		if cell.state in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
+			result.tilled += 1
+		if cell.state == GridCell.State.PLANTED and cell.crop_instance != null:
+			result.planted += 1
+			if cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.MATURE:
+				result.mature += 1
+	return result
+
+
 func _is_crop_cell_currently_irrigated(position: Vector2i) -> bool:
 	for waterwheel in _valid_registered_buildings():
 		if (

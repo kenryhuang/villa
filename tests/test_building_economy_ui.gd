@@ -72,6 +72,7 @@ func _test_scene_contracts(assertions: TestAssert) -> void:
 		"StorageList",
 		"Actions/CollectAllButton",
 		"Actions/RangePreviewButton",
+		"Actions/StartPlantingButton",
 		"FeedbackLabel",
 	])
 	_check_scene(assertions, MAINTENANCE_SCENE, [
@@ -352,12 +353,12 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	var required := {
 		"beehive": ["next_output", "mature_flowers", "bonus", "storage"],
 		"chicken_coop": ["animal_count", "feed_stock", "feed_days", "daily_egg_output"],
-		"waterwheel": ["water_connected", "irrigation_radius", "covered_farmland", "covered_greenhouses"],
-		"greenhouse": ["planting_cells", "water_connected", "season_protection", "crop_maturity_days", "waterwheel_connected", "planting_hint"],
+		"waterwheel": ["water_connected", "irrigation_radius", "covered_farmland", "covered_greenhouses", "growth_multiplier"],
+		"greenhouse": ["planting_cells", "tilled_cells", "planted_cells", "mature_cells", "water_connected", "season_protection", "crop_maturity_days", "waterwheel_connected", "planting_hint"],
 		"barn": ["nearby_buildings", "pending_outputs", "total_capacity", "grouped_outputs"],
-		"lumberyard": ["output_table", "next_settlement", "maintenance", "stored_capacity"],
-		"quarry": ["output_table", "next_settlement", "maintenance", "stored_capacity"],
-		"mine": ["output_table", "next_settlement", "maintenance", "stored_capacity", "depth_tier"],
+		"lumberyard": ["output_table", "cycle_status", "cycle_progress", "cycle_remaining", "maintenance", "stored_capacity"],
+		"quarry": ["output_table", "cycle_status", "cycle_progress", "cycle_remaining", "maintenance", "stored_capacity"],
+		"mine": ["output_table", "cycle_status", "cycle_progress", "cycle_remaining", "maintenance", "stored_capacity", "depth_tier"],
 	}
 	for building_id in required:
 		var building := _scene_building(building_id, tree)
@@ -378,6 +379,7 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	assertions.equal(panel.summary_fields.get_node("IrrigationRadiusLabel").text, "灌溉半径：4格", "waterwheel radius uses a friendly Chinese unit")
 	assertions.equal(panel.summary_fields.get_node("CoveredFarmlandLabel").text, "覆盖农田：4", "waterwheel farmland label is localized")
 	assertions.equal(panel.summary_fields.get_node("CoveredGreenhousesLabel").text, "覆盖温室：0", "waterwheel greenhouse label is localized")
+	assertions.equal(panel.summary_fields.get_node("GrowthMultiplierLabel").text, "生长速度：1.5×", "waterwheel growth benefit is explicit")
 	var seeded_greenhouse := _scene_building("greenhouse", tree)
 	seeded_greenhouse.grid_x = 10
 	seeded_greenhouse.grid_z = 10
@@ -394,6 +396,20 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	panel.show_building(seeded_greenhouse)
 	var maturity: Array = panel.view_data.fields.crop_maturity_days
 	assertions.equal(maturity[0].get("remaining_days"), 3, "greenhouse UI renders authoritative crop maturity instead of a placeholder")
+	assertions.equal(panel.view_data.fields.planting_cells, 8, "greenhouse UI exposes all authoritative planting cells")
+	assertions.equal(panel.view_data.fields.planted_cells, 1, "greenhouse UI counts planted cells")
+	assertions.equal(panel.view_data.fields.mature_cells, 0, "greenhouse UI counts mature cells")
+	assertions.truthy(panel.get_node("Actions/StartPlantingButton").visible, "greenhouse exposes a visible planting action")
+
+	var quarry_status := _scene_building("quarry", tree)
+	quarry_status.grid_x = 40
+	quarry_status.grid_z = 20
+	production.register_building(quarry_status)
+	production.advance_minutes(75)
+	panel.show_building(quarry_status)
+	assertions.equal(panel.view_data.fields.cycle_status, "running", "resource panel exposes running state")
+	assertions.equal(panel.view_data.fields.cycle_progress, {"current": 75, "maximum": 180}, "resource panel exposes exact cycle progress")
+	assertions.equal(panel.view_data.fields.cycle_remaining, 105, "resource panel exposes exact remaining minutes")
 
 	var coop := _scene_building("chicken_coop", tree)
 	production.register_building(coop)
@@ -505,6 +521,21 @@ func _test_range_and_modal_lifecycle(assertions: TestAssert, tree: SceneTree) ->
 	ui.range_overlay.show_cells(production.get_irrigated_cells(waterwheel), grid)
 	assertions.truthy(tree.paused, "range overlay alone never changes pause state")
 	ui.range_overlay.clear()
+	var greenhouse := _scene_building("greenhouse", tree)
+	greenhouse.grid_x = 20
+	greenhouse.grid_z = 20
+	production.register_building(greenhouse)
+	assertions.truthy(ui.open_for(greenhouse), "greenhouse opens status panel")
+	ui.status_panel.set_range_preview(true)
+	assertions.equal(ui.range_overlay.cells, production.get_greenhouse_cells(greenhouse), "greenhouse range preview exposes all eight planting cells")
+	var planting_requests: Array[BuildingInstance] = []
+	ui.greenhouse_planting_requested.connect(func(building: BuildingInstance) -> void: planting_requests.append(building))
+	ui.status_panel.get_node("Actions/StartPlantingButton").pressed.emit()
+	assertions.equal(planting_requests, [greenhouse], "greenhouse planting action emits the authoritative building")
+	assertions.truthy(not ui.is_open(), "greenhouse planting action closes the modal")
+	assertions.equal(ui.range_overlay.cells, production.get_greenhouse_cells(greenhouse), "planting action retains a short-lived world guide")
+	ui.clear_world_guide()
+	assertions.equal(ui.range_overlay.cells, [], "world guide can be cleared authoritatively")
 	tree.paused = false
 
 
@@ -521,6 +552,12 @@ func _test_main_route_and_construction_regression(assertions: TestAssert, tree: 
 		assertions.truthy(
 			main.building_economy_ui.is_connected("unlock_requested", Callable(main, "_on_building_unlock_requested")),
 			"Main connects recipe unlock navigation exactly once"
+		)
+	assertions.truthy(main.building_economy_ui.has_signal("greenhouse_planting_requested"), "Main building UI exposes greenhouse planting navigation")
+	if main.building_economy_ui.has_signal("greenhouse_planting_requested"):
+		assertions.truthy(
+			main.building_economy_ui.is_connected("greenhouse_planting_requested", Callable(main, "_on_greenhouse_planting_requested")),
+			"Main connects greenhouse planting navigation exactly once"
 		)
 	var completed := _scene_building("windmill", tree)
 	main.call("_on_building_instance_placed", completed)

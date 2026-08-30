@@ -2,6 +2,7 @@ class_name BuildingEconomyUI
 extends Control
 
 signal unlock_requested(service_id: String)
+signal greenhouse_planting_requested(building: BuildingInstance)
 
 const PRODUCTION_BUILDINGS := [
 	"windmill", "workbench", "stone_kiln", "furnace", "food_workshop", "textile_machine",
@@ -33,6 +34,7 @@ var _building_ref: WeakRef
 var _is_open := false
 var animations_enabled := true
 var _panel_tween: Tween
+var _world_guide_generation := 0
 
 
 func _ready() -> void:
@@ -136,6 +138,11 @@ func close() -> void:
 
 func on_build_mode_entered() -> void:
 	close()
+	range_overlay.clear()
+
+
+func clear_world_guide() -> void:
+	_world_guide_generation += 1
 	range_overlay.clear()
 
 
@@ -290,7 +297,11 @@ func _production_state_text(state: String = "") -> String:
 
 
 func _status_state_text(state: String) -> String:
-	return "维护暂停" if state == "maintenance-paused" else "运行中"
+	if state == "maintenance-paused":
+		return "维护暂停"
+	if state == "output-full":
+		return "仓满暂停"
+	return "运行中"
 
 
 func _connect_panel_signals() -> void:
@@ -303,6 +314,9 @@ func _connect_panel_signals() -> void:
 	var status_callback := Callable(self, "_on_status_snapshot_changed")
 	if not status_panel.snapshot_changed.is_connected(status_callback):
 		status_panel.snapshot_changed.connect(status_callback)
+	var planting_callback := Callable(self, "_on_greenhouse_planting_requested")
+	if not status_panel.planting_requested.is_connected(planting_callback):
+		status_panel.planting_requested.connect(planting_callback)
 
 
 func _on_production_snapshot_changed(state: String) -> void:
@@ -313,6 +327,24 @@ func _on_production_snapshot_changed(state: String) -> void:
 func _on_status_snapshot_changed(state: String) -> void:
 	if _is_open and status_panel.visible:
 		state_label.text = _status_state_text(state)
+
+
+func _on_greenhouse_planting_requested(building: BuildingInstance) -> void:
+	if building == null or building != current_building() or _production == null:
+		return
+	var cells := _production.get_greenhouse_cells(building)
+	close()
+	range_overlay.show_cells(cells, _grid, WorldRangeOverlay.GREENHOUSE_COLOR)
+	_world_guide_generation += 1
+	var generation := _world_guide_generation
+	var timer := get_tree().create_timer(8.0, true)
+	timer.timeout.connect(_on_world_guide_timeout.bind(generation))
+	greenhouse_planting_requested.emit(building)
+
+
+func _on_world_guide_timeout(generation: int) -> void:
+	if generation == _world_guide_generation:
+		clear_world_guide()
 
 
 func _on_unlock_requested(service_id: String) -> void:
