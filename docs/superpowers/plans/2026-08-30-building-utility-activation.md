@@ -18,17 +18,17 @@
 - Modify: `scripts/systems/farming_system.gd`
 - Modify: `scripts/systems/production_system.gd`
 
-- [ ] **Step 1: Write failing farming tests**
+- [x] **Step 1: Write failing farming tests**
 
 Add assertions that `set_automatic_irrigation_cells([Vector2i(...)])` gives a planted crop `1.5x` minute growth before and after `on_day_changed()`, while removing the cell restores `1.0x` growth.
 
-- [ ] **Step 2: Run the farming suite and verify RED**
+- [x] **Step 2: Run the farming suite and verify RED**
 
 Run: `godot_console --headless --path . --script res://tests/run_farming_system_tests.gd`
 
 Expected: failure because automatic irrigation APIs do not exist.
 
-- [ ] **Step 3: Implement the farming environment**
+- [x] **Step 3: Implement the farming environment**
 
 Add an automatic-irrigation key set to `FarmingSystem`, public setter/query methods, and use it in the continuous growth multiplier:
 
@@ -40,15 +40,15 @@ var multiplier := 1.5 if (
 ) else 1.0
 ```
 
-- [ ] **Step 4: Write failing production coverage tests**
+- [x] **Step 4: Write failing production coverage tests**
 
 Cover active waterside waterwheels, invalid water placement, maintenance pause, repair, removal, and verify `apply_daily_effects()` no longer writes ordinary water flags.
 
-- [ ] **Step 5: Implement authoritative coverage publication**
+- [x] **Step 5: Implement authoritative coverage publication**
 
 Build and publish all active waterwheel coverage positions from `ProductionSystem` whenever building/environment state changes. Keep `get_irrigated_cells()` as the filtered UI view.
 
-- [ ] **Step 6: Run focused suites and verify GREEN**
+- [x] **Step 6: Run focused suites and verify GREEN**
 
 Run both farming and production test runners. Expected: zero failures in both focused suites.
 
@@ -59,17 +59,17 @@ Run both farming and production test runners. Expected: zero failures in both fo
 - Modify: `scripts/systems/production_system.gd`
 - Modify: `tests/test_production_system.gd`
 
-- [ ] **Step 1: Write failing cycle tests**
+- [x] **Step 1: Write failing cycle tests**
 
 Add exact boundary tests for lumberyard/quarry 180 minutes and mine 240 minutes, multi-cycle advancement, every-third-cycle bonuses, maintenance pause, output-full pause, and collection recovery.
 
-- [ ] **Step 2: Run production tests and verify RED**
+- [x] **Step 2: Run production tests and verify RED**
 
 Run: `godot_console --headless --path . --script res://tests/run_production_system_tests.gd`
 
 Expected: cycle snapshot or cycle output assertions fail.
 
-- [ ] **Step 3: Add cycle configuration and runtime state**
+- [x] **Step 3: Add cycle configuration and runtime state**
 
 Replace daily resource output configuration with `cycle_minutes`, `cycle_output`, and `bonus_every_cycles`. Add:
 
@@ -80,11 +80,11 @@ var resource_completed_cycles: Dictionary = {}
 
 Advance resource cycles from `advance_minutes()`, validate storage per completion, emit `production_output_changed`, `production_job_completed`, and transition-only `production_output_blocked` events.
 
-- [ ] **Step 4: Remove duplicate daily resource settlement**
+- [x] **Step 4: Remove duplicate daily resource settlement**
 
 Keep daily passive settlement for beehives and chicken coops only. Resource buildings must never also produce through `finish_daily_outputs()`.
 
-- [ ] **Step 5: Run production tests and verify GREEN**
+- [x] **Step 5: Run production tests and verify GREEN**
 
 Expected: exact cycle and existing recipe/passive tests pass.
 
@@ -95,15 +95,15 @@ Expected: exact cycle and existing recipe/passive tests pass.
 - Modify: `tests/test_production_system.gd`
 - Modify: `tests/test_economy_save_integration.gd`
 
-- [ ] **Step 1: Write failing serialization tests**
+- [x] **Step 1: Write failing serialization tests**
 
 Require deterministic version-3 `resource_cycles` records, exact restoration, v1/v2 zero-state migration, and atomic rejection of duplicate keys, negative values, non-integers, or progress at/above the configured safe maximum.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Expected: version and missing field assertions fail.
 
-- [ ] **Step 3: Implement version-3 serialization**
+- [x] **Step 3: Implement version-3 serialization**
 
 Serialize stable records:
 
@@ -117,7 +117,7 @@ Serialize stable records:
 
 Accept versions 1–2 with empty cycle dictionaries and version 3 with strict validation. Clear orphaned keys during building removal/reset.
 
-- [ ] **Step 4: Verify save and production suites**
+- [x] **Step 4: Verify save and production suites**
 
 Run production and economy-save integration runners; compare the latter against its recorded 45/1507 baseline.
 
@@ -131,23 +131,23 @@ Run production and economy-save integration runners; compare the latter against 
 - Modify: `scripts/main.gd`
 - Modify: `tests/test_building_economy_ui.gd`
 
-- [ ] **Step 1: Write failing typed-view and interaction tests**
+- [x] **Step 1: Write failing typed-view and interaction tests**
 
 Require greenhouse plot counts (`tilled`, `planted`, `mature`), waterwheel `growth_multiplier`, resource `cycle_status/progress/remaining`, greenhouse range preview, and a `planting_requested` signal that closes the modal and selects the hoe in farming mode.
 
-- [ ] **Step 2: Run the economy UI suite and verify RED**
+- [x] **Step 2: Run the economy UI suite and verify RED**
 
 Expected: new fields and greenhouse action are absent.
 
-- [ ] **Step 3: Expose runtime snapshots**
+- [x] **Step 3: Expose runtime snapshots**
 
 Add `ProductionSystem.get_greenhouse_plot_snapshot()` and `get_resource_cycle_snapshot()` so UI rendering never reimplements authority rules.
 
-- [ ] **Step 4: Implement reusable panel actions**
+- [x] **Step 4: Implement reusable panel actions**
 
 Allow `WorldRangeOverlay.show_cells()` to take a supplied color. Let the status panel use range preview for both waterwheel and greenhouse, add a greenhouse “开始种植” button/signal, and render resource progress/status clearly in a scroll-safe layout.
 
-- [ ] **Step 5: Wire Main gameplay transition**
+- [x] **Step 5: Wire Main gameplay transition**
 
 On greenhouse planting request, close the modal while retaining a short-lived greenhouse overlay, call:
 
@@ -158,7 +158,7 @@ action_controller.select_mode_slot(0)
 
 Then publish a HUD message explaining that the highlighted eight cells must be hoed before sowing.
 
-- [ ] **Step 6: Run UI and gameplay integration suites**
+- [x] **Step 6: Run UI and gameplay integration suites**
 
 Expected: new tests pass; preserve the recorded unrelated contract-delivery baseline if it remains.
 
@@ -167,20 +167,20 @@ Expected: new tests pass; preserve the recorded unrelated contract-delivery base
 **Files:**
 - Modify: `docs/validation/building-geography-fishing-validation.md`
 
-- [ ] **Step 1: Run focused regressions**
+- [x] **Step 1: Run focused regressions**
 
 Run production, farming, building-system, economy-UI, main-gameplay integration, and editor import checks.
 
-- [ ] **Step 2: Check runtime startup**
+- [x] **Step 2: Check runtime startup**
 
 Run: `godot_console --headless --path . --quit-after 3`
 
 Expected: main scene initializes without new script errors.
 
-- [ ] **Step 3: Record exact evidence**
+- [x] **Step 3: Record exact evidence**
 
 Append commands, pass counts, and any unchanged known baselines to the validation document.
 
-- [ ] **Step 4: Inspect final diff**
+- [x] **Step 4: Inspect final diff**
 
 Confirm no generated captures, save files, import debris, or unrelated changes are staged.

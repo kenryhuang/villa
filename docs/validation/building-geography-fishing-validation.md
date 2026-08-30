@@ -61,3 +61,29 @@
 - 新字段为顶层 `fishing_state`，版本为 `1`。
 - 活动钓鱼会话不保存；保存前先取消会话。已正式投出的耐久/体力不返还，尚未结算的鱼点成功次数不增加。
 - 旧存档没有 `fishing_state` 时，四个鱼点从空的当日状态开始；若旧背包或收集记录已有漂流瓶，会回填唯一鱼获状态，避免重复获得。
+
+## 建筑效用闭环补充验证（2026-08-31）
+
+- 温室直接使用外部世界网格中的 8 个权威种植格；建筑状态面板会显示已耕、已种和成熟数量，并可进入种植模式及显示范围。
+- 水车的有效灌溉范围会跨日持续生效，使范围内作物获得 `1.5x` 生长速度；维护中断、修复和拆除会即时刷新覆盖状态。
+- 伐木场与采石场每 180 游戏分钟完成一轮，矿场每 240 游戏分钟完成一轮；产出库存满后暂停，收取腾出容量后自动恢复。
+- 资源建筑的周期进度、完成轮次和库存使用 `ProductionSystem` 存档协议 v3 持久化；v1/v2 存档按零进度迁移。
+- 温室、水车和资源建筑面板均展示对应的真实运行状态；生产完成、库存满和恢复生产会进入右侧消息栏。
+
+本轮验证结果：
+
+| 命令 | 结果 |
+|---|---:|
+| `run_production_system_tests.gd` | PASS，407 项 |
+| `run_farming_system_tests.gd` | PASS，1837 项 |
+| `run_seed_selector_panel_tests.gd` | PASS，137 项 |
+| `run_building_system_tests.gd` | PASS，3461 项 |
+| `run_building_economy_ui_tests.gd` | PASS，257 项 |
+| `run_economy_ui_responsive_tests.gd` | PASS，763 项 |
+| Godot editor headless import | EXIT 0，无新增解析错误 |
+| 主场景 headless 启动 3 秒 | EXIT 0，无启动错误 |
+
+聚合测试基线保持不变：
+
+- `run_main_gameplay_integration_tests.gd`：`2/1820` 失败，仍为自动种子快捷映射和订单交付初态断言。
+- `run_economy_save_integration_tests.gd`：`45/1507` 失败，仍为此前记录的既有经济存档断言。
