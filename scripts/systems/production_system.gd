@@ -1739,6 +1739,7 @@ func _set_passive_output_blocked(
 		_emit_event("production_output_blocked", [building, passive_id])
 	else:
 		_passive_output_blocked.erase(key)
+		_emit_event("production_output_resumed", [building, passive_id])
 
 
 func _can_store_passive_outputs(
@@ -1852,6 +1853,9 @@ func _advance_resource_building(building: BuildingInstance, minutes: int) -> voi
 		for item_id in output:
 			_emit_event("production_output_changed", [building, str(item_id), state.get_output_count(str(item_id))])
 		_emit_event("production_job_completed", [building, passive_id, output.duplicate(true)])
+		var following_output := _resource_output_for(building, completed + 1)
+		if not _can_store_passive_outputs(building, state, following_output):
+			_set_passive_output_blocked(building, passive_id, true)
 	resource_cycle_progress[key] = progress
 	resource_completed_cycles[key] = completed
 

@@ -408,6 +408,7 @@ func _event_bindings() -> Array:
 		[&"market_caravan_changed", Callable(self, "_on_market_caravan_changed")],
 		[&"production_job_completed", Callable(self, "_on_production_completed")],
 		[&"production_output_blocked", Callable(self, "_on_production_blocked")],
+		[&"production_output_resumed", Callable(self, "_on_production_resumed")],
 		[&"production_feed_shortage", Callable(self, "_on_feed_shortage")],
 		[&"production_maintenance_changed", Callable(self, "_on_maintenance_changed")],
 		[&"order_updated", Callable(self, "_on_order_updated")],
@@ -488,6 +489,10 @@ func _on_production_completed(building: BuildingInstance, recipe_id: String, out
 
 func _on_production_blocked(building: BuildingInstance, _recipe_id: String) -> void:
 	push("full", "产物已满", "%s的产物仓库已满" % _building_name(building), _current_day(), "building" if building != null else "", _building_key(building))
+
+
+func _on_production_resumed(building: BuildingInstance, _recipe_id: String) -> void:
+	push("resumed", "生产恢复", "%s已腾出空间，恢复生产" % _building_name(building), _current_day(), "building" if building != null else "", _building_key(building))
 
 
 func _on_feed_shortage(

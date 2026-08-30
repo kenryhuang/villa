@@ -173,6 +173,7 @@ class ProductionEventRecorder:
 	var feed_changes: Array[Dictionary] = []
 	var completed: Array[Dictionary] = []
 	var blocked: Array[Dictionary] = []
+	var resumed: Array[Dictionary] = []
 	var maintenance: Array[Dictionary] = []
 
 	func on_feed_shortage(
@@ -193,6 +194,9 @@ class ProductionEventRecorder:
 
 	func on_blocked(building: BuildingInstance, recipe_id: String) -> void:
 		blocked.append({"building": building, "recipe_id": recipe_id})
+
+	func on_resumed(building: BuildingInstance, recipe_id: String) -> void:
+		resumed.append({"building": building, "recipe_id": recipe_id})
 
 	func on_maintenance(building: BuildingInstance, due_day: int) -> void:
 		maintenance.append({"building": building, "due_day": due_day})
@@ -1177,6 +1181,7 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 	event_bus.production_feed_shortage.connect(recorder.on_feed_shortage)
 	event_bus.production_job_completed.connect(recorder.on_completed)
 	event_bus.production_output_blocked.connect(recorder.on_blocked)
+	event_bus.production_output_resumed.connect(recorder.on_resumed)
 	event_bus.production_maintenance_changed.connect(recorder.on_maintenance)
 
 	var maintenance_building := _building("workbench")
@@ -1220,6 +1225,9 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 	assertions.truthy(production.add_input(chicken, "animal_feed", 1, feed_inventory), "feeding uses real production transfer")
 	var output_inventory := _inventory()
 	assertions.truthy(production.collect_all(lumberyard, output_inventory), "collection clears passive-full state")
+	assertions.equal(recorder.resumed.size(), 1, "collecting a full resource building emits one recovery transition")
+	if not recorder.resumed.is_empty():
+		assertions.equal(recorder.resumed[0].recipe_id, "cycle:lumberyard", "resource recovery keeps stable source id")
 	production.finish_daily_outputs(5)
 	production.advance_minutes(720)
 	production.finish_daily_outputs(6)
@@ -1250,6 +1258,7 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 	event_bus.production_feed_shortage.disconnect(recorder.on_feed_shortage)
 	event_bus.production_job_completed.disconnect(recorder.on_completed)
 	event_bus.production_output_blocked.disconnect(recorder.on_blocked)
+	event_bus.production_output_resumed.disconnect(recorder.on_resumed)
 	event_bus.production_maintenance_changed.disconnect(recorder.on_maintenance)
 
 

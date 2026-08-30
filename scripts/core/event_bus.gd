@@ -35,6 +35,7 @@ signal market_caravan_changed(
 signal production_job_started(building: BuildingInstance, recipe_id: String, batches: int)
 signal production_job_completed(building: BuildingInstance, recipe_id: String, outputs: Dictionary)
 signal production_output_blocked(building: BuildingInstance, recipe_id: String)
+signal production_output_resumed(building: BuildingInstance, recipe_id: String)
 signal production_feed_shortage(
 	building: BuildingInstance,
 	item_id: String,
