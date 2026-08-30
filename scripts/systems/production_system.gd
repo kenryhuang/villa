@@ -1040,11 +1040,29 @@ func to_dict() -> Dictionary:
 			"building_key": key,
 			"remaining_seconds": float(repair_remaining_seconds[key]),
 		})
+	var resource_records: Array[Dictionary] = []
+	var resource_keys: Array[String] = []
+	for key_value in resource_cycle_progress.keys():
+		var key := str(key_value)
+		if key not in resource_keys:
+			resource_keys.append(key)
+	for key_value in resource_completed_cycles.keys():
+		var key := str(key_value)
+		if key not in resource_keys:
+			resource_keys.append(key)
+	resource_keys.sort()
+	for key in resource_keys:
+		resource_records.append({
+			"building_key": key,
+			"progress_minutes": int(resource_cycle_progress.get(key, 0)),
+			"completed_cycles": int(resource_completed_cycles.get(key, 0)),
+		})
 	return {
-		"version": 2,
+		"version": 3,
 		"maintenance": records,
 		"speed_accumulators": speed_records,
 		"repairing": repairing_records,
+		"resource_cycles": resource_records,
 	}
 
 
@@ -1059,6 +1077,8 @@ func from_dict(data: Dictionary) -> bool:
 	maintenance_due_days = parsed.maintenance
 	speed_accumulators = parsed.speed
 	repair_remaining_seconds = parsed.repairing
+	resource_cycle_progress = parsed.resource_progress
+	resource_completed_cycles = parsed.resource_completed
 	_refresh_greenhouse_cells()
 	for building in _valid_registered_buildings():
 		refresh_indicator(building)
@@ -1073,6 +1093,8 @@ func reset_maintenance(total_day: int = 0) -> bool:
 	maintenance_due_days.clear()
 	repair_remaining_seconds.clear()
 	speed_accumulators.clear()
+	resource_cycle_progress.clear()
+	resource_completed_cycles.clear()
 	_feed_shortage_active.clear()
 	_passive_output_blocked.clear()
 	_refresh_greenhouse_cells()
@@ -1087,14 +1109,17 @@ static func building_key(building: BuildingInstance) -> String:
 
 
 func _parse_maintenance(data: Dictionary) -> Variant:
-	if not _integer_number_in_range(data.get("version"), 1, 2):
+	if not _integer_number_in_range(data.get("version"), 1, 3):
 		return null
 	var version := int(data.version)
-	if data.size() != (3 if version == 1 else 4):
+	var expected_size := 3 if version == 1 else (4 if version == 2 else 5)
+	if data.size() != expected_size:
 		return null
 	if not data.get("maintenance") is Array or not data.get("speed_accumulators") is Array:
 		return null
-	if version == 2 and not data.get("repairing") is Array:
+	if version >= 2 and not data.get("repairing") is Array:
+		return null
+	if version == 3 and not data.get("resource_cycles") is Array:
 		return null
 	var maintenance := {}
 	for value in data.maintenance:
@@ -1123,7 +1148,7 @@ func _parse_maintenance(data: Dictionary) -> Variant:
 			return null
 		speed[key] = int(record.remainder)
 	var repairing := {}
-	if version == 2:
+	if version >= 2:
 		for value in data.repairing:
 			if not value is Dictionary:
 				return null
@@ -1139,11 +1164,52 @@ func _parse_maintenance(data: Dictionary) -> Variant:
 			):
 				return null
 			repairing[key] = float(remaining)
-	return {"maintenance": maintenance, "speed": speed, "repairing": repairing}
+	var resource_progress := {}
+	var resource_completed := {}
+	if version == 3:
+		for value in data.resource_cycles:
+			if not value is Dictionary:
+				return null
+			var record := value as Dictionary
+			if record.size() != 3 or not record.get("building_key") is String:
+				return null
+			var key := str(record.building_key)
+			if not _valid_resource_cycle_key(key) or resource_progress.has(key):
+				return null
+			var duration := _resource_cycle_duration_for_key(key)
+			if (
+				not _integer_number_in_range(record.get("progress_minutes"), 0, duration - 1)
+				or not _integer_number_in_range(record.get("completed_cycles"), 0, MAX_SAFE_INTEGER)
+			):
+				return null
+			resource_progress[key] = int(record.progress_minutes)
+			resource_completed[key] = int(record.completed_cycles)
+	return {
+		"maintenance": maintenance,
+		"speed": speed,
+		"repairing": repairing,
+		"resource_progress": resource_progress,
+		"resource_completed": resource_completed,
+	}
 
 
 func _valid_building_key(key: String) -> bool:
 	return ProgressionScript.is_valid_building_key(key)
+
+
+func _valid_resource_cycle_key(key: String) -> bool:
+	if not _valid_building_key(key):
+		return false
+	var building_id := key.split(":", false)[0]
+	var source := GameDataScript.get_building(building_id)
+	return str(source.get("effect", "")) == "resource_output"
+
+
+func _resource_cycle_duration_for_key(key: String) -> int:
+	var building_id := key.split(":", false)[0]
+	var source := GameDataScript.get_building(building_id)
+	var config: Dictionary = source.get("effect_config", {})
+	return maxi(1, int(config.get("cycle_minutes", 180)))
 
 
 static func _integer_number_in_range(value: Variant, minimum: int, maximum: int) -> bool:

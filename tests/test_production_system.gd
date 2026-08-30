@@ -261,6 +261,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_greenhouse_restore_transaction(assertions)
 	_test_waterwheel_persistent_irrigation(assertions)
 	_test_resource_minute_cycles(assertions)
+	_test_resource_cycle_serialization(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
@@ -597,6 +598,45 @@ func _test_resource_minute_cycles(assertions: TestAssert) -> void:
 	assertions.equal(mine.producer_state.outputs, {"copper_ore": 2}, "maintenance-paused mine creates no output")
 	production.finish_daily_outputs(1)
 	assertions.equal(mine.producer_state.outputs, {"copper_ore": 2}, "daily settlement does not duplicate resource output")
+
+
+func _test_resource_cycle_serialization(assertions: TestAssert) -> void:
+	var original := _production()
+	var quarry := _building("quarry")
+	quarry.grid_x = 12
+	quarry.grid_z = 9
+	original.register_building(quarry)
+	original.advance_minutes(73)
+	var saved: Dictionary = original.to_dict()
+	assertions.equal(saved.get("version"), 3, "resource cycles upgrade production save protocol to version three")
+	assertions.equal((saved.get("resource_cycles", []) as Array).size(), 1, "resource save contains one stable building record")
+	if not (saved.get("resource_cycles", []) as Array).is_empty():
+		assertions.equal(saved.resource_cycles[0].get("building_key"), ProductionSystemScript.building_key(quarry), "resource save uses stable building key")
+		assertions.equal(saved.resource_cycles[0].get("progress_minutes"), 73, "resource save keeps exact partial progress")
+		assertions.equal(saved.resource_cycles[0].get("completed_cycles"), 0, "resource save keeps exact completed count")
+
+	var restored := _production()
+	var restored_quarry := _building("quarry")
+	restored_quarry.grid_x = 12
+	restored_quarry.grid_z = 9
+	restored.register_building(restored_quarry)
+	assertions.truthy(restored.from_dict(saved), "version-three resource cycles restore")
+	assertions.equal(restored.get_resource_cycle_snapshot(restored_quarry).get("progress_minutes"), 73, "restored quarry resumes exact progress")
+	var before := restored.to_dict()
+	var duplicate := saved.duplicate(true)
+	duplicate.resource_cycles.append(duplicate.resource_cycles[0].duplicate(true))
+	assertions.truthy(not restored.from_dict(duplicate), "duplicate resource cycle keys are rejected")
+	assertions.equal(restored.to_dict(), before, "invalid resource cycle restore is atomic")
+	var invalid_progress := saved.duplicate(true)
+	invalid_progress.resource_cycles[0].progress_minutes = 180
+	assertions.truthy(not restored.from_dict(invalid_progress), "cycle progress at duration boundary is rejected")
+	assertions.equal(restored.to_dict(), before, "out-of-range resource progress leaves state unchanged")
+
+	var legacy_v2 := saved.duplicate(true)
+	legacy_v2.version = 2
+	legacy_v2.erase("resource_cycles")
+	assertions.truthy(restored.from_dict(legacy_v2), "version-two production saves remain readable")
+	assertions.equal(restored.get_resource_cycle_snapshot(restored_quarry).get("progress_minutes"), 0, "legacy production save initializes resource progress at zero")
 
 
 func _test_state_round_trip(assertions: TestAssert) -> void:
