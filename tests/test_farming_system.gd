@@ -237,12 +237,41 @@ func run(assertions: TestAssert) -> void:
 	season.free()
 	grid.free()
 
+	_test_automatic_irrigation_survives_day_change(assertions)
 	_test_stage_only_growth_change(assertions)
 	_test_environment_lifecycle_transitions(assertions)
 	_test_save_seed_controls_deterministic_yield(assertions)
 	_test_exact_harvest_post_states(assertions)
 	_test_deterministic_harvest_transaction(assertions)
 	_test_reentrant_harvest_observes_final_state(assertions)
+
+
+func _test_automatic_irrigation_survives_day_change(assertions: TestAssert) -> void:
+	var grid = GridSystemScript.new()
+	var farming = FarmingSystemScript.new()
+	var season = SeasonSystemScript.new()
+	season.current_season = SeasonSystemScript.Season.SPRING
+	assertions.truthy(farming.configure(grid, season, null), "automatic irrigation fixture configures")
+	grid.set_cell_state(6, 6, FARMLAND)
+	var cell := grid.get_cell(6, 6)
+	var crop := _make_crop_data("irrigated_turnip", 6)
+	crop.growth_duration_minutes = 216
+	assertions.truthy(farming.plant(cell, crop) != null, "automatic irrigation fixture plants")
+	farming.set_automatic_irrigation_cells([Vector2i(6, 6)])
+	assertions.truthy(farming.is_automatically_irrigated_cell(cell), "waterwheel coverage is queryable")
+	farming.advance_growth_minutes(36)
+	assertions.near(cell.crop_instance.growth_progress, 1.5, 0.001, "automatic irrigation applies watered growth")
+	farming.on_day_changed(2)
+	assertions.truthy(not cell.watered and not cell.crop_instance.is_watered_today, "day change clears only ordinary watering")
+	farming.advance_growth_minutes(36)
+	assertions.near(cell.crop_instance.growth_progress, 3.0, 0.001, "automatic irrigation survives day change")
+	farming.set_automatic_irrigation_cells([])
+	assertions.truthy(not farming.is_automatically_irrigated_cell(cell), "removing waterwheel coverage updates authority")
+	farming.advance_growth_minutes(36)
+	assertions.near(cell.crop_instance.growth_progress, 4.0, 0.001, "removed automatic irrigation restores normal growth")
+	farming.free()
+	season.free()
+	grid.free()
 
 
 func _test_stage_only_growth_change(assertions: TestAssert) -> void:

@@ -130,6 +130,22 @@ class GreenhouseFarmingRecorder:
 		rebuild_calls += 1
 
 
+class GeographyDouble:
+	extends RefCounted
+	var grid: GridSystem
+	var connected := true
+
+	func configure(value: GridSystem) -> bool:
+		grid = value
+		return true
+
+	func get_grid() -> GridSystem:
+		return grid
+
+	func footprint_borders_natural_water(_origin: Vector2i, _footprint: Vector2i) -> bool:
+		return connected
+
+
 class InventorySignalRecorder:
 	extends RefCounted
 
@@ -243,6 +259,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_barn_central_storage_upgrade_semantics(assertions)
 	_test_greenhouse_maintenance_coverage(assertions)
 	_test_greenhouse_restore_transaction(assertions)
+	_test_waterwheel_persistent_irrigation(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
@@ -502,6 +519,39 @@ func _test_greenhouse_restore_transaction(assertions: TestAssert) -> void:
 	assertions.equal(farming.active_cells, [], "restore finalization removes stale active coverage")
 	assertions.equal(farming.paused_cells, expected, "restore finalization publishes paused coverage")
 	assertions.equal(farming.rebuild_calls, 1, "restore finalization rebuilds crop visuals once")
+	farming.free()
+	grid.free()
+
+
+func _test_waterwheel_persistent_irrigation(assertions: TestAssert) -> void:
+	var production := _production()
+	var grid := GridSystem.new()
+	var farming := FarmingSystem.new()
+	var geography := GeographyDouble.new()
+	assertions.truthy(farming.configure(grid, SeasonSystem.new(), null), "waterwheel farming fixture configures")
+	assertions.truthy(production.configure(grid, farming, null, null, null, geography), "waterwheel production fixture configures")
+	grid.set_cell_state(8, 8, GridCell.State.FARMLAND)
+	var waterwheel := _building("waterwheel")
+	waterwheel.grid_x = 7
+	waterwheel.grid_z = 7
+	assertions.truthy(production.register_building(waterwheel), "waterside waterwheel registers")
+	var irrigated := grid.get_cell(8, 8)
+	assertions.truthy(farming.is_automatically_irrigated_cell(irrigated), "active waterside waterwheel publishes persistent coverage")
+	production.apply_daily_effects(1)
+	assertions.truthy(not irrigated.watered, "daily waterwheel effects do not write disposable water flags")
+	assertions.truthy(production.set_maintenance_due_day(waterwheel, 0), "waterwheel can pause for maintenance")
+	assertions.truthy(not farming.is_automatically_irrigated_cell(irrigated), "maintenance pause removes automatic coverage")
+	assertions.truthy(production.set_maintenance_due_day(waterwheel, 99), "waterwheel maintenance can recover")
+	assertions.truthy(farming.is_automatically_irrigated_cell(irrigated), "maintenance recovery republishes automatic coverage")
+	geography.connected = false
+	production.apply_daily_effects(2)
+	assertions.truthy(not farming.is_automatically_irrigated_cell(irrigated), "disconnected waterwheel publishes no coverage")
+	geography.connected = true
+	production.apply_daily_effects(3)
+	assertions.truthy(farming.is_automatically_irrigated_cell(irrigated), "restored water connection republishes coverage")
+	production.unregister_building(waterwheel)
+	assertions.truthy(not farming.is_automatically_irrigated_cell(irrigated), "removed waterwheel clears coverage")
+	farming.season_system.free()
 	farming.free()
 	grid.free()
 

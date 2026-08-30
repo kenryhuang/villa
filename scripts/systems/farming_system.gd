@@ -14,6 +14,7 @@ var _event_bus
 var _crop_visuals := {}
 var _greenhouse_cells := {}
 var _paused_greenhouse_cells := {}
+var _automatic_irrigation_cells := {}
 var _game_data
 var _prepared_harvest_owner: WeakRef
 var _prepared_harvest: Dictionary = {}
@@ -75,6 +76,21 @@ func is_greenhouse_cell(cell: GridCell) -> bool:
 
 func is_paused_greenhouse_cell(cell: GridCell) -> bool:
 	return cell != null and _paused_greenhouse_cells.has(GridSystemScript.cell_key(cell.gx, cell.gz))
+
+
+func set_automatic_irrigation_cells(cells: Array) -> void:
+	var next_cells := {}
+	for position in cells:
+		if position is Vector2i:
+			next_cells[GridSystemScript.cell_key(position.x, position.y)] = true
+	_automatic_irrigation_cells = next_cells
+
+
+func is_automatically_irrigated_cell(cell: GridCell) -> bool:
+	return (
+		cell != null
+		and _automatic_irrigation_cells.has(GridSystemScript.cell_key(cell.gx, cell.gz))
+	)
 
 
 func preview_seed_selection(plant_item_id: String) -> Dictionary:
@@ -687,7 +703,11 @@ func advance_growth_minutes(minutes: int) -> void:
 			continue
 		var old_stage := instance.get_current_stage()
 		var old_state := instance.lifecycle_state
-		var multiplier := 1.5 if cell.watered or instance.is_watered_today else 1.0
+		var multiplier := 1.5 if (
+			cell.watered
+			or instance.is_watered_today
+			or is_automatically_irrigated_cell(cell)
+		) else 1.0
 		if not instance.advance_game_minutes(minutes, multiplier):
 			continue
 		var next_stage := instance.get_current_stage()

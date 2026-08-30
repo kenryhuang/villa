@@ -640,17 +640,7 @@ func apply_daily_effects(total_day: int) -> void:
 	if total_day <= _last_daily_effects_day:
 		return
 	_last_daily_effects_day = total_day
-	for building in _valid_registered_buildings():
-		if (
-			not _building_is_active(building)
-			or not _has_effect(building, "irrigation")
-			or is_maintenance_paused(building)
-		):
-			continue
-		if not is_water_connected(building):
-			continue
-		for position in get_irrigated_cells(building):
-			_grid_system.water_cell(position.x, position.y)
+	_refresh_automatic_irrigation_cells()
 
 
 func finish_daily_outputs(total_day: int) -> void:
@@ -1806,6 +1796,7 @@ func _refresh_greenhouse_cells() -> void:
 		return
 	if _restore_transaction_depth > 0:
 		return
+	_refresh_automatic_irrigation_cells()
 	var active_cells: Array = []
 	var paused_cells: Array = []
 	var active_seen := {}
@@ -1843,6 +1834,30 @@ func _refresh_greenhouse_cells() -> void:
 	_last_active_greenhouse_cells = active_signature
 	_last_paused_greenhouse_cells = paused_signature
 	_farming_system.set_greenhouse_cells(active_cells, effective_paused)
+
+
+func _refresh_automatic_irrigation_cells() -> void:
+	if (
+		_farming_system == null
+		or not _farming_system.has_method("set_automatic_irrigation_cells")
+		or _restore_transaction_depth > 0
+	):
+		return
+	var cells: Array = []
+	var seen := {}
+	for building in _valid_registered_buildings():
+		if (
+			not _building_is_active(building)
+			or not _has_effect(building, "irrigation")
+			or is_maintenance_paused(building)
+			or not is_water_connected(building)
+		):
+			continue
+		for position in get_waterwheel_covered_cells(building):
+			if not seen.has(position):
+				seen[position] = true
+				cells.append(position)
+	_farming_system.call("set_automatic_irrigation_cells", cells)
 
 
 func _crop_has_flower_tag(crop_data: Variant) -> bool:
