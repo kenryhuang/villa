@@ -260,6 +260,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_greenhouse_maintenance_coverage(assertions)
 	_test_greenhouse_restore_transaction(assertions)
 	_test_waterwheel_persistent_irrigation(assertions)
+	_test_resource_minute_cycles(assertions)
 	_test_authoritative_passive_events(assertions, tree)
 	_cleanup_nodes()
 
@@ -554,6 +555,48 @@ func _test_waterwheel_persistent_irrigation(assertions: TestAssert) -> void:
 	farming.season_system.free()
 	farming.free()
 	grid.free()
+
+
+func _test_resource_minute_cycles(assertions: TestAssert) -> void:
+	var production := _production()
+	var quarry := _building("quarry")
+	quarry.grid_x = 3
+	quarry.grid_z = 4
+	assertions.truthy(production.register_building(quarry), "quarry cycle fixture registers")
+	var initial: Dictionary = production.get_resource_cycle_snapshot(quarry)
+	assertions.equal(initial.get("duration_minutes"), 180, "quarry cycle lasts three game hours")
+	assertions.equal(initial.get("progress_minutes"), 0, "new quarry starts at zero progress")
+	production.advance_minutes(179)
+	assertions.equal(quarry.producer_state.outputs, {}, "quarry produces nothing before exact boundary")
+	assertions.equal(production.get_resource_cycle_snapshot(quarry).get("remaining_minutes"), 1, "quarry exposes exact remaining minute")
+	production.advance_minutes(1)
+	assertions.equal(quarry.producer_state.outputs, {"stone": 3}, "quarry produces stone at 180 minutes")
+	production.advance_minutes(360)
+	assertions.equal(quarry.producer_state.outputs, {"stone": 9, "coal": 1}, "third quarry cycle adds coal bonus")
+	assertions.equal(production.get_resource_cycle_snapshot(quarry).get("completed_cycles"), 3, "quarry tracks completed cycles")
+	var full_progress := int(production.get_resource_cycle_snapshot(quarry).get("progress_minutes", -1))
+	production.advance_minutes(180)
+	assertions.equal(int(production.get_resource_cycle_snapshot(quarry).get("progress_minutes", -1)), full_progress, "full quarry pauses cycle progress")
+	var inventory := _inventory()
+	assertions.truthy(production.collect_all(quarry, inventory), "quarry output can be collected")
+	production.advance_minutes(180)
+	assertions.equal(quarry.producer_state.outputs, {"stone": 3}, "quarry resumes after collection")
+
+	var mine := _building("mine")
+	mine.grid_x = 8
+	mine.grid_z = 8
+	assertions.truthy(production.register_building(mine), "mine cycle fixture registers")
+	assertions.equal(production.get_resource_cycle_snapshot(mine).get("duration_minutes"), 240, "mine cycle lasts four game hours")
+	production.advance_minutes(239)
+	assertions.equal(mine.producer_state.outputs, {}, "mine produces nothing before exact boundary")
+	production.advance_minutes(1)
+	assertions.equal(mine.producer_state.outputs, {"copper_ore": 2}, "shallow mine produces copper on cycle")
+	assertions.truthy(production.set_maintenance_due_day(mine, 0), "mine maintenance can pause cycle")
+	production.advance_minutes(240)
+	assertions.equal(production.get_resource_cycle_snapshot(mine).get("progress_minutes"), 0, "maintenance-paused mine does not advance")
+	assertions.equal(mine.producer_state.outputs, {"copper_ore": 2}, "maintenance-paused mine creates no output")
+	production.finish_daily_outputs(1)
+	assertions.equal(mine.producer_state.outputs, {"copper_ore": 2}, "daily settlement does not duplicate resource output")
 
 
 func _test_state_round_trip(assertions: TestAssert) -> void:
@@ -1120,7 +1163,9 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 	assertions.truthy(production.register_building(lumberyard), "passive output fixture registers")
 
 	production.finish_daily_outputs(3)
+	production.advance_minutes(180)
 	production.finish_daily_outputs(4)
+	production.advance_minutes(180)
 	assertions.equal(recorder.feed_changes.size(), 1, "continuous feed shortage emits once")
 	if not recorder.feed_changes.is_empty():
 		assertions.equal(recorder.feed_changes[0].item_id, "animal_feed", "feed event keeps stable item id")
@@ -1128,7 +1173,7 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 		assertions.equal(recorder.feed_changes[0].total_day, 3, "feed event keeps transition day")
 	assertions.equal(recorder.blocked.size(), 1, "continuous passive-full state emits once")
 	if not recorder.blocked.is_empty():
-		assertions.equal(recorder.blocked[0].recipe_id, "passive:lumberyard", "passive-full event has stable source id")
+		assertions.equal(recorder.blocked[0].recipe_id, "cycle:lumberyard", "resource-full event has stable source id")
 
 	var feed_inventory := _inventory()
 	feed_inventory.add_item("animal_feed", 1)
@@ -1136,6 +1181,7 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 	var output_inventory := _inventory()
 	assertions.truthy(production.collect_all(lumberyard, output_inventory), "collection clears passive-full state")
 	production.finish_daily_outputs(5)
+	production.advance_minutes(720)
 	production.finish_daily_outputs(6)
 	assertions.equal(recorder.feed_changes.size(), 3, "feed recovery and a later shortage are separate transitions")
 	if recorder.feed_changes.size() >= 3:
@@ -1143,7 +1189,9 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 		assertions.equal(recorder.feed_changes[2].shortage, true, "later missing feed emits a new shortage")
 		assertions.equal(recorder.feed_changes[2].total_day, 6, "later shortage keeps its new day")
 	production.finish_daily_outputs(7)
+	production.advance_minutes(180)
 	production.finish_daily_outputs(8)
+	production.advance_minutes(180)
 	assertions.equal(recorder.blocked.size(), 2, "passive-full recovery permits one future full transition")
 	var saw_chicken_completion := false
 	for event in recorder.completed:
@@ -1155,6 +1203,7 @@ func _test_authoritative_passive_events(assertions: TestAssert, tree: SceneTree)
 	)
 	assertions.truthy(production.sync_daily_cursor(2), "load rewind resets the authoritative production cursor")
 	production.finish_daily_outputs(3)
+	production.advance_minutes(180)
 	assertions.equal(recorder.feed_changes.size(), 4, "load rewind clears stale feed-transition suppression")
 	assertions.equal(recorder.blocked.size(), 3, "load rewind clears stale passive-full suppression")
 

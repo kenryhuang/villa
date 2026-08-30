@@ -46,6 +46,8 @@ var _last_paused_greenhouse_cells: Array = []
 var _feed_shortage_active: Dictionary = {}
 var _passive_output_blocked: Dictionary = {}
 var _active_player_input_transactions: Dictionary = {}
+var resource_cycle_progress: Dictionary = {}
+var resource_completed_cycles: Dictionary = {}
 
 
 func _init() -> void:
@@ -575,7 +577,10 @@ func advance_minutes(minutes: int) -> void:
 		if not _building_is_active(building):
 			refresh_indicator(building)
 			continue
-		_advance_building(building, minutes)
+		if _has_effect(building, "resource_output"):
+			_advance_resource_building(building, minutes)
+		else:
+			_advance_building(building, minutes)
 		refresh_indicator(building)
 
 
@@ -629,6 +634,8 @@ func collect_outputs(
 	else:
 		var state := _get_state(building)
 		if state != null:
+			if _has_effect(building, "resource_output"):
+				_set_passive_output_blocked(building, "cycle:%s" % building.building_id, false)
 			_prepare_running_job(building, state)
 		refresh_indicator(building)
 	return result
@@ -716,6 +723,11 @@ func register_building(building: BuildingInstance) -> bool:
 	if not _registered_buildings.has(building):
 		_registered_buildings.append(building)
 	var key := building_key(building)
+	if _has_effect(building, "resource_output"):
+		if not resource_cycle_progress.has(key):
+			resource_cycle_progress[key] = 0
+		if not resource_completed_cycles.has(key):
+			resource_completed_cycles[key] = 0
 	if not maintenance_due_days.has(key):
 		maintenance_due_days[key] = _current_day + MAINTENANCE_INTERVAL_DAYS
 	_apply_saved_upgrades(building)
@@ -735,6 +747,8 @@ func unregister_building(building: BuildingInstance) -> void:
 		speed_accumulators.erase(key)
 		_feed_shortage_active.erase(key)
 		_passive_output_blocked.erase(key)
+		resource_cycle_progress.erase(key)
+		resource_completed_cycles.erase(key)
 	_refresh_greenhouse_cells()
 	set_process(not repair_remaining_seconds.is_empty())
 
@@ -1559,6 +1573,8 @@ func _finish_passive_building(
 	if is_maintenance_paused(building):
 		return
 	var id := building.building_id
+	if id not in ["beehive", "chicken_coop"]:
+		return
 	var state := _get_state(building)
 	if state == null:
 		return
@@ -1572,8 +1588,6 @@ func _finish_passive_building(
 		output = passive_output_for(id, total_day, assigned_flowers.size(), species.size())
 	elif id == "chicken_coop":
 		output = passive_output_for(id, total_day, 0)
-	else:
-		output = _resource_output_for(building, total_day)
 	if output.is_empty():
 		return
 	var passive_id := "passive:%s" % id
@@ -1672,7 +1686,7 @@ func _is_output_full(building: BuildingInstance, state: ProducerState) -> bool:
 	return state.output_capacity > 0 and state.outputs.size() >= state.output_capacity
 
 
-func _resource_output_for(building: BuildingInstance, total_day: int) -> Dictionary:
+func _resource_output_for(building: BuildingInstance, cycle_number: int) -> Dictionary:
 	if not _has_effect(building, "resource_output"):
 		return {}
 	var config := _effect_config(building)
@@ -1680,15 +1694,76 @@ func _resource_output_for(building: BuildingInstance, total_day: int) -> Diction
 		var tier := str(config.get("depth_tier", "shallow"))
 		var table: Dictionary = config.get("depth_outputs", {})
 		var output: Dictionary = table.get(tier, {}).duplicate(true)
-		var interval := int(config.get("deep_bonus_every_days", 0))
-		if tier == "deep" and interval > 0 and total_day % interval == 0:
+		var interval := int(config.get("deep_bonus_every_cycles", 0))
+		if tier == "deep" and interval > 0 and cycle_number % interval == 0:
 			_merge_counts(output, config.get("deep_bonus_output", {}))
 		return output
-	var output: Dictionary = config.get("daily_output", {}).duplicate(true)
-	var interval := int(config.get("bonus_every_days", 0))
-	if interval > 0 and total_day % interval == 0:
+	var output: Dictionary = config.get("cycle_output", {}).duplicate(true)
+	var interval := int(config.get("bonus_every_cycles", 0))
+	if interval > 0 and cycle_number % interval == 0:
 		_merge_counts(output, config.get("bonus_output", {}))
 	return output
+
+
+func get_resource_cycle_snapshot(building: BuildingInstance) -> Dictionary:
+	if building == null or not is_instance_valid(building) or not _has_effect(building, "resource_output"):
+		return {}
+	var key := building_key(building)
+	var duration := _resource_cycle_duration(building)
+	var progress := clampi(int(resource_cycle_progress.get(key, 0)), 0, maxi(duration - 1, 0))
+	var state := _get_state(building)
+	var next_output := _resource_output_for(building, int(resource_completed_cycles.get(key, 0)) + 1)
+	var status := "running"
+	if is_maintenance_paused(building):
+		status = "maintenance_paused"
+	elif state == null or not _can_store_passive_outputs(building, state, next_output):
+		status = "output_full"
+	return {
+		"status": status,
+		"duration_minutes": duration,
+		"progress_minutes": progress,
+		"remaining_minutes": maxi(duration - progress, 0),
+		"completed_cycles": int(resource_completed_cycles.get(key, 0)),
+		"next_output": next_output.duplicate(true),
+	}
+
+
+func _resource_cycle_duration(building: BuildingInstance) -> int:
+	return maxi(1, int(_effect_config(building).get("cycle_minutes", 180)))
+
+
+func _advance_resource_building(building: BuildingInstance, minutes: int) -> void:
+	var state := _get_state(building)
+	if state == null or is_maintenance_paused(building) or minutes <= 0:
+		return
+	var key := building_key(building)
+	var duration := _resource_cycle_duration(building)
+	var progress := clampi(int(resource_cycle_progress.get(key, 0)), 0, duration - 1)
+	var completed := maxi(0, int(resource_completed_cycles.get(key, 0)))
+	var remaining := minutes
+	while remaining > 0:
+		var output := _resource_output_for(building, completed + 1)
+		var passive_id := "cycle:%s" % building.building_id
+		if output.is_empty() or not _can_store_passive_outputs(building, state, output):
+			_set_passive_output_blocked(building, passive_id, true)
+			break
+		_set_passive_output_blocked(building, passive_id, false)
+		var consumed := mini(remaining, duration - progress)
+		progress += consumed
+		remaining -= consumed
+		if progress < duration:
+			break
+		if not state.add_outputs(output):
+			_set_passive_output_blocked(building, passive_id, true)
+			progress = duration - 1
+			break
+		completed += 1
+		progress = 0
+		for item_id in output:
+			_emit_event("production_output_changed", [building, str(item_id), state.get_output_count(str(item_id))])
+		_emit_event("production_job_completed", [building, passive_id, output.duplicate(true)])
+	resource_cycle_progress[key] = progress
+	resource_completed_cycles[key] = completed
 
 
 func _ensure_passive_state(building: BuildingInstance) -> void:

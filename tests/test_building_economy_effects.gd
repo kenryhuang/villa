@@ -541,29 +541,38 @@ func _test_barn_grouped_selective_collection(assertions: TestAssert) -> void:
 
 
 func _test_deterministic_resource_outputs(assertions: TestAssert) -> void:
-	var production := _production()
 	var lumberyard := _building("lumberyard", 2, 2, true)
 	var quarry := _building("quarry", 6, 2, true)
 	var mine := _building("mine", 10, 2, true)
 	mine.data.effect_config.depth_tier = "deep"
-	for building in [lumberyard, quarry, mine]:
-		production.register_building(building)
-	production.finish_daily_outputs(3)
+	var lumber_production := _production()
+	var quarry_production := _production()
+	var mine_production := _production()
+	lumber_production.register_building(lumberyard)
+	quarry_production.register_building(quarry)
+	mine_production.register_building(mine)
 	var lumber_config: Dictionary = lumberyard.data.effect_config
 	var quarry_config: Dictionary = quarry.data.effect_config
 	var mine_config: Dictionary = mine.data.effect_config
-	assertions.equal(lumberyard.producer_state.outputs, lumber_config.daily_output, "lumberyard daily output comes from its data table")
-	var expected_quarry: Dictionary = quarry_config.daily_output.duplicate(true)
-	if 3 % int(quarry_config.bonus_every_days) == 0:
-		_merge_counts(expected_quarry, quarry_config.bonus_output)
-	assertions.equal(quarry.producer_state.outputs, expected_quarry, "quarry occasional coal is deterministic from day and config")
-	var expected_mine: Dictionary = mine_config.depth_outputs.deep.duplicate(true)
-	if 3 % int(mine_config.deep_bonus_every_days) == 0:
-		_merge_counts(expected_mine, mine_config.deep_bonus_output)
-	assertions.equal(mine.producer_state.outputs, expected_mine, "mine depth-tier ore is deterministic from day and config")
+	lumber_production.advance_minutes(int(lumber_config.cycle_minutes))
+	assertions.equal(lumberyard.producer_state.outputs, lumber_config.cycle_output, "lumberyard cycle output comes from its data table")
+	quarry_production.advance_minutes(int(quarry_config.cycle_minutes) * 3)
+	var expected_quarry: Dictionary = {}
+	for cycle in range(1, 4):
+		_merge_counts(expected_quarry, quarry_config.cycle_output)
+		if cycle % int(quarry_config.bonus_every_cycles) == 0:
+			_merge_counts(expected_quarry, quarry_config.bonus_output)
+	assertions.equal(quarry.producer_state.outputs, expected_quarry, "quarry occasional coal is deterministic from cycle and config")
+	mine_production.advance_minutes(int(mine_config.cycle_minutes) * 3)
+	var expected_mine: Dictionary = {}
+	for cycle in range(1, 4):
+		_merge_counts(expected_mine, mine_config.depth_outputs.deep)
+		if cycle % int(mine_config.deep_bonus_every_cycles) == 0:
+			_merge_counts(expected_mine, mine_config.deep_bonus_output)
+	assertions.equal(mine.producer_state.outputs, expected_mine, "mine depth-tier ore is deterministic from cycle and config")
 	var first_result := mine.producer_state.outputs.duplicate(true)
-	production.finish_daily_outputs(3)
-	assertions.equal(mine.producer_state.outputs, first_result, "resource outputs cannot settle twice on one day")
+	mine_production.finish_daily_outputs(3)
+	assertions.equal(mine.producer_state.outputs, first_result, "daily settlement cannot duplicate resource cycles")
 
 
 func _test_building_definitions_scenes_and_build_ui(assertions: TestAssert, tree: SceneTree) -> void:
