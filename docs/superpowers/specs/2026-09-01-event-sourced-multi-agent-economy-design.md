@@ -10,6 +10,8 @@
 
 - 每轮虽包含市场快照，市场变化事件却只主动推送给商人老李；
 - 上下文没有其他 Agent 和 Player 的公共主体投影；
+- 季节、天数、天气、环境和市场变化尚未形成所有 Agent 共享的公共事件流；
+- 每个 Agent 虽有自己的感知收件箱，但其他 Agent 没有可见的“该主体当前状态 + 近期公开事件”视图；
 - `role_id`、目标和工具集合在启动时静态合并，运行中不能改变身份；
 - `propose_trade`、`speak` 仍是无权威结果的占位动作；
 - Agent 间没有报价、协商、合作、承诺、关系变化或资源锁定；
@@ -29,12 +31,15 @@
 7. Agent 始终只有一个当前主身份。转职替换专属目标和工具，但保留 Soul、关系、历史、记忆和通用能力。
 8. 所有 Agent 都能看到市场价格、紧缺程度和趋势；商人额外获得成交量、历史、流动性和供需压力。
 9. 交易、合作和紧急消息立即唤醒接收者；普通聊天进入收件箱，在下一决策周期处理。
+10. 所有 Agent 共享市场、天数、季节、天气和环境变化等公共事件；同时可以看到每个已知主体的当前公开状态和近期公开事件，但不能看到对方的私有收件箱。
 
 ## 3. 目标与非目标
 
 ### 3.1 目标
 
 - 为 NPC Agent 和 Player 建立统一但受可见性约束的 Actor 模型。
+- 建立全局公共世界状态与公共事件流，让所有 Agent 基于相同的时间、季节、环境和市场事实决策。
+- 为每个主体维护可供其他 Agent 感知的当前公开状态与近期公开事件列表，同时保留每个 Agent 独立的私有事件队列。
 - 让市场、其他 Agent、Player、关系、报价和合作状态进入 Agent 的实时上下文。
 - 提供足够且按身份动态变化的读取工具与命令工具。
 - 实现可协商、可过期、可回滚验证的双边交易。
@@ -77,14 +82,18 @@
 时间 / Player 行为 / 市场 / 世界领域事件
                     │
                     ▼
+              WorldFactBridge
+                    │
+                    ▼
              AgentWorldEventStore
                     │
            EventProjectorPipeline
-          ┌─────────┼──────────────┐
-          ▼         ▼              ▼
-   ActorProjection  Interaction    MarketPressure
-   RoleCapability   Agreement      Relationship
-          └─────────┼──────────────┘
+   ┌────────────────┼────────────────────┐
+   ▼                ▼                    ▼
+GlobalPublicEvent  ActorPublicActivity  PrivatePerceptionInbox
+ActorProjection    Interaction          MarketPressure
+RoleCapability     Agreement            Relationship
+   └────────────────┼────────────────────┘
                     ▼
              AgentContextProjection
                     │
@@ -105,10 +114,14 @@
 
 | 组件 | 职责 |
 |---|---|
+| `WorldFactBridge` | 订阅时间、季节、天气、市场和环境权威系统，把已提交变化规范化为可见性明确、可去重的世界事实事件 |
 | `AgentWorldEventStore` | 追加事件批次、分配全局序号、检查幂等键、保存聚合版本、导出与恢复日志 |
 | `AgentCommandGateway` | 接收动作，检查当前能力、可见性、参数和前置条件，并协调领域事务与事件提交 |
 | `AgentWorldProjector` | 按事件顺序更新全部确定性投影，支持从零重放 |
 | `ActorProjection` | 保存 NPC Agent 与 Player 的公共身份、区域和可观察状态 |
+| `GlobalPublicEventProjection` | 保存所有 Agent 共享的当前世界状态与近期公共事件 |
+| `ActorPublicActivityProjection` | 按主体保存当前公开状态和近期公开事件列表，供其他 Agent 感知 |
+| `PrivatePerceptionInbox` | 为每个 Agent 保存其有权看到的未消费事件、消费游标和紧急唤醒状态，不向其他主体暴露 |
 | `RoleCapabilityProjection` | 保存当前角色、角色历史、目标、工具、调度策略、审核状态和转职冷却 |
 | `InteractionProjection` | 保存消息、交易报价、还价、过期时间、参与者和资产锁定状态 |
 | `AgreementProjection` | 保存合作条款、里程碑、承诺、贡献、完成条件和收益分配 |
@@ -146,9 +159,12 @@
 
 `global_sequence` 只用于稳定排序与重放，不用于拒绝正常动作。并发保护只作用于被修改的聚合和领域资源。
 
+`visibility.scope` 只允许 `public`、`region`、`participants`、`private` 或 `system`。公共事件对所有 Agent 可见；区域事件只对位于该区域或拥有远程信息来源的 Agent 可见；参与者事件只对协议参与者可见；私有事件只进入指定 Agent 的收件箱；系统事件只用于重放与诊断。
+
 ### 6.2 首期事件类别
 
 - 主体：`ActorObserved`、`ActorRegionChanged`、`PublicStatusChanged`。
+- 公共时间与环境：`DayStarted`、`SeasonChanged`、`WeatherChanged`、`EnvironmentConditionChanged`、`RegionUnlocked`、`PublicHazardChanged`。
 - 消息：`MessageSent`、`MessageDelivered`、`MessageAcknowledged`。
 - 交易：`TradeProposed`、`TradeCountered`、`TradeAccepted`、`TradeRejected`、`TradeExpired`、`TradeCancelled`、`TradeSettled`。
 - 资源：`AssetReserved`、`AssetReservationReleased`、`AssetTransferred`、`PublicMarketTradeExecuted`。
@@ -157,6 +173,8 @@
 - 关系：`TrustAdjusted`、`FamiliarityAdjusted`。数值由规则产生，事件必须引用原因事件。
 - 市场：`MarketQuoteObserved`、`MarketPressureRecorded`、`MarketPressureSettled`。
 - 世界动作：沿用耕作、收获、探索、建造等结果事件，并附加参与协议和可见性信息。
+
+来自 `SeasonSystem`、`MarketSystem`、天气、环境和 Player 行为的事实必须在来源系统成功提交后由 `WorldFactBridge` 追加，使用来源系统生成的稳定去重键。桥接失败只能报告错误，不能反向撤销已经完成的世界变化；下一次投影刷新必须从权威系统补发一条校正事件，使 Agent 上下文最终与真实世界一致。
 
 ### 6.3 批次提交
 
@@ -223,21 +241,62 @@ Soul、个人记忆、关系、历史事件和通用工具在转职后保留。�
 
 ## 8. 感知、可见性与上下文
 
-### 8.1 公共主体投影
+感知系统分为三层，不能混成一个共享队列：
 
-每次请求包含 `known_actors`。Agent 可以看到其他主体的：
+1. `GlobalPublicEventProjection`：所有 Agent 共享的公共世界状态和公共事件；
+2. `ActorPublicActivityProjection`：每个主体对外可见的当前状态和近期公开事件；
+3. `PrivatePerceptionInbox`：每个 Agent 独立拥有、仅自己可读的事件队列。
 
-- 显示名称、公开身份和区域；
-- 双方关系、共同协议和公开声誉标签；
-- 可观察状态和近期公开行为；
-- 已公开的交易与合作；
-- 对方在当前报价中明确声明并锁定的资产。
+### 8.1 全局公共世界状态
 
-默认不可见：完整库存、金币、隐藏目标、风险参数、私有记忆、未公开消息和内部决策摘要。
+每次决策包含 `public_world_state`：
+
+```text
+game_day, absolute_game_minute, time_of_day,
+season, weather, environment_conditions,
+public_hazards, unlocked_regions,
+market_summary, public_discoveries
+```
+
+时间不是只有一个当前值。`DayStarted`、`SeasonChanged`、`WeatherChanged`、市场变化和环境变化同时进入 `global_public_events`，让 Agent 知道“发生了什么变化”，而不只是看到变化后的结果。
+
+`GlobalPublicEventProjection` 保存最近 64 条公共事件；构建单次上下文时最多选取最近且最相关的 24 条。完整历史仍保留在事件日志中，投影窗口淘汰不会删除事实。
+
+### 8.2 每主体公开状态与近期事件
+
+每次请求包含 `known_actors`。每个已知主体记录：
+
+```text
+actor_id, actor_type, display_name, public_role, region_id,
+current_public_state, observable_status, relationship,
+active_public_interactions, recent_public_events
+```
+
+`current_public_state` 由权威投影计算，包括当前身份、区域、是否忙碌、正在公开执行的活动、公开合作阶段和可观察生产状态，不能由 LLM 自报。
+
+`ActorPublicActivityProjection` 为每个主体保留最近 32 条公开事件；发送给某个观察者时最多提供 12 条，并继续按可见性、区域和相关性裁剪。例如公开收获、建造、旅行、市场成交、合作激活和身份变化可见；私信、私有报价、隐藏库存变化和内部决策不可见。
+
+Agent 可以综合其他 Agent 的当前公开状态与近期事件判断其意图和能力，但不能读取对方真正的私有事件队列。
 
 Player 额外遵守最小披露原则：只暴露位置、公开身份、关系、公开行为，以及 Player 在当前交互中主动填写的物品和金币上限。
 
-### 8.2 市场投影
+### 8.3 每 Agent 独立感知队列
+
+每个 Agent 拥有独立的 `PrivatePerceptionInbox`：
+
+```text
+agent_id, last_consumed_sequence,
+unread_event_ids, merged_event_delta,
+pending_urgent, last_decision_sequence
+```
+
+队列接收该 Agent 有权看到的全部公共、区域、参与者和私有事件。公共事件会分别路由到每个 Agent，而不是使用一个被首个 Agent 消费后就消失的共享队列。
+
+决策请求成功创建时冻结本轮 `own_event_delta`；只有请求得到有效完整响应后才推进消费游标。Provider 失败或请求取消不会丢弃未消费事件。存档与读档通过事件日志和每 Agent 消费游标确定性恢复队列。
+
+其他 Agent 只能通过 `ActorPublicActivityProjection` 查看该主体的公开事件列表，永远不能读取其 `unread_event_ids`、私信、私有报价、记忆候选或尚未公开的计划。
+
+### 8.4 市场投影
 
 所有角色获得：
 
@@ -253,33 +312,38 @@ Player 额外遵守最小披露原则：只暴露位置、公开身份、关系�
 - 当前需求压力、供给压力、私下成交价格信号；
 - 公开大宗报价、紧缺持续时间和商队信息。
 
-### 8.3 上下文结构
+市场快照属于 `public_world_state`，市场变化同时作为 `global_public_events` 进入事件增量。市场事件不再只推送给商人；角色差异只影响字段深度、相关性排序和唤醒阈值。
+
+### 8.5 决策上下文结构
 
 ```text
 identity_and_soul
 active_role_and_goals
 current_capabilities
 self_private_state
-known_actors
+public_world_state
+global_public_events
+known_actors[].current_public_state
+known_actors[].recent_public_events
+own_event_delta
 relationships
 market_view
 active_offers
 active_agreements
 world_domain_view
-recent_visible_events
 relevant_long_term_memories
 dialogue_input
 ```
 
-`AgentContextProjection` 先执行可见性裁剪，再把结果发送给 Agent Service。Agent Service 不能通过读取工具绕过裁剪。
+`AgentContextProjection` 先执行可见性裁剪和数量限制，再把结果发送给 Agent Service。Agent Service 不能通过读取工具绕过裁剪。
 
-### 8.4 事件投递与唤醒
+### 8.6 事件投递与唤醒
 
 - 立即唤醒：报价、还价、合作请求、紧急求助、转职审核结果。
-- 可提前唤醒：协议失败、承诺到期、重大行情变化、关键资源短缺。
-- 下一周期处理：普通消息、公开行为、小幅行情变化。
+- 可提前唤醒：协议失败、承诺到期、重大行情变化、关键资源短缺、公共灾害。
+- 下一周期处理：普通消息、公开行为、小幅行情变化、普通时间推进。
 
-同一商品、主体或协议的普通事件按最新状态合并。单 Agent 仍只允许一个在途 Provider 请求；新紧急事件设置 `pending_urgent`，当前请求结束后最多补发一次汇总请求。
+同一商品、主体、环境条件或协议的普通事件在单个 Agent 的队列中按最新状态合并，但不同 Agent 的消费状态互不影响。单 Agent 仍只允许一个在途 Provider 请求；新紧急事件设置 `pending_urgent`，当前请求结束后最多补发一次汇总请求。
 
 ## 9. 工具体系
 
@@ -435,10 +499,13 @@ active_role
 goals
 allowed_read_tools
 allowed_command_tools
+public_world_state
+global_public_events
+known_actors
+own_event_delta
 market_view
 interaction_view
 agreement_view
-recent_visible_events
 ```
 
 Agent Service 的静态 profile 只保存 Soul 和稳定人物信息。当前角色、目标和能力以 Godot 请求为准，并与本地角色目录取权限交集。
@@ -460,6 +527,7 @@ next_global_sequence
 events
 projection_checkpoint
 checkpoint_sequence
+agent_consumption_cursors
 idempotency_outcomes
 ```
 
@@ -467,6 +535,7 @@ idempotency_outcomes
 - 每 256 个事件或每个游戏日生成一次确定性投影检查点。
 - 加载时验证事件 ID、序号、聚合版本、Schema、引用关系和检查点哈希；验证失败时整个存档加载失败，不部分应用。
 - 正常加载从检查点恢复投影，再重放后续事件；测试必须能从零重放全部事件并得到相同状态。
+- 每个 Agent 的事件消费游标与世界存档一起保存；未消费队列由事件日志、可见性和游标重建，不保存第二份可漂移的事件正文。
 - 旧 Agent Runtime v2/v3 存档通过一次 `AgentWorldBootstrapped` 迁移事件导入现有角色、NPC 资产、农场、建筑、活动和知识，不清空玩家存档或 Agent 记忆数据库。
 - SQLite 记忆继续沿用现有检查点机制。新增世界事件以 `event_id` 写入记忆，重复上报不会产生重复记忆。
 
@@ -503,7 +572,7 @@ idempotency_outcomes
 本设计作为一个总体规格，实施按顺序拆成六个可独立验证阶段：
 
 1. 事件存储、投影框架、幂等结果、存档和旧状态迁移。
-2. Actor、关系、分层市场和多 Agent 事件路由。
+2. 公共世界事件、Actor 公开活动、私有感知队列、关系、分层市场和多 Agent 事件路由。
 3. 读取工具循环、动态能力上下文和 Agent Service 协议扩展。
 4. 双边交易、资源锁定、Player 确认 UI 和市场压力。
 5. 合作协议、贡献验证和收益结算。
@@ -518,6 +587,10 @@ idempotency_outcomes
 - 原子追加、批次回滚、幂等、聚合版本和全局顺序；
 - 从零重放与检查点恢复结果完全一致；
 - Actor 可见性矩阵不会泄漏 Player 或其他 Agent 的私有资产；
+- `DayStarted`、`SeasonChanged`、天气、环境和市场公共事件会进入每个 Agent 的独立队列；
+- 每个 Agent 的 `known_actors` 都包含其他已知主体的当前公开状态和近期公开事件；
+- 不同 Agent 消费同一公共事件互不影响，Provider 失败不会推进自己的消费游标；
+- 全局 64 条、上下文 24 条、每主体 32 条和每次展示 12 条的窗口限制稳定生效，且不删除事件日志；
 - 市场信息按普通角色和商人角色正确裁剪；
 - 普通事件合并，紧急交互只补发一次唤醒；
 - 报价创建、锁定、接受、拒绝、还价、取消、过期和释放；
@@ -535,21 +608,25 @@ idempotency_outcomes
 - 对话最多返回一个交互型命令；
 - 本地与 Godot 工具白名单取交集；
 - 事件按可见性写入正确 Agent 的短期与长期记忆；
+- 公共事件进入所有 Agent 的上下文，区域、参与者和私有事件只进入授权上下文；
 - 重复 `event_id` 不重复存储；
 - Provider 失败不会缓存虚假动作或事实。
 
 ### 18.3 集成验收场景
 
-1. 阿禾观察到种子涨价，向老李提出私下购买；老李被立即唤醒并还价；双方接受后资产正确转移，公共库存不变，市场产生价格信号。
-2. 老李向 Player 报价；在 Player 点击确认前任何资产都不改变，确认后双方原子结算。
-3. 阿禾与学者林建立新作物探索合作，分别提交种植资源与样本调查，完成后按条款分配收益并提高关系。
-4. 学者林满足条件后提出转为商人；Godot 审核、扣除成本、切换目标和工具，旧探险专属动作被拒绝。
-5. 保存游戏、重启、加载，从检查点和事件尾部恢复相同报价、锁定、合作、关系、角色、市场压力和幂等结果。
-6. Agent Service 停止时游戏继续运行；重新启动后用当前投影恢复决策，不重放已经提交的动作。
+1. 季节和天气变化后，三个 Agent 的独立队列都收到同一公共事实；各自决策上下文包含相同公共世界状态，但消费进度互不影响。
+2. 阿禾观察到种子涨价，向老李提出私下购买；老李被立即唤醒并还价；双方接受后资产正确转移，公共库存不变，市场产生价格信号。
+3. 老李向 Player 报价；在 Player 点击确认前任何资产都不改变，确认后双方原子结算。
+4. 阿禾与学者林建立新作物探索合作，分别提交种植资源与样本调查，完成后按条款分配收益并提高关系。
+5. 学者林满足条件后提出转为商人；Godot 审核、扣除成本、切换目标和工具，旧探险专属动作被拒绝。
+6. 保存游戏、重启、加载，从检查点和事件尾部恢复相同公共事件、每主体公开活动、每 Agent 消费游标、报价、锁定、合作、关系、角色、市场压力和幂等结果。
+7. Agent Service 停止时游戏继续运行；重新启动后用当前投影恢复决策，不重放已经提交的动作，也不丢弃尚未消费的感知事件。
 
 ## 19. 完成标准
 
-- 三个 NPC Agent 的上下文都包含当前市场、其他可见 Agent 和 Player 公共信息。
+- 三个 NPC Agent 的上下文都包含当前天数、时间、季节、天气、环境、市场和近期公共事件。
+- 每个 Agent 都维护独立的私有感知队列，公共事件可被所有 Agent 分别消费而不会相互抢占。
+- 每个 Agent 都能看到其他已知 Agent 与 Player 的当前公开状态和近期公开事件，同时无法读取对方私有队列。
 - Agent 能真实发送消息、协商交易、建立合作并改变双方权威资产。
 - Player 的私有资产不会因感知或未确认报价泄漏、锁定或扣除。
 - Agent 可以在确定性规则下改变身份，目标、工具和调度随之变化。
