@@ -2,6 +2,7 @@ extends SceneTree
 
 const AgentWorldStateTest = preload("res://tests/test_agent_world_state.gd")
 const AgentEventStoreTest = preload("res://tests/test_agent_event_store.gd")
+const AgentPerceptionProjectionTest = preload("res://tests/test_agent_perception_projection.gd")
 const AgentActionExecutionTest = preload("res://tests/test_agent_action_execution.gd")
 const AgentRuntimeTest = preload("res://tests/test_agent_runtime.gd")
 const VisibleNpcFarmSystemTest = preload("res://tests/test_visible_npc_farm_system.gd")
@@ -24,6 +25,7 @@ func _init() -> void:
 func _run() -> void:
 	var assertions := TestAssertScript.new()
 	AgentEventStoreTest.new().run(assertions)
+	AgentPerceptionProjectionTest.new().run(assertions)
 	var config_test := AgentClientConfigTest.new()
 	config_test.run(assertions)
 	var streaming_test := AgentStreamingTest.new()
