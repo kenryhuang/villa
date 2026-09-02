@@ -119,6 +119,20 @@ func run(assertions: TestAssert) -> void:
 	}), 123)
 	assertions.truthy(interactions.execute(_command("reject_trade", "lao_li", "reject-offer", {"offer_id": str(rejectable.offer_id), "reason_code": "not_needed"}), 124).ok, "receiver can reject an offer")
 	assertions.equal(interactions.get_offer(str(rejectable.offer_id), "farmer_ahe").status, "rejected", "rejected offer remains inspectable and unlocked")
+	var merchant_reserved_salt := interactions.available_item("lao_li", "salt")
+	var merchant_lock := interactions.execute(_command("propose_trade", "lao_li", "merchant-lock", {
+		"target_actor_id": "xuezhe_lin", "give": {"items": {"salt": merchant_reserved_salt}, "gold": 0},
+		"receive": {"items": {}, "gold": 1}, "expires_in_minutes": 60, "note": "reserved elsewhere",
+	}), 125)
+	assertions.truthy(merchant_lock.ok, "merchant can reserve all currently available salt in another offer")
+	var receiver_conflict := interactions.execute(_command("propose_trade", "farmer_ahe", "receiver-conflict", {
+		"target_actor_id": "lao_li", "give": {"items": {"carrot_seed": 1}, "gold": 0},
+		"receive": {"items": {"salt": merchant_reserved_salt}, "gold": 0}, "expires_in_minutes": 60, "note": "must respect locks",
+	}), 126)
+	assertions.truthy(receiver_conflict.ok, "offer can be proposed before receiver asset check")
+	assertions.equal(str(interactions.execute(_command("accept_trade", "lao_li", "receiver-conflict-accept", {"offer_id": str(receiver_conflict.offer_id)}), 127).get("error", "")), "receiver_assets_reserved", "NPC receiver cannot spend assets reserved by another offer")
+	interactions.execute(_command("cancel_trade", "lao_li", "merchant-lock-cancel", {"offer_id": str(merchant_lock.offer_id)}), 128)
+	interactions.execute(_command("reject_trade", "lao_li", "receiver-conflict-reject", {"offer_id": str(receiver_conflict.offer_id), "reason_code": "locked"}), 129)
 
 	var doomed := interactions.execute(_command("propose_trade", "farmer_ahe", "offer-recheck", {
 		"target_actor_id": "lao_li", "give": {"items": {"carrot_seed": 1}, "gold": 0},
@@ -165,6 +179,17 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(interactions.execute(player_accept_command, 162).ok, "explicit Player confirmation atomically settles trade")
 	assertions.equal(player_inventory.get_item_count("salt"), player_salt_before - 1, "Player-confirmed trade debits Player item")
 	assertions.equal(int(player_wallet.gold), player_gold_before + 1, "Player-confirmed trade credits Player wallet")
+	player_inventory.add_item("salt", 2)
+	var player_lock := interactions.execute(_command("propose_trade", "player", "player-lock", {
+		"target_actor_id": "xuezhe_lin", "give": {"items": {"salt": 1}, "gold": 0},
+		"receive": {"items": {}, "gold": 1}, "expires_in_minutes": 60, "note": "player lock",
+	}), 163)
+	assertions.truthy(player_lock.ok, "Player can reserve assets in an outgoing offer")
+	var player_receiver_conflict := interactions.execute(_command("propose_trade", "farmer_ahe", "player-receiver-conflict", {
+		"target_actor_id": "player", "give": {"items": {}, "gold": 1},
+		"receive": {"items": {"salt": player_inventory.get_item_count("salt")}, "gold": 0}, "expires_in_minutes": 60, "note": "respect Player lock",
+	}), 164)
+	assertions.equal(str(interactions.execute(_command("accept_trade", "player", "player-receiver-conflict-accept", {"offer_id": str(player_receiver_conflict.offer_id), "player_confirmed": true}), 165).get("error", "")), "player_assets_reserved", "Player receiver cannot spend assets reserved by another offer")
 
 	var visible := interactions.list_offers("farmer_ahe")
 	assertions.truthy(not visible.is_empty(), "participant receives interaction view")

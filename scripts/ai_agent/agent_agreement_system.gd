@@ -63,6 +63,8 @@ func record_action_outcome(outcome: Dictionary, game_minute: int) -> Array[Dicti
 	var actor_id := str(outcome.get("agent_id", ""))
 	var tool_name := str(outcome.get("tool_name", ""))
 	var explicit_agreement_id := str(outcome.get("agreement_id", ""))
+	if explicit_agreement_id.is_empty():
+		return emitted
 	var agreement_ids := _agreements.keys()
 	agreement_ids.sort()
 	for agreement_id_value in agreement_ids:
@@ -362,7 +364,7 @@ func _accept(actor_id: String, arguments: Dictionary, command: Dictionary, game_
 	if activating:
 		for commitment_value in agreement.commitments:
 			var commitment := commitment_value as Dictionary
-			if str(commitment.participant_id) == "player" or _bundle_empty(commitment):
+			if _bundle_empty(commitment):
 				continue
 			var reservation_id := _reservation_id(agreement_id, str(commitment.participant_id))
 			if not bool(_interactions.call("reserve_assets", str(commitment.participant_id), reservation_id, {"items": commitment.items, "gold": commitment.gold})):
@@ -426,21 +428,19 @@ func _complete(agreement_id: String, game_minute: int, cause_id: String) -> Dict
 	var deltas: Dictionary = {}
 	for participant_value in agreement.participants:
 		var participant := str(participant_value)
-		if participant == "player":
-			continue
-		var state = _economy.call("get_npc_state", participant)
-		if state == null:
+		var snapshot: Dictionary = _interactions.call("snapshot_actor_assets", participant)
+		if snapshot.is_empty():
 			return _failure("completion_participant_missing")
-		snapshots[participant] = state.to_dict()
+		snapshots[participant] = snapshot
 		var commitment := _commitment_for(agreement, participant)
 		var item_delta: Dictionary = {}
 		for item_id in commitment.items:
 			item_delta[str(item_id)] = -int(commitment.items[item_id])
 		deltas[participant] = {"items": item_delta, "gold": int(reward_deltas.get(participant, 0)) - int(commitment.gold)}
-		if not bool(_economy.call("can_apply_agent_asset_delta", participant, item_delta, int(deltas[participant].gold))):
+		if not bool(_interactions.call("can_apply_actor_asset_delta", participant, item_delta, int(deltas[participant].gold), _reservation_id(agreement_id, participant))):
 			return _fail_active_agreement(agreement_id, game_minute, "committed_assets_changed")
 	for participant in deltas:
-		if not bool(_economy.call("apply_agent_asset_delta", str(participant), deltas[participant].items, int(deltas[participant].gold))):
+		if not bool(_interactions.call("apply_actor_asset_delta", str(participant), deltas[participant].items, int(deltas[participant].gold), _reservation_id(agreement_id, str(participant)))):
 			_restore_snapshots(snapshots)
 			return _failure("atomic_completion_failed")
 	var events: Array[Dictionary] = [_event("AgreementCompleted", agreement_id, "system", game_minute, cause_id, "agreement:" + agreement_id, {"agreement_id": agreement_id, "reward_gold": int(template.reward_gold), "reward_deltas": reward_deltas}, agreement.participants)]
@@ -573,8 +573,7 @@ func _bundle_empty(commitment: Dictionary) -> bool:
 
 func _release_commitments(agreement: Dictionary) -> void:
 	for participant in agreement.participants:
-		if str(participant) != "player":
-			_interactions.call("release_reservation", _reservation_id(str(agreement.agreement_id), str(participant)))
+		_interactions.call("release_reservation", _reservation_id(str(agreement.agreement_id), str(participant)))
 
 
 func _reservation_id(agreement_id: String, participant_id: String) -> String:
@@ -583,7 +582,7 @@ func _reservation_id(agreement_id: String, participant_id: String) -> String:
 
 func _restore_snapshots(snapshots: Dictionary) -> void:
 	for participant in snapshots:
-		_economy.call("get_npc_state", str(participant)).from_dict(snapshots[participant])
+		_interactions.call("restore_actor_assets", str(participant), snapshots[participant])
 
 
 func _adjust_all_relationships(participants: Array, delta: int, game_minute: int) -> void:

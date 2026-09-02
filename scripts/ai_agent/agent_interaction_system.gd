@@ -12,6 +12,7 @@ const MAX_PRESSURE_PER_AGENT := 40
 const MAX_PRESSURE_PER_DAY := 80
 const MAX_PRICE_BIAS_BPS := 2000
 const STATE_VERSION := 1
+const MAX_SAFE_INTEGER := 9223372036854775807
 
 var _economy: Variant
 var _store: Variant
@@ -115,13 +116,16 @@ func available_item(actor_id: String, item_id: String) -> int:
 	return maxi(0, int(state.inventory.get(item_id, 0)) - reserved)
 
 
-func _reserved_item(actor_id: String, item_id: String) -> int:
+func _reserved_item(actor_id: String, item_id: String, excluded_offer_id := "", excluded_reservation_id := "") -> int:
 	var reserved := 0
 	for offer_value in _offers.values():
 		var offer := offer_value as Dictionary
-		if str(offer.status) == OPEN_STATUS and str(offer.proposer_id) == actor_id:
+		if str(offer.offer_id) != excluded_offer_id and str(offer.status) == OPEN_STATUS and str(offer.proposer_id) == actor_id:
 			reserved += int(((offer.proposer_gives as Dictionary).items as Dictionary).get(item_id, 0))
-	for reservation_value in _external_reservations.values():
+	for reservation_id in _external_reservations:
+		if str(reservation_id) == excluded_reservation_id:
+			continue
+		var reservation_value: Variant = _external_reservations[reservation_id]
 		var reservation := reservation_value as Dictionary
 		if str(reservation.actor_id) == actor_id:
 			reserved += int((reservation.bundle.items as Dictionary).get(item_id, 0))
@@ -137,13 +141,16 @@ func available_gold(actor_id: String) -> int:
 	return maxi(0, int(state.gold) - _reserved_gold(actor_id))
 
 
-func _reserved_gold(actor_id: String) -> int:
+func _reserved_gold(actor_id: String, excluded_offer_id := "", excluded_reservation_id := "") -> int:
 	var reserved := 0
 	for offer_value in _offers.values():
 		var offer := offer_value as Dictionary
-		if str(offer.status) == OPEN_STATUS and str(offer.proposer_id) == actor_id:
+		if str(offer.offer_id) != excluded_offer_id and str(offer.status) == OPEN_STATUS and str(offer.proposer_id) == actor_id:
 			reserved += int((offer.proposer_gives as Dictionary).gold)
-	for reservation_value in _external_reservations.values():
+	for reservation_id in _external_reservations:
+		if str(reservation_id) == excluded_reservation_id:
+			continue
+		var reservation_value: Variant = _external_reservations[reservation_id]
 		var reservation := reservation_value as Dictionary
 		if str(reservation.actor_id) == actor_id:
 			reserved += int(reservation.bundle.gold)
@@ -167,6 +174,90 @@ func release_reservation(reservation_id: String) -> bool:
 	if not _external_reservations.has(reservation_id):
 		return false
 	_external_reservations.erase(reservation_id)
+	return true
+
+
+func snapshot_actor_assets(actor_id: String) -> Dictionary:
+	if actor_id == "player":
+		if _player_inventory == null or _player_wallet == null:
+			return {}
+		return {
+			"actor_type": "player",
+			"slots": _player_inventory.slots.duplicate(true),
+			"quick_slot_mappings": _player_inventory.quick_slot_mappings.duplicate(),
+			"gold": int(_player_wallet.gold),
+		}
+	var state = _economy.call("get_npc_state", actor_id) if _economy != null else null
+	return {"actor_type": "npc", "state": state.to_dict()} if state != null else {}
+
+
+func restore_actor_assets(actor_id: String, snapshot: Dictionary) -> bool:
+	if actor_id == "player":
+		if _player_inventory == null or _player_wallet == null or str(snapshot.get("actor_type", "")) != "player":
+			return false
+		_player_inventory.call("restore_state", snapshot.get("slots", []), snapshot.get("quick_slot_mappings", []))
+		return bool(_player_wallet.call("restore_gold_unchecked", int(snapshot.get("gold", -1))))
+	var state = _economy.call("get_npc_state", actor_id) if _economy != null else null
+	return state != null and str(snapshot.get("actor_type", "")) == "npc" and snapshot.get("state") is Dictionary and bool(state.from_dict(snapshot.state))
+
+
+func can_apply_actor_asset_delta(actor_id: String, item_delta: Dictionary, gold_delta: int, excluded_reservation_id := "") -> bool:
+	if actor_id == "player":
+		if _player_inventory == null or _player_wallet == null:
+			return false
+		var additions: Dictionary = {}
+		for item_id_value in item_delta:
+			var item_id := str(item_id_value)
+			var delta := int(item_delta[item_id_value])
+			if delta < 0 and int(_player_inventory.call("get_item_count", item_id)) - _reserved_item(actor_id, item_id, "", excluded_reservation_id) < -delta:
+				return false
+			if delta > 0:
+				additions[item_id] = delta
+		if not additions.is_empty() and (not _player_inventory.has_method("preflight_add_items") or not bool((_player_inventory.call("preflight_add_items", additions) as Dictionary).get("ok", false))):
+			return false
+		var available_player_gold := int(_player_wallet.gold) - _reserved_gold(actor_id, "", excluded_reservation_id)
+		return (gold_delta >= 0 and available_player_gold <= MAX_SAFE_INTEGER - gold_delta) or (gold_delta < 0 and available_player_gold >= -gold_delta)
+	var state = _economy.call("get_npc_state", actor_id) if _economy != null else null
+	if state == null:
+		return false
+	for item_id_value in item_delta:
+		var item_id := str(item_id_value)
+		var delta := int(item_delta[item_id_value])
+		if delta < 0 and int(state.inventory.get(item_id, 0)) - _reserved_item(actor_id, item_id, "", excluded_reservation_id) < -delta:
+			return false
+	var available_npc_gold := int(state.gold) - _reserved_gold(actor_id, "", excluded_reservation_id)
+	if gold_delta < 0 and available_npc_gold < -gold_delta:
+		return false
+	return bool(_economy.call("can_apply_agent_asset_delta", actor_id, item_delta, gold_delta))
+
+
+func apply_actor_asset_delta(actor_id: String, item_delta: Dictionary, gold_delta: int, excluded_reservation_id := "") -> bool:
+	if not can_apply_actor_asset_delta(actor_id, item_delta, gold_delta, excluded_reservation_id):
+		return false
+	if actor_id != "player":
+		return bool(_economy.call("apply_agent_asset_delta", actor_id, item_delta, gold_delta))
+	var before := snapshot_actor_assets(actor_id)
+	var item_ids := item_delta.keys()
+	item_ids.sort()
+	for item_id_value in item_ids:
+		var item_id := str(item_id_value)
+		var delta := int(item_delta[item_id_value])
+		var applied := true
+		if delta < 0:
+			applied = bool(_player_inventory.call("remove_item", item_id, -delta))
+		elif delta > 0:
+			applied = bool(_player_inventory.call("add_item", item_id, delta))
+		if not applied:
+			restore_actor_assets(actor_id, before)
+			return false
+	var gold_applied := true
+	if gold_delta < 0:
+		gold_applied = bool(_player_wallet.call("spend_gold", -gold_delta))
+	elif gold_delta > 0:
+		gold_applied = bool(_player_wallet.call("add_gold", gold_delta))
+	if not gold_applied:
+		restore_actor_assets(actor_id, before)
+		return false
 	return true
 
 
@@ -429,6 +520,10 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 		return _failure("proposer_assets_changed")
 	if not _has_total_assets(str(offer.recipient_id), offer.proposer_receives):
 		return _failure("receiver_assets_changed")
+	if not _has_settlement_assets(str(offer.proposer_id), offer.proposer_gives, offer_id):
+		return _failure("proposer_assets_reserved")
+	if not _has_settlement_assets(str(offer.recipient_id), offer.proposer_receives):
+		return _failure("receiver_assets_reserved")
 	var proposer_delta := _bundle_delta(offer.proposer_gives, offer.proposer_receives)
 	var receiver_delta := _bundle_delta(offer.proposer_receives, offer.proposer_gives)
 	if not bool(_economy.call("can_apply_agent_asset_delta", str(offer.proposer_id), proposer_delta.items, int(proposer_delta.gold))) or not bool(_economy.call("can_apply_agent_asset_delta", str(offer.recipient_id), receiver_delta.items, int(receiver_delta.gold))):
@@ -465,11 +560,14 @@ func _accept_player_trade(offer_id: String, offer: Dictionary, command: Dictiona
 	var player_credits: Dictionary = offer.proposer_receives if player_is_proposer else offer.proposer_gives
 	var npc_debits: Dictionary = offer.proposer_receives if player_is_proposer else offer.proposer_gives
 	var npc_credits: Dictionary = offer.proposer_gives if player_is_proposer else offer.proposer_receives
-	for item_id in player_debits.items:
-		if int(_player_inventory.call("get_item_count", str(item_id))) < int(player_debits.items[item_id]):
-			return _failure("player_assets_changed")
-	if int(_player_wallet.gold) < int(player_debits.gold) or not _has_total_assets(npc_id, npc_debits):
-		return _failure("player_or_npc_assets_changed")
+	if not _has_total_player_assets(player_debits):
+		return _failure("player_assets_changed")
+	if not _has_total_assets(npc_id, npc_debits):
+		return _failure("npc_assets_changed")
+	if not _has_settlement_assets("player", player_debits, offer_id if player_is_proposer else ""):
+		return _failure("player_assets_reserved")
+	if not _has_settlement_assets(npc_id, npc_debits, offer_id if not player_is_proposer else ""):
+		return _failure("npc_assets_reserved")
 	var capacity_tokens: Array = []
 	for item_id in player_credits.items:
 		var token = _player_inventory.call("reserve_item_capacity", str(item_id), int(player_credits.items[item_id]))
@@ -597,6 +695,32 @@ func _has_total_assets(actor_id: String, bundle: Dictionary) -> bool:
 		return false
 	for item_id in bundle.items:
 		if int(state.inventory.get(item_id, 0)) < int(bundle.items[item_id]):
+			return false
+	return true
+
+
+func _has_total_player_assets(bundle: Dictionary) -> bool:
+	if _player_inventory == null or _player_wallet == null or int(_player_wallet.gold) < int(bundle.gold):
+		return false
+	for item_id in bundle.items:
+		if int(_player_inventory.call("get_item_count", str(item_id))) < int(bundle.items[item_id]):
+			return false
+	return true
+
+
+func _has_settlement_assets(actor_id: String, bundle: Dictionary, excluded_offer_id := "") -> bool:
+	var total_gold := int(_player_wallet.gold) if actor_id == "player" and _player_wallet != null else -1
+	var state = null
+	if actor_id != "player":
+		state = _economy.call("get_npc_state", actor_id)
+		if state == null:
+			return false
+		total_gold = int(state.gold)
+	if total_gold - _reserved_gold(actor_id, excluded_offer_id) < int(bundle.gold):
+		return false
+	for item_id in bundle.items:
+		var total := int(_player_inventory.call("get_item_count", str(item_id))) if actor_id == "player" else int(state.inventory.get(item_id, 0))
+		if total - _reserved_item(actor_id, str(item_id), excluded_offer_id) < int(bundle.items[item_id]):
 			return false
 	return true
 
