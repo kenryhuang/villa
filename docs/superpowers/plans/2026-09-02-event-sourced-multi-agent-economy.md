@@ -48,7 +48,7 @@ Existing integration points:
 - Create: `tests/test_agent_event_store.gd`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Record the clean baseline**
+- [x] **Step 1: Record the clean baseline**
 
 Run:
 
@@ -59,7 +59,7 @@ Push-Location services/agent-service; npm test; Pop-Location
 
 Expected: existing Agent runner and all TypeScript tests pass before edits. Record exact counts in the validation log at Task 11.
 
-- [ ] **Step 2: Write failing event-store tests**
+- [x] **Step 2: Write failing event-store tests**
 
 Cover strict envelope fields, atomic two-event append, monotonic `global_sequence`, per-aggregate versioning, duplicate `idempotency_key`, failed-batch no-op, `to_dict/from_dict`, corrupted sequence rejection, and full replay ordering. Add the suite to `run_agent_system_tests.gd`:
 
@@ -69,7 +69,7 @@ const AgentEventStoreTest = preload("res://tests/test_agent_event_store.gd")
 AgentEventStoreTest.new().run(assertions)
 ```
 
-- [ ] **Step 3: Run the Agent suite and verify RED**
+- [x] **Step 3: Run the Agent suite and verify RED**
 
 Run:
 
@@ -79,7 +79,7 @@ godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
 
 Expected: parse/preload failure because the new store does not exist.
 
-- [ ] **Step 4: Implement strict event normalization and storage**
+- [x] **Step 4: Implement strict event normalization and storage**
 
 Provide this public surface:
 
@@ -95,7 +95,7 @@ func from_dict(value: Dictionary) -> bool
 
 `append_batch` must normalize all events before mutation, assign contiguous sequences and aggregate versions on a candidate copy, and commit only when the whole batch validates. Return `{ok, events, last_sequence}` or a stable `{ok:false,error}`.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run the Agent suite, then:
 
@@ -113,7 +113,7 @@ git commit -m "feat: add agent world event store"
 - Modify: `tests/run_agent_system_tests.gd`
 - Modify: `scripts/ai_agent/agent_perception_inbox.gd`
 
-- [ ] **Step 1: Write failing projection tests**
+- [x] **Step 1: Write failing projection tests**
 
 Prove:
 
@@ -126,11 +126,11 @@ Prove:
 - global projection retains 64 and each actor retains 32 public events while the immutable store retains all;
 - request context selects at most 24 global public events.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Expected: missing projector/context APIs.
 
-- [ ] **Step 3: Implement projector and frozen inbox batches**
+- [x] **Step 3: Implement projector and frozen inbox batches**
 
 Use explicit APIs:
 
@@ -147,7 +147,7 @@ func release_delta(agent_id: String, request_id: String) -> bool
 
 Replace destructive `drain()` use with freeze/acknowledge semantics. Visibility scopes are exactly `public`, `region`, `participants`, `private`, and `system`.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 ```powershell
 git add scripts/ai_agent/agent_world_projector.gd scripts/ai_agent/agent_context_projection.gd scripts/ai_agent/agent_perception_inbox.gd tests/test_agent_perception_projection.gd tests/run_agent_system_tests.gd
@@ -164,7 +164,7 @@ git commit -m "feat: project multi-agent public perception"
 - Modify: `tests/test_agent_runtime.gd`
 - Modify: `tests/test_agent_main_integration.gd`
 
-- [ ] **Step 1: Write failing runtime tests**
+- [x] **Step 1: Write failing runtime tests**
 
 Require every Agent request to include:
 
@@ -178,11 +178,11 @@ market_view
 
 Test day/season/market signals, stable fact deduplication, visibility, response acknowledgement, failure release, and correction facts after bridge publication failure.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Expected: requests still use the old `snapshot + drain(agent_id)` shape and market events only target `lao_li`.
 
-- [ ] **Step 3: Implement `WorldFactBridge` and Runtime integration**
+- [x] **Step 3: Implement `WorldFactBridge` and Runtime integration**
 
 The bridge subscribes only to committed EventBus signals and emits normalized events such as:
 
@@ -198,7 +198,7 @@ The bridge subscribes only to committed EventBus signals and emits normalized ev
 
 Remove the `lao_li`-only market routing. Build requests through `AgentContextProjection`; acknowledge on valid complete response, release on stream failure/cancel. Continue using protocol v2 and 0–3 final actions.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run the Agent suite and main startup smoke test, then commit:
 
@@ -218,15 +218,15 @@ git commit -m "feat: feed public world facts to every agent"
 - Modify: `scripts/ai_agent/agent_runtime.gd`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Write failing role tests**
+- [x] **Step 1: Write failing role tests**
 
 Test a single active role, retained Soul/history/general tools, farmer/merchant/explorer eligibility, exact cost, cooldown, rejected audit event, successful `RoleChanged`, immediate goal/tool/schedule replacement, and rejection of a late old-role action with `role_capability_changed`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Expected: registry remains immutable and role transition APIs do not exist.
 
-- [ ] **Step 3: Implement role rules and current capability lookup**
+- [x] **Step 3: Implement role rules and current capability lookup**
 
 Expose:
 
@@ -241,7 +241,7 @@ func from_dict(value: Dictionary) -> bool
 
 The validator must consult `AgentRoleSystem`, not static merged profile tools. Rules in JSON must name concrete required items, minimum gold, completed-event counts, region/building requirements, cost, and cooldown.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git add scripts/ai_agent/agent_role_system.gd data/agents/role_transitions.json scripts/ai_agent/agent_registry.gd scripts/ai_agent/agent_action_validator.gd scripts/ai_agent/agent_runtime.gd tests/test_agent_roles.gd tests/run_agent_system_tests.gd
@@ -261,11 +261,11 @@ git commit -m "feat: support event-sourced agent roles"
 - Modify: `services/agent-service/tests/provider.test.ts`
 - Modify: `services/agent-service/tests/provider_stream.test.ts`
 
-- [ ] **Step 1: Write failing TypeScript tests**
+- [x] **Step 1: Write failing TypeScript tests**
 
 Require strict v2 parsing of the expanded projection, dynamic active role/goals, intersection of local and Godot tool lists, public/private event separation, read tools that cannot escape the supplied context, at most 6 read calls, 0–3 final commands, and at most one interaction command during dialogue.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 Push-Location services/agent-service; npm test; Pop-Location
@@ -273,7 +273,7 @@ Push-Location services/agent-service; npm test; Pop-Location
 
 Expected: expanded context and read-loop assertions fail.
 
-- [ ] **Step 3: Implement local reads and final-command separation**
+- [x] **Step 3: Implement local reads and final-command separation**
 
 Introduce distinct contracts:
 
@@ -294,7 +294,7 @@ type DecisionContext = {
 
 Read results are computed locally from the immutable context and returned to the Provider for another turn. Only command tools enter the Godot `actions` array.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 Push-Location services/agent-service; npm test; Pop-Location
@@ -315,15 +315,15 @@ git commit -m "feat: add dynamic agent context tools"
 - Modify: `services/agent-service/tests/provider.test.ts`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Write failing interaction tests**
+- [x] **Step 1: Write failing interaction tests**
 
 Cover `send_message` versus regional public `speak`, untrusted text preservation, propose/accept/reject/cancel/counter/expire, proposer reservation, duplicate-spend prevention, counteroffer lock replacement, receiver asset recheck, NPC↔NPC atomic transfer, exact integer overflow guards, idempotency, and urgent receiver wakeup.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Expected: `propose_trade` remains a no-op and no reservation API exists.
 
-- [ ] **Step 3: Implement interaction aggregates**
+- [x] **Step 3: Implement interaction aggregates**
 
 Use:
 
@@ -337,7 +337,7 @@ func get_offer(offer_id: String, observer_id: String) -> Dictionary
 
 An offer locks only the proposer side. Accept stages both inventories/wallets and the event batch, then commits all or restores all. Player-targeted acceptance returns `player_confirmation_required` until submitted by the Player UI command path.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run Godot Agent and TypeScript suites, then:
 
@@ -355,15 +355,15 @@ git commit -m "feat: add agent negotiation and peer trading"
 - Modify: `tests/test_agent_interactions.gd`
 - Modify: `tests/test_market_system.gd`
 
-- [ ] **Step 1: Write failing pressure tests**
+- [x] **Step 1: Write failing pressure tests**
 
 Prove public buy/sell behavior remains unchanged; private settlement leaves public stock unchanged; funded open buy/sell offers add pressure; close/expire removes open pressure; clearing above/below midpoint creates capped signed price-discovery pressure; per-offer, per-Agent, and per-day caps hold; normal settlement consumes pressure once.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run Agent and market suites. Expected: MarketSystem has no external pressure settlement API.
 
-- [ ] **Step 3: Implement bounded pressure input**
+- [x] **Step 3: Implement bounded pressure input**
 
 Add to MarketSystem:
 
@@ -374,7 +374,7 @@ func get_agent_market_pressure() -> Dictionary
 
 Apply a clamped factor inside existing price settlement, never assign price directly. Emit `MarketPressureSettled` after consumption.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git add scripts/ai_agent/agent_world_projector.gd scripts/systems/market_system.gd scripts/ai_agent/agent_interaction_system.gd tests/test_agent_interactions.gd tests/test_market_system.gd
@@ -393,15 +393,15 @@ git commit -m "feat: price private agent market signals"
 - Modify: `services/agent-service/tests/provider.test.ts`
 - Modify: `tests/run_agent_system_tests.gd`
 
-- [ ] **Step 1: Define concrete initial templates and failing tests**
+- [x] **Step 1: Define concrete initial templates and failing tests**
 
 Add `joint_crop_supply`, `exploration_sample`, `material_procurement`, and `shared_construction`. Tests cover proposal/versioned counter, all-party acceptance, Player manual acceptance, resource commitment locks, action-linked contribution verification, deterministic milestones, deadline failure, cancellation policy, exact integer reward split, relationship effects, and atomic completion settlement.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Expected: agreement APIs and command tools are missing.
 
-- [ ] **Step 3: Implement agreement lifecycle**
+- [x] **Step 3: Implement agreement lifecycle**
 
 Expose:
 
@@ -414,7 +414,7 @@ func get_agreement(agreement_id: String, observer_id: String) -> Dictionary
 
 Templates, not LLM text, define required contribution types, milestone predicates, refund policy, deadline range, and reward rounding.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git add scripts/ai_agent/agent_agreement_system.gd data/agents/cooperation_templates.json scripts/ai_agent/agent_action_executor_router.gd scripts/ai_agent/agent_runtime.gd services/agent-service/src/tool_contracts.ts services/agent-service/tests/provider.test.ts tests/test_agent_agreements.gd tests/run_agent_system_tests.gd
@@ -431,15 +431,15 @@ git commit -m "feat: add agent cooperation agreements"
 - Modify: `tests/test_agent_dialogue_ui.gd`
 - Modify: `tests/test_visible_agent_npc_dialogue.gd`
 
-- [ ] **Step 1: Write failing UI interaction tests**
+- [x] **Step 1: Write failing UI interaction tests**
 
 Require fixed-size scrollable dialogue history plus pending trade/cooperation cards, exact current terms, expiry state, accept/reject/counter buttons, no asset mutation on text reply/close, explicit Player command on button click, and reopening the NPC dialogue with pending cards intact.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Expected: dialogue panel has no structured interaction controls.
 
-- [ ] **Step 3: Implement generic interaction cards**
+- [x] **Step 3: Implement generic interaction cards**
 
 Render projection data rather than Provider prose. Emit:
 
@@ -454,7 +454,7 @@ signal interaction_response_requested(
 
 Main routes button actions to the Runtime Player-command entry point. Keep gameplay input blocked only while the dialogue is visible and restore it on every close path.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git add scripts/ui/dialogue_ui.gd scenes/ui/dialogue_ui.tscn scripts/main.gd scripts/actors/npc.gd tests/test_agent_dialogue_ui.gd tests/test_visible_agent_npc_dialogue.gd
@@ -471,19 +471,19 @@ git commit -m "feat: confirm agent interactions in dialogue"
 - Modify: `tests/test_agent_main_integration.gd`
 - Modify: `tests/test_economy_save_integration.gd`
 
-- [ ] **Step 1: Write failing save/replay tests**
+- [x] **Step 1: Write failing save/replay tests**
 
 Require next Runtime save version with event schema, next sequence, full event log, deterministic checkpoint, checkpoint sequence, per-Agent consumption cursors, and idempotency outcomes. Test atomic corrupt-log rejection, from-zero replay equivalence, checkpoint-plus-tail equivalence, pending locks/agreements/roles/pressure restore, and v2/v3 bootstrap migration without deleting world saves or SQLite memory.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run Agent and economy-save integration suites. Expected: new save fields/version absent; preserve the recorded unrelated aggregate baseline separately.
 
-- [ ] **Step 3: Implement migration and composition**
+- [x] **Step 3: Implement migration and composition**
 
 `AgentRuntime.configure()` owns and wires store, projector, context, bridge, interactions, agreements, and roles. `to_dict()` writes the complete bounded context. `from_dict()` validates into temporary instances before swapping live state. Old saves produce one deterministic `AgentWorldBootstrapped` event from their current authoritative data.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git add scripts/ai_agent/agent_runtime.gd scripts/core/save_manager.gd scripts/main.gd tests/test_agent_world_state.gd tests/test_agent_main_integration.gd tests/test_economy_save_integration.gd
@@ -496,7 +496,7 @@ git commit -m "feat: persist event-sourced agent world"
 - Create: `docs/validation/agent-system-validation.md`
 - Modify: `docs/superpowers/plans/2026-09-02-event-sourced-multi-agent-economy.md`
 
-- [ ] **Step 1: Run focused and service regressions**
+- [x] **Step 1: Run focused and service regressions**
 
 ```powershell
 godot_console --headless --path . --script res://tests/run_agent_system_tests.gd
@@ -508,7 +508,7 @@ Push-Location services/agent-service; npm test; Pop-Location
 
 Expected: focused suites and service tests pass; aggregate suites introduce no failures beyond the recorded existing baselines.
 
-- [ ] **Step 2: Verify parsing and startup**
+- [x] **Step 2: Verify parsing and startup**
 
 ```powershell
 godot_console --headless --path . --editor --quit
@@ -518,11 +518,11 @@ git diff --check
 
 Expected: zero exit codes and no new parse/startup errors. Delete only untracked `.gd.uid` files generated by the editor after a dry-run listing.
 
-- [ ] **Step 3: Exercise the configured local service path**
+- [x] **Step 3: Exercise the configured local service path**
 
 Start the local TypeScript service from its existing local JSON configuration, issue a Godot-shaped streaming decision request containing public world events, known actors and a private delta, and verify a protocol-v2 response with 0–3 authorized commands. Do not log the configured API key.
 
-- [ ] **Step 4: Record evidence and complete the plan**
+- [x] **Step 4: Record evidence and complete the plan**
 
 Append exact commands/counts, migration behavior, known baselines and manual scenario results to `docs/validation/agent-system-validation.md`; mark every completed checkbox in this plan; run `git diff --check`; commit:
 
