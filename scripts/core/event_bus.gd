@@ -25,6 +25,7 @@ signal gold_changed(new_gold: int)
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
 signal market_settled(total_day: int)
+signal market_pressure_settled(total_day: int, pressure: Dictionary)
 signal market_caravan_changed(
 	caravan_id: String,
 	item_id: String,

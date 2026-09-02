@@ -169,6 +169,16 @@ func _apply_public_world(event: Dictionary) -> void:
 				item[key] = payload[key]
 			market[item_id] = item
 			_public_world_state.market_summary = market
+		"MarketPressureSettled":
+			_public_world_state["last_market_pressure"] = payload.duplicate(true)
+			var market := (_public_world_state.market_summary as Dictionary).duplicate(true)
+			var pressure_items: Dictionary = ((payload.get("pressure", {}) as Dictionary).get("items", {}) as Dictionary)
+			for item_id_value in pressure_items:
+				var item_id := str(item_id_value)
+				var item := (market.get(item_id, {}) as Dictionary).duplicate(true)
+				item["last_agent_pressure"] = (pressure_items[item_id] as Dictionary).duplicate(true)
+				market[item_id] = item
+			_public_world_state.market_summary = market
 
 
 func _apply_actor_activity(event: Dictionary) -> void:

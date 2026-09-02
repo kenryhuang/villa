@@ -11,9 +11,41 @@ func run(assertions: TestAssert, tree: SceneTree = null) -> void:
 	_test_safe_ledger_boundaries_and_transaction_rollback(assertions)
 	_test_sealed_publication_requires_ownership(assertions)
 	_test_settlement_is_idempotent_and_bounded(assertions)
+	_test_agent_market_pressure_is_bounded_and_consumed(assertions)
 	_test_state_is_deep_copied_and_persistent(assertions)
 	if tree != null:
 		await _test_abandoned_state_recovers_without_market_calls(assertions, tree)
+
+
+func _test_agent_market_pressure_is_bounded_and_consumed(assertions: TestAssert) -> void:
+	var baseline := MarketSystem.new()
+	var pressured := MarketSystem.new()
+	assertions.truthy(baseline.configure([_wood_definition()]), "pressure baseline configures")
+	assertions.truthy(pressured.configure([_wood_definition()]), "pressured market configures")
+	assertions.truthy(pressured.has_method("set_agent_market_pressure"), "market exposes bounded Agent pressure input")
+	if not pressured.has_method("set_agent_market_pressure"):
+		baseline.free()
+		pressured.free()
+		return
+	var public_stock := pressured.get_stock("wood")
+	assertions.truthy(pressured.set_agent_market_pressure({
+		"day": 1,
+		"items": {"wood": {"demand": 999999, "supply": 0, "private_volume": 999999, "price_bias_bps": 999999}},
+	}), "market accepts and clamps structurally valid pressure")
+	var bounded: Dictionary = pressured.get_agent_market_pressure()
+	assertions.truthy(int(bounded.items.wood.demand) <= 80, "daily demand pressure is capped")
+	assertions.truthy(int(bounded.items.wood.private_volume) <= 80, "daily private volume is capped")
+	assertions.truthy(int(bounded.items.wood.price_bias_bps) <= 2000, "price-discovery bias is capped")
+	assertions.equal(pressured.get_stock("wood"), public_stock, "private pressure never mutates public stock")
+	assertions.truthy(baseline.settle_day(1), "baseline settles")
+	assertions.truthy(pressured.settle_day(1), "pressure settles through normal market refresh")
+	assertions.truthy(pressured.get_mid_price("wood") > baseline.get_mid_price("wood"), "bounded demand and above-midpoint signal raise settled price")
+	assertions.equal(pressured.get_agent_market_pressure(), {"day": 1, "items": {}}, "normal settlement consumes pressure exactly once")
+	assertions.truthy(not pressured.settle_day(1), "same-day replay cannot consume pressure again")
+	assertions.truthy(not pressured.set_agent_market_pressure({"day": -1, "items": {}}), "invalid pressure day is rejected")
+	assertions.truthy(not pressured.set_agent_market_pressure({"day": 2, "items": {"missing": {"demand": 1, "supply": 0, "private_volume": 0, "price_bias_bps": 0}}}), "unknown pressure item is rejected")
+	baseline.free()
+	pressured.free()
 
 
 func _wood_definition() -> Dictionary:

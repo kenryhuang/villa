@@ -6,17 +6,24 @@ const MAX_NOTE_LENGTH := 500
 const MAX_OFFER_MINUTES := 10080
 const MAX_ASSET_QUANTITY := 9223372036854775807
 const OPEN_STATUS := "open"
+const GAME_MINUTES_PER_DAY := 1080
+const MAX_PRESSURE_PER_OFFER := 20
+const MAX_PRESSURE_PER_AGENT := 40
+const MAX_PRESSURE_PER_DAY := 80
+const MAX_PRICE_BIAS_BPS := 2000
 
 var _economy: Variant
 var _store: Variant
 var _projector: Variant
 var _wake_agent: Callable
+var _market: Variant
 var _offers: Dictionary = {}
 var _results: Dictionary = {}
 var _next_offer_id := 1
+var _settled_pressure: Dictionary = {}
 
 
-func configure(economy: Variant, store: Variant, projector: Variant, wake_agent: Callable = Callable()) -> bool:
+func configure(economy: Variant, store: Variant, projector: Variant, wake_agent: Callable = Callable(), market: Variant = null) -> bool:
 	if (
 		economy == null
 		or store == null
@@ -32,6 +39,9 @@ func configure(economy: Variant, store: Variant, projector: Variant, wake_agent:
 	_store = store
 	_projector = projector
 	_wake_agent = wake_agent
+	_market = market
+	if _market != null and (not _market.has_method("set_agent_market_pressure") or not _market.has_method("get_mid_price")):
+		return false
 	return true
 
 
@@ -74,6 +84,7 @@ func expire_due(game_minute: int) -> Array[Dictionary]:
 			continue
 		offer.status = "expired"
 		_offers[offer_id] = offer
+		_refresh_market_pressure(game_minute)
 		_wake(str(offer.proposer_id), 3, game_minute)
 		_wake(str(offer.recipient_id), 3, game_minute)
 		results.append({"ok": true, "offer_id": offer_id, "events": committed.events})
@@ -122,6 +133,14 @@ func list_offers(observer_id: String) -> Array[Dictionary]:
 	return result
 
 
+func refresh_market_pressure(game_minute: int) -> bool:
+	return _refresh_market_pressure(game_minute)
+
+
+func mark_market_pressure_consumed(total_day: int) -> void:
+	_settled_pressure.erase(total_day)
+
+
 func _send_message(agent_id: String, arguments: Dictionary, command: Dictionary, game_minute: int) -> Dictionary:
 	var target_id := str(arguments.get("target_actor_id", ""))
 	var text: Variant = arguments.get("text")
@@ -161,6 +180,7 @@ func _propose_trade(agent_id: String, arguments: Dictionary, command: Dictionary
 		return committed
 	_offers[str(offer.offer_id)] = offer
 	_next_offer_id += 1
+	_refresh_market_pressure(game_minute)
 	_wake(target_id, 3, game_minute)
 	return {"ok": true, "offer_id": str(offer.offer_id), "events": committed.events}
 
@@ -189,6 +209,7 @@ func _counter_trade(agent_id: String, arguments: Dictionary, command: Dictionary
 	_offers[old_id] = old_offer
 	_offers[str(new_offer.offer_id)] = new_offer
 	_next_offer_id += 1
+	_refresh_market_pressure(game_minute)
 	_wake(str(new_offer.recipient_id), 3, game_minute)
 	return {"ok": true, "offer_id": str(new_offer.offer_id), "events": committed.events}
 
@@ -227,6 +248,8 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 		return committed
 	offer.status = "settled"
 	_offers[offer_id] = offer
+	_record_settlement_pressure(offer, game_minute)
+	_refresh_market_pressure(game_minute)
 	_wake(str(offer.proposer_id), 3, game_minute)
 	return {"ok": true, "offer_id": offer_id, "events": committed.events, "changed_entities": ["trade_offer:" + offer_id, "npc_inventory:" + str(offer.proposer_id), "npc_inventory:" + str(offer.recipient_id)], "resource_delta": {}}
 
@@ -245,6 +268,7 @@ func _close_offer(agent_id: String, arguments: Dictionary, command: Dictionary, 
 		return committed
 	offer.status = status
 	_offers[offer_id] = offer
+	_refresh_market_pressure(game_minute)
 	_wake(str(offer.proposer_id) if agent_id == str(offer.recipient_id) else str(offer.recipient_id), 3, game_minute)
 	return {"ok": true, "offer_id": offer_id, "events": committed.events}
 
@@ -317,6 +341,81 @@ func _bundle_delta(debits: Dictionary, credits: Dictionary) -> Dictionary:
 	for item_id in credits.items:
 		items[str(item_id)] = int(items.get(str(item_id), 0)) + int(credits.items[item_id])
 	return {"items": items, "gold": int(credits.gold) - int(debits.gold)}
+
+
+func _refresh_market_pressure(game_minute: int) -> bool:
+	if _market == null:
+		return true
+	var day := int(game_minute / GAME_MINUTES_PER_DAY) + 1
+	var per_agent: Dictionary = {}
+	for offer_value in _offers.values():
+		var offer := offer_value as Dictionary
+		if str(offer.status) != OPEN_STATUS or int(offer.expires_game_minute) <= game_minute:
+			continue
+		var agent_id := str(offer.proposer_id)
+		var agent_items: Dictionary = per_agent.get(agent_id, {})
+		_add_bundle_pressure(agent_items, offer.proposer_gives, "supply")
+		_add_bundle_pressure(agent_items, offer.proposer_receives, "demand")
+		per_agent[agent_id] = agent_items
+	var combined: Dictionary = {}
+	for agent_items_value in per_agent.values():
+		for item_id_value in (agent_items_value as Dictionary):
+			var item_id := str(item_id_value)
+			var source: Dictionary = agent_items_value[item_id]
+			var target: Dictionary = combined.get(item_id, _empty_pressure())
+			target.demand = mini(MAX_PRESSURE_PER_DAY, int(target.demand) + mini(MAX_PRESSURE_PER_AGENT, int(source.demand)))
+			target.supply = mini(MAX_PRESSURE_PER_DAY, int(target.supply) + mini(MAX_PRESSURE_PER_AGENT, int(source.supply)))
+			combined[item_id] = target
+	for item_id_value in (_settled_pressure.get(day, {}) as Dictionary):
+		var item_id := str(item_id_value)
+		var settled: Dictionary = _settled_pressure[day][item_id]
+		var target: Dictionary = combined.get(item_id, _empty_pressure())
+		target.private_volume = mini(MAX_PRESSURE_PER_DAY, int(settled.private_volume))
+		target.price_bias_bps = clampi(int(settled.price_bias_bps), -MAX_PRICE_BIAS_BPS, MAX_PRICE_BIAS_BPS)
+		combined[item_id] = target
+	return bool(_market.call("set_agent_market_pressure", {"day": day, "items": combined}))
+
+
+func _add_bundle_pressure(target: Dictionary, bundle: Dictionary, field: String) -> void:
+	for item_id_value in bundle.items:
+		var item_id := str(item_id_value)
+		var pressure: Dictionary = target.get(item_id, _empty_pressure())
+		pressure[field] = mini(MAX_PRESSURE_PER_AGENT, int(pressure[field]) + mini(MAX_PRESSURE_PER_OFFER, int(bundle.items[item_id])))
+		target[item_id] = pressure
+
+
+func _record_settlement_pressure(offer: Dictionary, game_minute: int) -> void:
+	if _market == null:
+		return
+	var day := int(game_minute / GAME_MINUTES_PER_DAY) + 1
+	var day_pressure: Dictionary = _settled_pressure.get(day, {})
+	_record_cash_price_signal(day_pressure, offer.proposer_gives, offer.proposer_receives)
+	_record_cash_price_signal(day_pressure, offer.proposer_receives, offer.proposer_gives)
+	_settled_pressure[day] = day_pressure
+
+
+func _record_cash_price_signal(day_pressure: Dictionary, item_side: Dictionary, cash_side: Dictionary) -> void:
+	if int(cash_side.gold) <= 0 or (item_side.items as Dictionary).size() != 1:
+		return
+	var item_id := str((item_side.items as Dictionary).keys()[0])
+	var quantity := int(item_side.items[item_id])
+	var midpoint := int(_market.call("get_mid_price", item_id))
+	if quantity <= 0 or midpoint <= 0:
+		return
+	var clearing_price := float(cash_side.gold) / float(quantity)
+	var bias := clampi(roundi((clearing_price - float(midpoint)) * 10000.0 / float(midpoint)), -MAX_PRICE_BIAS_BPS, MAX_PRICE_BIAS_BPS)
+	var pressure: Dictionary = day_pressure.get(item_id, _empty_pressure())
+	var old_volume := int(pressure.private_volume)
+	var added_volume := mini(MAX_PRESSURE_PER_OFFER, quantity)
+	var new_volume := mini(MAX_PRESSURE_PER_DAY, old_volume + added_volume)
+	if new_volume > 0:
+		pressure.price_bias_bps = clampi(roundi((float(int(pressure.price_bias_bps) * old_volume) + float(bias * added_volume)) / float(old_volume + added_volume)), -MAX_PRICE_BIAS_BPS, MAX_PRICE_BIAS_BPS)
+	pressure.private_volume = new_volume
+	day_pressure[item_id] = pressure
+
+
+func _empty_pressure() -> Dictionary:
+	return {"demand": 0, "supply": 0, "private_volume": 0, "price_bias_bps": 0}
 
 
 func _commit(events: Array[Dictionary], key: String) -> Dictionary:

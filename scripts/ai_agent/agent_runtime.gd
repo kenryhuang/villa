@@ -88,7 +88,7 @@ func configure(
 		return false
 	if not role_system.configure(registry, _npc_economy, event_store, world_projector, building_registry, knowledge_registry):
 		return false
-	if not interaction_system.configure(_npc_economy, event_store, world_projector, Callable(self, "_wake_agent_for_interaction")):
+	if not interaction_system.configure(_npc_economy, event_store, world_projector, Callable(self, "_wake_agent_for_interaction"), _market):
 		return false
 	if _farm_port != null:
 		farm_registry = _farm_port
@@ -431,6 +431,8 @@ func _connect_events() -> void:
 		_event_bus.market_price_changed.connect(_on_market_price_changed)
 	if not _event_bus.market_stock_changed.is_connected(_on_market_stock_changed):
 		_event_bus.market_stock_changed.connect(_on_market_stock_changed)
+	if not _event_bus.market_pressure_settled.is_connected(_on_market_pressure_settled):
+		_event_bus.market_pressure_settled.connect(_on_market_pressure_settled)
 	if not _event_bus.weather_changed.is_connected(_on_weather_changed):
 		_event_bus.weather_changed.connect(_on_weather_changed)
 	if not _event_bus.environment_condition_changed.is_connected(_on_environment_condition_changed):
@@ -467,6 +469,7 @@ func _on_market_stock_changed(item_id: String, stock: int) -> void:
 
 func _on_day_changed(total_day: int) -> void:
 	var minute := _absolute_game_minute()
+	interaction_system.refresh_market_pressure(minute)
 	world_fact_bridge.publish_day(total_day, minute, "day:%d" % total_day)
 	_notify_public_event(2, minute)
 
@@ -486,6 +489,13 @@ func _on_weather_changed(weather: String) -> void:
 func _on_environment_condition_changed(condition_id: String, state: Dictionary) -> void:
 	var minute := _absolute_game_minute()
 	world_fact_bridge.publish_environment(condition_id, state, minute, "environment:%s:%d:%d" % [condition_id, minute, JSON.stringify(state).hash()])
+	_notify_public_event(2, minute)
+
+
+func _on_market_pressure_settled(total_day: int, pressure: Dictionary) -> void:
+	var minute := _absolute_game_minute()
+	interaction_system.mark_market_pressure_consumed(total_day)
+	world_fact_bridge.publish_market_pressure(total_day, pressure, minute, "market-pressure:%d" % total_day)
 	_notify_public_event(2, minute)
 
 
@@ -523,9 +533,13 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	public_world.season = int(_season.current_season)
 	projected.public_world_state = public_world
 	var market_snapshot: Dictionary = {}
+	var agent_pressure: Dictionary = (_market.call("get_agent_market_pressure") as Dictionary).get("items", {}) if _market.has_method("get_agent_market_pressure") else {}
 	for definition in GameDataScript.get_market_items():
 		var item_id := str(definition.id)
 		market_snapshot[item_id] = _market.call("get_item_state", item_id)
+		if agent_pressure.has(item_id):
+			(market_snapshot[item_id] as Dictionary)["agent_pressure"] = (agent_pressure[item_id] as Dictionary).duplicate(true)
+	projected.market_view = market_snapshot.duplicate(true)
 	var farm_snapshot: Variant = (
 		farm_registry.call("get_snapshot", agent_id, game_minute)
 		if farm_registry.has_method("get_snapshot")

@@ -7,6 +7,11 @@ const MarketMath = preload("res://scripts/shared/market_math.gd")
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
 signal market_settled(total_day: int)
+signal market_pressure_settled(total_day: int, pressure: Dictionary)
+
+const MAX_AGENT_PRESSURE_PER_ITEM := 80
+const MAX_PRIVATE_VOLUME_PER_ITEM := 80
+const MAX_PRICE_BIAS_BPS := 2000
 
 var last_settled_day: int = 0
 
@@ -31,6 +36,7 @@ var _finalized_price_events: Dictionary = {}
 var _finalized_settlement_day := 0
 var _publication_in_progress := false
 var _tearing_down := false
+var _agent_market_pressure: Dictionary = {"day": 0, "items": {}}
 
 
 func _init() -> void:
@@ -112,6 +118,7 @@ func configure(item_definitions: Array) -> bool:
 	_items = configured_items
 	_catalog_defaults = configured_items.duplicate(true)
 	last_settled_day = 0
+	_agent_market_pressure = {"day": 0, "items": {}}
 	return true
 
 
@@ -142,6 +149,34 @@ func get_history(item_id: String) -> Array:
 		return []
 	var history: Array = (_items[item_id] as Dictionary).get("history", [])
 	return history.duplicate(true)
+
+
+func set_agent_market_pressure(snapshot: Dictionary) -> bool:
+	_recover_abandoned_state()
+	if not _can_direct_mutate() or snapshot.size() != 2 or not snapshot.has("day") or not snapshot.has("items") or not EconomyLimitsScript.is_safe_date(snapshot.day) or not snapshot.items is Dictionary:
+		return false
+	var items: Dictionary = {}
+	for item_id_value in snapshot.items:
+		var item_id := str(item_id_value)
+		var value: Variant = snapshot.items[item_id_value]
+		if not _items.has(item_id) or not value is Dictionary:
+			return false
+		var pressure := value as Dictionary
+		for field in ["demand", "supply", "private_volume", "price_bias_bps"]:
+			if not pressure.has(field) or not _is_integer_number(pressure[field]):
+				return false
+		items[item_id] = {
+			"demand": clampi(int(pressure.demand), 0, MAX_AGENT_PRESSURE_PER_ITEM),
+			"supply": clampi(int(pressure.supply), 0, MAX_AGENT_PRESSURE_PER_ITEM),
+			"private_volume": clampi(int(pressure.private_volume), 0, MAX_PRIVATE_VOLUME_PER_ITEM),
+			"price_bias_bps": clampi(int(pressure.price_bias_bps), -MAX_PRICE_BIAS_BPS, MAX_PRICE_BIAS_BPS),
+		}
+	_agent_market_pressure = {"day": int(snapshot.day), "items": items}
+	return true
+
+
+func get_agent_market_pressure() -> Dictionary:
+	return _agent_market_pressure.duplicate(true)
 
 
 func quote_buy(item_id: String, quantity: int) -> int:
@@ -427,20 +462,25 @@ func settle_day(
 ) -> bool:
 	if not can_settle_day(total_day):
 		return false
-	begin_atomic_transaction()
+	var consumed_pressure := _agent_market_pressure.duplicate(true)
+	var pressure_items := consumed_pressure.items as Dictionary
+	var transaction := begin_atomic_transaction()
+	if transaction == null:
+		return false
 	for item_id_value in _items.keys():
 		var item_id := str(item_id_value)
 		var state: Dictionary = _items[item_id]
+		var pressure: Dictionary = pressure_items.get(item_id, {})
 		var old_price := int(state.get("mid_price", 0))
 		var target_price := MarketMath.target_price(
 			int(state.get("base_price", 0)),
 			int(state.get("stock", 0)),
 			int(state.get("target_stock", 0)),
-			int(state.get("demand", 0)),
-			int(state.get("supply", 0)),
+			int(state.get("demand", 0)) + int(pressure.get("demand", 0)),
+			int(state.get("supply", 0)) + int(pressure.get("supply", 0)),
 			int(state.get("daily_liquidity", 0)),
 			_factor_for_item(season_factors, item_id),
-			_factor_for_item(event_factors, item_id)
+			_factor_for_item(event_factors, item_id) * (1.0 + float(pressure.get("price_bias_bps", 0)) / 10000.0)
 		)
 		var new_price := MarketMath.smooth_price(
 			old_price,
@@ -460,7 +500,11 @@ func settle_day(
 			_emit_price_changed(item_id, new_price)
 	last_settled_day = total_day
 	_emit_settled(total_day)
-	end_atomic_transaction(true)
+	if not end_atomic_transaction(transaction, true):
+		return false
+	_agent_market_pressure = {"day": int(consumed_pressure.day), "items": {}}
+	market_pressure_settled.emit(total_day, consumed_pressure)
+	_emit_event_bus("market_pressure_settled", [total_day, consumed_pressure])
 	return true
 
 

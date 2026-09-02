@@ -57,6 +57,10 @@ func publish_market_stock(item_id: String, stock: int, game_minute: int, source_
 	return _publish("MarketStockChanged", "market", item_id, payload, game_minute, source_id)
 
 
+func publish_market_pressure(total_day: int, pressure: Dictionary, game_minute: int, source_id: String) -> bool:
+	return _publish("MarketPressureSettled", "market_pressure", "day-%d" % total_day, {"day": total_day, "pressure": pressure.duplicate(true)}, game_minute, source_id)
+
+
 func _publish(
 	event_type: String,
 	aggregate_type: String,
