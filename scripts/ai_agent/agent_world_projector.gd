@@ -4,9 +4,11 @@ extends RefCounted
 const GLOBAL_EVENT_LIMIT := 64
 const ACTOR_EVENT_LIMIT := 32
 const KNOWN_ACTOR_EVENT_LIMIT := 12
+const CHECKPOINT_VERSION := 1
 
 var _agent_ids: Array[String] = []
 var _actors: Dictionary = {}
+var _initial_actors: Dictionary = {}
 var _public_world_state: Dictionary = {
 	"game_day": 1,
 	"absolute_game_minute": 0,
@@ -59,6 +61,7 @@ func configure(agent_ids: Array, actor_profiles: Array, inbox: Variant) -> bool:
 		}
 	_agent_ids = normalized_agents
 	_actors = normalized_actors
+	_initial_actors = normalized_actors.duplicate(true)
 	_actor_public_events.clear()
 	for actor_id in _actors:
 		_actor_public_events[actor_id] = []
@@ -97,6 +100,109 @@ func market_view() -> Dictionary:
 
 func get_last_sequence() -> int:
 	return _last_sequence
+
+
+func to_dict() -> Dictionary:
+	var actors: Array[Dictionary] = []
+	var actor_ids := _actors.keys()
+	actor_ids.sort()
+	for actor_id in actor_ids:
+		actors.append((_actors[actor_id] as Dictionary).duplicate(true))
+	var actor_events: Array[Dictionary] = []
+	var event_actor_ids := _actor_public_events.keys()
+	event_actor_ids.sort()
+	for actor_id in event_actor_ids:
+		actor_events.append({
+			"actor_id": str(actor_id),
+			"events": (_actor_public_events[actor_id] as Array).duplicate(true),
+		})
+	var relationships: Array[Dictionary] = []
+	var relationship_keys := _relationships.keys()
+	relationship_keys.sort()
+	for key in relationship_keys:
+		relationships.append({"pair_key": str(key), "state": (_relationships[key] as Dictionary).duplicate(true)})
+	return {
+		"version": CHECKPOINT_VERSION,
+		"checkpoint_sequence": _last_sequence,
+		"public_world_state": _public_world_state.duplicate(true),
+		"actors": actors,
+		"global_public_events": _global_public_events.duplicate(true),
+		"actor_public_events": actor_events,
+		"relationships": relationships,
+	}
+
+
+func validate_dict(value: Dictionary) -> bool:
+	return _normalize_checkpoint(value) != null
+
+
+func from_dict(value: Dictionary) -> bool:
+	var normalized: Variant = _normalize_checkpoint(value)
+	if normalized == null:
+		return false
+	_last_sequence = int(normalized.checkpoint_sequence)
+	_public_world_state = (normalized.public_world_state as Dictionary).duplicate(true)
+	_actors = (normalized.actors as Dictionary).duplicate(true)
+	_global_public_events.assign(normalized.global_public_events)
+	_actor_public_events = (normalized.actor_public_events as Dictionary).duplicate(true)
+	_relationships = (normalized.relationships as Dictionary).duplicate(true)
+	return true
+
+
+func _normalize_checkpoint(value: Dictionary) -> Variant:
+	var fields := ["version", "checkpoint_sequence", "public_world_state", "actors", "global_public_events", "actor_public_events", "relationships"]
+	if value.size() != fields.size():
+		return null
+	for field in fields:
+		if not value.has(field):
+			return null
+	if value.version != CHECKPOINT_VERSION or not _is_nonnegative_integer(value.checkpoint_sequence) or not value.public_world_state is Dictionary or not value.actors is Array or not value.global_public_events is Array or not value.actor_public_events is Array or not value.relationships is Array:
+		return null
+	var actors: Dictionary = {}
+	var last_actor_id := ""
+	for actor_value in value.actors:
+		if not actor_value is Dictionary:
+			return null
+		var actor := actor_value as Dictionary
+		var actor_id := str(actor.get("actor_id", ""))
+		if actor_id.is_empty() or actor_id <= last_actor_id or not _actors.has(actor_id) or not actor.get("current_public_state") is Dictionary:
+			return null
+		last_actor_id = actor_id
+		actors[actor_id] = actor.duplicate(true)
+	if actors.size() != _actors.size():
+		return null
+	var actor_events: Dictionary = {}
+	last_actor_id = ""
+	for record_value in value.actor_public_events:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var actor_id := str(record.get("actor_id", ""))
+		if record.size() != 2 or actor_id.is_empty() or actor_id <= last_actor_id or not actors.has(actor_id) or not record.get("events") is Array or (record.events as Array).size() > ACTOR_EVENT_LIMIT:
+			return null
+		last_actor_id = actor_id
+		actor_events[actor_id] = (record.events as Array).duplicate(true)
+	if actor_events.size() != actors.size() or (value.global_public_events as Array).size() > GLOBAL_EVENT_LIMIT:
+		return null
+	var relationships: Dictionary = {}
+	var last_pair_key := ""
+	for record_value in value.relationships:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var pair_key := str(record.get("pair_key", ""))
+		if record.size() != 2 or pair_key.is_empty() or pair_key <= last_pair_key or not record.get("state") is Dictionary:
+			return null
+		last_pair_key = pair_key
+		relationships[pair_key] = (record.state as Dictionary).duplicate(true)
+	return {
+		"checkpoint_sequence": int(value.checkpoint_sequence),
+		"public_world_state": (value.public_world_state as Dictionary).duplicate(true),
+		"actors": actors,
+		"global_public_events": (value.global_public_events as Array).duplicate(true),
+		"actor_public_events": actor_events,
+		"relationships": relationships,
+	}
 
 
 func get_actor(actor_id: String) -> Dictionary:
@@ -252,6 +358,7 @@ func _is_visible_to(event: Dictionary, observer_id: String) -> bool:
 
 func _reset_projection() -> void:
 	_last_sequence = 0
+	_actors = _initial_actors.duplicate(true)
 	_global_public_events.clear()
 	_relationships.clear()
 	_public_world_state = {
@@ -266,7 +373,8 @@ func _reset_projection() -> void:
 		"market_summary": {},
 		"public_discoveries": [],
 	}
-	for actor_id in _actor_public_events:
+	_actor_public_events.clear()
+	for actor_id in _actors:
 		_actor_public_events[actor_id] = []
 
 
@@ -289,3 +397,12 @@ func _pair_key(left_id: String, right_id: String) -> String:
 	var ids := [left_id, right_id]
 	ids.sort()
 	return "%s\n%s" % ids
+
+
+func _is_nonnegative_integer(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+		and int(value) >= 0
+	)

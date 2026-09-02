@@ -27,7 +27,8 @@ const AgentRoleSystemScript = preload("res://scripts/ai_agent/agent_role_system.
 const AgentInteractionSystemScript = preload("res://scripts/ai_agent/agent_interaction_system.gd")
 const AgentAgreementSystemScript = preload("res://scripts/ai_agent/agent_agreement_system.gd")
 
-const VERSION := 3
+const VERSION := 4
+const EVENT_SCHEMA_VERSION := 1
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
 
@@ -64,6 +65,7 @@ var _store_agent_session := false
 var _agent_session_directory := AgentClientConfigScript.DEFAULT_SESSION_DIRECTORY
 var _request_triggers: Dictionary = {}
 var _farm_port: Variant
+var _base_actor_profiles: Array[Dictionary] = []
 
 
 func _init() -> void:
@@ -86,6 +88,8 @@ func configure(
 	_market = market
 	_season = season
 	_hud_bus = hud_bus
+	_base_actor_profiles.clear()
+	_base_actor_profiles = _actor_profiles()
 	if not _configure_world_context():
 		return false
 	if not role_system.configure(registry, _npc_economy, event_store, world_projector, building_registry, knowledge_registry):
@@ -350,6 +354,7 @@ func _on_checkpoint_exported(success: bool, response: Dictionary, error: String,
 
 func _on_load_completed(slot: int) -> void:
 	set_save_slot(slot)
+	interaction_system.refresh_market_pressure(_absolute_game_minute())
 	if not service_enabled:
 		_publish("warning", "Agent 服务未连接；世界已加载，角色记忆暂不可用。", {"slot": slot})
 		return
@@ -395,12 +400,28 @@ func _valid_checkpoint_record(value: Dictionary) -> bool:
 
 
 func to_dict() -> Dictionary:
-	return {"version": VERSION, "session_id": session_id, "executor": executor.to_dict(), "farm": farm_registry.to_dict(), "buildings": building_registry.to_dict(), "activities": activity_system.to_dict(), "knowledge": knowledge_registry.to_dict()}
+	return {
+		"version": VERSION,
+		"event_schema_version": EVENT_SCHEMA_VERSION,
+		"session_id": session_id,
+		"executor": executor.to_dict(),
+		"farm": farm_registry.to_dict(),
+		"buildings": building_registry.to_dict(),
+		"activities": activity_system.to_dict(),
+		"knowledge": knowledge_registry.to_dict(),
+		"event_store": event_store.to_dict(),
+		"projection_checkpoint": world_projector.to_dict(),
+		"checkpoint_sequence": world_projector.get_last_sequence(),
+		"perception_inbox": perception_inbox.to_dict(),
+		"roles": role_system.to_dict(),
+		"interactions": interaction_system.to_dict(),
+		"agreements": agreement_system.to_dict(),
+	}
 
 
 func validate_dict(value: Dictionary) -> bool:
 	var version := int(value.get("version", 0))
-	if version not in [2, VERSION] or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
+	if version not in [2, 3, VERSION] or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
 		return false
 	var farm = FarmScript.new() if _farm_port == null or version == 2 else farm_registry
 	var buildings = BuildingScript.new()
@@ -413,12 +434,21 @@ func validate_dict(value: Dictionary) -> bool:
 			if farm.has_method("validate_dict")
 			else bool(farm.call("from_dict", value.farm))
 		)
-	return executor.validate_dict(value.executor) and farm_valid and value.get("buildings") is Dictionary and buildings.from_dict(value.buildings) and value.get("activities") is Dictionary and activities.from_dict(value.activities) and value.get("knowledge") is Dictionary and knowledge.from_dict(value.knowledge)
+	var legacy_valid := executor.validate_dict(value.executor) and farm_valid and value.get("buildings") is Dictionary and buildings.from_dict(value.buildings) and value.get("activities") is Dictionary and activities.from_dict(value.activities) and value.get("knowledge") is Dictionary and knowledge.from_dict(value.knowledge)
+	if not legacy_valid or version < VERSION:
+		return legacy_valid
+	return _validate_event_sourced_state(value)
 
 
-func from_dict(value: Dictionary) -> bool:
+func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 	if not validate_dict(value):
 		return false
+	var apply_pressure_now: bool = apply_market_pressure and not (
+		_save_manager != null
+		and is_instance_valid(_save_manager)
+		and _save_manager.has_method("is_restore_transaction_active")
+		and bool(_save_manager.call("is_restore_transaction_active"))
+	)
 	var before := to_dict()
 	var restore_farm := true
 	if _farm_port != null and int(value.version) == 2:
@@ -433,36 +463,177 @@ func from_dict(value: Dictionary) -> bool:
 		knowledge_registry.from_dict(before.knowledge)
 		return false
 	session_id = str(value.session_id)
+	if int(value.version) == VERSION:
+		if not _restore_event_sourced_state(value, apply_pressure_now):
+			_restore_legacy_components(before)
+			return false
+	else:
+		if not _bootstrap_legacy_event_state(int(value.version), apply_pressure_now):
+			_restore_legacy_components(before)
+			return false
 	if gateway != null:
 		gateway.bump_epoch()
 	return true
 
 
+func _validate_event_sourced_state(value: Dictionary) -> bool:
+	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements"]:
+		if not value.has(field):
+			return false
+	if value.event_schema_version != EVENT_SCHEMA_VERSION or not value.event_store is Dictionary or not value.projection_checkpoint is Dictionary or not value.perception_inbox is Dictionary or not value.roles is Dictionary or not value.interactions is Dictionary or not value.agreements is Dictionary:
+		return false
+	var restored_store = AgentWorldEventStoreScript.new()
+	if not restored_store.from_dict(value.event_store):
+		return false
+	var last_sequence := int(value.event_store.next_global_sequence) - 1
+	if not _is_nonnegative_integer(value.checkpoint_sequence) or int(value.checkpoint_sequence) > last_sequence:
+		return false
+	var restored_inbox = AgentPerceptionInboxScript.new()
+	var restored_projector = AgentWorldProjectorScript.new()
+	if not restored_projector.configure(registry.get_agent_ids(), _actor_profiles(), restored_inbox):
+		return false
+	var prefix: Array[Dictionary] = []
+	var tail: Array[Dictionary] = []
+	for event_value in restored_store.get_events_after(0):
+		if int(event_value.global_sequence) <= int(value.checkpoint_sequence):
+			prefix.append(event_value)
+		else:
+			tail.append(event_value)
+	if not restored_projector.replay(prefix) or _canonical_json_value(restored_projector.to_dict()) != _canonical_json_value(value.projection_checkpoint):
+		return false
+	if not restored_projector.apply_batch(tail) or restored_projector.get_last_sequence() != last_sequence:
+		return false
+	if not restored_inbox.validate_dict(value.perception_inbox, last_sequence):
+		return false
+	var restored_roles = AgentRoleSystemScript.new()
+	if not restored_roles.configure(registry, _npc_economy, restored_store, restored_projector, building_registry, knowledge_registry) or not restored_roles.validate_dict(value.roles):
+		return false
+	var restored_interactions = AgentInteractionSystemScript.new()
+	if not restored_interactions.configure(_npc_economy, restored_store, restored_projector, Callable(), _market) or not restored_interactions.validate_dict(value.interactions):
+		return false
+	var restored_agreements = AgentAgreementSystemScript.new()
+	return restored_agreements.configure(_npc_economy, restored_interactions, restored_store, restored_projector) and restored_agreements.validate_dict(value.agreements)
+
+
+func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := true) -> bool:
+	var restored_store = AgentWorldEventStoreScript.new()
+	if not restored_store.from_dict(value.event_store):
+		return false
+	var restored_inbox = AgentPerceptionInboxScript.new()
+	var restored_projector = AgentWorldProjectorScript.new()
+	if not restored_projector.configure(registry.get_agent_ids(), _actor_profiles(), restored_inbox):
+		return false
+	var all_events: Array[Dictionary] = restored_store.get_events_after(0)
+	if not restored_projector.replay(all_events) or not restored_inbox.from_dict(value.perception_inbox, restored_projector.get_last_sequence()):
+		return false
+	var restored_context = AgentContextProjectionScript.new()
+	var restored_bridge = AgentWorldFactBridgeScript.new()
+	if not restored_context.configure(restored_projector, restored_inbox) or not restored_bridge.configure(restored_store, restored_projector):
+		return false
+	var restored_roles = AgentRoleSystemScript.new()
+	if not restored_roles.configure(registry, _npc_economy, restored_store, restored_projector, building_registry, knowledge_registry) or not restored_roles.from_dict(value.roles):
+		return false
+	var restored_interactions = AgentInteractionSystemScript.new()
+	if not restored_interactions.configure(_npc_economy, restored_store, restored_projector, Callable(self, "_wake_agent_for_interaction"), _market):
+		return false
+	if interaction_system._player_inventory != null and not restored_interactions.configure_player_assets(interaction_system._player_inventory, interaction_system._player_wallet):
+		return false
+	if not restored_interactions.from_dict(value.interactions, apply_market_pressure):
+		return false
+	var restored_agreements = AgentAgreementSystemScript.new()
+	if not restored_agreements.configure(_npc_economy, restored_interactions, restored_store, restored_projector, Callable(self, "_wake_agent_for_interaction")) or not restored_agreements.from_dict(value.agreements):
+		return false
+	event_store = restored_store
+	perception_inbox = restored_inbox
+	world_projector = restored_projector
+	context_projection = restored_context
+	world_fact_bridge = restored_bridge
+	role_system = restored_roles
+	interaction_system = restored_interactions
+	agreement_system = restored_agreements
+	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system, interaction_system, agreement_system):
+		return false
+	return executor.from_dict(value.executor)
+
+
+func _bootstrap_legacy_event_state(source_version: int, apply_market_pressure := true) -> bool:
+	var restored_store = AgentWorldEventStoreScript.new()
+	var minute := _absolute_game_minute()
+	var candidate: Array[Dictionary] = [{
+		"event_type": "AgentWorldBootstrapped",
+		"aggregate_type": "agent_world",
+		"aggregate_id": session_id if not session_id.is_empty() else "legacy",
+		"actor_id": "system",
+		"game_minute": minute,
+		"command_id": "migrate-runtime-v%d" % source_version,
+		"correlation_id": "legacy-agent-world-migration",
+		"causation_event_id": "",
+		"visibility": {"scope": "public", "actor_ids": []},
+		"payload": {
+			"source_runtime_version": source_version,
+			"world_revision": executor.world_revision,
+			"agent_ids": registry.get_agent_ids(),
+		},
+	}]
+	var committed: Dictionary = restored_store.append_batch(candidate, "legacy-bootstrap:%s:v%d" % [session_id, source_version])
+	if not bool(committed.get("ok", false)):
+		return false
+	var legacy_state := {
+		"event_store": restored_store.to_dict(),
+		"perception_inbox": _empty_inbox_state(),
+		"roles": role_system.to_dict(),
+		"interactions": {"version": 1, "next_offer_id": 1, "offers": [], "idempotency_results": [], "settled_pressure": [], "external_reservations": []},
+		"agreements": {"version": 1, "next_agreement_id": 1, "agreements": [], "idempotency_results": [], "relationships": [], "relationship_daily_changes": []},
+		"executor": executor.to_dict(),
+	}
+	return _restore_event_sourced_state(legacy_state, apply_market_pressure)
+
+
+func _empty_inbox_state() -> Dictionary:
+	var cursors: Array[Dictionary] = []
+	for agent_id in registry.get_agent_ids():
+		cursors.append({"agent_id": str(agent_id), "consumed_sequence": 0})
+	cursors.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return str(left.agent_id) < str(right.agent_id))
+	return {"version": 1, "consumption_cursors": cursors}
+
+
+func _restore_legacy_components(value: Dictionary) -> void:
+	if farm_registry.has_method("from_dict"):
+		farm_registry.call("from_dict", value.farm)
+	building_registry.from_dict(value.buildings)
+	activity_system.from_dict(value.activities)
+	knowledge_registry.from_dict(value.knowledge)
+	executor.from_dict(value.executor)
+
+
+func _canonical_json_value(value: Variant) -> Variant:
+	if typeof(value) == TYPE_FLOAT and is_finite(float(value)) and floorf(float(value)) == float(value):
+		return int(value)
+	if value is Array:
+		var result: Array = []
+		for item in value:
+			result.append(_canonical_json_value(item))
+		return result
+	if value is Dictionary:
+		var result: Dictionary = {}
+		for key in value:
+			result[key] = _canonical_json_value(value[key])
+		return result
+	return value
+
+
+func _is_nonnegative_integer(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+		and int(value) >= 0
+	)
+
+
 func _configure_world_context() -> bool:
 	var agent_ids: Array = registry.get_agent_ids()
-	var actor_profiles: Array[Dictionary] = []
-	var default_regions := {
-		"farmer_ahe": "farm",
-		"lao_li": "village",
-		"xuezhe_lin": "forest",
-	}
-	for agent_id_value in agent_ids:
-		var agent_id := str(agent_id_value)
-		var agent: Dictionary = registry.get_agent(agent_id)
-		actor_profiles.append({
-			"actor_id": agent_id,
-			"actor_type": "npc_agent",
-			"display_name": str(agent.get("display_name", agent_id)),
-			"public_role": str(agent.get("role_id", "unknown")),
-			"region_id": str(default_regions.get(agent_id, "village")),
-		})
-	actor_profiles.append({
-		"actor_id": "player",
-		"actor_type": "player",
-		"display_name": "玩家",
-		"public_role": "farmer",
-		"region_id": "farm",
-	})
+	var actor_profiles := _actor_profiles()
 	if not world_projector.configure(agent_ids, actor_profiles, perception_inbox):
 		return false
 	if not context_projection.configure(world_projector, perception_inbox):
@@ -491,6 +662,35 @@ func _configure_world_context() -> bool:
 		):
 			return false
 	return true
+
+
+func _actor_profiles() -> Array[Dictionary]:
+	if not _base_actor_profiles.is_empty():
+		return _base_actor_profiles.duplicate(true)
+	var actor_profiles: Array[Dictionary] = []
+	var default_regions := {
+		"farmer_ahe": "farm",
+		"lao_li": "village",
+		"xuezhe_lin": "forest",
+	}
+	for agent_id_value in registry.get_agent_ids():
+		var agent_id := str(agent_id_value)
+		var agent: Dictionary = registry.get_agent(agent_id)
+		actor_profiles.append({
+			"actor_id": agent_id,
+			"actor_type": "npc_agent",
+			"display_name": str(agent.get("display_name", agent_id)),
+			"public_role": str(agent.get("role_id", "unknown")),
+			"region_id": str(default_regions.get(agent_id, "village")),
+		})
+	actor_profiles.append({
+		"actor_id": "player",
+		"actor_type": "player",
+		"display_name": "玩家",
+		"public_role": "farmer",
+		"region_id": "farm",
+	})
+	return actor_profiles
 
 
 func _connect_events() -> void:

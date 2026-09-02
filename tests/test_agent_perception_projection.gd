@@ -12,6 +12,7 @@ func run(assertions: TestAssert) -> void:
 	_test_public_facts_reach_independent_inboxes(assertions)
 	_test_actor_activity_respects_visibility(assertions)
 	_test_projection_windows_do_not_truncate_store(assertions)
+	_test_checkpoint_and_cursor_restore(assertions)
 
 
 func _test_public_facts_reach_independent_inboxes(assertions: TestAssert) -> void:
@@ -77,6 +78,30 @@ func _test_projection_windows_do_not_truncate_store(assertions: TestAssert) -> v
 	assertions.equal(fixture.projector.actor_public_events("lao_li", "farmer_ahe", 100).size(), 32, "actor projection retains thirty-two events")
 	assertions.equal(_actor(fixture.projector.known_actors("farmer_ahe"), "lao_li").recent_public_events.size(), 12, "known actor exposes at most twelve events")
 	assertions.equal(fixture.store.get_events_after(0).size(), 70, "projection windows never truncate immutable event store")
+
+
+func _test_checkpoint_and_cursor_restore(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	var prefix := _append(fixture.store, [
+		_event("DayStarted", "public_world", "clock", "system", {"day": 4}),
+		_event("MarketPriceChanged", "market", "grain", "system", {"item_id": "grain", "price": 33}),
+	], "checkpoint-prefix")
+	assertions.truthy(fixture.projector.apply_batch(prefix), "checkpoint prefix projects")
+	var checkpoint: Dictionary = fixture.projector.to_dict()
+	fixture.context.build("farmer_ahe", "checkpoint-consume")
+	assertions.truthy(fixture.context.acknowledge("farmer_ahe", "checkpoint-consume"), "checkpoint fixture advances one Agent cursor")
+	var cursor_state: Dictionary = fixture.inbox.to_dict()
+	var tail := _append(fixture.store, [_event("WeatherChanged", "public_world", "weather", "system", {"weather": "wind"})], "checkpoint-tail")
+	fixture.projector.apply_batch(tail)
+
+	var full := _fixture()
+	assertions.truthy(full.projector.replay(fixture.store.get_events_after(0)), "from-zero replay succeeds")
+	var resumed := _fixture()
+	assertions.truthy(resumed.projector.from_dict(checkpoint), "deterministic projection checkpoint restores")
+	assertions.truthy(resumed.projector.apply_batch(tail), "checkpoint tail applies contiguously")
+	assertions.equal(resumed.projector.to_dict(), full.projector.to_dict(), "checkpoint-plus-tail equals from-zero replay")
+	assertions.truthy(full.inbox.from_dict(cursor_state, full.projector.get_last_sequence()), "per-Agent consumption cursor restores")
+	assertions.equal(full.context.build("farmer_ahe", "cursor-tail").own_event_delta.size(), 1, "restored cursor exposes only unseen tail")
 
 
 func _fixture() -> Dictionary:

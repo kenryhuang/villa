@@ -144,6 +144,143 @@ func get_relationship(left_id: String, right_id: String) -> int:
 	return int(_relationships.get(_pair_key(left_id, right_id), 0))
 
 
+func to_dict() -> Dictionary:
+	return {
+		"version": VERSION,
+		"next_agreement_id": _next_agreement_id,
+		"agreements": _sorted_dictionary_records(_agreements, "agreement_id", "agreement"),
+		"idempotency_results": _sorted_dictionary_records(_results, "idempotency_key", "result"),
+		"relationships": _sorted_scalar_records(_relationships, "pair_key", "trust"),
+		"relationship_daily_changes": _sorted_scalar_records(_relationship_daily_changes, "daily_key", "delta"),
+	}
+
+
+func validate_dict(value: Dictionary) -> bool:
+	return _normalize_state(value) != null
+
+
+func from_dict(value: Dictionary) -> bool:
+	var normalized: Variant = _normalize_state(value)
+	if normalized == null:
+		return false
+	_next_agreement_id = int(normalized.next_agreement_id)
+	_agreements = normalized.agreements
+	_results = normalized.results
+	_relationships = normalized.relationships
+	_relationship_daily_changes = normalized.relationship_daily_changes
+	return true
+
+
+func _normalize_state(value: Dictionary) -> Variant:
+	var fields := ["version", "next_agreement_id", "agreements", "idempotency_results", "relationships", "relationship_daily_changes"]
+	if value.size() != fields.size():
+		return null
+	for field in fields:
+		if not value.has(field):
+			return null
+	if value.version != VERSION or not _is_positive_integer(value.next_agreement_id) or not value.agreements is Array or not value.idempotency_results is Array or not value.relationships is Array or not value.relationship_daily_changes is Array:
+		return null
+	var agreements: Dictionary = {}
+	var last_key := ""
+	for record_value in value.agreements:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var key := str(record.get("agreement_id", ""))
+		if record.size() != 2 or key.is_empty() or key <= last_key or not record.get("agreement") is Dictionary or not _valid_agreement(record.agreement, key):
+			return null
+		last_key = key
+		agreements[key] = (record.agreement as Dictionary).duplicate(true)
+	var results: Variant = _normalize_dictionary_records(value.idempotency_results, "idempotency_key", "result")
+	var relationships: Variant = _normalize_scalar_records(value.relationships, "pair_key", "trust", -100, 100)
+	var daily_changes: Variant = _normalize_scalar_records(value.relationship_daily_changes, "daily_key", "delta", -3, 3)
+	if results == null or relationships == null or daily_changes == null:
+		return null
+	return {"next_agreement_id": int(value.next_agreement_id), "agreements": agreements, "results": results, "relationships": relationships, "relationship_daily_changes": daily_changes}
+
+
+func _valid_agreement(value: Dictionary, agreement_id: String) -> bool:
+	for field in ["agreement_id", "objective_id", "proposer_id", "participants", "commitments", "reward_split", "deadline", "status", "terms_version", "accepted_by", "progress", "note"]:
+		if not value.has(field):
+			return false
+	if str(value.agreement_id) != agreement_id or not _templates.has(str(value.objective_id)) or not _actor_exists(str(value.proposer_id)):
+		return false
+	if not value.participants is Array or not value.commitments is Array or not value.reward_split is Dictionary or not value.accepted_by is Array or not value.progress is Dictionary:
+		return false
+	if not str(value.status) in ["proposed", "negotiating", "active", "completed", "failed", "rejected", "cancelled"] or not _is_nonnegative_integer(value.deadline) or not _is_positive_integer(value.terms_version) or typeof(value.note) != TYPE_STRING:
+		return false
+	var participants: Array = value.participants
+	if participants.is_empty() or not str(value.proposer_id) in participants:
+		return false
+	var seen: Dictionary = {}
+	for participant_value in participants:
+		var participant := str(participant_value)
+		if seen.has(participant) or not _actor_exists(participant):
+			return false
+		seen[participant] = true
+	for accepted_value in value.accepted_by:
+		if not seen.has(str(accepted_value)):
+			return false
+	for commitment_value in value.commitments:
+		if _normalize_commitment(commitment_value) == null:
+			return false
+	return true
+
+
+func _normalize_dictionary_records(records: Array, key_field: String, value_field: String) -> Variant:
+	var normalized: Dictionary = {}
+	var last_key := ""
+	for record_value in records:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var key := str(record.get(key_field, ""))
+		if record.size() != 2 or key.is_empty() or key <= last_key or not record.get(value_field) is Dictionary:
+			return null
+		last_key = key
+		normalized[key] = (record[value_field] as Dictionary).duplicate(true)
+	return normalized
+
+
+func _normalize_scalar_records(records: Array, key_field: String, value_field: String, minimum: int, maximum: int) -> Variant:
+	var normalized: Dictionary = {}
+	var last_key := ""
+	for record_value in records:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var key := str(record.get(key_field, ""))
+		if record.size() != 2 or key.is_empty() or key <= last_key or not _is_integer(record.get(value_field)) or int(record[value_field]) < minimum or int(record[value_field]) > maximum:
+			return null
+		last_key = key
+		normalized[key] = int(record[value_field])
+	return normalized
+
+
+func _sorted_dictionary_records(source: Dictionary, key_field: String, value_field: String) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	var keys := source.keys()
+	keys.sort()
+	for key in keys:
+		var record := {}
+		record[key_field] = str(key)
+		record[value_field] = source[key].duplicate(true)
+		records.append(record)
+	return records
+
+
+func _sorted_scalar_records(source: Dictionary, key_field: String, value_field: String) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	var keys := source.keys()
+	keys.sort()
+	for key in keys:
+		var record := {}
+		record[key_field] = str(key)
+		record[value_field] = int(source[key])
+		records.append(record)
+	return records
+
+
 func _propose(actor_id: String, arguments: Dictionary, command: Dictionary, game_minute: int) -> Dictionary:
 	var terms: Variant = _normalize_proposal(actor_id, arguments, game_minute)
 	if terms == null:
@@ -372,12 +509,12 @@ func _normalize_proposal(actor_id: String, value: Dictionary, game_minute: int) 
 
 
 func _normalize_commitment(value: Variant) -> Variant:
-	if not value is Dictionary or value.size() != 3 or typeof(value.get("participant_id")) != TYPE_STRING or not value.get("items") is Dictionary or typeof(value.get("gold")) != TYPE_INT or int(value.gold) < 0:
+	if not value is Dictionary or value.size() != 3 or typeof(value.get("participant_id")) != TYPE_STRING or not value.get("items") is Dictionary or not _is_nonnegative_integer(value.get("gold")):
 		return null
 	var items: Dictionary = {}
 	for item_id_value in value.items:
 		var item_id := str(item_id_value)
-		if not bool(_economy.call("has_item", item_id)) or typeof(value.items[item_id_value]) != TYPE_INT or int(value.items[item_id_value]) <= 0 or int(value.items[item_id_value]) > MAX_QUANTITY:
+		if not bool(_economy.call("has_item", item_id)) or not _is_positive_integer(value.items[item_id_value]) or int(value.items[item_id_value]) > MAX_QUANTITY:
 			return null
 		items[item_id] = int(value.items[item_id_value])
 	return {"participant_id": str(value.participant_id), "items": items, "gold": int(value.gold)}
@@ -512,3 +649,20 @@ func _remember(key: String, result: Dictionary) -> Dictionary:
 
 func _failure(error: String) -> Dictionary:
 	return {"ok": false, "error": error}
+
+
+func _is_nonnegative_integer(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+		and int(value) >= 0
+	)
+
+
+func _is_positive_integer(value: Variant) -> bool:
+	return _is_nonnegative_integer(value) and int(value) > 0
+
+
+func _is_integer(value: Variant) -> bool:
+	return (typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT) and is_finite(float(value)) and floorf(float(value)) == float(value)

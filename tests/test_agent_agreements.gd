@@ -88,6 +88,13 @@ func run(assertions: TestAssert) -> void:
 	assertions.truthy(agreements.execute(_command("accept_cooperation", "player", "agreement-player-manual", {"agreement_id": str(player_agreement.agreement_id), "terms_version": 1, "player_confirmed": true}), 502).ok, "explicit Player command manually accepts current terms")
 
 	assertions.truthy(wakes.has("lao_li"), "proposal and lifecycle changes urgently wake participants")
+	var saved := agreements.to_dict()
+	var json_saved: Dictionary = JSON.parse_string(JSON.stringify(saved))
+	var restored := AgreementScript.new()
+	assertions.truthy(restored.configure(economy, interactions, store, projector), "restored agreement system configures")
+	assertions.truthy(restored.from_dict(json_saved), "pending agreements and relationship state restore after JSON round trip")
+	var restored_snapshot := restored.to_dict()
+	assertions.equal(restored.to_dict(), restored_snapshot, "agreement persistence is deterministic")
 	market.free()
 	economy.free()
 

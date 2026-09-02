@@ -148,16 +148,23 @@ func _normalize_store(value: Dictionary) -> Variant:
 		var normalized := AgentWorldEventScript.normalize_candidate(candidate)
 		if not bool(normalized.get("ok", false)):
 			return null
-		var aggregate_key := _aggregate_key(str(event.aggregate_type), str(event.aggregate_id))
+		var canonical := (normalized.value as Dictionary).duplicate(true)
+		canonical["event_schema_version"] = AgentWorldEventScript.EVENT_SCHEMA_VERSION
+		canonical["event_id"] = str(event.event_id)
+		canonical["global_sequence"] = int(event.global_sequence)
+		canonical["aggregate_version"] = int(event.aggregate_version)
+		canonical["idempotency_key"] = str(event.idempotency_key)
+		canonical["payload"] = _canonical_json_value(canonical.payload)
+		var aggregate_key := _aggregate_key(str(canonical.aggregate_type), str(canonical.aggregate_id))
 		var expected_version := int(computed_versions.get(aggregate_key, 0)) + 1
-		if int(event.aggregate_version) != expected_version:
+		if int(canonical.aggregate_version) != expected_version:
 			return null
 		computed_versions[aggregate_key] = expected_version
-		var key := str(event.idempotency_key)
+		var key := str(canonical.idempotency_key)
 		if not events_by_idempotency.has(key):
 			events_by_idempotency[key] = []
-		(events_by_idempotency[key] as Array).append(event.duplicate(true))
-		normalized_events.append(event.duplicate(true))
+		(events_by_idempotency[key] as Array).append(canonical.duplicate(true))
+		normalized_events.append(canonical)
 		expected_sequence += 1
 	if int(value.next_global_sequence) != expected_sequence:
 		return null
@@ -199,9 +206,19 @@ func _normalize_store(value: Dictionary) -> Variant:
 			"events": (events_by_idempotency[idempotency_key] as Array).duplicate(true),
 			"last_sequence": int((events_by_idempotency[idempotency_key] as Array)[-1].global_sequence),
 		}
-		if record.result != expected_result:
+		var result := record.result as Dictionary
+		if result.size() != 3 or result.get("ok") != true or not result.get("events") is Array or not _is_positive_integer(result.get("last_sequence")):
 			return null
-		normalized_results[idempotency_key] = (record.result as Dictionary).duplicate(true)
+		if (result.events as Array).size() != (expected_result.events as Array).size():
+			return null
+		for event_index in range((expected_result.events as Array).size()):
+			var result_event := (result.events as Array)[event_index] as Dictionary
+			var expected_event := (expected_result.events as Array)[event_index] as Dictionary
+			if not _events_equivalent(result_event, expected_event):
+				return null
+		if int(result.last_sequence) != int(expected_result.last_sequence):
+			return null
+		normalized_results[idempotency_key] = expected_result
 	if normalized_results.size() != events_by_idempotency.size():
 		return null
 
@@ -225,10 +242,52 @@ func _failure(error: String) -> Dictionary:
 	return {"ok": false, "error": error}
 
 
+func _events_equivalent(left: Dictionary, right: Dictionary) -> bool:
+	if left.size() != right.size():
+		return false
+	for field in right:
+		if not left.has(field):
+			return false
+		if field in ["event_schema_version", "global_sequence", "aggregate_version"]:
+			if not _is_positive_integer(left[field]) or int(left[field]) != int(right[field]):
+				return false
+		elif field == "game_minute":
+			if not _is_nonnegative_integer(left[field]) or int(left[field]) != int(right[field]):
+				return false
+		elif _canonical_json_value(left[field]) != _canonical_json_value(right[field]):
+			return false
+	return true
+
+
+func _canonical_json_value(value: Variant) -> Variant:
+	if typeof(value) == TYPE_FLOAT and is_finite(float(value)) and floorf(float(value)) == float(value):
+		return int(value)
+	if value is Array:
+		var result: Array = []
+		for item in value:
+			result.append(_canonical_json_value(item))
+		return result
+	if value is Dictionary:
+		var result: Dictionary = {}
+		for key in value:
+			result[key] = _canonical_json_value(value[key])
+		return result
+	return value
+
+
 func _is_positive_integer(value: Variant) -> bool:
 	return (
 		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
 		and is_finite(float(value))
 		and floorf(float(value)) == float(value)
 		and int(value) > 0
+	)
+
+
+func _is_nonnegative_integer(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+		and int(value) >= 0
 	)

@@ -11,6 +11,7 @@ const MAX_PRESSURE_PER_OFFER := 20
 const MAX_PRESSURE_PER_AGENT := 40
 const MAX_PRESSURE_PER_DAY := 80
 const MAX_PRICE_BIAS_BPS := 2000
+const STATE_VERSION := 1
 
 var _economy: Variant
 var _store: Variant
@@ -185,6 +186,151 @@ func list_offers(observer_id: String) -> Array[Dictionary]:
 		if not offer.is_empty():
 			result.append(offer)
 	return result
+
+
+func to_dict() -> Dictionary:
+	return {
+		"version": STATE_VERSION,
+		"next_offer_id": _next_offer_id,
+		"offers": _sorted_dictionary_records(_offers, "offer_id", "offer"),
+		"idempotency_results": _sorted_dictionary_records(_results, "idempotency_key", "result"),
+		"settled_pressure": _sorted_integer_records(_settled_pressure, "day", "items"),
+		"external_reservations": _sorted_dictionary_records(_external_reservations, "reservation_id", "reservation"),
+	}
+
+
+func validate_dict(value: Dictionary) -> bool:
+	return _normalize_state(value) != null
+
+
+func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
+	var normalized: Variant = _normalize_state(value)
+	if normalized == null:
+		return false
+	_next_offer_id = int(normalized.next_offer_id)
+	_offers = normalized.offers
+	_results = normalized.results
+	_settled_pressure = normalized.settled_pressure
+	_external_reservations = normalized.external_reservations
+	if apply_market_pressure:
+		var minute := int((_projector.call("public_world_state") as Dictionary).get("absolute_game_minute", 0))
+		return _refresh_market_pressure(minute)
+	return true
+
+
+func _normalize_state(value: Dictionary) -> Variant:
+	var fields := ["version", "next_offer_id", "offers", "idempotency_results", "settled_pressure", "external_reservations"]
+	if value.size() != fields.size():
+		return null
+	for field in fields:
+		if not value.has(field):
+			return null
+	if value.version != STATE_VERSION or not _positive_integer(value.next_offer_id) or not value.offers is Array or not value.idempotency_results is Array or not value.settled_pressure is Array or not value.external_reservations is Array:
+		return null
+	var offers: Dictionary = {}
+	var last_key := ""
+	for record_value in value.offers:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var key := str(record.get("offer_id", ""))
+		if record.size() != 2 or key.is_empty() or key <= last_key or not record.get("offer") is Dictionary or not _valid_offer(record.offer, key):
+			return null
+		last_key = key
+		offers[key] = (record.offer as Dictionary).duplicate(true)
+	var results: Variant = _normalize_keyed_results(value.idempotency_results)
+	if results == null:
+		return null
+	var pressure: Dictionary = {}
+	var last_day := 0
+	for record_value in value.settled_pressure:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		if record.size() != 2 or not _positive_integer(record.get("day")) or int(record.day) <= last_day or not _valid_pressure_items(record.get("items")):
+			return null
+		last_day = int(record.day)
+		pressure[last_day] = (record.items as Dictionary).duplicate(true)
+	var reservations: Dictionary = {}
+	last_key = ""
+	for record_value in value.external_reservations:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var key := str(record.get("reservation_id", ""))
+		var reservation: Variant = record.get("reservation")
+		if record.size() != 2 or key.is_empty() or key <= last_key or not reservation is Dictionary or str(reservation.get("actor_id", "")).is_empty():
+			return null
+		var bundle: Variant = _normalize_bundle(reservation.get("bundle"))
+		if bundle == null:
+			return null
+		last_key = key
+		reservations[key] = {"actor_id": str(reservation.actor_id), "bundle": bundle}
+	return {"next_offer_id": int(value.next_offer_id), "offers": offers, "results": results, "settled_pressure": pressure, "external_reservations": reservations}
+
+
+func _valid_offer(value: Dictionary, offer_id: String) -> bool:
+	if str(value.get("offer_id", "")) != offer_id or not str(value.get("status", "")) in ["open", "settled", "rejected", "cancelled", "expired", "countered"]:
+		return false
+	if not _actor_exists(str(value.get("proposer_id", ""))) or not _actor_exists(str(value.get("recipient_id", ""))) or str(value.proposer_id) == str(value.recipient_id):
+		return false
+	if _normalize_bundle(value.get("proposer_gives")) == null or _normalize_bundle(value.get("proposer_receives")) == null:
+		return false
+	return _nonnegative_integer(value.get("created_game_minute")) and _nonnegative_integer(value.get("expires_game_minute")) and int(value.expires_game_minute) >= int(value.created_game_minute)
+
+
+func _normalize_keyed_results(records: Array) -> Variant:
+	var result: Dictionary = {}
+	var last_key := ""
+	for record_value in records:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		var key := str(record.get("idempotency_key", ""))
+		if record.size() != 2 or key.is_empty() or key <= last_key or not record.get("result") is Dictionary:
+			return null
+		last_key = key
+		result[key] = (record.result as Dictionary).duplicate(true)
+	return result
+
+
+func _valid_pressure_items(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	for pressure_value in value.values():
+		if not pressure_value is Dictionary:
+			return false
+		var pressure := pressure_value as Dictionary
+		for field in ["demand", "supply", "private_volume", "price_bias_bps"]:
+			if not _nonnegative_integer(pressure.get(field)) and field != "price_bias_bps":
+				return false
+		if not _integer_number(pressure.get("price_bias_bps")) or absi(int(pressure.price_bias_bps)) > MAX_PRICE_BIAS_BPS:
+			return false
+	return true
+
+
+func _sorted_dictionary_records(source: Dictionary, key_field: String, value_field: String) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	var keys := source.keys()
+	keys.sort()
+	for key in keys:
+		var record := {}
+		record[key_field] = str(key)
+		record[value_field] = source[key].duplicate(true)
+		records.append(record)
+	return records
+
+
+func _sorted_integer_records(source: Dictionary, key_field: String, value_field: String) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	var keys := source.keys()
+	keys.sort()
+	for key in keys:
+		var record := {}
+		record[key_field] = int(key)
+		record[value_field] = source[key].duplicate(true)
+		records.append(record)
+	return records
 
 
 func refresh_market_pressure(game_minute: int) -> bool:
@@ -578,3 +724,7 @@ func _nonnegative_integer(value: Variant) -> bool:
 
 func _positive_integer(value: Variant) -> bool:
 	return _nonnegative_integer(value) and int(value) > 0
+
+
+func _integer_number(value: Variant) -> bool:
+	return (typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT) and is_finite(float(value)) and floorf(float(value)) == float(value)

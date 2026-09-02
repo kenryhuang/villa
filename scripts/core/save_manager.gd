@@ -341,6 +341,10 @@ func _apply_save_data(data: Dictionary) -> bool:
 	return applied
 
 
+func is_restore_transaction_active() -> bool:
+	return _restore_transaction_active
+
+
 func _begin_restore_transaction() -> bool:
 	if _restore_transaction_active:
 		return false

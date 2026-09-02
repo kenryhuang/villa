@@ -121,17 +121,54 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	runtime.call("_handle_response", "farmer_ahe", dialogue_response)
 	assertions.equal(dialogue_speech, [["farmer_ahe", "runtime-dialogue-invalid-action", "我先回答你的问题。"]], "dialogue summary completes conversation even when world action rejects")
 	var saved: Dictionary = runtime.to_dict()
+	assertions.equal(saved.version, 4, "Agent world save uses event-sourced Runtime version")
+	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements"]:
+		assertions.truthy(saved.has(field), "Agent world save includes %s" % field)
+	assertions.equal(saved.checkpoint_sequence, int(saved.event_store.next_global_sequence) - 1, "checkpoint follows the complete saved event log")
+	assertions.truthy((saved.event_store.events as Array).size() > 0, "Agent world save contains its replay log")
+	var corrupt := saved.duplicate(true)
+	corrupt.event_store = (saved.event_store as Dictionary).duplicate(true)
+	corrupt.event_store.events = (saved.event_store.events as Array).duplicate(true)
+	(corrupt.event_store.events as Array)[0] = ((corrupt.event_store.events as Array)[0] as Dictionary).duplicate(true)
+	(corrupt.event_store.events as Array)[0].global_sequence = 2
+	var before_corrupt_restore := runtime.to_dict()
+	assertions.truthy(not runtime.from_dict(corrupt), "corrupt Agent event log is rejected atomically")
+	assertions.equal(runtime.to_dict(), before_corrupt_restore, "failed Agent restore leaves live state unchanged")
 	var restored := AgentRuntimeScript.new()
 	tree.root.add_child(restored)
 	assertions.truthy(restored.configure(economy, market, season, null, disabled_config_path), "second runtime configures")
-	assertions.truthy(restored.from_dict(saved), "Agent world state restores")
-	assertions.equal(restored.to_dict(), saved, "Agent world state round trip is stable")
+	var json_saved: Dictionary = JSON.parse_string(JSON.stringify(saved))
+	assertions.truthy(runtime.event_store.validate_dict(json_saved.event_store), "JSON event store validates")
+	assertions.truthy(runtime.world_projector.validate_dict(json_saved.projection_checkpoint), "JSON projection checkpoint validates")
+	assertions.truthy(runtime.perception_inbox.validate_dict(json_saved.perception_inbox, int(json_saved.checkpoint_sequence)), "JSON perception cursors validate")
+	assertions.truthy(runtime.role_system.validate_dict(json_saved.roles), "JSON role state validates")
+	assertions.truthy(runtime.interaction_system.validate_dict(json_saved.interactions), "JSON interaction state validates")
+	assertions.truthy(runtime.agreement_system.validate_dict(json_saved.agreements), "JSON agreement state validates")
+	assertions.truthy(restored.from_dict(json_saved), "Agent world state restores after JSON round trip")
+	assertions.equal(
+		runtime.call("_canonical_json_value", restored.to_dict()),
+		runtime.call("_canonical_json_value", saved),
+		"Agent world state JSON round trip is semantically stable",
+	)
 	var first_runtime_request: Dictionary = runtime.call("_build_request", "lao_li", "dialogue", 100, "第一条问题")
 	var second_runtime_request: Dictionary = restored.call("_build_request", "lao_li", "dialogue", 100, "第一条问题")
 	assertions.truthy(
 		str(first_runtime_request.request_id) != str(second_runtime_request.request_id),
 		"separate game runtimes never reuse the same Agent request ID",
 	)
+	for legacy_version in [2, 3]:
+		var legacy := saved.duplicate(true)
+		legacy.version = legacy_version
+		for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements"]:
+			legacy.erase(field)
+		var migrated := AgentRuntimeScript.new()
+		tree.root.add_child(migrated)
+		assertions.truthy(migrated.configure(economy, market, season, null, disabled_config_path), "legacy v%d migration runtime configures" % legacy_version)
+		assertions.truthy(migrated.from_dict(legacy), "legacy v%d Agent state migrates" % legacy_version)
+		var migrated_events: Array = migrated.event_store.get_events_after(0)
+		assertions.equal(migrated_events.size(), 1, "legacy v%d migration creates one deterministic bootstrap event" % legacy_version)
+		assertions.equal(str((migrated_events[0] as Dictionary).event_type), "AgentWorldBootstrapped", "legacy v%d migration records bootstrap event" % legacy_version)
+		migrated.free()
 	var save_manager = tree.root.get_node("SaveManager")
 	assertions.truthy(save_manager.configure_agent_runtime(runtime), "SaveManager accepts Agent runtime")
 	assertions.truthy(runtime.configure_save_manager(save_manager), "runtime coordinates asynchronous memory sidecars")

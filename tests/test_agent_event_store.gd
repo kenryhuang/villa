@@ -61,6 +61,9 @@ func _test_serialization_and_corruption(assertions: TestAssert) -> void:
 	var restored = AgentWorldEventStoreScript.new()
 	assertions.truthy(restored.from_dict(saved), "event store round trips")
 	assertions.equal(restored.to_dict(), saved, "event serialization is deterministic")
+	var json_saved: Dictionary = JSON.parse_string(JSON.stringify(saved))
+	assertions.truthy(restored.from_dict(json_saved), "event store accepts its JSON round trip")
+	assertions.equal(restored.to_dict(), saved, "JSON event restore canonicalizes numeric fields")
 	assertions.equal(restored.get_events_after(0)[0].payload.season, 2, "replay preserves payload")
 
 	var corrupt_sequence := saved.duplicate(true)

@@ -280,7 +280,7 @@ func _normalize_state(value: Dictionary) -> Variant:
 		var role_id := str(record.active_role_id)
 		if not _states.has(agent_id) or result.has(agent_id) or (_registry.call("get_role", role_id) as Dictionary).is_empty():
 			return null
-		if typeof(record.last_changed_minute) != TYPE_INT or int(record.last_changed_minute) < -1:
+		if not _is_integer(record.last_changed_minute) or int(record.last_changed_minute) < -1:
 			return null
 		var history: Array = record.history
 		if history.is_empty() or history[-1] != role_id:
@@ -288,7 +288,9 @@ func _normalize_state(value: Dictionary) -> Variant:
 		for history_role in history:
 			if typeof(history_role) != TYPE_STRING or (_registry.call("get_role", str(history_role)) as Dictionary).is_empty():
 				return null
-		result[agent_id] = record.duplicate(true)
+		var canonical := record.duplicate(true)
+		canonical.last_changed_minute = int(record.last_changed_minute)
+		result[agent_id] = canonical
 	if result.size() != _states.size():
 		return null
 	return result
@@ -300,3 +302,7 @@ func _is_nonnegative_integer(value: Variant) -> bool:
 
 func _is_positive_integer(value: Variant) -> bool:
 	return _is_nonnegative_integer(value) and int(value) > 0
+
+
+func _is_integer(value: Variant) -> bool:
+	return (typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT) and is_finite(float(value)) and floorf(float(value)) == float(value)
