@@ -5,6 +5,9 @@ const AgentPerceptionInboxScript = preload("res://scripts/ai_agent/agent_percept
 const AgentSchedulerScript = preload("res://scripts/ai_agent/agent_scheduler.gd")
 const AgentGatewayScript = preload("res://scripts/ai_agent/agent_gateway.gd")
 const AgentStreamClientScript = preload("res://scripts/ai_agent/agent_stream_client.gd")
+const AgentWorldEventStoreScript = preload("res://scripts/ai_agent/agent_world_event_store.gd")
+const AgentWorldProjectorScript = preload("res://scripts/ai_agent/agent_world_projector.gd")
+const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_fact_bridge.gd")
 
 class FakeGateway:
 	extends RefCounted
@@ -49,6 +52,7 @@ func run(assertions: TestAssert, _tree: SceneTree) -> void:
 	_test_interval_overrides(assertions)
 	_test_gateway_configuration(assertions)
 	_test_stream_client_configuration(assertions)
+	_test_world_fact_bridge_is_idempotent(assertions)
 
 
 func _test_perception_coalescing(assertions: TestAssert) -> void:
@@ -147,3 +151,18 @@ func _test_stream_client_configuration(assertions: TestAssert) -> void:
 	assertions.equal(client.get_active_agent_ids(), [], "stream client begins without requests")
 	client.cancel_all()
 	client.free()
+
+
+func _test_world_fact_bridge_is_idempotent(assertions: TestAssert) -> void:
+	var store := AgentWorldEventStoreScript.new()
+	var inbox := AgentPerceptionInboxScript.new()
+	var projector := AgentWorldProjectorScript.new()
+	assertions.truthy(projector.configure(["farmer_ahe"], [
+		{"actor_id": "farmer_ahe", "actor_type": "npc_agent", "display_name": "阿禾", "public_role": "farmer", "region_id": "farm"},
+	], inbox), "fact bridge projector configures")
+	var bridge := AgentWorldFactBridgeScript.new()
+	assertions.truthy(bridge.configure(store, projector), "world fact bridge configures")
+	assertions.truthy(bridge.publish_market_price("grain", 22, 60, "market:grain:60:22"), "first market fact publishes")
+	assertions.truthy(bridge.publish_market_price("grain", 22, 60, "market:grain:60:22"), "duplicate source fact is idempotent")
+	assertions.equal(store.get_events_after(0).size(), 1, "duplicate world fact creates one event")
+	assertions.equal(projector.market_view().grain.price, 22, "published fact reaches market projection")

@@ -19,6 +19,10 @@ const KnowledgeScript = preload("res://scripts/systems/explorer_knowledge_regist
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
 const AgentSessionTraceScript = preload("res://scripts/ai_agent/agent_session_trace.gd")
+const AgentWorldEventStoreScript = preload("res://scripts/ai_agent/agent_world_event_store.gd")
+const AgentWorldProjectorScript = preload("res://scripts/ai_agent/agent_world_projector.gd")
+const AgentContextProjectionScript = preload("res://scripts/ai_agent/agent_context_projection.gd")
+const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_fact_bridge.gd")
 
 const VERSION := 3
 const GAME_MINUTES_PER_DAY := 1080
@@ -30,6 +34,10 @@ var building_registry = BuildingScript.new()
 var activity_system = ActivityScript.new()
 var knowledge_registry = KnowledgeScript.new()
 var perception_inbox = AgentPerceptionInboxScript.new()
+var event_store = AgentWorldEventStoreScript.new()
+var world_projector = AgentWorldProjectorScript.new()
+var context_projection = AgentContextProjectionScript.new()
+var world_fact_bridge = AgentWorldFactBridgeScript.new()
 var validator = AgentValidatorScript.new()
 var executor = AgentExecutorScript.new()
 var scheduler = AgentSchedulerScript.new()
@@ -72,6 +80,8 @@ func configure(
 	_market = market
 	_season = season
 	_hud_bus = hud_bus
+	if not _configure_world_context():
+		return false
 	if _farm_port != null:
 		farm_registry = _farm_port
 	elif farm_registry.get_plot("farmer_ahe", 0).is_empty() and not farm_registry.configure_farm("farmer_ahe", 12):
@@ -159,6 +169,7 @@ func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 		return false
 	var cancelled := gateway != null and bool(gateway.call("cancel_agent", agent_id, "dialogue_closed"))
 	if not cancelled:
+		context_projection.release(agent_id, request_id)
 		_request_triggers.erase(request_id)
 	return cancelled
 
@@ -343,20 +354,85 @@ func from_dict(value: Dictionary) -> bool:
 	return true
 
 
+func _configure_world_context() -> bool:
+	var agent_ids: Array = registry.get_agent_ids()
+	var actor_profiles: Array[Dictionary] = []
+	var default_regions := {
+		"farmer_ahe": "farm",
+		"lao_li": "village",
+		"xuezhe_lin": "forest",
+	}
+	for agent_id_value in agent_ids:
+		var agent_id := str(agent_id_value)
+		var agent: Dictionary = registry.get_agent(agent_id)
+		actor_profiles.append({
+			"actor_id": agent_id,
+			"actor_type": "npc_agent",
+			"display_name": str(agent.get("display_name", agent_id)),
+			"public_role": str(agent.get("role_id", "unknown")),
+			"region_id": str(default_regions.get(agent_id, "village")),
+		})
+	actor_profiles.append({
+		"actor_id": "player",
+		"actor_type": "player",
+		"display_name": "玩家",
+		"public_role": "farmer",
+		"region_id": "farm",
+	})
+	if not world_projector.configure(agent_ids, actor_profiles, perception_inbox):
+		return false
+	if not context_projection.configure(world_projector, perception_inbox):
+		return false
+	if not world_fact_bridge.configure(event_store, world_projector):
+		return false
+	var existing_events: Array[Dictionary] = event_store.get_events_after(0)
+	if not existing_events.is_empty():
+		return world_projector.replay(existing_events)
+	var minute := _absolute_game_minute()
+	if not world_fact_bridge.publish_day(int(_season.total_days), minute, "bootstrap-day:%d" % int(_season.total_days)):
+		return false
+	if not world_fact_bridge.publish_season(int(_season.current_season), minute, "bootstrap-season:%d" % int(_season.current_season)):
+		return false
+	if not world_fact_bridge.publish_time(int(_season.hour), int(_season.minute), minute, "bootstrap-time:%d" % minute):
+		return false
+	for definition in GameDataScript.get_market_items():
+		var item_id := str(definition.id)
+		var market_state: Dictionary = _market.call("get_item_state", item_id)
+		if not world_fact_bridge.publish_market_price(
+			item_id,
+			int(market_state.get("mid_price", 0)),
+			minute,
+			"bootstrap-market:%s" % item_id,
+			market_state
+		):
+			return false
+	return true
+
+
 func _connect_events() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
 	if _event_bus == null:
 		return
 	if not _event_bus.time_changed.is_connected(_on_time_changed):
 		_event_bus.time_changed.connect(_on_time_changed)
+	if not _event_bus.day_changed.is_connected(_on_day_changed):
+		_event_bus.day_changed.connect(_on_day_changed)
+	if not _event_bus.season_changed.is_connected(_on_season_changed):
+		_event_bus.season_changed.connect(_on_season_changed)
 	if not _event_bus.market_price_changed.is_connected(_on_market_price_changed):
 		_event_bus.market_price_changed.connect(_on_market_price_changed)
 	if not _event_bus.market_stock_changed.is_connected(_on_market_stock_changed):
 		_event_bus.market_stock_changed.connect(_on_market_stock_changed)
+	if not _event_bus.weather_changed.is_connected(_on_weather_changed):
+		_event_bus.weather_changed.connect(_on_weather_changed)
+	if not _event_bus.environment_condition_changed.is_connected(_on_environment_condition_changed):
+		_event_bus.environment_condition_changed.connect(_on_environment_condition_changed)
 
 
-func _on_time_changed(_hour: int, _minute: int) -> void:
+func _on_time_changed(hour: int, minute: int) -> void:
 	var game_minute := _absolute_game_minute()
+	if minute == 0:
+		world_fact_bridge.publish_time(hour, minute, game_minute, "time:%d" % game_minute)
 	for outcome in executor.complete_due(game_minute):
 		_publish_committed_outcome(str(outcome.get("agent_id", "")), outcome)
 		if service_enabled:
@@ -366,18 +442,47 @@ func _on_time_changed(_hour: int, _minute: int) -> void:
 
 
 func _on_market_price_changed(item_id: String, price: int) -> void:
-	_queue_market_event(item_id, {"price": price}, 2)
+	var minute := _absolute_game_minute()
+	world_fact_bridge.publish_market_price(item_id, price, minute, "market-price:%s:%d:%d" % [item_id, minute, price], _market.call("get_item_state", item_id))
+	_notify_public_event(2, minute)
 
 
 func _on_market_stock_changed(item_id: String, stock: int) -> void:
-	_queue_market_event(item_id, {"stock": stock}, 1 if stock > 3 else 3)
-
-
-func _queue_market_event(item_id: String, payload: Dictionary, priority: int) -> void:
 	var minute := _absolute_game_minute()
-	perception_inbox.push_event("lao_li", "market", item_id, payload, minute, priority)
-	if service_enabled:
-		scheduler.notify_event("lao_li", priority, minute)
+	var priority := 1 if stock > 3 else 3
+	world_fact_bridge.publish_market_stock(item_id, stock, minute, "market-stock:%s:%d:%d" % [item_id, minute, stock], _market.call("get_item_state", item_id))
+	_notify_public_event(priority, minute)
+
+
+func _on_day_changed(total_day: int) -> void:
+	var minute := _absolute_game_minute()
+	world_fact_bridge.publish_day(total_day, minute, "day:%d" % total_day)
+	_notify_public_event(2, minute)
+
+
+func _on_season_changed(season: int) -> void:
+	var minute := _absolute_game_minute()
+	world_fact_bridge.publish_season(season, minute, "season:%d:%d" % [int(_season.total_days), season])
+	_notify_public_event(3, minute)
+
+
+func _on_weather_changed(weather: String) -> void:
+	var minute := _absolute_game_minute()
+	world_fact_bridge.publish_weather(weather, minute, "weather:%d:%s" % [minute, weather])
+	_notify_public_event(2, minute)
+
+
+func _on_environment_condition_changed(condition_id: String, state: Dictionary) -> void:
+	var minute := _absolute_game_minute()
+	world_fact_bridge.publish_environment(condition_id, state, minute, "environment:%s:%d:%d" % [condition_id, minute, JSON.stringify(state).hash()])
+	_notify_public_event(2, minute)
+
+
+func _notify_public_event(priority: int, game_minute: int) -> void:
+	if not service_enabled:
+		return
+	for agent_id in registry.get_agent_ids():
+		scheduler.notify_event(str(agent_id), priority, game_minute)
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
@@ -388,9 +493,17 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	):
 		return {}
 	_request_sequence += 1
+	var request_id := "%s-%s-%d" % [agent_id, _request_namespace, _request_sequence]
 	var state = _npc_economy.call("get_npc_state", agent_id)
 	if state == null:
 		return {}
+	var projected: Dictionary = context_projection.build(agent_id, request_id)
+	var public_world := (projected.get("public_world_state", {}) as Dictionary).duplicate(true)
+	public_world.game_day = int(_season.total_days)
+	public_world.absolute_game_minute = game_minute
+	public_world.time_of_day = {"hour": int(_season.hour), "minute": int(_season.minute)}
+	public_world.season = int(_season.current_season)
+	projected.public_world_state = public_world
 	var market_snapshot: Dictionary = {}
 	for definition in GameDataScript.get_market_items():
 		var item_id := str(definition.id)
@@ -400,8 +513,9 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 		if farm_registry.has_method("get_snapshot")
 		else farm_registry.to_dict().farms.get(agent_id, [])
 	)
-	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot}
-	var request := AgentProtocolScript.make_decision_request("%s-%s-%d" % [agent_id, _request_namespace, _request_sequence], session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, perception_inbox.drain(agent_id), dialogue)
+	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot, "public_world_state": projected.public_world_state, "global_public_events": projected.global_public_events, "known_actors": projected.known_actors, "own_event_delta": projected.own_event_delta, "market_view": projected.market_view}
+	projected.projection_schema_version = 1
+	var request := AgentProtocolScript.make_decision_request(request_id, session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, projected.own_event_delta, dialogue, projected)
 	_request_triggers[str(request.request_id)] = trigger
 	return request
 
@@ -419,6 +533,7 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 	elif event_name == "content.delta" and trigger == "dialogue":
 		dialogue_stream_delta.emit(agent_id, request_id, str((data.payload as Dictionary).get("delta", "")))
 	elif event_name == "stream.error":
+		context_projection.release(agent_id, request_id)
 		if trigger == "dialogue":
 			dialogue_stream_failed.emit(agent_id, request_id, str((data.payload as Dictionary).get("code", "stream_error")))
 		_request_triggers.erase(request_id)
@@ -426,6 +541,7 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 
 func _handle_stream_failure(agent_id: String, request_id: String, error: String) -> void:
 	var trigger := str(_request_triggers.get(request_id, ""))
+	context_projection.release(agent_id, request_id)
 	if not session_trace.finish_error(agent_id, request_id, error, trigger):
 		_publish("warning", "%s 的 Agent 失败会话无法记录。" % agent_id, {"agent_id": agent_id})
 	if trigger == "dialogue":
@@ -446,8 +562,10 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		dialogue_ready.emit(agent_id, request_id, speech)
 	var checked := validator.validate(response, registry, executor.world_revision)
 	if not checked.ok:
+		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
 		return
+	context_projection.acknowledge(agent_id, request_id)
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
 	for outcome in outcomes:
 		if str(outcome.get("status", "")) == "in_progress":

@@ -56,6 +56,8 @@ signal tool_durability_changed(tool_id: String, current: int, maximum: int)
 signal season_changed(new_season: int)
 signal day_changed(total_day: int)
 signal time_changed(hour: int, minute: int)
+signal weather_changed(weather: String)
+signal environment_condition_changed(condition_id: String, state: Dictionary)
 
 # Player signals
 signal stamina_changed(new_stamina: int)

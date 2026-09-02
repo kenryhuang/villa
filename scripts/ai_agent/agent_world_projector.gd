@@ -93,6 +93,10 @@ func market_view() -> Dictionary:
 	return (_public_world_state.get("market_summary", {}) as Dictionary).duplicate(true)
 
 
+func get_last_sequence() -> int:
+	return _last_sequence
+
+
 func global_public_events(limit: int = 24) -> Array[Dictionary]:
 	return _tail(_global_public_events, clampi(limit, 0, GLOBAL_EVENT_LIMIT))
 
@@ -137,6 +141,12 @@ func _apply_public_world(event: Dictionary) -> void:
 		_trim_front(_global_public_events, GLOBAL_EVENT_LIMIT)
 	var payload := event.payload as Dictionary
 	match str(event.event_type):
+		"TimeChanged":
+			_public_world_state.absolute_game_minute = int(payload.get("absolute_game_minute", _public_world_state.absolute_game_minute))
+			_public_world_state.time_of_day = {
+				"hour": int(payload.get("hour", 0)),
+				"minute": int(payload.get("minute", 0)),
+			}
 		"DayStarted":
 			_public_world_state.game_day = int(payload.get("day", _public_world_state.game_day))
 		"SeasonChanged":

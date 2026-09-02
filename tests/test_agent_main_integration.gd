@@ -32,6 +32,37 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	market.configure(GameDataScript.get_market_items())
 	economy.configure(market, GameDataScript.get_npc_economy_profiles(), GameDataScript.get_population_demand_profiles())
 	assertions.truthy(runtime.configure(economy, market, season, null, disabled_config_path), "Agent runtime configures against authoritative systems")
+	var initial_request: Dictionary = runtime.call("_build_request", "farmer_ahe", "dialogue", 0, "看看周围")
+	for field in ["projection_schema_version", "public_world_state", "global_public_events", "known_actors", "own_event_delta", "market_view"]:
+		assertions.truthy(initial_request.has(field), "runtime request includes %s" % field)
+	assertions.equal(initial_request.known_actors.size(), 3, "Agent sees two NPC Agents and the public Player actor")
+	assertions.equal(initial_request.public_world_state.game_day, int(season.total_days), "public world state includes authoritative day")
+	assertions.equal(initial_request.public_world_state.season, int(season.current_season), "public world state includes authoritative season")
+	assertions.truthy(initial_request.market_view.has("grain"), "every Agent context includes current market")
+	runtime.call("_handle_stream_failure", "farmer_ahe", str(initial_request.request_id), "fixture_release")
+
+	runtime.call("_on_market_price_changed", "grain", 777)
+	var market_requests: Dictionary = {}
+	for agent_id in ["farmer_ahe", "lao_li", "xuezhe_lin"]:
+		var request: Dictionary = runtime.call("_build_request", agent_id, "event", 1, "")
+		market_requests[agent_id] = request
+		assertions.truthy(_has_market_fact(request.own_event_delta, "grain", 777), "%s receives the same public market event" % agent_id)
+	var farmer_response := {
+		"protocol_version": 2,
+		"decision_id": "ack-farmer",
+		"request_id": str((market_requests.farmer_ahe as Dictionary).request_id),
+		"agent_id": "farmer_ahe",
+		"expected_revision": 0,
+		"actions": [],
+		"decision_summary": "已看到行情",
+	}
+	runtime.call("_handle_response", "farmer_ahe", farmer_response)
+	var farmer_after_ack: Dictionary = runtime.call("_build_request", "farmer_ahe", "event", 2, "")
+	assertions.truthy(not _has_market_fact(farmer_after_ack.own_event_delta, "grain", 777), "valid response acknowledges only farmer event delta")
+	assertions.truthy(_has_market_fact((market_requests.lao_li as Dictionary).own_event_delta, "grain", 777), "farmer acknowledgement leaves merchant copy intact")
+	runtime.call("_handle_stream_failure", "xuezhe_lin", str((market_requests.xuezhe_lin as Dictionary).request_id), "provider_timeout")
+	var explorer_retry: Dictionary = runtime.call("_build_request", "xuezhe_lin", "event", 3, "")
+	assertions.truthy(_has_market_fact(explorer_retry.own_event_delta, "grain", 777), "failed request releases explorer events for next context")
 	assertions.truthy(
 		str(runtime.get_session_trace().get_log_path()).begins_with(trace_directory + "/"),
 		"runtime opens Agent trace in configured directory",
@@ -133,3 +164,12 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		for file_name in DirAccess.get_files_at(trace_directory):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(trace_directory.path_join(file_name)))
 		DirAccess.remove_absolute(absolute_trace_directory)
+
+
+func _has_market_fact(events: Array, item_id: String, price: int) -> bool:
+	for value in events:
+		var event := value as Dictionary
+		var payload := event.get("payload", {}) as Dictionary
+		if str(event.get("event_type", "")) == "MarketPriceChanged" and str(payload.get("item_id", "")) == item_id and int(payload.get("price", -1)) == price:
+			return true
+	return false

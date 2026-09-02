@@ -64,7 +64,8 @@ static func make_decision_request(
 	world_revision: int,
 	snapshot: Dictionary,
 	event_delta: Array,
-	dialogue_input: String = ""
+	dialogue_input: String = "",
+	projection: Dictionary = {}
 ) -> Dictionary:
 	var request := {
 		"protocol_version": PROTOCOL_VERSION,
@@ -78,6 +79,16 @@ static func make_decision_request(
 		"snapshot": snapshot.duplicate(true),
 		"event_delta": event_delta.duplicate(true),
 	}
+	for field in [
+		"projection_schema_version",
+		"public_world_state",
+		"global_public_events",
+		"known_actors",
+		"own_event_delta",
+		"market_view",
+	]:
+		if projection.has(field):
+			request[field] = projection[field] if not projection[field] is Array and not projection[field] is Dictionary else projection[field].duplicate(true)
 	if not dialogue_input.is_empty():
 		request["dialogue_input"] = dialogue_input
 	return request
