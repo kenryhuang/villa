@@ -39,15 +39,39 @@ func _test_validator(assertions: TestAssert) -> void:
 		_intent("farmer_ahe", "till", {"plot": 0.5}, 4, "network-fraction")
 	))
 	assertions.equal(validator.validate(fractional_intent, registry, 4).error, "invalid_arguments", "fractional JSON number rejects")
+	var valid_v2_arguments := {
+		"send_message": {"target_actor_id": "lao_li", "text": "需要盐吗？", "urgency": "urgent"},
+		"propose_trade": {"target_actor_id": "lao_li", "give": {"items": {"carrot_seed": 1}, "gold": 0}, "receive": {"items": {"salt": 1}, "gold": 0}, "expires_in_minutes": 60, "note": "交换"},
+		"counter_trade": {"offer_id": "offer-1", "give": {"items": {"salt": 1}, "gold": 0}, "receive": {"items": {"carrot_seed": 1}, "gold": 0}, "expires_in_minutes": 60, "note": "还价"},
+		"accept_trade": {"offer_id": "offer-1"},
+		"reject_trade": {"offer_id": "offer-1", "reason_code": "not_needed"},
+		"cancel_trade": {"offer_id": "offer-1"},
+		"propose_cooperation": {"objective_id": "joint_crop_supply", "participants": ["lao_li"], "commitments": [{"participant_id": "farmer_ahe", "items": {"carrot_seed": 1}, "gold": 0}, {"participant_id": "lao_li", "items": {"salt": 1}, "gold": 0}], "reward_split": {"farmer_ahe": 1, "lao_li": 1}, "deadline_minutes": 120, "note": "合作"},
+		"counter_cooperation": {"agreement_id": "agreement-1", "revised_terms": {"commitments": [{"participant_id": "farmer_ahe", "items": {"carrot_seed": 1}, "gold": 0}, {"participant_id": "lao_li", "items": {"salt": 1}, "gold": 0}], "reward_split": {"farmer_ahe": 1, "lao_li": 1}, "deadline_minutes": 180}, "note": "改期"},
+		"accept_cooperation": {"agreement_id": "agreement-1", "terms_version": 1},
+		"reject_cooperation": {"agreement_id": "agreement-1", "reason_code": "busy"},
+		"commit_contribution": {"agreement_id": "agreement-1", "contribution_id": "harvest_crop"},
+		"cancel_cooperation": {"agreement_id": "agreement-1", "reason_code": "changed"},
+		"speak": {"target_actor_id": "lao_li", "text": "早上好"},
+		"wait": {"reason": "目前没有合适动作"},
+	}
+	for tool_name in valid_v2_arguments:
+		assertions.truthy(
+			bool(validator.call("_valid_arguments", tool_name, valid_v2_arguments[tool_name])),
+			"Godot validator accepts the TypeScript v2 %s contract" % tool_name,
+		)
+	assertions.truthy(bool(validator.call("_valid_arguments", "till", {"plot": 255})), "Godot validator matches the v2 plot upper bound")
+	assertions.truthy(bool(validator.call("_valid_arguments", "propose_role_change", {"target_role_id": "merchant", "motivation": "x".repeat(300)})), "Godot validator matches the v2 role motivation bound")
+	assertions.truthy(not bool(validator.call("_valid_arguments", "wait", {})), "legacy empty wait arguments reject")
 	assertions.truthy(validator.validate(_batch_intent("farmer_ahe", [], 0, "empty"), registry, 9).ok, "empty action batch is valid")
 	var four_actions := []
 	for index in range(4):
-		four_actions.append(_action("speak", {}, "four-%d" % index))
+		four_actions.append(_action("speak", {"target_actor_id": "lao_li", "text": "hello"}, "four-%d" % index))
 	assertions.equal(validator.validate(_batch_intent("farmer_ahe", four_actions, 0, "four"), registry, 0).error, "invalid_actions", "four actions reject")
-	assertions.equal(validator.validate(_batch_intent("farmer_ahe", [_action("wait", {}, "wait"), _action("speak", {}, "speak")], 0, "wait-many"), registry, 0).error, "wait_must_be_exclusive", "wait must be the only action")
-	var duplicate := _action("speak", {}, "duplicate")
+	assertions.equal(validator.validate(_batch_intent("farmer_ahe", [_action("wait", {"reason": "pause"}, "wait"), _action("speak", {"target_actor_id": "lao_li", "text": "hello"}, "speak")], 0, "wait-many"), registry, 0).error, "wait_must_be_exclusive", "wait must be the only action")
+	var duplicate := _action("speak", {"target_actor_id": "lao_li", "text": "hello"}, "duplicate")
 	assertions.equal(validator.validate(_batch_intent("farmer_ahe", [duplicate, duplicate], 0, "duplicates"), registry, 0).error, "duplicate_action_id", "duplicate action IDs reject")
-	var legacy := _intent("farmer_ahe", "speak", {}, 0, "legacy")
+	var legacy := _intent("farmer_ahe", "speak", {"target_actor_id": "lao_li", "text": "hello"}, 0, "legacy")
 	legacy.protocol_version = 1
 	assertions.equal(validator.validate(legacy, registry, 0).error, "invalid_protocol_version", "v1 action intent rejects")
 

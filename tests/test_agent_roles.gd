@@ -34,6 +34,8 @@ func _test_role_change_rules_and_capabilities(assertions: TestAssert) -> void:
 	var original_soul: Dictionary = registry.get_agent("farmer_ahe").soul
 	assertions.equal(roles.get_active_role("farmer_ahe"), "farmer", "Agent starts in profile role")
 	assertions.truthy((roles.get_capabilities("farmer_ahe").tools as Array).has("plant"), "farmer capability contains plant")
+	for general_tool in ["send_message", "counter_trade", "accept_trade", "propose_cooperation", "accept_cooperation", "propose_role_change"]:
+		assertions.truthy((roles.get_capabilities("farmer_ahe").tools as Array).has(general_tool), "farmer retains general capability %s" % general_tool)
 
 	var rejected: Dictionary = roles.propose_change("farmer_ahe", "merchant", "想经营农产品", 30, "role-reject-1")
 	assertions.truthy(bool(rejected.get("ok", false)), "eligibility rejection is an audited command result")
@@ -49,6 +51,7 @@ func _test_role_change_rules_and_capabilities(assertions: TestAssert) -> void:
 	assertions.equal(roles.get_active_role("farmer_ahe"), "merchant", "active role updates immediately")
 	assertions.equal(int(economy.get_npc_state("farmer_ahe").gold), 400, "successful merchant transition charges exact cost")
 	assertions.truthy((roles.get_capabilities("farmer_ahe").tools as Array).has("propose_trade"), "new role tools activate")
+	assertions.truthy((roles.get_capabilities("farmer_ahe").tools as Array).has("accept_cooperation"), "general interaction tools survive role change")
 	assertions.truthy(not (roles.get_capabilities("farmer_ahe").tools as Array).has("plant"), "old role-specific tools deactivate")
 	assertions.equal(registry.get_agent("farmer_ahe").soul, original_soul, "role change preserves Soul")
 	assertions.equal(_actor(projector.known_actors("lao_li"), "farmer_ahe").public_role, "merchant", "role event updates public actor identity")
