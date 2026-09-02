@@ -98,6 +98,15 @@ func run(assertions: TestAssert) -> void:
 	}), 113)
 	assertions.truthy(interactions.execute(_command("accept_trade", "lao_li", "accept-above-mid", {"offer_id": str(above_mid.offer_id)}), 114).ok, "cash-priced private sale settles")
 	assertions.equal(int(market.get_agent_market_pressure().items.carrot_seed.price_bias_bps), 2000, "above-midpoint clearing creates capped positive discovery pressure")
+	assertions.truthy(interactions.validate_against_events(interactions.to_dict(), store.get_events_after(0)), "settled private pressure matches its event history")
+	var pressure_tamper := interactions.to_dict()
+	pressure_tamper.settled_pressure = (pressure_tamper.settled_pressure as Array).duplicate(true)
+	pressure_tamper.settled_pressure[0] = (pressure_tamper.settled_pressure[0] as Dictionary).duplicate(true)
+	pressure_tamper.settled_pressure[0].items = (pressure_tamper.settled_pressure[0].items as Dictionary).duplicate(true)
+	pressure_tamper.settled_pressure[0].items.carrot_seed = (pressure_tamper.settled_pressure[0].items.carrot_seed as Dictionary).duplicate(true)
+	pressure_tamper.settled_pressure[0].items.carrot_seed.price_bias_bps = -2000
+	assertions.truthy(interactions.validate_dict(pressure_tamper), "bounded pressure tamper remains structurally valid")
+	assertions.truthy(not interactions.validate_against_events(pressure_tamper, store.get_events_after(0)), "settled pressure tamper is rejected by event history")
 	var below_mid := interactions.execute(_command("propose_trade", "lao_li", "offer-below-mid", {
 		"target_actor_id": "farmer_ahe", "give": {"items": {"grain_seed": 1}, "gold": 0},
 		"receive": {"items": {}, "gold": 1}, "expires_in_minutes": 60, "note": "cash sale",
@@ -194,11 +203,13 @@ func run(assertions: TestAssert) -> void:
 		"receive": {"items": {}, "gold": 1}, "expires_in_minutes": 60, "note": "player lock",
 	}), 163)
 	assertions.truthy(player_lock.ok, "Player can reserve assets in an outgoing offer")
+	assertions.equal(interactions.execute(_command("accept_trade", "player", "player-self-accept", {"offer_id": str(player_lock.offer_id), "player_confirmed": true}), 163).error, "only_receiver_can_accept", "Player cannot self-accept an outgoing offer")
 	var player_receiver_conflict := interactions.execute(_command("propose_trade", "farmer_ahe", "player-receiver-conflict", {
 		"target_actor_id": "player", "give": {"items": {}, "gold": 1},
 		"receive": {"items": {"salt": player_inventory.get_item_count("salt")}, "gold": 0}, "expires_in_minutes": 60, "note": "respect Player lock",
 	}), 164)
 	assertions.equal(str(interactions.execute(_command("accept_trade", "player", "player-receiver-conflict-accept", {"offer_id": str(player_receiver_conflict.offer_id), "player_confirmed": true}), 165).get("error", "")), "player_assets_reserved", "Player receiver cannot spend assets reserved by another offer")
+	assertions.truthy(interactions.execute(_command("accept_trade", "xuezhe_lin", "npc-accepts-player-offer", {"offer_id": str(player_lock.offer_id)}), 166).ok, "NPC recipient can accept a Player-authored offer")
 
 	var visible := interactions.list_offers("farmer_ahe")
 	assertions.truthy(not visible.is_empty(), "participant receives interaction view")

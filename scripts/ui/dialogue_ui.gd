@@ -271,17 +271,20 @@ func _render_interactions() -> void:
 		actions.name = "Actions"
 		content.add_child(actions)
 		var actionable := str(record.get("status", "")) in ["open", "proposed", "negotiating"]
+		var is_trade := record.has("offer_id")
+		var player_is_recipient := not is_trade or str(record.get("recipient_id", "player")) == "player"
+		var player_already_accepted := not is_trade and "player" in (record.get("accepted_by", []) as Array)
 		for definition in [["AcceptButton", "接受", "accept"], ["RejectButton", "拒绝", "reject"]]:
 			var button := Button.new()
 			button.name = str(definition[0])
 			button.text = str(definition[1])
-			button.disabled = not actionable
+			button.disabled = not actionable or (str(definition[2]) == "accept" and (not player_is_recipient or player_already_accepted))
 			button.pressed.connect(_request_interaction_response.bind(interaction_id, str(definition[2]), {}))
 			actions.add_child(button)
 		var counter_button := Button.new()
 		counter_button.name = "CounterButton"
 		counter_button.text = "还价"
-		counter_button.disabled = not actionable
+		counter_button.disabled = not actionable or not player_is_recipient
 		actions.add_child(counter_button)
 		var counter_editor := _build_counter_editor(interaction_id, record)
 		content.add_child(counter_editor)
@@ -311,8 +314,10 @@ func _build_counter_editor(interaction_id: String, record: Dictionary) -> VBoxCo
 		var player_is_proposer := str(record.get("proposer_id", "")) == "player"
 		var give: Dictionary = (record.get("proposer_gives", {}) if player_is_proposer else record.get("proposer_receives", {})).duplicate(true)
 		var receive: Dictionary = (record.get("proposer_receives", {}) if player_is_proposer else record.get("proposer_gives", {})).duplicate(true)
-		_add_bundle_editor(editor, "你提供", "Give", give, fields)
-		_add_bundle_editor(editor, "你获得", "Receive", receive, fields)
+		fields.give = {}
+		fields.receive = {}
+		_add_bundle_editor(editor, "你提供", "Give", give, fields.give)
+		_add_bundle_editor(editor, "你获得", "Receive", receive, fields.receive)
 		fields.expiry = _add_number_field(editor, "有效时间（游戏分钟）", "CounterExpiryMinutes", maxi(1, int(record.get("expires_game_minute", 1)) - _current_game_minute(record)), 1, 10080)
 	else:
 		var deadline_remaining := maxi(60, int(record.get("deadline", 60)) - _current_game_minute(record))
@@ -382,15 +387,11 @@ func _submit_counter(interaction_id: String, record: Dictionary, fields: Diction
 	var terms: Dictionary
 	if record.has("offer_id"):
 		terms = {
-			"give": _bundle_from_fields(fields.get("Give", fields)),
-			"receive": _bundle_from_fields(fields.get("Receive", fields)),
+			"give": _bundle_from_fields(fields.give),
+			"receive": _bundle_from_fields(fields.receive),
 			"expires_in_minutes": int((fields.expiry as SpinBox).value),
 			"counter_note": str((fields.note as LineEdit).text),
 		}
-		# _add_bundle_editor writes into the supplied dictionary. Trade fields use
-		# explicit children to keep their Player-facing direction unambiguous.
-		terms.give = _bundle_from_named_editor(editor, "Give")
-		terms.receive = _bundle_from_named_editor(editor, "Receive")
 	else:
 		var commitments: Array[Dictionary] = []
 		for participant_id in fields.commitments:
@@ -400,20 +401,10 @@ func _submit_counter(interaction_id: String, record: Dictionary, fields: Diction
 		var rewards: Dictionary = {}
 		for participant_id in fields.rewards:
 			rewards[str(participant_id)] = int((fields.rewards[participant_id] as SpinBox).value)
-		terms = {"revised_terms": {"commitments": commitments, "reward_split": rewards, "deadline_minutes": int((fields.deadline as SpinBox).value)}, "counter_note": str((fields.note as LineEdit).text)}
+		var counter_note := str((fields.note as LineEdit).text)
+		terms = {"revised_terms": {"commitments": commitments, "reward_split": rewards, "deadline_minutes": int((fields.deadline as SpinBox).value), "note": counter_note}, "counter_note": counter_note}
 	editor.visible = false
 	_request_interaction_response(interaction_id, "counter", terms)
-
-
-func _bundle_from_named_editor(editor: VBoxContainer, prefix: String) -> Dictionary:
-	var items: Dictionary = {}
-	var marker := "Counter%sItem_" % prefix
-	for node in editor.find_children("*", "SpinBox", true, false):
-		var input := node as SpinBox
-		if input.name.begins_with(marker) and int(input.value) > 0:
-			items[str(input.get_meta("item_id", input.name.trim_prefix(marker)))] = int(input.value)
-	var gold := editor.find_child("Counter%sGold" % prefix, true, false) as SpinBox
-	return {"items": items, "gold": int(gold.value)}
 
 
 func _bundle_from_fields(fields: Dictionary) -> Dictionary:

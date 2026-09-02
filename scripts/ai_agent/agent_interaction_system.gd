@@ -299,6 +299,7 @@ func validate_against_events(value: Dictionary, events: Array) -> bool:
 	if normalized == null:
 		return false
 	var derived: Dictionary = {}
+	var derived_pressure: Dictionary = {}
 	var next_id := 1
 	for event_value in events:
 		if not event_value is Dictionary:
@@ -326,12 +327,25 @@ func validate_against_events(value: Dictionary, events: Array) -> bool:
 				"TradeOfferCountered":
 					offer.status = "countered"
 					offer.counter_offer_id = str(payload.get("counter_offer_id", ""))
-				"TradeSettled": offer.status = "settled"
+				"TradeSettled":
+					offer.status = "settled"
+					var pressure: Variant = payload.get("settled_pressure")
+					if not pressure is Dictionary or not _positive_integer(pressure.get("day")) or not _valid_pressure_items(pressure.get("items")):
+						return false
+					derived_pressure[int(pressure.day)] = (pressure.items as Dictionary).duplicate(true)
 				"TradeOfferRejected": offer.status = "rejected"
 				"TradeOfferCancelled": offer.status = "cancelled"
 				"TradeOfferExpired": offer.status = "expired"
 			derived[offer_id] = offer
-	return int(normalized.next_offer_id) == next_id and _canonical_json_value(normalized.offers) == _canonical_json_value(derived)
+		elif event_type == "MarketPressureSettled":
+			if not payload is Dictionary or not _positive_integer(payload.get("day")):
+				return false
+			derived_pressure.erase(int(payload.day))
+	return (
+		int(normalized.next_offer_id) == next_id
+		and _canonical_json_value(normalized.offers) == _canonical_json_value(derived)
+		and _canonical_json_value(normalized.settled_pressure) == _canonical_json_value(derived_pressure)
+	)
 
 
 func validate_external_reservations(value: Dictionary, expected: Dictionary) -> bool:
@@ -577,9 +591,12 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 	if offer.is_empty() or str(offer.status) != OPEN_STATUS:
 		return _failure("offer_not_open")
 	if "player" in [str(offer.proposer_id), str(offer.recipient_id)]:
-		if agent_id != "player" or arguments.get("player_confirmed") != true:
-			return _failure("player_confirmation_required")
-		return _accept_player_trade(offer_id, offer, command, game_minute)
+		if str(offer.recipient_id) == "player":
+			if agent_id != "player" or arguments.get("player_confirmed") != true:
+				return _failure("player_confirmation_required")
+		elif agent_id != str(offer.recipient_id):
+			return _failure("only_receiver_can_accept")
+		return _accept_player_trade(offer_id, offer, command, game_minute, agent_id)
 	if str(offer.recipient_id) != agent_id:
 		return _failure("only_receiver_can_accept")
 	if not _has_total_assets(str(offer.proposer_id), offer.proposer_gives):
@@ -603,7 +620,8 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 	if not bool(_economy.call("apply_agent_asset_delta", str(offer.recipient_id), receiver_delta.items, int(receiver_delta.gold))):
 		proposer_state.from_dict(proposer_before)
 		return _failure("atomic_settlement_failed")
-	var event := _event("TradeSettled", "trade_offer", offer_id, agent_id, game_minute, str(command.action_id), str(command.decision_id), {"offer_id": offer_id, "proposer_id": str(offer.proposer_id), "recipient_id": str(offer.recipient_id), "proposer_gives": offer.proposer_gives, "proposer_receives": offer.proposer_receives}, "participants", [str(offer.proposer_id), str(offer.recipient_id)])
+	var pressure_after := _settlement_pressure_after(offer, game_minute)
+	var event := _event("TradeSettled", "trade_offer", offer_id, agent_id, game_minute, str(command.action_id), str(command.decision_id), {"offer_id": offer_id, "proposer_id": str(offer.proposer_id), "recipient_id": str(offer.recipient_id), "proposer_gives": offer.proposer_gives, "proposer_receives": offer.proposer_receives, "settled_pressure": pressure_after}, "participants", [str(offer.proposer_id), str(offer.recipient_id)])
 	var committed := _commit([event], str(command.idempotency_key))
 	if not bool(committed.get("ok", false)):
 		proposer_state.from_dict(proposer_before)
@@ -611,13 +629,13 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 		return committed
 	offer.status = "settled"
 	_offers[offer_id] = offer
-	_record_settlement_pressure(offer, game_minute)
+	_apply_settlement_pressure(pressure_after)
 	_refresh_market_pressure(game_minute)
 	_wake(str(offer.proposer_id), 3, game_minute)
 	return {"ok": true, "offer_id": offer_id, "events": committed.events, "changed_entities": ["trade_offer:" + offer_id, "npc_inventory:" + str(offer.proposer_id), "npc_inventory:" + str(offer.recipient_id)], "resource_delta": {}}
 
 
-func _accept_player_trade(offer_id: String, offer: Dictionary, command: Dictionary, game_minute: int) -> Dictionary:
+func _accept_player_trade(offer_id: String, offer: Dictionary, command: Dictionary, game_minute: int, accepted_by: String) -> Dictionary:
 	if _player_inventory == null or _player_wallet == null:
 		return _failure("player_assets_unavailable")
 	var player_is_proposer := str(offer.proposer_id) == "player"
@@ -670,7 +688,8 @@ func _accept_player_trade(offer_id: String, offer: Dictionary, command: Dictiona
 			if bool(_player_inventory.call("has_item_capacity_reservation", token)):
 				_player_inventory.call("release_item_capacity_reservation", token)
 		return _failure("atomic_settlement_failed")
-	var event := _event("TradeSettled", "trade_offer", offer_id, "player", game_minute, str(command.action_id), str(command.decision_id), {"offer_id": offer_id, "proposer_id": str(offer.proposer_id), "recipient_id": str(offer.recipient_id), "proposer_gives": offer.proposer_gives, "proposer_receives": offer.proposer_receives}, "participants", [str(offer.proposer_id), str(offer.recipient_id)])
+	var pressure_after := _settlement_pressure_after(offer, game_minute)
+	var event := _event("TradeSettled", "trade_offer", offer_id, accepted_by, game_minute, str(command.action_id), str(command.decision_id), {"offer_id": offer_id, "proposer_id": str(offer.proposer_id), "recipient_id": str(offer.recipient_id), "proposer_gives": offer.proposer_gives, "proposer_receives": offer.proposer_receives, "settled_pressure": pressure_after}, "participants", [str(offer.proposer_id), str(offer.recipient_id)])
 	var committed := _commit([event], str(command.idempotency_key))
 	if not bool(committed.get("ok", false)):
 		_player_inventory.call("restore_state", slots_before, mappings_before)
@@ -679,7 +698,7 @@ func _accept_player_trade(offer_id: String, offer: Dictionary, command: Dictiona
 		return committed
 	offer.status = "settled"
 	_offers[offer_id] = offer
-	_record_settlement_pressure(offer, game_minute)
+	_apply_settlement_pressure(pressure_after)
 	_refresh_market_pressure(game_minute)
 	_wake(npc_id, 3, game_minute)
 	return {"ok": true, "offer_id": offer_id, "events": committed.events, "changed_entities": ["trade_offer:" + offer_id, "player_inventory", "npc_inventory:" + npc_id], "resource_delta": {}}
@@ -841,14 +860,16 @@ func _add_bundle_pressure(target: Dictionary, bundle: Dictionary, field: String)
 		target[item_id] = pressure
 
 
-func _record_settlement_pressure(offer: Dictionary, game_minute: int) -> void:
-	if _market == null:
-		return
+func _settlement_pressure_after(offer: Dictionary, game_minute: int) -> Dictionary:
 	var day := _pressure_day(game_minute)
-	var day_pressure: Dictionary = _settled_pressure.get(day, {})
+	var day_pressure: Dictionary = (_settled_pressure.get(day, {}) as Dictionary).duplicate(true)
 	_record_cash_price_signal(day_pressure, offer.proposer_gives, offer.proposer_receives)
 	_record_cash_price_signal(day_pressure, offer.proposer_receives, offer.proposer_gives)
-	_settled_pressure[day] = day_pressure
+	return {"day": day, "items": day_pressure}
+
+
+func _apply_settlement_pressure(snapshot: Dictionary) -> void:
+	_settled_pressure[int(snapshot.day)] = (snapshot.items as Dictionary).duplicate(true)
 
 
 func _record_cash_price_signal(day_pressure: Dictionary, item_side: Dictionary, cash_side: Dictionary) -> void:

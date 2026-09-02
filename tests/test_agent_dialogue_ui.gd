@@ -46,7 +46,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	dialogue.agent_dialogue_cancelled.connect(func(agent_id: String, request_id: String): cancelled.append([agent_id, request_id]))
 	dialogue.agent_dialogue_closed.connect(func(agent_id: String, request_id: String): closed.append([agent_id, request_id]))
 	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
-	dialogue.set_agent_interactions("farmer_ahe", [{"offer_id": "offer-1", "status": "open", "proposer_gives": {"items": {"carrot": 2}, "gold": 0}, "proposer_receives": {"items": {"salt": 1}, "gold": 0}, "expires_game_minute": 900}])
+	dialogue.set_agent_interactions("farmer_ahe", [{"offer_id": "offer-1", "status": "open", "proposer_id": "farmer_ahe", "recipient_id": "player", "proposer_gives": {"items": {"carrot": 2}, "gold": 0}, "proposer_receives": {"items": {"salt": 1}, "gold": 0}, "expires_game_minute": 900}])
 	var cards := dialogue.get_node("DialoguePanel/Margin/VBox/InteractionScroll/InteractionCards") as VBoxContainer
 	assertions.equal(cards.get_child_count(), 1, "pending interaction renders one authority-backed card")
 	var first_card := cards.get_child(0)
@@ -71,6 +71,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(submitted_terms.give.gold, 7, "counter carries edited Player give gold")
 	assertions.equal(submitted_terms.expires_in_minutes, 180, "counter carries edited expiry")
 	assertions.equal(dialogue.get_agent_interactions("farmer_ahe")[0].status, "open", "UI button emission alone does not mutate interaction state")
+	dialogue.set_agent_interactions("farmer_ahe", [{"offer_id": "offer-outgoing", "status": "open", "proposer_id": "player", "recipient_id": "farmer_ahe", "proposer_gives": {"items": {"salt": 1}, "gold": 0}, "proposer_receives": {"items": {"carrot": 1}, "gold": 0}, "expires_game_minute": 900}])
+	var outgoing_card := cards.get_child(0)
+	assertions.truthy((outgoing_card.find_child("AcceptButton", true, false) as Button).disabled, "Player cannot accept an outgoing counteroffer before the NPC")
+	assertions.truthy((outgoing_card.find_child("CounterButton", true, false) as Button).disabled, "Player cannot counter their own outgoing offer")
+	dialogue.set_agent_interactions("farmer_ahe", [{"agreement_id": "agreement-1", "status": "proposed", "proposer_id": "farmer_ahe", "participants": ["farmer_ahe", "player"], "accepted_by": ["farmer_ahe"], "commitments": [{"participant_id": "farmer_ahe", "items": {}, "gold": 0}, {"participant_id": "player", "items": {"salt": 1}, "gold": 0}], "reward_split": {"farmer_ahe": 1, "player": 1}, "deadline": 900, "note": "合作"}])
+	var agreement_card := cards.get_child(0)
+	(agreement_card.find_child("CounterButton", true, false) as Button).pressed.emit()
+	(agreement_card.find_child("CounterNote", true, false) as LineEdit).text = "需要更多时间"
+	(agreement_card.find_child("CounterDeadlineMinutes", true, false) as SpinBox).value = 240
+	(agreement_card.find_child("SubmitCounterButton", true, false) as Button).pressed.emit()
+	var cooperation_terms := interaction_responses[-1][3] as Dictionary
+	assertions.equal(cooperation_terms.revised_terms.deadline_minutes, 240, "cooperation counter carries edited deadline")
+	assertions.equal(cooperation_terms.revised_terms.note, "需要更多时间", "cooperation counter includes the required inner note")
 	assertions.truthy(dialogue.visible, "click flow opens Agent dialogue immediately")
 	assertions.equal(dialogue.get_viewport().gui_get_focus_owner(), input, "opening Agent dialogue focuses its text editor")
 	assertions.equal((dialogue.get_node("DialoguePanel/Margin/VBox/Header/NameLabel") as Label).text, "阿禾", "Agent dialogue header shows display name")
@@ -90,7 +103,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(history_view.text.contains("今天价格稳定。"), "streamed Agent reply appears in scrollable history")
 	close_button.pressed.emit()
 	assertions.truthy(not dialogue.visible, "Agent dialogue close button hides the panel")
-	assertions.equal(interaction_responses.size(), 3, "closing dialogue never accepts or rejects an interaction")
+	assertions.equal(interaction_responses.size(), 4, "closing dialogue never accepts or rejects an interaction")
 	assertions.truthy(dialogue.get_viewport().gui_get_focus_owner() != input, "closing Agent dialogue releases text input focus")
 	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
 	assertions.equal(cards.get_child_count(), 1, "reopening preserves pending structured cards")

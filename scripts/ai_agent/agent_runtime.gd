@@ -793,8 +793,10 @@ func _on_environment_condition_changed(condition_id: String, state: Dictionary) 
 
 func _on_market_pressure_settled(total_day: int, pressure: Dictionary) -> void:
 	var minute := _absolute_game_minute()
+	if not world_fact_bridge.publish_market_pressure(total_day, pressure, minute, "market-pressure:%d" % total_day):
+		_publish("warning", "Agent 市场压力结算事件写入失败，保留待核对状态。", {"day": total_day})
+		return
 	interaction_system.mark_market_pressure_consumed(total_day)
-	world_fact_bridge.publish_market_pressure(total_day, pressure, minute, "market-pressure:%d" % total_day)
 	_notify_public_event(2, minute)
 
 
