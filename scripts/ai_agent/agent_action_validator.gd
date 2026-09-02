@@ -7,7 +7,7 @@ const REGION_IDS := ["creek", "hills", "forest"]
 const DISCOVERY_IDS := ["crop:moonflower", "terrain:cliff", "crop:stardust_fruit"]
 
 
-func validate(intent: Variant, registry: Variant, _current_revision: int) -> Dictionary:
+func validate(intent: Variant, registry: Variant, _current_revision: int, role_system: Variant = null) -> Dictionary:
 	if not intent is Dictionary:
 		return {"ok": false, "error": "invalid_envelope"}
 	var agent_id := str((intent as Dictionary).get("agent_id", ""))
@@ -16,8 +16,13 @@ func validate(intent: Variant, registry: Variant, _current_revision: int) -> Dic
 	var agent: Dictionary = registry.call("get_agent", agent_id)
 	if agent.is_empty():
 		return {"ok": false, "error": "unknown_agent"}
-	var parsed := AgentProtocolScript.parse_action_intent(intent, agent.get("tools", []))
+	var allowed_tools: Array = agent.get("tools", [])
+	if role_system != null and role_system.has_method("get_capabilities"):
+		allowed_tools = (role_system.call("get_capabilities", agent_id) as Dictionary).get("tools", [])
+	var parsed := AgentProtocolScript.parse_action_intent(intent, allowed_tools)
 	if not parsed.ok:
+		if role_system != null and str(parsed.get("error", "")) == "unauthorized_tool":
+			return {"ok": false, "error": "role_capability_changed"}
 		return parsed
 	for action in parsed.value.actions:
 		if not _valid_arguments(str(action.tool_name), action.arguments):
@@ -41,6 +46,8 @@ func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 			return _exact_keys(arguments, ["region_id"]) and str(arguments.region_id) in REGION_IDS
 		"collect_sample", "register_discovery":
 			return _exact_keys(arguments, ["discovery_id"]) and str(arguments.discovery_id) in DISCOVERY_IDS
+		"propose_role_change":
+			return _exact_keys(arguments, ["target_role_id", "motivation"]) and str(arguments.target_role_id) in ["farmer", "merchant", "explorer"] and _bounded_text(arguments.motivation, 240)
 		"speak", "wait":
 			return arguments.is_empty()
 	return false
@@ -66,3 +73,7 @@ func _integer_in_range(value: Variant, minimum: int, maximum: int) -> bool:
 
 func _bounded_id(value: Variant) -> bool:
 	return typeof(value) == TYPE_STRING and not str(value).strip_edges().is_empty() and str(value).length() <= 80
+
+
+func _bounded_text(value: Variant, maximum: int) -> bool:
+	return typeof(value) == TYPE_STRING and not str(value).strip_edges().is_empty() and str(value).length() <= maximum

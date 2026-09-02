@@ -4,6 +4,7 @@ const ROLES_PATH := "res://data/agents/roles.json"
 const PROFILES_PATH := "res://data/agents/profiles.json"
 
 var _agents: Dictionary = {}
+var _roles: Dictionary = {}
 
 
 func load_defaults() -> bool:
@@ -35,6 +36,7 @@ func load_defaults() -> bool:
 		merged["decision_interval_hours"] = (roles[role_id] as Dictionary).decision_interval_hours.duplicate()
 		candidates[agent_id] = merged
 	_agents = candidates
+	_roles = roles
 	return true
 
 
@@ -46,6 +48,29 @@ func get_agent_ids() -> Array:
 
 func get_agent(agent_id: String) -> Dictionary:
 	return (_agents.get(agent_id, {}) as Dictionary).duplicate(true)
+
+
+func get_role(role_id: String) -> Dictionary:
+	return (_roles.get(role_id, {}) as Dictionary).duplicate(true)
+
+
+func get_role_ids() -> Array:
+	var result := _roles.keys()
+	result.sort()
+	return result
+
+
+func set_active_role(agent_id: String, role_id: String) -> bool:
+	if not _agents.has(agent_id) or not _roles.has(role_id):
+		return false
+	var agent := (_agents[agent_id] as Dictionary).duplicate(true)
+	var role: Dictionary = _roles[role_id]
+	agent.role_id = role_id
+	agent.tools = (role.tools as Array).duplicate()
+	agent.goals = (role.goals as Array).duplicate()
+	agent.decision_interval_hours = (role.decision_interval_hours as Array).duplicate()
+	_agents[agent_id] = agent
+	return true
 
 
 func is_agent_managed(agent_id: String) -> bool:

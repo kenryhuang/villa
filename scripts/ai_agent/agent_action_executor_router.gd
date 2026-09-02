@@ -19,6 +19,7 @@ var _buildings: Variant
 var _activities: Variant
 var _knowledge: Variant
 var _economy: Variant
+var _roles: Variant
 var _publish_hud: Callable
 var _outcomes: Dictionary = {}
 
@@ -66,7 +67,8 @@ func configure(
 	activities: Variant,
 	knowledge: Variant,
 	economy: Variant,
-	publish_hud: Callable = Callable()
+	publish_hud: Callable = Callable(),
+	roles: Variant = null
 ) -> bool:
 	if registry == null or farm == null or buildings == null or activities == null or knowledge == null or economy == null:
 		return false
@@ -76,6 +78,7 @@ func configure(
 	_activities = activities
 	_knowledge = knowledge
 	_economy = economy
+	_roles = roles
 	_publish_hud = publish_hud
 	return true
 
@@ -195,7 +198,10 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 		return (_outcomes[idempotency_key] as Dictionary).duplicate(true)
 	var agent_id := str(intent.get("agent_id", ""))
 	var tool_name := str(intent.get("tool_name", ""))
-	if not _registry.call("is_tool_allowed", agent_id, tool_name):
+	var tool_allowed := bool(_registry.call("is_tool_allowed", agent_id, tool_name))
+	if _roles != null and _roles.has_method("get_capabilities"):
+		tool_allowed = tool_name in ((_roles.call("get_capabilities", agent_id) as Dictionary).get("tools", []) as Array)
+	if not tool_allowed:
 		return _failure(intent, game_minute, "unauthorized_tool")
 	var arguments: Dictionary = intent.get("arguments", {})
 	var result := _execute_tool(
@@ -293,6 +299,15 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 			return _success("%s采集了%s。" % [_display_name(agent_id), item_id], ["npc_inventory:" + agent_id], {item_id: 1})
 		"prepare_supplies":
 			return _trade(agent_id, "buy", arguments)
+		"propose_role_change":
+			if _roles == null:
+				return _error("role_system_unavailable")
+			var role_result: Dictionary = _roles.call("propose_change", agent_id, str(arguments.get("target_role_id", "")), str(arguments.get("motivation", "")), game_minute, key)
+			if not bool(role_result.get("ok", false)):
+				return _error(str(role_result.get("error", "role_change_failed")))
+			if not bool(role_result.get("approved", false)):
+				return _success("%s的身份转换未通过：%s。" % [_display_name(agent_id), str(role_result.get("error", "条件不足"))], ["agent_role:" + agent_id])
+			return _success("%s现在成为%s。" % [_display_name(agent_id), str(role_result.get("role_id", ""))], ["agent_role:" + agent_id], {"gold": -int(role_result.get("cost_gold", 0))})
 		"propose_trade", "speak", "wait":
 			return {"ok": true, "mutated": false, "message": "", "changed_entities": [], "resource_delta": {}}
 	return _error("unsupported_tool")

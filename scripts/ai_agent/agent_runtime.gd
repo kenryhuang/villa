@@ -23,6 +23,7 @@ const AgentWorldEventStoreScript = preload("res://scripts/ai_agent/agent_world_e
 const AgentWorldProjectorScript = preload("res://scripts/ai_agent/agent_world_projector.gd")
 const AgentContextProjectionScript = preload("res://scripts/ai_agent/agent_context_projection.gd")
 const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_fact_bridge.gd")
+const AgentRoleSystemScript = preload("res://scripts/ai_agent/agent_role_system.gd")
 
 const VERSION := 3
 const GAME_MINUTES_PER_DAY := 1080
@@ -38,6 +39,7 @@ var event_store = AgentWorldEventStoreScript.new()
 var world_projector = AgentWorldProjectorScript.new()
 var context_projection = AgentContextProjectionScript.new()
 var world_fact_bridge = AgentWorldFactBridgeScript.new()
+var role_system = AgentRoleSystemScript.new()
 var validator = AgentValidatorScript.new()
 var executor = AgentExecutorScript.new()
 var scheduler = AgentSchedulerScript.new()
@@ -82,6 +84,8 @@ func configure(
 	_hud_bus = hud_bus
 	if not _configure_world_context():
 		return false
+	if not role_system.configure(registry, _npc_economy, event_store, world_projector, building_registry, knowledge_registry):
+		return false
 	if _farm_port != null:
 		farm_registry = _farm_port
 	elif farm_registry.get_plot("farmer_ahe", 0).is_empty() and not farm_registry.configure_farm("farmer_ahe", 12):
@@ -89,7 +93,7 @@ func configure(
 	for agent_id in registry.get_agent_ids():
 		if not bool(_npc_economy.call("set_agent_managed", agent_id, true)):
 			return false
-	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy):
+	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system):
 		return false
 	if farm_registry.has_signal("work_finished"):
 		var callback := Callable(self, "_on_farm_work_finished")
@@ -560,7 +564,7 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		if speech.is_empty():
 			speech = "……"
 		dialogue_ready.emit(agent_id, request_id, speech)
-	var checked := validator.validate(response, registry, executor.world_revision)
+	var checked := validator.validate(response, registry, executor.world_revision, role_system)
 	if not checked.ok:
 		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})

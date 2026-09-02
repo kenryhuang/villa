@@ -97,6 +97,10 @@ func get_last_sequence() -> int:
 	return _last_sequence
 
 
+func get_actor(actor_id: String) -> Dictionary:
+	return (_actors.get(actor_id, {}) as Dictionary).duplicate(true)
+
+
 func global_public_events(limit: int = 24) -> Array[Dictionary]:
 	return _tail(_global_public_events, clampi(limit, 0, GLOBAL_EVENT_LIMIT))
 

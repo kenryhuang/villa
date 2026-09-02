@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "role_id": "farmer",
+      "minimum_gold": 0,
+      "required_items": {},
+      "required_building_types": [],
+      "required_public_discoveries": [],
+      "required_regions": [],
+      "minimum_event_counts": {},
+      "cost_gold": 50,
+      "cooldown_hours": 24
+    },
+    {
+      "role_id": "merchant",
+      "minimum_gold": 300,
+      "required_items": {},
+      "required_building_types": [],
+      "required_public_discoveries": [],
+      "required_regions": [],
+      "minimum_event_counts": {"PublicMarketTradeExecuted": 1},
+      "cost_gold": 100,
+      "cooldown_hours": 24
+    },
+    {
+      "role_id": "explorer",
+      "minimum_gold": 100,
+      "required_items": {"bread": 1},
+      "required_building_types": [],
+      "required_public_discoveries": [],
+      "required_regions": ["forest"],
+      "minimum_event_counts": {},
+      "cost_gold": 75,
+      "cooldown_hours": 24
+    }
+  ]
+}
