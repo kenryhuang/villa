@@ -83,14 +83,10 @@ func _publish(
 		"visibility": {"scope": "public", "actor_ids": []},
 		"payload": payload.duplicate(true),
 	}]
-	var result: Dictionary = _store.call("append_batch", candidates, "world-fact:" + source_id)
+	var result: Dictionary = _store.call("append_projected_batch", candidates, "world-fact:" + source_id, _projector)
 	if not bool(result.get("ok", false)):
 		return false
 	var committed := result.get("events", []) as Array
 	if committed.is_empty():
 		return false
-	if int((committed[-1] as Dictionary).global_sequence) <= int(_projector.call("get_last_sequence")):
-		return true
-	if bool(_projector.call("apply_batch", committed)):
-		return true
-	return bool(_projector.call("replay", _store.call("get_events_after", 0)))
+	return int((committed[-1] as Dictionary).global_sequence) <= int(_projector.call("get_last_sequence"))

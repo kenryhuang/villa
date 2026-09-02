@@ -816,13 +816,11 @@ func _empty_pressure() -> Dictionary:
 
 
 func _commit(events: Array[Dictionary], key: String) -> Dictionary:
-	var committed: Dictionary = _store.call("append_batch", events, key)
+	var committed: Dictionary = _store.call("append_projected_batch", events, key, _projector)
 	if not bool(committed.get("ok", false)):
 		return _failure(str(committed.get("error", "event_commit_failed")))
 	var committed_events: Array[Dictionary] = []
 	committed_events.assign(committed.events)
-	if not bool(_projector.call("apply_batch", committed_events)):
-		return _failure("event_projection_failed")
 	return {"ok": true, "events": committed_events}
 
 

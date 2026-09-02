@@ -116,10 +116,10 @@ func propose_change(
 	var gold_before := int(economy_state.gold)
 	economy_state.gold = gold_before - cost
 	var events := _success_events(agent_id, target_role_id, motivation, game_minute, cost)
-	var committed: Dictionary = _store.call("append_batch", events, idempotency_key)
+	var committed: Dictionary = _store.call("append_projected_batch", events, idempotency_key, _projector)
 	var committed_events: Array[Dictionary] = []
 	committed_events.assign(committed.get("events", []))
-	if not bool(committed.get("ok", false)) or not bool(_projector.call("apply_batch", committed_events)):
+	if not bool(committed.get("ok", false)):
 		economy_state.gold = gold_before
 		return {"ok": false, "error": "role_event_commit_failed"}
 	if not bool(_registry.call("set_active_role", agent_id, target_role_id)):
@@ -196,10 +196,10 @@ func _commit_rejection(agent_id: String, target_role_id: String, motivation: Str
 		_event("RoleChangeProposed", agent_id, target_role_id, game_minute, {"target_role_id": target_role_id, "motivation": motivation}, "private"),
 		_event("RoleChangeRejected", agent_id, target_role_id, game_minute, {"target_role_id": target_role_id, "reason": error}, "private"),
 	]
-	var committed: Dictionary = _store.call("append_batch", events, idempotency_key)
+	var committed: Dictionary = _store.call("append_projected_batch", events, idempotency_key, _projector)
 	var committed_events: Array[Dictionary] = []
 	committed_events.assign(committed.get("events", []))
-	if not bool(committed.get("ok", false)) or not bool(_projector.call("apply_batch", committed_events)):
+	if not bool(committed.get("ok", false)):
 		return {"ok": false, "error": "role_event_commit_failed"}
 	return {"ok": true, "approved": false, "error": error, "events": committed.events}
 

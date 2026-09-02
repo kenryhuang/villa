@@ -53,12 +53,40 @@ func append_batch(events: Array[Dictionary], idempotency_key: String) -> Diction
 	return result.duplicate(true)
 
 
+func append_projected_batch(events: Array[Dictionary], idempotency_key: String, projector: Variant) -> Dictionary:
+	if projector == null or not projector.has_method("get_last_sequence") or not projector.has_method("apply_batch"):
+		return _failure("invalid_projector")
+	var store_sequence := get_last_sequence()
+	if int(projector.call("get_last_sequence")) != store_sequence:
+		return _failure("event_projection_out_of_sync")
+	var cached := get_idempotent_result(idempotency_key)
+	if not cached.is_empty():
+		return cached
+	var store_before := to_dict()
+	var projector_before: Dictionary = projector.call("to_dict") if projector.has_method("to_dict") else {}
+	var committed := append_batch(events, idempotency_key)
+	if not bool(committed.get("ok", false)):
+		return committed
+	var committed_events: Array[Dictionary] = []
+	committed_events.assign(committed.events)
+	if bool(projector.call("apply_batch", committed_events)):
+		return committed
+	from_dict(store_before)
+	if not projector_before.is_empty() and projector.has_method("from_dict"):
+		projector.call("from_dict", projector_before)
+	return _failure("event_projection_failed")
+
+
 func get_events_after(sequence: int) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for event in _events:
 		if int(event.global_sequence) > sequence:
 			result.append(event.duplicate(true))
 	return result
+
+
+func get_last_sequence() -> int:
+	return _next_global_sequence - 1
 
 
 func get_aggregate_version(aggregate_type: String, aggregate_id: String) -> int:

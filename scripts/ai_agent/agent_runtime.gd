@@ -984,14 +984,12 @@ func _record_world_action_outcome(outcome: Dictionary) -> bool:
 	if events.is_empty():
 		return true
 	var key := "agent-outcome:%s:%s" % [str(outcome.get("idempotency_key", action_id)), status]
-	var committed: Dictionary = event_store.append_batch(events, key)
+	var committed: Dictionary = event_store.append_projected_batch(events, key, world_projector)
 	if not bool(committed.get("ok", false)):
 		return false
 	var committed_events: Array[Dictionary] = []
 	committed_events.assign(committed.events)
-	if not committed_events.is_empty() and int(committed_events[-1].global_sequence) <= world_projector.get_last_sequence():
-		return true
-	return world_projector.apply_batch(committed_events)
+	return not committed_events.is_empty() and int(committed_events[-1].global_sequence) <= world_projector.get_last_sequence()
 
 
 func _world_action_event(event_type: String, aggregate_type: String, aggregate_id: String, actor_id: String, command_id: String, payload: Dictionary, scope: String, actor_ids: Array = []) -> Dictionary:
@@ -1010,7 +1008,7 @@ func _world_action_event(event_type: String, aggregate_type: String, aggregate_i
 
 
 func _event_pipeline_synchronized() -> bool:
-	return int(event_store.to_dict().next_global_sequence) - 1 == world_projector.get_last_sequence()
+	return event_store.get_last_sequence() == world_projector.get_last_sequence()
 
 
 func _on_farm_work_finished(intent: Dictionary, result: Dictionary) -> void:

@@ -2,11 +2,22 @@ extends RefCounted
 
 const AgentWorldEventStoreScript = preload("res://scripts/ai_agent/agent_world_event_store.gd")
 
+class RejectingProjector:
+	extends RefCounted
+	var last_sequence := 0
+	func get_last_sequence() -> int: return last_sequence
+	func apply_batch(_events: Array[Dictionary]) -> bool: return false
+	func to_dict() -> Dictionary: return {"last_sequence": last_sequence}
+	func from_dict(value: Dictionary) -> bool:
+		last_sequence = int(value.get("last_sequence", 0))
+		return true
+
 
 func run(assertions: TestAssert) -> void:
 	_test_atomic_append_and_versions(assertions)
 	_test_idempotency(assertions)
 	_test_failed_batch_is_atomic(assertions)
+	_test_projection_commit_is_atomic(assertions)
 	_test_serialization_and_corruption(assertions)
 
 
@@ -50,6 +61,25 @@ func _test_failed_batch_is_atomic(assertions: TestAssert) -> void:
 	assertions.equal(store.get_events_after(0), [], "failed batch commits no prefix")
 	assertions.equal(store.get_aggregate_version("public_world", "clock"), 0, "failed batch advances no aggregate")
 	assertions.equal(store.get_idempotent_result("v2:decision-3:action-1"), {}, "failed batch is not cached as committed")
+
+
+func _test_projection_commit_is_atomic(assertions: TestAssert) -> void:
+	var store = AgentWorldEventStoreScript.new()
+	var projector := RejectingProjector.new()
+	var rejected_events: Array[Dictionary] = [
+		_event("DayStarted", "public_world", "clock", {"day": 2}),
+	]
+	var failed: Dictionary = store.call("append_projected_batch", rejected_events, "projected-failure", projector)
+	assertions.equal(str(failed.get("error", "")), "event_projection_failed", "projection failure is explicit")
+	assertions.equal(store.get_events_after(0), [], "projection failure rolls back the event-store append")
+	assertions.equal(store.get_idempotent_result("projected-failure"), {}, "projection failure leaves no idempotency record")
+	assertions.truthy(bool(store.append_batch([_event("DayStarted", "public_world", "clock", {"day": 2})], "orphan").ok), "divergence fixture appends without projection")
+	var diverged_events: Array[Dictionary] = [
+		_event("SeasonChanged", "public_world", "season", {"season": 1}),
+	]
+	var diverged: Dictionary = store.call("append_projected_batch", diverged_events, "must-not-append", projector)
+	assertions.equal(str(diverged.get("error", "")), "event_projection_out_of_sync", "diverged projection rejects before append")
+	assertions.equal(store.get_events_after(0).size(), 1, "diverged projection cannot grow the event log")
 
 
 func _test_serialization_and_corruption(assertions: TestAssert) -> void:
