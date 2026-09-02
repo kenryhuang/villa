@@ -261,7 +261,10 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 			if _buildings.call("add_building", str(record.agent_id), str(payload.building_type), str(payload.building_id), game_minute):
 				changed.append("npc_building:" + str(payload.building_id))
 		world_revision += 1
-		var outcome := {"protocol_version": 2, "decision_id": str(record.payload.get("decision_id", "")), "action_id": str(record.payload.get("action_id", record.activity_id)), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "tool_name": str(record.payload.get("tool_name", record.kind)), "agreement_id": str(record.payload.get("agreement_id", "")), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
+		var completed_arguments := (record.payload as Dictionary).duplicate(true)
+		for internal_field in ["decision_id", "action_id", "tool_name"]:
+			completed_arguments.erase(internal_field)
+		var outcome := {"protocol_version": 2, "decision_id": str(record.payload.get("decision_id", "")), "action_id": str(record.payload.get("action_id", record.activity_id)), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "tool_name": str(record.payload.get("tool_name", record.kind)), "arguments": completed_arguments, "agreement_id": str(record.payload.get("agreement_id", "")), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
 		_outcomes[str(record.activity_id)] = outcome.duplicate(true)
 		outcomes.append(outcome)
 		if _publish_hud.is_valid():

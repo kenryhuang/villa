@@ -28,6 +28,7 @@ const QUANTITY_SCHEMA = {type: "integer", minimum: 1, maximum: 100};
 const ID_LIST_SCHEMA = {type: "array", items: ITEM_ID_SCHEMA, minItems: 1, maxItems: 20, uniqueItems: true};
 const TEXT_SCHEMA = {type: "string", minLength: 1, maxLength: 1000};
 const NOTE_SCHEMA = {type: "string", maxLength: 500};
+const AGREEMENT_ID_SCHEMA = {type: "string", minLength: 1, maxLength: 80};
 const ITEM_QUANTITIES_SCHEMA = {type: "object", additionalProperties: {type: "integer", minimum: 1, maximum: 1000000}};
 const ASSET_BUNDLE_SCHEMA = objectSchema({
   items: ITEM_QUANTITIES_SCHEMA,
@@ -46,13 +47,13 @@ function objectSchema(properties: Record<string, unknown>, required: string[]): 
 
 const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   till: objectSchema({plot: PLOT_SCHEMA}, ["plot"]),
-  harvest: objectSchema({plot: PLOT_SCHEMA}, ["plot"]),
+  harvest: objectSchema({plot: PLOT_SCHEMA, agreement_id: AGREEMENT_ID_SCHEMA}, ["plot"]),
   plant: objectSchema({
     plot: PLOT_SCHEMA,
     seed_item_id: {type: "string", enum: [...SEED_IDS]},
   }, ["plot", "seed_item_id"]),
-  buy: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
-  sell: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
+  buy: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, agreement_id: AGREEMENT_ID_SCHEMA}, ["item_id", "quantity"]),
+  sell: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, agreement_id: AGREEMENT_ID_SCHEMA}, ["item_id", "quantity"]),
   prepare_supplies: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
   send_message: objectSchema({target_actor_id: ITEM_ID_SCHEMA, text: TEXT_SCHEMA, urgency: {type: "string", enum: ["normal", "urgent"]}}, ["target_actor_id", "text", "urgency"]),
   propose_trade: objectSchema({target_actor_id: ITEM_ID_SCHEMA, give: ASSET_BUNDLE_SCHEMA, receive: ASSET_BUNDLE_SCHEMA, expires_in_minutes: {type: "integer", minimum: 1, maximum: 10080}, note: NOTE_SCHEMA}, ["target_actor_id", "give", "receive", "expires_in_minutes", "note"]),
@@ -78,6 +79,7 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   build: objectSchema({
     building_type: {type: "string", enum: [...BUILDING_TYPES]},
     building_id: ITEM_ID_SCHEMA,
+	agreement_id: AGREEMENT_ID_SCHEMA,
   }, ["building_type", "building_id"]),
   travel: objectSchema({
     region_id: {type: "string", enum: [...REGION_IDS]},
@@ -85,9 +87,11 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   }, ["region_id", "duration_minutes"]),
   survey: objectSchema({
     region_id: {type: "string", enum: [...REGION_IDS]},
+	agreement_id: AGREEMENT_ID_SCHEMA,
   }, ["region_id"]),
   collect_sample: objectSchema({
     discovery_id: {type: "string", enum: [...DISCOVERY_IDS]},
+	agreement_id: AGREEMENT_ID_SCHEMA,
   }, ["discovery_id"]),
   register_discovery: objectSchema({
     discovery_id: {type: "string", enum: [...DISCOVERY_IDS]},
@@ -124,6 +128,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const keys = Object.keys(value);
   return keys.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
+}
+
+function hasExactKeysWithOptionalAgreement(value: Record<string, unknown>, expected: readonly string[]): boolean {
+	return hasExactKeys(value, expected)
+		|| (hasExactKeys(value, [...expected, "agreement_id"]) && isBoundedId(value.agreement_id));
 }
 
 function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {
@@ -187,13 +196,16 @@ export function validToolArguments(name: string, value: unknown): boolean {
   switch (name) {
     case "till":
     case "harvest":
-      return hasExactKeys(value, ["plot"]) && isIntegerInRange(value.plot, 0, 255);
+	  return hasExactKeysWithOptionalAgreement(value, ["plot"]) && isIntegerInRange(value.plot, 0, 255);
     case "plant":
       return hasExactKeys(value, ["plot", "seed_item_id"])
         && isIntegerInRange(value.plot, 0, 255)
         && isOneOf(value.seed_item_id, SEED_IDS);
     case "buy":
     case "sell":
+	  return hasExactKeysWithOptionalAgreement(value, ["item_id", "quantity"])
+		&& isBoundedId(value.item_id)
+		&& isIntegerInRange(value.quantity, 1, 100);
     case "prepare_supplies":
       return hasExactKeys(value, ["item_id", "quantity"])
         && isBoundedId(value.item_id)
@@ -233,7 +245,7 @@ export function validToolArguments(name: string, value: unknown): boolean {
       return hasExactKeys(value, ["agreement_id", "contribution_id"])
         && isBoundedId(value.agreement_id) && isBoundedId(value.contribution_id);
     case "build":
-      return hasExactKeys(value, ["building_type", "building_id"])
+	  return hasExactKeysWithOptionalAgreement(value, ["building_type", "building_id"])
         && isOneOf(value.building_type, BUILDING_TYPES)
         && isBoundedId(value.building_id);
     case "travel":
@@ -241,9 +253,11 @@ export function validToolArguments(name: string, value: unknown): boolean {
         && isOneOf(value.region_id, REGION_IDS)
         && isIntegerInRange(value.duration_minutes, 10, 240);
     case "survey":
-      return hasExactKeys(value, ["region_id"])
+	  return hasExactKeysWithOptionalAgreement(value, ["region_id"])
         && isOneOf(value.region_id, REGION_IDS);
-    case "collect_sample":
+	case "collect_sample":
+	  return hasExactKeysWithOptionalAgreement(value, ["discovery_id"])
+		&& isOneOf(value.discovery_id, DISCOVERY_IDS);
     case "register_discovery":
       return hasExactKeys(value, ["discovery_id"])
         && isOneOf(value.discovery_id, DISCOVERY_IDS);

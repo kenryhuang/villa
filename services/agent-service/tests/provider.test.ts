@@ -103,6 +103,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
     properties: {
       item_id: {type: "string", minLength: 1, maxLength: 80},
       quantity: {type: "integer", minimum: 1, maximum: 100},
+	  agreement_id: {type: "string", minLength: 1, maxLength: 80},
     },
     required: ["item_id", "quantity"],
     additionalProperties: false,

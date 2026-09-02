@@ -102,6 +102,30 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	runtime.call("_handle_response", "farmer_ahe", batch_response)
 	assertions.equal(runtime.farm_registry.get_plot("farmer_ahe", 0).state, "planted", "runtime executes every action in a v2 batch")
 	assertions.equal(runtime.executor.world_revision, 2, "runtime batch commits one revision per mutation")
+	var action_event_types := runtime.event_store.get_events_after(0).map(func(event: Dictionary): return str(event.event_type))
+	assertions.truthy("FieldTilled" in action_event_types and "CropPlanted" in action_event_types, "committed farming actions enter the replayable Agent event log")
+	var trade_response := {
+		"protocol_version": 2, "decision_id": "runtime-trade", "request_id": "runtime-trade-request",
+		"agent_id": "farmer_ahe", "expected_revision": 2, "decision_summary": "sell one seed",
+		"actions": [{"action_id": "runtime-sell", "idempotency_key": "v2:runtime:sell", "tool_name": "sell", "tool_version": 1, "arguments": {"item_id": "carrot_seed", "quantity": 1}}],
+	}
+	runtime.call("_handle_response", "farmer_ahe", trade_response)
+	action_event_types = runtime.event_store.get_events_after(0).map(func(event: Dictionary): return str(event.event_type))
+	assertions.truthy("PublicMarketTradeExecuted" in action_event_types, "public Agent market trade enters the event log through the production response path")
+	var eligible_role_change: Dictionary = runtime.role_system.propose_change("farmer_ahe", "merchant", "通过真实成交积累经验", 5, "runtime-role-after-trade")
+	assertions.truthy(bool(eligible_role_change.get("approved", false)), "production market event satisfies configured merchant experience")
+	var travel_response := {
+		"protocol_version": 2, "decision_id": "runtime-travel", "request_id": "runtime-travel-request",
+		"agent_id": "xuezhe_lin", "expected_revision": 3, "decision_summary": "travel to creek",
+		"actions": [{"action_id": "runtime-travel", "idempotency_key": "v2:runtime:travel", "tool_name": "travel", "tool_version": 1, "arguments": {"region_id": "creek", "duration_minutes": 10}}],
+	}
+	runtime.call("_handle_response", "xuezhe_lin", travel_response)
+	assertions.equal(runtime.world_projector.get_actor("xuezhe_lin").current_public_state.status, "traveling", "in-progress travel updates public Agent status")
+	season.hour = 6
+	season.minute = 10
+	runtime.call("_on_time_changed", 6, 10)
+	assertions.equal(runtime.world_projector.get_actor("xuezhe_lin").region_id, "creek", "completed travel updates projected Agent region")
+	assertions.equal(runtime.world_projector.get_actor("xuezhe_lin").current_public_state.status, "idle", "completed travel restores public Agent status")
 	var revision_before_empty: int = runtime.executor.world_revision
 	var empty_response := batch_response.duplicate(true)
 	empty_response.request_id = "runtime-empty-request"

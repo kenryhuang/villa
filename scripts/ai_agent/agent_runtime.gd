@@ -726,6 +726,7 @@ func _on_time_changed(hour: int, minute: int) -> void:
 		if _event_bus != null:
 			_event_bus.agent_interaction_changed.emit(str(expired.get("agreement_id", "")), "failed")
 	for outcome in executor.complete_due(game_minute):
+		_record_world_action_outcome(outcome)
 		agreement_system.record_action_outcome(outcome, game_minute)
 		_publish_committed_outcome(str(outcome.get("agent_id", "")), outcome)
 		if service_enabled:
@@ -902,9 +903,14 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
 		return
+	if not _event_pipeline_synchronized():
+		context_projection.release(agent_id, request_id)
+		_publish("warning", "%s 的 Agent 事件投影暂不同步，动作已推迟。" % agent_id, {"agent_id": agent_id})
+		return
 	context_projection.acknowledge(agent_id, request_id)
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
 	for outcome in outcomes:
+		_record_world_action_outcome(outcome)
 		agreement_system.record_action_outcome(outcome, _absolute_game_minute())
 		if str(outcome.get("status", "")) == "in_progress":
 			record_farm_lifecycle("queued", {
@@ -931,8 +937,85 @@ func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:
 	})
 
 
+func _record_world_action_outcome(outcome: Dictionary) -> bool:
+	var status := str(outcome.get("status", ""))
+	var tool_name := str(outcome.get("tool_name", ""))
+	if status not in ["in_progress", "completed"] or tool_name in [
+		"", "wait", "send_message", "speak", "propose_trade", "counter_trade",
+		"accept_trade", "reject_trade", "cancel_trade", "propose_cooperation",
+		"counter_cooperation", "accept_cooperation", "reject_cooperation",
+		"commit_contribution", "cancel_cooperation", "propose_role_change",
+	]:
+		return true
+	if not _event_pipeline_synchronized():
+		return false
+	var agent_id := str(outcome.get("agent_id", ""))
+	var action_id := str(outcome.get("action_id", outcome.get("idempotency_key", "action")))
+	var arguments := (outcome.get("arguments", {}) as Dictionary).duplicate(true)
+	var base_payload := {
+		"tool_name": tool_name,
+		"status": status,
+		"arguments": arguments,
+		"changed_entities": (outcome.get("changed_entities", []) as Array).duplicate(true),
+		"resource_delta": (outcome.get("resource_delta", {}) as Dictionary).duplicate(true),
+		"agreement_id": str(outcome.get("agreement_id", "")),
+	}
+	var events: Array[Dictionary] = []
+	var region_id := str(world_projector.get_actor(agent_id).get("region_id", "village"))
+	if status == "in_progress" and tool_name in ["travel", "build"]:
+		var activity_status := "traveling" if tool_name == "travel" else "building"
+		events.append(_world_action_event("PublicStatusChanged", "actor", agent_id, agent_id, action_id, base_payload.merged({"status": activity_status, "region_id": region_id}, true), "public"))
+	elif status == "completed":
+		match tool_name:
+			"till": events.append(_world_action_event("FieldTilled", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "region"))
+			"plant": events.append(_world_action_event("CropPlanted", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "region"))
+			"harvest": events.append(_world_action_event("CropHarvested", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "public"))
+			"buy", "sell", "prepare_supplies": events.append(_world_action_event("PublicMarketTradeExecuted", "market_trade", action_id, agent_id, action_id, base_payload, "public"))
+			"travel":
+				var destination := str(arguments.get("region_id", region_id))
+				events.append(_world_action_event("ActorRegionChanged", "actor", agent_id, agent_id, action_id, base_payload.merged({"region_id": destination}, true), "public"))
+				events.append(_world_action_event("PublicStatusChanged", "actor", agent_id, agent_id, action_id, base_payload.merged({"status": "idle", "region_id": destination}, true), "public"))
+			"build":
+				events.append(_world_action_event("BuildingCompleted", "building", str(arguments.get("building_id", action_id)), agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "public"))
+				events.append(_world_action_event("PublicStatusChanged", "actor", agent_id, agent_id, action_id, base_payload.merged({"status": "idle", "region_id": region_id}, true), "public"))
+			"survey": events.append(_world_action_event("RegionSurveyed", "region", str(arguments.get("region_id", region_id)), agent_id, action_id, base_payload.merged({"region_id": str(arguments.get("region_id", region_id))}, true), "public"))
+			"collect_sample": events.append(_world_action_event("SampleCollected", "agent_knowledge", agent_id, agent_id, action_id, base_payload, "private", [agent_id]))
+			"register_discovery": events.append(_world_action_event("DiscoveryRegistered", "public_knowledge", str(arguments.get("discovery_id", action_id)), agent_id, action_id, base_payload, "public"))
+	if events.is_empty():
+		return true
+	var key := "agent-outcome:%s:%s" % [str(outcome.get("idempotency_key", action_id)), status]
+	var committed: Dictionary = event_store.append_batch(events, key)
+	if not bool(committed.get("ok", false)):
+		return false
+	var committed_events: Array[Dictionary] = []
+	committed_events.assign(committed.events)
+	if not committed_events.is_empty() and int(committed_events[-1].global_sequence) <= world_projector.get_last_sequence():
+		return true
+	return world_projector.apply_batch(committed_events)
+
+
+func _world_action_event(event_type: String, aggregate_type: String, aggregate_id: String, actor_id: String, command_id: String, payload: Dictionary, scope: String, actor_ids: Array = []) -> Dictionary:
+	return {
+		"event_type": event_type,
+		"aggregate_type": aggregate_type,
+		"aggregate_id": aggregate_id,
+		"actor_id": actor_id,
+		"game_minute": _absolute_game_minute(),
+		"command_id": command_id,
+		"correlation_id": "agent-action:" + actor_id,
+		"causation_event_id": "",
+		"visibility": {"scope": scope, "actor_ids": actor_ids.duplicate()},
+		"payload": payload.duplicate(true),
+	}
+
+
+func _event_pipeline_synchronized() -> bool:
+	return int(event_store.to_dict().next_global_sequence) - 1 == world_projector.get_last_sequence()
+
+
 func _on_farm_work_finished(intent: Dictionary, result: Dictionary) -> void:
 	var outcome := executor.finalize_queued_action(intent, result, _absolute_game_minute())
+	_record_world_action_outcome(outcome)
 	agreement_system.record_action_outcome(outcome, _absolute_game_minute())
 	record_farm_lifecycle("committed" if bool(result.get("ok", false)) else "rejected", intent)
 	var agent_id := str(intent.get("agent_id", "farmer_ahe"))

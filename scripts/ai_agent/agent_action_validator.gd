@@ -33,11 +33,15 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 	match tool_name:
-		"till", "harvest":
+		"till":
 			return _exact_keys(arguments, ["plot"]) and _integer_in_range(arguments.plot, 0, 255)
+		"harvest":
+			return _keys_with_optional_agreement(arguments, ["plot"]) and _integer_in_range(arguments.plot, 0, 255)
 		"plant":
 			return _exact_keys(arguments, ["plot", "seed_item_id"]) and _integer_in_range(arguments.plot, 0, 255) and str(arguments.seed_item_id) in SEED_IDS
-		"buy", "sell", "prepare_supplies":
+		"buy", "sell":
+			return _keys_with_optional_agreement(arguments, ["item_id", "quantity"]) and _bounded_id(arguments.item_id) and _integer_in_range(arguments.quantity, 1, 100)
+		"prepare_supplies":
 			return _exact_keys(arguments, ["item_id", "quantity"]) and _bounded_id(arguments.item_id) and _integer_in_range(arguments.quantity, 1, 100)
 		"send_message":
 			return _exact_keys(arguments, ["target_actor_id", "text", "urgency"]) and _bounded_id(arguments.target_actor_id) and _text(arguments.text, 1000) and str(arguments.urgency) in ["normal", "urgent"]
@@ -70,12 +74,14 @@ func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 		"commit_contribution":
 			return _exact_keys(arguments, ["agreement_id", "contribution_id"]) and _bounded_id(arguments.agreement_id) and _bounded_id(arguments.contribution_id)
 		"build":
-			return _exact_keys(arguments, ["building_type", "building_id"]) and str(arguments.building_type) in BUILDING_TYPES and _bounded_id(arguments.building_id)
+			return _keys_with_optional_agreement(arguments, ["building_type", "building_id"]) and str(arguments.building_type) in BUILDING_TYPES and _bounded_id(arguments.building_id)
 		"travel":
 			return _exact_keys(arguments, ["region_id", "duration_minutes"]) and str(arguments.region_id) in REGION_IDS and _integer_in_range(arguments.duration_minutes, 10, 240)
 		"survey":
-			return _exact_keys(arguments, ["region_id"]) and str(arguments.region_id) in REGION_IDS
-		"collect_sample", "register_discovery":
+			return _keys_with_optional_agreement(arguments, ["region_id"]) and str(arguments.region_id) in REGION_IDS
+		"collect_sample":
+			return _keys_with_optional_agreement(arguments, ["discovery_id"]) and str(arguments.discovery_id) in DISCOVERY_IDS
+		"register_discovery":
 			return _exact_keys(arguments, ["discovery_id"]) and str(arguments.discovery_id) in DISCOVERY_IDS
 		"propose_role_change":
 			return _exact_keys(arguments, ["target_role_id", "motivation"]) and str(arguments.target_role_id) in ["farmer", "merchant", "explorer"] and _text(arguments.motivation, 300)
@@ -164,6 +170,14 @@ func _exact_keys(arguments: Dictionary, expected: Array) -> bool:
 		if not arguments.has(key):
 			return false
 	return true
+
+
+func _keys_with_optional_agreement(arguments: Dictionary, expected: Array) -> bool:
+	if _exact_keys(arguments, expected):
+		return true
+	var linked := expected.duplicate()
+	linked.append("agreement_id")
+	return _exact_keys(arguments, linked) and _bounded_id(arguments.agreement_id)
 
 
 func _integer_in_range(value: Variant, minimum: int, maximum: int) -> bool:

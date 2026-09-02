@@ -62,6 +62,15 @@ func _test_validator(assertions: TestAssert) -> void:
 		)
 	assertions.truthy(bool(validator.call("_valid_arguments", "till", {"plot": 255})), "Godot validator matches the v2 plot upper bound")
 	assertions.truthy(bool(validator.call("_valid_arguments", "propose_role_change", {"target_role_id": "merchant", "motivation": "x".repeat(300)})), "Godot validator matches the v2 role motivation bound")
+	for linked_case in [
+		["harvest", {"plot": 1, "agreement_id": "agreement-1"}],
+		["buy", {"item_id": "wood", "quantity": 1, "agreement_id": "agreement-1"}],
+		["sell", {"item_id": "grain", "quantity": 1, "agreement_id": "agreement-1"}],
+		["build", {"building_type": "barn", "building_id": "barn-1", "agreement_id": "agreement-1"}],
+		["survey", {"region_id": "forest", "agreement_id": "agreement-1"}],
+		["collect_sample", {"discovery_id": "crop:moonflower", "agreement_id": "agreement-1"}],
+	]:
+		assertions.truthy(bool(validator.call("_valid_arguments", linked_case[0], linked_case[1])), "%s can explicitly link an agreement contribution" % linked_case[0])
 	assertions.truthy(not bool(validator.call("_valid_arguments", "wait", {})), "legacy empty wait arguments reject")
 	assertions.truthy(validator.validate(_batch_intent("farmer_ahe", [], 0, "empty"), registry, 9).ok, "empty action batch is valid")
 	var four_actions := []

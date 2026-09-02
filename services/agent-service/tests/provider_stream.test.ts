@@ -145,6 +145,12 @@ test("accepts exact Provider tool arguments for every contract shape", () => {
     ["register_discovery", {discovery_id: "terrain:cliff"}],
     ["speak", {target_actor_id: "lao_li", text: "你好"}],
     ["wait", {reason: "暂无合适行动"}],
+	["harvest", {plot: 3, agreement_id: "agreement-1"}],
+	["buy", {item_id: "wood", quantity: 1, agreement_id: "agreement-1"}],
+	["sell", {item_id: "grain", quantity: 1, agreement_id: "agreement-1"}],
+	["build", {building_type: "barn", building_id: "barn-2", agreement_id: "agreement-1"}],
+	["survey", {region_id: "forest", agreement_id: "agreement-1"}],
+	["collect_sample", {discovery_id: "crop:moonflower", agreement_id: "agreement-1"}],
   ];
   for (const [toolName, args] of validCases) {
     assert.deepEqual(
