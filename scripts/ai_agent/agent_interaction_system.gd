@@ -863,6 +863,8 @@ func _add_bundle_pressure(target: Dictionary, bundle: Dictionary, field: String)
 func _settlement_pressure_after(offer: Dictionary, game_minute: int) -> Dictionary:
 	var day := _pressure_day(game_minute)
 	var day_pressure: Dictionary = (_settled_pressure.get(day, {}) as Dictionary).duplicate(true)
+	if _market == null:
+		return {"day": day, "items": day_pressure}
 	_record_cash_price_signal(day_pressure, offer.proposer_gives, offer.proposer_receives)
 	_record_cash_price_signal(day_pressure, offer.proposer_receives, offer.proposer_gives)
 	return {"day": day, "items": day_pressure}

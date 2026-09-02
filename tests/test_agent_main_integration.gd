@@ -10,6 +10,18 @@ const InventoryScript = preload("res://scripts/systems/inventory_system.gd")
 const GameStateScript = preload("res://scripts/core/game_state.gd")
 
 
+class FailOnceMarketPressureBridge:
+	extends RefCounted
+	var delegate: Variant
+	var attempts := 0
+
+	func publish_market_pressure(total_day: int, pressure: Dictionary, game_minute: int, source_id: String) -> bool:
+		attempts += 1
+		if attempts == 1:
+			return false
+		return bool(delegate.call("publish_market_pressure", total_day, pressure, game_minute, source_id))
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var disabled_config_path := "user://agent-main-integration-disabled.json"
 	var trace_directory := "user://agent-main-trace-%d" % Time.get_ticks_usec()
@@ -162,9 +174,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var agreement_terms := {"objective_id": "joint_crop_supply", "participants": ["player"], "commitments": [{"participant_id": "farmer_ahe", "items": {}, "gold": 0}, {"participant_id": "player", "items": {}, "gold": 0}], "reward_split": {"farmer_ahe": 1, "player": 1}, "deadline_minutes": 120, "note": "runtime save fixture"}
 	var player_agreement := runtime.agreement_system.execute({"agent_id": "farmer_ahe", "tool_name": "propose_cooperation", "arguments": agreement_terms, "idempotency_key": "runtime-player-agreement", "action_id": "runtime-player-agreement", "decision_id": "runtime-player-agreement"}, 21)
 	assertions.truthy(player_agreement.ok, "runtime fixture creates a pending Player agreement")
+	var real_fact_bridge = runtime.world_fact_bridge
+	var fail_once_bridge := FailOnceMarketPressureBridge.new()
+	fail_once_bridge.delegate = real_fact_bridge
+	runtime.world_fact_bridge = fail_once_bridge
+	runtime.call("_on_market_pressure_settled", 1, {"day": 1, "items": {}})
+	assertions.equal(fail_once_bridge.attempts, 1, "failed market-pressure publication is retained for retry")
+	assertions.equal(runtime.to_dict().pending_market_pressure_facts.size(), 1, "failed market-pressure fact is persisted")
+	runtime.world_fact_bridge = real_fact_bridge
+	assertions.truthy(runtime.call("_retry_pending_market_pressure_facts"), "pending market-pressure fact retries through the real bridge")
+	assertions.equal(runtime.to_dict().pending_market_pressure_facts, [], "successful correction clears the pending market-pressure fact")
 	var saved: Dictionary = runtime.to_dict()
-	assertions.equal(saved.version, 4, "Agent world save uses event-sourced Runtime version")
-	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements"]:
+	assertions.equal(saved.version, 5, "Agent world save uses event-sourced Runtime version")
+	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements", "pending_market_pressure_facts"]:
 		assertions.truthy(saved.has(field), "Agent world save includes %s" % field)
 	assertions.equal(saved.checkpoint_sequence, int(saved.event_store.next_global_sequence) - 1, "checkpoint follows the complete saved event log")
 	assertions.truthy((saved.event_store.events as Array).size() > 0, "Agent world save contains its replay log")
@@ -188,6 +210,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(runtime.role_system.validate_dict(role_tamper.roles), "tampered runtime role snapshot remains structurally valid")
 	assertions.truthy(not runtime.from_dict(role_tamper), "runtime rejects a role snapshot that disagrees with the event log")
 	assertions.equal(runtime.to_dict(), before_corrupt_restore, "rejected event-derived state preserves session, registry role, and all live state")
+	var old_v4 := saved.duplicate(true)
+	old_v4.version = 4
+	old_v4.erase("pending_market_pressure_facts")
+	assertions.truthy(not runtime.validate_dict(old_v4), "obsolete development-only v4 Agent saves are rejected explicitly")
 	var trade_tamper := saved.duplicate(true)
 	trade_tamper.interactions = (saved.interactions as Dictionary).duplicate(true)
 	trade_tamper.interactions.offers = (saved.interactions.offers as Array).duplicate(true)

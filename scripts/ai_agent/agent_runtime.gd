@@ -27,7 +27,7 @@ const AgentRoleSystemScript = preload("res://scripts/ai_agent/agent_role_system.
 const AgentInteractionSystemScript = preload("res://scripts/ai_agent/agent_interaction_system.gd")
 const AgentAgreementSystemScript = preload("res://scripts/ai_agent/agent_agreement_system.gd")
 
-const VERSION := 4
+const VERSION := 5
 const EVENT_SCHEMA_VERSION := 1
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
@@ -66,6 +66,7 @@ var _agent_session_directory := AgentClientConfigScript.DEFAULT_SESSION_DIRECTOR
 var _request_triggers: Dictionary = {}
 var _farm_port: Variant
 var _base_actor_profiles: Array[Dictionary] = []
+var _pending_market_pressure_facts: Dictionary = {}
 
 
 func _init() -> void:
@@ -418,6 +419,7 @@ func to_dict() -> Dictionary:
 		"roles": role_system.to_dict(),
 		"interactions": interaction_system.to_dict(),
 		"agreements": agreement_system.to_dict(),
+		"pending_market_pressure_facts": _pending_market_pressure_records(),
 	}
 
 
@@ -484,10 +486,12 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 
 
 func _validate_event_sourced_state(value: Dictionary) -> bool:
-	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements"]:
+	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements", "pending_market_pressure_facts"]:
 		if not value.has(field):
 			return false
 	if value.event_schema_version != EVENT_SCHEMA_VERSION or not value.event_store is Dictionary or not value.projection_checkpoint is Dictionary or not value.perception_inbox is Dictionary or not value.roles is Dictionary or not value.interactions is Dictionary or not value.agreements is Dictionary:
+		return false
+	if _normalize_pending_market_pressure_facts(value.pending_market_pressure_facts) == null:
 		return false
 	var restored_store = AgentWorldEventStoreScript.new()
 	if not restored_store.from_dict(value.event_store):
@@ -561,6 +565,9 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	# the shared registry used by the scheduler and validator.
 	if not restored_roles.from_dict(value.roles):
 		return false
+	var restored_executor = AgentExecutorScript.new()
+	if not restored_executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), restored_roles, restored_interactions, restored_agreements) or not restored_executor.from_dict(value.executor):
+		return false
 	event_store = restored_store
 	perception_inbox = restored_inbox
 	world_projector = restored_projector
@@ -569,9 +576,9 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	role_system = restored_roles
 	interaction_system = restored_interactions
 	agreement_system = restored_agreements
-	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system, interaction_system, agreement_system):
-		return false
-	return executor.from_dict(value.executor)
+	executor = restored_executor
+	_pending_market_pressure_facts = _normalize_pending_market_pressure_facts(value.pending_market_pressure_facts)
+	return true
 
 
 func _bootstrap_legacy_event_state(source_version: int, target_session_id: String, apply_market_pressure := true) -> bool:
@@ -602,6 +609,7 @@ func _bootstrap_legacy_event_state(source_version: int, target_session_id: Strin
 		"roles": role_system.to_dict(),
 		"interactions": {"version": 1, "next_offer_id": 1, "offers": [], "idempotency_results": [], "settled_pressure": [], "external_reservations": []},
 		"agreements": {"version": 1, "next_agreement_id": 1, "agreements": [], "idempotency_results": [], "relationships": [], "relationship_daily_changes": []},
+		"pending_market_pressure_facts": [],
 		"executor": executor.to_dict(),
 	}
 	return _restore_event_sourced_state(legacy_state, apply_market_pressure)
@@ -735,6 +743,9 @@ func _connect_events() -> void:
 
 func _on_time_changed(hour: int, minute: int) -> void:
 	var game_minute := _absolute_game_minute()
+	var had_pending_market_pressure := not _pending_market_pressure_facts.is_empty()
+	if had_pending_market_pressure and _retry_pending_market_pressure_facts():
+		_notify_public_event(2, game_minute)
 	if minute == 0:
 		world_fact_bridge.publish_time(hour, minute, game_minute, "time:%d" % game_minute)
 	for expired in interaction_system.expire_due(game_minute):
@@ -793,11 +804,49 @@ func _on_environment_condition_changed(condition_id: String, state: Dictionary) 
 
 func _on_market_pressure_settled(total_day: int, pressure: Dictionary) -> void:
 	var minute := _absolute_game_minute()
-	if not world_fact_bridge.publish_market_pressure(total_day, pressure, minute, "market-pressure:%d" % total_day):
+	_pending_market_pressure_facts[total_day] = {"day": total_day, "pressure": pressure.duplicate(true), "game_minute": minute}
+	if not _retry_pending_market_pressure_facts():
 		_publish("warning", "Agent 市场压力结算事件写入失败，保留待核对状态。", {"day": total_day})
 		return
-	interaction_system.mark_market_pressure_consumed(total_day)
 	_notify_public_event(2, minute)
+
+
+func _retry_pending_market_pressure_facts() -> bool:
+	var days := _pending_market_pressure_facts.keys()
+	days.sort()
+	for day_value in days:
+		var day := int(day_value)
+		var record := _pending_market_pressure_facts[day] as Dictionary
+		if not world_fact_bridge.publish_market_pressure(day, record.pressure, int(record.game_minute), "market-pressure:%d" % day):
+			return false
+		interaction_system.mark_market_pressure_consumed(day)
+		_pending_market_pressure_facts.erase(day)
+	return true
+
+
+func _pending_market_pressure_records() -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	var days := _pending_market_pressure_facts.keys()
+	days.sort()
+	for day_value in days:
+		records.append((_pending_market_pressure_facts[day_value] as Dictionary).duplicate(true))
+	return records
+
+
+func _normalize_pending_market_pressure_facts(value: Variant) -> Variant:
+	if not value is Array:
+		return null
+	var result: Dictionary = {}
+	var last_day := 0
+	for record_value in value:
+		if not record_value is Dictionary:
+			return null
+		var record := record_value as Dictionary
+		if record.size() != 3 or not _is_nonnegative_integer(record.get("day")) or int(record.day) <= last_day or not record.get("pressure") is Dictionary or not _is_nonnegative_integer(record.get("game_minute")):
+			return null
+		last_day = int(record.day)
+		result[last_day] = {"day": last_day, "pressure": (record.pressure as Dictionary).duplicate(true), "game_minute": int(record.game_minute)}
+	return result
 
 
 func _notify_public_event(priority: int, game_minute: int) -> void:
