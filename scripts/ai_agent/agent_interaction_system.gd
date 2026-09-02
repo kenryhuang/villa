@@ -294,6 +294,72 @@ func validate_dict(value: Dictionary) -> bool:
 	return _normalize_state(value) != null
 
 
+func validate_against_events(value: Dictionary, events: Array) -> bool:
+	var normalized: Variant = _normalize_state(value)
+	if normalized == null:
+		return false
+	var derived: Dictionary = {}
+	var next_id := 1
+	for event_value in events:
+		if not event_value is Dictionary:
+			return false
+		var event := event_value as Dictionary
+		var event_type := str(event.get("event_type", ""))
+		var payload: Variant = event.get("payload")
+		if event_type == "TradeOfferProposed":
+			if not payload is Dictionary:
+				return false
+			var offer := (payload as Dictionary).duplicate(true)
+			var offer_id := str(offer.get("offer_id", ""))
+			if offer_id.is_empty() or derived.has(offer_id):
+				return false
+			derived[offer_id] = offer
+			next_id = maxi(next_id, _numeric_suffix(offer_id) + 1)
+		elif event_type in ["TradeOfferCountered", "TradeSettled", "TradeOfferRejected", "TradeOfferCancelled", "TradeOfferExpired"]:
+			if not payload is Dictionary:
+				return false
+			var offer_id := str(payload.get("offer_id", ""))
+			if not derived.has(offer_id):
+				return false
+			var offer := derived[offer_id] as Dictionary
+			match event_type:
+				"TradeOfferCountered":
+					offer.status = "countered"
+					offer.counter_offer_id = str(payload.get("counter_offer_id", ""))
+				"TradeSettled": offer.status = "settled"
+				"TradeOfferRejected": offer.status = "rejected"
+				"TradeOfferCancelled": offer.status = "cancelled"
+				"TradeOfferExpired": offer.status = "expired"
+			derived[offer_id] = offer
+	return int(normalized.next_offer_id) == next_id and _canonical_json_value(normalized.offers) == _canonical_json_value(derived)
+
+
+func validate_external_reservations(value: Dictionary, expected: Dictionary) -> bool:
+	var normalized: Variant = _normalize_state(value)
+	return normalized != null and normalized.external_reservations == expected
+
+
+func _numeric_suffix(identifier: String) -> int:
+	var separator := identifier.rfind("-")
+	return identifier.substr(separator + 1).to_int() if separator >= 0 else 0
+
+
+func _canonical_json_value(value: Variant) -> Variant:
+	if typeof(value) == TYPE_FLOAT and is_finite(float(value)) and floorf(float(value)) == float(value):
+		return int(value)
+	if value is Array:
+		var result: Array = []
+		for item in value:
+			result.append(_canonical_json_value(item))
+		return result
+	if value is Dictionary:
+		var result: Dictionary = {}
+		for key in value:
+			result[key] = _canonical_json_value(value[key])
+		return result
+	return value
+
+
 func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 	var normalized: Variant = _normalize_state(value)
 	if normalized == null:

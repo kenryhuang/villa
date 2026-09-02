@@ -184,6 +184,7 @@ func get_player_interactions(agent_id: String) -> Array[Dictionary]:
 			var record := offer.duplicate(true)
 			record.interaction_id = str(offer.offer_id)
 			record.interaction_type = "trade"
+			record.snapshot_game_minute = _absolute_game_minute()
 			result.append(record)
 	for agreement_value in agreement_system.list_agreements("player"):
 		var agreement := agreement_value as Dictionary
@@ -191,6 +192,7 @@ func get_player_interactions(agent_id: String) -> Array[Dictionary]:
 			var record := agreement.duplicate(true)
 			record.interaction_id = str(agreement.agreement_id)
 			record.interaction_type = "cooperation"
+			record.snapshot_game_minute = _absolute_game_minute()
 			result.append(record)
 	return result
 
@@ -210,10 +212,12 @@ func respond_to_player_interaction(agent_id: String, interaction_id: String, res
 				tool_name = "cancel_trade" if str(offer.proposer_id) == "player" else "reject_trade"
 				if tool_name == "reject_trade": arguments.reason_code = "player_rejected"
 			"counter":
+				if not counter_terms.get("give") is Dictionary or not counter_terms.get("receive") is Dictionary or typeof(counter_terms.get("expires_in_minutes")) != TYPE_INT:
+					return {"ok": false, "error": "invalid_counter_terms"}
 				tool_name = "counter_trade"
-				arguments.give = (offer.proposer_receives as Dictionary).duplicate(true)
-				arguments.receive = (offer.proposer_gives as Dictionary).duplicate(true)
-				arguments.expires_in_minutes = maxi(1, int(offer.expires_game_minute) - minute)
+				arguments.give = (counter_terms.give as Dictionary).duplicate(true)
+				arguments.receive = (counter_terms.receive as Dictionary).duplicate(true)
+				arguments.expires_in_minutes = int(counter_terms.expires_in_minutes)
 				arguments.note = str(counter_terms.get("counter_note", "Player counteroffer"))
 			_:
 				return {"ok": false, "error": "invalid_interaction_response"}
@@ -232,12 +236,10 @@ func respond_to_player_interaction(agent_id: String, interaction_id: String, res
 			cooperation_tool = "reject_cooperation"
 			cooperation_arguments.reason_code = "player_rejected"
 		"counter":
+			if not counter_terms.get("revised_terms") is Dictionary:
+				return {"ok": false, "error": "invalid_counter_terms"}
 			cooperation_tool = "counter_cooperation"
-			cooperation_arguments.revised_terms = {
-				"commitments": (agreement.commitments as Array).duplicate(true),
-				"reward_split": (agreement.reward_split as Dictionary).duplicate(true),
-				"deadline_minutes": maxi(60, int(agreement.deadline) - minute),
-			}
+			cooperation_arguments.revised_terms = (counter_terms.revised_terms as Dictionary).duplicate(true)
 			cooperation_arguments.note = str(counter_terms.get("counter_note", "Player counterproposal"))
 		_:
 			return {"ok": false, "error": "invalid_interaction_response"}
@@ -450,6 +452,7 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 		and bool(_save_manager.call("is_restore_transaction_active"))
 	)
 	var before := to_dict()
+	var previous_session_id := session_id
 	var restore_farm := true
 	if _farm_port != null and int(value.version) == 2:
 		farm_registry.call("clear_pending_work")
@@ -462,15 +465,19 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 		activity_system.from_dict(before.activities)
 		knowledge_registry.from_dict(before.knowledge)
 		return false
-	session_id = str(value.session_id)
 	if int(value.version) == VERSION:
 		if not _restore_event_sourced_state(value, apply_pressure_now):
 			_restore_legacy_components(before)
+			role_system.from_dict(before.roles)
+			session_id = previous_session_id
 			return false
 	else:
-		if not _bootstrap_legacy_event_state(int(value.version), apply_pressure_now):
+		if not _bootstrap_legacy_event_state(int(value.version), str(value.session_id), apply_pressure_now):
 			_restore_legacy_components(before)
+			role_system.from_dict(before.roles)
+			session_id = previous_session_id
 			return false
+	session_id = str(value.session_id)
 	if gateway != null:
 		gateway.bump_epoch()
 	return true
@@ -505,14 +512,21 @@ func _validate_event_sourced_state(value: Dictionary) -> bool:
 		return false
 	if not restored_inbox.validate_dict(value.perception_inbox, last_sequence):
 		return false
+	var validation_registry = AgentRegistryScript.new()
+	if not validation_registry.load_defaults():
+		return false
 	var restored_roles = AgentRoleSystemScript.new()
-	if not restored_roles.configure(registry, _npc_economy, restored_store, restored_projector, building_registry, knowledge_registry) or not restored_roles.validate_dict(value.roles):
+	var events: Array[Dictionary] = restored_store.get_events_after(0)
+	if not restored_roles.configure(validation_registry, _npc_economy, restored_store, restored_projector, building_registry, knowledge_registry) or not restored_roles.validate_against_events(value.roles, events):
 		return false
 	var restored_interactions = AgentInteractionSystemScript.new()
-	if not restored_interactions.configure(_npc_economy, restored_store, restored_projector, Callable(), _market) or not restored_interactions.validate_dict(value.interactions):
+	if not restored_interactions.configure(_npc_economy, restored_store, restored_projector, Callable(), _market) or not restored_interactions.validate_against_events(value.interactions, events):
 		return false
 	var restored_agreements = AgentAgreementSystemScript.new()
-	return restored_agreements.configure(_npc_economy, restored_interactions, restored_store, restored_projector) and restored_agreements.validate_dict(value.agreements)
+	if not restored_agreements.configure(_npc_economy, restored_interactions, restored_store, restored_projector) or not restored_agreements.validate_against_events(value.agreements, events):
+		return false
+	var expected_reservations: Variant = restored_agreements.expected_reservations(value.agreements)
+	return expected_reservations != null and restored_interactions.validate_external_reservations(value.interactions, expected_reservations)
 
 
 func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := true) -> bool:
@@ -531,7 +545,7 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	if not restored_context.configure(restored_projector, restored_inbox) or not restored_bridge.configure(restored_store, restored_projector):
 		return false
 	var restored_roles = AgentRoleSystemScript.new()
-	if not restored_roles.configure(registry, _npc_economy, restored_store, restored_projector, building_registry, knowledge_registry) or not restored_roles.from_dict(value.roles):
+	if not restored_roles.configure(registry, _npc_economy, restored_store, restored_projector, building_registry, knowledge_registry):
 		return false
 	var restored_interactions = AgentInteractionSystemScript.new()
 	if not restored_interactions.configure(_npc_economy, restored_store, restored_projector, Callable(self, "_wake_agent_for_interaction"), _market):
@@ -542,6 +556,10 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 		return false
 	var restored_agreements = AgentAgreementSystemScript.new()
 	if not restored_agreements.configure(_npc_economy, restored_interactions, restored_store, restored_projector, Callable(self, "_wake_agent_for_interaction")) or not restored_agreements.from_dict(value.agreements):
+		return false
+	# Apply the role snapshot last: this is the only staged component that mutates
+	# the shared registry used by the scheduler and validator.
+	if not restored_roles.from_dict(value.roles):
 		return false
 	event_store = restored_store
 	perception_inbox = restored_inbox
@@ -556,13 +574,13 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	return executor.from_dict(value.executor)
 
 
-func _bootstrap_legacy_event_state(source_version: int, apply_market_pressure := true) -> bool:
+func _bootstrap_legacy_event_state(source_version: int, target_session_id: String, apply_market_pressure := true) -> bool:
 	var restored_store = AgentWorldEventStoreScript.new()
 	var minute := _absolute_game_minute()
 	var candidate: Array[Dictionary] = [{
 		"event_type": "AgentWorldBootstrapped",
 		"aggregate_type": "agent_world",
-		"aggregate_id": session_id if not session_id.is_empty() else "legacy",
+		"aggregate_id": target_session_id if not target_session_id.is_empty() else "legacy",
 		"actor_id": "system",
 		"game_minute": minute,
 		"command_id": "migrate-runtime-v%d" % source_version,
@@ -575,7 +593,7 @@ func _bootstrap_legacy_event_state(source_version: int, apply_market_pressure :=
 			"agent_ids": registry.get_agent_ids(),
 		},
 	}]
-	var committed: Dictionary = restored_store.append_batch(candidate, "legacy-bootstrap:%s:v%d" % [session_id, source_version])
+	var committed: Dictionary = restored_store.append_batch(candidate, "legacy-bootstrap:%s:v%d" % [target_session_id, source_version])
 	if not bool(committed.get("ok", false)):
 		return false
 	var legacy_state := {

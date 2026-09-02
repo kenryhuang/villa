@@ -66,6 +66,16 @@ func _test_role_change_rules_and_capabilities(assertions: TestAssert) -> void:
 
 	var saved: Dictionary = roles.to_dict()
 	assertions.truthy(roles.validate_dict(saved), "role state validates")
+	assertions.truthy(roles.validate_against_events(saved, store.get_events_after(0)), "role snapshot matches its event history")
+	var tampered := saved.duplicate(true)
+	tampered.roles = (saved.roles as Array).duplicate(true)
+	for index in range((tampered.roles as Array).size()):
+		if str((tampered.roles[index] as Dictionary).agent_id) == "farmer_ahe":
+			tampered.roles[index] = (tampered.roles[index] as Dictionary).duplicate(true)
+			tampered.roles[index].active_role_id = "explorer"
+			tampered.roles[index].history = ["farmer", "explorer"]
+	assertions.truthy(roles.validate_dict(tampered), "structurally valid role tamper passes shape validation")
+	assertions.truthy(not roles.validate_against_events(tampered, store.get_events_after(0)), "role tamper is rejected by event history")
 	var registry_restored := RegistryScript.new()
 	registry_restored.load_defaults()
 	var restored := RoleSystemScript.new()

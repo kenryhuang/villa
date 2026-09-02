@@ -57,9 +57,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(interaction_responses[0].slice(0, 3), ["farmer_ahe", "offer-1", "accept"], "accept identifies Agent and interaction")
 	(first_card.find_child("RejectButton", true, false) as Button).pressed.emit()
 	(first_card.find_child("CounterButton", true, false) as Button).pressed.emit()
-	assertions.equal(interaction_responses.size(), 3, "reject and counter each emit one explicit Player command")
-	assertions.equal(interaction_responses[2][2], "counter", "counter button uses counter response")
-	assertions.equal((interaction_responses[2][3] as Dictionary).offer_id, "offer-1", "counter carries current authority-backed terms")
+	assertions.equal(interaction_responses.size(), 2, "counter opens an editor without submitting unchanged terms")
+	var counter_editor := first_card.find_child("CounterEditor", true, false) as VBoxContainer
+	assertions.truthy(counter_editor.visible, "counter button reveals the structured term editor")
+	var give_gold := first_card.find_child("CounterGiveGold", true, false) as SpinBox
+	var expiry := first_card.find_child("CounterExpiryMinutes", true, false) as SpinBox
+	give_gold.value = 7
+	expiry.value = 180
+	(first_card.find_child("SubmitCounterButton", true, false) as Button).pressed.emit()
+	assertions.equal(interaction_responses.size(), 3, "submitting edited counter terms emits one Player command")
+	assertions.equal(interaction_responses[2][2], "counter", "counter submit uses counter response")
+	var submitted_terms := interaction_responses[2][3] as Dictionary
+	assertions.equal(submitted_terms.give.gold, 7, "counter carries edited Player give gold")
+	assertions.equal(submitted_terms.expires_in_minutes, 180, "counter carries edited expiry")
 	assertions.equal(dialogue.get_agent_interactions("farmer_ahe")[0].status, "open", "UI button emission alone does not mutate interaction state")
 	assertions.truthy(dialogue.visible, "click flow opens Agent dialogue immediately")
 	assertions.equal(dialogue.get_viewport().gui_get_focus_owner(), input, "opening Agent dialogue focuses its text editor")

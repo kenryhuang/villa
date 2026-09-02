@@ -161,6 +161,109 @@ func validate_dict(value: Dictionary) -> bool:
 	return _normalize_state(value) != null
 
 
+func validate_against_events(value: Dictionary, events: Array) -> bool:
+	var normalized: Variant = _normalize_state(value)
+	if normalized == null:
+		return false
+	var derived: Dictionary = {}
+	var relationships: Dictionary = {}
+	var daily_changes: Dictionary = {}
+	var next_id := 1
+	for event_value in events:
+		if not event_value is Dictionary:
+			return false
+		var event := event_value as Dictionary
+		var event_type := str(event.get("event_type", ""))
+		var payload: Variant = event.get("payload")
+		if event_type in ["AgreementProposed", "AgreementCountered"]:
+			if not payload is Dictionary:
+				return false
+			var agreement := (payload as Dictionary).duplicate(true)
+			var agreement_id := str(agreement.get("agreement_id", ""))
+			if agreement_id.is_empty() or (event_type == "AgreementProposed" and derived.has(agreement_id)):
+				return false
+			derived[agreement_id] = agreement
+			next_id = maxi(next_id, _numeric_suffix(agreement_id) + 1)
+		elif event_type in ["AgreementAccepted", "AgreementActivated", "AgreementContributionVerified", "AgreementCompleted", "AgreementFailed", "AgreementRejected", "AgreementCancelled"]:
+			if not payload is Dictionary:
+				return false
+			var agreement_id := str(payload.get("agreement_id", ""))
+			if not derived.has(agreement_id):
+				return false
+			var agreement := derived[agreement_id] as Dictionary
+			match event_type:
+				"AgreementAccepted":
+					var actor_id := str(event.get("actor_id", ""))
+					if not actor_id in (agreement.accepted_by as Array):
+						(agreement.accepted_by as Array).append(actor_id)
+						(agreement.accepted_by as Array).sort()
+				"AgreementActivated": agreement.status = "active"
+				"AgreementContributionVerified": agreement.progress[str(payload.get("contribution_id", ""))] = int(payload.get("count", 0))
+				"AgreementCompleted": agreement.status = "completed"
+				"AgreementFailed": agreement.status = "failed"
+				"AgreementRejected": agreement.status = "rejected"
+				"AgreementCancelled": agreement.status = "cancelled"
+			derived[agreement_id] = agreement
+		elif event_type == "RelationshipChanged":
+			if not payload is Dictionary:
+				return false
+			var key := _pair_key(str(payload.get("left_id", "")), str(payload.get("right_id", "")))
+			var day := int(event.get("game_minute", 0)) / 1080 + 1
+			var daily_key := "%d:%s" % [day, key]
+			var used := int(daily_changes.get(daily_key, 0))
+			var applied := clampi(int(payload.get("delta", 0)), -3 - used, 3 - used)
+			daily_changes[daily_key] = used + applied
+			relationships[key] = clampi(int(relationships.get(key, 0)) + applied, -100, 100)
+	return (
+		int(normalized.next_agreement_id) == next_id
+		and _canonical_json_value(normalized.agreements) == _canonical_json_value(derived)
+		and normalized.relationships == relationships
+		and normalized.relationship_daily_changes == daily_changes
+	)
+
+
+func expected_reservations(value: Dictionary) -> Variant:
+	var normalized: Variant = _normalize_state(value)
+	if normalized == null:
+		return null
+	var result: Dictionary = {}
+	for agreement_value in normalized.agreements.values():
+		var agreement := agreement_value as Dictionary
+		if str(agreement.status) != "active":
+			continue
+		for commitment_value in agreement.commitments:
+			var commitment := commitment_value as Dictionary
+			if _bundle_empty(commitment):
+				continue
+			var participant_id := str(commitment.participant_id)
+			result[_reservation_id(str(agreement.agreement_id), participant_id)] = {
+				"actor_id": participant_id,
+				"bundle": {"items": (commitment.items as Dictionary).duplicate(true), "gold": int(commitment.gold)},
+			}
+	return result
+
+
+func _numeric_suffix(identifier: String) -> int:
+	var separator := identifier.rfind("-")
+	return identifier.substr(separator + 1).to_int() if separator >= 0 else 0
+
+
+func _canonical_json_value(value: Variant) -> Variant:
+	if typeof(value) == TYPE_FLOAT and is_finite(float(value)) and floorf(float(value)) == float(value):
+		return int(value)
+	if value is Array:
+		var result: Array = []
+		for item in value:
+			result.append(_canonical_json_value(item))
+		return result
+	if value is Dictionary:
+		var result: Dictionary = {}
+		for key in value:
+			result[key] = _canonical_json_value(value[key])
+		return result
+	return value
+
+
 func from_dict(value: Dictionary) -> bool:
 	var normalized: Variant = _normalize_state(value)
 	if normalized == null:

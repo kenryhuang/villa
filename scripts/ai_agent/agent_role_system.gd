@@ -23,6 +23,7 @@ var _buildings: Variant
 var _knowledge: Variant
 var _rules: Dictionary = {}
 var _states: Dictionary = {}
+var _initial_roles: Dictionary = {}
 
 
 func configure(
@@ -48,6 +49,7 @@ func configure(
 	_knowledge = knowledge
 	_rules = normalized_rules
 	_states.clear()
+	_initial_roles.clear()
 	for agent_id_value in _registry.call("get_agent_ids"):
 		var agent_id := str(agent_id_value)
 		var agent: Dictionary = _registry.call("get_agent", agent_id)
@@ -57,6 +59,7 @@ func configure(
 			"last_changed_minute": -1,
 			"history": [str(agent.role_id)],
 		}
+		_initial_roles[agent_id] = str(agent.role_id)
 	return true
 
 
@@ -143,6 +146,35 @@ func to_dict() -> Dictionary:
 
 func validate_dict(value: Dictionary) -> bool:
 	return _normalize_state(value) != null
+
+
+func validate_against_events(value: Dictionary, events: Array) -> bool:
+	var normalized: Variant = _normalize_state(value)
+	if normalized == null:
+		return false
+	var derived: Dictionary = {}
+	for agent_id in _initial_roles:
+		var role_id := str(_initial_roles[agent_id])
+		derived[agent_id] = {"agent_id": agent_id, "active_role_id": role_id, "last_changed_minute": -1, "history": [role_id]}
+	for event_value in events:
+		if not event_value is Dictionary:
+			return false
+		var event := event_value as Dictionary
+		if str(event.get("event_type", "")) != "RoleChanged":
+			continue
+		var agent_id := str(event.get("actor_id", ""))
+		var payload: Variant = event.get("payload")
+		if not derived.has(agent_id) or not payload is Dictionary:
+			return false
+		var role_id := str(payload.get("role_id", ""))
+		if (_registry.call("get_role", role_id) as Dictionary).is_empty():
+			return false
+		var state := derived[agent_id] as Dictionary
+		state.active_role_id = role_id
+		state.last_changed_minute = int(event.get("game_minute", -1))
+		(state.history as Array).append(role_id)
+		derived[agent_id] = state
+	return normalized == derived
 
 
 func from_dict(value: Dictionary) -> bool:

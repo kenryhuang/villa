@@ -6,6 +6,8 @@ const NpcEconomyScript = preload("res://scripts/systems/npc_economy_system.gd")
 const SeasonScript = preload("res://scripts/systems/season_system.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const DialogueScene = preload("res://scenes/ui/dialogue_ui.tscn")
+const InventoryScript = preload("res://scripts/systems/inventory_system.gd")
+const GameStateScript = preload("res://scripts/core/game_state.gd")
 
 
 func run(assertions: TestAssert, tree: SceneTree) -> void:
@@ -144,6 +146,22 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	dialogue_response.actions = [{"tool_name": "unauthorized"}]
 	runtime.call("_handle_response", "farmer_ahe", dialogue_response)
 	assertions.equal(dialogue_speech, [["farmer_ahe", "runtime-dialogue-invalid-action", "我先回答你的问题。"]], "dialogue summary completes conversation even when world action rejects")
+	var player_inventory := InventoryScript.new()
+	var player_wallet := GameStateScript.new()
+	tree.root.add_child(player_inventory)
+	tree.root.add_child(player_wallet)
+	player_inventory.add_item("salt", 2)
+	player_wallet.gold = 20
+	assertions.truthy(runtime.configure_player_assets(player_inventory, player_wallet), "runtime configures Player assets for interaction commands")
+	var player_offer := runtime.interaction_system.execute({"agent_id": "farmer_ahe", "tool_name": "propose_trade", "arguments": {"target_actor_id": "player", "give": {"items": {"carrot_seed": 1}, "gold": 0}, "receive": {"items": {"salt": 1}, "gold": 0}, "expires_in_minutes": 120, "note": "test"}, "idempotency_key": "runtime-player-offer", "action_id": "runtime-player-offer", "decision_id": "runtime-player-offer"}, 20)
+	assertions.truthy(player_offer.ok, "runtime fixture creates a pending Player trade")
+	var player_counter := runtime.respond_to_player_interaction("farmer_ahe", str(player_offer.offer_id), "counter", {"give": {"items": {"salt": 1}, "gold": 3}, "receive": {"items": {"carrot_seed": 1}, "gold": 0}, "expires_in_minutes": 180, "counter_note": "edited"})
+	assertions.truthy(player_counter.ok, "Player counter command accepts complete edited trade terms")
+	var counter_offer := runtime.interaction_system.get_offer(str(player_counter.offer_id), "player")
+	assertions.equal(counter_offer.proposer_gives.gold, 3, "runtime uses edited trade terms instead of reconstructing the old offer")
+	var agreement_terms := {"objective_id": "joint_crop_supply", "participants": ["player"], "commitments": [{"participant_id": "farmer_ahe", "items": {}, "gold": 0}, {"participant_id": "player", "items": {}, "gold": 0}], "reward_split": {"farmer_ahe": 1, "player": 1}, "deadline_minutes": 120, "note": "runtime save fixture"}
+	var player_agreement := runtime.agreement_system.execute({"agent_id": "farmer_ahe", "tool_name": "propose_cooperation", "arguments": agreement_terms, "idempotency_key": "runtime-player-agreement", "action_id": "runtime-player-agreement", "decision_id": "runtime-player-agreement"}, 21)
+	assertions.truthy(player_agreement.ok, "runtime fixture creates a pending Player agreement")
 	var saved: Dictionary = runtime.to_dict()
 	assertions.equal(saved.version, 4, "Agent world save uses event-sourced Runtime version")
 	for field in ["event_schema_version", "event_store", "projection_checkpoint", "checkpoint_sequence", "perception_inbox", "roles", "interactions", "agreements"]:
@@ -158,6 +176,32 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var before_corrupt_restore := runtime.to_dict()
 	assertions.truthy(not runtime.from_dict(corrupt), "corrupt Agent event log is rejected atomically")
 	assertions.equal(runtime.to_dict(), before_corrupt_restore, "failed Agent restore leaves live state unchanged")
+	var role_tamper := saved.duplicate(true)
+	role_tamper.session_id = "tampered-session"
+	role_tamper.roles = (saved.roles as Dictionary).duplicate(true)
+	role_tamper.roles.roles = (saved.roles.roles as Array).duplicate(true)
+	for index in range((role_tamper.roles.roles as Array).size()):
+		if str((role_tamper.roles.roles[index] as Dictionary).agent_id) == "farmer_ahe":
+			role_tamper.roles.roles[index] = (role_tamper.roles.roles[index] as Dictionary).duplicate(true)
+			role_tamper.roles.roles[index].active_role_id = "explorer"
+			role_tamper.roles.roles[index].history = ["farmer", "explorer"]
+	assertions.truthy(runtime.role_system.validate_dict(role_tamper.roles), "tampered runtime role snapshot remains structurally valid")
+	assertions.truthy(not runtime.from_dict(role_tamper), "runtime rejects a role snapshot that disagrees with the event log")
+	assertions.equal(runtime.to_dict(), before_corrupt_restore, "rejected event-derived state preserves session, registry role, and all live state")
+	var trade_tamper := saved.duplicate(true)
+	trade_tamper.interactions = (saved.interactions as Dictionary).duplicate(true)
+	trade_tamper.interactions.offers = (saved.interactions.offers as Array).duplicate(true)
+	trade_tamper.interactions.offers[0] = (trade_tamper.interactions.offers[0] as Dictionary).duplicate(true)
+	trade_tamper.interactions.offers[0].offer = (trade_tamper.interactions.offers[0].offer as Dictionary).duplicate(true)
+	trade_tamper.interactions.offers[0].offer.status = "cancelled"
+	assertions.truthy(not runtime.validate_dict(trade_tamper), "runtime rejects a trade snapshot that disagrees with the event log")
+	var agreement_tamper := saved.duplicate(true)
+	agreement_tamper.agreements = (saved.agreements as Dictionary).duplicate(true)
+	agreement_tamper.agreements.agreements = (saved.agreements.agreements as Array).duplicate(true)
+	agreement_tamper.agreements.agreements[0] = (agreement_tamper.agreements.agreements[0] as Dictionary).duplicate(true)
+	agreement_tamper.agreements.agreements[0].agreement = (agreement_tamper.agreements.agreements[0].agreement as Dictionary).duplicate(true)
+	agreement_tamper.agreements.agreements[0].agreement.status = "cancelled"
+	assertions.truthy(not runtime.validate_dict(agreement_tamper), "runtime rejects an agreement snapshot that disagrees with the event log")
 	var restored := AgentRuntimeScript.new()
 	tree.root.add_child(restored)
 	assertions.truthy(restored.configure(economy, market, season, null, disabled_config_path), "second runtime configures")
@@ -168,6 +212,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(runtime.role_system.validate_dict(json_saved.roles), "JSON role state validates")
 	assertions.truthy(runtime.interaction_system.validate_dict(json_saved.interactions), "JSON interaction state validates")
 	assertions.truthy(runtime.agreement_system.validate_dict(json_saved.agreements), "JSON agreement state validates")
+	assertions.truthy(runtime.role_system.validate_against_events(json_saved.roles, runtime.event_store.get_events_after(0)), "JSON role state agrees with event history")
+	assertions.truthy(runtime.interaction_system.validate_against_events(json_saved.interactions, runtime.event_store.get_events_after(0)), "JSON interaction state agrees with event history")
+	assertions.truthy(runtime.agreement_system.validate_against_events(json_saved.agreements, runtime.event_store.get_events_after(0)), "JSON agreement state agrees with event history")
 	assertions.truthy(restored.from_dict(json_saved), "Agent world state restores after JSON round trip")
 	assertions.equal(
 		runtime.call("_canonical_json_value", restored.to_dict()),
@@ -219,6 +266,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	dialogue.free()
 	restored.free()
 	runtime.free()
+	player_inventory.free()
+	player_wallet.free()
 	season.free()
 	economy.free()
 	market.free()

@@ -271,13 +271,21 @@ func _render_interactions() -> void:
 		actions.name = "Actions"
 		content.add_child(actions)
 		var actionable := str(record.get("status", "")) in ["open", "proposed", "negotiating"]
-		for definition in [["AcceptButton", "接受", "accept"], ["RejectButton", "拒绝", "reject"], ["CounterButton", "还价", "counter"]]:
+		for definition in [["AcceptButton", "接受", "accept"], ["RejectButton", "拒绝", "reject"]]:
 			var button := Button.new()
 			button.name = str(definition[0])
 			button.text = str(definition[1])
 			button.disabled = not actionable
-			button.pressed.connect(_request_interaction_response.bind(interaction_id, str(definition[2]), record.duplicate(true)))
+			button.pressed.connect(_request_interaction_response.bind(interaction_id, str(definition[2]), {}))
 			actions.add_child(button)
+		var counter_button := Button.new()
+		counter_button.name = "CounterButton"
+		counter_button.text = "还价"
+		counter_button.disabled = not actionable
+		actions.add_child(counter_button)
+		var counter_editor := _build_counter_editor(interaction_id, record)
+		content.add_child(counter_editor)
+		counter_button.pressed.connect(func(): counter_editor.visible = not counter_editor.visible)
 		interaction_cards.add_child(card)
 
 
@@ -292,6 +300,139 @@ func _request_interaction_response(interaction_id: String, response: String, ter
 	if not _is_open or _current_villager_id.is_empty():
 		return
 	interaction_response_requested.emit(_current_villager_id, interaction_id, response, terms if response == "counter" else {})
+
+
+func _build_counter_editor(interaction_id: String, record: Dictionary) -> VBoxContainer:
+	var editor := VBoxContainer.new()
+	editor.name = "CounterEditor"
+	editor.visible = false
+	var fields: Dictionary = {}
+	if record.has("offer_id"):
+		var player_is_proposer := str(record.get("proposer_id", "")) == "player"
+		var give: Dictionary = (record.get("proposer_gives", {}) if player_is_proposer else record.get("proposer_receives", {})).duplicate(true)
+		var receive: Dictionary = (record.get("proposer_receives", {}) if player_is_proposer else record.get("proposer_gives", {})).duplicate(true)
+		_add_bundle_editor(editor, "你提供", "Give", give, fields)
+		_add_bundle_editor(editor, "你获得", "Receive", receive, fields)
+		fields.expiry = _add_number_field(editor, "有效时间（游戏分钟）", "CounterExpiryMinutes", maxi(1, int(record.get("expires_game_minute", 1)) - _current_game_minute(record)), 1, 10080)
+	else:
+		var deadline_remaining := maxi(60, int(record.get("deadline", 60)) - _current_game_minute(record))
+		fields.deadline = _add_number_field(editor, "截止时间（游戏分钟）", "CounterDeadlineMinutes", deadline_remaining, 60, 10080)
+		fields.commitments = {}
+		for commitment_value in record.get("commitments", []):
+			var commitment := commitment_value as Dictionary
+			var participant_id := str(commitment.get("participant_id", ""))
+			var bundle_fields: Dictionary = {}
+			_add_bundle_editor(editor, "%s 承诺" % participant_id, "Commitment_%s" % participant_id, {"items": commitment.get("items", {}), "gold": commitment.get("gold", 0)}, bundle_fields)
+			fields.commitments[participant_id] = bundle_fields
+		fields.rewards = {}
+		for participant_id_value in (record.get("reward_split", {}) as Dictionary):
+			var participant_id := str(participant_id_value)
+			fields.rewards[participant_id] = _add_number_field(editor, "%s 奖励权重" % participant_id, "CounterReward_%s" % _safe_node_part(participant_id), int(record.reward_split[participant_id_value]), 1, 1000)
+	var note := LineEdit.new()
+	note.name = "CounterNote"
+	note.placeholder_text = "还价说明（可选）"
+	editor.add_child(note)
+	fields.note = note
+	var buttons := HBoxContainer.new()
+	var submit := Button.new()
+	submit.name = "SubmitCounterButton"
+	submit.text = "提交还价"
+	submit.pressed.connect(_submit_counter.bind(interaction_id, record.duplicate(true), fields, editor))
+	buttons.add_child(submit)
+	var cancel := Button.new()
+	cancel.name = "CancelCounterButton"
+	cancel.text = "取消"
+	cancel.pressed.connect(func(): editor.visible = false)
+	buttons.add_child(cancel)
+	editor.add_child(buttons)
+	return editor
+
+
+func _add_bundle_editor(parent: VBoxContainer, label_text: String, prefix: String, bundle: Dictionary, fields: Dictionary) -> void:
+	var heading := Label.new()
+	heading.text = label_text
+	parent.add_child(heading)
+	fields.gold = _add_number_field(parent, "金币", "Counter%sGold" % prefix, int(bundle.get("gold", 0)), 0, 999999)
+	fields.items = {}
+	for item_id_value in (bundle.get("items", {}) as Dictionary):
+		var item_id := str(item_id_value)
+		var input := _add_number_field(parent, item_id, "Counter%sItem_%s" % [prefix, _safe_node_part(item_id)], int(bundle.items[item_id_value]), 0, 9999)
+		input.set_meta("item_id", item_id)
+		fields.items[item_id] = input
+
+
+func _add_number_field(parent: VBoxContainer, label_text: String, node_name: String, initial: int, minimum: int, maximum: int) -> SpinBox:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var input := SpinBox.new()
+	input.name = node_name
+	input.min_value = minimum
+	input.max_value = maximum
+	input.step = 1
+	input.value = initial
+	row.add_child(input)
+	parent.add_child(row)
+	return input
+
+
+func _submit_counter(interaction_id: String, record: Dictionary, fields: Dictionary, editor: VBoxContainer) -> void:
+	var terms: Dictionary
+	if record.has("offer_id"):
+		terms = {
+			"give": _bundle_from_fields(fields.get("Give", fields)),
+			"receive": _bundle_from_fields(fields.get("Receive", fields)),
+			"expires_in_minutes": int((fields.expiry as SpinBox).value),
+			"counter_note": str((fields.note as LineEdit).text),
+		}
+		# _add_bundle_editor writes into the supplied dictionary. Trade fields use
+		# explicit children to keep their Player-facing direction unambiguous.
+		terms.give = _bundle_from_named_editor(editor, "Give")
+		terms.receive = _bundle_from_named_editor(editor, "Receive")
+	else:
+		var commitments: Array[Dictionary] = []
+		for participant_id in fields.commitments:
+			var bundle := _bundle_from_fields(fields.commitments[participant_id])
+			commitments.append({"participant_id": str(participant_id), "items": bundle.items, "gold": bundle.gold})
+		commitments.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return str(left.participant_id) < str(right.participant_id))
+		var rewards: Dictionary = {}
+		for participant_id in fields.rewards:
+			rewards[str(participant_id)] = int((fields.rewards[participant_id] as SpinBox).value)
+		terms = {"revised_terms": {"commitments": commitments, "reward_split": rewards, "deadline_minutes": int((fields.deadline as SpinBox).value)}, "counter_note": str((fields.note as LineEdit).text)}
+	editor.visible = false
+	_request_interaction_response(interaction_id, "counter", terms)
+
+
+func _bundle_from_named_editor(editor: VBoxContainer, prefix: String) -> Dictionary:
+	var items: Dictionary = {}
+	var marker := "Counter%sItem_" % prefix
+	for node in editor.find_children("*", "SpinBox", true, false):
+		var input := node as SpinBox
+		if input.name.begins_with(marker) and int(input.value) > 0:
+			items[str(input.get_meta("item_id", input.name.trim_prefix(marker)))] = int(input.value)
+	var gold := editor.find_child("Counter%sGold" % prefix, true, false) as SpinBox
+	return {"items": items, "gold": int(gold.value)}
+
+
+func _bundle_from_fields(fields: Dictionary) -> Dictionary:
+	var items: Dictionary = {}
+	for item_id in fields.get("items", {}):
+		var quantity := int((fields.items[item_id] as SpinBox).value)
+		if quantity > 0:
+			items[str(item_id)] = quantity
+	return {"items": items, "gold": int((fields.gold as SpinBox).value)}
+
+
+func _current_game_minute(_record: Dictionary) -> int:
+	# The authority revalidates the submitted relative deadline. The UI does not
+	# own the clock, so saved cards may optionally include their snapshot minute.
+	return int(_record.get("snapshot_game_minute", 0))
+
+
+func _safe_node_part(value: String) -> String:
+	return value.replace("/", "_").replace(":", "_").replace(".", "_")
 
 
 func _scroll_history_to_end() -> void:
