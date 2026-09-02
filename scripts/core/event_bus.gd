@@ -58,6 +58,7 @@ signal day_changed(total_day: int)
 signal time_changed(hour: int, minute: int)
 signal weather_changed(weather: String)
 signal environment_condition_changed(condition_id: String, state: Dictionary)
+signal agent_interaction_changed(target_id: String, state: String)
 
 # Player signals
 signal stamina_changed(new_stamina: int)

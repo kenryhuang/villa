@@ -220,6 +220,37 @@ func receive_item(npc_id: String, item_id: String, quantity: int) -> bool:
 	return true
 
 
+func can_apply_agent_asset_delta(npc_id: String, item_delta: Dictionary, gold_delta: int) -> bool:
+	if not has_npc(npc_id) or not _is_safe_integer(gold_delta):
+		return false
+	var state: NpcEconomyState = _states[npc_id]
+	if not _safe_sum(int(state.gold), gold_delta):
+		return false
+	for item_id_value in item_delta:
+		var item_id := str(item_id_value)
+		var delta: Variant = item_delta[item_id_value]
+		if item_id.is_empty() or not has_item(item_id) or not _is_safe_integer(delta):
+			return false
+		if not _safe_sum(int(state.inventory.get(item_id, 0)), int(delta)):
+			return false
+	return true
+
+
+func apply_agent_asset_delta(npc_id: String, item_delta: Dictionary, gold_delta: int) -> bool:
+	if not can_apply_agent_asset_delta(npc_id, item_delta, gold_delta):
+		return false
+	var state: NpcEconomyState = _states[npc_id]
+	state.gold += gold_delta
+	for item_id_value in item_delta:
+		var item_id := str(item_id_value)
+		var quantity := int(state.inventory.get(item_id, 0)) + int(item_delta[item_id_value])
+		if quantity == 0:
+			state.inventory.erase(item_id)
+		else:
+			state.inventory[item_id] = quantity
+	return true
+
+
 func set_agent_managed(npc_id: String, managed: bool) -> bool:
 	if not has_npc(npc_id):
 		return false
@@ -933,3 +964,19 @@ func _is_nonnegative_integer(value: Variant) -> bool:
 		and floorf(float(value)) == float(value)
 		and int(value) >= 0
 	)
+
+
+func _is_safe_integer(value: Variant) -> bool:
+	return (
+		(typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT)
+		and is_finite(float(value))
+		and floorf(float(value)) == float(value)
+		and int(value) >= -9223372036854775807
+		and int(value) <= 9223372036854775807
+	)
+
+
+func _safe_sum(current: int, delta: int) -> bool:
+	if delta < 0:
+		return current >= -delta
+	return current <= 9223372036854775807 - delta

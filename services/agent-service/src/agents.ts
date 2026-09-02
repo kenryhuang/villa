@@ -47,7 +47,10 @@ export interface AgentContext {
   allowed_command_tools: readonly string[];
 }
 
-const GENERAL_COMMAND_TOOLS = ["speak", "wait", "propose_role_change"] as const;
+const GENERAL_COMMAND_TOOLS = [
+  "send_message", "propose_trade", "counter_trade", "accept_trade",
+  "reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
+] as const;
 
 export class AgentRegistry {
   readonly #agents = new Map<string, AgentDefinition>();

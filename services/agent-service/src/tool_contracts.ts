@@ -26,6 +26,12 @@ const PLOT_SCHEMA = {type: "integer", minimum: 0, maximum: 255};
 const ITEM_ID_SCHEMA = {type: "string", minLength: 1, maxLength: 80};
 const QUANTITY_SCHEMA = {type: "integer", minimum: 1, maximum: 100};
 const ID_LIST_SCHEMA = {type: "array", items: ITEM_ID_SCHEMA, minItems: 1, maxItems: 20, uniqueItems: true};
+const TEXT_SCHEMA = {type: "string", minLength: 1, maxLength: 1000};
+const NOTE_SCHEMA = {type: "string", maxLength: 500};
+const ASSET_BUNDLE_SCHEMA = objectSchema({
+  items: {type: "object", additionalProperties: {type: "integer", minimum: 1, maximum: 1000000}},
+  gold: {type: "integer", minimum: 0, maximum: 1000000000},
+}, ["items", "gold"]);
 
 function objectSchema(properties: Record<string, unknown>, required: string[]): JsonSchema {
   return {type: "object", properties, required, additionalProperties: false};
@@ -41,7 +47,12 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   buy: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
   sell: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
   prepare_supplies: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
-  propose_trade: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
+  send_message: objectSchema({target_actor_id: ITEM_ID_SCHEMA, text: TEXT_SCHEMA, urgency: {type: "string", enum: ["normal", "urgent"]}}, ["target_actor_id", "text", "urgency"]),
+  propose_trade: objectSchema({target_actor_id: ITEM_ID_SCHEMA, give: ASSET_BUNDLE_SCHEMA, receive: ASSET_BUNDLE_SCHEMA, expires_in_minutes: {type: "integer", minimum: 1, maximum: 10080}, note: NOTE_SCHEMA}, ["target_actor_id", "give", "receive", "expires_in_minutes", "note"]),
+  counter_trade: objectSchema({offer_id: ITEM_ID_SCHEMA, give: ASSET_BUNDLE_SCHEMA, receive: ASSET_BUNDLE_SCHEMA, expires_in_minutes: {type: "integer", minimum: 1, maximum: 10080}, note: NOTE_SCHEMA}, ["offer_id", "give", "receive", "expires_in_minutes", "note"]),
+  accept_trade: objectSchema({offer_id: ITEM_ID_SCHEMA}, ["offer_id"]),
+  reject_trade: objectSchema({offer_id: ITEM_ID_SCHEMA, reason_code: ITEM_ID_SCHEMA}, ["offer_id", "reason_code"]),
+  cancel_trade: objectSchema({offer_id: ITEM_ID_SCHEMA}, ["offer_id"]),
   build: objectSchema({
     building_type: {type: "string", enum: [...BUILDING_TYPES]},
     building_id: ITEM_ID_SCHEMA,
@@ -63,8 +74,8 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
     target_role_id: {type: "string", enum: [...ROLE_IDS]},
     motivation: {type: "string", minLength: 1, maxLength: 300},
   }, ["target_role_id", "motivation"]),
-  speak: objectSchema({}, []),
-  wait: objectSchema({}, []),
+  speak: objectSchema({target_actor_id: ITEM_ID_SCHEMA, text: TEXT_SCHEMA}, ["target_actor_id", "text"]),
+  wait: objectSchema({reason: {type: "string", minLength: 1, maxLength: 300}}, ["reason"]),
 };
 
 const READ_TOOL_PARAMETERS: Readonly<Record<ReadToolName, JsonSchema>> = {
@@ -110,6 +121,28 @@ function isIdList(value: unknown): value is string[] {
     && value.every(isBoundedId) && new Set(value).size === value.length;
 }
 
+function isText(value: unknown, maximum: number, allowEmpty = false): value is string {
+  return typeof value === "string" && value.length <= maximum && (allowEmpty || value.trim().length > 0);
+}
+
+function isAssetBundle(value: unknown): value is {items: Record<string, number>; gold: number} {
+  if (!isRecord(value) || !hasExactKeys(value, ["items", "gold"]) || !isRecord(value.items)
+    || !isIntegerInRange(value.gold, 0, 1_000_000_000)) return false;
+  return Object.keys(value.items).every(isBoundedId)
+    && Object.values(value.items).every((quantity) => isIntegerInRange(quantity, 1, 1_000_000));
+}
+
+function validOfferTerms(value: Record<string, unknown>, idField: "target_actor_id" | "offer_id"): boolean {
+  if (!(hasExactKeys(value, [idField, "give", "receive", "expires_in_minutes", "note"])
+    && isBoundedId(value[idField]) && isAssetBundle(value.give) && isAssetBundle(value.receive)
+    && isIntegerInRange(value.expires_in_minutes, 1, 10080) && isText(value.note, 500, true))) return false;
+  const give = value.give as {items: Record<string, number>; gold: number};
+  const receive = value.receive as {items: Record<string, number>; gold: number};
+  return (give.gold > 0 || Object.keys(give.items).length > 0)
+    && (receive.gold > 0 || Object.keys(receive.items).length > 0)
+    && Object.keys(give.items).every((itemId) => !Object.hasOwn(receive.items, itemId));
+}
+
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name) {
@@ -123,10 +156,21 @@ export function validToolArguments(name: string, value: unknown): boolean {
     case "buy":
     case "sell":
     case "prepare_supplies":
-    case "propose_trade":
       return hasExactKeys(value, ["item_id", "quantity"])
         && isBoundedId(value.item_id)
         && isIntegerInRange(value.quantity, 1, 100);
+    case "send_message":
+      return hasExactKeys(value, ["target_actor_id", "text", "urgency"])
+        && isBoundedId(value.target_actor_id) && isText(value.text, 1000)
+        && isOneOf(value.urgency, ["normal", "urgent"]);
+    case "propose_trade": return validOfferTerms(value, "target_actor_id");
+    case "counter_trade": return validOfferTerms(value, "offer_id");
+    case "accept_trade":
+    case "cancel_trade":
+      return hasExactKeys(value, ["offer_id"]) && isBoundedId(value.offer_id);
+    case "reject_trade":
+      return hasExactKeys(value, ["offer_id", "reason_code"])
+        && isBoundedId(value.offer_id) && isBoundedId(value.reason_code);
     case "build":
       return hasExactKeys(value, ["building_type", "building_id"])
         && isOneOf(value.building_type, BUILDING_TYPES)
@@ -149,8 +193,10 @@ export function validToolArguments(name: string, value: unknown): boolean {
         && value.motivation.trim().length > 0
         && value.motivation.length <= 300;
     case "speak":
+      return hasExactKeys(value, ["target_actor_id", "text"])
+        && isBoundedId(value.target_actor_id) && isText(value.text, 1000);
     case "wait":
-      return hasExactKeys(value, []);
+      return hasExactKeys(value, ["reason"]) && isText(value.reason, 300);
     default:
       return false;
   }

@@ -56,8 +56,8 @@ test("decodes fragmented Provider SSE without corrupting UTF-8", async () => {
 test("limits a dialogue completion to one command", () => {
   const two = new AgentStreamAssembler();
   two.accept({choices: [{delta: {tool_calls: [
-    {index: 0, id: "one", function: {name: "speak", arguments: "{}"}},
-    {index: 1, id: "two", function: {name: "speak", arguments: "{}"}},
+    {index: 0, id: "one", function: {name: "speak", arguments: "{\"target_actor_id\":\"lao_li\",\"text\":\"一\"}"}},
+    {index: 1, id: "two", function: {name: "speak", arguments: "{\"target_actor_id\":\"lao_li\",\"text\":\"二\"}"}},
   ]}, finish_reason: "tool_calls"}]});
   assert.throws(() => two.finish(request, ["speak"], 1), /provider_too_many_tool_calls/);
 });
@@ -126,14 +126,19 @@ test("accepts exact Provider tool arguments for every contract shape", () => {
     ["buy", {item_id: "salt", quantity: 4}],
     ["sell", {item_id: "grain", quantity: 1}],
     ["prepare_supplies", {item_id: "rope", quantity: 2}],
-    ["propose_trade", {item_id: "bread", quantity: 3}],
+    ["send_message", {target_actor_id: "lao_li", text: "盐还有吗？", urgency: "normal"}],
+    ["propose_trade", {target_actor_id: "lao_li", give: {items: {carrot: 2}, gold: 0}, receive: {items: {salt: 1}, gold: 0}, expires_in_minutes: 60, note: "交换"}],
+    ["counter_trade", {offer_id: "offer-1", give: {items: {salt: 2}, gold: 0}, receive: {items: {carrot: 2}, gold: 0}, expires_in_minutes: 30, note: "还价"}],
+    ["accept_trade", {offer_id: "offer-1"}],
+    ["reject_trade", {offer_id: "offer-1", reason_code: "price_too_low"}],
+    ["cancel_trade", {offer_id: "offer-1"}],
     ["build", {building_type: "barn", building_id: "barn-1"}],
     ["travel", {region_id: "creek", duration_minutes: 60}],
     ["survey", {region_id: "forest"}],
     ["collect_sample", {discovery_id: "crop:moonflower"}],
     ["register_discovery", {discovery_id: "terrain:cliff"}],
-    ["speak", {}],
-    ["wait", {}],
+    ["speak", {target_actor_id: "lao_li", text: "你好"}],
+    ["wait", {reason: "暂无合适行动"}],
   ];
   for (const [toolName, args] of validCases) {
     assert.deepEqual(
@@ -162,14 +167,14 @@ test("accepts zero through three ordered calls and rejects larger or contradicto
 
   const four = new AgentStreamAssembler();
   four.accept({choices: [{delta: {tool_calls: [0, 1, 2, 3].map((index) => ({
-    index, id: `call-${index}`, function: {name: "speak", arguments: "{}"},
+    index, id: `call-${index}`, function: {name: "speak", arguments: "{\"target_actor_id\":\"lao_li\",\"text\":\"你好\"}"},
   }))}, finish_reason: "tool_calls"}]});
   assert.throws(() => four.finish(request, ["speak"]), /provider_too_many_tool_calls/);
 
   const waitThenSpeak = new AgentStreamAssembler();
   waitThenSpeak.accept({choices: [{delta: {tool_calls: [
-    {index: 0, id: "wait", function: {name: "wait", arguments: "{}"}},
-    {index: 1, id: "speak", function: {name: "speak", arguments: "{}"}},
+    {index: 0, id: "wait", function: {name: "wait", arguments: "{\"reason\":\"等待\"}"}},
+    {index: 1, id: "speak", function: {name: "speak", arguments: "{\"target_actor_id\":\"lao_li\",\"text\":\"你好\"}"}},
   ]}, finish_reason: "tool_calls"}]});
   assert.throws(() => waitThenSpeak.finish(request, ["wait", "speak"]), /wait_must_be_exclusive/);
 });

@@ -24,6 +24,7 @@ const AgentWorldProjectorScript = preload("res://scripts/ai_agent/agent_world_pr
 const AgentContextProjectionScript = preload("res://scripts/ai_agent/agent_context_projection.gd")
 const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_fact_bridge.gd")
 const AgentRoleSystemScript = preload("res://scripts/ai_agent/agent_role_system.gd")
+const AgentInteractionSystemScript = preload("res://scripts/ai_agent/agent_interaction_system.gd")
 
 const VERSION := 3
 const GAME_MINUTES_PER_DAY := 1080
@@ -40,6 +41,7 @@ var world_projector = AgentWorldProjectorScript.new()
 var context_projection = AgentContextProjectionScript.new()
 var world_fact_bridge = AgentWorldFactBridgeScript.new()
 var role_system = AgentRoleSystemScript.new()
+var interaction_system = AgentInteractionSystemScript.new()
 var validator = AgentValidatorScript.new()
 var executor = AgentExecutorScript.new()
 var scheduler = AgentSchedulerScript.new()
@@ -86,6 +88,8 @@ func configure(
 		return false
 	if not role_system.configure(registry, _npc_economy, event_store, world_projector, building_registry, knowledge_registry):
 		return false
+	if not interaction_system.configure(_npc_economy, event_store, world_projector, Callable(self, "_wake_agent_for_interaction")):
+		return false
 	if _farm_port != null:
 		farm_registry = _farm_port
 	elif farm_registry.get_plot("farmer_ahe", 0).is_empty() and not farm_registry.configure_farm("farmer_ahe", 12):
@@ -93,7 +97,7 @@ func configure(
 	for agent_id in registry.get_agent_ids():
 		if not bool(_npc_economy.call("set_agent_managed", agent_id, true)):
 			return false
-	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system):
+	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system, interaction_system):
 		return false
 	if farm_registry.has_signal("work_finished"):
 		var callback := Callable(self, "_on_farm_work_finished")
@@ -437,6 +441,9 @@ func _on_time_changed(hour: int, minute: int) -> void:
 	var game_minute := _absolute_game_minute()
 	if minute == 0:
 		world_fact_bridge.publish_time(hour, minute, game_minute, "time:%d" % game_minute)
+	for expired in interaction_system.expire_due(game_minute):
+		if _event_bus != null:
+			_event_bus.agent_interaction_changed.emit(str(expired.get("offer_id", "")), "expired")
 	for outcome in executor.complete_due(game_minute):
 		_publish_committed_outcome(str(outcome.get("agent_id", "")), outcome)
 		if service_enabled:
@@ -489,6 +496,13 @@ func _notify_public_event(priority: int, game_minute: int) -> void:
 		scheduler.notify_event(str(agent_id), priority, game_minute)
 
 
+func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: int) -> void:
+	if _event_bus != null:
+		_event_bus.agent_interaction_changed.emit(agent_id, "urgent")
+	if service_enabled:
+		scheduler.notify_event(agent_id, priority, game_minute)
+
+
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
 	if (
 		trigger != "dialogue"
@@ -536,7 +550,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.goals = (capabilities.get("goals", []) as Array).duplicate()
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
-	projected.interaction_view = {"active_offers": []}
+	projected.interaction_view = {"active_offers": interaction_system.list_offers(agent_id)}
 	projected.agreement_view = {"active_agreements": []}
 	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot, "public_world_state": projected.public_world_state, "global_public_events": projected.global_public_events, "known_actors": projected.known_actors, "own_event_delta": projected.own_event_delta, "market_view": projected.market_view}
 	projected.projection_schema_version = 1

@@ -77,7 +77,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
   assert.equal(providerBody.stream, true);
   assert.deepEqual(providerBody.tools.map((tool) => tool.function.name), [
     "inspect_self_resources", "inspect_farm_plots",
-    "till", "plant", "harvest", "build", "buy", "sell", "speak", "wait",
+    "till", "plant", "harvest", "build", "buy", "sell", "speak", "wait", "propose_trade",
   ]);
   const byName = new Map(providerBody.tools.map((tool) => [tool.function.name, tool.function.parameters]));
   assert.deepEqual(byName.get("till"), {
@@ -109,7 +109,9 @@ test("sends credentials only in the header and accepts one role tool", async () 
   });
   assert.equal(byName.has("survey"), false, "Godot cannot widen the local farmer role");
   assert.deepEqual(byName.get("wait"), {
-    type: "object", properties: {}, required: [], additionalProperties: false,
+    type: "object",
+    properties: {reason: {type: "string", minLength: 1, maxLength: 300}},
+    required: ["reason"], additionalProperties: false,
   });
 });
 

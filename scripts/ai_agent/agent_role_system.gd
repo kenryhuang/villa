@@ -3,7 +3,10 @@ extends RefCounted
 
 const DEFAULT_RULES_PATH := "res://data/agents/role_transitions.json"
 const VERSION := 1
-const GENERAL_TOOLS := ["speak", "wait", "propose_role_change"]
+const GENERAL_TOOLS := [
+	"send_message", "propose_trade", "counter_trade", "accept_trade",
+	"reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
+]
 const GENERAL_READ_TOOLS := [
 	"inspect_market_item", "compare_market_items", "inspect_known_actor",
 	"inspect_relationship", "inspect_trade_offer", "inspect_agreement",
