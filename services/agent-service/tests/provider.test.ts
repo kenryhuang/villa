@@ -13,6 +13,13 @@ import type { MemoryEvent } from "../src/memory.ts";
 const request: DecisionRequest = {
   protocol_version: 2, request_id: "req-1", session_id: "save-0", session_epoch: 1,
   agent_id: "farmer_ahe", trigger: "schedule", game_minute: 480, world_revision: 7,
+  projection_schema_version: 1,
+  actor_context: {self: {gold: 20, inventory: {carrot_seed: 6}}, farm: [{plot: 0, state: "tilled"}]},
+  active_role: "farmer", goals: ["keep_crops_healthy"],
+  allowed_read_tools: ["inspect_self_resources", "inspect_farm_plots"],
+  allowed_command_tools: ["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait"],
+  public_world_state: {season: 0}, global_public_events: [], known_actors: [], own_event_delta: [],
+  market_view: {}, interaction_view: {active_offers: []}, agreement_view: {active_agreements: []},
   snapshot: {inventory: {carrot_seed: 6}}, event_delta: [],
 };
 
@@ -53,8 +60,8 @@ test("sends credentials only in the header and accepts one role tool", async () 
   const config = configuredProvider(`http://127.0.0.1:${address.port}`, "test-key");
   const registry = AgentRegistry.loadDefault();
   const provider = new OpenAICompatibleProvider(config.provider);
-  const context = registry.buildContext("farmer_ahe", request.snapshot, [], []);
-  const intent = await provider.decide(request, {...context, allowed_tools: ALL_TOOLS});
+  const context = registry.buildContext("farmer_ahe", {...request, allowed_command_tools: ALL_TOOLS}, []);
+  const intent = await provider.decide(request, context);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   config.cleanup();
   assert.equal(intent.actions[0].tool_name, "plant");
@@ -68,7 +75,10 @@ test("sends credentials only in the header and accepts one role tool", async () 
   };
   assert.equal(providerBody.tool_choice, "auto");
   assert.equal(providerBody.stream, true);
-  assert.deepEqual(providerBody.tools.map((tool) => tool.function.name), ALL_TOOLS);
+  assert.deepEqual(providerBody.tools.map((tool) => tool.function.name), [
+    "inspect_self_resources", "inspect_farm_plots",
+    "till", "plant", "harvest", "build", "buy", "sell", "speak", "wait",
+  ]);
   const byName = new Map(providerBody.tools.map((tool) => [tool.function.name, tool.function.parameters]));
   assert.deepEqual(byName.get("till"), {
     type: "object",
@@ -97,12 +107,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
     required: ["item_id", "quantity"],
     additionalProperties: false,
   });
-  assert.deepEqual(byName.get("survey"), {
-    type: "object",
-    properties: {region_id: {type: "string", enum: ["creek", "hills", "forest"]}},
-    required: ["region_id"],
-    additionalProperties: false,
-  });
+  assert.equal(byName.has("survey"), false, "Godot cannot widen the local farmer role");
   assert.deepEqual(byName.get("wait"), {
     type: "object", properties: {}, required: [], additionalProperties: false,
   });
@@ -131,13 +136,13 @@ test("includes the exact player dialogue in the Provider prompt", async () => {
     trigger: "dialogue",
     dialogue_input: "今天胡萝卜价格怎么样？",
   };
-  const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", request.snapshot, [], []);
+  const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", dialogueRequest, []);
   await provider.decide(dialogueRequest, context);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   config.cleanup();
   const providerBody = JSON.parse(capturedBody) as {
     messages: Array<{role: string; content: string}>;
-    tools?: unknown;
+    tools?: Array<{function: {name: string}}>;
     tool_choice?: unknown;
   };
   const userMessage = providerBody.messages.find((message) => message.role === "user");
@@ -145,14 +150,50 @@ test("includes the exact player dialogue in the Provider prompt", async () => {
   assert.ok(userMessage);
   const dialoguePayload = JSON.parse(userMessage.content) as {
     dialogue_input: string;
-    context: {allowed_tools: string[]};
+    context: {allowed_read_tools: string[]; allowed_command_tools: string[]};
   };
   assert.equal(dialoguePayload.dialogue_input, "今天胡萝卜价格怎么样？");
-  assert.deepEqual(dialoguePayload.context.allowed_tools, []);
-  assert.equal("tools" in providerBody, false);
-  assert.equal("tool_choice" in providerBody, false);
+  assert.deepEqual(dialoguePayload.context.allowed_read_tools, ["inspect_self_resources", "inspect_farm_plots"]);
+  assert.deepEqual(dialoguePayload.context.allowed_command_tools, ["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait"]);
+  assert.equal("tools" in providerBody, true);
+  assert.equal("tool_choice" in providerBody, true);
+  assert.deepEqual(providerBody.tools?.map((tool) => tool.function.name), [
+    "inspect_self_resources", "inspect_farm_plots", "speak",
+  ]);
   assert.match(systemMessage?.content || "", /in character/i);
-  assert.match(systemMessage?.content || "", /do not call tools/i);
+  assert.match(systemMessage?.content || "", /at most one authorized interaction command/i);
+});
+
+test("executes local read tools and sends only final commands to Godot", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  let turn = 0;
+  const server: Server = createServer((incoming, response) => {
+    let body = "";
+    incoming.setEncoding("utf8");
+    incoming.on("data", (chunk) => { body += chunk; });
+    incoming.on("end", () => {
+      bodies.push(JSON.parse(body));
+      response.setHeader("content-type", "text/event-stream");
+      turn += 1;
+      const chunk = turn === 1
+        ? {id: "read-turn", choices: [{delta: {tool_calls: [{index: 0, id: "read-1", type: "function", function: {name: "inspect_self_resources", arguments: JSON.stringify({item_ids: ["carrot_seed", "private_item"]})}}]}, finish_reason: "tool_calls"}]}
+        : {id: "command-turn", choices: [{delta: {content: "开始播种。", tool_calls: [{index: 0, id: "plant-1", type: "function", function: {name: "plant", arguments: JSON.stringify({plot: 0, seed_item_id: "carrot_seed"})}}]}, finish_reason: "tool_calls"}]};
+      response.end(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const config = configuredProvider(`http://127.0.0.1:${address.port}`, "read-key");
+  const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", request, []);
+  const intent = await new OpenAICompatibleProvider(config.provider).decide(request, context);
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  config.cleanup();
+  assert.equal(bodies.length, 2);
+  const secondMessages = bodies[1].messages as Array<Record<string, unknown>>;
+  const toolMessage = secondMessages.find((message) => message.role === "tool");
+  assert.ok(toolMessage);
+  assert.deepEqual(JSON.parse(String(toolMessage.content)), {gold: 20, items: {carrot_seed: 6, private_item: 0}});
+  assert.deepEqual(intent.actions.map((action) => action.tool_name), ["plant"]);
 });
 
 test("compresses selected events through the configured real Provider", async () => {

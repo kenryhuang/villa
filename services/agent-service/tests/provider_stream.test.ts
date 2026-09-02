@@ -12,6 +12,11 @@ const request: DecisionRequest = {
   trigger: "dialogue",
   game_minute: 480,
   world_revision: 7,
+  projection_schema_version: 1,
+  actor_context: {}, active_role: "farmer", goals: [],
+  allowed_read_tools: [], allowed_command_tools: ["till", "plant", "harvest", "wait", "speak"],
+  public_world_state: {}, global_public_events: [], known_actors: [], own_event_delta: [],
+  market_view: {}, interaction_view: {}, agreement_view: {},
   snapshot: {},
   event_delta: [],
   dialogue_input: "整理第一块地",
@@ -46,6 +51,15 @@ test("decodes fragmented Provider SSE without corrupting UTF-8", async () => {
   assert.equal(decoded.length, 2);
   assert.equal(((decoded[0].choices as any[])[0].delta as any).reasoning_content, "地块未开垦。");
   assert.equal(((decoded[1].choices as any[])[0].delta as any).content, "我来整理土地。");
+});
+
+test("limits a dialogue completion to one command", () => {
+  const two = new AgentStreamAssembler();
+  two.accept({choices: [{delta: {tool_calls: [
+    {index: 0, id: "one", function: {name: "speak", arguments: "{}"}},
+    {index: 1, id: "two", function: {name: "speak", arguments: "{}"}},
+  ]}, finish_reason: "tool_calls"}]});
+  assert.throws(() => two.finish(request, ["speak"], 1), /provider_too_many_tool_calls/);
 });
 
 test("assembles interleaved reasoning content and fragmented tool arguments", () => {

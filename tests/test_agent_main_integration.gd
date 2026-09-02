@@ -33,8 +33,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	economy.configure(market, GameDataScript.get_npc_economy_profiles(), GameDataScript.get_population_demand_profiles())
 	assertions.truthy(runtime.configure(economy, market, season, null, disabled_config_path), "Agent runtime configures against authoritative systems")
 	var initial_request: Dictionary = runtime.call("_build_request", "farmer_ahe", "dialogue", 0, "看看周围")
-	for field in ["projection_schema_version", "public_world_state", "global_public_events", "known_actors", "own_event_delta", "market_view"]:
+	for field in ["projection_schema_version", "actor_context", "active_role", "goals", "allowed_read_tools", "allowed_command_tools", "public_world_state", "global_public_events", "known_actors", "own_event_delta", "market_view", "interaction_view", "agreement_view"]:
 		assertions.truthy(initial_request.has(field), "runtime request includes %s" % field)
+	assertions.equal(initial_request.active_role, "farmer", "runtime request uses the active projected role")
+	assertions.truthy(initial_request.allowed_read_tools.has("inspect_farm_plots"), "farmer receives farm read capability")
+	assertions.truthy(initial_request.allowed_command_tools.has("plant"), "farmer receives role command capability")
 	assertions.equal(initial_request.known_actors.size(), 3, "Agent sees two NPC Agents and the public Player actor")
 	assertions.equal(initial_request.public_world_state.game_day, int(season.total_days), "public world state includes authoritative day")
 	assertions.equal(initial_request.public_world_state.season, int(season.current_season), "public world state includes authoritative season")

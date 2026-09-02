@@ -41,3 +41,22 @@ test("accepts zero through three actions and rejects invalid batches", () => {
   assert.equal(parseActionOutcome({ ...outcome, status: "maybe" }).ok, false);
   assert.equal(parseActionOutcome({ ...outcome, action_id: "" }).ok, false);
 });
+
+test("requires the complete immutable projection and rejects malformed capability lists", () => {
+  const request = fixture("decision-request.json");
+  for (const field of [
+    "projection_schema_version", "actor_context", "active_role", "goals",
+    "allowed_read_tools", "allowed_command_tools", "public_world_state",
+    "global_public_events", "known_actors", "own_event_delta", "market_view",
+    "interaction_view", "agreement_view",
+  ]) {
+    const missing = {...request};
+    delete missing[field];
+    assert.equal(parseDecisionRequest(missing).ok, false, `requires ${field}`);
+  }
+  assert.equal(parseDecisionRequest({...request, projection_schema_version: 2}).ok, false);
+  assert.equal(parseDecisionRequest({...request, goals: ["ok", 3]}).ok, false);
+  assert.equal(parseDecisionRequest({...request, allowed_read_tools: ["inspect_self_resources", "inspect_self_resources"]}).ok, false);
+  assert.equal(parseDecisionRequest({...request, allowed_command_tools: ["plant", ""]}).ok, false);
+  assert.equal(parseDecisionRequest({...request, known_actors: [{actor_id: "a"}, "private-leak"]}).ok, false);
+});

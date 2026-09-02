@@ -7,7 +7,13 @@ import {
   decodeProviderSse,
   type ProviderTraceEvent,
 } from "./provider_stream.ts";
-import {toolDescription} from "./tool_contracts.ts";
+import {executeReadTool, readToolDescription, toolDescription} from "./tool_contracts.ts";
+
+const DIALOGUE_COMMANDS = new Set([
+  "send_message", "propose_trade", "counter_trade", "accept_trade", "reject_trade",
+  "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation",
+  "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak",
+]);
 
 export class OpenAICompatibleProvider {
   readonly #config: ProviderConfig;
@@ -35,46 +41,73 @@ export class OpenAICompatibleProvider {
       const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
         ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
       const isDialogue = request.trigger === "dialogue";
-      const providerContext = isDialogue
-        ? {...context, allowed_tools: []}
-        : context;
+      const allowedCommands = isDialogue
+        ? context.allowed_command_tools.filter((name) => DIALOGUE_COMMANDS.has(name))
+        : [...context.allowed_command_tools];
       const systemContent = isDialogue
-        ? "You are a game NPC Agent speaking directly with the player. Reply immediately in character using the Agent soul and speech style. Answer the player's dialogue input in one to three concise sentences. Do not call tools or plan world actions. Never invent world assets."
-        : "You are a game NPC Agent. Use zero to three authorized tools in the exact order they should execute. Use no tool when no action is needed. Put travel or build last. Never invent world assets.";
+        ? "You are a game NPC Agent speaking directly with the player. Reply in character in one to three concise sentences. You may use local read tools, then optionally issue at most one authorized interaction command. Never perform farming, travel, harvesting, or market speculation during dialogue. Never invent world assets."
+        : "You are a game NPC Agent. You may use local read tools to inspect only the supplied context, then use zero to three authorized command tools in execution order. Use no command when no action is needed. Put travel or build last. Never invent world assets.";
       const userContent = isDialogue
-        ? {context: providerContext, dialogue_input: request.dialogue_input ?? ""}
-        : providerContext;
-      const providerBody: Record<string, unknown> = {
-        model: this.#config.model,
-        temperature: this.#config.temperature,
-        max_tokens: this.#config.maxOutputTokens,
-        stream: true,
-        stream_options: {include_usage: true},
-        messages: [
-          {role: "system", content: systemContent},
-          {role: "user", content: JSON.stringify(userContent)},
-        ],
-      };
-      if (!isDialogue) {
-        providerBody.tool_choice = "auto";
-        providerBody.tools = providerContext.allowed_tools.map(toolDescription);
+        ? {context, dialogue_input: request.dialogue_input ?? ""}
+        : context;
+      const messages: Record<string, unknown>[] = [
+        {role: "system", content: systemContent},
+        {role: "user", content: JSON.stringify(userContent)},
+      ];
+      let readCount = 0;
+      while (true) {
+        const availableReads = readCount < 6 ? [...context.allowed_read_tools] : [];
+        const providerBody: Record<string, unknown> = {
+          model: this.#config.model,
+          temperature: this.#config.temperature,
+          max_tokens: this.#config.maxOutputTokens,
+          stream: true,
+          stream_options: {include_usage: true},
+          messages: structuredClone(messages),
+          tool_choice: "auto",
+          tools: [
+            ...availableReads.map(readToolDescription),
+            ...allowedCommands.map(toolDescription),
+          ],
+        };
+        if ((providerBody.tools as unknown[]).length === 0) {
+          delete providerBody.tool_choice;
+          delete providerBody.tools;
+        }
+        emit({type: "input", body: structuredClone(providerBody)});
+        const response = await fetch(endpoint, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
+          body: JSON.stringify(providerBody),
+        });
+        if (!response.ok) throw new Error(`provider_http_${response.status}`);
+        if (!response.body) throw new Error("provider_missing_stream_body");
+        const assembler = new AgentStreamAssembler();
+        for await (const chunk of decodeProviderSse(response.body)) {
+          for (const event of assembler.accept(chunk)) emit(event);
+        }
+        const rawOutput = assembler.rawOutput();
+        emit({type: "output", output: rawOutput});
+        const calls = assembler.toolCalls();
+        const reads = calls.filter((call) => availableReads.includes(call.name));
+        if (reads.length > 0) {
+          if (reads.length !== calls.length) throw new Error("provider_mixed_read_and_command_tools");
+          if (readCount + reads.length > 6) throw new Error("provider_too_many_read_calls");
+          readCount += reads.length;
+          messages.push({role: "assistant", content: rawOutput.message.content || null, tool_calls: rawOutput.message.tool_calls});
+          for (const call of reads) {
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              name: call.name,
+              content: JSON.stringify(executeReadTool(context, call.name, call.arguments)),
+            });
+          }
+          continue;
+        }
+        return assembler.finish(request, allowedCommands, isDialogue ? 1 : 3).intent;
       }
-      emit({type: "input", body: structuredClone(providerBody)});
-      const response = await fetch(endpoint, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
-        body: JSON.stringify(providerBody),
-      });
-      if (!response.ok) throw new Error(`provider_http_${response.status}`);
-      if (!response.body) throw new Error("provider_missing_stream_body");
-      const assembler = new AgentStreamAssembler();
-      for await (const chunk of decodeProviderSse(response.body)) {
-        for (const event of assembler.accept(chunk)) emit(event);
-      }
-      const result = assembler.finish(request, providerContext.allowed_tools);
-      emit({type: "output", output: result.rawOutput});
-      return result.intent;
     } finally {
       clearTimeout(timeout);
       externalSignal?.removeEventListener("abort", abortFromCaller);

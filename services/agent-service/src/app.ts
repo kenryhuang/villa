@@ -50,7 +50,7 @@ function decisionContext(dependencies: AppDependencies, request: DecisionRequest
     ...dependencies.memory.longTermRecent(request.session_id, request.agent_id, 8),
     ...dependencies.memory.recent(request.session_id, request.agent_id, 8),
   ];
-  return dependencies.registry.buildContext(request.agent_id, request.snapshot, request.event_delta, memories);
+  return dependencies.registry.buildContext(request.agent_id, request, memories);
 }
 
 function storeDecision(

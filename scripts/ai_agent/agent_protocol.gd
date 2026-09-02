@@ -81,11 +81,18 @@ static func make_decision_request(
 	}
 	for field in [
 		"projection_schema_version",
+		"actor_context",
+		"active_role",
+		"goals",
+		"allowed_read_tools",
+		"allowed_command_tools",
 		"public_world_state",
 		"global_public_events",
 		"known_actors",
 		"own_event_delta",
 		"market_view",
+		"interaction_view",
+		"agreement_view",
 	]:
 		if projection.has(field):
 			request[field] = projection[field] if not projection[field] is Array and not projection[field] is Dictionary else projection[field].duplicate(true)

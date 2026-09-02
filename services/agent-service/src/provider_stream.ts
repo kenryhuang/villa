@@ -94,6 +94,7 @@ export async function* decodeProviderSse(
 }
 
 interface ToolAccumulator {id: string; name: string; arguments: string;}
+export interface ParsedProviderToolCall {index: number; id: string; name: string; arguments: Record<string, unknown>;}
 
 export class AgentStreamAssembler {
   #responseId = "";
@@ -169,46 +170,63 @@ export class AgentStreamAssembler {
     return event;
   }
 
-  finish(request: DecisionRequest, allowedTools: readonly string[]): ProviderStreamResult {
+  toolCalls(maximum = Number.MAX_SAFE_INTEGER): ParsedProviderToolCall[] {
     const tools = [...this.#tools.entries()].sort(([left], [right]) => left - right);
-    if (tools.length > 3) throw new Error("provider_too_many_tool_calls");
-    const actions = tools.map(([index, tool]) => {
+    if (tools.length > maximum) throw new Error(maximum === 3 ? "provider_too_many_tool_calls" : "provider_too_many_read_calls");
+    return tools.map(([index, tool]) => {
       if (!tool.name || !tool.arguments) throw new Error("provider_incomplete_tool_call");
       let args: unknown;
       try { args = JSON.parse(tool.arguments); }
       catch { throw new Error("provider_invalid_tool_arguments"); }
+      if (!isRecord(args)) throw new Error("provider_invalid_tool_arguments");
+      return {index, id: tool.id, name: tool.name, arguments: args};
+    });
+  }
+
+  rawMessage(): ProviderRawMessage {
+    return {
+      content: this.#content,
+      reasoning_content: this.#reasoning,
+      tool_calls: this.toolCalls().map((tool) => ({
+        id: tool.id,
+        type: "function" as const,
+        function: {name: tool.name, arguments: JSON.stringify(tool.arguments)},
+      })),
+    };
+  }
+
+  rawOutput(): ProviderRawOutput {
+    return {
+      id: this.#responseId,
+      message: this.rawMessage(),
+      finish_reason: this.#finishReason,
+      ...(this.#usage ? {usage: this.#usage} : {}),
+    };
+  }
+
+  finish(request: DecisionRequest, allowedTools: readonly string[], maximumActions = 3): ProviderStreamResult {
+    if (this.#tools.size > maximumActions) throw new Error("provider_too_many_tool_calls");
+    const parsedTools = this.toolCalls(maximumActions);
+    const actions = parsedTools.map((tool) => {
       if (!allowedTools.includes(tool.name)) throw new Error("provider_invalid_intent:unauthorized_tool");
-      if (!validToolArguments(tool.name, args)) {
+      if (!validToolArguments(tool.name, tool.arguments)) {
         throw new Error("provider_invalid_intent:invalid_arguments");
       }
       const providerId = tool.id.trim();
-      const actionId = providerId && providerId.length <= 80 ? providerId : `action-${index}`;
+      const actionId = providerId && providerId.length <= 80 ? providerId : `action-${tool.index}`;
       return {
         action_id: actionId,
-        idempotency_key: `v2:${request.request_id}:${index}:${actionId}`,
+        idempotency_key: `v2:${request.request_id}:${tool.index}:${actionId}`,
         tool_name: tool.name,
         tool_version: 1 as const,
-        arguments: args as Record<string, unknown>,
+        arguments: tool.arguments,
       };
     });
     if (actions.length > 1 && actions.some((action) => action.tool_name === "wait")) {
       throw new Error("provider_invalid_intent:wait_must_be_exclusive");
     }
-    const rawMessage: ProviderRawMessage = {
-      content: this.#content,
-      reasoning_content: this.#reasoning,
-      tool_calls: tools.map(([, tool]) => ({
-        id: tool.id,
-        type: "function" as const,
-        function: {name: tool.name, arguments: tool.arguments},
-      })),
-    };
-    const rawOutput: ProviderRawOutput = {
-      id: this.#responseId,
-      message: rawMessage,
-      finish_reason: this.#finishReason,
-      ...(this.#usage ? {usage: this.#usage} : {}),
-    };
+    const rawMessage = this.rawMessage();
+    const rawOutput = this.rawOutput();
     const intentValue: unknown = {
       protocol_version: 2,
       decision_id: this.#responseId || `${request.request_id}:decision`,

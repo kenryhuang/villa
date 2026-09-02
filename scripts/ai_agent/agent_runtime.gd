@@ -517,6 +517,27 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 		if farm_registry.has_method("get_snapshot")
 		else farm_registry.to_dict().farms.get(agent_id, [])
 	)
+	var capabilities: Dictionary = role_system.get_capabilities(agent_id)
+	var role_options: Array[Dictionary] = []
+	for role_id_value in registry.get_role_ids():
+		var role: Dictionary = registry.get_role(str(role_id_value))
+		role_options.append({"role_id": str(role.role_id), "goals": (role.goals as Array).duplicate()})
+	public_world.role_options = role_options
+	projected.public_world_state = public_world
+	projected.actor_context = {
+		"self": state.to_dict(),
+		"farm": farm_snapshot,
+		"buildings": building_registry.to_dict().buildings,
+		"private_knowledge": knowledge_registry.get_private(agent_id),
+		"known_discoveries": knowledge_registry.to_dict().public,
+		"relationships": {},
+	}
+	projected.active_role = str(capabilities.get("role_id", ""))
+	projected.goals = (capabilities.get("goals", []) as Array).duplicate()
+	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
+	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
+	projected.interaction_view = {"active_offers": []}
+	projected.agreement_view = {"active_agreements": []}
 	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot, "public_world_state": projected.public_world_state, "global_public_events": projected.global_public_events, "known_actors": projected.known_actors, "own_event_delta": projected.own_event_delta, "market_view": projected.market_view}
 	projected.projection_schema_version = 1
 	var request := AgentProtocolScript.make_decision_request(request_id, session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, projected.own_event_delta, dialogue, projected)

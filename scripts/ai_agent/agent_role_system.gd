@@ -4,6 +4,11 @@ extends RefCounted
 const DEFAULT_RULES_PATH := "res://data/agents/role_transitions.json"
 const VERSION := 1
 const GENERAL_TOOLS := ["speak", "wait", "propose_role_change"]
+const GENERAL_READ_TOOLS := [
+	"inspect_market_item", "compare_market_items", "inspect_known_actor",
+	"inspect_relationship", "inspect_trade_offer", "inspect_agreement",
+	"inspect_role_option", "inspect_self_resources",
+]
 
 var _registry: Variant
 var _economy: Variant
@@ -63,10 +68,15 @@ func get_capabilities(agent_id: String) -> Dictionary:
 	for tool_name in GENERAL_TOOLS:
 		if not tool_name in tools:
 			tools.append(tool_name)
+	var read_tools: Array = (role.get("read_tools", []) as Array).duplicate()
+	for tool_name in GENERAL_READ_TOOLS:
+		if not tool_name in read_tools:
+			read_tools.append(tool_name)
 	return {
 		"role_id": role_id,
 		"goals": (role.get("goals", []) as Array).duplicate(),
 		"tools": tools,
+		"read_tools": read_tools,
 		"decision_interval_hours": (role.get("decision_interval_hours", [1, 1]) as Array).duplicate(),
 	}
 

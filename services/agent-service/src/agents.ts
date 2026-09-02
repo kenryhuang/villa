@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type {DecisionRequest} from "./protocol.ts";
 
 export interface Soul {
   traits: string[];
@@ -12,6 +13,7 @@ interface RoleDefinition {
   role_id: string;
   goals: string[];
   tools: string[];
+  read_tools?: string[];
   decision_interval_hours: [number, number];
 }
 
@@ -31,18 +33,32 @@ export interface AgentDefinition extends ProfileDefinition {
 }
 
 export interface AgentContext {
-  agent: Pick<AgentDefinition, "agent_id" | "display_name" | "role_id" | "soul" | "goals">;
-  snapshot: Record<string, unknown>;
-  recent_events: readonly Record<string, unknown>[];
+  agent: Pick<AgentDefinition, "agent_id" | "display_name" | "soul"> & {active_role: string; goals: readonly string[]};
+  actor_context: Record<string, unknown>;
+  public_world_state: Record<string, unknown>;
+  global_public_events: readonly Record<string, unknown>[];
+  known_actors: readonly Record<string, unknown>[];
+  own_event_delta: readonly Record<string, unknown>[];
+  market_view: Record<string, unknown>;
+  interaction_view: Record<string, unknown>;
+  agreement_view: Record<string, unknown>;
   memories: readonly Record<string, unknown>[];
-  allowed_tools: readonly string[];
+  allowed_read_tools: readonly string[];
+  allowed_command_tools: readonly string[];
 }
+
+const GENERAL_COMMAND_TOOLS = ["speak", "wait", "propose_role_change"] as const;
 
 export class AgentRegistry {
   readonly #agents = new Map<string, AgentDefinition>();
+  readonly #roles = new Map<string, RoleDefinition>();
 
   constructor(roles: RoleDefinition[], profiles: ProfileDefinition[]) {
     const roleMap = new Map(roles.map((role) => [role.role_id, role]));
+    for (const role of roles) {
+      if (!role.role_id || this.#roles.has(role.role_id)) throw new Error(`Invalid role: ${role.role_id}`);
+      this.#roles.set(role.role_id, structuredClone(role));
+    }
     for (const profile of profiles) {
       const role = roleMap.get(profile.role_id);
       if (!role || this.#agents.has(profile.agent_id)) throw new Error(`Invalid Agent profile: ${profile.agent_id}`);
@@ -70,16 +86,31 @@ export class AgentRegistry {
 
   buildContext(
     agentId: string,
-    snapshot: Record<string, unknown>,
-    events: readonly Record<string, unknown>[],
+    request: DecisionRequest,
     memories: readonly Record<string, unknown>[],
   ): AgentContext {
     const agent = this.#agents.get(agentId);
     if (!agent) throw new Error(`Unknown Agent: ${agentId}`);
+    if (request.agent_id !== agentId) throw new Error(`Agent mismatch: ${agentId}`);
+    const role = this.#roles.get(request.active_role);
+    if (!role) throw new Error(`Unknown role: ${request.active_role}`);
+    const goals = request.goals.filter((goal) => role.goals.includes(goal));
+    const allowedReadTools = request.allowed_read_tools.filter((tool) => (role.read_tools ?? []).includes(tool));
+    const localCommands = new Set([...role.tools, ...GENERAL_COMMAND_TOOLS]);
+    const allowedCommandTools = request.allowed_command_tools.filter((tool) => localCommands.has(tool));
     return {
-      agent: {agent_id: agent.agent_id, display_name: agent.display_name, role_id: agent.role_id, soul: structuredClone(agent.soul), goals: [...agent.goals]},
-      snapshot: structuredClone(snapshot), recent_events: structuredClone(events), memories: structuredClone(memories),
-      allowed_tools: [...agent.tools],
+      agent: {agent_id: agent.agent_id, display_name: agent.display_name, soul: structuredClone(agent.soul), active_role: role.role_id, goals},
+      actor_context: structuredClone(request.actor_context),
+      public_world_state: structuredClone(request.public_world_state),
+      global_public_events: structuredClone(request.global_public_events),
+      known_actors: structuredClone(request.known_actors),
+      own_event_delta: structuredClone(request.own_event_delta),
+      market_view: structuredClone(request.market_view),
+      interaction_view: structuredClone(request.interaction_view),
+      agreement_view: structuredClone(request.agreement_view),
+      memories: structuredClone(memories),
+      allowed_read_tools: allowedReadTools,
+      allowed_command_tools: allowedCommandTools,
     };
   }
 }

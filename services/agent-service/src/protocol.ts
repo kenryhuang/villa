@@ -14,6 +14,19 @@ export interface DecisionRequest {
   trigger: Trigger;
   game_minute: number;
   world_revision: number;
+  projection_schema_version: 1;
+  actor_context: Record<string, unknown>;
+  active_role: string;
+  goals: readonly string[];
+  allowed_read_tools: readonly string[];
+  allowed_command_tools: readonly string[];
+  public_world_state: Record<string, unknown>;
+  global_public_events: readonly Record<string, unknown>[];
+  known_actors: readonly Record<string, unknown>[];
+  own_event_delta: readonly Record<string, unknown>[];
+  market_view: Record<string, unknown>;
+  interaction_view: Record<string, unknown>;
+  agreement_view: Record<string, unknown>;
   snapshot: Record<string, unknown>;
   event_delta: readonly Record<string, unknown>[];
   dialogue_input?: string;
@@ -69,6 +82,15 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+function isUniqueIdList(value: unknown, maximum = 64): value is string[] {
+  if (!Array.isArray(value) || value.length > maximum || value.some((entry) => !isId(entry))) return false;
+  return new Set(value).size === value.length;
+}
+
+function isRecordList(value: unknown, maximum = 256): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.length <= maximum && value.every(isRecord);
+}
+
 function failure<T>(error: string): ParseResult<T> {
   return { ok: false, error };
 }
@@ -81,7 +103,20 @@ export function parseDecisionRequest(value: unknown): ParseResult<DecisionReques
   if (!isNonNegativeInteger(value.session_epoch)) return failure("invalid_session_epoch");
   if (!isNonNegativeInteger(value.game_minute)) return failure("invalid_game_minute");
   if (!isNonNegativeInteger(value.world_revision)) return failure("invalid_world_revision");
+  if (value.projection_schema_version !== 1) return failure("invalid_projection_schema_version");
   if (typeof value.trigger !== "string" || !TRIGGERS.has(value.trigger as Trigger)) return failure("invalid_trigger");
+  if (!isRecord(value.actor_context)) return failure("invalid_actor_context");
+  if (!isId(value.active_role)) return failure("invalid_active_role");
+  if (!isUniqueIdList(value.goals)) return failure("invalid_goals");
+  if (!isUniqueIdList(value.allowed_read_tools)) return failure("invalid_allowed_read_tools");
+  if (!isUniqueIdList(value.allowed_command_tools)) return failure("invalid_allowed_command_tools");
+  if (!isRecord(value.public_world_state)) return failure("invalid_public_world_state");
+  if (!isRecordList(value.global_public_events)) return failure("invalid_global_public_events");
+  if (!isRecordList(value.known_actors)) return failure("invalid_known_actors");
+  if (!isRecordList(value.own_event_delta)) return failure("invalid_own_event_delta");
+  if (!isRecord(value.market_view)) return failure("invalid_market_view");
+  if (!isRecord(value.interaction_view)) return failure("invalid_interaction_view");
+  if (!isRecord(value.agreement_view)) return failure("invalid_agreement_view");
   if (!isRecord(value.snapshot)) return failure("invalid_snapshot");
   if (!Array.isArray(value.event_delta) || value.event_delta.some((event) => !isRecord(event))) return failure("invalid_event_delta");
   if (value.dialogue_input !== undefined && (typeof value.dialogue_input !== "string" || value.dialogue_input.length > 1000)) {
