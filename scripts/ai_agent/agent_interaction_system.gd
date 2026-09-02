@@ -21,6 +21,7 @@ var _offers: Dictionary = {}
 var _results: Dictionary = {}
 var _next_offer_id := 1
 var _settled_pressure: Dictionary = {}
+var _external_reservations: Dictionary = {}
 
 
 func configure(economy: Variant, store: Variant, projector: Variant, wake_agent: Callable = Callable(), market: Variant = null) -> bool:
@@ -100,6 +101,10 @@ func available_item(actor_id: String, item_id: String) -> int:
 		var offer := offer_value as Dictionary
 		if str(offer.status) == OPEN_STATUS and str(offer.proposer_id) == actor_id:
 			reserved += int(((offer.proposer_gives as Dictionary).items as Dictionary).get(item_id, 0))
+	for reservation_value in _external_reservations.values():
+		var reservation := reservation_value as Dictionary
+		if str(reservation.actor_id) == actor_id:
+			reserved += int((reservation.bundle.items as Dictionary).get(item_id, 0))
 	return maxi(0, int(state.inventory.get(item_id, 0)) - reserved)
 
 
@@ -112,7 +117,31 @@ func available_gold(actor_id: String) -> int:
 		var offer := offer_value as Dictionary
 		if str(offer.status) == OPEN_STATUS and str(offer.proposer_id) == actor_id:
 			reserved += int((offer.proposer_gives as Dictionary).gold)
+	for reservation_value in _external_reservations.values():
+		var reservation := reservation_value as Dictionary
+		if str(reservation.actor_id) == actor_id:
+			reserved += int(reservation.bundle.gold)
 	return maxi(0, int(state.gold) - reserved)
+
+
+func reserve_assets(actor_id: String, reservation_id: String, bundle_value: Variant) -> bool:
+	if reservation_id.strip_edges().is_empty():
+		return false
+	if _external_reservations.has(reservation_id):
+		var existing := _external_reservations[reservation_id] as Dictionary
+		return str(existing.actor_id) == actor_id and existing.bundle == bundle_value
+	var bundle: Variant = _normalize_bundle(bundle_value)
+	if bundle == null or not _has_available(actor_id, bundle):
+		return false
+	_external_reservations[reservation_id] = {"actor_id": actor_id, "bundle": (bundle as Dictionary).duplicate(true)}
+	return true
+
+
+func release_reservation(reservation_id: String) -> bool:
+	if not _external_reservations.has(reservation_id):
+		return false
+	_external_reservations.erase(reservation_id)
+	return true
 
 
 func get_offer(offer_id: String, observer_id: String) -> Dictionary:

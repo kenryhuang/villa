@@ -21,6 +21,7 @@ var _knowledge: Variant
 var _economy: Variant
 var _roles: Variant
 var _interactions: Variant
+var _agreements: Variant
 var _publish_hud: Callable
 var _outcomes: Dictionary = {}
 
@@ -70,7 +71,8 @@ func configure(
 	economy: Variant,
 	publish_hud: Callable = Callable(),
 	roles: Variant = null,
-	interactions: Variant = null
+	interactions: Variant = null,
+	agreements: Variant = null
 ) -> bool:
 	if registry == null or farm == null or buildings == null or activities == null or knowledge == null or economy == null:
 		return false
@@ -82,6 +84,7 @@ func configure(
 	_economy = economy
 	_roles = roles
 	_interactions = interactions
+	_agreements = agreements
 	_publish_hud = publish_hud
 	return true
 
@@ -131,6 +134,10 @@ func finalize_queued_action(intent: Dictionary, result: Dictionary, game_minute:
 			"resource_delta": result.get("resource_delta", {}),
 			"hud_message": str(result.get("message", "")),
 			"game_minute": game_minute,
+			"agent_id": str(intent.get("agent_id", "")),
+			"tool_name": str(intent.get("tool_name", "")),
+			"arguments": (intent.get("arguments", {}) as Dictionary).duplicate(true),
+			"agreement_id": str((intent.get("arguments", {}) as Dictionary).get("agreement_id", "")),
 		}
 	else:
 		outcome = _failure(intent, game_minute, str(result.get("error", "work_failed")))
@@ -232,6 +239,10 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 		"resource_delta": result.get("resource_delta", {}),
 		"hud_message": str(result.get("message", "")),
 		"game_minute": game_minute,
+		"agent_id": agent_id,
+		"tool_name": tool_name,
+		"arguments": arguments.duplicate(true),
+		"agreement_id": str(arguments.get("agreement_id", "")),
 	}
 	_outcomes[idempotency_key] = outcome.duplicate(true)
 	if not outcome.hud_message.is_empty() and _publish_hud.is_valid():
@@ -250,7 +261,7 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 			if _buildings.call("add_building", str(record.agent_id), str(payload.building_type), str(payload.building_id), game_minute):
 				changed.append("npc_building:" + str(payload.building_id))
 		world_revision += 1
-		var outcome := {"protocol_version": 2, "decision_id": str(record.payload.get("decision_id", "")), "action_id": str(record.payload.get("action_id", record.activity_id)), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
+		var outcome := {"protocol_version": 2, "decision_id": str(record.payload.get("decision_id", "")), "action_id": str(record.payload.get("action_id", record.activity_id)), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "tool_name": str(record.payload.get("tool_name", record.kind)), "agreement_id": str(record.payload.get("agreement_id", "")), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
 		_outcomes[str(record.activity_id)] = outcome.duplicate(true)
 		outcomes.append(outcome)
 		if _publish_hud.is_valid():
@@ -274,13 +285,13 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 		"travel":
 			var region_id := str(arguments.get("region_id", ""))
 			var duration := clampi(int(arguments.get("duration_minutes", 60)), 10, 240)
-			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id, "decision_id": decision_id, "action_id": action_id}):
+			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id, "decision_id": decision_id, "action_id": action_id, "tool_name": "travel", "agreement_id": str(arguments.get("agreement_id", ""))}):
 				return _error("travel_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s出发前往%s。" % [_display_name(agent_id), region_id], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"build":
 			var building_type := str(arguments.get("building_type", ""))
 			var building_id := str(arguments.get("building_id", key))
-			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id, "action_id": action_id}):
+			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id, "action_id": action_id, "tool_name": "build", "agreement_id": str(arguments.get("agreement_id", ""))}):
 				return _error("build_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s开始建造%s。" % [_display_name(agent_id), building_type], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"survey":
@@ -322,6 +333,16 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 				"changed_entities": interaction_result.get("changed_entities", []),
 				"resource_delta": interaction_result.get("resource_delta", {}),
 			}
+		"propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation", "commit_contribution", "cancel_cooperation":
+			if _agreements == null:
+				return _error("agreement_system_unavailable")
+			var agreement_result: Dictionary = _agreements.call("execute", {
+				"agent_id": agent_id, "tool_name": tool_name, "arguments": arguments,
+				"idempotency_key": key, "decision_id": decision_id, "action_id": action_id,
+			}, game_minute)
+			if not bool(agreement_result.get("ok", false)):
+				return _error(str(agreement_result.get("error", "agreement_failed")))
+			return {"ok": true, "mutated": true, "message": "", "changed_entities": ["agreement:" + str(agreement_result.get("agreement_id", ""))], "resource_delta": {}}
 		"propose_role_change":
 			if _roles == null:
 				return _error("role_system_unavailable")
@@ -341,7 +362,7 @@ func _plant(agent_id: String, arguments: Dictionary, game_minute: int) -> Dictio
 	var seed_item_id := str(arguments.get("seed_item_id", ""))
 	var crop: Dictionary = CROP_BY_SEED.get(seed_item_id, {})
 	var state = _economy.call("get_npc_state", agent_id)
-	if crop.is_empty() or state == null or int(state.inventory.get(seed_item_id, 0)) <= 0:
+	if crop.is_empty() or state == null or int(state.inventory.get(seed_item_id, 0)) <= 0 or (_interactions != null and int(_interactions.call("available_item", agent_id, seed_item_id)) <= 0):
 		return _error("seed_unavailable")
 	var state_before: Dictionary = state.to_dict()
 	state.inventory[seed_item_id] = int(state.inventory.get(seed_item_id, 0)) - 1
@@ -366,6 +387,13 @@ func _harvest(agent_id: String, arguments: Dictionary, game_minute: int) -> Dict
 func _trade(agent_id: String, tool_name: String, arguments: Dictionary) -> Dictionary:
 	var item_id := str(arguments.get("item_id", ""))
 	var quantity := int(arguments.get("quantity", 0))
+	if _interactions != null:
+		if tool_name == "sell" and int(_interactions.call("available_item", agent_id, item_id)) < quantity:
+			return _error("assets_reserved")
+		if tool_name == "buy":
+			var quoted := int(_economy.call("quote_agent_buy", item_id, quantity))
+			if quoted <= 0 or int(_interactions.call("available_gold", agent_id)) < quoted:
+				return _error("assets_reserved")
 	var succeeded := bool(_economy.call("agent_buy" if tool_name == "buy" else "agent_sell", agent_id, item_id, quantity))
 	if not succeeded:
 		return _error("trade_rejected")

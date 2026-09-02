@@ -271,6 +271,12 @@ func agent_buy(npc_id: String, item_id: String, quantity: int) -> bool:
 	return _buy_bundle(_states[npc_id], {item_id: quantity})
 
 
+func quote_agent_buy(item_id: String, quantity: int) -> int:
+	if quantity <= 0 or not has_item(item_id):
+		return 0
+	return int(_market_system.call("quote_buy", item_id, quantity))
+
+
 func agent_sell(npc_id: String, item_id: String, quantity: int) -> bool:
 	if quantity <= 0 or not has_npc(npc_id) or not has_item(item_id):
 		return false

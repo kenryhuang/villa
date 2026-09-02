@@ -25,6 +25,7 @@ const AgentContextProjectionScript = preload("res://scripts/ai_agent/agent_conte
 const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_fact_bridge.gd")
 const AgentRoleSystemScript = preload("res://scripts/ai_agent/agent_role_system.gd")
 const AgentInteractionSystemScript = preload("res://scripts/ai_agent/agent_interaction_system.gd")
+const AgentAgreementSystemScript = preload("res://scripts/ai_agent/agent_agreement_system.gd")
 
 const VERSION := 3
 const GAME_MINUTES_PER_DAY := 1080
@@ -42,6 +43,7 @@ var context_projection = AgentContextProjectionScript.new()
 var world_fact_bridge = AgentWorldFactBridgeScript.new()
 var role_system = AgentRoleSystemScript.new()
 var interaction_system = AgentInteractionSystemScript.new()
+var agreement_system = AgentAgreementSystemScript.new()
 var validator = AgentValidatorScript.new()
 var executor = AgentExecutorScript.new()
 var scheduler = AgentSchedulerScript.new()
@@ -90,6 +92,8 @@ func configure(
 		return false
 	if not interaction_system.configure(_npc_economy, event_store, world_projector, Callable(self, "_wake_agent_for_interaction"), _market):
 		return false
+	if not agreement_system.configure(_npc_economy, interaction_system, event_store, world_projector, Callable(self, "_wake_agent_for_interaction")):
+		return false
 	if _farm_port != null:
 		farm_registry = _farm_port
 	elif farm_registry.get_plot("farmer_ahe", 0).is_empty() and not farm_registry.configure_farm("farmer_ahe", 12):
@@ -97,7 +101,7 @@ func configure(
 	for agent_id in registry.get_agent_ids():
 		if not bool(_npc_economy.call("set_agent_managed", agent_id, true)):
 			return false
-	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system, interaction_system):
+	if not executor.configure(registry, farm_registry, building_registry, activity_system, knowledge_registry, _npc_economy, Callable(), role_system, interaction_system, agreement_system):
 		return false
 	if farm_registry.has_signal("work_finished"):
 		var callback := Callable(self, "_on_farm_work_finished")
@@ -446,7 +450,11 @@ func _on_time_changed(hour: int, minute: int) -> void:
 	for expired in interaction_system.expire_due(game_minute):
 		if _event_bus != null:
 			_event_bus.agent_interaction_changed.emit(str(expired.get("offer_id", "")), "expired")
+	for expired in agreement_system.expire_due(game_minute):
+		if _event_bus != null:
+			_event_bus.agent_interaction_changed.emit(str(expired.get("agreement_id", "")), "failed")
 	for outcome in executor.complete_due(game_minute):
+		agreement_system.record_action_outcome(outcome, game_minute)
 		_publish_committed_outcome(str(outcome.get("agent_id", "")), outcome)
 		if service_enabled:
 			gateway.report_outcome(str(outcome.get("agent_id", "")), session_id, outcome)
@@ -552,20 +560,24 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 		role_options.append({"role_id": str(role.role_id), "goals": (role.goals as Array).duplicate()})
 	public_world.role_options = role_options
 	projected.public_world_state = public_world
+	var relationships: Dictionary = {}
+	for known_actor_value in projected.known_actors:
+		var known_actor := known_actor_value as Dictionary
+		relationships[str(known_actor.actor_id)] = (known_actor.get("relationship", {}) as Dictionary).duplicate(true)
 	projected.actor_context = {
 		"self": state.to_dict(),
 		"farm": farm_snapshot,
 		"buildings": building_registry.to_dict().buildings,
 		"private_knowledge": knowledge_registry.get_private(agent_id),
 		"known_discoveries": knowledge_registry.to_dict().public,
-		"relationships": {},
+		"relationships": relationships,
 	}
 	projected.active_role = str(capabilities.get("role_id", ""))
 	projected.goals = (capabilities.get("goals", []) as Array).duplicate()
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
 	projected.interaction_view = {"active_offers": interaction_system.list_offers(agent_id)}
-	projected.agreement_view = {"active_agreements": []}
+	projected.agreement_view = {"active_agreements": agreement_system.list_agreements(agent_id)}
 	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot, "public_world_state": projected.public_world_state, "global_public_events": projected.global_public_events, "known_actors": projected.known_actors, "own_event_delta": projected.own_event_delta, "market_view": projected.market_view}
 	projected.projection_schema_version = 1
 	var request := AgentProtocolScript.make_decision_request(request_id, session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, projected.own_event_delta, dialogue, projected)
@@ -621,6 +633,7 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	context_projection.acknowledge(agent_id, request_id)
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
 	for outcome in outcomes:
+		agreement_system.record_action_outcome(outcome, _absolute_game_minute())
 		if str(outcome.get("status", "")) == "in_progress":
 			record_farm_lifecycle("queued", {
 				"request_id": request_id,
@@ -648,6 +661,7 @@ func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:
 
 func _on_farm_work_finished(intent: Dictionary, result: Dictionary) -> void:
 	var outcome := executor.finalize_queued_action(intent, result, _absolute_game_minute())
+	agreement_system.record_action_outcome(outcome, _absolute_game_minute())
 	record_farm_lifecycle("committed" if bool(result.get("ok", false)) else "rejected", intent)
 	var agent_id := str(intent.get("agent_id", "farmer_ahe"))
 	if str(outcome.get("status", "")) in ["rejected", "failed"]:

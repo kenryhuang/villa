@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "objective_id": "joint_crop_supply",
+      "display_name": "联合种植供货",
+      "minimum_participants": 2,
+      "maximum_participants": 3,
+      "deadline_minutes": [60, 4320],
+      "required_actions": [{"contribution_id": "harvest_crop", "tool_name": "harvest", "count": 1}, {"contribution_id": "sell_crop", "tool_name": "sell", "count": 1}],
+      "reward_gold": 101,
+      "remainder_policy": "proposer",
+      "refund_policy": "full_before_completion"
+    },
+    {
+      "objective_id": "exploration_sample",
+      "display_name": "探索采样",
+      "minimum_participants": 2,
+      "maximum_participants": 3,
+      "deadline_minutes": [120, 4320],
+      "required_actions": [{"contribution_id": "survey_region", "tool_name": "survey", "count": 1}, {"contribution_id": "collect_sample", "tool_name": "collect_sample", "count": 1}],
+      "reward_gold": 90,
+      "remainder_policy": "proposer",
+      "refund_policy": "full_before_completion"
+    },
+    {
+      "objective_id": "material_procurement",
+      "display_name": "材料筹集",
+      "minimum_participants": 2,
+      "maximum_participants": 3,
+      "deadline_minutes": [60, 2880],
+      "required_actions": [{"contribution_id": "buy_material", "tool_name": "buy", "count": 1}, {"contribution_id": "deliver_material", "tool_name": "commit_contribution", "count": 1}],
+      "reward_gold": 80,
+      "remainder_policy": "proposer",
+      "refund_policy": "full_before_completion"
+    },
+    {
+      "objective_id": "shared_construction",
+      "display_name": "共同建设",
+      "minimum_participants": 2,
+      "maximum_participants": 3,
+      "deadline_minutes": [120, 5760],
+      "required_actions": [{"contribution_id": "prepare_material", "tool_name": "commit_contribution", "count": 1}, {"contribution_id": "build_structure", "tool_name": "build", "count": 1}],
+      "reward_gold": 120,
+      "remainder_policy": "proposer",
+      "refund_policy": "full_before_completion"
+    }
+  ]
+}

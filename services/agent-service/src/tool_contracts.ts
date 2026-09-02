@@ -28,10 +28,17 @@ const QUANTITY_SCHEMA = {type: "integer", minimum: 1, maximum: 100};
 const ID_LIST_SCHEMA = {type: "array", items: ITEM_ID_SCHEMA, minItems: 1, maxItems: 20, uniqueItems: true};
 const TEXT_SCHEMA = {type: "string", minLength: 1, maxLength: 1000};
 const NOTE_SCHEMA = {type: "string", maxLength: 500};
+const ITEM_QUANTITIES_SCHEMA = {type: "object", additionalProperties: {type: "integer", minimum: 1, maximum: 1000000}};
 const ASSET_BUNDLE_SCHEMA = objectSchema({
-  items: {type: "object", additionalProperties: {type: "integer", minimum: 1, maximum: 1000000}},
+  items: ITEM_QUANTITIES_SCHEMA,
   gold: {type: "integer", minimum: 0, maximum: 1000000000},
 }, ["items", "gold"]);
+const COMMITMENT_SCHEMA = objectSchema({participant_id: ITEM_ID_SCHEMA, items: ITEM_QUANTITIES_SCHEMA, gold: {type: "integer", minimum: 0, maximum: 1000000000}}, ["participant_id", "items", "gold"]);
+const COOPERATION_TERMS_PROPERTIES = {
+  commitments: {type: "array", items: COMMITMENT_SCHEMA, minItems: 2, maxItems: 3},
+  reward_split: {type: "object", additionalProperties: {type: "integer", minimum: 1, maximum: 1000}},
+  deadline_minutes: {type: "integer", minimum: 60, maximum: 5760},
+};
 
 function objectSchema(properties: Record<string, unknown>, required: string[]): JsonSchema {
   return {type: "object", properties, required, additionalProperties: false};
@@ -53,6 +60,21 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   accept_trade: objectSchema({offer_id: ITEM_ID_SCHEMA}, ["offer_id"]),
   reject_trade: objectSchema({offer_id: ITEM_ID_SCHEMA, reason_code: ITEM_ID_SCHEMA}, ["offer_id", "reason_code"]),
   cancel_trade: objectSchema({offer_id: ITEM_ID_SCHEMA}, ["offer_id"]),
+  propose_cooperation: objectSchema({
+    objective_id: {type: "string", enum: ["joint_crop_supply", "exploration_sample", "material_procurement", "shared_construction"]},
+    participants: {type: "array", items: ITEM_ID_SCHEMA, minItems: 1, maxItems: 2, uniqueItems: true},
+    ...COOPERATION_TERMS_PROPERTIES,
+    note: NOTE_SCHEMA,
+  }, ["objective_id", "participants", "commitments", "reward_split", "deadline_minutes", "note"]),
+  counter_cooperation: objectSchema({
+    agreement_id: ITEM_ID_SCHEMA,
+    revised_terms: objectSchema({...COOPERATION_TERMS_PROPERTIES}, ["commitments", "reward_split", "deadline_minutes"]),
+    note: NOTE_SCHEMA,
+  }, ["agreement_id", "revised_terms", "note"]),
+  accept_cooperation: objectSchema({agreement_id: ITEM_ID_SCHEMA, terms_version: {type: "integer", minimum: 1, maximum: 1000}}, ["agreement_id", "terms_version"]),
+  reject_cooperation: objectSchema({agreement_id: ITEM_ID_SCHEMA, reason_code: ITEM_ID_SCHEMA}, ["agreement_id", "reason_code"]),
+  commit_contribution: objectSchema({agreement_id: ITEM_ID_SCHEMA, contribution_id: ITEM_ID_SCHEMA}, ["agreement_id", "contribution_id"]),
+  cancel_cooperation: objectSchema({agreement_id: ITEM_ID_SCHEMA, reason_code: ITEM_ID_SCHEMA}, ["agreement_id", "reason_code"]),
   build: objectSchema({
     building_type: {type: "string", enum: [...BUILDING_TYPES]},
     building_id: ITEM_ID_SCHEMA,
@@ -143,6 +165,23 @@ function validOfferTerms(value: Record<string, unknown>, idField: "target_actor_
     && Object.keys(give.items).every((itemId) => !Object.hasOwn(receive.items, itemId));
 }
 
+function validCommitment(value: unknown): boolean {
+  return isRecord(value) && hasExactKeys(value, ["participant_id", "items", "gold"])
+    && isBoundedId(value.participant_id) && isRecord(value.items)
+    && Object.keys(value.items).every(isBoundedId)
+    && Object.values(value.items).every((quantity) => isIntegerInRange(quantity, 1, 1_000_000))
+    && isIntegerInRange(value.gold, 0, 1_000_000_000);
+}
+
+function validCooperationTerms(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ["commitments", "reward_split", "deadline_minutes"])
+    || !Array.isArray(value.commitments) || value.commitments.length < 2 || value.commitments.length > 3
+    || !value.commitments.every(validCommitment) || !isRecord(value.reward_split)
+    || !isIntegerInRange(value.deadline_minutes, 60, 5760)) return false;
+  return Object.keys(value.reward_split).every(isBoundedId)
+    && Object.values(value.reward_split).every((weight) => isIntegerInRange(weight, 1, 1000));
+}
+
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name) {
@@ -171,6 +210,28 @@ export function validToolArguments(name: string, value: unknown): boolean {
     case "reject_trade":
       return hasExactKeys(value, ["offer_id", "reason_code"])
         && isBoundedId(value.offer_id) && isBoundedId(value.reason_code);
+    case "propose_cooperation": {
+      if (!hasExactKeys(value, ["objective_id", "participants", "commitments", "reward_split", "deadline_minutes", "note"])
+        || !isOneOf(value.objective_id, ["joint_crop_supply", "exploration_sample", "material_procurement", "shared_construction"])
+        || !Array.isArray(value.participants) || value.participants.length < 1 || value.participants.length > 2
+        || !value.participants.every(isBoundedId) || new Set(value.participants).size !== value.participants.length
+        || !isText(value.note, 500, true)) return false;
+      return validCooperationTerms({commitments: value.commitments, reward_split: value.reward_split, deadline_minutes: value.deadline_minutes});
+    }
+    case "counter_cooperation":
+      return hasExactKeys(value, ["agreement_id", "revised_terms", "note"])
+        && isBoundedId(value.agreement_id) && validCooperationTerms(value.revised_terms)
+        && isText(value.note, 500, true);
+    case "accept_cooperation":
+      return hasExactKeys(value, ["agreement_id", "terms_version"])
+        && isBoundedId(value.agreement_id) && isIntegerInRange(value.terms_version, 1, 1000);
+    case "reject_cooperation":
+    case "cancel_cooperation":
+      return hasExactKeys(value, ["agreement_id", "reason_code"])
+        && isBoundedId(value.agreement_id) && isBoundedId(value.reason_code);
+    case "commit_contribution":
+      return hasExactKeys(value, ["agreement_id", "contribution_id"])
+        && isBoundedId(value.agreement_id) && isBoundedId(value.contribution_id);
     case "build":
       return hasExactKeys(value, ["building_type", "building_id"])
         && isOneOf(value.building_type, BUILDING_TYPES)

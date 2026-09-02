@@ -50,6 +50,8 @@ export interface AgentContext {
 const GENERAL_COMMAND_TOOLS = [
   "send_message", "propose_trade", "counter_trade", "accept_trade",
   "reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
+  "propose_cooperation", "counter_cooperation", "accept_cooperation",
+  "reject_cooperation", "commit_contribution", "cancel_cooperation",
 ] as const;
 
 export class AgentRegistry {

@@ -21,6 +21,7 @@ var _public_world_state: Dictionary = {
 }
 var _global_public_events: Array[Dictionary] = []
 var _actor_public_events: Dictionary = {}
+var _relationships: Dictionary = {}
 var _inbox: Variant
 var _last_sequence := 0
 
@@ -80,6 +81,7 @@ func apply_batch(events: Array[Dictionary]) -> bool:
 		var event := (value as Dictionary).duplicate(true)
 		_apply_public_world(event)
 		_apply_actor_activity(event)
+		_apply_relationship(event)
 		_route_to_inboxes(event)
 		_last_sequence = int(event.global_sequence)
 	return true
@@ -131,7 +133,7 @@ func known_actors(observer_id: String) -> Array[Dictionary]:
 			"region_id": str(actor.region_id),
 			"current_public_state": (actor.current_public_state as Dictionary).duplicate(true),
 			"observable_status": str((actor.current_public_state as Dictionary).get("status", "idle")),
-			"relationship": {},
+			"relationship": (_relationships.get(_pair_key(observer_id, actor_id), {}) as Dictionary).duplicate(true),
 			"active_public_interactions": [],
 			"recent_public_events": actor_public_events(actor_id, observer_id),
 		})
@@ -209,6 +211,21 @@ func _apply_actor_activity(event: Dictionary) -> void:
 	_actors[actor_id] = actor
 
 
+func _apply_relationship(event: Dictionary) -> void:
+	if str(event.event_type) != "RelationshipChanged":
+		return
+	var payload := event.payload as Dictionary
+	var left_id := str(payload.get("left_id", ""))
+	var right_id := str(payload.get("right_id", ""))
+	if left_id.is_empty() or right_id.is_empty():
+		return
+	var key := _pair_key(left_id, right_id)
+	var current: Dictionary = _relationships.get(key, {"trust": 0})
+	current.trust = clampi(int(current.get("trust", 0)) + int(payload.get("delta", 0)), -100, 100)
+	current.last_event_id = str(event.event_id)
+	_relationships[key] = current
+
+
 func _route_to_inboxes(event: Dictionary) -> void:
 	for agent_id in _agent_ids:
 		if _is_visible_to(event, agent_id):
@@ -236,6 +253,7 @@ func _is_visible_to(event: Dictionary, observer_id: String) -> bool:
 func _reset_projection() -> void:
 	_last_sequence = 0
 	_global_public_events.clear()
+	_relationships.clear()
 	_public_world_state = {
 		"game_day": 1,
 		"absolute_game_minute": 0,
@@ -265,3 +283,9 @@ func _tail(values: Array, limit: int) -> Array[Dictionary]:
 	for index in range(first, values.size()):
 		result.append((values[index] as Dictionary).duplicate(true))
 	return result
+
+
+func _pair_key(left_id: String, right_id: String) -> String:
+	var ids := [left_id, right_id]
+	ids.sort()
+	return "%s\n%s" % ids
