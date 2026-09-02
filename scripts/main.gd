@@ -393,6 +393,8 @@ func _connect_systems() -> bool:
 		item_container_router
 	):
 		return false
+	if not bool(agent_runtime.call("configure_player_assets", inventory_system, get_node_or_null("/root/GameState"))):
+		return false
 
 	# Building and production share one authoritative registry and player inventory.
 	if not building_system.configure(
@@ -1509,6 +1511,7 @@ func _on_dialogue_started(villager_id: String) -> void:
 			))
 		):
 			_set_player_dialogue_movement_blocked(true)
+			_refresh_agent_interactions(villager_id)
 			return
 		_set_agent_npc_busy(villager_id, false)
 		return
@@ -1551,6 +1554,7 @@ func _on_agent_dialogue_ready(villager_id: String, request_id: String, speech: S
 		return
 	if dialogue_ui and dialogue_ui.has_method("finish_agent_dialogue"):
 		dialogue_ui.call("finish_agent_dialogue", request_id, speech)
+	_refresh_agent_interactions(villager_id)
 	_agent_dialogue_requests.erase(villager_id)
 
 
@@ -1569,6 +1573,20 @@ func _on_agent_message_submitted(villager_id: String, message: String) -> void:
 	if dialogue_ui != null and dialogue_ui.has_method("fail_agent_submission"):
 		dialogue_ui.call("fail_agent_submission", villager_id, AGENT_SERVICE_UNAVAILABLE_MESSAGE)
 	_publish_agent_service_unavailable(villager_id)
+
+
+func _on_agent_interaction_response_requested(villager_id: String, interaction_id: String, response: String, counter_terms: Dictionary) -> void:
+	if agent_runtime == null or not agent_runtime.has_method("respond_to_player_interaction"):
+		return
+	var result: Dictionary = agent_runtime.call("respond_to_player_interaction", villager_id, interaction_id, response, counter_terms)
+	if not bool(result.get("ok", false)):
+		_publish_hud_message("agent", "warning", "交互操作失败：%s" % str(result.get("error", "unknown")), {"agent_id": villager_id, "interaction_id": interaction_id})
+	_refresh_agent_interactions(villager_id)
+
+
+func _refresh_agent_interactions(villager_id: String) -> void:
+	if dialogue_ui != null and dialogue_ui.has_method("set_agent_interactions") and agent_runtime != null and agent_runtime.has_method("get_player_interactions"):
+		dialogue_ui.call("set_agent_interactions", villager_id, agent_runtime.call("get_player_interactions", villager_id))
 
 
 func _on_agent_dialogue_cancelled(villager_id: String, request_id: String) -> void:
@@ -1686,6 +1704,7 @@ func _connect_agent_dialogue_ui() -> void:
 		{"name": "agent_message_submitted", "method": "_on_agent_message_submitted"},
 		{"name": "agent_dialogue_cancelled", "method": "_on_agent_dialogue_cancelled"},
 		{"name": "agent_dialogue_closed", "method": "_on_agent_dialogue_closed"},
+		{"name": "interaction_response_requested", "method": "_on_agent_interaction_response_requested"},
 	]:
 		var signal_name := str(signal_record.name)
 		if not dialogue_ui.has_signal(signal_name):

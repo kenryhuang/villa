@@ -21,6 +21,8 @@ var _offers: Dictionary = {}
 var _results: Dictionary = {}
 var _next_offer_id := 1
 var _settled_pressure: Dictionary = {}
+var _player_inventory: Variant
+var _player_wallet: Variant
 var _external_reservations: Dictionary = {}
 
 
@@ -43,6 +45,14 @@ func configure(economy: Variant, store: Variant, projector: Variant, wake_agent:
 	_market = market
 	if _market != null and (not _market.has_method("set_agent_market_pressure") or not _market.has_method("get_mid_price")):
 		return false
+	return true
+
+
+func configure_player_assets(inventory: Variant, wallet: Variant) -> bool:
+	if inventory == null or wallet == null or not inventory.has_method("get_item_count") or not inventory.has_method("remove_item") or not inventory.has_method("add_item") or not inventory.has_method("restore_state") or not wallet.has_method("spend_gold") or not wallet.has_method("add_gold") or not wallet.has_method("restore_gold_unchecked"):
+		return false
+	_player_inventory = inventory
+	_player_wallet = wallet
 	return true
 
 
@@ -93,9 +103,18 @@ func expire_due(game_minute: int) -> Array[Dictionary]:
 
 
 func available_item(actor_id: String, item_id: String) -> int:
+	if actor_id == "player":
+		if _player_inventory == null:
+			return 0
+		return int(_player_inventory.call("get_item_count", item_id)) - _reserved_item(actor_id, item_id)
 	var state = _economy.call("get_npc_state", actor_id) if _economy != null else null
 	if state == null:
 		return 0
+	var reserved := _reserved_item(actor_id, item_id)
+	return maxi(0, int(state.inventory.get(item_id, 0)) - reserved)
+
+
+func _reserved_item(actor_id: String, item_id: String) -> int:
 	var reserved := 0
 	for offer_value in _offers.values():
 		var offer := offer_value as Dictionary
@@ -105,13 +124,19 @@ func available_item(actor_id: String, item_id: String) -> int:
 		var reservation := reservation_value as Dictionary
 		if str(reservation.actor_id) == actor_id:
 			reserved += int((reservation.bundle.items as Dictionary).get(item_id, 0))
-	return maxi(0, int(state.inventory.get(item_id, 0)) - reserved)
+	return reserved
 
 
 func available_gold(actor_id: String) -> int:
+	if actor_id == "player":
+		return maxi(0, int(_player_wallet.gold) - _reserved_gold(actor_id)) if _player_wallet != null else 0
 	var state = _economy.call("get_npc_state", actor_id) if _economy != null else null
 	if state == null:
 		return 0
+	return maxi(0, int(state.gold) - _reserved_gold(actor_id))
+
+
+func _reserved_gold(actor_id: String) -> int:
 	var reserved := 0
 	for offer_value in _offers.values():
 		var offer := offer_value as Dictionary
@@ -121,7 +146,7 @@ func available_gold(actor_id: String) -> int:
 		var reservation := reservation_value as Dictionary
 		if str(reservation.actor_id) == actor_id:
 			reserved += int(reservation.bundle.gold)
-	return maxi(0, int(state.gold) - reserved)
+	return reserved
 
 
 func reserve_assets(actor_id: String, reservation_id: String, bundle_value: Variant) -> bool:
@@ -249,7 +274,9 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 	if offer.is_empty() or str(offer.status) != OPEN_STATUS:
 		return _failure("offer_not_open")
 	if "player" in [str(offer.proposer_id), str(offer.recipient_id)]:
-		return _failure("player_confirmation_required")
+		if agent_id != "player" or arguments.get("player_confirmed") != true:
+			return _failure("player_confirmation_required")
+		return _accept_player_trade(offer_id, offer, command, game_minute)
 	if str(offer.recipient_id) != agent_id:
 		return _failure("only_receiver_can_accept")
 	if not _has_total_assets(str(offer.proposer_id), offer.proposer_gives):
@@ -281,6 +308,71 @@ func _accept_trade(agent_id: String, arguments: Dictionary, command: Dictionary,
 	_refresh_market_pressure(game_minute)
 	_wake(str(offer.proposer_id), 3, game_minute)
 	return {"ok": true, "offer_id": offer_id, "events": committed.events, "changed_entities": ["trade_offer:" + offer_id, "npc_inventory:" + str(offer.proposer_id), "npc_inventory:" + str(offer.recipient_id)], "resource_delta": {}}
+
+
+func _accept_player_trade(offer_id: String, offer: Dictionary, command: Dictionary, game_minute: int) -> Dictionary:
+	if _player_inventory == null or _player_wallet == null:
+		return _failure("player_assets_unavailable")
+	var player_is_proposer := str(offer.proposer_id) == "player"
+	var npc_id := str(offer.recipient_id) if player_is_proposer else str(offer.proposer_id)
+	var player_debits: Dictionary = offer.proposer_gives if player_is_proposer else offer.proposer_receives
+	var player_credits: Dictionary = offer.proposer_receives if player_is_proposer else offer.proposer_gives
+	var npc_debits: Dictionary = offer.proposer_receives if player_is_proposer else offer.proposer_gives
+	var npc_credits: Dictionary = offer.proposer_gives if player_is_proposer else offer.proposer_receives
+	for item_id in player_debits.items:
+		if int(_player_inventory.call("get_item_count", str(item_id))) < int(player_debits.items[item_id]):
+			return _failure("player_assets_changed")
+	if int(_player_wallet.gold) < int(player_debits.gold) or not _has_total_assets(npc_id, npc_debits):
+		return _failure("player_or_npc_assets_changed")
+	var capacity_tokens: Array = []
+	for item_id in player_credits.items:
+		var token = _player_inventory.call("reserve_item_capacity", str(item_id), int(player_credits.items[item_id]))
+		if token == null:
+			for held in capacity_tokens:
+				_player_inventory.call("release_item_capacity_reservation", held)
+			return _failure("player_inventory_full")
+		capacity_tokens.append(token)
+	var npc_delta := _bundle_delta(npc_debits, npc_credits)
+	if not bool(_economy.call("can_apply_agent_asset_delta", npc_id, npc_delta.items, int(npc_delta.gold))):
+		for held in capacity_tokens:
+			_player_inventory.call("release_item_capacity_reservation", held)
+		return _failure("asset_overflow")
+	var slots_before: Array = _player_inventory.slots.duplicate(true)
+	var mappings_before: Array = _player_inventory.quick_slot_mappings.duplicate()
+	var gold_before := int(_player_wallet.gold)
+	var npc_state = _economy.call("get_npc_state", npc_id)
+	var npc_before: Dictionary = npc_state.to_dict()
+	var ok := true
+	for item_id in player_debits.items:
+		ok = ok and bool(_player_inventory.call("remove_item", str(item_id), int(player_debits.items[item_id])))
+	if int(player_debits.gold) > 0:
+		ok = ok and bool(_player_wallet.call("spend_gold", int(player_debits.gold)))
+	ok = ok and bool(_economy.call("apply_agent_asset_delta", npc_id, npc_delta.items, int(npc_delta.gold)))
+	for token in capacity_tokens:
+		ok = ok and bool(_player_inventory.call("commit_item_capacity_reservation", token))
+	if int(player_credits.gold) > 0:
+		ok = ok and bool(_player_wallet.call("add_gold", int(player_credits.gold)))
+	if not ok:
+		_player_inventory.call("restore_state", slots_before, mappings_before)
+		_player_wallet.call("restore_gold_unchecked", gold_before)
+		npc_state.from_dict(npc_before)
+		for token in capacity_tokens:
+			if bool(_player_inventory.call("has_item_capacity_reservation", token)):
+				_player_inventory.call("release_item_capacity_reservation", token)
+		return _failure("atomic_settlement_failed")
+	var event := _event("TradeSettled", "trade_offer", offer_id, "player", game_minute, str(command.action_id), str(command.decision_id), {"offer_id": offer_id, "proposer_id": str(offer.proposer_id), "recipient_id": str(offer.recipient_id), "proposer_gives": offer.proposer_gives, "proposer_receives": offer.proposer_receives}, "participants", [str(offer.proposer_id), str(offer.recipient_id)])
+	var committed := _commit([event], str(command.idempotency_key))
+	if not bool(committed.get("ok", false)):
+		_player_inventory.call("restore_state", slots_before, mappings_before)
+		_player_wallet.call("restore_gold_unchecked", gold_before)
+		npc_state.from_dict(npc_before)
+		return committed
+	offer.status = "settled"
+	_offers[offer_id] = offer
+	_record_settlement_pressure(offer, game_minute)
+	_refresh_market_pressure(game_minute)
+	_wake(npc_id, 3, game_minute)
+	return {"ok": true, "offer_id": offer_id, "events": committed.events, "changed_entities": ["trade_offer:" + offer_id, "player_inventory", "npc_inventory:" + npc_id], "resource_delta": {}}
 
 
 func _close_offer(agent_id: String, arguments: Dictionary, command: Dictionary, game_minute: int, status: String) -> Dictionary:

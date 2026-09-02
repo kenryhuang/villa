@@ -168,6 +168,78 @@ func configure_save_manager(save_manager: Variant) -> bool:
 	return true
 
 
+func configure_player_assets(inventory: Variant, wallet: Variant) -> bool:
+	return interaction_system.configure_player_assets(inventory, wallet)
+
+
+func get_player_interactions(agent_id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for offer_value in interaction_system.list_offers("player"):
+		var offer := offer_value as Dictionary
+		if agent_id in [str(offer.proposer_id), str(offer.recipient_id)]:
+			var record := offer.duplicate(true)
+			record.interaction_id = str(offer.offer_id)
+			record.interaction_type = "trade"
+			result.append(record)
+	for agreement_value in agreement_system.list_agreements("player"):
+		var agreement := agreement_value as Dictionary
+		if agent_id in (agreement.participants as Array):
+			var record := agreement.duplicate(true)
+			record.interaction_id = str(agreement.agreement_id)
+			record.interaction_type = "cooperation"
+			result.append(record)
+	return result
+
+
+func respond_to_player_interaction(agent_id: String, interaction_id: String, response: String, counter_terms: Dictionary = {}) -> Dictionary:
+	var minute := _absolute_game_minute()
+	var key := "player:%s:%s:%d" % [interaction_id, response, Time.get_ticks_usec()]
+	var offer := interaction_system.get_offer(interaction_id, "player")
+	if not offer.is_empty() and agent_id in [str(offer.proposer_id), str(offer.recipient_id)]:
+		var tool_name := ""
+		var arguments: Dictionary = {"offer_id": interaction_id}
+		match response:
+			"accept":
+				tool_name = "accept_trade"
+				arguments.player_confirmed = true
+			"reject":
+				tool_name = "cancel_trade" if str(offer.proposer_id) == "player" else "reject_trade"
+				if tool_name == "reject_trade": arguments.reason_code = "player_rejected"
+			"counter":
+				tool_name = "counter_trade"
+				arguments.give = (offer.proposer_receives as Dictionary).duplicate(true)
+				arguments.receive = (offer.proposer_gives as Dictionary).duplicate(true)
+				arguments.expires_in_minutes = maxi(1, int(offer.expires_game_minute) - minute)
+				arguments.note = str(counter_terms.get("counter_note", "Player counteroffer"))
+			_:
+				return {"ok": false, "error": "invalid_interaction_response"}
+		return interaction_system.execute({"agent_id": "player", "tool_name": tool_name, "arguments": arguments, "idempotency_key": key, "action_id": key, "decision_id": key}, minute)
+	var agreement := agreement_system.get_agreement(interaction_id, "player")
+	if agreement.is_empty() or not agent_id in (agreement.participants as Array):
+		return {"ok": false, "error": "interaction_not_found"}
+	var cooperation_tool := ""
+	var cooperation_arguments: Dictionary = {"agreement_id": interaction_id}
+	match response:
+		"accept":
+			cooperation_tool = "accept_cooperation"
+			cooperation_arguments.terms_version = int(agreement.terms_version)
+			cooperation_arguments.player_confirmed = true
+		"reject":
+			cooperation_tool = "reject_cooperation"
+			cooperation_arguments.reason_code = "player_rejected"
+		"counter":
+			cooperation_tool = "counter_cooperation"
+			cooperation_arguments.revised_terms = {
+				"commitments": (agreement.commitments as Array).duplicate(true),
+				"reward_split": (agreement.reward_split as Dictionary).duplicate(true),
+				"deadline_minutes": maxi(60, int(agreement.deadline) - minute),
+			}
+			cooperation_arguments.note = str(counter_terms.get("counter_note", "Player counterproposal"))
+		_:
+			return {"ok": false, "error": "invalid_interaction_response"}
+	return agreement_system.execute({"agent_id": "player", "tool_name": cooperation_tool, "arguments": cooperation_arguments, "idempotency_key": key, "action_id": key, "decision_id": key}, minute)
+
+
 func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 	return service_enabled and scheduler.trigger_dialogue(agent_id, text, _absolute_game_minute())
 

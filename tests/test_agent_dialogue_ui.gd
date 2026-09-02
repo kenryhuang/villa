@@ -9,6 +9,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	await tree.process_frame
 	var required_paths := [
 		"DialoguePanel/Margin/VBox/History",
+		"DialoguePanel/Margin/VBox/InteractionScroll/InteractionCards",
 		"DialoguePanel/Margin/VBox/Composer/MessageInput",
 		"DialoguePanel/Margin/VBox/Composer/SendButton",
 		"DialoguePanel/Margin/VBox/Header/CloseButton",
@@ -23,6 +24,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(has_open, "Agent dialogue UI exposes conversation opening")
 	assertions.truthy(has_history, "Agent dialogue UI exposes per-Agent history")
 	assertions.truthy(dialogue.has_signal("agent_message_submitted"), "Agent dialogue UI exposes player message submission")
+	assertions.truthy(dialogue.has_signal("interaction_response_requested"), "Agent dialogue UI exposes explicit structured interaction response")
 	if not complete or not has_open or not has_history or not dialogue.has_signal("agent_message_submitted"):
 		dialogue.queue_free()
 		await tree.process_frame
@@ -36,12 +38,29 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(not history_view.bbcode_enabled, "Agent dialogue history renders player and Provider text literally")
 	assertions.truthy(history_view.custom_minimum_size.y <= 220.0, "Agent dialogue controls fit inside the fixed panel height")
 	var submitted: Array[Array] = []
+	var interaction_responses: Array[Array] = []
 	var cancelled: Array[Array] = []
 	var closed: Array[Array] = []
 	dialogue.agent_message_submitted.connect(func(agent_id: String, message: String): submitted.append([agent_id, message]))
+	dialogue.interaction_response_requested.connect(func(agent_id: String, interaction_id: String, response: String, counter_terms: Dictionary): interaction_responses.append([agent_id, interaction_id, response, counter_terms]))
 	dialogue.agent_dialogue_cancelled.connect(func(agent_id: String, request_id: String): cancelled.append([agent_id, request_id]))
 	dialogue.agent_dialogue_closed.connect(func(agent_id: String, request_id: String): closed.append([agent_id, request_id]))
 	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
+	dialogue.set_agent_interactions("farmer_ahe", [{"offer_id": "offer-1", "status": "open", "proposer_gives": {"items": {"carrot": 2}, "gold": 0}, "proposer_receives": {"items": {"salt": 1}, "gold": 0}, "expires_game_minute": 900}])
+	var cards := dialogue.get_node("DialoguePanel/Margin/VBox/InteractionScroll/InteractionCards") as VBoxContainer
+	assertions.equal(cards.get_child_count(), 1, "pending interaction renders one authority-backed card")
+	var first_card := cards.get_child(0)
+	var terms_label := first_card.find_child("TermsLabel", true, false) as Label
+	assertions.truthy(terms_label.text.contains("offer-1") and terms_label.text.contains("carrot"), "card renders exact current structured terms")
+	(first_card.find_child("AcceptButton", true, false) as Button).pressed.emit()
+	assertions.equal(interaction_responses.size(), 1, "accept button emits one explicit Player command")
+	assertions.equal(interaction_responses[0].slice(0, 3), ["farmer_ahe", "offer-1", "accept"], "accept identifies Agent and interaction")
+	(first_card.find_child("RejectButton", true, false) as Button).pressed.emit()
+	(first_card.find_child("CounterButton", true, false) as Button).pressed.emit()
+	assertions.equal(interaction_responses.size(), 3, "reject and counter each emit one explicit Player command")
+	assertions.equal(interaction_responses[2][2], "counter", "counter button uses counter response")
+	assertions.equal((interaction_responses[2][3] as Dictionary).offer_id, "offer-1", "counter carries current authority-backed terms")
+	assertions.equal(dialogue.get_agent_interactions("farmer_ahe")[0].status, "open", "UI button emission alone does not mutate interaction state")
 	assertions.truthy(dialogue.visible, "click flow opens Agent dialogue immediately")
 	assertions.equal(dialogue.get_viewport().gui_get_focus_owner(), input, "opening Agent dialogue focuses its text editor")
 	assertions.equal((dialogue.get_node("DialoguePanel/Margin/VBox/Header/NameLabel") as Label).text, "阿禾", "Agent dialogue header shows display name")
@@ -61,8 +80,10 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(history_view.text.contains("今天价格稳定。"), "streamed Agent reply appears in scrollable history")
 	close_button.pressed.emit()
 	assertions.truthy(not dialogue.visible, "Agent dialogue close button hides the panel")
+	assertions.equal(interaction_responses.size(), 3, "closing dialogue never accepts or rejects an interaction")
 	assertions.truthy(dialogue.get_viewport().gui_get_focus_owner() != input, "closing Agent dialogue releases text input focus")
 	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
+	assertions.equal(cards.get_child_count(), 1, "reopening preserves pending structured cards")
 	assertions.truthy(history_view.text.contains("今天胡萝卜价格怎么样？"), "reopening restores player history")
 	assertions.truthy(history_view.text.contains("今天价格稳定。"), "reopening restores Agent history")
 	input.text = "那土豆呢？"
@@ -72,5 +93,9 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(cancelled, [["farmer_ahe", "dialogue-request-2"]], "closing pending reply cancels exact request")
 	assertions.equal(closed[-1], ["farmer_ahe", "dialogue-request-2"], "closing pending reply unlocks exact NPC")
 	assertions.equal(dialogue.get_agent_history("farmer_ahe").size(), 4, "closing preserves current Agent history")
+	dialogue.open_agent_dialogue("farmer_ahe", "阿禾")
+	dialogue.set_agent_interactions("farmer_ahe", [{"offer_id": "offer-expired", "status": "expired", "expires_game_minute": 1}])
+	var expired_card := cards.get_child(0)
+	assertions.truthy((expired_card.find_child("AcceptButton", true, false) as Button).disabled, "expired interaction cannot be accepted")
 	dialogue.queue_free()
 	await tree.process_frame

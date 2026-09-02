@@ -54,13 +54,23 @@ text = "×"
 tooltip_text = "关闭对话"
 
 [node name="History" type="RichTextLabel" parent="DialoguePanel/Margin/VBox"]
-custom_minimum_size = Vector2(0, 220)
+custom_minimum_size = Vector2(0, 130)
 layout_mode = 2
 size_flags_vertical = 3
 fit_content = false
 scroll_active = true
 scroll_following = true
 selection_enabled = true
+
+[node name="InteractionScroll" type="ScrollContainer" parent="DialoguePanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 90)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="InteractionCards" type="VBoxContainer" parent="DialoguePanel/Margin/VBox/InteractionScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
 
 [node name="Status" type="Label" parent="DialoguePanel/Margin/VBox"]
 layout_mode = 2

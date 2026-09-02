@@ -4,6 +4,7 @@ extends Control
 signal agent_message_submitted(villager_id: String, message: String)
 signal agent_dialogue_cancelled(villager_id: String, request_id: String)
 signal agent_dialogue_closed(villager_id: String, request_id: String)
+signal interaction_response_requested(agent_id: String, interaction_id: String, response: String, counter_terms: Dictionary)
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const MAX_MESSAGE_LENGTH := 1000
@@ -13,12 +14,15 @@ const FAILURE_TEXT := "Agent 服务暂时不可用，请稍后再试。"
 @onready var panel: PanelContainer = $DialoguePanel
 @onready var name_label: Label = $DialoguePanel/Margin/VBox/Header/NameLabel
 @onready var history_view: RichTextLabel = $DialoguePanel/Margin/VBox/History
+@onready var interaction_scroll: ScrollContainer = $DialoguePanel/Margin/VBox/InteractionScroll
+@onready var interaction_cards: VBoxContainer = $DialoguePanel/Margin/VBox/InteractionScroll/InteractionCards
 @onready var status_label: Label = $DialoguePanel/Margin/VBox/Status
 @onready var message_input: TextEdit = $DialoguePanel/Margin/VBox/Composer/MessageInput
 @onready var send_button: Button = $DialoguePanel/Margin/VBox/Composer/SendButton
 @onready var close_button: Button = $DialoguePanel/Margin/VBox/Header/CloseButton
 
 var _histories: Dictionary = {}
+var _interaction_views: Dictionary = {}
 var _display_names: Dictionary = {}
 var _current_villager_id := ""
 var _agent_request_id := ""
@@ -54,6 +58,7 @@ func open_agent_dialogue(villager_id: String, display_name: String) -> bool:
 	_set_composer_enabled(true)
 	status_label.text = "输入消息后按 Enter 发送，Shift+Enter 换行。"
 	_render_history()
+	_render_interactions()
 	message_input.grab_focus()
 	return true
 
@@ -62,6 +67,23 @@ func get_agent_history(villager_id: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for entry in (_histories.get(villager_id, []) as Array):
 		result.append((entry as Dictionary).duplicate(true))
+	return result
+
+
+func set_agent_interactions(villager_id: String, interactions: Array) -> void:
+	var normalized: Array[Dictionary] = []
+	for value in interactions:
+		if value is Dictionary:
+			normalized.append((value as Dictionary).duplicate(true))
+	_interaction_views[villager_id] = normalized
+	if _is_open and _current_villager_id == villager_id:
+		_render_interactions()
+
+
+func get_agent_interactions(villager_id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for value in _interaction_views.get(villager_id, []):
+		result.append((value as Dictionary).duplicate(true))
 	return result
 
 
@@ -223,6 +245,53 @@ func _render_history() -> void:
 		lines.append("%s：%s" % [speaker, str(entry.get("text", ""))])
 	history_view.text = "\n\n".join(lines)
 	call_deferred("_scroll_history_to_end")
+
+
+func _render_interactions() -> void:
+	for child in interaction_cards.get_children():
+		interaction_cards.remove_child(child)
+		child.queue_free()
+	var records: Array = _interaction_views.get(_current_villager_id, [])
+	interaction_scroll.visible = not records.is_empty()
+	for record_value in records:
+		var record := record_value as Dictionary
+		var interaction_id := str(record.get("interaction_id", record.get("offer_id", record.get("agreement_id", ""))))
+		if interaction_id.is_empty():
+			continue
+		var card := PanelContainer.new()
+		card.name = "InteractionCard"
+		var content := VBoxContainer.new()
+		card.add_child(content)
+		var title := Label.new()
+		title.name = "TermsLabel"
+		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		title.text = _interaction_title(record) + "\n" + JSON.stringify(record)
+		content.add_child(title)
+		var actions := HBoxContainer.new()
+		actions.name = "Actions"
+		content.add_child(actions)
+		var actionable := str(record.get("status", "")) in ["open", "proposed", "negotiating"]
+		for definition in [["AcceptButton", "接受", "accept"], ["RejectButton", "拒绝", "reject"], ["CounterButton", "还价", "counter"]]:
+			var button := Button.new()
+			button.name = str(definition[0])
+			button.text = str(definition[1])
+			button.disabled = not actionable
+			button.pressed.connect(_request_interaction_response.bind(interaction_id, str(definition[2]), record.duplicate(true)))
+			actions.add_child(button)
+		interaction_cards.add_child(card)
+
+
+func _interaction_title(record: Dictionary) -> String:
+	var status := str(record.get("status", "unknown"))
+	if record.has("offer_id"):
+		return "交易报价 · %s" % status
+	return "合作协议 · %s" % status
+
+
+func _request_interaction_response(interaction_id: String, response: String, terms: Dictionary) -> void:
+	if not _is_open or _current_villager_id.is_empty():
+		return
+	interaction_response_requested.emit(_current_villager_id, interaction_id, response, terms if response == "counter" else {})
 
 
 func _scroll_history_to_end() -> void:
