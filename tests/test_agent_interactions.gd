@@ -12,6 +12,7 @@ const GameStateScript = preload("res://scripts/core/game_state.gd")
 
 
 func run(assertions: TestAssert) -> void:
+	_test_settled_pressure_rollover_and_cap(assertions)
 	var market := MarketScript.new()
 	var economy := EconomyScript.new()
 	assertions.truthy(market.configure(GameDataScript.get_market_items()), "interaction fixture market configures")
@@ -208,6 +209,46 @@ func run(assertions: TestAssert) -> void:
 	economy.free()
 	player_inventory.free()
 	player_wallet.free()
+
+
+func _test_settled_pressure_rollover_and_cap(assertions: TestAssert) -> void:
+	var market := MarketScript.new()
+	var economy := EconomyScript.new()
+	market.configure(GameDataScript.get_market_items())
+	economy.configure(market, GameDataScript.get_npc_economy_profiles(), GameDataScript.get_population_demand_profiles())
+	var inbox := InboxScript.new()
+	var projector := ProjectorScript.new()
+	projector.configure(["farmer_ahe", "lao_li", "xuezhe_lin"], [
+		{"actor_id": "farmer_ahe", "actor_type": "npc", "display_name": "阿禾", "public_role": "farmer", "region_id": "farm"},
+		{"actor_id": "lao_li", "actor_type": "npc", "display_name": "老李", "public_role": "merchant", "region_id": "farm"},
+		{"actor_id": "xuezhe_lin", "actor_type": "npc", "display_name": "学者林", "public_role": "explorer", "region_id": "hills"},
+	], inbox)
+	var interactions := InteractionScript.new()
+	interactions.configure(economy, EventStoreScript.new(), projector, Callable(), market)
+	var farmer = economy.get_npc_state("farmer_ahe")
+	var merchant = economy.get_npc_state("lao_li")
+	farmer.inventory.grain_seed = 200
+	merchant.gold = 100000
+	assertions.truthy(market.settle_day(1), "pressure rollover fixture settles the current day before private trades")
+	interactions.mark_market_pressure_consumed(1)
+	for index in range(4):
+		var high := interactions.execute(_command("propose_trade", "farmer_ahe", "pressure-high-%d" % index, {
+			"target_actor_id": "lao_li", "give": {"items": {"grain_seed": 20}, "gold": 0},
+			"receive": {"items": {}, "gold": 2000}, "expires_in_minutes": 60, "note": "high signal",
+		}), 200 + index * 2)
+		assertions.truthy(high.ok and interactions.execute(_command("accept_trade", "lao_li", "pressure-high-accept-%d" % index, {"offer_id": str(high.offer_id)}), 201 + index * 2).ok, "private price signal %d settles" % index)
+	var capped_bias := int(market.get_agent_market_pressure().items.grain_seed.price_bias_bps)
+	var late := interactions.execute(_command("propose_trade", "farmer_ahe", "pressure-after-cap", {
+		"target_actor_id": "lao_li", "give": {"items": {"grain_seed": 20}, "gold": 0},
+		"receive": {"items": {}, "gold": 1}, "expires_in_minutes": 60, "note": "must not move a capped signal",
+	}), 210)
+	assertions.truthy(late.ok and interactions.execute(_command("accept_trade", "lao_li", "pressure-after-cap-accept", {"offer_id": str(late.offer_id)}), 211).ok, "trade after the volume cap still settles assets")
+	var pressure := market.get_agent_market_pressure()
+	assertions.equal(int(pressure.day), 2, "private trades after day settlement target the next unsettled day")
+	assertions.equal(int(pressure.items.grain_seed.private_volume), 80, "private price-discovery volume stays capped per day")
+	assertions.equal(int(pressure.items.grain_seed.price_bias_bps), capped_bias, "trades beyond the volume cap cannot manipulate price bias")
+	market.free()
+	economy.free()
 
 
 func _command(tool_name: String, agent_id: String, key: String, arguments: Dictionary) -> Dictionary:

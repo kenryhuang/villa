@@ -737,7 +737,7 @@ func _bundle_delta(debits: Dictionary, credits: Dictionary) -> Dictionary:
 func _refresh_market_pressure(game_minute: int) -> bool:
 	if _market == null:
 		return true
-	var day := int(game_minute / GAME_MINUTES_PER_DAY) + 1
+	var day := _pressure_day(game_minute)
 	var per_agent: Dictionary = {}
 	for offer_value in _offers.values():
 		var offer := offer_value as Dictionary
@@ -778,7 +778,7 @@ func _add_bundle_pressure(target: Dictionary, bundle: Dictionary, field: String)
 func _record_settlement_pressure(offer: Dictionary, game_minute: int) -> void:
 	if _market == null:
 		return
-	var day := int(game_minute / GAME_MINUTES_PER_DAY) + 1
+	var day := _pressure_day(game_minute)
 	var day_pressure: Dictionary = _settled_pressure.get(day, {})
 	_record_cash_price_signal(day_pressure, offer.proposer_gives, offer.proposer_receives)
 	_record_cash_price_signal(day_pressure, offer.proposer_receives, offer.proposer_gives)
@@ -799,10 +799,16 @@ func _record_cash_price_signal(day_pressure: Dictionary, item_side: Dictionary, 
 	var old_volume := int(pressure.private_volume)
 	var added_volume := mini(MAX_PRESSURE_PER_OFFER, quantity)
 	var new_volume := mini(MAX_PRESSURE_PER_DAY, old_volume + added_volume)
-	if new_volume > 0:
-		pressure.price_bias_bps = clampi(roundi((float(int(pressure.price_bias_bps) * old_volume) + float(bias * added_volume)) / float(old_volume + added_volume)), -MAX_PRICE_BIAS_BPS, MAX_PRICE_BIAS_BPS)
+	var accepted_volume := new_volume - old_volume
+	if accepted_volume > 0:
+		pressure.price_bias_bps = clampi(roundi((float(int(pressure.price_bias_bps) * old_volume) + float(bias * accepted_volume)) / float(new_volume)), -MAX_PRICE_BIAS_BPS, MAX_PRICE_BIAS_BPS)
 	pressure.private_volume = new_volume
 	day_pressure[item_id] = pressure
+
+
+func _pressure_day(game_minute: int) -> int:
+	var calendar_day := int(game_minute / GAME_MINUTES_PER_DAY) + 1
+	return maxi(calendar_day, int(_market.last_settled_day) + 1) if _market != null else calendar_day
 
 
 func _empty_pressure() -> Dictionary:
