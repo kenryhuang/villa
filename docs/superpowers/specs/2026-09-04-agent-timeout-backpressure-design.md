@@ -6,7 +6,9 @@ The latest persisted session contains 32 autonomous decisions: 10 completed and 
 
 ## Provider timeout
 
-The configured per-round Provider timeout becomes 60 seconds in the tracked example, the parser default, and the local development configuration. The per-round timer behavior remains unchanged: every `/chat/completions` round gets its own budget and reports `provider_timeout` if that round exceeds it.
+The configured per-round Provider timeout becomes 180 seconds in the tracked example, the parser default, and the local development configuration. The per-round timer behavior remains unchanged: every `/chat/completions` round gets its own budget and reports `provider_timeout` if that round exceeds it.
+
+The Agent Service owns one fair FIFO concurrency gate shared by decision rounds and memory-compaction calls. `provider.max_concurrency` is configurable and defaults to `2`. A remote call first waits for a gate permit and only then starts its per-round timeout, so queue delay cannot consume the Provider execution budget. Caller cancellation removes a queued call without consuming a permit. A permit is always released after success, Provider error, timeout, or caller cancellation.
 
 ## Request projection
 
@@ -21,13 +23,16 @@ The summary contains schema version, omitted count, first and last omitted globa
 
 The inbox still freezes the complete batch. A successful decision acknowledges the complete frozen batch and advances the cursor through every represented event. A failed decision releases the complete batch unchanged. Thus projection size is bounded without truncating the immutable event store or losing delivery semantics.
 
+Before compacting the model-facing delta, `AgentContextProjection` removes any `own_event_delta` event whose non-empty `event_id` already appears in the same request's `global_public_events`. Private, regional, older public, and identifier-less events remain in the private delta. This merge changes only the model projection: acknowledgement and failure release continue to operate on the complete frozen inbox batch.
+
 ## Scheduler backpressure
 
 When any request reaches a terminal success or failure callback, the scheduler updates that Agent's automatic scheduling baseline to the scheduler's current game minute. The next time-based decision therefore waits a complete configured interval instead of immediately issuing `catch_up` for game time elapsed while the Provider was running.
+
+Every role's authored default scheduling range doubles: farmer `[2, 2]`, merchant `[2, 4]`, and explorer `[4, 8]` game hours. Explicit debug-panel overrides keep their literal values and are not multiplied again.
 
 Explicit pending dialogue and priority event work remains eligible for immediate dispatch after the current request finishes. This change suppresses only automatic catch-up storms.
 
 ## Verification
 
-Regression tests prove the 60-second default, absence of the nested market projection, deterministic 16-record event projection with full-batch acknowledgement/release, and a full post-response scheduling interval after both success and failure. Existing Provider, Agent protocol, Godot Agent, and connected service tests must remain green.
-
+Regression tests prove the 180-second default, configurable two-call FIFO Provider gate whose queue wait is outside the timeout, doubled role defaults, absence of the nested market projection, event-ID de-duplication between public history and the private delta, deterministic 16-record event projection with full-batch acknowledgement/release, and a full post-response scheduling interval after both success and failure. Existing Provider, Agent protocol, Godot Agent, and connected service tests must remain green.
