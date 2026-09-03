@@ -12,6 +12,7 @@ func run(assertions: TestAssert) -> void:
 	_test_public_facts_reach_independent_inboxes(assertions)
 	_test_actor_activity_respects_visibility(assertions)
 	_test_projection_windows_do_not_truncate_store(assertions)
+	_test_own_event_delta_is_bounded_without_losing_delivery(assertions)
 	_test_checkpoint_and_cursor_restore(assertions)
 
 
@@ -78,6 +79,45 @@ func _test_projection_windows_do_not_truncate_store(assertions: TestAssert) -> v
 	assertions.equal(fixture.projector.actor_public_events("lao_li", "farmer_ahe", 100).size(), 32, "actor projection retains thirty-two events")
 	assertions.equal(_actor(fixture.projector.known_actors("farmer_ahe"), "lao_li").recent_public_events.size(), 12, "known actor exposes at most twelve events")
 	assertions.equal(fixture.store.get_events_after(0).size(), 70, "projection windows never truncate immutable event store")
+
+
+func _test_own_event_delta_is_bounded_without_losing_delivery(assertions: TestAssert) -> void:
+	var fixture := _fixture()
+	var events: Array[Dictionary] = []
+	for index in range(40):
+		var is_market := index % 2 == 0
+		events.append(_event(
+			"MarketPriceChanged" if is_market else "PublicStatusChanged",
+			"market" if is_market else "actor",
+			"entity-%02d" % index,
+			"system",
+			{"item_id": "item-%02d" % index, "price": index + 1},
+		))
+	var committed := _append(fixture.store, events, "bounded-delta")
+	assertions.truthy(fixture.projector.apply_batch(committed), "large delivery batch projects")
+	var projected: Dictionary = fixture.context.build("farmer_ahe", "bounded-request")
+	assertions.truthy(not projected.public_world_state.has("market_summary"), "model world state omits duplicated market projection")
+	assertions.equal(projected.own_event_delta.size(), 16, "model event delta is bounded to one summary and fifteen details")
+	var summary := projected.own_event_delta[0] as Dictionary
+	assertions.equal(summary.event_type, "EventDeltaSummary", "omitted event prefix becomes a typed summary")
+	assertions.equal(summary.payload.omitted_count, 25, "summary records the omitted event count")
+	assertions.equal(summary.payload.first_global_sequence, 1, "summary records the first omitted sequence")
+	assertions.equal(summary.payload.last_global_sequence, 25, "summary records the last omitted sequence")
+	assertions.equal(summary.payload.event_type_counts, [
+		{"event_type": "MarketPriceChanged", "count": 13},
+		{"event_type": "PublicStatusChanged", "count": 12},
+	], "summary event-type counts are deterministic")
+	assertions.equal(summary.payload.aggregate_type_counts, [
+		{"aggregate_type": "actor", "count": 12},
+		{"aggregate_type": "market", "count": 13},
+	], "summary aggregate-type counts are deterministic")
+	assertions.equal(int((projected.own_event_delta[1] as Dictionary).global_sequence), 26, "bounded delta retains the first recent detail")
+	assertions.equal(int((projected.own_event_delta[-1] as Dictionary).global_sequence), 40, "bounded delta retains the newest detail")
+	assertions.truthy(fixture.context.acknowledge("farmer_ahe", "bounded-request"), "bounded projection acknowledges the complete frozen batch")
+	assertions.equal(fixture.context.build("farmer_ahe", "bounded-after-ack").own_event_delta, [], "complete frozen batch is consumed after acknowledgement")
+	var released: Dictionary = fixture.context.build("lao_li", "bounded-release")
+	assertions.truthy(fixture.context.release("lao_li", "bounded-release"), "bounded projection releases the complete frozen batch")
+	assertions.equal(fixture.context.build("lao_li", "bounded-retry").own_event_delta, released.own_event_delta, "released batch produces the same deterministic bounded projection")
 
 
 func _test_checkpoint_and_cursor_restore(assertions: TestAssert) -> void:

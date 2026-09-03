@@ -144,6 +144,7 @@ func _on_gateway_response(
 	if str(_in_flight.get(agent_id, "")) != request_id:
 		return
 	_in_flight.erase(agent_id)
+	_last_dispatched[agent_id] = _current_minute
 	if ok:
 		_handle_response.call(agent_id, response)
 	elif _handle_failure.is_valid():

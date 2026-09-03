@@ -39,6 +39,7 @@ export interface AgentContext {
   global_public_events: readonly Record<string, unknown>[];
   known_actors: readonly Record<string, unknown>[];
   own_event_delta: readonly Record<string, unknown>[];
+  market_summary: Record<string, unknown>;
   market_view: Record<string, unknown>;
   interaction_view: Record<string, unknown>;
   agreement_view: Record<string, unknown>;
@@ -110,6 +111,7 @@ export class AgentRegistry {
       global_public_events: structuredClone(request.global_public_events),
       known_actors: structuredClone(request.known_actors),
       own_event_delta: structuredClone(request.own_event_delta),
+      market_summary: structuredClone(request.market_summary),
       market_view: structuredClone(request.market_view),
       interaction_view: structuredClone(request.interaction_view),
       agreement_view: structuredClone(request.agreement_view),

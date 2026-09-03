@@ -26,6 +26,7 @@ const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_f
 const AgentRoleSystemScript = preload("res://scripts/ai_agent/agent_role_system.gd")
 const AgentInteractionSystemScript = preload("res://scripts/ai_agent/agent_interaction_system.gd")
 const AgentAgreementSystemScript = preload("res://scripts/ai_agent/agent_agreement_system.gd")
+const AgentMarketSummaryScript = preload("res://scripts/ai_agent/agent_market_summary.gd")
 
 const VERSION := 5
 const EVENT_SCHEMA_VERSION := 1
@@ -45,6 +46,7 @@ var world_fact_bridge = AgentWorldFactBridgeScript.new()
 var role_system = AgentRoleSystemScript.new()
 var interaction_system = AgentInteractionSystemScript.new()
 var agreement_system = AgentAgreementSystemScript.new()
+var market_summary = AgentMarketSummaryScript.new()
 var validator = AgentValidatorScript.new()
 var executor = AgentExecutorScript.new()
 var scheduler = AgentSchedulerScript.new()
@@ -883,9 +885,11 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	public_world.season = int(_season.current_season)
 	projected.public_world_state = public_world
 	var market_snapshot: Dictionary = {}
+	var market_catalog: Dictionary = {}
 	var agent_pressure: Dictionary = (_market.call("get_agent_market_pressure") as Dictionary).get("items", {}) if _market.has_method("get_agent_market_pressure") else {}
 	for definition in GameDataScript.get_market_items():
 		var item_id := str(definition.id)
+		market_catalog[item_id] = definition.duplicate(true)
 		market_snapshot[item_id] = _market.call("get_item_state", item_id)
 		if agent_pressure.has(item_id):
 			(market_snapshot[item_id] as Dictionary)["agent_pressure"] = (agent_pressure[item_id] as Dictionary).duplicate(true)
@@ -918,11 +922,18 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.goals = (capabilities.get("goals", []) as Array).duplicate()
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
+	projected.market_summary = market_summary.build(
+		str(capabilities.get("role_id", "")),
+		game_minute,
+		state.to_dict(),
+		farm_snapshot if farm_snapshot is Array else [],
+		market_snapshot,
+		market_catalog
+	)
 	projected.interaction_view = {"active_offers": interaction_system.list_offers(agent_id)}
 	projected.agreement_view = {"active_agreements": agreement_system.list_agreements(agent_id)}
-	var snapshot := {"game_time": {"day": int(_season.total_days), "hour": int(_season.hour), "minute": int(_season.minute), "season": int(_season.current_season)}, "self": state.to_dict(), "farm": farm_snapshot, "buildings": building_registry.to_dict().buildings, "private_knowledge": knowledge_registry.get_private(agent_id), "public_knowledge": knowledge_registry.to_dict().public, "market": market_snapshot, "public_world_state": projected.public_world_state, "global_public_events": projected.global_public_events, "known_actors": projected.known_actors, "own_event_delta": projected.own_event_delta, "market_view": projected.market_view}
 	projected.projection_schema_version = 1
-	var request := AgentProtocolScript.make_decision_request(request_id, session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, snapshot, projected.own_event_delta, dialogue, projected)
+	var request := AgentProtocolScript.make_decision_request(request_id, session_id, gateway.session_epoch, agent_id, trigger, game_minute, executor.world_revision, dialogue, projected)
 	_request_triggers[str(request.request_id)] = trigger
 	return request
 

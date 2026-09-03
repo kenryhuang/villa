@@ -62,8 +62,6 @@ static func make_decision_request(
 	trigger: String,
 	game_minute: int,
 	world_revision: int,
-	snapshot: Dictionary,
-	event_delta: Array,
 	dialogue_input: String = "",
 	projection: Dictionary = {}
 ) -> Dictionary:
@@ -76,8 +74,6 @@ static func make_decision_request(
 		"trigger": trigger,
 		"game_minute": game_minute,
 		"world_revision": world_revision,
-		"snapshot": snapshot.duplicate(true),
-		"event_delta": event_delta.duplicate(true),
 	}
 	for field in [
 		"projection_schema_version",
@@ -90,6 +86,7 @@ static func make_decision_request(
 		"global_public_events",
 		"known_actors",
 		"own_event_delta",
+		"market_summary",
 		"market_view",
 		"interaction_view",
 		"agreement_view",

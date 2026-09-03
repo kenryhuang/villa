@@ -13,7 +13,7 @@ Copy-Item ../../config/agent-client.example.json ../../config/agent-client.local
 
 Edit `config/agent-service.local.json` and set the Provider `base_url`, `api_key`, and `model`. The default service address is `http://127.0.0.1:8787`. The database and checkpoint paths are resolved relative to `services/agent-service`.
 
-Edit `../../config/agent-client.local.json` if Godot should use a different service address, token, or timeout. Set `enabled` to `false` to keep remote Agent decisions disabled explicitly. `store_agent_session` defaults to `false`; when enabled, Godot appends credential-free stream events to `user://agent_sessions` and retains the newest 20 session files.
+Edit `../../config/agent-client.local.json` if Godot should use a different service address, token, or timeout. Set `enabled` to `false` to keep remote Agent decisions disabled explicitly. `store_agent_session` defaults to `false`; when enabled, Godot appends one credential-free aggregate input/response record per completed or failed request to `user://agent_sessions` and retains the newest 20 session files.
 
 Start the service:
 
@@ -50,7 +50,7 @@ The streaming route emits project-owned `provider.input`, `reasoning.delta`, `co
 To inspect raw SSE manually from Windows PowerShell while the service is running:
 
 ```powershell
-curl.exe -N -H "Accept: text/event-stream" -H "Content-Type: application/json" --data-binary "@../../shared/agent_protocol/v1/decision-request.json" http://127.0.0.1:8787/v1/agents/farmer_ahe/decide/stream
+curl.exe -N -H "Accept: text/event-stream" -H "Content-Type: application/json" --data-binary "@../../shared/agent_protocol/v2/decision-request.json" http://127.0.0.1:8787/v1/agents/farmer_ahe/decide/stream
 ```
 
 On a successful game save, Godot asynchronously exports the current session memory and writes a `save_N.agent-memory.json` manifest beside the world save. Loading never waits for the service: a missing, corrupt, or unavailable checkpoint produces a HUD warning and continues with empty Agent memory. Deleting a save also deletes its manifest.

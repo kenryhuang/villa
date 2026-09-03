@@ -284,7 +284,7 @@ export function toolDescription(name: string): Record<string, unknown> {
     type: "function",
     function: {
       name,
-      description: `Role-authorized ${name} command. Return only arguments grounded in the supplied snapshot.`,
+      description: `Role-authorized ${name} command. Return only arguments grounded in the supplied context.`,
       parameters: structuredClone(parameters),
     },
   };

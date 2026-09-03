@@ -41,6 +41,14 @@ test("loads strict service Provider and memory settings from JSON", () => {
   });
 });
 
+test("defaults each Provider round to sixty seconds", () => {
+  const value = validConfig();
+  delete (value.provider as Record<string, unknown>).timeout_ms;
+  withTempConfig(value, (path, root) => {
+    assert.equal(loadConfigFile(path, root).provider.timeoutMs, 60_000);
+  });
+});
+
 test("selects the default or explicit config path without environment variables", () => {
   const root = resolve("service-root");
   assert.equal(

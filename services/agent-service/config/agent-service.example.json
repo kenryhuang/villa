@@ -7,7 +7,7 @@
     "base_url": "https://provider.example/v1",
     "api_key": "replace-with-your-key",
     "model": "replace-with-your-model",
-    "timeout_ms": 30000,
+    "timeout_ms": 60000,
     "max_output_tokens": 1200,
     "temperature": 0.4
   },

@@ -24,11 +24,10 @@ export interface DecisionRequest {
   global_public_events: readonly Record<string, unknown>[];
   known_actors: readonly Record<string, unknown>[];
   own_event_delta: readonly Record<string, unknown>[];
+  market_summary: Record<string, unknown>;
   market_view: Record<string, unknown>;
   interaction_view: Record<string, unknown>;
   agreement_view: Record<string, unknown>;
-  snapshot: Record<string, unknown>;
-  event_delta: readonly Record<string, unknown>[];
   dialogue_input?: string;
 }
 
@@ -69,6 +68,11 @@ export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string
 
 const TRIGGERS = new Set<Trigger>(["schedule", "event", "dialogue", "catch_up"]);
 const OUTCOME_STATUSES = new Set<OutcomeStatus>(["accepted", "in_progress", "completed", "rejected", "failed"]);
+const MARKET_SIGNAL_LIMITS: Readonly<Record<string, number>> = {
+  farmer: 12,
+  merchant: 20,
+  explorer: 10,
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,12 +95,38 @@ function isRecordList(value: unknown, maximum = 256): value is Record<string, un
   return Array.isArray(value) && value.length <= maximum && value.every(isRecord);
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function isMarketSummary(value: unknown, activeRole: string, gameMinute: number): value is Record<string, unknown> {
+  if (!isRecord(value) || !hasExactKeys(value, ["schema_version", "role_id", "generated_game_minute", "overview", "signals"])) return false;
+  if (value.schema_version !== 1 || value.role_id !== activeRole || value.generated_game_minute !== gameMinute) return false;
+  if (!isRecord(value.overview) || !hasExactKeys(value.overview, ["item_count", "shortage_count", "surplus_count", "rising_count", "falling_count"])) return false;
+  if (Object.values(value.overview).some((entry) => !isNonNegativeInteger(entry))) return false;
+  const signals = value.signals;
+  const signalLimit = MARKET_SIGNAL_LIMITS[activeRole] ?? 20;
+  if (!Array.isArray(signals) || signals.length > signalLimit) return false;
+  const itemIds = new Set<string>();
+  for (const signal of signals) {
+    if (!isRecord(signal) || !hasExactKeys(signal, ["item_id", "mid_price", "base_price", "stock_ratio_bps", "price_change_bps", "reason_codes"])) return false;
+    if (!isId(signal.item_id) || itemIds.has(signal.item_id)) return false;
+    itemIds.add(signal.item_id);
+    if (!isNonNegativeInteger(signal.mid_price) || !isNonNegativeInteger(signal.base_price) || !isNonNegativeInteger(signal.stock_ratio_bps)) return false;
+    if (typeof signal.price_change_bps !== "number" || !Number.isSafeInteger(signal.price_change_bps)) return false;
+    if (!isUniqueIdList(signal.reason_codes, 16) || signal.reason_codes.length === 0) return false;
+  }
+  return true;
+}
+
 function failure<T>(error: string): ParseResult<T> {
   return { ok: false, error };
 }
 
 export function parseDecisionRequest(value: unknown): ParseResult<DecisionRequest> {
   if (!isRecord(value) || value.protocol_version !== PROTOCOL_VERSION) return failure("invalid_protocol_version");
+  if (Object.hasOwn(value, "snapshot") || Object.hasOwn(value, "event_delta")) return failure("legacy_request_fields");
   for (const field of ["request_id", "session_id", "agent_id"] as const) {
     if (!isId(value[field])) return failure(`invalid_${field}`);
   }
@@ -114,11 +144,10 @@ export function parseDecisionRequest(value: unknown): ParseResult<DecisionReques
   if (!isRecordList(value.global_public_events)) return failure("invalid_global_public_events");
   if (!isRecordList(value.known_actors)) return failure("invalid_known_actors");
   if (!isRecordList(value.own_event_delta)) return failure("invalid_own_event_delta");
+  if (!isMarketSummary(value.market_summary, String(value.active_role), Number(value.game_minute))) return failure("invalid_market_summary");
   if (!isRecord(value.market_view)) return failure("invalid_market_view");
   if (!isRecord(value.interaction_view)) return failure("invalid_interaction_view");
   if (!isRecord(value.agreement_view)) return failure("invalid_agreement_view");
-  if (!isRecord(value.snapshot)) return failure("invalid_snapshot");
-  if (!Array.isArray(value.event_delta) || value.event_delta.some((event) => !isRecord(event))) return failure("invalid_event_delta");
   if (value.dialogue_input !== undefined && (typeof value.dialogue_input !== "string" || value.dialogue_input.length > 1000)) {
     return failure("invalid_dialogue_input");
   }

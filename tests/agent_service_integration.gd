@@ -48,13 +48,53 @@ func _run() -> void:
 		"schedule",
 		480,
 		7,
+		"",
 		{
-			"game_time": {"day": 1, "hour": 14, "minute": 0, "season": 0},
-			"self": {"gold": 500, "inventory": {"carrot_seed": 6}},
-			"farm": [{"plot_index": 0, "tilled": false, "crop": {}}],
-			"market": {},
+			"projection_schema_version": 1,
+			"actor_context": {
+				"self": {"agent_id": "farmer_ahe", "gold": 500, "inventory": {"carrot_seed": 6}},
+				"farm": [{"plot_index": 0, "tilled": false, "crop": {}}],
+				"buildings": {},
+				"private_knowledge": [],
+				"known_discoveries": [],
+				"relationships": {},
+			},
+			"active_role": "farmer",
+			"goals": ["maintain_basic_reserve", "keep_crops_healthy"],
+			"allowed_read_tools": [
+				"inspect_self_resources", "inspect_farm_plots", "inspect_crop_options",
+			],
+			"allowed_command_tools": [
+				"till", "plant", "harvest", "build", "buy", "sell", "speak", "wait",
+			],
+			"public_world_state": {
+				"game_day": 1,
+				"absolute_game_minute": 480,
+				"time_of_day": {"hour": 14, "minute": 0},
+				"season": 0,
+			},
+			"global_public_events": [],
+			"known_actors": [{
+				"actor_id": "farmer_ahe",
+				"actor_type": "npc_agent",
+				"display_name": "阿禾",
+				"public_role": "farmer",
+				"region_id": "farm",
+				"current_public_state": {"status": "idle"},
+				"recent_public_events": [],
+			}],
+			"own_event_delta": [],
+			"market_summary": {
+				"schema_version": 1,
+				"role_id": "farmer",
+				"generated_game_minute": 480,
+				"overview": {"item_count": 0, "shortage_count": 0, "surplus_count": 0, "rising_count": 0, "falling_count": 0},
+				"signals": [],
+			},
+			"market_view": {},
+			"interaction_view": {"active_offers": []},
+			"agreement_view": {"active_agreements": []},
 		},
-		[],
 	)
 	var streamed := await _request_decision_stream("farmer_ahe", decision_request)
 	if not streamed.ok:
@@ -65,7 +105,8 @@ func _run() -> void:
 		event_names.size() < 5
 		or event_names[0] != "stream.started"
 		or event_names[1] != "provider.input"
-		or event_names.count("provider.output") != 1
+		or event_names.count("provider.input") < 1
+		or event_names.count("provider.output") != event_names.count("provider.input")
 		or event_names.count("decision.final") != 1
 		or event_names[-1] != "stream.completed"
 	):

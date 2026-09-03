@@ -56,6 +56,36 @@ test("serves health decision outcome and checkpoint routes", async () => {
   memory.close(); rmSync(directory, {recursive: true, force: true});
 });
 
+test("accepts a Runtime-sized decision projection", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "villa-agent-runtime-body-"));
+  const memory = new MemoryRepository(join(directory, "memory.sqlite"));
+  let providerCalls = 0;
+  const provider = {decide: async (request: DecisionRequest): Promise<ActionIntent> => {
+    providerCalls += 1;
+    return {
+      protocol_version: 2, decision_id: "runtime-body", request_id: request.request_id,
+      agent_id: request.agent_id, expected_revision: request.world_revision,
+      actions: [], decision_summary: "Accepted the projected Runtime context",
+    };
+  }};
+  const server = createServer(createApp({memory, registry: AgentRegistry.loadDefault(), provider, checkpointRoot: directory}));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const fixture = JSON.parse(readFileSync(join(process.cwd(), "../../shared/agent_protocol/v2/decision-request.json"), "utf8")) as DecisionRequest;
+  const request: DecisionRequest = {
+    ...fixture,
+    request_id: "runtime-sized-request",
+    actor_context: {...fixture.actor_context, runtime_projection: "x".repeat(260_000)},
+  };
+  const response = await fetch(`http://127.0.0.1:${address.port}/v1/agents/farmer_ahe/decide`, {
+    method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(request),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(providerCalls, 1);
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  memory.close(); rmSync(directory, {recursive: true, force: true});
+});
+
 test("scopes idempotency by session and rejects checkpoints outside its root", async () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-session-"));
   const outside = mkdtempSync(join(tmpdir(), "villa-agent-outside-"));

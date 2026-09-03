@@ -16,9 +16,8 @@ const request: DecisionRequest = {
   actor_context: {}, active_role: "farmer", goals: [],
   allowed_read_tools: [], allowed_command_tools: ["till", "plant", "harvest", "wait", "speak"],
   public_world_state: {}, global_public_events: [], known_actors: [], own_event_delta: [],
+  market_summary: {schema_version: 1, role_id: "farmer", generated_game_minute: 480, overview: {item_count: 0, shortage_count: 0, surplus_count: 0, rising_count: 0, falling_count: 0}, signals: []},
   market_view: {}, interaction_view: {}, agreement_view: {},
-  snapshot: {},
-  event_delta: [],
   dialogue_input: "整理第一块地",
 };
 

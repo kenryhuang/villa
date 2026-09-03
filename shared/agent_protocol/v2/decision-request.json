@@ -17,9 +17,8 @@
   "global_public_events": [],
   "known_actors": [],
   "own_event_delta": [],
+  "market_summary": {"schema_version": 1, "role_id": "farmer", "generated_game_minute": 480, "overview": {"item_count": 0, "shortage_count": 0, "surplus_count": 0, "rising_count": 0, "falling_count": 0}, "signals": []},
   "market_view": {},
   "interaction_view": {"active_offers": []},
-  "agreement_view": {"active_agreements": []},
-  "snapshot": {"season": 0, "inventory": {"carrot_seed": 6}},
-  "event_delta": []
+  "agreement_view": {"active_agreements": []}
 }

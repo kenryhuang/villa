@@ -45,10 +45,17 @@ class FakeGateway:
 		event_callbacks.erase(agent_id)
 		callback.call(true, response, "")
 
+	func fail(agent_id: String, error: String) -> void:
+		var callback: Callable = callbacks.get(agent_id, Callable())
+		callbacks.erase(agent_id)
+		event_callbacks.erase(agent_id)
+		callback.call(false, {}, error)
+
 
 func run(assertions: TestAssert, _tree: SceneTree) -> void:
 	_test_perception_coalescing(assertions)
 	_test_role_schedule_and_backpressure(assertions)
+	_test_terminal_response_resets_schedule_baseline(assertions)
 	_test_interval_overrides(assertions)
 	_test_gateway_configuration(assertions)
 	_test_stream_client_configuration(assertions)
@@ -132,6 +139,40 @@ func _test_interval_overrides(assertions: TestAssert) -> void:
 	assertions.truthy(scheduler.set_decision_interval_hours("farmer_ahe", 3), "positive Agent interval override applies")
 	assertions.equal(scheduler.advance_to(179), 0, "three-hour override is not due before 180 minutes")
 	assertions.equal(scheduler.advance_to(180), 1, "three-hour override dispatches at 180 minutes")
+
+
+func _test_terminal_response_resets_schedule_baseline(assertions: TestAssert) -> void:
+	var registry := AgentRegistryScript.new()
+	registry.load_defaults()
+	var gateway := FakeGateway.new()
+	var scheduler := AgentSchedulerScript.new()
+	assertions.truthy(scheduler.configure(
+		registry,
+		gateway,
+		func(agent_id: String, trigger: String, game_minute: int, dialogue: String): return {"request_id": "%s-%s-%d-%d" % [agent_id, trigger, game_minute, gateway.requests.size()], "agent_id": agent_id, "trigger": trigger, "game_minute": game_minute, "dialogue_input": dialogue},
+		func(_agent_id: String, _response: Dictionary): pass,
+		Callable(),
+		func(_agent_id: String, _request_id: String, _error: String): pass,
+	), "terminal baseline scheduler configures")
+	assertions.truthy(scheduler.set_decision_interval_hours("farmer_ahe", 1), "farmer interval configures for terminal baseline test")
+	assertions.truthy(scheduler.set_decision_interval_hours("lao_li", 0), "merchant schedule disables for terminal baseline test")
+	assertions.truthy(scheduler.set_decision_interval_hours("xuezhe_lin", 0), "explorer schedule disables for terminal baseline test")
+	scheduler.advance_to(60)
+	scheduler.advance_to(300)
+	assertions.equal(gateway.requests.size(), 1, "in-flight request suppresses automatic duplicates")
+	gateway.succeed("farmer_ahe", {})
+	assertions.equal(scheduler.advance_to(359), 0, "successful request waits a full interval from completion time")
+	assertions.equal(scheduler.advance_to(360), 1, "successful request becomes due after the completion interval")
+	scheduler.advance_to(500)
+	gateway.fail("farmer_ahe", "provider_timeout")
+	assertions.equal(scheduler.advance_to(559), 0, "failed request waits a full interval from failure time")
+	assertions.equal(scheduler.advance_to(560), 1, "failed request becomes due after the failure interval")
+	assertions.truthy(scheduler.notify_event("farmer_ahe", 2, 561), "priority event queues behind an in-flight decision")
+	scheduler.advance_to(700)
+	var before_terminal := gateway.requests.size()
+	gateway.succeed("farmer_ahe", {})
+	assertions.equal(gateway.requests.size(), before_terminal + 1, "explicit pending event dispatches immediately after terminal response")
+	assertions.equal((gateway.requests[-1] as Dictionary).request.trigger, "event", "immediate pending dispatch preserves explicit event trigger")
 
 
 func _test_gateway_configuration(assertions: TestAssert) -> void:

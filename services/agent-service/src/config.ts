@@ -100,7 +100,7 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
       baseUrl,
       apiKey: requiredString(provider, "api_key", "provider.api_key"),
       model: requiredString(provider, "model", "provider.model"),
-      timeoutMs: integer(provider, "timeout_ms", "provider.timeout_ms", 10_000, 100, 120_000),
+      timeoutMs: integer(provider, "timeout_ms", "provider.timeout_ms", 60_000, 100, 120_000),
       maxOutputTokens: integer(provider, "max_output_tokens", "provider.max_output_tokens", 1200, 64, 16_384),
       temperature: decimal(provider, "temperature", "provider.temperature", 0.4, 0, 2),
     },

@@ -18,6 +18,8 @@ interface ProviderPort {
 }
 interface AppDependencies { memory: MemoryRepository; registry: AgentRegistry; provider: ProviderPort; checkpointRoot: string; }
 
+const MAX_REQUEST_BODY_BYTES = 1_048_576;
+
 function decisionCacheKey(request: DecisionRequest): string {
   const fingerprint = createHash("sha256").update(JSON.stringify(request)).digest("hex");
   return `decision:${request.session_id}:${request.request_id}:${fingerprint}`;
@@ -97,7 +99,7 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 65_536) throw new Error("payload_too_large");
+    if (size > MAX_REQUEST_BODY_BYTES) throw new Error("payload_too_large");
     chunks.push(buffer);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }

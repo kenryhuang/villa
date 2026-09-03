@@ -13,7 +13,10 @@ const fixture = (name: string): Record<string, unknown> => JSON.parse(
 );
 
 test("accepts the shared protocol fixtures", () => {
-  assert.equal(parseDecisionRequest(fixture("decision-request.json")).ok, true);
+  const request = fixture("decision-request.json");
+  assert.equal(parseDecisionRequest(request).ok, true);
+  assert.equal(Object.hasOwn(request, "snapshot"), false);
+  assert.equal(Object.hasOwn(request, "event_delta"), false);
   assert.equal(parseActionIntent(fixture("action-intent.json"), ["plant", "wait"]).ok, true);
   assert.equal(parseActionOutcome(fixture("action-outcome.json")).ok, true);
 });
@@ -47,7 +50,7 @@ test("requires the complete immutable projection and rejects malformed capabilit
   for (const field of [
     "projection_schema_version", "actor_context", "active_role", "goals",
     "allowed_read_tools", "allowed_command_tools", "public_world_state",
-    "global_public_events", "known_actors", "own_event_delta", "market_view",
+    "global_public_events", "known_actors", "own_event_delta", "market_summary", "market_view",
     "interaction_view", "agreement_view",
   ]) {
     const missing = {...request};
@@ -59,4 +62,38 @@ test("requires the complete immutable projection and rejects malformed capabilit
   assert.equal(parseDecisionRequest({...request, allowed_read_tools: ["inspect_self_resources", "inspect_self_resources"]}).ok, false);
   assert.equal(parseDecisionRequest({...request, allowed_command_tools: ["plant", ""]}).ok, false);
   assert.equal(parseDecisionRequest({...request, known_actors: [{actor_id: "a"}, "private-leak"]}).ok, false);
+  assert.deepEqual(parseDecisionRequest({...request, snapshot: {}}), {ok: false, error: "legacy_request_fields"});
+  assert.deepEqual(parseDecisionRequest({...request, event_delta: []}), {ok: false, error: "legacy_request_fields"});
+  assert.equal(parseDecisionRequest({...request, market_summary: []}).ok, false);
+  assert.equal(parseDecisionRequest({...request, market_summary: {}}).ok, false);
+  assert.equal(parseDecisionRequest({...request, market_summary: {...request.market_summary as object, role_id: "merchant"}}).ok, false);
+  assert.equal(parseDecisionRequest({...request, market_summary: {...request.market_summary as object, signals: Array(21).fill({})}}).ok, false);
+});
+
+test("enforces the compact market signal limit for each role", () => {
+  const request = fixture("decision-request.json");
+  const signal = (index: number) => ({
+    item_id: `item-${index}`,
+    mid_price: 100,
+    base_price: 100,
+    stock_ratio_bps: 10_000,
+    price_change_bps: 0,
+    reason_codes: ["market_scope"],
+  });
+  const withSignals = (role: string, count: number) => ({
+    ...request,
+    active_role: role,
+    market_summary: {
+      ...request.market_summary as object,
+      role_id: role,
+      signals: Array.from({length: count}, (_, index) => signal(index)),
+    },
+  });
+
+  assert.equal(parseDecisionRequest(withSignals("farmer", 12)).ok, true);
+  assert.equal(parseDecisionRequest(withSignals("farmer", 13)).ok, false);
+  assert.equal(parseDecisionRequest(withSignals("merchant", 20)).ok, true);
+  assert.equal(parseDecisionRequest(withSignals("merchant", 21)).ok, false);
+  assert.equal(parseDecisionRequest(withSignals("explorer", 10)).ok, true);
+  assert.equal(parseDecisionRequest(withSignals("explorer", 11)).ok, false);
 });
