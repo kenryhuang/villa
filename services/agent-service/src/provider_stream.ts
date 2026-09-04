@@ -41,6 +41,16 @@ type JsonRecord = Record<string, unknown>;
 const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+function providerContentText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) throw new Error("provider_stream_invalid_content");
+  return value.map((part) => {
+    if (typeof part === "string") return part;
+    if (isRecord(part) && typeof part.text === "string") return part.text;
+    throw new Error("provider_stream_invalid_content");
+  }).join("");
+}
+
 function parseSseRecord(record: string): Record<string, unknown> | undefined | "done" {
   const data: string[] = [];
   for (const line of record.split(/\r?\n/)) {
@@ -128,10 +138,10 @@ export class AgentStreamAssembler {
       }
     }
     if (delta.content !== undefined && delta.content !== null) {
-      if (typeof delta.content !== "string") throw new Error("provider_stream_invalid_content");
-      if (delta.content) {
-        this.#content += delta.content;
-        emitted.push({type: "content", delta: delta.content});
+      const content = providerContentText(delta.content);
+      if (content) {
+        this.#content += content;
+        emitted.push({type: "content", delta: content});
       }
     }
     if (delta.tool_calls !== undefined && delta.tool_calls !== null) {
@@ -234,7 +244,7 @@ export class AgentStreamAssembler {
       agent_id: request.agent_id,
       expected_revision: request.world_revision,
       actions,
-      ...(this.#content ? {speech: this.#content} : {}),
+      ...(this.#content ? {speech: this.#content.slice(0, 500)} : {}),
       decision_summary: actions.length === 0
         ? "Selected no action from current context"
         : `Selected ${actions.map((action) => action.tool_name).join(", ")} from current context`,

@@ -91,7 +91,9 @@ func _test_role_schedule_and_backpressure(assertions: TestAssert) -> void:
 		func(agent_id: String, request_id: String, error: String): failures.append({"agent_id": agent_id, "request_id": request_id, "error": error})
 	), "scheduler configures")
 	scheduler.advance_to(60)
-	assertions.equal(gateway.requests.map(func(value): return value.agent_id), ["farmer_ahe", "lao_li"], "farmer and merchant are due by one hour")
+	assertions.equal(gateway.requests.size(), 0, "doubled role defaults are not due after one hour")
+	scheduler.advance_to(120)
+	assertions.equal(gateway.requests.map(func(value): return value.agent_id), ["farmer_ahe", "lao_li"], "farmer and merchant are due by two hours")
 	scheduler.advance_to(600)
 	assertions.equal(gateway.requests.size(), 3, "time jump adds only the previously idle explorer")
 	assertions.equal(gateway.requests.filter(func(value): return value.agent_id == "farmer_ahe").size(), 1, "in-flight farmer is not duplicated")
@@ -124,8 +126,9 @@ func _test_interval_overrides(assertions: TestAssert) -> void:
 		func(agent_id: String, trigger: String, game_minute: int, dialogue: String): return {"request_id": "%s-%s-%d" % [agent_id, trigger, game_minute], "dialogue_input": dialogue},
 		func(_agent_id: String, _response: Dictionary): pass
 	), "interval scheduler configures")
-	assertions.equal(scheduler.get_decision_interval_hours("farmer_ahe"), 1, "farmer exposes configured default interval")
-	assertions.equal(scheduler.get_decision_interval_hours("xuezhe_lin"), 2, "explorer exposes configured default interval")
+	assertions.equal(scheduler.get_decision_interval_hours("farmer_ahe"), 2, "farmer exposes doubled default interval")
+	assertions.equal(scheduler.get_decision_interval_hours("lao_li"), 2, "merchant exposes doubled minimum default interval")
+	assertions.equal(scheduler.get_decision_interval_hours("xuezhe_lin"), 4, "explorer exposes doubled default interval")
 	assertions.truthy(not scheduler.set_decision_interval_hours("missing", 1), "unknown Agent interval rejects")
 	assertions.truthy(not scheduler.set_decision_interval_hours("farmer_ahe", -1), "negative Agent interval rejects")
 	assertions.truthy(not scheduler.set_decision_interval_hours("farmer_ahe", 169), "Agent interval above one week rejects")

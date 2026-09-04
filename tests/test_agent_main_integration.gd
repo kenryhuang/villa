@@ -65,7 +65,8 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	for agent_id in ["farmer_ahe", "lao_li", "xuezhe_lin"]:
 		var request: Dictionary = runtime.call("_build_request", agent_id, "event", 1, "")
 		market_requests[agent_id] = request
-		assertions.truthy(_has_market_fact(request.own_event_delta, "grain", 777), "%s receives the same public market event" % agent_id)
+		assertions.truthy(_has_market_fact(request.global_public_events, "grain", 777), "%s receives the shared public market event" % agent_id)
+		assertions.truthy(not _has_market_fact(request.own_event_delta, "grain", 777), "%s does not receive the same market event twice" % agent_id)
 	var farmer_response := {
 		"protocol_version": 2,
 		"decision_id": "ack-farmer",
@@ -78,10 +79,11 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	runtime.call("_handle_response", "farmer_ahe", farmer_response)
 	var farmer_after_ack: Dictionary = runtime.call("_build_request", "farmer_ahe", "event", 2, "")
 	assertions.truthy(not _has_market_fact(farmer_after_ack.own_event_delta, "grain", 777), "valid response acknowledges only farmer event delta")
-	assertions.truthy(_has_market_fact((market_requests.lao_li as Dictionary).own_event_delta, "grain", 777), "farmer acknowledgement leaves merchant copy intact")
+	assertions.truthy(_has_market_fact((market_requests.lao_li as Dictionary).global_public_events, "grain", 777), "farmer acknowledgement leaves public history intact")
 	runtime.call("_handle_stream_failure", "xuezhe_lin", str((market_requests.xuezhe_lin as Dictionary).request_id), "provider_timeout")
 	var explorer_retry: Dictionary = runtime.call("_build_request", "xuezhe_lin", "event", 3, "")
-	assertions.truthy(_has_market_fact(explorer_retry.own_event_delta, "grain", 777), "failed request releases explorer events for next context")
+	assertions.truthy(_has_market_fact(explorer_retry.global_public_events, "grain", 777), "failed request keeps public history visible on the next context")
+	assertions.truthy(not _has_market_fact(explorer_retry.own_event_delta, "grain", 777), "released public event remains de-duplicated on retry")
 	assertions.truthy(
 		str(runtime.get_session_trace().get_log_path()).begins_with(trace_directory + "/"),
 		"runtime opens Agent trace in configured directory",

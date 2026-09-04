@@ -12,6 +12,8 @@ extends CanvasLayer
 var _trace: Node
 var _selected_request_id := ""
 var _refresh_pending := false
+var _reset_scroll_on_refresh := false
+var _render_generation := 0
 
 
 func _ready() -> void:
@@ -49,6 +51,7 @@ func configure(trace: Node) -> bool:
 
 func open() -> void:
 	visible = true
+	_reset_scroll_on_refresh = true
 	_refresh_list()
 
 
@@ -101,11 +104,7 @@ func _refresh_list() -> void:
 	for index in range(requests.size()):
 		var record := requests[index] as Dictionary
 		var request_id := str(record.get("request_id", ""))
-		var label := "%s · %s · %s" % [
-			str(record.get("agent_id", "Agent")),
-			str(record.get("trigger", "request")),
-			str(record.get("status", "streaming")),
-		]
+		var label := _request_label(record)
 		request_list.add_item(label)
 		request_list.set_item_metadata(index, request_id)
 		if request_id == _selected_request_id:
@@ -113,31 +112,33 @@ func _refresh_list() -> void:
 	if selected_index < 0 and not requests.is_empty():
 		selected_index = requests.size() - 1
 		_selected_request_id = str((requests[selected_index] as Dictionary).request_id)
+		_reset_scroll_on_refresh = true
 	if selected_index >= 0:
 		request_list.select(selected_index)
-		_render_request(requests[selected_index])
+		_render_request(requests[selected_index], _reset_scroll_on_refresh)
 	else:
-		_render_request({})
+		_render_request({}, _reset_scroll_on_refresh)
+	_reset_scroll_on_refresh = false
 
 
 func _on_request_selected(index: int) -> void:
 	_selected_request_id = str(request_list.get_item_metadata(index))
 	if _trace != null and _trace.has_method("get_request"):
-		_render_request(_trace.call("get_request", _selected_request_id))
+		_render_request(_trace.call("get_request", _selected_request_id), true)
 
 
-func _render_request(record: Dictionary) -> void:
+func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
+	var scroll_state := _capture_scroll_state(reset_scroll)
+	_render_generation += 1
+	var generation := _render_generation
 	if record.is_empty():
 		status_label.text = "尚无 Agent 请求"
 		input_view.text = ""
 		reasoning_view.text = ""
 		output_view.text = ""
+		call_deferred("_restore_scroll_state", scroll_state, generation)
 		return
-	status_label.text = "%s · %s · %s" % [
-		str(record.get("agent_id", "Agent")),
-		str(record.get("request_id", "")),
-		str(record.get("status", "streaming")),
-	]
+	status_label.text = _status_text(record)
 	input_view.text = JSON.stringify(record.get("input", {}), "\t")
 	reasoning_view.text = str(record.get("reasoning", ""))
 	output_view.text = JSON.stringify({
@@ -147,13 +148,60 @@ func _render_request(record: Dictionary) -> void:
 		"action_intent": record.get("final", {}),
 		"error": record.get("error", {}),
 	}, "\t")
-	call_deferred("_scroll_views_to_end")
+	call_deferred("_restore_scroll_state", scroll_state, generation)
 
 
-func _scroll_views_to_end() -> void:
-	for view in [input_view, reasoning_view, output_view]:
-		var scroll_bar := (view as TextEdit).get_v_scroll_bar()
-		(view as TextEdit).scroll_vertical = scroll_bar.max_value
+func _capture_scroll_state(reset_scroll: bool) -> Dictionary:
+	var result := {}
+	for view_value in [input_view, reasoning_view, output_view]:
+		var view := view_value as TextEdit
+		var scroll_bar := view.get_v_scroll_bar()
+		result[view.name] = {
+			"follow": reset_scroll or scroll_bar.value >= scroll_bar.max_value - scroll_bar.page - 0.5,
+			"position": view.scroll_vertical,
+		}
+	return result
+
+
+func _restore_scroll_state(state: Dictionary, generation: int) -> void:
+	if generation != _render_generation:
+		return
+	for view_value in [input_view, reasoning_view, output_view]:
+		var view := view_value as TextEdit
+		var view_state := state.get(view.name, {}) as Dictionary
+		if bool(view_state.get("follow", true)):
+			view.scroll_vertical = view.get_v_scroll_bar().max_value
+		else:
+			view.scroll_vertical = float(view_state.get("position", 0.0))
+
+
+func _request_label(record: Dictionary) -> String:
+	var parts := [
+		str(record.get("agent_id", "Agent")),
+		str(record.get("trigger", "request")),
+		str(record.get("status", "streaming")),
+	]
+	var error_code := _error_code(record)
+	if not error_code.is_empty():
+		parts.append(error_code)
+	return " · ".join(PackedStringArray(parts))
+
+
+func _status_text(record: Dictionary) -> String:
+	var parts := [
+		str(record.get("agent_id", "Agent")),
+		str(record.get("request_id", "")),
+		str(record.get("status", "streaming")),
+	]
+	var error_code := _error_code(record)
+	if not error_code.is_empty():
+		parts.append(error_code)
+	return " · ".join(PackedStringArray(parts))
+
+
+func _error_code(record: Dictionary) -> String:
+	var error: Variant = record.get("error", {})
+	return str((error as Dictionary).get("code", "")) if error is Dictionary else ""
 
 
 func _unhandled_input(event: InputEvent) -> void:

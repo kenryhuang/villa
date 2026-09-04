@@ -214,6 +214,67 @@ test("executes local read tools and sends only final commands to Godot", async (
   assert.deepEqual(intent.actions.map((action) => action.tool_name), ["plant"]);
 });
 
+test("allows two batched read rounds before a command-only round", async () => {
+  const bodies: Array<{tools?: Array<{function: {name: string}}>; messages: Array<Record<string, unknown>>}> = [];
+  let turn = 0;
+  const server: Server = createServer((incoming, response) => {
+    let body = "";
+    incoming.setEncoding("utf8");
+    incoming.on("data", (chunk) => { body += chunk; });
+    incoming.on("end", () => {
+      bodies.push(JSON.parse(body));
+      turn += 1;
+      const toolCalls = turn === 1
+        ? [
+            ["depth-grain", "inspect_market_depth", {item_id: "grain_seed"}],
+            ["depth-salt", "inspect_market_depth", {item_id: "salt"}],
+            ["history-grain", "inspect_price_history", {item_id: "grain_seed"}],
+            ["history-salt", "inspect_price_history", {item_id: "salt"}],
+          ]
+        : turn === 2
+          ? [
+              ["item-grain", "inspect_market_item", {item_id: "grain_seed"}],
+              ["item-salt", "inspect_market_item", {item_id: "salt"}],
+              ["merchant-stock", "inspect_self_resources", {item_ids: ["grain_seed", "salt"]}],
+            ]
+          : [["merchant-speak", "speak", {target_actor_id: "farmer_ahe", text: "价格平稳，暂时观望。"}]];
+      const calls = toolCalls.map(([id, name, argumentsValue], index) => ({
+        index,
+        id,
+        type: "function",
+        function: {name, arguments: JSON.stringify(argumentsValue)},
+      }));
+      response.setHeader("content-type", "text/event-stream");
+      response.end(`data: ${JSON.stringify({id: `merchant-round-${turn}`, choices: [{delta: {tool_calls: calls}, finish_reason: "tool_calls"}]})}\n\ndata: [DONE]\n\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const config = configuredProvider(`http://127.0.0.1:${address.port}`, "read-round-key");
+  try {
+    const merchantRequest: DecisionRequest = {
+      ...request,
+      request_id: "merchant-two-read-rounds",
+      agent_id: "lao_li",
+      active_role: "merchant",
+      allowed_read_tools: ["inspect_market_depth", "inspect_price_history", "inspect_market_item", "inspect_self_resources"],
+      allowed_command_tools: ["speak", "wait"],
+    };
+    const context = AgentRegistry.loadDefault().buildContext("lao_li", merchantRequest, []);
+    const intent = await new OpenAICompatibleProvider(config.provider).decide(merchantRequest, context);
+    assert.equal(bodies.length, 3);
+    assert.deepEqual(
+      bodies[2].tools?.map((tool) => tool.function.name),
+      ["speak", "wait"],
+    );
+    assert.deepEqual(intent.actions.map((action) => action.tool_name), ["speak"]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    config.cleanup();
+  }
+});
+
 test("gives every Provider read-tool round a fresh timeout budget", async () => {
   let turn = 0;
   const server: Server = createServer((incoming, response) => {
@@ -266,6 +327,54 @@ test("reports an internally timed out Provider round as provider_timeout", async
       new OpenAICompatibleProvider(config.provider).decide(request, context),
       /provider_timeout/,
     );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    config.cleanup();
+  }
+});
+
+test("limits Provider calls to two and excludes FIFO queue wait from round timeout", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const arrivals: string[] = [];
+  const server: Server = createServer((incoming, response) => {
+    let body = "";
+    incoming.setEncoding("utf8");
+    incoming.on("data", (chunk) => { body += chunk; });
+    incoming.on("end", () => {
+      const providerBody = JSON.parse(body) as {messages: Array<{role: string; content: string}>};
+      const payload = JSON.parse(providerBody.messages.find((message) => message.role === "user")?.content || "{}") as {request_marker?: string};
+      arrivals.push(payload.request_marker || "missing");
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      setTimeout(() => {
+        active -= 1;
+        response.setHeader("content-type", "text/event-stream");
+        response.end(`data: ${JSON.stringify({id: "queued-decision", choices: [{delta: {tool_calls: [{index: 0, id: "wait-1", type: "function", function: {name: "wait", arguments: JSON.stringify({reason: "queue test"})}}]}, finish_reason: "tool_calls"}]})}\n\ndata: [DONE]\n\n`);
+      }, 80);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const config = configuredProvider(
+    `http://127.0.0.1:${address.port}`,
+    "concurrency-key",
+    {timeout_ms: 120, max_concurrency: 2},
+  );
+  try {
+    const provider = new OpenAICompatibleProvider(config.provider);
+    const registry = AgentRegistry.loadDefault();
+    const decisions = ["first", "second", "third"].map((requestMarker, index) => {
+      const queuedRequest = {...request, request_id: `queued-${index + 1}`} as DecisionRequest & {request_marker?: string};
+      const context = registry.buildContext("farmer_ahe", queuedRequest, []) as ReturnType<AgentRegistry["buildContext"]> & {request_marker?: string};
+      context.request_marker = requestMarker;
+      return provider.decide(queuedRequest, context);
+    });
+    const intents = await Promise.all(decisions);
+    assert.equal(maxActive, 2);
+    assert.deepEqual(arrivals, ["first", "second", "third"]);
+    assert.deepEqual(intents.map((intent) => intent.actions[0].tool_name), ["wait", "wait", "wait"]);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -25,17 +25,34 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(reasoning.text, "", "visible Agent debug deltas wait for one coalesced frame refresh")
 	await tree.process_frame
 	assertions.equal(reasoning.text, "先查看农场。再检查库存。", "coalesced refresh materializes every reasoning delta")
-	trace.accept_event(_event("content.delta", 5, {"delta": "你好，今天适合耕种。"}))
-	trace.accept_event(_event("provider.output", 6, {"message": {"content": "你好，今天适合耕种。"}}))
-	trace.accept_event(_event("stream.error", 7, {"code": "provider_error"}))
+	var long_content := ""
+	for index in range(160):
+		long_content += "第 %03d 行调试输出\n" % index
+	trace.accept_event(_event("content.delta", 5, {"delta": long_content}))
+	await tree.process_frame
 	await tree.process_frame
 	var input := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Input") as TextEdit
 	var output := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Output") as TextEdit
+	var tabs := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs") as TabContainer
+	tabs.current_tab = 2
+	await tree.process_frame
+	assertions.truthy(output.get_v_scroll_bar().max_value > 1.0, "long Agent output creates a vertical scroll range")
+	output.scroll_vertical = 0
+	await tree.process_frame
+	trace.accept_event(_event("content.delta", 6, {"delta": "末尾新增一行\n"}))
+	trace.accept_event(_event("provider.output", 7, {"message": {"content": "请求失败前的输出"}}))
+	trace.accept_event(_event("stream.error", 8, {"code": "provider_too_many_read_calls"}))
+	await tree.process_frame
+	await tree.process_frame
 	assertions.equal(list.item_count, 1, "Agent debug window lists one request")
 	assertions.truthy(input.text.contains("test-model"), "Agent debug window shows raw input")
 	assertions.equal(reasoning.text, "先查看农场。再检查库存。", "Agent debug window streams raw reasoning")
-	assertions.truthy(output.text.contains("今天适合耕种"), "Agent debug window shows raw output")
-	assertions.truthy(output.text.contains("provider_error"), "Agent debug window shows terminal error payload")
+	assertions.equal(output.scroll_vertical, 0, "manual upward scroll survives streamed trace refreshes")
+	assertions.truthy(output.text.contains("请求失败前的输出"), "Agent debug window shows raw output")
+	assertions.truthy(output.text.contains("provider_too_many_read_calls"), "Agent debug window shows terminal error payload")
+	assertions.truthy(list.get_item_text(0).contains("provider_too_many_read_calls"), "request row exposes terminal error code")
+	var status := window.get_node("Overlay/Center/Panel/Margin/Layout/Body/Details/Status") as Label
+	assertions.truthy(status.text.contains("provider_too_many_read_calls"), "request status exposes terminal error code")
 	window.toggle()
 	assertions.truthy(not window.visible, "Agent debug window toggle closes")
 	window.toggle()

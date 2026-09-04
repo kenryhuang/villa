@@ -30,9 +30,10 @@ func _test_public_facts_reach_independent_inboxes(assertions: TestAssert) -> voi
 	var farmer_context: Dictionary = fixture.context.build("farmer_ahe", "request-farmer")
 	var merchant_context: Dictionary = fixture.context.build("lao_li", "request-merchant")
 	var explorer_context: Dictionary = fixture.context.build("xuezhe_lin", "request-explorer")
-	assertions.equal(farmer_context.own_event_delta.size(), 5, "farmer independently receives public facts")
-	assertions.equal(merchant_context.own_event_delta.size(), 5, "merchant independently receives public facts")
-	assertions.equal(explorer_context.own_event_delta.size(), 5, "explorer independently receives public facts")
+	assertions.equal(farmer_context.own_event_delta.size(), 0, "farmer private delta omits facts already in public history")
+	assertions.equal(merchant_context.own_event_delta.size(), 0, "merchant private delta omits facts already in public history")
+	assertions.equal(explorer_context.own_event_delta.size(), 0, "explorer private delta omits facts already in public history")
+	assertions.equal(farmer_context.global_public_events.size(), 5, "public history carries shared facts once")
 	assertions.equal(farmer_context.public_world_state.game_day, 3, "context exposes current day")
 	assertions.equal(farmer_context.public_world_state.season, 2, "context exposes current season")
 	assertions.equal(farmer_context.public_world_state.weather, "rain", "context exposes current weather")
@@ -40,9 +41,9 @@ func _test_public_facts_reach_independent_inboxes(assertions: TestAssert) -> voi
 
 	assertions.truthy(fixture.context.acknowledge("farmer_ahe", "request-farmer"), "farmer acknowledges own batch")
 	assertions.equal(fixture.context.build("farmer_ahe", "request-farmer-2").own_event_delta, [], "acknowledged events leave farmer queue")
-	assertions.equal(fixture.context.build("lao_li", "request-merchant").own_event_delta.size(), 5, "farmer acknowledgement does not consume merchant queue")
+	assertions.equal(fixture.context.build("lao_li", "request-merchant").global_public_events.size(), 5, "farmer acknowledgement does not alter shared public history")
 	assertions.truthy(fixture.context.release("xuezhe_lin", "request-explorer"), "failed explorer request releases frozen batch")
-	assertions.equal(fixture.context.build("xuezhe_lin", "request-explorer-2").own_event_delta.size(), 5, "released events return to explorer context")
+	assertions.equal(fixture.context.build("xuezhe_lin", "request-explorer-2").global_public_events.size(), 5, "released request still sees shared public history")
 
 
 func _test_actor_activity_respects_visibility(assertions: TestAssert) -> void:
@@ -61,9 +62,9 @@ func _test_actor_activity_respects_visibility(assertions: TestAssert) -> void:
 	assertions.equal(lao_li_for_farmer.current_public_state.status, "trading", "known actor exposes current public state")
 	assertions.equal(lao_li_for_farmer.recent_public_events.size(), 1, "known actor excludes private message")
 	assertions.equal(_actor(explorer_known, "lao_li").recent_public_events.size(), 1, "public activity reaches unrelated observer")
-	assertions.equal(fixture.context.build("farmer_ahe", "private-farmer").own_event_delta.size(), 2, "private recipient gets public and private events")
-	assertions.equal(fixture.context.build("lao_li", "private-merchant").own_event_delta.size(), 1, "private sender gets only public event when not addressed")
-	assertions.equal(fixture.context.build("xuezhe_lin", "private-explorer").own_event_delta.size(), 2, "forest actor gets own regional event")
+	assertions.equal(fixture.context.build("farmer_ahe", "private-farmer").own_event_delta.size(), 1, "private recipient delta retains only its private event")
+	assertions.equal(fixture.context.build("lao_li", "private-merchant").own_event_delta.size(), 0, "merchant delta omits its duplicated public event")
+	assertions.equal(fixture.context.build("xuezhe_lin", "private-explorer").own_event_delta.size(), 1, "forest actor delta retains its regional event")
 	assertions.equal(_actor(farmer_known, "xuezhe_lin").recent_public_events.size(), 0, "different region cannot observe regional activity")
 
 
@@ -75,7 +76,10 @@ func _test_projection_windows_do_not_truncate_store(assertions: TestAssert) -> v
 	var committed := _append(fixture.store, events, "window-1")
 	assertions.truthy(fixture.projector.apply_batch(committed), "large public batch projects")
 	assertions.equal(fixture.projector.global_public_events(100).size(), 64, "global projection retains sixty-four events")
-	assertions.equal(fixture.context.build("farmer_ahe", "window-request").global_public_events.size(), 24, "context includes at most twenty-four global events")
+	var context: Dictionary = fixture.context.build("farmer_ahe", "window-request")
+	assertions.equal(context.global_public_events.size(), 24, "context includes at most twenty-four global events")
+	assertions.equal(context.own_event_delta.size(), 16, "older public events outside the shared window remain as a bounded delta")
+	assertions.equal((context.own_event_delta[0] as Dictionary).payload.omitted_count, 31, "only the forty-six non-overlapping older events are compacted")
 	assertions.equal(fixture.projector.actor_public_events("lao_li", "farmer_ahe", 100).size(), 32, "actor projection retains thirty-two events")
 	assertions.equal(_actor(fixture.projector.known_actors("farmer_ahe"), "lao_li").recent_public_events.size(), 12, "known actor exposes at most twelve events")
 	assertions.equal(fixture.store.get_events_after(0).size(), 70, "projection windows never truncate immutable event store")
@@ -86,13 +90,15 @@ func _test_own_event_delta_is_bounded_without_losing_delivery(assertions: TestAs
 	var events: Array[Dictionary] = []
 	for index in range(40):
 		var is_market := index % 2 == 0
-		events.append(_event(
+		var event := _event(
 			"MarketPriceChanged" if is_market else "PublicStatusChanged",
 			"market" if is_market else "actor",
 			"entity-%02d" % index,
 			"system",
 			{"item_id": "item-%02d" % index, "price": index + 1},
-		))
+		)
+		event.visibility = {"scope": "private", "actor_ids": AGENT_IDS.duplicate()}
+		events.append(event)
 	var committed := _append(fixture.store, events, "bounded-delta")
 	assertions.truthy(fixture.projector.apply_batch(committed), "large delivery batch projects")
 	var projected: Dictionary = fixture.context.build("farmer_ahe", "bounded-request")
@@ -131,7 +137,9 @@ func _test_checkpoint_and_cursor_restore(assertions: TestAssert) -> void:
 	fixture.context.build("farmer_ahe", "checkpoint-consume")
 	assertions.truthy(fixture.context.acknowledge("farmer_ahe", "checkpoint-consume"), "checkpoint fixture advances one Agent cursor")
 	var cursor_state: Dictionary = fixture.inbox.to_dict()
-	var tail := _append(fixture.store, [_event("WeatherChanged", "public_world", "weather", "system", {"weather": "wind"})], "checkpoint-tail")
+	var private_tail := _event("WeatherChanged", "public_world", "weather", "system", {"weather": "wind"})
+	private_tail.visibility = {"scope": "private", "actor_ids": ["farmer_ahe"]}
+	var tail := _append(fixture.store, [private_tail], "checkpoint-tail")
 	fixture.projector.apply_batch(tail)
 
 	var full := _fixture()

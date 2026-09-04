@@ -6,6 +6,7 @@ export interface ProviderConfig {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  maxConcurrency: number;
   maxOutputTokens: number;
   temperature: number;
 }
@@ -82,7 +83,7 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
   const provider = objectSection(parsed, "provider");
   const memory = objectSection(parsed, "memory");
   rejectUnknown(service, ["host", "port"], "service ");
-  rejectUnknown(provider, ["base_url", "api_key", "model", "timeout_ms", "max_output_tokens", "temperature"], "provider ");
+  rejectUnknown(provider, ["base_url", "api_key", "model", "timeout_ms", "max_concurrency", "max_output_tokens", "temperature"], "provider ");
   rejectUnknown(memory, ["database_path", "checkpoint_root"], "memory ");
 
   const baseUrl = requiredString(provider, "base_url", "provider.base_url").replace(/\/+$/, "");
@@ -100,7 +101,8 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
       baseUrl,
       apiKey: requiredString(provider, "api_key", "provider.api_key"),
       model: requiredString(provider, "model", "provider.model"),
-      timeoutMs: integer(provider, "timeout_ms", "provider.timeout_ms", 60_000, 100, 120_000),
+      timeoutMs: integer(provider, "timeout_ms", "provider.timeout_ms", 180_000, 100, 600_000),
+      maxConcurrency: integer(provider, "max_concurrency", "provider.max_concurrency", 2, 1, 32),
       maxOutputTokens: integer(provider, "max_output_tokens", "provider.max_output_tokens", 1200, 64, 16_384),
       temperature: decimal(provider, "temperature", "provider.temperature", 0.4, 0, 2),
     },

@@ -28,11 +28,14 @@ func build(agent_id: String, request_id: String) -> Dictionary:
 	var public_world_state: Dictionary = _projector.call("public_world_state")
 	public_world_state.erase("market_summary")
 	var frozen_delta: Array[Dictionary] = _inbox.call("freeze_delta", agent_id, request_id)
+	var global_public_events: Array[Dictionary] = []
+	global_public_events.assign(_projector.call("global_public_events", GLOBAL_CONTEXT_EVENT_LIMIT))
+	var unique_delta := _without_public_duplicates(frozen_delta, global_public_events)
 	return {
 		"public_world_state": public_world_state,
-		"global_public_events": _projector.call("global_public_events", GLOBAL_CONTEXT_EVENT_LIMIT),
+		"global_public_events": global_public_events,
 		"known_actors": _projector.call("known_actors", agent_id),
-		"own_event_delta": _compact_event_delta(agent_id, frozen_delta),
+		"own_event_delta": _compact_event_delta(agent_id, unique_delta),
 		"market_view": _projector.call("market_view"),
 	}
 
@@ -43,6 +46,24 @@ func acknowledge(agent_id: String, request_id: String) -> bool:
 
 func release(agent_id: String, request_id: String) -> bool:
 	return _inbox != null and bool(_inbox.call("release_delta", agent_id, request_id))
+
+
+func _without_public_duplicates(
+	events: Array[Dictionary],
+	global_public_events: Array[Dictionary]
+) -> Array[Dictionary]:
+	var public_event_ids := {}
+	for event in global_public_events:
+		var event_id := str(event.get("event_id", ""))
+		if not event_id.is_empty():
+			public_event_ids[event_id] = true
+	var result: Array[Dictionary] = []
+	for event in events:
+		var event_id := str(event.get("event_id", ""))
+		if not event_id.is_empty() and public_event_ids.has(event_id):
+			continue
+		result.append(event.duplicate(true))
+	return result
 
 
 func _compact_event_delta(agent_id: String, events: Array[Dictionary]) -> Array[Dictionary]:

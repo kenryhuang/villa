@@ -12,6 +12,7 @@ const validConfig = () => ({
     api_key: "test-key",
     model: "test-model",
     timeout_ms: 30000,
+    max_concurrency: 3,
     max_output_tokens: 1600,
     temperature: 0.25,
   },
@@ -34,6 +35,7 @@ test("loads strict service Provider and memory settings from JSON", () => {
     assert.equal(config.provider.apiKey, "test-key");
     assert.equal(config.provider.model, "test-model");
     assert.equal(config.provider.timeoutMs, 30000);
+    assert.equal(config.provider.maxConcurrency, 3);
     assert.equal(config.provider.maxOutputTokens, 1600);
     assert.equal(config.provider.temperature, 0.25);
     assert.equal(config.databasePath, resolve(root, "data/test.sqlite"));
@@ -41,11 +43,14 @@ test("loads strict service Provider and memory settings from JSON", () => {
   });
 });
 
-test("defaults each Provider round to sixty seconds", () => {
+test("defaults each Provider round to 180 seconds and global concurrency to two", () => {
   const value = validConfig();
   delete (value.provider as Record<string, unknown>).timeout_ms;
+  delete (value.provider as Record<string, unknown>).max_concurrency;
   withTempConfig(value, (path, root) => {
-    assert.equal(loadConfigFile(path, root).provider.timeoutMs, 60_000);
+    const provider = loadConfigFile(path, root).provider;
+    assert.equal(provider.timeoutMs, 180_000);
+    assert.equal(provider.maxConcurrency, 2);
   });
 });
 
@@ -85,6 +90,7 @@ test("rejects invalid URLs ranges and section shapes", () => {
     [(value: ReturnType<typeof validConfig>) => { value.provider.base_url = "not-a-url"; }, /provider.base_url is invalid/],
     [(value: ReturnType<typeof validConfig>) => { value.service.port = 70000; }, /service.port is invalid/],
     [(value: ReturnType<typeof validConfig>) => { value.provider.temperature = 3; }, /provider.temperature is invalid/],
+    [(value: ReturnType<typeof validConfig>) => { value.provider.max_concurrency = 0; }, /provider.max_concurrency is invalid/],
     [(value: ReturnType<typeof validConfig>) => { (value as unknown as Record<string, unknown>).service = []; }, /service must be an object/],
     [(value: ReturnType<typeof validConfig>) => { (value as unknown as Record<string, unknown>).extra = {}; }, /unknown top-level field: extra/],
   ] as const) {

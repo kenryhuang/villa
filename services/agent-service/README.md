@@ -11,7 +11,7 @@ Copy-Item config/agent-service.example.json config/agent-service.local.json
 Copy-Item ../../config/agent-client.example.json ../../config/agent-client.local.json
 ```
 
-Edit `config/agent-service.local.json` and set the Provider `base_url`, `api_key`, and `model`. The default service address is `http://127.0.0.1:8787`. The database and checkpoint paths are resolved relative to `services/agent-service`.
+Edit `config/agent-service.local.json` and set the Provider `base_url`, `api_key`, and `model`. `timeout_ms` defaults to `180000` per remote Provider round, and `max_concurrency` defaults to `2` across decision and memory-compaction calls. Calls wait in FIFO order before acquiring a Provider slot; queue time does not consume the per-round timeout. The default service address is `http://127.0.0.1:8787`. The database and checkpoint paths are resolved relative to `services/agent-service`.
 
 Edit `../../config/agent-client.local.json` if Godot should use a different service address, token, or timeout. Set `enabled` to `false` to keep remote Agent decisions disabled explicitly. `store_agent_session` defaults to `false`; when enabled, Godot appends one credential-free aggregate input/response record per completed or failed request to `user://agent_sessions` and retains the newest 20 session files.
 
@@ -56,6 +56,8 @@ curl.exe -N -H "Accept: text/event-stream" -H "Content-Type: application/json" -
 On a successful game save, Godot asynchronously exports the current session memory and writes a `save_N.agent-memory.json` manifest beside the world save. Loading never waits for the service: a missing, corrupt, or unavailable checkpoint produces a HUD warning and continues with empty Agent memory. Deleting a save also deletes its manifest.
 
 Important raw events are scored immediately. Once an Agent accumulates 20 uncompacted high-value events, the configured real Provider condenses them into a factual long-term memory. Provider failure leaves every raw event intact for a later retry. Each decision context includes both recent raw events and that Agent's own long-term memories; session and Agent IDs isolate all reads.
+
+The model projection carries shared public events once in `global_public_events`; matching event IDs are removed from the model-facing `own_event_delta` while private, regional, and older events remain. The complete frozen inbox batch is still acknowledged only after a valid decision. Authored automatic schedule defaults are two game hours for the farmer, two to four for the merchant, and four to eight for the explorer; debug-panel overrides remain literal.
 
 With both local configuration files present, the opt-in connected streaming smoke test is:
 

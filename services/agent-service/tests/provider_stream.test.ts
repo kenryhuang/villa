@@ -52,6 +52,32 @@ test("decodes fragmented Provider SSE without corrupting UTF-8", async () => {
   assert.equal(((decoded[1].choices as any[])[0].delta as any).content, "我来整理土地。");
 });
 
+test("assembles structured text content from compatible Provider streams", () => {
+  const assembler = new AgentStreamAssembler();
+  const emitted = assembler.accept({
+    id: "chat-structured-content",
+    choices: [{
+      delta: {content: [{type: "text", text: "先观察"}, {type: "text", text: "市场。"}]},
+      finish_reason: "stop",
+    }],
+  });
+
+  assert.deepEqual(emitted, [{type: "content", delta: "先观察市场。"}]);
+  assert.equal(assembler.finish(request, ["wait"]).intent.speech, "先观察市场。");
+});
+
+test("caps visible Provider content at the protocol speech limit", () => {
+  const assembler = new AgentStreamAssembler();
+  assembler.accept({
+    id: "chat-long-content",
+    choices: [{delta: {content: "长".repeat(501)}, finish_reason: "stop"}],
+  });
+
+  const result = assembler.finish(request, ["wait"]);
+  assert.equal(result.intent.speech, "长".repeat(500));
+  assert.equal(result.rawMessage.content, "长".repeat(501));
+});
+
 test("limits a dialogue completion to one command", () => {
   const two = new AgentStreamAssembler();
   two.accept({choices: [{delta: {tool_calls: [

@@ -2,6 +2,7 @@ import type { AgentContext, AgentDefinition } from "./agents.ts";
 import type { ProviderConfig } from "./config.ts";
 import type { MemoryEvent } from "./memory.ts";
 import type { ActionIntent, DecisionRequest } from "./protocol.ts";
+import {ProviderConcurrencyGate} from "./provider_concurrency_gate.ts";
 import {
   AgentStreamAssembler,
   decodeProviderSse,
@@ -47,9 +48,11 @@ async function withProviderTimeout<T>(
 
 export class OpenAICompatibleProvider {
   readonly #config: ProviderConfig;
+  readonly #concurrencyGate: ProviderConcurrencyGate;
 
   constructor(config: ProviderConfig) {
     this.#config = config;
+    this.#concurrencyGate = new ProviderConcurrencyGate(config.maxConcurrency);
   }
 
   async decide(request: DecisionRequest, context: AgentContext): Promise<ActionIntent> {
@@ -79,9 +82,9 @@ export class OpenAICompatibleProvider {
       {role: "system", content: systemContent},
       {role: "user", content: JSON.stringify(userContent)},
     ];
-    let readCount = 0;
+    let readRounds = 0;
     while (true) {
-      const availableReads = readCount < 6 ? [...context.allowed_read_tools] : [];
+      const availableReads = readRounds < 2 ? [...context.allowed_read_tools] : [];
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
         temperature: this.#config.temperature,
@@ -100,32 +103,34 @@ export class OpenAICompatibleProvider {
         delete providerBody.tools;
       }
       emit({type: "input", body: structuredClone(providerBody)});
-      const {assembler, rawOutput} = await withProviderTimeout(
-        this.#config.timeoutMs,
+      const {assembler, rawOutput} = await this.#concurrencyGate.run(
         externalSignal,
-        async (signal) => {
-          const response = await fetch(endpoint, {
-            method: "POST",
-            signal,
-            headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
-            body: JSON.stringify(providerBody),
-          });
-          if (!response.ok) throw new Error(`provider_http_${response.status}`);
-          if (!response.body) throw new Error("provider_missing_stream_body");
-          const roundAssembler = new AgentStreamAssembler();
-          for await (const chunk of decodeProviderSse(response.body)) {
-            for (const event of roundAssembler.accept(chunk)) emit(event);
-          }
-          return {assembler: roundAssembler, rawOutput: roundAssembler.rawOutput()};
-        },
+        () => withProviderTimeout(
+          this.#config.timeoutMs,
+          externalSignal,
+          async (signal) => {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              signal,
+              headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
+              body: JSON.stringify(providerBody),
+            });
+            if (!response.ok) throw new Error(`provider_http_${response.status}`);
+            if (!response.body) throw new Error("provider_missing_stream_body");
+            const roundAssembler = new AgentStreamAssembler();
+            for await (const chunk of decodeProviderSse(response.body)) {
+              for (const event of roundAssembler.accept(chunk)) emit(event);
+            }
+            return {assembler: roundAssembler, rawOutput: roundAssembler.rawOutput()};
+          },
+        ),
       );
       emit({type: "output", output: rawOutput});
       const calls = assembler.toolCalls();
       const reads = calls.filter((call) => availableReads.includes(call.name));
       if (reads.length > 0) {
         if (reads.length !== calls.length) throw new Error("provider_mixed_read_and_command_tools");
-        if (readCount + reads.length > 6) throw new Error("provider_too_many_read_calls");
-        readCount += reads.length;
+        readRounds += 1;
         messages.push({role: "assistant", content: rawOutput.message.content || null, tool_calls: rawOutput.message.tool_calls});
         for (const call of reads) {
           messages.push({
@@ -143,27 +148,30 @@ export class OpenAICompatibleProvider {
 
   async compactMemory(agent: AgentDefinition, events: MemoryEvent[]): Promise<{summary: string; importance: number}> {
     if (events.length === 0) throw new Error("memory_compaction_requires_events");
-    const payload = await withProviderTimeout(
-      this.#config.timeoutMs,
+    const payload = await this.#concurrencyGate.run(
       undefined,
-      async (signal) => {
-        const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
-          ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
-        const response = await fetch(endpoint, {
-          method: "POST", signal,
-          headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
-          body: JSON.stringify({
-            model: this.#config.model, temperature: Math.min(0.3, this.#config.temperature),
-            max_tokens: Math.min(600, this.#config.maxOutputTokens), response_format: {type: "json_object"},
-            messages: [
-              {role: "system", content: "Compress verified NPC events into one factual long-term memory. Return JSON with summary and importance (1-10). Do not invent facts."},
-              {role: "user", content: JSON.stringify({agent: {id: agent.agent_id, soul: agent.soul, goals: agent.goals}, events})},
-            ],
-          }),
-        });
-        if (!response.ok) throw new Error(`provider_http_${response.status}`);
-        return await response.json() as Record<string, unknown>;
-      },
+      () => withProviderTimeout(
+        this.#config.timeoutMs,
+        undefined,
+        async (signal) => {
+          const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
+            ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
+          const response = await fetch(endpoint, {
+            method: "POST", signal,
+            headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
+            body: JSON.stringify({
+              model: this.#config.model, temperature: Math.min(0.3, this.#config.temperature),
+              max_tokens: Math.min(600, this.#config.maxOutputTokens), response_format: {type: "json_object"},
+              messages: [
+                {role: "system", content: "Compress verified NPC events into one factual long-term memory. Return JSON with summary and importance (1-10). Do not invent facts."},
+                {role: "user", content: JSON.stringify({agent: {id: agent.agent_id, soul: agent.soul, goals: agent.goals}, events})},
+              ],
+            }),
+          });
+          if (!response.ok) throw new Error(`provider_http_${response.status}`);
+          return await response.json() as Record<string, unknown>;
+        },
+      ),
     );
     const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0];
     const message = choice?.message as Record<string, unknown> | undefined;
