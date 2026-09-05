@@ -58,19 +58,13 @@ func _initialize_gameplay() -> void:
 	meadow = MeadowScript.new()
 	meadow.name = "PaintedMeadow"
 	add_child(meadow)
-	meadow.configure(farm_session.grid)
 	meadow.apply_ground_material($EnvironmentModel)
-	get_node("/root/EventBus").cell_state_changed.connect(_on_farm_cell_changed)
 	var interaction := InteractionScript.new()
 	interaction.name = "FarmInteraction"
 	add_child(interaction)
 	interaction.configure(farm_session, player)
 	if not transient:
 		get_tree().auto_accept_quit = false
-
-func _on_farm_cell_changed(gx: int, gz: int, _state: int) -> void:
-	if meadow != null:
-		meadow.refresh_cell(gx, gz)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:

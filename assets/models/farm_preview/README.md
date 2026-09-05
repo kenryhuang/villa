@@ -9,7 +9,7 @@
 | `farmland_tile.glb` | 2.8 × 2.8 米的土块、七条垄沟和泥土颗粒 |
 | `grain_young.glb` | 六株有弯曲叶片的谷物幼苗 |
 | `grain_mature.glb` | 六株带独立籽粒、芒刺与叶片的成熟谷物 |
-| `farm_environment.glb` | 静态地面、小路、石头、围栏；树木、草丛、田地和作物由 Godot 独立实例管理 |
+| `farm_environment.glb` | 静态地面、小路、石头、围栏；树木、田地和作物由 Godot 独立实例管理 |
 
 源文件：`art/blender/farm_preview.blend`。双击用 Blender 打开，已设置整体场景与相机。原始独立资产位于 01–05 集合，02–05 默认隐藏以免与组合场景重叠；在 Outliner 中启用对应集合即可单独编辑。06 是可编辑环境，07 是合并静态网格后的导出副本，默认隐藏。09 是从 `art/blender/painted_oak.blend` 载入的新橡树组合。
 
@@ -19,7 +19,7 @@ GLB 使用米为单位，Y 朝上；玩家正面朝 +Z，脚底为原点，高�
 
 项目默认启动场景为 `scenes/preview/farm_3d_preview.tscn`，在 Godot 中按 F5 即可进入 3D 农庄，也可以运行 `./tools/preview_3d.ps1`。已经接入原有格子、工具、播种、时间季节、生长和收获系统。数字键 1–4 选择锄头、谷物种子、浇水壶、收获；靠近后左键操作鼠标指向的格子，E 操作角色前方。原游戏保留在 `scenes/main.tscn`，可单独打开后按 F6 运行；单树观察场景为 `scenes/preview/tree_3d_preview.tscn`。
 
-草地由 `scripts/farm3d/painted_meadow.gd` 使用原 `grass-seamless-blended.png` 和共享弯曲草叶网格生成，开垦后隐藏对应格子里的草。动态田地将 `farmland_tile.glb` 缩放至原游戏的 1 米格子；幼苗和成熟谷物均使用真实 GLB 网格。Blender 源文件保存静态环境、角色、树木和独立建模资产，动态草地与农田的最终效果请在 Godot 中查看。
+草地由 `scripts/farm3d/painted_meadow.gd` 使用原 `grass-seamless-blended.png` 设置地表材质；不再生成额外的立体杂草和野花。动态田地将 `farmland_tile.glb` 缩放至原游戏的 1 米格子；幼苗和成熟谷物均使用真实 GLB 网格。Blender 源文件保存静态环境、角色、树木和独立建模资产，动态草地与农田的最终效果请在 Godot 中查看。
 
 游戏自动保存至 `user://farm_3d_save.json`，与原游戏存档独立。完整控制与验证见 `docs/validation/3d-farming-integration.md`。
 

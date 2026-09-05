@@ -48,12 +48,6 @@ func _run() -> void:
 			await process_frame
 			quit(1)
 			return
-		var meadow = preview.get_node("PaintedMeadow")
-		var records: Array = meadow._by_cell.get(Vector2i(cell.gx, cell.gz), [])
-		_check(not records.is_empty(), "Interaction test cell contains grass before cultivation")
-		for record_index in records:
-			var record: Dictionary = meadow._instances[int(record_index)]
-			_check(record.get("hidden", false), "Cultivation event removes grass from the actual targeted cell")
 		var seed_count: int = session.inventory.get_item_count("grain_seed")
 		var key := InputEventKey.new()
 		key.keycode = KEY_2

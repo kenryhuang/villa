@@ -1,6 +1,6 @@
 extends SceneTree
 
-const FlatGridScript = preload("res://scripts/farm3d/flat_grid.gd")
+const EnvironmentScene = preload("res://assets/models/farm_preview/farm_environment.glb")
 const MeadowScript = preload("res://scripts/farm3d/painted_meadow.gd")
 
 var failures: Array[String] = []
@@ -19,29 +19,24 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _run() -> void:
-	var grid = FlatGridScript.new()
-	_check(grid.configure_flat(), "Flat 3D grid configures for meadow ownership")
-	var meadow = MeadowScript.new()
-	root.add_child(meadow)
-	meadow.configure(grid)
-	var mapped_positions := true
-	for key in meadow._by_cell:
-		for record_index in meadow._by_cell[key]:
-			var record: Dictionary = meadow._instances[int(record_index)]
-			var origin: Vector3 = record.transform.origin
-			mapped_positions = mapped_positions and meadow._grid_key(Vector2(origin.x, origin.z)) == key
-	_check(mapped_positions, "Every generated grid clump remains in the grid cell that owns its mask")
-	var cultivated := Vector2i(18, 13)
-	var cell := grid.get_cell(cultivated.x, cultivated.y)
-	_check(cell != null and grid.set_cell_state(cultivated.x, cultivated.y, GridCell.State.FARMLAND), "A central wasteland cell cultivates")
-	meadow.refresh_cell(cultivated.x, cultivated.y)
-	var masked := true
-	for record_index in meadow._by_cell[cultivated]:
-		var record: Dictionary = meadow._instances[int(record_index)]
-		masked = masked and bool(record.hidden)
-	_check(masked, "Cultivating a cell masks every grass clump owned by that cell")
-	meadow.queue_free()
+	var environment := EnvironmentScene.instantiate()
+	var meadow := MeadowScript.new()
+	meadow.apply_ground_material(environment)
+	# Keep override resources alive while imported mesh instances are destroyed.
+	var materials: Array[Material] = []
+	var painted_surfaces := 0
+	for mesh_node in environment.find_children("*", "MeshInstance3D", true, false):
+		for surface in mesh_node.mesh.get_surface_count():
+			var material = mesh_node.get_active_material(surface)
+			materials.append(material)
+			if material.resource_name == "Painted meadow ground":
+				painted_surfaces += 1
+				_check(material.albedo_texture == MeadowScript.GRASS_TEXTURE, "Ground retains the original painted grass texture")
+	_check(painted_surfaces > 0, "Painted material is applied to the actual ground")
+	_check(meadow.get_child_count() == 0, "Meadow no longer generates decorative grass or flower meshes")
 	await process_frame
-	grid.free()
+	await process_frame
+	meadow.free()
+	environment.free()
 	print("3D MEADOW: %s" % ("PASS (%d checks)" % checks if failures.is_empty() else "FAIL (%d/%d checks)" % [failures.size(), checks]))
 	quit(0 if failures.is_empty() else 1)
