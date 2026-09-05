@@ -28,6 +28,22 @@ func _run() -> void:
 	root.add_child(preview)
 	await _frames(45)
 	_check(preview.get_node("EnvironmentModel").find_children("*", "MeshInstance3D", true, false).size() > 0, "Environment contains an imported native mesh")
+	for mesh_node in preview.get_node("EnvironmentModel").find_children("*", "MeshInstance3D", true, false):
+		var bounds: AABB = mesh_node.get_aabb()
+		_check(bounds.end.y < 2.0, "Terrain export no longer contains the old baked tree geometry")
+	var trees := preview.get_node_or_null("Trees")
+	_check(trees != null and trees.get_child_count() == 6, "Farm contains six independent painted oak instances")
+	if trees != null:
+		for tree in trees.get_children():
+			_check(tree.scene_file_path == "res://scenes/vegetation/painted_oak.tscn", "Each farm tree reuses the new oak scene")
+			_check(tree.has_node("TrunkCollision") and tree.has_node("CanopyCameraCollision"), "Each replacement brings its matching trunk and camera collision")
+			var space: PhysicsDirectSpaceState3D = preview.get_world_3d().direct_space_state
+			var trunk_center: Vector3 = tree.global_position + Vector3.UP
+			var trunk_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(trunk_center + Vector3.RIGHT * 2.0, trunk_center, 1))
+			_check(trunk_hit.get("collider") == tree.get_node("TrunkCollision"), "Replacement trunk blocks movement at its farm position")
+			var crown: Vector3 = tree.to_global(Vector3(0, 3.8, 0))
+			var canopy_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(crown + Vector3.UP * 4.0, crown, 4))
+			_check(canopy_hit.get("collider") == tree.get_node("CanopyCameraCollision"), "Replacement crown blocks the camera at its scaled position")
 	var player := preview.get_node("Player") as CharacterBody3D
 	_check(player.find_children("*", "MeshInstance3D", true, false).size() > 0, "Farmer contains an imported native mesh")
 	var animation_players := player.find_children("*", "AnimationPlayer", true, false)

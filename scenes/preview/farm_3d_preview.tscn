@@ -1,9 +1,11 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/preview/farm_3d_preview.gd" id="1_root"]
 [ext_resource type="Script" path="res://scripts/preview/farm_preview_player.gd" id="2_player"]
 [ext_resource type="PackedScene" path="res://assets/models/farm_preview/farm_environment.glb" id="3_environment"]
 [ext_resource type="PackedScene" path="res://assets/models/farm_preview/player_farmer.glb" id="4_farmer"]
+
+[ext_resource type="PackedScene" path="res://scenes/vegetation/painted_oak.tscn" id="5_oak"]
 
 [sub_resource type="Environment" id="Environment_warm"]
 background_mode = 1
@@ -22,15 +24,8 @@ size = Vector3(44, 0.28, 44)
 radius = 0.3
 height = 1.9
 
-[sub_resource type="CylinderShape3D" id="Tree_shape"]
-radius = 0.42
-height = 3.0
-
 [sub_resource type="BoxShape3D" id="Plot_shape"]
 size = Vector3(2.8, 0.13, 2.8)
-
-[sub_resource type="SphereShape3D" id="Canopy_shape"]
-radius = 2.1
 
 [node name="Farm3DPreview" type="Node3D"]
 script = ExtResource("1_root")
@@ -93,70 +88,37 @@ position = Vector3(8.51, 0.065, -7.86)
 [node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot22"]
 shape = SubResource("Plot_shape")
 
-[node name="TreeColliders" type="Node3D" parent="."]
+[node name="Trees" type="Node3D" parent="."]
 
-[node name="TreeA" type="StaticBody3D" parent="TreeColliders"]
-position = Vector3(-8, 1.5, -5)
-[node name="Collision" type="CollisionShape3D" parent="TreeColliders/TreeA"]
-shape = SubResource("Tree_shape")
-[node name="TreeB" type="StaticBody3D" parent="TreeColliders"]
-position = Vector3(-10, 1.5, 2)
-[node name="Collision" type="CollisionShape3D" parent="TreeColliders/TreeB"]
-shape = SubResource("Tree_shape")
-[node name="TreeC" type="StaticBody3D" parent="TreeColliders"]
-position = Vector3(12, 1.5, -9)
-[node name="Collision" type="CollisionShape3D" parent="TreeColliders/TreeC"]
-shape = SubResource("Tree_shape")
-[node name="TreeD" type="StaticBody3D" parent="TreeColliders"]
-position = Vector3(10, 1.5, 5)
-[node name="Collision" type="CollisionShape3D" parent="TreeColliders/TreeD"]
-shape = SubResource("Tree_shape")
-[node name="TreeE" type="StaticBody3D" parent="TreeColliders"]
-position = Vector3(-5, 1.5, -12)
-[node name="Collision" type="CollisionShape3D" parent="TreeColliders/TreeE"]
-shape = SubResource("Tree_shape")
-[node name="TreeF" type="StaticBody3D" parent="TreeColliders"]
-position = Vector3(5, 1.5, -14)
-[node name="Collision" type="CollisionShape3D" parent="TreeColliders/TreeF"]
-shape = SubResource("Tree_shape")
+[node name="OakA" parent="Trees" instance=ExtResource("5_oak")]
+position = Vector3(-8, 0, -5)
+rotation = Vector3(0, 0.0, 0)
+scale = Vector3(0.92, 0.92, 0.92)
 
-[node name="CanopyColliders" type="Node3D" parent="."]
-[node name="CanopyA" type="StaticBody3D" parent="CanopyColliders"]
-collision_layer = 4
-position = Vector3(-8, 4.18, -5)
-scale = Vector3(1.1, 1.1, 1.1)
-[node name="Collision" type="CollisionShape3D" parent="CanopyColliders/CanopyA"]
-shape = SubResource("Canopy_shape")
-[node name="CanopyB" type="StaticBody3D" parent="CanopyColliders"]
-collision_layer = 4
-position = Vector3(-10, 3.344, 2)
-scale = Vector3(0.88, 0.88, 0.88)
-[node name="Collision" type="CollisionShape3D" parent="CanopyColliders/CanopyB"]
-shape = SubResource("Canopy_shape")
-[node name="CanopyC" type="StaticBody3D" parent="CanopyColliders"]
-collision_layer = 4
-position = Vector3(12, 4.75, -9)
-scale = Vector3(1.25, 1.25, 1.25)
-[node name="Collision" type="CollisionShape3D" parent="CanopyColliders/CanopyC"]
-shape = SubResource("Canopy_shape")
-[node name="CanopyD" type="StaticBody3D" parent="CanopyColliders"]
-collision_layer = 4
-position = Vector3(10, 3.876, 5)
-scale = Vector3(1.02, 1.02, 1.02)
-[node name="Collision" type="CollisionShape3D" parent="CanopyColliders/CanopyD"]
-shape = SubResource("Canopy_shape")
-[node name="CanopyE" type="StaticBody3D" parent="CanopyColliders"]
-collision_layer = 4
-position = Vector3(-5, 3.458, -12)
-scale = Vector3(0.91, 0.91, 0.91)
-[node name="Collision" type="CollisionShape3D" parent="CanopyColliders/CanopyE"]
-shape = SubResource("Canopy_shape")
-[node name="CanopyF" type="StaticBody3D" parent="CanopyColliders"]
-collision_layer = 4
-position = Vector3(5, 4.256, -14)
-scale = Vector3(1.12, 1.12, 1.12)
-[node name="Collision" type="CollisionShape3D" parent="CanopyColliders/CanopyF"]
-shape = SubResource("Canopy_shape")
+[node name="OakB" parent="Trees" instance=ExtResource("5_oak")]
+position = Vector3(-10, 0, 2)
+rotation = Vector3(0, 1.9, 0)
+scale = Vector3(0.74, 0.74, 0.74)
+
+[node name="OakC" parent="Trees" instance=ExtResource("5_oak")]
+position = Vector3(12, 0, -9)
+rotation = Vector3(0, 3.8, 0)
+scale = Vector3(1.05, 1.05, 1.05)
+
+[node name="OakD" parent="Trees" instance=ExtResource("5_oak")]
+position = Vector3(10, 0, 5)
+rotation = Vector3(0, 5.7, 0)
+scale = Vector3(0.86, 0.86, 0.86)
+
+[node name="OakE" parent="Trees" instance=ExtResource("5_oak")]
+position = Vector3(-5, 0, -12)
+rotation = Vector3(0, 7.6, 0)
+scale = Vector3(0.76, 0.76, 0.76)
+
+[node name="OakF" parent="Trees" instance=ExtResource("5_oak")]
+position = Vector3(5, 0, -14)
+rotation = Vector3(0, 9.5, 0)
+scale = Vector3(0.94, 0.94, 0.94)
 
 [node name="Player" type="CharacterBody3D" parent="."]
 position = Vector3(-2, 0, 4)

@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="villa"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/preview/farm_3d_preview.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 

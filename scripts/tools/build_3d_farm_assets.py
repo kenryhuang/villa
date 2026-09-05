@@ -443,8 +443,8 @@ environment.objects.link(obj)
 obj.data.materials.append(M["path"])
 
 TREE_POSITIONS = [(-8, -5), (-10, 2), (12, -9), (10, 5), (-5, -12), (5, -14)]
-for i, (x, z) in enumerate(TREE_POSITIONS):
-    place(oak, x, z, scale=[1.10, .88, 1.25, 1.02, .91, 1.12][i], angle=i * 1.9)
+TREE_SCALES = [.92, .74, 1.05, .86, .76, .94]
+for x, z in TREE_POSITIONS:
     for j in range(5):
         a = j * 1.25
         ellipsoid("Mossy root stone", (x + math.cos(a) * .8, -z + math.sin(a) * .8, .07),
@@ -507,6 +507,18 @@ combined = join_objects(copies, "Farm environment • static mesh")
 export(export_collection, "farm_environment")
 export_collection.hide_render = True
 export_collection.hide_viewport = True
+
+# Godot instances painted_oak.tscn separately, including its matching collisions.
+# Mirror those placements in the editable Blender composition after terrain export.
+painted_source = SOURCE / "painted_oak.blend"
+if not painted_source.exists():
+    raise FileNotFoundError("Run build_painted_oak.py before building the farm composition")
+with bpy.data.libraries.load(str(painted_source), link=False) as (available, imported):
+    imported.collections = ["Oak • sculpt and painted leaves"]
+painted_oak = imported.collections[0]
+ACTIVE = collection("09 • Painted oaks")
+for i, (x, z) in enumerate(TREE_POSITIONS):
+    place(painted_oak, x, z, scale=TREE_SCALES[i], angle=i * 1.9)
 
 # Source opens as a composed scene, original assets remain in labeled collections.
 for col in [oak, field, young, ripe]:
