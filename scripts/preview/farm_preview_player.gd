@@ -10,9 +10,11 @@ var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity"))
 var camera_yaw := 0.0
 var _animation_player: AnimationPlayer
 var _farm_action_seconds := 0.0
+var ui_blocked := false
 
 func _ready() -> void:
 	collision_layer = 2
+	collision_mask = 1 | 16
 	_animation_player = _find_animation_player(self)
 	if _animation_player != null:
 		for animation_name in _animation_player.get_animation_list():
@@ -24,10 +26,10 @@ func _physics_process(delta: float) -> void:
 	_farm_action_seconds = maxf(0.0, _farm_action_seconds - delta)
 	if not is_on_floor():
 		velocity.y -= gravity * delta
-	if Input.is_action_just_pressed("jump") and is_on_floor():
+	if not ui_blocked and Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = jump_velocity
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if _farm_action_seconds > 0.0:
+	if ui_blocked or _farm_action_seconds > 0.0:
 		input_vector = Vector2.ZERO
 	var direction := Vector3(input_vector.x, 0.0, input_vector.y).rotated(Vector3.UP, camera_yaw)
 	var speed := sprint_speed if Input.is_action_pressed("sprint") else walk_speed
@@ -52,6 +54,11 @@ func begin_farm_action(point: Vector3) -> void:
 		look_at(target, Vector3.UP, true)
 	velocity.x = 0.0
 	velocity.z = 0.0
+
+func cancel_farm_action() -> void:
+	_farm_action_seconds = 0.0
+	var moving := Input.get_vector("move_left", "move_right", "move_forward", "move_back").length_squared() > 0.001
+	play_motion_animation(moving)
 
 func play_motion_animation(is_walking: bool) -> void:
 	if _animation_player == null:

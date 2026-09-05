@@ -67,6 +67,8 @@ func _initialize_gameplay() -> void:
 		get_tree().auto_accept_quit = false
 
 func _unhandled_input(event: InputEvent) -> void:
+	if player.ui_blocked:
+		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE

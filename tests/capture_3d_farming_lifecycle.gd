@@ -26,7 +26,7 @@ func _run() -> void:
 				push_error("Capture could not cultivate its actual demo cell")
 				quit(1)
 				return
-	interaction.select_mode("seed")
+	interaction.select_target("seed", "grain_seed")
 	await _settle()
 	await _capture("farm_3d_cultivated.png")
 	for cell in cells:
@@ -39,7 +39,7 @@ func _run() -> void:
 	interaction.hud.notify_message("谷物正在生长 · 距成熟还有 54 游戏分钟")
 	await _capture("farm_3d_growing.png")
 	session.season.advance_game_minutes(54)
-	interaction.select_mode("harvest")
+	interaction.cancel_selection()
 	interaction.hud.notify_message("谷物成熟了，可以收获入背包")
 	await _capture("farm_3d_mature.png")
 	var total := 0

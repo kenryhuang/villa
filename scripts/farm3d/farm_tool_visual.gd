@@ -48,6 +48,12 @@ func _ready() -> void:
 func set_mode(mode: String) -> void:
 	visible = mode == "hoe"
 
+func cancel_action() -> void:
+	if _swing != null:
+		_swing.kill()
+	_hoe.rotation = REST_ROTATION
+	hide()
+
 func swing() -> void:
 	if _swing != null and _swing.is_running():
 		_swing.kill()

@@ -5,6 +5,7 @@ extends FarmingSystem
 ## suppresses its 2D/fallback scene path and forwards every visual change to
 ## the imported 3D crop visual owner.
 var visual_adapter: Node
+var paddy_cells: Dictionary = {}
 
 
 func _create_visual(cell: GridCell, _instance: CropInstance) -> Node3D:
@@ -23,3 +24,7 @@ func _remove_visual(cell: GridCell) -> void:
 func _sync_3d(cell: GridCell) -> void:
 	if visual_adapter != null and visual_adapter.has_method("sync_cell"):
 		visual_adapter.call("sync_cell", cell)
+
+
+func is_automatically_irrigated_cell(cell: GridCell) -> bool:
+	return (cell != null and paddy_cells.has(GridSystem.cell_key(cell.gx, cell.gz))) or super.is_automatically_irrigated_cell(cell)

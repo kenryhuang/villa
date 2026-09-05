@@ -1,0 +1,106 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Theme" path="res://assets/ui/hud/hud_theme.tres" id="8_theme"]
+
+[sub_resource type="StyleBoxFlat" id="TopPanelStyle"]
+content_margin_left = 18.0
+content_margin_top = 7.0
+content_margin_right = 18.0
+content_margin_bottom = 7.0
+bg_color = Color(0.105, 0.145, 0.12, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.82, 0.65, 0.34, 0.92)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[node name="TopBar" type="PanelContainer"]
+offset_left = 20.0
+offset_top = 18.0
+offset_right = 1180.0
+offset_bottom = 80.0
+theme = ExtResource("8_theme")
+theme_override_styles/panel = SubResource("TopPanelStyle")
+
+[node name="StatusRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StaminaBar" type="ProgressBar" parent="StatusRow"]
+custom_minimum_size = Vector2(150, 32)
+layout_mode = 2
+max_value = 100.0
+value = 100.0
+show_percentage = false
+
+[node name="GoldLabel" type="Label" parent="StatusRow"]
+custom_minimum_size = Vector2(85, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)
+theme_override_colors/font_outline_color = Color(0.0901961, 0.12549, 0.0980392, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 22
+text = "💰 100"
+vertical_alignment = 1
+
+[node name="LevelLabel" type="Label" parent="StatusRow"]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)
+theme_override_colors/font_outline_color = Color(0.0901961, 0.12549, 0.0980392, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 22
+text = "Lv.1"
+vertical_alignment = 1
+
+[node name="ExpBar" type="ProgressBar" parent="StatusRow"]
+custom_minimum_size = Vector2(130, 32)
+layout_mode = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="SeasonLabel" type="Label" parent="StatusRow"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)
+theme_override_colors/font_outline_color = Color(0.0901961, 0.12549, 0.0980392, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 22
+text = "春 1/7"
+vertical_alignment = 1
+
+[node name="TimeLabel" type="Label" parent="StatusRow"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.945098, 0.815686, 1)
+theme_override_colors/font_outline_color = Color(0.0901961, 0.12549, 0.0980392, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 22
+text = "06:00"
+vertical_alignment = 1
+
+
+[node name="Value" type="Label" parent="StatusRow/StaminaBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme_override_font_sizes/font_size = 14
+text = "体力 100"
+horizontal_alignment = 1
+vertical_alignment = 1
+[node name="Value" type="Label" parent="StatusRow/ExpBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme_override_font_sizes/font_size = 14
+text = "经验"
+horizontal_alignment = 1
+vertical_alignment = 1

@@ -11,7 +11,12 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
+const EconomyScript = preload("res://scripts/systems/economy_system.gd")
+const BuildingsScript = preload("res://scripts/farm3d/farm_building_system.gd")
+const ProductionScript = preload("res://scripts/systems/production_system.gd")
+const DataScript = preload("res://scripts/core/game_data.gd")
+const STARTER_MATERIALS := ["wood", "stone", "fiber", "plank", "stone_brick", "brick", "charcoal", "glass", "iron_ingot", "rope", "steel", "wooden_crate", "farm_tools", "machine_parts", "lamp"]
 
 @export var auto_restore := true
 @export var auto_save := true
@@ -25,13 +30,17 @@ var tools: ToolSystem
 var action_controller: PlayerActionController
 var visuals: Node3D
 var player: Node3D
+var economy: EconomySystem
+var buildings: BuildingSystem
+var production: ProductionSystem
+var paddy_cells: Dictionary = {}
 
 
 func configure(next_player: Node3D) -> bool:
 	if next_player == null:
 		return false
 	player = next_player
-	_ensure_grain_registered()
+	_ensure_crops_registered()
 	visuals = CropVisualSystemScript.new()
 	visuals.name = "Farm3DVisuals"
 	add_child(visuals)
@@ -49,6 +58,8 @@ func configure(next_player: Node3D) -> bool:
 	if event_bus != null and event_bus.has_signal("day_changed"):
 		event_bus.day_changed.connect(farming.on_day_changed)
 	inventory = InventorySystemScript.new()
+	inventory.max_slots = 60
+	inventory.reset_slots()
 	add_child(inventory)
 	tools = ToolSystemScript.new()
 	add_child(tools)
@@ -61,13 +72,28 @@ func configure(next_player: Node3D) -> bool:
 	action_controller.set_process_unhandled_input(false)
 	action_controller.switch_mode(PlayerActionController.ActionMode.FARMING)
 	action_controller.set_selected_plant_item_id("grain_seed")
+	economy = EconomyScript.new()
+	add_child(economy)
+	economy.configure(inventory, _game_state())
+	buildings = BuildingsScript.new()
+	buildings.farmer = player
+	add_child(buildings)
+	buildings.configure(grid, economy)
+	production = ProductionScript.new()
+	add_child(production)
+	production.configure(grid, farming, buildings, inventory)
+	production.sync_clock(season.hour, season.minute)
+	production.sync_daily_cursor(season.total_days)
+	if event_bus != null:
+		event_bus.day_changed.connect(production.apply_daily_effects)
+		event_bus.day_changed.connect(production.finish_daily_outputs)
 	if auto_restore and load_game():
 		return true
 	_grant_initial_state()
 	return true
 
 
-func act(cell: GridCell, mode: String) -> Dictionary:
+func act(cell: GridCell, mode: String, seed_id: String = "grain_seed") -> Dictionary:
 	if cell == null:
 		return _failure("invalid_cell")
 	if not _in_range(cell):
@@ -84,9 +110,9 @@ func act(cell: GridCell, mode: String) -> Dictionary:
 			action_controller.select_slot(0)
 			result = _result(action_controller.perform_cell_action(cell), "已清理枯萎作物" if clearing else "已开垦地块")
 		"seed":
-			action_controller.set_selected_plant_item_id("grain_seed")
+			action_controller.set_selected_plant_item_id(seed_id)
 			action_controller.select_slot(PlayerActionController.SEED_SLOT)
-			result = _result(action_controller.perform_cell_action(cell), "已播种谷物", _plant_failure_reason())
+			result = _result(action_controller.perform_cell_action(cell), "已播种%s" % item_name(seed_id), _plant_failure_reason())
 		"water":
 			var water_failure := _tool_failure("watering_can")
 			if not water_failure.is_empty():
@@ -134,6 +160,10 @@ func save_game() -> bool:
 		"experience": experience,
 		"level": level,
 		"harvest_seed": harvest_seed,
+		"paddy_cells": paddy_cells.keys(),
+		"production": production.to_dict(),
+		"buildings": buildings.get_all_buildings().map(func(b: BuildingInstance): return b.to_dict()),
+		"gold": int(state.gold) if state != null else 100,
 	}
 	file.store_string(JSON.stringify(data))
 	file.flush()
@@ -163,6 +193,12 @@ func load_game() -> bool:
 	# All validation completed before any live state changes.
 	if not grid.from_dict(data.grid) or not tools.from_dict(data.tools):
 		return false
+	production.begin_restore_transaction()
+	paddy_cells.clear()
+	for key in data.get("paddy_cells", []):
+		paddy_cells[int(key)] = true
+	_sync_paddy()
+	buildings.restore_buildings(data.get("buildings", []))
 	inventory.restore_state(normalized.slots, normalized.quick_mappings)
 	season.current_season = int(data.season.season) as SeasonSystem.Season
 	season.current_day = int(data.season.day)
@@ -175,6 +211,14 @@ func load_game() -> bool:
 		state.player_state.exp = int(data.experience)
 		state.player_state.level = int(data.level)
 		state.harvest_seed = int(data.harvest_seed)
+		state.gold = int(data.get("gold", state.gold))
+	if int(data.version) == 1:
+		_grant_catalog_items()
+	if data.has("production"):
+		production.from_dict(data.production)
+	production.sync_clock(season.hour, season.minute)
+	production.sync_daily_cursor(season.total_days)
+	production.end_restore_transaction()
 	farming.sync_growth_clock()
 	return true
 
@@ -182,6 +226,7 @@ func load_game() -> bool:
 func _harvest_or_clear(cell: GridCell) -> Dictionary:
 	if cell.crop_instance != null and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.WITHERED:
 		return _result(farming.clear_withered(cell), "已清理枯萎作物")
+	var harvested_name: String = cell.crop_instance.crop_data.crop_name if cell.crop_instance != null else "作物"
 	var preview := farming.preview_harvest(cell)
 	if preview.is_empty():
 		return _failure("not_mature")
@@ -219,11 +264,13 @@ func _harvest_or_clear(cell: GridCell) -> Dictionary:
 	farming.publish_harvest_publication(publication)
 	if owns_notification_transaction:
 		inventory.end_restore_notification_transaction(true)
-	return {"ok": true, "reason": "", "message": "已收获谷物", "items": items.duplicate(true)}
+	return {"ok": true, "reason": "", "message": "已收获%s，物品已放入背包" % harvested_name, "items": items.duplicate(true)}
 
 
 func _grant_initial_state() -> void:
 	inventory.add_item("grain_seed", 99)
+	_grant_catalog_items()
+	_game_state().gold = 50_000
 	for base_x in [19, 22, 25]:
 		for base_z in [12, 9, 6]:
 			for gx in [base_x, base_x + 1]:
@@ -243,10 +290,12 @@ func _grant_initial_state() -> void:
 	visuals.rebuild(grid._cells.values())
 
 
-func _ensure_grain_registered() -> void:
+func _ensure_crops_registered() -> void:
 	var data = get_node_or_null("/root/GameData")
-	if data != null and data.get_crop("grain") == null:
-		data.register_crop(CropCatalogScript.grain_definition())
+	if data != null:
+		for crop in CropCatalogScript.default_crop_definitions():
+			if data.get_crop(crop.crop_id) == null:
+				data.register_crop(crop)
 
 
 func _in_range(cell: GridCell) -> bool:
@@ -275,7 +324,12 @@ func _message_for(reason: String) -> String:
 		"out_of_range": "离地块太远",
 		"invalid_mode": "未知农事操作",
 		"wrong_season": "当前季节不适宜播种",
-		"no_seed": "谷物种子不足",
+		"no_seed": "种子不足，请查看背包",
+		"requires_greenhouse": "这种作物需要种在温室周围的种植区",
+		"greenhouse_required": "这种作物需要温室环境",
+		"no_target": "请从下方选择农田、种子或建筑",
+		"already_watered": "这块地已经浇过水了",
+		"invalid_target": "这里不能放置所选目标",
 		"plot_unavailable": "地块暂时不能种植",
 		"not_mature": "作物尚未成熟",
 		"crop_mature": "作物已成熟，请先收获",
@@ -293,9 +347,21 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if data.size() != 9 or not _is_integer(data.get("version")) or int(data.version) != SAVE_VERSION:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, SAVE_VERSION]:
 		return false
+	if data.size() != (9 if int(data.version) == 1 else 13):
+		return false
+	if int(data.version) == SAVE_VERSION:
+		if not data.get("paddy_cells") is Array or not data.get("buildings") is Array or not _is_integer(data.get("gold")) or int(data.gold) < 0:
+			return false
+		if not data.get("production") is Dictionary or not production.validate_dict(data.production):
+			return false
+		for key in data.paddy_cells:
+			if not _is_integer(key) or not grid._cells.has(int(key)):
+				return false
 	if not data.get("grid") is Dictionary or not grid.validate_dict(data.grid):
+		return false
+	if not buildings.validate_restore_buildings(data.get("buildings", []), data.grid):
 		return false
 	if not data.get("inventory") is Dictionary or not data.inventory.has("slots") or not data.inventory.has("quick"):
 		return false
@@ -328,3 +394,82 @@ func _is_integer(value: Variant) -> bool:
 
 func _game_state() -> Node:
 	return get_node_or_null("/root/GameState")
+
+
+func _grant_catalog_items() -> void:
+	# Upgrade old 3D saves once; subsequent loads never replenish spent supplies.
+	for crop in CropCatalogScript.default_crop_definitions():
+		if crop.plant_item_id != "grain_seed":
+			inventory.add_item(crop.plant_item_id, 20)
+	for item_id in STARTER_MATERIALS:
+		inventory.add_item(item_id, 99)
+
+
+func item_name(item_id: String) -> String:
+	var item: Variant = DataScript.get_item(item_id)
+	return str(item.get("name", item_id)) if item != null else item_id
+
+
+func apply_target(cell: GridCell, category: String, target_id: String) -> Dictionary:
+	if cell == null:
+		return _failure("invalid_cell")
+	if not _in_range(cell):
+		return _failure("out_of_range")
+	var result: Dictionary
+	match category:
+		"farmland":
+			if target_id not in ["dry", "paddy"] or cell.crop_instance != null or cell.state not in [GridCell.State.WASTELAND, GridCell.State.FARMLAND]:
+				return _failure("invalid_target")
+			var key := GridSystem.cell_key(cell.gx, cell.gz)
+			if cell.state == GridCell.State.FARMLAND and paddy_cells.has(key) == (target_id == "paddy"):
+				return {"ok": false, "reason": "already_farmland", "message": "这里已经是所选类型的农田"}
+			if int(_game_state().player_state.stamina) < 5:
+				return _failure("insufficient_stamina")
+			if cell.state == GridCell.State.WASTELAND and not grid.set_cell_state(cell.gx, cell.gz, GridCell.State.FARMLAND):
+				return _failure("invalid_target")
+			_game_state().player_state.stamina -= 5
+			if target_id == "paddy":
+				paddy_cells[key] = true
+				grid.water_cell(cell.gx, cell.gz)
+			else:
+				paddy_cells.erase(key)
+			_sync_paddy()
+			result = _result(true, "已开垦水田 · 持续灌溉" if target_id == "paddy" else "已开垦旱地")
+		"seed":
+			if get_node("/root/GameData").get_crop_for_plant_item(target_id) == null:
+				return _failure("invalid_target")
+			return act(cell, "seed", target_id)
+		"building":
+			var source: Variant = DataScript.get_building(target_id)
+			if source == null:
+				return _failure("invalid_target")
+			var placement := buildings.try_place_building(target_id, cell.gx, cell.gz)
+			if placement.placed:
+				for location in placement.instance.occupied_cells:
+					paddy_cells.erase(GridSystem.cell_key(location.gx, location.gz))
+				_sync_paddy()
+			result = {"ok": placement.placed, "reason": placement.diagnostic.code, "message": "开始建造%s" % DataScript.get_building(target_id).name if placement.placed else placement.diagnostic.message}
+		"":
+			if cell.crop_instance != null and (cell.crop_instance.is_mature() or cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.WITHERED):
+				result = _harvest_or_clear(cell)
+			elif cell.state in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
+				if cell.watered:
+					return _failure("already_watered")
+				if int(_game_state().player_state.stamina) < 2:
+					return _failure("insufficient_stamina")
+				result = _result(grid.water_cell(cell.gx, cell.gz), "已浇水")
+				if result.ok:
+					_game_state().player_state.stamina -= 2
+			else:
+				return _failure("no_target")
+		_:
+			return _failure("invalid_target")
+	if result.ok and auto_save:
+		save_game()
+	return result
+
+
+func _sync_paddy() -> void:
+	visuals.paddy_cells = paddy_cells.duplicate()
+	farming.paddy_cells = paddy_cells.duplicate()
+	visuals.rebuild(grid._cells.values())

@@ -1,164 +1,276 @@
 extends CanvasLayer
 
-signal mode_requested(mode: String)
+signal target_requested(category: String, target_id: String)
+signal category_requested(category: String)
 signal rest_requested
 signal save_requested
 
-const MODES := ["hoe", "seed", "water", "harvest"]
-const NAMES := ["锄头", "谷物种子", "浇水壶", "收获"]
-const ICONS := ["res://assets/ui/action_icons/hoe.png", "res://assets/crops/grain/painted/stage_0/variant_0_front.png", "res://assets/ui/action_icons/watering_can.png", "res://assets/ui/action_icons/harvest_basket.svg"]
+const Catalog = preload("res://scripts/farm3d/target_catalog.gd")
+const BusScript = preload("res://scripts/ui/hud_message_bus.gd")
+const StreamScene = preload("res://scenes/ui/hud_message_stream.tscn")
+const InventoryScene = preload("res://scenes/farm3d/inventory.tscn")
+const StatusScene = preload("res://scenes/farm3d/status_bar.tscn")
 const INK := Color("f8edcf")
-var buttons: Array[Button] = []
-var clock_label: Label
-var stock_label: Label
-var target_label: Label
-var message_label: Label
-var stamina_bar: ProgressBar
-var _message_seconds := 0.0
 var _session: Node
-var _mode := "hoe"
+var category := ""
+var target_id := ""
+var buttons: Array[Button] = []
+var category_buttons: Dictionary = {}
+var bus: Node
+var message_stream: PanelContainer
+var inventory_ui: Control
+var status_bar: PanelContainer
+var secondary: PanelContainer
+var secondary_grid: GridContainer
+var secondary_title: Label
+var history_panel: PanelContainer
+var history_text: RichTextLabel
+var _ui: Control
+var _menu: VBoxContainer
+var _status_seconds := 0.0
 
 func configure(session: Node) -> void:
 	_session = session
-	var ui := Control.new()
-	ui.name = "HUD"
-	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(ui)
-	var title := _label("暖阳农庄", 30)
-	title.position = Vector2(32, 26)
-	ui.add_child(title)
-	var subtitle := _label("耕一方田，等一季收成", 16)
-	subtitle.position = Vector2(34, 67)
-	subtitle.modulate.a = 0.78
-	ui.add_child(subtitle)
-	var status := PanelContainer.new()
-	status.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	status.position = Vector2(-352, 26)
-	status.custom_minimum_size = Vector2(320, 156)
-	status.add_theme_stylebox_override("panel", _panel(Color("273925e8")))
-	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui.add_child(status)
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 8)
-	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	status.add_child(rows)
-	clock_label = _label("", 21)
-	stock_label = _label("", 17)
-	rows.add_child(clock_label)
-	rows.add_child(stock_label)
-	stamina_bar = ProgressBar.new()
-	stamina_bar.custom_minimum_size = Vector2(280, 7)
-	stamina_bar.show_percentage = false
-	stamina_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stamina_bar.add_theme_stylebox_override("background", _panel(Color("152a1a"), 0))
-	stamina_bar.add_theme_stylebox_override("fill", _panel(Color("afc577"), 0))
-	rows.add_child(stamina_bar)
-	var controls := HBoxContainer.new()
-	controls.add_theme_constant_override("separation", 8)
-	rows.add_child(controls)
-	for entry in [["休息到次日", rest_requested], ["保存", save_requested]]:
-		var button := Button.new()
-		button.text = entry[0]
-		button.focus_mode = Control.FOCUS_NONE
+	_ui = Control.new()
+	_ui.name = "HUD"
+	_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.theme = preload("res://assets/ui/hud/hud_theme.tres")
+	add_child(_ui)
+	bus = BusScript.new()
+	add_child(bus)
+	status_bar = StatusScene.instantiate()
+	_ui.add_child(status_bar)
+	status_bar.position = Vector2(18, 18)
+	status_bar.size = Vector2(750, 58)
+	for child in status_bar.get_node("StatusRow").get_children():
+		if child is Label:
+			child.add_theme_font_size_override("font_size", 17)
+			child.custom_minimum_size.x = 70
+	status_bar.get_node("StatusRow/StaminaBar").custom_minimum_size.x = 115
+	status_bar.get_node("StatusRow/ExpBar").custom_minimum_size.x = 95
+	message_stream = StreamScene.instantiate()
+	_ui.add_child(message_stream)
+	message_stream.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	message_stream.position = Vector2(18, 88)
+	message_stream.size = Vector2(344, 280)
+	message_stream.set_expanded_bottom(368)
+	message_stream.title_label.text = "消息"
+	message_stream.configure(bus)
+	message_stream.history_requested.connect(_toggle_history)
+	_make_menu()
+	_make_history()
+	inventory_ui = InventoryScene.instantiate()
+	_ui.add_child(inventory_ui)
+	inventory_ui.configure(session.inventory)
+	inventory_ui.target_requested.connect(func(next_category: String, id: String): target_requested.emit(next_category, id))
+	inventory_ui.blocking_opened.connect(func(): Input.mouse_mode = Input.MOUSE_MODE_VISIBLE)
+	session.buildings.building_construction_completed.connect(func(building: BuildingInstance): notify_message("%s建造完成" % building.data.display_name, true))
+	get_viewport().size_changed.connect(_layout)
+	_layout()
+	_connect_notifications()
+	_refresh_status()
+	notify_message("选择农田、种子或建筑后点击地面放置；Esc 收起。", true)
+	bus.publish("操作", "info", "空手点击成熟作物收获、枯萎作物清理、生长中的作物浇水。I 打开背包。")
+
+func _make_menu() -> void:
+	_menu = VBoxContainer.new()
+	_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_menu.add_theme_constant_override("separation", 8)
+	_ui.add_child(_menu)
+	_menu.resized.connect(_position_menu)
+	secondary = PanelContainer.new()
+	secondary.add_theme_stylebox_override("panel", _style(Color("26372bee"), Color("a89058")))
+	_menu.add_child(secondary)
+	var contents := VBoxContainer.new()
+	contents.add_theme_constant_override("separation", 8)
+	secondary.add_child(contents)
+	var header := HBoxContainer.new()
+	contents.add_child(header)
+	secondary_title = Label.new()
+	secondary_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	secondary_title.add_theme_font_size_override("font_size", 18)
+	header.add_child(secondary_title)
+	var close := _button("收起  Esc", Vector2(100, 30))
+	close.pressed.connect(func(): category_requested.emit(""))
+	header.add_child(close)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.y = 216
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	contents.add_child(scroll)
+	secondary_grid = GridContainer.new()
+	secondary_grid.columns = 5
+	secondary_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	secondary_grid.add_theme_constant_override("h_separation", 6)
+	secondary_grid.add_theme_constant_override("v_separation", 6)
+	scroll.add_child(secondary_grid)
+	secondary.hide()
+	var base := PanelContainer.new()
+	base.add_theme_stylebox_override("panel", _style(Color("202e25f2"), Color("a89058")))
+	_menu.add_child(base)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	base.add_child(row)
+	for entry in [["farmland", "农田"], ["seed", "种子"], ["building", "建筑"]]:
+		var button := _button(entry[1], Vector2(122, 48))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", 15)
-		button.add_theme_stylebox_override("normal", _panel(Color("3c5037"), 5))
-		button.add_theme_color_override("font_color", INK)
-		button.pressed.connect(entry[1].emit)
-		controls.add_child(button)
-	var bottom := VBoxContainer.new()
-	bottom.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	bottom.position = Vector2(-330, -210)
-	bottom.custom_minimum_size = Vector2(660, 180)
-	bottom.add_theme_constant_override("separation", 9)
-	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui.add_child(bottom)
-	message_label = _label("", 18)
-	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bottom.add_child(message_label)
-	target_label = _label("靠近草地，用锄头开垦第一块田", 18)
-	target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bottom.add_child(target_label)
-	var bar := HBoxContainer.new()
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 8)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bottom.add_child(bar)
-	for index in MODES.size():
-		var button := Button.new()
-		button.name = MODES[index].capitalize()
-		button.custom_minimum_size = Vector2(140, 88)
-		button.text = "%d  %s" % [index + 1, NAMES[index]]
-		button.icon = load(ICONS[index]) as Texture2D
-		button.expand_icon = true
-		button.add_theme_constant_override("icon_max_width", 34)
-		button.add_theme_font_size_override("font_size", 17)
-		button.add_theme_color_override("font_color", INK)
-		button.add_theme_color_override("font_hover_color", INK)
-		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(func(): mode_requested.emit(MODES[index]))
-		bar.add_child(button)
-		buttons.append(button)
-	var help := _label("1–4 选择工具  ·  左键耕作 / E 操作前方  ·  WASD 移动  ·  右键转镜头  ·  Tab 总览", 15)
-	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bottom.add_child(help)
-	set_mode("hoe")
-	refresh()
+		button.pressed.connect(func(): category_requested.emit("" if category == entry[0] and secondary.visible else entry[0]))
+		category_buttons[entry[0]] = button
+		row.add_child(button)
+	for entry in [["背包  I", toggle_inventory], ["休息", func(): rest_requested.emit()], ["保存", func(): save_requested.emit()]]:
+		var button := _button(entry[0], Vector2(78, 48))
+		button.pressed.connect(entry[1])
+		row.add_child(button)
+
+func show_category(next_category: String) -> void:
+	category = next_category
+	target_id = ""
+	for child in secondary_grid.get_children():
+		child.free()
+	buttons.clear()
+	secondary.visible = not category.is_empty()
+	secondary_grid.get_parent().custom_minimum_size.y = 110 if category == "farmland" else 216
+	if secondary.visible:
+		secondary_title.text = {"farmland": "农田", "seed": "种子与树苗", "building": "建筑"}.get(category, "")
+		for entry in Catalog.entries(category):
+			var button := _button("", Vector2(126, 96))
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.set_meta("target_id", entry.id)
+			button.set_meta("entry", entry)
+			button.icon = entry.get("icon")
+			button.expand_icon = true
+			button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+			button.add_theme_constant_override("icon_max_width", 32)
+			button.pressed.connect(func(): target_requested.emit(category, entry.id))
+			buttons.append(button)
+			secondary_grid.add_child(button)
+	_refresh_buttons()
+	_layout()
+
+func set_target(next_category: String, id: String) -> void:
+	if category != next_category:
+		show_category(next_category)
+	target_id = id
+	secondary.hide()
+	_refresh_buttons()
+	_layout()
+
+func _refresh_buttons() -> void:
+	for id in category_buttons:
+		category_buttons[id].text = {"farmland": "农田", "seed": "种子", "building": "建筑"}[id]
+		category_buttons[id].add_theme_stylebox_override("normal", _style(Color("64744b") if category == id else Color("354438"), Color("c4ab70") if category == id else Color("566449")))
+	for button in buttons:
+		var entry: Dictionary = button.get_meta("entry")
+		if target_id == entry.id:
+			category_buttons[category].text = entry.name
+		button.text = "%s%s\n%s" % [entry.name, " ×%d" % _session.inventory.get_item_count(entry.id) if category == "seed" else "", entry.detail]
+		button.add_theme_stylebox_override("normal", _style(Color("69784c") if target_id == entry.id else Color("354438"), Color("e6c882") if target_id == entry.id else Color("566449")))
 
 func _process(delta: float) -> void:
 	if _session == null:
 		return
-	refresh()
-	_message_seconds = maxf(0.0, _message_seconds - delta)
-	message_label.visible = _message_seconds > 0.0
+	_status_seconds -= delta
+	if _status_seconds <= 0:
+		_status_seconds = 0.25
+		_refresh_status()
+		_refresh_buttons()
+	_session.player.ui_blocked = is_modal_open()
 
-func refresh() -> void:
-	var season = _session.season
-	clock_label.text = "%s · 第 %d 天    %02d:%02d" % [["春", "夏", "秋", "冬"][int(season.current_season)], season.current_day, season.hour, season.minute]
-	var state = get_node("/root/GameState").player_state
-	stock_label.text = "种子 %d    谷物 %d    体力 %d/%d" % [_session.inventory.get_item_count("grain_seed"), _session.inventory.get_item_count("grain"), state.stamina, state.max_stamina]
-	stamina_bar.max_value = state.max_stamina
-	stamina_bar.value = state.stamina
-
-func set_mode(mode: String) -> void:
-	_mode = mode
-	for index in buttons.size():
-		var selected: bool = MODES[index] == mode
-		var style := _panel(Color("586e36f5") if selected else Color("283923ed"), 10)
-		style.border_color = Color("ddcc87") if selected else Color("647452")
-		style.set_border_width_all(2 if selected else 1)
-		buttons[index].add_theme_stylebox_override("normal", style)
-		buttons[index].add_theme_stylebox_override("hover", _panel(Color("677c45"), 10))
-		buttons[index].add_theme_stylebox_override("pressed", style)
-
-func show_target(text: String, allowed: bool) -> void:
-	target_label.text = text
-	target_label.modulate = INK if allowed else Color("e9c4a3")
+func _refresh_status() -> void:
+	var state := get_node("/root/GameState")
+	var ps = state.player_state
+	var row := status_bar.get_node("StatusRow")
+	row.get_node("StaminaBar").max_value = ps.max_stamina
+	row.get_node("StaminaBar").value = ps.stamina
+	row.get_node("StaminaBar/Value").text = "体力 %d" % ps.stamina if row.has_node("StaminaBar/Value") else ""
+	row.get_node("GoldLabel").text = "金币 %d" % state.gold
+	row.get_node("LevelLabel").text = "Lv.%d" % ps.level
+	row.get_node("ExpBar").value = ps.get_exp_progress() * 100
+	row.get_node("SeasonLabel").text = "%s %d/%d" % [["春", "夏", "秋", "冬"][_session.season.current_season], _session.season.current_day, SeasonSystem.DAYS_PER_SEASON]
+	row.get_node("TimeLabel").text = "%02d:%02d" % [_session.season.hour, _session.season.minute]
 
 func notify_message(text: String, success: bool = true) -> void:
-	message_label.text = text
-	message_label.modulate = Color("f6dfa1") if success else Color("f0b29c")
-	_message_seconds = 3.2
-	message_label.show()
+	bus.publish("农庄", "success" if success else "warning", text, {"game_time": "%02d:%02d" % [_session.season.hour, _session.season.minute]})
 
-func _label(text: String, size: int) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_color_override("font_color", INK)
-	label.add_theme_color_override("font_shadow_color", Color("182515cf"))
-	label.add_theme_constant_override("shadow_offset_x", 1)
-	label.add_theme_constant_override("shadow_offset_y", 2)
-	return label
+func toggle_inventory() -> void:
+	history_panel.hide()
+	inventory_ui.toggle()
+	_session.player.ui_blocked = is_modal_open()
 
-func _panel(color: Color, padding: int = 14) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
-	box.set_corner_radius_all(9)
-	box.content_margin_left = padding
-	box.content_margin_right = padding
-	box.content_margin_top = padding
-	box.content_margin_bottom = padding
-	return box
+func is_modal_open() -> bool:
+	return inventory_ui != null and (inventory_ui.visible or history_panel.visible)
+
+func close_panels() -> void:
+	inventory_ui.close()
+	history_panel.hide()
+	_session.player.ui_blocked = false
+
+func _make_history() -> void:
+	history_panel = PanelContainer.new()
+	history_panel.add_theme_stylebox_override("panel", _style(Color("202e25fa"), Color("b59c63")))
+	_ui.add_child(history_panel)
+	var box := VBoxContainer.new()
+	history_panel.add_child(box)
+	var close := _button("消息记录  ·  关闭", Vector2(0, 36))
+	close.pressed.connect(func(): history_panel.hide())
+	box.add_child(close)
+	history_text = RichTextLabel.new()
+	history_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	history_text.add_theme_font_size_override("normal_font_size", 18)
+	box.add_child(history_text)
+	history_panel.hide()
+
+func _toggle_history() -> void:
+	inventory_ui.close()
+	history_panel.visible = not history_panel.visible
+	history_text.text = ""
+	for record in bus.get_recent():
+		history_text.add_text("%s  %s%s\n\n" % [record.game_time, record.text, " ×%d" % record.count if record.count > 1 else ""])
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_session.player.ui_blocked = is_modal_open()
+
+func _layout() -> void:
+	var viewport_size := _ui.size
+	var width := minf(760, viewport_size.x - 36)
+	_menu.size = Vector2(width, 0)
+	_position_menu()
+	history_panel.position = (viewport_size - Vector2(720, 480)) * 0.5
+	history_panel.size = Vector2(720, 480)
+
+func _position_menu() -> void:
+	_menu.position = Vector2((_ui.size.x - _menu.size.x) * 0.5, _ui.size.y - _menu.size.y - 18)
+
+func _button(text: String, minimum: Vector2) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = minimum
+	button.focus_mode = Control.FOCUS_NONE
+	button.add_theme_font_size_override("font_size", 16)
+	button.add_theme_color_override("font_color", INK)
+	button.add_theme_stylebox_override("normal", _style(Color("354438"), Color("566449")))
+	button.add_theme_stylebox_override("hover", _style(Color("58684a"), Color("c4ab70")))
+	button.add_theme_stylebox_override("pressed", _style(Color("768151"), Color("ead395")))
+	return button
+
+func _style(background: Color, border: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = background
+	style.border_color = border
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(9)
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 7
+	style.content_margin_bottom = 7
+	return style
+
+
+func _connect_notifications() -> void:
+	var events := get_node("/root/EventBus")
+	events.season_changed.connect(func(value: int): notify_message("季节变为%s" % ["春季", "夏季", "秋季", "冬季"][value]))
+	events.crop_matured.connect(func(gx: int, gz: int):
+		var cell: GridCell = _session.grid.get_cell(gx, gz)
+		if cell != null and cell.crop_instance != null:
+			notify_message("%s成熟了，收起目标后点击即可收获" % cell.crop_instance.crop_data.crop_name)
+	)

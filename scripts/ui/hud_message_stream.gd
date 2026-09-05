@@ -247,6 +247,12 @@ func _scroll_to_latest_deferred() -> void:
 func _scroll_to_latest() -> void:
 	if not is_node_ready():
 		return
+	# Wrapped message cards update container height after the deferred call.
+	# Read the scroll range only after those layout passes have completed.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	var scroll_bar := message_scroll.get_v_scroll_bar()
 	message_scroll.scroll_vertical = int(scroll_bar.max_value)
 	_adjusting_scroll = false

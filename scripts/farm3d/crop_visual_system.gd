@@ -6,6 +6,7 @@ const YOUNG_SCENE := preload("res://assets/models/farm_preview/grain_young.glb")
 const MATURE_SCENE := preload("res://assets/models/farm_preview/grain_mature.glb")
 
 var _visuals := {}
+var paddy_cells: Dictionary = {}
 
 
 func rebuild(cells: Array) -> void:
@@ -50,12 +51,38 @@ func sync_cell(cell: GridCell) -> void:
 	collider.position.y = 0.0225
 	collider.add_child(collision_shape)
 	holder.add_child(collider)
+	if paddy_cells.has(key):
+		var water := MeshInstance3D.new()
+		water.name = "PaddyWater"
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(0.87, 0.87)
+		water.mesh = plane
+		water.position.y = 0.059
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(0.25, 0.46, 0.41, 0.75)
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.roughness = 0.18
+		water.material_override = material
+		holder.add_child(water)
 	if cell.crop_instance != null:
 		_add_crop(holder, cell)
 
 
 func _add_crop(holder: Node3D, cell: GridCell) -> void:
 	var instance: CropInstance = cell.crop_instance
+	if instance.crop_data.crop_id != "grain":
+		var paths: Array[String] = instance.crop_data.stage_scenes
+		var stage := clampi(instance.get_current_stage(), 0, paths.size() - 1)
+		var packed := load(paths[stage]) as PackedScene
+		if packed != null:
+			var crop := packed.instantiate() as Node3D
+			crop.name = "Crop_" + instance.crop_data.crop_id
+			crop.position.y = 0.06
+			holder.add_child(crop)
+			if instance.lifecycle_state == CropInstance.LifecycleState.WITHERED:
+				for sprite in crop.find_children("*", "Sprite3D", true, false):
+					sprite.modulate = Color("91794e")
+		return
 	var progress := instance.growth_progress
 	var maturity := maxf(1.0, float(instance.crop_data.growth_days))
 	var stage := instance.get_current_stage()
