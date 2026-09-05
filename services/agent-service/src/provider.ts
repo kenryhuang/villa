@@ -87,6 +87,7 @@ export class OpenAICompatibleProvider {
       const availableReads = readRounds < 2 ? [...context.allowed_read_tools] : [];
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
+        ...(isDialogue ? {enable_thinking: false} : {}),
         temperature: this.#config.temperature,
         max_tokens: this.#config.maxOutputTokens,
         stream: true,

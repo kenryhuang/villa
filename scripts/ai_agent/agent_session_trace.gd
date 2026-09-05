@@ -128,6 +128,38 @@ func finish_error(
 	return true
 
 
+func finish_cancelled(
+	agent_id: String,
+	request_id: String,
+	reason: String,
+	trigger: String = "",
+	timestamp_msec: int = -1
+) -> bool:
+	if agent_id.strip_edges().is_empty() or request_id.strip_edges().is_empty():
+		return false
+	if _terminal_requests.has(request_id):
+		return true
+	var resolved_timestamp := timestamp_msec
+	if resolved_timestamp < 0:
+		resolved_timestamp = int(Time.get_unix_time_from_system() * 1000.0)
+	var index := int(_request_indexes.get(request_id, -1))
+	if index < 0:
+		index = _append_record(request_id, "", agent_id, trigger, resolved_timestamp)
+		if index < 0:
+			return false
+	var record := _requests[index]
+	if str(record.trigger).is_empty():
+		record.trigger = trigger
+	record.updated_msec = resolved_timestamp
+	record.status = "cancelled"
+	record.error = {}
+	record.cancellation = {"code": reason if not reason.is_empty() else "cancelled"}
+	_requests[index] = record
+	_persist_terminal(request_id)
+	trace_updated.emit(request_id)
+	return true
+
+
 func get_requests() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for record in _requests:
@@ -204,6 +236,7 @@ func _append_record(
 		"output": {},
 		"final": {},
 		"error": {},
+		"cancellation": {},
 		"action_events": [],
 	})
 	_trim_memory()
@@ -242,6 +275,7 @@ func _disk_record(record: Dictionary) -> Dictionary:
 			"provider_output": (materialized.output as Dictionary).duplicate(true),
 			"decision": (materialized.final as Dictionary).duplicate(true),
 			"error": (materialized.error as Dictionary).duplicate(true),
+			"cancellation": (materialized.cancellation as Dictionary).duplicate(true),
 			"action_events": (materialized.get("action_events", []) as Array).duplicate(true),
 		},
 	}

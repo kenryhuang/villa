@@ -280,11 +280,15 @@ export function validToolArguments(name: string, value: unknown): boolean {
 export function toolDescription(name: string): Record<string, unknown> {
   const parameters = TOOL_PARAMETERS[name];
   if (!parameters) throw new Error(`unknown_tool_contract:${name}`);
+  const farmingDescriptions: Record<string, string> = {
+    harvest: "Harvest a mature crop for produce, or clear a withered crop to leave tilled soil with no items or inventory rewards. Rejects growing and dormant crops. Use the plot state and available_actions from the current farm context.",
+    plant: "Plant one seed on a tilled plot. Check crop_options (or inspect_crop_options) for plantable_plots, unavailable_reason, and seed_quantity. Season names in public_world_state are authoritative; do not infer planting validity from an empty plot or numeric season alone.",
+  };
   return {
     type: "function",
     function: {
       name,
-      description: `Role-authorized ${name} command. Return only arguments grounded in the supplied context.`,
+      description: farmingDescriptions[name] ?? `Role-authorized ${name} command. Return only arguments grounded in the supplied context.`,
       parameters: structuredClone(parameters),
     },
   };

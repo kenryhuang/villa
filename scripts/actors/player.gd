@@ -36,12 +36,12 @@ const DIALOGUE_MOVEMENT_ACTIONS := [
 	&"jump",
 	&"sprint",
 ]
-
 var _auto_path: Array[Vector3] = []
 var _auto_path_index := 0
 var _auto_stall_elapsed := 0.0
 var _auto_last_distance := INF
 var _movement_input_blocked := false
+var _movement_input_rearm_pending := false
 @onready var player_visual: PlayerVisual = $PlayerVisual
 
 
@@ -56,20 +56,21 @@ func _physics_process(delta: float) -> void:
 	# 重力
 	if not is_on_floor():
 		velocity.y -= gravity * delta
+	var input_vector := filter_movement_input(
+		Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	)
+	var movement_input_enabled := not _movement_input_blocked and not _movement_input_rearm_pending
 
 	# 跳跃
-	if not _movement_input_blocked and is_on_floor() and Input.is_action_just_pressed("jump"):
+	if movement_input_enabled and is_on_floor() and Input.is_action_just_pressed("jump"):
 		velocity.y = jump_velocity
 
 	# 奔跑
-	_is_sprinting = not _movement_input_blocked and Input.is_action_pressed("sprint")
+	_is_sprinting = movement_input_enabled and Input.is_action_pressed("sprint")
 	if _is_sprinting and not is_on_floor():
 		_is_sprinting = false
 
 	# 移动
-	var input_vector := filter_movement_input(
-		Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	)
 	var direction := Vector3.ZERO
 	var using_auto_movement := has_auto_movement()
 	if input_vector.length_squared() > 0.0001:
@@ -142,15 +143,42 @@ func set_movement_input_blocked(blocked: bool) -> void:
 		return
 	_movement_input_blocked = blocked
 	if blocked:
+		_movement_input_rearm_pending = false
+		_release_dialogue_movement_actions()
 		stop_auto_movement("dialogue_open")
 		return
+	_movement_input_rearm_pending = true
 	_release_dialogue_movement_actions()
 
 
+func _input(event: InputEvent) -> void:
+	var matching_actions := _dialogue_movement_actions_for_event(event)
+	if matching_actions.is_empty():
+		return
+	if not _movement_input_blocked and _movement_input_rearm_pending and event.is_pressed() and not _is_key_echo(event):
+		_movement_input_rearm_pending = false
+		return
+	if _movement_input_blocked or _movement_input_rearm_pending:
+		for action in matching_actions:
+			Input.action_release(action)
+
+
 func filter_movement_input(input_vector: Vector2) -> Vector2:
-	if _movement_input_blocked:
+	if _movement_input_blocked or _movement_input_rearm_pending:
 		return Vector2.ZERO
 	return input_vector
+
+
+func _dialogue_movement_actions_for_event(event: InputEvent) -> Array[StringName]:
+	var result: Array[StringName] = []
+	for action in DIALOGUE_MOVEMENT_ACTIONS:
+		if event.is_action(action):
+			result.append(action)
+	return result
+
+
+func _is_key_echo(event: InputEvent) -> bool:
+	return event is InputEventKey and event.echo
 
 
 func _release_dialogue_movement_actions() -> void:

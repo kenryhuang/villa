@@ -32,6 +32,10 @@ const VERSION := 5
 const EVENT_SCHEMA_VERSION := 1
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
+const EXPECTED_STREAM_CANCELLATIONS := {
+	"dialogue_replaced": true,
+	"dialogue_closed": true,
+}
 
 var registry = AgentRegistryScript.new()
 var farm_registry = FarmScript.new()
@@ -881,8 +885,17 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	var public_world := (projected.get("public_world_state", {}) as Dictionary).duplicate(true)
 	public_world.game_day = int(_season.total_days)
 	public_world.absolute_game_minute = game_minute
-	public_world.time_of_day = {"hour": int(_season.hour), "minute": int(_season.minute)}
+	public_world.time_of_day = {
+		"hour": int(_season.hour),
+		"minute": int(_season.minute),
+		"text": "%02d:%02d" % [int(_season.hour), int(_season.minute)],
+	}
 	public_world.season = int(_season.current_season)
+	public_world.season_name = str(SeasonSystem.Season.keys()[public_world.season]).to_lower()
+	public_world.season_label = ["春季", "夏季", "秋季", "冬季"][public_world.season]
+	public_world.season_day = int(_season.current_day)
+	public_world.days_per_season = SeasonSystem.DAYS_PER_SEASON
+	public_world.year = 1 + int(float(maxi(0, int(_season.total_days) - 1)) / float(SeasonSystem.DAYS_PER_SEASON * 4))
 	projected.public_world_state = public_world
 	var market_snapshot: Dictionary = {}
 	var market_catalog: Dictionary = {}
@@ -913,6 +926,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.actor_context = {
 		"self": state.to_dict(),
 		"farm": farm_snapshot,
+		"crop_options": _build_crop_options(agent_id),
 		"buildings": building_registry.to_dict().buildings,
 		"private_knowledge": knowledge_registry.get_private(agent_id),
 		"known_discoveries": knowledge_registry.to_dict().public,
@@ -938,6 +952,15 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	return request
 
 
+func _build_crop_options(agent_id: String) -> Array:
+	if not farm_registry.has_method("get_crop_options"):
+		return []
+	var options: Array = farm_registry.call("get_crop_options", agent_id)
+	return options.filter(func(option: Dictionary) -> bool:
+		return str(option.get("seed_item_id", "")) in AgentValidatorScript.SEED_IDS
+	)
+
+
 func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 	if not session_trace.accept_event(event):
 		_publish("warning", "%s 的 Agent 流事件无法记录。" % agent_id, {"agent_id": agent_id})
@@ -960,9 +983,15 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 func _handle_stream_failure(agent_id: String, request_id: String, error: String) -> void:
 	var trigger := str(_request_triggers.get(request_id, ""))
 	context_projection.release(agent_id, request_id)
-	if not session_trace.finish_error(agent_id, request_id, error, trigger):
+	var expected_cancellation := EXPECTED_STREAM_CANCELLATIONS.has(error)
+	var trace_finished: bool = bool(
+		session_trace.finish_cancelled(agent_id, request_id, error, trigger)
+		if expected_cancellation
+		else session_trace.finish_error(agent_id, request_id, error, trigger)
+	)
+	if not trace_finished:
 		_publish("warning", "%s 的 Agent 失败会话无法记录。" % agent_id, {"agent_id": agent_id})
-	if trigger == "dialogue":
+	if trigger == "dialogue" and not expected_cancellation:
 		dialogue_stream_failed.emit(agent_id, request_id, error)
 	_request_triggers.erase(request_id)
 
@@ -1049,7 +1078,9 @@ func _record_world_action_outcome(outcome: Dictionary) -> bool:
 		match tool_name:
 			"till": events.append(_world_action_event("FieldTilled", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "region"))
 			"plant": events.append(_world_action_event("CropPlanted", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "region"))
-			"harvest": events.append(_world_action_event("CropHarvested", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "public"))
+			"harvest":
+				var event_type := "CropCleared" if bool(outcome.get("cleared_withered", false)) else "CropHarvested"
+				events.append(_world_action_event(event_type, "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "public"))
 			"buy", "sell", "prepare_supplies": events.append(_world_action_event("PublicMarketTradeExecuted", "market_trade", action_id, agent_id, action_id, base_payload, "public"))
 			"travel":
 				var destination := str(arguments.get("region_id", region_id))

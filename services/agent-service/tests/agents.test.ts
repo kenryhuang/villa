@@ -1,12 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentRegistry } from "../src/agents.ts";
-import {executeReadTool} from "../src/tool_contracts.ts";
+import {executeReadTool, toolDescription} from "../src/tool_contracts.ts";
 
 const summary = (roleId: string, gameMinute: number, signals: Record<string, unknown>[] = []) => ({
   schema_version: 1, role_id: roleId, generated_game_minute: gameMinute,
   overview: {item_count: signals.length, shortage_count: 0, surplus_count: 0, rising_count: 0, falling_count: 0},
   signals,
+});
+
+test("harvest contract explicitly supports withered cleanup without inventory rewards", () => {
+  const tool = toolDescription("harvest").function as {description: string};
+  assert.match(tool.description, /withered/);
+  assert.match(tool.description, /no items/);
+  assert.match(tool.description, /growing.*dormant/);
+});
+
+test("crop inspection preserves authoritative planting restrictions and named calendar", () => {
+  const cropOptions = [{crop_id: "grain", seed_item_id: "grain_seed", season_names: ["spring"], season_valid: false, plantable_plots: [], unavailable_reason: "wrong_season"}];
+  const world = {season: 3, season_name: "winter", season_label: "冬季", season_day: 5, year: 2, time_of_day: {hour: 20, minute: 7, text: "20:07"}};
+  const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", {
+    protocol_version: 2, request_id: "crop-context", session_id: "save", session_epoch: 1,
+    agent_id: "farmer_ahe", trigger: "schedule", game_minute: 57247, world_revision: 1,
+    projection_schema_version: 1, actor_context: {crop_options: cropOptions}, active_role: "farmer",
+    goals: ["keep_crops_healthy"], allowed_read_tools: ["inspect_crop_options"], allowed_command_tools: ["plant", "harvest"],
+    public_world_state: world, global_public_events: [], known_actors: [], own_event_delta: [],
+    market_summary: summary("farmer", 57247), market_view: {}, interaction_view: {}, agreement_view: {},
+  }, []);
+  assert.deepEqual(context.public_world_state, world);
+  const result = executeReadTool(context, "inspect_crop_options", {});
+  assert.deepEqual(result, {crop_options: cropOptions});
+  (result.crop_options as typeof cropOptions)[0].season_valid = true;
+  assert.equal((context.actor_context.crop_options as typeof cropOptions)[0].season_valid, false);
 });
 
 test("loads three isolated role profiles and tool collections", () => {

@@ -147,6 +147,7 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 		"provider_output": record.get("output", {}),
 		"action_intent": record.get("final", {}),
 		"error": record.get("error", {}),
+		"cancellation": record.get("cancellation", {}),
 	}, "\t")
 	call_deferred("_restore_scroll_state", scroll_state, generation)
 

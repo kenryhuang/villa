@@ -8,6 +8,7 @@ const AgentStreamClientScript = preload("res://scripts/ai_agent/agent_stream_cli
 const AgentWorldEventStoreScript = preload("res://scripts/ai_agent/agent_world_event_store.gd")
 const AgentWorldProjectorScript = preload("res://scripts/ai_agent/agent_world_projector.gd")
 const AgentWorldFactBridgeScript = preload("res://scripts/ai_agent/agent_world_fact_bridge.gd")
+const AgentRuntimeScript = preload("res://scripts/ai_agent/agent_runtime.gd")
 
 class FakeGateway:
 	extends RefCounted
@@ -56,10 +57,24 @@ func run(assertions: TestAssert, _tree: SceneTree) -> void:
 	_test_perception_coalescing(assertions)
 	_test_role_schedule_and_backpressure(assertions)
 	_test_terminal_response_resets_schedule_baseline(assertions)
+	_test_dialogue_preemption_is_not_an_error(assertions)
 	_test_interval_overrides(assertions)
 	_test_gateway_configuration(assertions)
 	_test_stream_client_configuration(assertions)
 	_test_world_fact_bridge_is_idempotent(assertions)
+
+
+func _test_dialogue_preemption_is_not_an_error(assertions: TestAssert) -> void:
+	var runtime := AgentRuntimeScript.new()
+	var request_id := "autonomous-request-preempted-by-dialogue"
+	runtime._request_triggers[request_id] = "catch_up"
+	runtime.call("_handle_stream_failure", "farmer_ahe", request_id, "dialogue_replaced")
+	var record: Dictionary = runtime.session_trace.get_request(request_id)
+	assertions.equal(record.get("status"), "cancelled", "dialogue preemption records an expected cancellation")
+	assertions.equal(record.get("error"), {}, "dialogue preemption does not create an error payload")
+	assertions.equal(record.get("cancellation", {}).get("code"), "dialogue_replaced", "dialogue preemption keeps its diagnostic reason")
+	runtime.session_trace.free()
+	runtime.free()
 
 
 func _test_perception_coalescing(assertions: TestAssert) -> void:

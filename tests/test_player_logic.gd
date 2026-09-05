@@ -63,14 +63,22 @@ func run(assertions) -> void:
 		assertions.equal(player.call("filter_movement_input", Vector2.RIGHT), Vector2.ZERO, "dialogue blocks held D movement input")
 		assertions.truthy(not player.has_auto_movement(), "dialogue stops active automatic movement")
 		assertions.equal(Vector2(player.velocity.x, player.velocity.z), Vector2.ZERO, "dialogue immediately stops planar velocity")
-		Input.action_press("move_right")
 		Input.action_press("jump")
 		Input.action_press("sprint")
 		player.call("set_movement_input_blocked", false)
-		assertions.truthy(not Input.is_action_pressed("move_right"), "closing dialogue clears stale movement action state")
-		assertions.truthy(not Input.is_action_pressed("jump"), "closing dialogue clears stale jump action state")
-		assertions.truthy(not Input.is_action_pressed("sprint"), "closing dialogue clears stale sprint action state")
-		assertions.equal(player.call("filter_movement_input", Vector2.RIGHT), Vector2.RIGHT, "closing dialogue immediately restores player control")
+		assertions.equal(player.call("filter_movement_input", Vector2.RIGHT), Vector2.ZERO, "held dialogue movement stays suppressed after close")
+		assertions.equal(player.call("filter_movement_input", Vector2.ZERO), Vector2.ZERO, "held jump and sprint keep input rearm pending")
+		Input.action_release("jump")
+		assertions.equal(player.call("filter_movement_input", Vector2.ZERO), Vector2.ZERO, "held sprint alone keeps input rearm pending")
+		Input.action_release("sprint")
+		assertions.equal(player.call("filter_movement_input", Vector2.ZERO), Vector2.ZERO, "neutral polling alone does not rearm movement")
+		var fresh_move := InputEventAction.new()
+		fresh_move.action = "move_right"
+		fresh_move.pressed = true
+		Input.action_press("move_right")
+		player.call("_input", fresh_move)
+		assertions.equal(player.call("filter_movement_input", Vector2.RIGHT), Vector2.RIGHT, "a fresh movement press is accepted after rearm")
+		Input.action_release("move_right")
 
 	var finished := []
 	var blocked := []

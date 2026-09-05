@@ -22,6 +22,20 @@ class FailOnceMarketPressureBridge:
 		return bool(delegate.call("publish_market_pressure", total_day, pressure, game_minute, source_id))
 
 
+class ContextFarmPort:
+	extends RefCounted
+	var options := [
+		{"crop_id": "grain", "seed_item_id": "grain_seed", "season_valid": false, "plantable_plots": [], "unavailable_reason": "wrong_season"},
+		{"crop_id": "sunflower", "seed_item_id": "sunflower_seed", "plantable_plots": [0], "unavailable_reason": ""},
+	]
+
+	func get_snapshot(_agent_id: String, _minute: int) -> Array:
+		return []
+
+	func get_crop_options(agent_id: String) -> Array:
+		return options.duplicate(true) if agent_id == "farmer_ahe" else []
+
+
 func run(assertions: TestAssert, tree: SceneTree) -> void:
 	var disabled_config_path := "user://agent-main-integration-disabled.json"
 	var trace_directory := "user://agent-main-trace-%d" % Time.get_ticks_usec()
@@ -59,6 +73,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(initial_request.public_world_state.season, int(season.current_season), "public world state includes authoritative season")
 	assertions.truthy(initial_request.market_view.has("grain"), "every Agent context includes current market")
 	runtime.call("_handle_stream_failure", "farmer_ahe", str(initial_request.request_id), "fixture_release")
+	_test_calendar_and_crop_context(assertions, runtime, season)
 
 	runtime.call("_on_market_price_changed", "grain", 777)
 	var market_requests: Dictionary = {}
@@ -293,6 +308,13 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 			fail_argument_count = (method_record.args as Array).size()
 			break
 	assertions.equal(fail_argument_count, 1, "stream failure API accepts only request ID")
+	var cleanup_intent := {"agent_id": "farmer_ahe", "tool_name": "harvest", "action_id": "cleanup-event", "idempotency_key": "cleanup-event", "arguments": {"plot": 3}}
+	var cleanup_result := {"ok": true, "cleared_withered": true, "resource_delta": {}, "changed_entities": ["npc_farm:farmer_ahe:3"]}
+	var cleanup_outcome: Dictionary = runtime.executor.finalize_queued_action(cleanup_intent, cleanup_result, 100)
+	assertions.equal(cleanup_outcome.get("cleared_withered"), true, "executor preserves cleanup semantics in terminal outcome")
+	assertions.truthy(runtime.call("_record_world_action_outcome", cleanup_outcome), "cleanup records a replayable world event")
+	var cleanup_event: Dictionary = runtime.event_store.get_events_after(0).back()
+	assertions.equal(cleanup_event.get("event_type"), "CropCleared", "cleanup is not published as a productive crop harvest")
 	dialogue.free()
 	restored.free()
 	runtime.free()
@@ -316,3 +338,34 @@ func _has_market_fact(events: Array, item_id: String, price: int) -> bool:
 		if str(event.get("event_type", "")) == "MarketPriceChanged" and str(payload.get("item_id", "")) == item_id and int(payload.get("price", -1)) == price:
 			return true
 	return false
+
+
+func _test_calendar_and_crop_context(assertions: TestAssert, runtime: Node, season: SeasonSystem) -> void:
+	var original_time := [season.total_days, season.current_day, season.current_season, season.hour, season.minute]
+	var original_farm: Variant = runtime.farm_registry
+	var farm := ContextFarmPort.new()
+	runtime.farm_registry = farm
+	season.total_days = 54
+	season.current_day = 5
+	season.hour = 20
+	season.minute = 7
+	for index in range(4):
+		season.current_season = index as SeasonSystem.Season
+		for agent_id in ["farmer_ahe", "lao_li", "xuezhe_lin"]:
+			var request: Dictionary = runtime.call("_build_request", agent_id, "schedule", 57247, "")
+			var world: Dictionary = request.public_world_state
+			assertions.equal(world.get("season_name"), ["spring", "summer", "autumn", "winter"][index], "%s context names season %d" % [agent_id, index])
+			assertions.equal(world.get("season_label"), ["春季", "夏季", "秋季", "冬季"][index], "%s context labels season %d" % [agent_id, index])
+			assertions.equal(world.get("season_day"), 5, "context includes day within season")
+			assertions.equal(world.get("year"), 2, "context includes calendar year")
+			assertions.equal(world.get("time_of_day", {}).get("text"), "20:07", "context includes unambiguous clock text")
+			assertions.equal(world.get("absolute_game_minute"), 57247, "context preserves absolute request time")
+			var expected_options: Array = [farm.options[0]] if agent_id == "farmer_ahe" else []
+			assertions.equal(request.actor_context.get("crop_options"), expected_options, "context carries only this actor's authorized crop options")
+			runtime.call("_handle_stream_failure", agent_id, str(request.request_id), "fixture_release")
+	runtime.farm_registry = original_farm
+	season.total_days = original_time[0]
+	season.current_day = original_time[1]
+	season.current_season = original_time[2]
+	season.hour = original_time[3]
+	season.minute = original_time[4]

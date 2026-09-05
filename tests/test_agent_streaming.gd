@@ -125,13 +125,15 @@ func _test_ndjson_and_retention(assertions: TestAssert) -> void:
 	assertions.truthy(trace.finish_error("farmer_ahe", "request-stream-error", "transport_closed", "schedule", 2000), "failure callback after stream error is idempotent")
 	assertions.equal(_read_nonempty_lines(log_path).size(), 2, "stream error callback does not write a duplicate")
 
-	assertions.truthy(trace.finish_error("farmer_ahe", "request-cancelled", "dialogue_closed", "dialogue", 3000), "local cancellation finalizes a trace")
+	assertions.truthy(trace.finish_cancelled("farmer_ahe", "request-cancelled", "dialogue_closed", "dialogue", 3000), "local cancellation finalizes a trace")
 	lines = _read_nonempty_lines(log_path)
 	assertions.equal(lines.size(), 3, "local cancellation writes one aggregated record")
 	var cancelled: Dictionary = JSON.parse_string(lines[2]) if lines.size() == 3 else {}
 	assertions.equal(cancelled.get("trigger"), "dialogue", "local cancellation retains trigger")
-	assertions.equal((((cancelled.get("response", {}) as Dictionary).get("error", {}) as Dictionary).get("code")), "dialogue_closed", "local cancellation retains failure code")
-	assertions.truthy(trace.finish_error("farmer_ahe", "request-cancelled", "dialogue_closed", "dialogue", 3001), "duplicate local cancellation remains accepted")
+	assertions.equal(cancelled.get("status"), "cancelled", "local cancellation is not recorded as an error")
+	assertions.equal((cancelled.get("response", {}) as Dictionary).get("error"), {}, "local cancellation has no error payload")
+	assertions.equal((((cancelled.get("response", {}) as Dictionary).get("cancellation", {}) as Dictionary).get("code")), "dialogue_closed", "local cancellation retains its reason")
+	assertions.truthy(trace.finish_cancelled("farmer_ahe", "request-cancelled", "dialogue_closed", "dialogue", 3001), "duplicate local cancellation remains accepted")
 	assertions.equal(_read_nonempty_lines(log_path).size(), 3, "duplicate local cancellation does not write twice")
 
 	assertions.truthy(trace.accept_event(_event_value_for("request-unfinished", "stream.started", 1, {"trigger": "schedule"})), "unfinished trace accepts start")

@@ -73,6 +73,7 @@ func run(assertions: TestAssert) -> void:
 	assertions.equal(interactions.available_item("lao_li", "salt"), merchant_salt_before - 1, "activation locks merchant resource commitment")
 
 	assertions.equal(agreements.record_action_outcome({"status": "completed", "agent_id": "farmer_ahe", "tool_name": "harvest", "action_id": "unbound-harvest"}, 209), [], "unbound ordinary action cannot advance an arbitrary agreement")
+	assertions.equal(agreements.record_action_outcome({"status": "completed", "agent_id": "farmer_ahe", "tool_name": "harvest", "action_id": "clear-dead-crop", "agreement_id": agreement_id, "cleared_withered": true, "resource_delta": {}}, 209), [], "withered cleanup cannot satisfy a productive harvest milestone")
 	assertions.equal(agreements.record_action_outcome({"status": "completed", "agent_id": "farmer_ahe", "tool_name": "harvest", "action_id": "harvest-1", "agreement_id": agreement_id}, 210).size(), 1, "agreement-linked harvest advances configured milestone")
 	var completion_events := agreements.record_action_outcome({"status": "completed", "agent_id": "lao_li", "tool_name": "sell", "action_id": "sell-1", "agreement_id": agreement_id}, 211)
 	assertions.truthy(completion_events.size() >= 2, "final verified action completes and settles agreement atomically")

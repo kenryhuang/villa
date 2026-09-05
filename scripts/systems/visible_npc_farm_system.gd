@@ -81,18 +81,78 @@ func get_snapshot(agent_id: String, _absolute_game_minute: int = 0) -> Array[Dic
 		record.crop = {}
 		record.growth_progress = 0.0
 		record.remaining_minutes = 0
-		record.season_valid = true
+		record.available_actions = []
 		match cell.state:
 			GridCell.State.WASTELAND:
 				record.state = "untilled"
+				record.available_actions = ["till"]
 			GridCell.State.FARMLAND:
 				record.state = "tilled"
+				record.available_actions = ["plant"]
 			GridCell.State.PLANTED:
 				_populate_crop_snapshot(record, cell)
 			_:
 				record.state = "blocked"
+		if record.queued:
+			record.available_actions = []
 		result.append(record)
 	return result
+
+
+func get_crop_options(agent_id: String) -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
+	if agent_id != _agent_id or _game_data == null or not _game_data.has_method("get_all_crops"):
+		return options
+	var seeds := _seed_counts(agent_id)
+	for crop_value in _game_data.get_all_crops():
+		var crop := crop_value as CropData
+		if crop == null:
+			continue
+		var plantable: Array[int] = []
+		var selection := _farming.preview_seed_selection(crop.plant_item_id)
+		var reason := str(selection.reason) if not selection.ok else "no_available_plot"
+		for plot in _plots:
+			var index := int(plot.plot_index)
+			var cell := get_plot_cell(agent_id, index)
+			if cell == null or _plot_is_queued(index):
+				continue
+			var preview := _farming.preview_plant(cell, crop.plant_item_id)
+			if preview.ok:
+				plantable.append(index)
+			elif cell.state == GridCell.State.FARMLAND:
+				reason = str(preview.reason)
+		var seed_quantity := int(seeds.get(crop.plant_item_id, 0))
+		if seed_quantity <= 0:
+			plantable.clear()
+			reason = "seed_unavailable"
+		var season_names: Array[String] = []
+		for season in crop.seasons:
+			season_names.append(str(SeasonSystem.Season.keys()[season]).to_lower())
+		options.append({
+			"crop_id": crop.crop_id,
+			"seed_item_id": crop.plant_item_id,
+			"name": crop.name,
+			"seed_quantity": seed_quantity,
+			"seasons": crop.seasons.duplicate(),
+			"season_names": season_names,
+			"season_valid": _crop_season_valid(crop),
+			"environment": crop.environment,
+			"growth_duration_minutes": crop.growth_duration_minutes,
+			"plantable_plots": plantable,
+			"unavailable_reason": "" if not plantable.is_empty() else reason,
+		})
+	options.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return str(left.seed_item_id) < str(right.seed_item_id)
+	)
+	return options
+
+
+func _crop_season_valid(crop: CropData) -> bool:
+	return (
+		crop.seasons.is_empty()
+		or _farming.season_system == null
+		or int(_farming.season_system.current_season) in crop.seasons
+	)
 
 
 func get_anchor() -> Vector2i:
@@ -306,7 +366,7 @@ func _validate_projected(action: Dictionary, projected: Array[Dictionary], seed_
 			plot.state = "growing"
 			plot.seed_item_id = seed_item_id
 		"harvest":
-			if str(plot.state) != "mature":
+			if str(plot.state) not in ["mature", "withered"]:
 				return {"ok": false, "error": "crop_not_mature"}
 			plot.state = "tilled"
 	return {"ok": true}
@@ -353,6 +413,13 @@ func _commit_plant(intent: Dictionary, cell: GridCell, plot_index: int) -> Dicti
 
 
 func _commit_harvest(cell: GridCell, plot_index: int) -> Dictionary:
+	if cell.crop_instance != null and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.WITHERED:
+		if not _farming.clear_withered(cell):
+			return {"ok": false, "error": "crop_clear_failed"}
+		return _commit_success(
+			"阿禾清理了地块 %d 的枯萎作物，没有获得收成。" % plot_index,
+			["npc_farm:%s:%d" % [_agent_id, plot_index]]
+		).merged({"cleared_withered": true})
 	if _economy == null:
 		return {"ok": false, "error": "economy_unavailable"}
 	var preview: Dictionary = _farming.preview_harvest(cell)
@@ -533,6 +600,7 @@ func _populate_crop_snapshot(record: Dictionary, cell: GridCell) -> void:
 		return
 	var crop: CropData = instance.crop_data
 	record.crop = instance.to_dict()
+	record.season_valid = _crop_season_valid(crop)
 	record.growth_progress = (
 		clampf(instance.growth_progress / float(crop.growth_days), 0.0, 1.0)
 		if crop.growth_days > 0
@@ -544,9 +612,13 @@ func _populate_crop_snapshot(record: Dictionary, cell: GridCell) -> void:
 	match instance.lifecycle_state:
 		CropInstance.LifecycleState.MATURE:
 			record.state = "mature"
+			record.available_actions = ["harvest"]
 		CropInstance.LifecycleState.DORMANT:
 			record.state = "dormant"
+			record.remaining_minutes = null
 		CropInstance.LifecycleState.WITHERED:
 			record.state = "withered"
+			record.available_actions = ["harvest"]
+			record.remaining_minutes = null
 		_:
 			record.state = "growing"

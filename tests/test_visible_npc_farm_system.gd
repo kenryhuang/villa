@@ -35,6 +35,9 @@ class FakeGameData:
 	extends Node
 	var crop: CropData
 
+	func get_all_crops() -> Array:
+		return [crop] if crop != null else []
+
 	func get_crop_for_plant_item(item_id: String) -> CropData:
 		return crop if crop != null and crop.plant_item_id == item_id else null
 
@@ -194,7 +197,94 @@ func run(assertions: TestAssert) -> void:
 			"farm relocation clears the previous physical footprint"
 		)
 
+	_test_harvest_cleanup(assertions, farm, farming, economy)
+	_test_crop_options(assertions, farm, farming, crop, economy)
 	farm.free()
 	farming.free()
 	grid.free()
 	game_data.free()
+
+
+func _farm_action(tool: String, key: String, arguments: Dictionary) -> Dictionary:
+	return {"agent_id": "farmer_ahe", "decision_id": key, "actions": [{
+		"action_id": key, "idempotency_key": key, "tool_name": tool, "arguments": arguments,
+	}]}
+
+
+func _test_harvest_cleanup(assertions: TestAssert, farm: Variant, farming: FarmingSystem, economy: FakeEconomy) -> void:
+	var cell: GridCell = farm.get_plot_cell("farmer_ahe", 0)
+	var instance: CropInstance = cell.crop_instance
+	var harvest := _farm_action("harvest", "growing-harvest", {"plot": 0})
+	assertions.equal(farm.queue_batch(harvest, 20)[0].get("error"), "crop_not_mature", "growing crops cannot be harvested")
+	instance.set_lifecycle_state(CropInstance.LifecycleState.DORMANT)
+	assertions.equal(farm.queue_batch(harvest, 20)[0].get("error"), "crop_not_mature", "dormant crops cannot be harvested")
+	instance.set_lifecycle_state(CropInstance.LifecycleState.WITHERED)
+	var inventory_before := economy.state.inventory.duplicate(true)
+	var batch := _farm_action("harvest", "clear-withered", {"plot": 0})
+	batch.actions.append(_farm_action("plant", "replant-cleared", {"plot": 0, "seed_item_id": "carrot_seed"}).actions[0])
+	var results: Array = farm.queue_batch(batch, 21)
+	assertions.equal(results.size(), 2, "withered harvest and replant queue in one batch")
+	assertions.truthy(bool(results[0].get("ok", false)), "withered harvest queues successfully")
+	if results.size() != 2 or not bool(results[0].get("ok", false)):
+		return
+	assertions.truthy(cell.crop_instance == instance, "queueing cleanup leaves the real crop intact")
+	var cleared: Dictionary = farm.complete_work("clear-withered")
+	assertions.truthy(bool(cleared.get("ok", false)), "withered harvest clears the crop")
+	assertions.equal(cleared.get("resource_delta"), {}, "cleanup rewards no items")
+	assertions.equal(cleared.get("cleared_withered"), true, "cleanup identifies clearing rather than productive harvest")
+	assertions.equal(economy.state.inventory, inventory_before, "cleanup preserves the entire NPC inventory")
+	assertions.equal(cell.state, GridCell.State.FARMLAND, "cleanup restores tilled soil")
+	assertions.truthy(cell.crop_instance == null, "cleanup removes the dead crop")
+	assertions.truthy(not cell.watered, "cleanup resets watering")
+	assertions.truthy(farm.complete_work("replant-cleared").ok, "same batch can plant on the cleared plot")
+	var replanted: CropInstance = cell.crop_instance
+	var replay: Array = farm.queue_batch(_farm_action("harvest", "clear-withered", {"plot": 0}), 22)
+	assertions.equal(replay[0], cleared, "cleanup replay returns the original result")
+	assertions.truthy(cell.crop_instance == replanted, "cleanup replay cannot erase the replacement crop")
+	replanted.set_growth_state(float(replanted.crop_data.growth_days), CropInstance.LifecycleState.MATURE)
+	var mature: Array = farm.queue_batch(_farm_action("harvest", "mature-harvest", {"plot": 0}), 23)
+	assertions.truthy(mature[0].ok, "mature crop still queues for harvest")
+	var harvested: Dictionary = farm.complete_work("mature-harvest")
+	assertions.truthy(harvested.ok, "mature harvest still succeeds")
+	assertions.equal(harvested.get("resource_delta"), {"carrot": 2}, "mature harvest still rewards crop yield")
+	assertions.equal(economy.state.inventory.get("carrot"), 2, "mature harvest credits NPC inventory")
+
+
+func _test_crop_options(assertions: TestAssert, farm: Variant, farming: FarmingSystem, crop: CropData, economy: FakeEconomy) -> void:
+	var season := SeasonSystem.new()
+	season.current_season = SeasonSystem.Season.WINTER
+	farming.season_system = season
+	economy.state.inventory.carrot_seed = 2
+	crop.seasons.assign([SeasonSystem.Season.SPRING])
+	var cell: GridCell = farm.get_plot_cell("farmer_ahe", 0)
+	if cell.crop_instance == null:
+		farming.plant(cell, crop)
+	cell.crop_instance.set_lifecycle_state(CropInstance.LifecycleState.WITHERED)
+	var snapshot: Array = farm.get_snapshot("farmer_ahe", 100)
+	assertions.equal(snapshot[0].get("season_valid"), false, "withered spring crop reports invalid winter season")
+	assertions.truthy(not snapshot[1].has("season_valid"), "empty plots do not promise seed season validity")
+	assertions.equal(snapshot[0].get("available_actions"), ["harvest"], "withered snapshot advertises cleanup through harvest")
+	assertions.truthy(farm.has_method("get_crop_options"), "visible farm exposes real crop options")
+	if farm.has_method("get_crop_options"):
+		farming.clear_withered(cell)
+		var options: Array = farm.get_crop_options("farmer_ahe")
+		assertions.equal(options.size(), 1, "crop options include registered crops")
+		if not options.is_empty():
+			var option: Dictionary = options[0]
+			assertions.equal(option.get("seed_item_id"), "carrot_seed", "crop option names authoritative seed")
+			assertions.equal(option.get("season_names"), ["spring"], "crop option names its allowed seasons")
+			assertions.equal(option.get("season_valid"), false, "spring-only seed is unavailable outdoors in winter")
+			assertions.equal(option.get("plantable_plots"), [], "invalid season yields no plantable plots")
+			assertions.equal(option.get("unavailable_reason"), "wrong_season", "crop option explains winter restriction")
+			assertions.equal(option.get("growth_duration_minutes"), 108, "crop option uses authoritative growth duration")
+			farming.set_greenhouse_cells([Vector2i(cell.gx, cell.gz)])
+			options = farm.get_crop_options("farmer_ahe")
+			assertions.equal(options[0].get("plantable_plots"), [0], "greenhouse preview permits planting despite outdoor season")
+			assertions.equal(options[0].get("unavailable_reason"), "", "greenhouse clears planting restriction")
+			economy.state.inventory.carrot_seed = 0
+			options = farm.get_crop_options("farmer_ahe")
+			assertions.equal(options[0].get("plantable_plots"), [], "missing seeds cannot advertise immediately plantable plots")
+			assertions.equal(options[0].get("unavailable_reason"), "seed_unavailable", "missing seeds explain planting rejection")
+			assertions.equal(farm.get_crop_options("lao_li"), [], "crop options do not expose another NPC's farm")
+	farming.season_system = null
+	season.free()

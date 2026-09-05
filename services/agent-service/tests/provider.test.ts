@@ -75,6 +75,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
   assert.equal(capturedHeaders.authorization, "Bearer test-key");
   assert.equal(capturedBody.includes("test-key"), false);
   const providerBody = JSON.parse(capturedBody) as {
+    enable_thinking?: boolean;
     tool_choice: string;
     stream: boolean;
     messages: Array<{role: string; content: string}>;
@@ -82,6 +83,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
   };
   assert.equal(providerBody.tool_choice, "auto");
   assert.equal(providerBody.stream, true);
+  assert.equal(Object.hasOwn(providerBody, "enable_thinking"), false);
   const sentContext = JSON.parse(providerBody.messages.find((message) => message.role === "user")?.content || "{}") as Record<string, unknown>;
   assert.deepEqual(sentContext.market_summary, request.market_summary);
   assert.equal(Object.hasOwn(sentContext, "market_view"), false);
@@ -127,17 +129,26 @@ test("sends credentials only in the header and accepts one role tool", async () 
   });
 });
 
-test("includes the exact player dialogue in the Provider prompt", async () => {
-  let capturedBody = "";
+test("dialogue disables thinking for every Provider round", async () => {
+  const capturedBodies: Array<{
+    enable_thinking?: boolean;
+    messages: Array<{role: string; content: string}>;
+    tools?: Array<{function: {name: string}}>;
+    tool_choice?: unknown;
+  }> = [];
+  let turn = 0;
   const server: Server = createServer((incoming, response) => {
+    let body = "";
     incoming.setEncoding("utf8");
-    incoming.on("data", (chunk) => { capturedBody += chunk; });
+    incoming.on("data", (chunk) => { body += chunk; });
     incoming.on("end", () => {
+      capturedBodies.push(JSON.parse(body));
+      turn += 1;
       response.setHeader("content-type", "text/event-stream");
-      response.end([
-        `data: ${JSON.stringify({id: "dialogue-1", choices: [{delta: {content: "价格很稳定。"}, finish_reason: "stop"}]})}\n\n`,
-        "data: [DONE]\n\n",
-      ].join(""));
+      const chunk = turn === 1
+        ? {id: "dialogue-read", choices: [{delta: {tool_calls: [{index: 0, id: "dialogue-read-1", type: "function", function: {name: "inspect_market_item", arguments: JSON.stringify({item_id: "secret_crop"})}}]}, finish_reason: "tool_calls"}]}
+        : {id: "dialogue-final", choices: [{delta: {content: "价格很稳定。"}, finish_reason: "stop"}]};
+      response.end(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`);
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -155,14 +166,12 @@ test("includes the exact player dialogue in the Provider prompt", async () => {
     executeReadTool(context, "inspect_market_item", {item_id: "secret_crop"}),
     {found: true, value: {marker: "FULL_MARKET_SENTINEL", mid_price: 99}},
   );
-  await provider.decide(dialogueRequest, context);
+  const intent = await provider.decide(dialogueRequest, context);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   config.cleanup();
-  const providerBody = JSON.parse(capturedBody) as {
-    messages: Array<{role: string; content: string}>;
-    tools?: Array<{function: {name: string}}>;
-    tool_choice?: unknown;
-  };
+  assert.equal(capturedBodies.length, 2);
+  assert.ok(capturedBodies.every((body) => body.enable_thinking === false));
+  const providerBody = capturedBodies[0];
   const userMessage = providerBody.messages.find((message) => message.role === "user");
   const systemMessage = providerBody.messages.find((message) => message.role === "system");
   assert.ok(userMessage);
@@ -180,6 +189,7 @@ test("includes the exact player dialogue in the Provider prompt", async () => {
   ]);
   assert.match(systemMessage?.content || "", /in character/i);
   assert.match(systemMessage?.content || "", /at most one authorized interaction command/i);
+  assert.equal(intent.speech, "价格很稳定。");
 });
 
 test("executes local read tools and sends only final commands to Godot", async () => {

@@ -58,7 +58,7 @@ func execute(command: Dictionary, game_minute: int) -> Dictionary:
 
 func record_action_outcome(outcome: Dictionary, game_minute: int) -> Array[Dictionary]:
 	var emitted: Array[Dictionary] = []
-	if str(outcome.get("status", "")) != "completed":
+	if str(outcome.get("status", "")) != "completed" or bool(outcome.get("cleared_withered", false)):
 		return emitted
 	var actor_id := str(outcome.get("agent_id", ""))
 	var tool_name := str(outcome.get("tool_name", ""))

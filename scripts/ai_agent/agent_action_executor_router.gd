@@ -139,6 +139,8 @@ func finalize_queued_action(intent: Dictionary, result: Dictionary, game_minute:
 			"arguments": (intent.get("arguments", {}) as Dictionary).duplicate(true),
 			"agreement_id": str((intent.get("arguments", {}) as Dictionary).get("agreement_id", "")),
 		}
+		if bool(result.get("cleared_withered", false)):
+			outcome.cleared_withered = true
 	else:
 		outcome = _failure(intent, game_minute, str(result.get("error", "work_failed")))
 	_outcomes[key] = outcome.duplicate(true)
