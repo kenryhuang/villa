@@ -1,0 +1,60 @@
+class_name FarmPreviewPlayer
+extends CharacterBody3D
+
+@export var walk_speed := 4.2
+@export var sprint_speed := 7.0
+@export var jump_velocity := 6.0
+@export var start_position := Vector3(-2.0, 0.0, 4.0)
+
+var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity"))
+var camera_yaw := 0.0
+var _animation_player: AnimationPlayer
+
+func _ready() -> void:
+	collision_layer = 2
+	_animation_player = _find_animation_player(self)
+	if _animation_player != null:
+		for animation_name in _animation_player.get_animation_list():
+			if String(animation_name).get_file().to_lower() in ["idle", "walk"]:
+				_animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
+	play_motion_animation(false)
+
+func _physics_process(delta: float) -> void:
+	if not is_on_floor():
+		velocity.y -= gravity * delta
+	if Input.is_action_just_pressed("jump") and is_on_floor():
+		velocity.y = jump_velocity
+	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var direction := Vector3(input_vector.x, 0.0, input_vector.y).rotated(Vector3.UP, camera_yaw)
+	var speed := sprint_speed if Input.is_action_pressed("sprint") else walk_speed
+	velocity.x = direction.x * speed
+	velocity.z = direction.z * speed
+	if direction.length_squared() > 0.001:
+		look_at(global_position + direction, Vector3.UP, true)
+	play_motion_animation(direction.length_squared() > 0.001)
+	move_and_slide()
+	if global_position.y < -8.0:
+		reset_position()
+
+func reset_position() -> void:
+	global_position = start_position
+	velocity = Vector3.ZERO
+
+func play_motion_animation(is_walking: bool) -> void:
+	if _animation_player == null:
+		return
+	var preferred := "Walk" if is_walking else "Idle"
+	for animation_name in _animation_player.get_animation_list():
+		if String(animation_name).get_file().to_lower() == preferred.to_lower():
+			if _animation_player.current_animation != animation_name:
+				_animation_player.play(animation_name, 0.16)
+			return
+
+func _find_animation_player(node: Node) -> AnimationPlayer:
+	if node is AnimationPlayer:
+		return node
+	for child in node.get_children():
+		var found := _find_animation_player(child)
+		if found != null:
+			return found
+	return null
