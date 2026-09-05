@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/preview/farm_3d_preview.gd" id="1_root"]
 [ext_resource type="Script" path="res://scripts/preview/farm_preview_player.gd" id="2_player"]
@@ -24,9 +24,6 @@ size = Vector3(44, 0.28, 44)
 radius = 0.3
 height = 1.9
 
-[sub_resource type="BoxShape3D" id="Plot_shape"]
-size = Vector3(2.8, 0.13, 2.8)
-
 [node name="Farm3DPreview" type="Node3D"]
 script = ExtResource("1_root")
 
@@ -48,45 +45,6 @@ collision_layer = 1
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GroundCollision"]
 position = Vector3(0, -0.14, 0)
 shape = SubResource("Ground_shape")
-
-[node name="FarmlandColliders" type="Node3D" parent="."]
-
-[node name="Plot00" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(2.35, 0.065, -1.7)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot00"]
-shape = SubResource("Plot_shape")
-[node name="Plot10" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(5.43, 0.065, -1.7)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot10"]
-shape = SubResource("Plot_shape")
-[node name="Plot20" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(8.51, 0.065, -1.7)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot20"]
-shape = SubResource("Plot_shape")
-[node name="Plot01" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(2.35, 0.065, -4.78)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot01"]
-shape = SubResource("Plot_shape")
-[node name="Plot11" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(5.43, 0.065, -4.78)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot11"]
-shape = SubResource("Plot_shape")
-[node name="Plot21" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(8.51, 0.065, -4.78)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot21"]
-shape = SubResource("Plot_shape")
-[node name="Plot02" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(2.35, 0.065, -7.86)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot02"]
-shape = SubResource("Plot_shape")
-[node name="Plot12" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(5.43, 0.065, -7.86)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot12"]
-shape = SubResource("Plot_shape")
-[node name="Plot22" type="StaticBody3D" parent="FarmlandColliders"]
-position = Vector3(8.51, 0.065, -7.86)
-[node name="Collision" type="CollisionShape3D" parent="FarmlandColliders/Plot22"]
-shape = SubResource("Plot_shape")
 
 [node name="Trees" type="Node3D" parent="."]
 
@@ -148,32 +106,3 @@ fov = 63.0
 [node name="OverviewCamera" type="Camera3D" parent="."]
 position = Vector3(15, 14, 20)
 fov = 42.0
-
-[node name="CanvasLayer" type="CanvasLayer" parent="."]
-
-[node name="Title" type="Label" parent="CanvasLayer"]
-offset_left = 34.0
-offset_top = 30.0
-theme_override_colors/font_color = Color(1, 0.94, 0.78, 1)
-theme_override_colors/font_shadow_color = Color(0.12, 0.08, 0.04, 0.85)
-theme_override_constants/shadow_offset_x = 2
-theme_override_constants/shadow_offset_y = 2
-theme_override_font_sizes/font_size = 28
-text = "暖阳农庄 · 3D 预览"
-
-[node name="Controls" type="Label" parent="CanvasLayer"]
-anchors_preset = 3
-anchor_left = 0.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 34.0
-offset_top = -58.0
-offset_right = -34.0
-offset_bottom = -22.0
-theme_override_colors/font_color = Color(0.98, 0.95, 0.84, 1)
-theme_override_colors/font_shadow_color = Color(0.09, 0.07, 0.04, 0.9)
-theme_override_constants/shadow_offset_x = 1
-theme_override_constants/shadow_offset_y = 2
-theme_override_font_sizes/font_size = 17
-text = "WASD 移动  ·  Shift 奔跑  ·  空格跳跃  ·  按住右键转镜头  ·  滚轮缩放  ·  Tab 总览  ·  R 复位  ·  F12 截图"

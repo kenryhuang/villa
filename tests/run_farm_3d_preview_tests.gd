@@ -65,11 +65,11 @@ func _run() -> void:
 	_check(player.global_position.y > 0.2, "Jump lifts the farmer from the terrain")
 	await _frames(80)
 	_check(player.is_on_floor(), "Farmer lands after jumping")
-	player.global_position = Vector3(2.35, 0.8, -1.7)
+	player.global_position = Vector3(1.5, 0.8, -1.5)
 	player.velocity = Vector3.ZERO
 	await _frames(50)
 	_check(player.is_on_floor(), "Farmer can stand on the modeled field")
-	_check(absf(player.global_position.y - 0.13) < 0.035, "Field collision matches the visible furrow height")
+	_check(absf(player.global_position.y - 0.045) < 0.025, "Field collision matches the visible furrow height")
 	player.reset_position()
 	await _frames(3)
 	var arm := preview.get_node("CameraRig/Pitch/SpringArm3D") as SpringArm3D

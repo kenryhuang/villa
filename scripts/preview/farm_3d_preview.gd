@@ -1,6 +1,9 @@
 extends Node3D
 
 const CAPTURE_WAIT_FRAMES := 8
+const FarmSessionScript = preload("res://scripts/farm3d/farm_session.gd")
+const MeadowScript = preload("res://scripts/farm3d/painted_meadow.gd")
+const InteractionScript = preload("res://scripts/farm3d/farm_interaction.gd")
 
 @onready var player: FarmPreviewPlayer = $Player
 @onready var camera_rig: Node3D = $CameraRig
@@ -12,6 +15,9 @@ var yaw := deg_to_rad(28.0)
 var pitch_angle := deg_to_rad(-18.0)
 var overview_enabled := false
 var _capture_path := ""
+var farm_session: Node
+var meadow: Node3D
+var _autosave_seconds := 0.0
 
 func _ready() -> void:
 	get_window().content_scale_size = Vector2i(1440, 960)
@@ -20,17 +26,51 @@ func _ready() -> void:
 	overview_camera.look_at(Vector3(0.0, 1.0, -2.0), Vector3.UP)
 	$CameraRig/Pitch/SpringArm3D.add_excluded_object(player.get_rid())
 	_capture_path = _capture_argument()
+	_initialize_gameplay()
 	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--capture-overview"):
 		set_overview(true)
 	if not _capture_path.is_empty():
 		_capture_after_frames()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not overview_enabled:
 		camera_rig.global_position = player.global_position + Vector3.UP * 1.2
 		player.camera_yaw = yaw
 	else:
 		player.camera_yaw = overview_camera.rotation.y
+	if farm_session != null and farm_session.auto_save:
+		_autosave_seconds += delta
+		if _autosave_seconds >= 15.0:
+			_autosave_seconds = 0.0
+			farm_session.save_game()
+
+func _initialize_gameplay() -> void:
+	var arguments := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	var transient := not _capture_path.is_empty() or arguments.has("--farm-test") or DisplayServer.get_name() == "headless"
+	farm_session = FarmSessionScript.new()
+	farm_session.name = "FarmSession"
+	farm_session.auto_restore = not transient and not arguments.has("--fresh-farm")
+	farm_session.auto_save = not transient
+	add_child(farm_session)
+	if not farm_session.configure(player):
+		push_error("Unable to initialize the 3D farming session")
+		return
+	meadow = MeadowScript.new()
+	meadow.name = "PaintedMeadow"
+	add_child(meadow)
+	meadow.configure(farm_session.grid)
+	meadow.apply_ground_material($EnvironmentModel)
+	get_node("/root/EventBus").cell_state_changed.connect(_on_farm_cell_changed)
+	var interaction := InteractionScript.new()
+	interaction.name = "FarmInteraction"
+	add_child(interaction)
+	interaction.configure(farm_session, player)
+	if not transient:
+		get_tree().auto_accept_quit = false
+
+func _on_farm_cell_changed(gx: int, gz: int, _state: int) -> void:
+	if meadow != null:
+		meadow.refresh_cell(gx, gz)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -57,6 +97,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if farm_session != null and farm_session.auto_save:
+			farm_session.save_game()
+		get_tree().quit()
 
 func set_overview(enabled: bool) -> void:
 	overview_enabled = enabled

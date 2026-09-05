@@ -450,19 +450,6 @@ for x, z in TREE_POSITIONS:
         ellipsoid("Mossy root stone", (x + math.cos(a) * .8, -z + math.sin(a) * .8, .07),
                   (.19, .15, .11), M["rock"], subdivisions=1, smooth=False)
 
-for ix in range(3):
-    for iz in range(3):
-        x, z = 2.35 + ix * 3.08, -1.7 - iz * 3.08
-        place(field, x, z)
-        if ix == 0 and iz == 0:
-            continue
-        crop = young if ix == 0 or (ix == 1 and iz == 0) else ripe
-        for a in range(4):
-            for b in range(4):
-                place(crop, x - .91 + a * .6 + random.uniform(-.045, .045),
-                      z - .91 + b * .6 + random.uniform(-.045, .045),
-                      y=.12, scale=random.uniform(.85, 1.08), angle=random.uniform(0, math.tau))
-
 # Fence deliberately leaves the front open for walking into the farm.
 for x in [0.7, 3, 5.3, 7.6, 9.9]:
     cube("Fence post", (x, 9.66, .52), (.14, .15, 1.04), M["wood"], .025)
@@ -472,21 +459,9 @@ for x in [1.85, 4.15, 6.45, 8.75]:
         rail = cube("Fence rail", (x, 9.66, height), (2.38, .08, .105), M["wood"], .015)
         rail.rotation_euler.y = random.uniform(-.025, .025)
 
-# Sparse three-dimensional grass and flowers, with clear walking space.
-for i in range(270):
-    x, z = random.uniform(-16, 16), random.uniform(-17, 13)
-    path_x = -2.8 + math.sin(z * .14) * 1.3
-    if abs(x - path_x) < 1.35 or (0.5 < x < 10.5 and -10 < z < .1):
-        continue
-    for j in range(3):
-        blade("Meadow grass", (x, -z, .0), random.uniform(0, math.tau),
-              random.uniform(.11, .27), .019, M["grass_light"] if j == 0 else M["grass_dark"], -.04)
-    if i % 10 == 0:
-        taper("Wildflower stem", (x, -z, 0), (x, -z, .22), .008, .003, M["leaf"], vertices=5)
-        for k in range(5):
-            a = k * math.tau / 5
-            ellipsoid("Wildflower petal", (x + math.cos(a) * .032, -z + math.sin(a) * .032, .23),
-                      (.03, .027, .01), M["flower"], subdivisions=1)
+# Meadow blades and flowers are authored at runtime by PaintedMeadow.  This
+# leaves every grid cell initially available for the real farming simulation;
+# it also lets a tilled or planted cell immediately reveal its soil/crop model.
 for i in range(25):
     z = random.uniform(-15, 12)
     x = -2.8 + math.sin(z * .14) * 1.3 + random.choice([-1, 1]) * random.uniform(1.1, 1.5)
