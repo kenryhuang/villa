@@ -10,6 +10,8 @@ const GREEN := Color("47674c")
 const MUTED := Color("787f70")
 const LINE := Color("dedfd1")
 var controller: BuildingProductionPanel
+var station_id := "windmill"
+var station_name := "风车"
 var session: Farm3DSession
 var building: BuildingInstance
 var window: PanelContainer
@@ -54,10 +56,12 @@ var _goods_snapshot: Dictionary = {}
 var _feedback := ""
 var _feedback_seconds := 0.0
 
-func configure(farm_session: Farm3DSession) -> void:
+func configure(farm_session: Farm3DSession, station := "windmill") -> void:
 	session = farm_session
+	station_id = station
+	station_name = str(GameData.get_building(station).name)
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	name = "WindmillView"
+	name = "WindmillView" if station_id == "windmill" else "FoodWorkshopView"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = Theme.new()
 	theme.default_font_size = 17
@@ -75,7 +79,7 @@ func configure(farm_session: Farm3DSession) -> void:
 	add_child(window)
 	var shell := _vbox(window, 14)
 	var header := _hbox(shell, 16)
-	_label(header, "风车", 28)
+	_label(header, station_name, 28)
 	_status = _label(header, "", 17, GREEN)
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_gold = _label(header, "", 15, MUTED)
@@ -83,7 +87,7 @@ func configure(farm_session: Farm3DSession) -> void:
 	var notice := _hbox(shell)
 	var pause_label := _label(notice, "Ⅱ 游戏时间已暂停 · 关闭面板后继续生产", 15, MUTED)
 	pause_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_label(notice, "自然风驱动 · 无需燃料", 15, GREEN)
+	_label(notice, "自然风驱动 · 无需燃料" if station_id == "windmill" else "农产与鱼获加工 · 使用背包原料", 15, GREEN)
 	_tabs = _hbox(shell)
 	for index in 3:
 		var button := _button(_tabs, ["配方", "加工", "队列与成品"][index], _show_tab.bind(index))
@@ -116,10 +120,21 @@ func configure(farm_session: Farm3DSession) -> void:
 func _make_recipes() -> void:
 	var box := _card(Color("f0f1e6"), 220)
 	_label(box, "选择配方", 20)
-	_label(box, "3 种加工方式", 14, MUTED)
-	for id in ["flour", "animal_feed", "sunflower_oil"]:
-		var recipe := RecipeDatabase.get_recipe(id)
-		var button := _button(box, "%s\n%s → %d 份" % [recipe.display_name, _counts(recipe.inputs), int(recipe.outputs[id])], _select_recipe.bind(id))
+	var recipes := RecipeDatabase.get_recipes_for_station(station_id)
+	_label(box, "%d 种加工方式" % recipes.size(), 14, MUTED)
+	var recipe_box := box
+	if station_id == "food_workshop":
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size.y = 350
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		box.add_child(scroll)
+		recipe_box = _vbox(scroll)
+		recipe_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for recipe in recipes:
+		var id := str(recipe.id)
+		var subtitle := "%s → %d 份" % [_counts(recipe.inputs),int(recipe.outputs[id])] if station_id == "windmill" else "%d 分钟 · %d 份" % [recipe.duration_minutes,recipe.outputs[id]]
+		var button := _button(recipe_box, "%s\n%s" % [recipe.display_name,subtitle], _select_recipe.bind(id))
 		button.custom_minimum_size.y = 82
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.icon = Icons.item_icon(id)
@@ -127,7 +142,7 @@ func _make_recipes() -> void:
 		button.add_theme_constant_override("icon_max_width", 34)
 		recipe_buttons[id] = button
 	_label(box, "从田间到餐桌", 17, GREEN)
-	var help := _label(box, "面粉供给食品工坊，饲料供给鸡舍。成品也可带到市集出售。", 15, MUTED)
+	var help := _label(box, "面粉供给食品工坊，饲料供给鸡舍。成品也可带到市集出售。" if station_id == "windmill" else "风车面粉、农产和鱼获继续加工。成品收进背包后可在市集出售。", 15, MUTED)
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 func _make_process() -> void:
@@ -141,13 +156,15 @@ func _make_process() -> void:
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input_icon = _icon(left)
 	_input = _label(left, "", 19)
+	_input.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_owned = _label(left, "", 14, MUTED)
+	_owned.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_label(flow, "→", 28, GREEN)
 	var right := _vbox(flow)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_output_icon = _icon(right)
 	_output = _label(right, "", 19)
-	_label(right, "完成后暂存于风车", 14, MUTED)
+	_label(right, "完成后暂存于"+station_name, 14, MUTED)
 	_label(box, "生产批量", 18)
 	var batch := _hbox(box)
 	_button(batch, "−", func(): controller.set_batches(controller.batches - 1))
@@ -197,7 +214,7 @@ func _make_queue() -> void:
 	_collect_reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 func open_for(target: BuildingInstance) -> bool:
-	if target == null or not target.is_construction_complete() or target.building_id != "windmill":
+	if target == null or not target.is_construction_complete() or target.building_id != station_id:
 		return false
 	close_panel()
 	building = target
@@ -284,10 +301,16 @@ func _render() -> void:
 	var id := controller.selected_recipe_id
 	_recipe_name.text = session.item_name(id)
 	_recipe_use.text = {"flour": "可在食品工坊制作面包、蜂蜜蛋糕。", "animal_feed": "供鸡舍日常消耗，继续生产鸡蛋与羽毛。", "sunflower_oil": "装瓶后收取，可带到市集出售。"}.get(id, "")
+	if station_id == "food_workshop":
+		_recipe_use.text = "使用普通鱼，可混合鱼种；稀有鱼不会被消耗。" if id in ["grilled_fish","pickled_fish"] else "面粉来自风车，鸡蛋来自鸡舍或市集。" if id in ["bread","honey_cake"] else "原料备齐后加工，成品可带到市集出售。"
 	_input.text = _counts(detail.inputs)
 	_output.text = _counts(detail.outputs)
 	var input_id := str(detail.inputs.keys()[0])
-	_owned.text = "背包持有 %d" % session.inventory.get_item_count(input_id)
+	var owned: Array[String] = []
+	for item in detail.inputs:
+		if not str(item).begins_with("tag:"):
+			owned.append("%s %d" % [session.item_name(item),session.inventory.get_item_count(item)])
+	_owned.text = "持有："+"、".join(owned)
 	_input_icon.texture = Icons.item_icon(input_id)
 	_output_icon.texture = Icons.item_icon(id)
 	batches_spin.set_value_no_signal(controller.batches)
@@ -298,6 +321,9 @@ func _render() -> void:
 	_waiting.text = "%d 游戏分钟" % waiting if waiting > 0 else "无需等待"
 	_prices.text = "%d / %d 金币" % [detail.input_value, detail.output_value]
 	_margin.text = "%+d 金币" % int(detail.margin)
+	if detail.inputs.has("tag:common_fish"):
+		_prices.text = "待补齐鱼获"
+		_margin.text = "—"
 	_reason.text = controller.failure_message if not controller.failure_message.is_empty() else controller.disabled_reason
 	if _reason.text.is_empty() and _feedback_seconds > 0:
 		_reason.text = _feedback
@@ -376,7 +402,7 @@ func _make_repair() -> void:
 	panel.add_theme_stylebox_override("panel", _style(PAPER, 22))
 	repair_modal.add_child(panel)
 	var box := _vbox(panel, 14)
-	_label(box, "风车维护", 24)
+	_label(box, station_name+"维护", 24)
 	_repair_text = _label(box, "", 17)
 	_repair_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var row := _hbox(box)
@@ -461,7 +487,7 @@ func _metric(parent: Node, title: String) -> Label:
 func _counts(counts: Dictionary) -> String:
 	var parts: Array[String] = []
 	for id in counts:
-		parts.append("%s ×%d" % [GameData.get_item(id).name, int(counts[id])])
+		parts.append("%s ×%d" % ["普通鱼" if id == "tag:common_fish" else session.item_name(id), int(counts[id])])
 	return "、".join(parts)
 
 func _style(color: Color, margin := 10) -> StyleBoxFlat:

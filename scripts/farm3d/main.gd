@@ -28,7 +28,8 @@ func _ready() -> void:
 	$CameraRig/Pitch/SpringArm3D.add_excluded_object(player.get_rid())
 	_capture_path = _capture_argument()
 	_initialize_landscape()
-	_initialize_gameplay()
+	if not _initialize_gameplay():
+		return
 	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--capture-overview"):
 		set_overview(true)
 	if not _capture_path.is_empty():
@@ -62,7 +63,7 @@ func _initialize_landscape() -> void:
 	follow_camera.far = 340.0
 	overview_camera.far = 650.0
 
-func _initialize_gameplay() -> void:
+func _initialize_gameplay() -> bool:
 	var arguments := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	var transient := not _capture_path.is_empty() or arguments.has("--farm-test") or DisplayServer.get_name() == "headless"
 	farm_session = FarmSessionScript.new()
@@ -71,8 +72,19 @@ func _initialize_gameplay() -> void:
 	farm_session.auto_save = not transient
 	add_child(farm_session)
 	if not farm_session.configure(player):
-		push_error("Unable to initialize the 3D farming session")
-		return
+		farm_session.auto_save = false
+		player.ui_blocked = true
+		player.set_physics_process(false)
+		farm_session.process_mode = Node.PROCESS_MODE_DISABLED
+		var notice := AcceptDialog.new()
+		notice.title = "农场存档未能载入"
+		notice.dialog_text = farm_session.save_error + "\n\n存档：" + ProjectSettings.globalize_path(farm_session.save_path)
+		notice.ok_button_text = "退出游戏"
+		notice.confirmed.connect(func(): get_tree().quit())
+		notice.canceled.connect(func(): get_tree().quit())
+		add_child(notice)
+		notice.popup_centered.call_deferred(Vector2i(640,180))
+		return false
 	meadow = MeadowScript.new()
 	meadow.name = "PaintedMeadow"
 	add_child(meadow)
@@ -83,6 +95,7 @@ func _initialize_gameplay() -> void:
 	interaction.configure(farm_session, player)
 	if not transient:
 		get_tree().auto_accept_quit = false
+	return true
 
 func _unhandled_input(event: InputEvent) -> void:
 	if player.ui_blocked or player.golf_locked:

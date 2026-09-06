@@ -4,11 +4,13 @@ var farmer: Node3D
 
 func _resolve_data(building: Variant) -> BuildingData:
 	var resolved := super._resolve_data(building)
-	if resolved != null and resolved.building_id in ["barn", "windmill"]:
+	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop"]:
 		# Copy so the shared catalogue and original game keep their own visuals.
 		resolved = resolved.duplicate() as BuildingData
 		resolved.scene_path = "res://scenes/farm3d/buildings/%s.tscn" % resolved.building_id
 		resolved.visual_size = Vector2(2.4,3.2) if resolved.building_id == "barn" else Vector2(3.1,4.2)
+		if resolved.building_id == "food_workshop":
+			resolved.visual_size = Vector2(3.8,3.6)
 	return resolved
 
 func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:

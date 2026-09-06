@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/farm3d/modeled_food_workshop.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/buildings/food_workshop/food_workshop.glb" id="2"]
+
+[node name="FoodWorkshop" type="Node3D"]
+script = ExtResource("1")
+authored_building_id = "food_workshop"
+model_scene = ExtResource("2")

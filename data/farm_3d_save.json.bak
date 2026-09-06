@@ -1,0 +1,2722 @@
+{
+  "buildings": [
+    {
+      "building_id": "food_workshop",
+      "construction_duration": 9.0,
+      "construction_elapsed": 9.0,
+      "construction_stage": 3,
+      "gx": 20,
+      "gz": 19,
+      "occupied_cells": [
+        {
+          "gx": 20,
+          "gz": 19,
+          "previous_state": 0
+        },
+        {
+          "gx": 21,
+          "gz": 19,
+          "previous_state": 0
+        },
+        {
+          "gx": 22,
+          "gz": 19,
+          "previous_state": 0
+        },
+        {
+          "gx": 23,
+          "gz": 19,
+          "previous_state": 0
+        },
+        {
+          "gx": 20,
+          "gz": 20,
+          "previous_state": 0
+        },
+        {
+          "gx": 21,
+          "gz": 20,
+          "previous_state": 0
+        },
+        {
+          "gx": 22,
+          "gz": 20,
+          "previous_state": 0
+        },
+        {
+          "gx": 23,
+          "gz": 20,
+          "previous_state": 0
+        },
+        {
+          "gx": 20,
+          "gz": 21,
+          "previous_state": 0
+        },
+        {
+          "gx": 21,
+          "gz": 21,
+          "previous_state": 0
+        },
+        {
+          "gx": 22,
+          "gz": 21,
+          "previous_state": 0
+        },
+        {
+          "gx": 23,
+          "gz": 21,
+          "previous_state": 0
+        },
+        {
+          "gx": 20,
+          "gz": 22,
+          "previous_state": 0
+        },
+        {
+          "gx": 21,
+          "gz": 22,
+          "previous_state": 0
+        },
+        {
+          "gx": 22,
+          "gz": 22,
+          "previous_state": 0
+        },
+        {
+          "gx": 23,
+          "gz": 22,
+          "previous_state": 0
+        }
+      ],
+      "producer_state": {
+        "inputs": {},
+        "jobs": [],
+        "max_queue_slots": 2,
+        "output_capacity": 3,
+        "outputs": {},
+        "station_id": "food_workshop"
+      }
+    },
+    {
+      "building_id": "barn",
+      "construction_duration": 9.0,
+      "construction_elapsed": 9.0,
+      "construction_stage": 3,
+      "gx": 20,
+      "gz": 23,
+      "occupied_cells": [
+        {
+          "gx": 20,
+          "gz": 23,
+          "previous_state": 0
+        },
+        {
+          "gx": 21,
+          "gz": 23,
+          "previous_state": 0
+        },
+        {
+          "gx": 20,
+          "gz": 24,
+          "previous_state": 0
+        },
+        {
+          "gx": 21,
+          "gz": 24,
+          "previous_state": 0
+        }
+      ]
+    },
+    {
+      "building_id": "barn",
+      "construction_duration": 9.0,
+      "construction_elapsed": 9.0,
+      "construction_stage": 3,
+      "gx": 29,
+      "gz": 24,
+      "occupied_cells": [
+        {
+          "gx": 29,
+          "gz": 24,
+          "previous_state": 0
+        },
+        {
+          "gx": 30,
+          "gz": 24,
+          "previous_state": 0
+        },
+        {
+          "gx": 29,
+          "gz": 25,
+          "previous_state": 0
+        },
+        {
+          "gx": 30,
+          "gz": 25,
+          "previous_state": 0
+        }
+      ]
+    },
+    {
+      "building_id": "windmill",
+      "construction_duration": 9.0,
+      "construction_elapsed": 9.0,
+      "construction_stage": 3,
+      "gx": 25,
+      "gz": 24,
+      "occupied_cells": [
+        {
+          "gx": 25,
+          "gz": 24,
+          "previous_state": 0
+        },
+        {
+          "gx": 26,
+          "gz": 24,
+          "previous_state": 0
+        },
+        {
+          "gx": 27,
+          "gz": 24,
+          "previous_state": 0
+        },
+        {
+          "gx": 25,
+          "gz": 25,
+          "previous_state": 0
+        },
+        {
+          "gx": 26,
+          "gz": 25,
+          "previous_state": 0
+        },
+        {
+          "gx": 27,
+          "gz": 25,
+          "previous_state": 0
+        },
+        {
+          "gx": 25,
+          "gz": 26,
+          "previous_state": 0
+        },
+        {
+          "gx": 26,
+          "gz": 26,
+          "previous_state": 0
+        },
+        {
+          "gx": 27,
+          "gz": 26,
+          "previous_state": 0
+        }
+      ],
+      "producer_state": {
+        "inputs": {},
+        "jobs": [],
+        "max_queue_slots": 2,
+        "output_capacity": 3,
+        "outputs": {},
+        "station_id": "windmill"
+      }
+    }
+  ],
+  "experience": 160,
+  "gold": 49566,
+  "golf": {
+    "active": true,
+    "ball": {
+      "x": -147.5,
+      "z": 74.5
+    },
+    "best": 21,
+    "hole": 0,
+    "scores": [],
+    "strokes": 0
+  },
+  "grid": {
+    "cells": [
+      {
+        "gx": 19,
+        "gz": 5,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 5,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 5,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 5,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 5,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 5,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 19,
+        "gz": 6,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 6,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 6,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 6,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 6,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 6,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 19,
+        "gz": 8,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 8,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 8,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 8,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 8,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 8,
+        "state": 1,
+        "watered": true
+      },
+      {
+        "gx": 19,
+        "gz": 9,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 9,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 9,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 9,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 9,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 9,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 19,
+        "gz": 11,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 11,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 11,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 11,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 11,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 11,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 19,
+        "gz": 12,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 12,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 12,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 12,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 12,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 12,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 19,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 21,
+        "gz": 19,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 19,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 19,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 20,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 21,
+        "gz": 20,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 20,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 20,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 21,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 21,
+        "gz": 21,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 21,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 21,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 22,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 21,
+        "gz": 22,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 22,
+        "gz": 22,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 23,
+        "gz": 22,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 23,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 21,
+        "gz": 23,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 20,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 21,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 27,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 29,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 30,
+        "gz": 24,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 25,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 25,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 27,
+        "gz": 25,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 29,
+        "gz": 25,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 30,
+        "gz": 25,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 25,
+        "gz": 26,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 26,
+        "gz": 26,
+        "state": 3,
+        "watered": false
+      },
+      {
+        "gx": 27,
+        "gz": 26,
+        "state": 3,
+        "watered": false
+      }
+    ],
+    "version": 3
+  },
+  "harvest_seed": 613839339,
+  "inventory": {
+    "quick": [
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1
+    ],
+    "slots": [
+      {
+        "item_id": "grain_seed",
+        "quantity": 99
+      },
+      {
+        "item_id": "carrot_seed",
+        "quantity": 18
+      },
+      {
+        "item_id": "potato_seed",
+        "quantity": 18
+      },
+      {
+        "item_id": "tomato_seed",
+        "quantity": 16
+      },
+      {
+        "item_id": "strawberry_seed",
+        "quantity": 14
+      },
+      {
+        "item_id": "blueberry_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "watermelon_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "sunflower_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "lavender_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "pumpkin_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "rose_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "apple_sapling",
+        "quantity": 20
+      },
+      {
+        "item_id": "peach_sapling",
+        "quantity": 20
+      },
+      {
+        "item_id": "grape_seed",
+        "quantity": 20
+      },
+      {
+        "item_id": "lemon_sapling",
+        "quantity": 20
+      },
+      {
+        "item_id": "wood",
+        "quantity": 99
+      },
+      {
+        "item_id": "stone",
+        "quantity": 99
+      },
+      {
+        "item_id": "fiber",
+        "quantity": 99
+      },
+      {
+        "item_id": "plank",
+        "quantity": 87
+      },
+      {
+        "item_id": "stone_brick",
+        "quantity": 91
+      },
+      {
+        "item_id": "brick",
+        "quantity": 99
+      },
+      {
+        "item_id": "charcoal",
+        "quantity": 99
+      },
+      {
+        "item_id": "glass",
+        "quantity": 94
+      },
+      {
+        "item_id": "iron_ingot",
+        "quantity": 97
+      },
+      {
+        "item_id": "rope",
+        "quantity": 99
+      },
+      {
+        "item_id": "steel",
+        "quantity": 99
+      },
+      {
+        "item_id": "wooden_crate",
+        "quantity": 99
+      },
+      {
+        "item_id": "farm_tools",
+        "quantity": 99
+      },
+      {
+        "item_id": "machine_parts",
+        "quantity": 99
+      },
+      {
+        "item_id": "lamp",
+        "quantity": 99
+      },
+      {
+        "item_id": "grain",
+        "quantity": 52
+      },
+      {
+        "item_id": "glass_jar",
+        "quantity": 22
+      },
+      {
+        "item_id": "strawberry",
+        "quantity": 15
+      },
+      {
+        "item_id": "tomato",
+        "quantity": 9
+      },
+      {
+        "item_id": "potato",
+        "quantity": 7
+      },
+      {
+        "item_id": "carrot",
+        "quantity": 5
+      },
+      {
+        "item_id": "flour",
+        "quantity": 1
+      },
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {}
+    ]
+  },
+  "level": 2,
+  "market": {
+    "items": {
+      "animal_feed": {
+        "base_price": 18,
+        "daily_liquidity": 18,
+        "demand": 0,
+        "history": [
+          18,
+          20,
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "item_id": "animal_feed",
+        "mid_price": 20,
+        "stock": 32,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "apple": {
+        "base_price": 19,
+        "daily_liquidity": 12,
+        "demand": 0,
+        "history": [
+          19,
+          21,
+          21,
+          21,
+          21,
+          21,
+          21
+        ],
+        "item_id": "apple",
+        "mid_price": 21,
+        "stock": 24,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "apple_sapling": {
+        "base_price": 35,
+        "daily_liquidity": 5,
+        "demand": 0,
+        "history": [
+          35,
+          39,
+          39,
+          39,
+          39,
+          39,
+          39
+        ],
+        "item_id": "apple_sapling",
+        "mid_price": 39,
+        "stock": 12,
+        "supply": 0,
+        "target_stock": 15
+      },
+      "beeswax": {
+        "base_price": 14,
+        "daily_liquidity": 9,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "beeswax",
+        "mid_price": 16,
+        "stock": 18,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "blueberry": {
+        "base_price": 21,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          21,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24
+        ],
+        "item_id": "blueberry",
+        "mid_price": 24,
+        "stock": 20,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "blueberry_seed": {
+        "base_price": 12,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          12,
+          13,
+          13,
+          13,
+          13,
+          13,
+          13
+        ],
+        "item_id": "blueberry_seed",
+        "mid_price": 13,
+        "stock": 25,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "bouquet": {
+        "base_price": 120,
+        "daily_liquidity": 5,
+        "demand": 0,
+        "history": [
+          120,
+          138,
+          132,
+          127,
+          121,
+          116,
+          111
+        ],
+        "item_id": "bouquet",
+        "mid_price": 111,
+        "stock": 11,
+        "supply": 0,
+        "target_stock": 12
+      },
+      "bread": {
+        "base_price": 116,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          116,
+          133,
+          130,
+          125,
+          121,
+          116,
+          111
+        ],
+        "item_id": "bread",
+        "mid_price": 111,
+        "stock": 32,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "brick": {
+        "base_price": 26,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          26,
+          29,
+          33,
+          33,
+          33,
+          33,
+          33
+        ],
+        "item_id": "brick",
+        "mid_price": 33,
+        "stock": 25,
+        "supply": 0,
+        "target_stock": 35
+      },
+      "candle": {
+        "base_price": 72,
+        "daily_liquidity": 6,
+        "demand": 0,
+        "history": [
+          72,
+          82,
+          94,
+          94,
+          94,
+          94,
+          94
+        ],
+        "item_id": "candle",
+        "mid_price": 94,
+        "stock": 7,
+        "supply": 0,
+        "target_stock": 14
+      },
+      "carp": {
+        "base_price": 32,
+        "daily_liquidity": 9,
+        "demand": 0,
+        "history": [
+          32,
+          36,
+          38,
+          38,
+          38,
+          38,
+          38
+        ],
+        "item_id": "carp",
+        "mid_price": 38,
+        "stock": 15,
+        "supply": 0,
+        "target_stock": 22
+      },
+      "carrot": {
+        "base_price": 14,
+        "daily_liquidity": 24,
+        "demand": 0,
+        "history": [
+          14,
+          15,
+          15,
+          15,
+          15,
+          15,
+          15
+        ],
+        "item_id": "carrot",
+        "mid_price": 15,
+        "stock": 50,
+        "supply": 0,
+        "target_stock": 55
+      },
+      "carrot_seed": {
+        "base_price": 4,
+        "daily_liquidity": 20,
+        "demand": 0,
+        "history": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "item_id": "carrot_seed",
+        "mid_price": 4,
+        "stock": 45,
+        "supply": 0,
+        "target_stock": 50
+      },
+      "charcoal": {
+        "base_price": 51,
+        "daily_liquidity": 16,
+        "demand": 0,
+        "history": [
+          51,
+          58,
+          59,
+          59,
+          59,
+          59,
+          59
+        ],
+        "item_id": "charcoal",
+        "mid_price": 59,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "clay": {
+        "base_price": 14,
+        "daily_liquidity": 24,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "clay",
+        "mid_price": 16,
+        "stock": 50,
+        "supply": 0,
+        "target_stock": 65
+      },
+      "cloth": {
+        "base_price": 68,
+        "daily_liquidity": 12,
+        "demand": 0,
+        "history": [
+          68,
+          78,
+          79,
+          79,
+          79,
+          79,
+          79
+        ],
+        "item_id": "cloth",
+        "mid_price": 79,
+        "stock": 22,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "coal": {
+        "base_price": 14,
+        "daily_liquidity": 20,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          17,
+          17,
+          17,
+          17,
+          18
+        ],
+        "item_id": "coal",
+        "mid_price": 18,
+        "stock": 35,
+        "supply": 0,
+        "target_stock": 55
+      },
+      "copper_ingot": {
+        "base_price": 51,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          51,
+          58,
+          63,
+          63,
+          63,
+          63,
+          63
+        ],
+        "item_id": "copper_ingot",
+        "mid_price": 63,
+        "stock": 18,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "copper_ore": {
+        "base_price": 14,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "copper_ore",
+        "mid_price": 16,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "creek_crucian": {
+        "base_price": 19,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          19,
+          21,
+          22,
+          22,
+          22,
+          22,
+          22
+        ],
+        "item_id": "creek_crucian",
+        "mid_price": 22,
+        "stock": 24,
+        "supply": 0,
+        "target_stock": 32
+      },
+      "crystal": {
+        "base_price": 70,
+        "daily_liquidity": 3,
+        "demand": 0,
+        "history": [
+          70,
+          80,
+          92,
+          105,
+          120,
+          129,
+          110
+        ],
+        "item_id": "crystal",
+        "mid_price": 110,
+        "stock": 1,
+        "supply": 0,
+        "target_stock": 10
+      },
+      "egg": {
+        "base_price": 14,
+        "daily_liquidity": 18,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          17,
+          17,
+          17,
+          17
+        ],
+        "item_id": "egg",
+        "mid_price": 17,
+        "stock": 27,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "farm_tools": {
+        "base_price": 218,
+        "daily_liquidity": 5,
+        "demand": 0,
+        "history": [
+          218,
+          250,
+          240,
+          230,
+          221,
+          211,
+          201
+        ],
+        "item_id": "farm_tools",
+        "mid_price": 201,
+        "stock": 11,
+        "supply": 0,
+        "target_stock": 12
+      },
+      "feather": {
+        "base_price": 14,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "feather",
+        "mid_price": 16,
+        "stock": 28,
+        "supply": 0,
+        "target_stock": 35
+      },
+      "fiber": {
+        "base_price": 14,
+        "daily_liquidity": 28,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          17,
+          17,
+          17
+        ],
+        "item_id": "fiber",
+        "mid_price": 17,
+        "stock": 50,
+        "supply": 0,
+        "target_stock": 70
+      },
+      "flour": {
+        "base_price": 70,
+        "daily_liquidity": 16,
+        "demand": 0,
+        "history": [
+          70,
+          80,
+          84,
+          85,
+          86,
+          88,
+          89
+        ],
+        "item_id": "flour",
+        "mid_price": 89,
+        "stock": 22,
+        "supply": 0,
+        "target_stock": 35
+      },
+      "fruit_jam": {
+        "base_price": 107,
+        "daily_liquidity": 8,
+        "demand": 0,
+        "history": [
+          107,
+          123,
+          126,
+          126,
+          126,
+          126,
+          126
+        ],
+        "item_id": "fruit_jam",
+        "mid_price": 126,
+        "stock": 14,
+        "supply": 0,
+        "target_stock": 20
+      },
+      "fruit_juice": {
+        "base_price": 102,
+        "daily_liquidity": 7,
+        "demand": 0,
+        "history": [
+          102,
+          117,
+          122,
+          122,
+          122,
+          122,
+          122
+        ],
+        "item_id": "fruit_juice",
+        "mid_price": 122,
+        "stock": 12,
+        "supply": 0,
+        "target_stock": 18
+      },
+      "furniture": {
+        "base_price": 462,
+        "daily_liquidity": 3,
+        "demand": 0,
+        "history": [
+          462,
+          531,
+          610,
+          620,
+          620,
+          620,
+          620
+        ],
+        "item_id": "furniture",
+        "mid_price": 620,
+        "stock": 3,
+        "supply": 0,
+        "target_stock": 7
+      },
+      "glass": {
+        "base_price": 51,
+        "daily_liquidity": 15,
+        "demand": 0,
+        "history": [
+          51,
+          58,
+          59,
+          59,
+          59,
+          59,
+          59
+        ],
+        "item_id": "glass",
+        "mid_price": 59,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "glass_bottle": {
+        "base_price": 14,
+        "daily_liquidity": 11,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "glass_bottle",
+        "mid_price": 16,
+        "stock": 22,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "glass_jar": {
+        "base_price": 13,
+        "daily_liquidity": 11,
+        "demand": 22,
+        "history": [
+          13,
+          14,
+          15,
+          15,
+          15,
+          15,
+          15
+        ],
+        "item_id": "glass_jar",
+        "mid_price": 15,
+        "stock": 0,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "gold_ore": {
+        "base_price": 50,
+        "daily_liquidity": 4,
+        "demand": 0,
+        "history": [
+          50,
+          57,
+          65,
+          74,
+          85,
+          97,
+          83
+        ],
+        "item_id": "gold_ore",
+        "mid_price": 83,
+        "stock": 0,
+        "supply": 0,
+        "target_stock": 12
+      },
+      "grain": {
+        "base_price": 28,
+        "daily_liquidity": 30,
+        "demand": 0,
+        "history": [
+          28,
+          32,
+          36,
+          38,
+          39,
+          39,
+          40
+        ],
+        "item_id": "grain",
+        "mid_price": 40,
+        "stock": 39,
+        "supply": 0,
+        "target_stock": 70
+      },
+      "grain_seed": {
+        "base_price": 4,
+        "daily_liquidity": 25,
+        "demand": 0,
+        "history": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "item_id": "grain_seed",
+        "mid_price": 4,
+        "stock": 50,
+        "supply": 0,
+        "target_stock": 60
+      },
+      "grape": {
+        "base_price": 20,
+        "daily_liquidity": 11,
+        "demand": 0,
+        "history": [
+          20,
+          23,
+          23,
+          23,
+          23,
+          23,
+          23
+        ],
+        "item_id": "grape",
+        "mid_price": 23,
+        "stock": 22,
+        "supply": 0,
+        "target_stock": 28
+      },
+      "grape_seed": {
+        "base_price": 18,
+        "daily_liquidity": 7,
+        "demand": 0,
+        "history": [
+          18,
+          20,
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "item_id": "grape_seed",
+        "mid_price": 20,
+        "stock": 16,
+        "supply": 0,
+        "target_stock": 20
+      },
+      "grilled_fish": {
+        "base_price": 72,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          72,
+          82,
+          86,
+          86,
+          86,
+          86,
+          86
+        ],
+        "item_id": "grilled_fish",
+        "mid_price": 86,
+        "stock": 16,
+        "supply": 0,
+        "target_stock": 24
+      },
+      "honey": {
+        "base_price": 14,
+        "daily_liquidity": 12,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "honey",
+        "mid_price": 16,
+        "stock": 22,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "honey_cake": {
+        "base_price": 252,
+        "daily_liquidity": 5,
+        "demand": 0,
+        "history": [
+          252,
+          289,
+          331,
+          331,
+          331,
+          331,
+          331
+        ],
+        "item_id": "honey_cake",
+        "mid_price": 331,
+        "stock": 10,
+        "supply": 0,
+        "target_stock": 14
+      },
+      "iron_ingot": {
+        "base_price": 51,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          51,
+          58,
+          66,
+          75,
+          76,
+          78,
+          79
+        ],
+        "item_id": "iron_ingot",
+        "mid_price": 79,
+        "stock": 12,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "iron_ore": {
+        "base_price": 14,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          18,
+          18,
+          19,
+          19,
+          20
+        ],
+        "item_id": "iron_ore",
+        "mid_price": 20,
+        "stock": 20,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "jewelry": {
+        "base_price": 340,
+        "daily_liquidity": 2,
+        "demand": 0,
+        "history": [
+          340,
+          391,
+          333,
+          284,
+          242,
+          209,
+          240
+        ],
+        "item_id": "jewelry",
+        "mid_price": 240,
+        "stock": 6,
+        "supply": 0,
+        "target_stock": 5
+      },
+      "lamp": {
+        "base_price": 174,
+        "daily_liquidity": 4,
+        "demand": 0,
+        "history": [
+          174,
+          200,
+          226,
+          226,
+          226,
+          226,
+          226
+        ],
+        "item_id": "lamp",
+        "mid_price": 226,
+        "stock": 5,
+        "supply": 0,
+        "target_stock": 10
+      },
+      "lavender": {
+        "base_price": 17,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          17,
+          19,
+          19,
+          19,
+          19,
+          19,
+          19
+        ],
+        "item_id": "lavender",
+        "mid_price": 19,
+        "stock": 20,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "lavender_seed": {
+        "base_price": 8,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          8,
+          9,
+          9,
+          9,
+          9,
+          9,
+          9
+        ],
+        "item_id": "lavender_seed",
+        "mid_price": 9,
+        "stock": 25,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "lemon": {
+        "base_price": 24,
+        "daily_liquidity": 8,
+        "demand": 0,
+        "history": [
+          24,
+          27,
+          28,
+          28,
+          28,
+          28,
+          28
+        ],
+        "item_id": "lemon",
+        "mid_price": 28,
+        "stock": 14,
+        "supply": 0,
+        "target_stock": 20
+      },
+      "lemon_sapling": {
+        "base_price": 40,
+        "daily_liquidity": 4,
+        "demand": 0,
+        "history": [
+          40,
+          46,
+          46,
+          46,
+          46,
+          46,
+          46
+        ],
+        "item_id": "lemon_sapling",
+        "mid_price": 46,
+        "stock": 9,
+        "supply": 0,
+        "target_stock": 12
+      },
+      "machine_parts": {
+        "base_price": 352,
+        "daily_liquidity": 3,
+        "demand": 0,
+        "history": [
+          352,
+          404,
+          458,
+          458,
+          458,
+          458,
+          458
+        ],
+        "item_id": "machine_parts",
+        "mid_price": 458,
+        "stock": 4,
+        "supply": 0,
+        "target_stock": 8
+      },
+      "moonflower": {
+        "base_price": 60,
+        "daily_liquidity": 2,
+        "demand": 0,
+        "history": [
+          60,
+          69,
+          74,
+          74,
+          74,
+          74,
+          74
+        ],
+        "item_id": "moonflower",
+        "mid_price": 74,
+        "stock": 5,
+        "supply": 0,
+        "target_stock": 8
+      },
+      "night_catfish": {
+        "base_price": 58,
+        "daily_liquidity": 3,
+        "demand": 0,
+        "history": [
+          58,
+          66,
+          72,
+          72,
+          72,
+          72,
+          72
+        ],
+        "item_id": "night_catfish",
+        "mid_price": 72,
+        "stock": 6,
+        "supply": 0,
+        "target_stock": 10
+      },
+      "peach": {
+        "base_price": 21,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          21,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24
+        ],
+        "item_id": "peach",
+        "mid_price": 24,
+        "stock": 20,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "peach_sapling": {
+        "base_price": 35,
+        "daily_liquidity": 5,
+        "demand": 0,
+        "history": [
+          35,
+          39,
+          39,
+          39,
+          39,
+          39,
+          39
+        ],
+        "item_id": "peach_sapling",
+        "mid_price": 39,
+        "stock": 12,
+        "supply": 0,
+        "target_stock": 15
+      },
+      "perfume": {
+        "base_price": 104,
+        "daily_liquidity": 3,
+        "demand": 0,
+        "history": [
+          104,
+          119,
+          135,
+          135,
+          135,
+          135,
+          135
+        ],
+        "item_id": "perfume",
+        "mid_price": 135,
+        "stock": 4,
+        "supply": 0,
+        "target_stock": 8
+      },
+      "pickled_fish": {
+        "base_price": 120,
+        "daily_liquidity": 7,
+        "demand": 0,
+        "history": [
+          120,
+          138,
+          148,
+          148,
+          148,
+          148,
+          148
+        ],
+        "item_id": "pickled_fish",
+        "mid_price": 148,
+        "stock": 11,
+        "supply": 0,
+        "target_stock": 18
+      },
+      "pickles": {
+        "base_price": 90,
+        "daily_liquidity": 9,
+        "demand": 0,
+        "history": [
+          90,
+          103,
+          105,
+          105,
+          105,
+          105,
+          105
+        ],
+        "item_id": "pickles",
+        "mid_price": 105,
+        "stock": 16,
+        "supply": 0,
+        "target_stock": 22
+      },
+      "plank": {
+        "base_price": 34,
+        "daily_liquidity": 18,
+        "demand": 0,
+        "history": [
+          34,
+          39,
+          44,
+          45,
+          45,
+          46,
+          46
+        ],
+        "item_id": "plank",
+        "mid_price": 46,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 45
+      },
+      "potato": {
+        "base_price": 7,
+        "daily_liquidity": 25,
+        "demand": 0,
+        "history": [
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7
+        ],
+        "item_id": "potato",
+        "mid_price": 7,
+        "stock": 55,
+        "supply": 0,
+        "target_stock": 60
+      },
+      "potato_seed": {
+        "base_price": 3,
+        "daily_liquidity": 20,
+        "demand": 0,
+        "history": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "item_id": "potato_seed",
+        "mid_price": 3,
+        "stock": 45,
+        "supply": 0,
+        "target_stock": 50
+      },
+      "pumpkin": {
+        "base_price": 23,
+        "daily_liquidity": 8,
+        "demand": 0,
+        "history": [
+          23,
+          26,
+          26,
+          26,
+          26,
+          26,
+          26
+        ],
+        "item_id": "pumpkin",
+        "mid_price": 26,
+        "stock": 18,
+        "supply": 0,
+        "target_stock": 22
+      },
+      "pumpkin_seed": {
+        "base_price": 12,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          12,
+          13,
+          13,
+          13,
+          13,
+          13,
+          13
+        ],
+        "item_id": "pumpkin_seed",
+        "mid_price": 13,
+        "stock": 25,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "rainbow_trout": {
+        "base_price": 50,
+        "daily_liquidity": 4,
+        "demand": 0,
+        "history": [
+          50,
+          57,
+          63,
+          63,
+          63,
+          63,
+          63
+        ],
+        "item_id": "rainbow_trout",
+        "mid_price": 63,
+        "stock": 7,
+        "supply": 0,
+        "target_stock": 12
+      },
+      "river_perch": {
+        "base_price": 27,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          27,
+          31,
+          32,
+          32,
+          32,
+          32,
+          32
+        ],
+        "item_id": "river_perch",
+        "mid_price": 32,
+        "stock": 17,
+        "supply": 0,
+        "target_stock": 24
+      },
+      "rope": {
+        "base_price": 51,
+        "daily_liquidity": 18,
+        "demand": 0,
+        "history": [
+          51,
+          58,
+          58,
+          58,
+          58,
+          58,
+          58
+        ],
+        "item_id": "rope",
+        "mid_price": 58,
+        "stock": 35,
+        "supply": 0,
+        "target_stock": 45
+      },
+      "rose": {
+        "base_price": 19,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          19,
+          21,
+          24,
+          27,
+          30,
+          32,
+          34
+        ],
+        "item_id": "rose",
+        "mid_price": 34,
+        "stock": 4,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "rose_seed": {
+        "base_price": 10,
+        "daily_liquidity": 10,
+        "demand": 0,
+        "history": [
+          10,
+          11,
+          11,
+          11,
+          11,
+          11,
+          11
+        ],
+        "item_id": "rose_seed",
+        "mid_price": 11,
+        "stock": 25,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "sachet": {
+        "base_price": 174,
+        "daily_liquidity": 4,
+        "demand": 0,
+        "history": [
+          174,
+          200,
+          226,
+          226,
+          226,
+          226,
+          226
+        ],
+        "item_id": "sachet",
+        "mid_price": 226,
+        "stock": 5,
+        "supply": 0,
+        "target_stock": 10
+      },
+      "salt": {
+        "base_price": 5,
+        "daily_liquidity": 20,
+        "demand": 0,
+        "history": [
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5
+        ],
+        "item_id": "salt",
+        "mid_price": 5,
+        "stock": 40,
+        "supply": 0,
+        "target_stock": 45
+      },
+      "sand": {
+        "base_price": 14,
+        "daily_liquidity": 24,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "sand",
+        "mid_price": 16,
+        "stock": 50,
+        "supply": 0,
+        "target_stock": 65
+      },
+      "silver_ore": {
+        "base_price": 18,
+        "daily_liquidity": 5,
+        "demand": 0,
+        "history": [
+          18,
+          20,
+          22,
+          22,
+          22,
+          22,
+          22
+        ],
+        "item_id": "silver_ore",
+        "mid_price": 22,
+        "stock": 10,
+        "supply": 0,
+        "target_stock": 16
+      },
+      "stardust_fruit": {
+        "base_price": 95,
+        "daily_liquidity": 2,
+        "demand": 0,
+        "history": [
+          95,
+          109,
+          114,
+          114,
+          114,
+          114,
+          114
+        ],
+        "item_id": "stardust_fruit",
+        "mid_price": 114,
+        "stock": 4,
+        "supply": 0,
+        "target_stock": 6
+      },
+      "steel": {
+        "base_price": 156,
+        "daily_liquidity": 4,
+        "demand": 0,
+        "history": [
+          156,
+          179,
+          187,
+          187,
+          187,
+          187,
+          187
+        ],
+        "item_id": "steel",
+        "mid_price": 187,
+        "stock": 8,
+        "supply": 0,
+        "target_stock": 12
+      },
+      "stone": {
+        "base_price": 14,
+        "daily_liquidity": 30,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "stone",
+        "mid_price": 16,
+        "stock": 60,
+        "supply": 0,
+        "target_stock": 80
+      },
+      "stone_brick": {
+        "base_price": 34,
+        "daily_liquidity": 16,
+        "demand": 0,
+        "history": [
+          34,
+          39,
+          39,
+          39,
+          39,
+          39,
+          39
+        ],
+        "item_id": "stone_brick",
+        "mid_price": 39,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 40
+      },
+      "strawberry": {
+        "base_price": 18,
+        "daily_liquidity": 12,
+        "demand": 0,
+        "history": [
+          18,
+          20,
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "item_id": "strawberry",
+        "mid_price": 20,
+        "stock": 25,
+        "supply": 0,
+        "target_stock": 30
+      },
+      "strawberry_seed": {
+        "base_price": 10,
+        "daily_liquidity": 12,
+        "demand": 0,
+        "history": [
+          10,
+          11,
+          11,
+          11,
+          11,
+          11,
+          11
+        ],
+        "item_id": "strawberry_seed",
+        "mid_price": 11,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 35
+      },
+      "sunflower": {
+        "base_price": 14,
+        "daily_liquidity": 14,
+        "demand": 0,
+        "history": [
+          14,
+          15,
+          15,
+          15,
+          15,
+          15,
+          15
+        ],
+        "item_id": "sunflower",
+        "mid_price": 15,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 35
+      },
+      "sunflower_oil": {
+        "base_price": 63,
+        "daily_liquidity": 7,
+        "demand": 0,
+        "history": [
+          63,
+          72,
+          76,
+          76,
+          76,
+          76,
+          76
+        ],
+        "item_id": "sunflower_oil",
+        "mid_price": 76,
+        "stock": 12,
+        "supply": 0,
+        "target_stock": 18
+      },
+      "sunflower_seed": {
+        "base_price": 8,
+        "daily_liquidity": 12,
+        "demand": 0,
+        "history": [
+          8,
+          9,
+          9,
+          9,
+          9,
+          9,
+          9
+        ],
+        "item_id": "sunflower_seed",
+        "mid_price": 9,
+        "stock": 30,
+        "supply": 0,
+        "target_stock": 35
+      },
+      "tomato": {
+        "base_price": 9,
+        "daily_liquidity": 22,
+        "demand": 0,
+        "history": [
+          9,
+          10,
+          10,
+          10,
+          10,
+          10,
+          10
+        ],
+        "item_id": "tomato",
+        "mid_price": 10,
+        "stock": 45,
+        "supply": 0,
+        "target_stock": 50
+      },
+      "tomato_sauce": {
+        "base_price": 60,
+        "daily_liquidity": 8,
+        "demand": 0,
+        "history": [
+          60,
+          69,
+          71,
+          71,
+          71,
+          71,
+          71
+        ],
+        "item_id": "tomato_sauce",
+        "mid_price": 71,
+        "stock": 14,
+        "supply": 0,
+        "target_stock": 20
+      },
+      "tomato_seed": {
+        "base_price": 5,
+        "daily_liquidity": 20,
+        "demand": 0,
+        "history": [
+          5,
+          5,
+          5,
+          5,
+          5,
+          5,
+          5
+        ],
+        "item_id": "tomato_seed",
+        "mid_price": 5,
+        "stock": 45,
+        "supply": 0,
+        "target_stock": 50
+      },
+      "watermelon": {
+        "base_price": 29,
+        "daily_liquidity": 8,
+        "demand": 0,
+        "history": [
+          29,
+          32,
+          32,
+          32,
+          32,
+          32,
+          32
+        ],
+        "item_id": "watermelon",
+        "mid_price": 32,
+        "stock": 16,
+        "supply": 0,
+        "target_stock": 20
+      },
+      "watermelon_seed": {
+        "base_price": 15,
+        "daily_liquidity": 8,
+        "demand": 0,
+        "history": [
+          15,
+          17,
+          17,
+          17,
+          17,
+          17,
+          17
+        ],
+        "item_id": "watermelon_seed",
+        "mid_price": 17,
+        "stock": 20,
+        "supply": 0,
+        "target_stock": 25
+      },
+      "wood": {
+        "base_price": 14,
+        "daily_liquidity": 30,
+        "demand": 0,
+        "history": [
+          14,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "item_id": "wood",
+        "mid_price": 16,
+        "stock": 60,
+        "supply": 0,
+        "target_stock": 80
+      },
+      "wooden_crate": {
+        "base_price": 154,
+        "daily_liquidity": 7,
+        "demand": 0,
+        "history": [
+          154,
+          177,
+          194,
+          194,
+          194,
+          194,
+          194
+        ],
+        "item_id": "wooden_crate",
+        "mid_price": 194,
+        "stock": 9,
+        "supply": 0,
+        "target_stock": 16
+      }
+    },
+    "last_settled_day": 7
+  },
+  "market_site": {
+    "x": -12.0,
+    "z": 12.0
+  },
+  "npc_economy": {
+    "demand_tags": {
+      "artisans": "工匠金属锭需求（需求 3）",
+      "builders": "建设材料需求（需求 5）",
+      "residents": "居民基础食品需求（需求 6）",
+      "tourists": "游客奢侈品需求（需求 1）"
+    },
+    "essential_zero_streaks": {
+      "animal_feed": 0,
+      "bread": 0,
+      "carrot_seed": 0,
+      "clay": 0,
+      "fiber": 0,
+      "flour": 0,
+      "grain": 0,
+      "grain_seed": 0,
+      "potato_seed": 0,
+      "salt": 0,
+      "sand": 0,
+      "stone": 0,
+      "tomato_seed": 0,
+      "wood": 0
+    },
+    "last_simulated_day": 7,
+    "npc_states": [
+      {
+        "gold": 329,
+        "inventory": {
+          "bread": 2,
+          "egg": 1,
+          "flour": 2,
+          "grain": 4
+        },
+        "investment_planned": false,
+        "last_simulated_day": 7,
+        "npc_id": "afu_shui",
+        "production_recipes": [
+          "flour",
+          "bread"
+        ],
+        "reserve_targets": {
+          "egg": 1,
+          "flour": 2,
+          "grain": 4
+        },
+        "sale_targets": {
+          "bread": 2,
+          "flour": 2
+        }
+      },
+      {
+        "gold": 407,
+        "inventory": {
+          "carrot_seed": 6,
+          "grain": 3,
+          "grain_seed": 8,
+          "potato_seed": 6
+        },
+        "investment_planned": false,
+        "last_simulated_day": 7,
+        "npc_id": "farmer_ahe",
+        "production_recipes": [],
+        "reserve_targets": {
+          "carrot_seed": 3,
+          "grain_seed": 4,
+          "potato_seed": 3
+        },
+        "sale_targets": {
+          "carrot": 2,
+          "grain": 2,
+          "potato": 2
+        }
+      },
+      {
+        "gold": 419,
+        "inventory": {
+          "bread": 2,
+          "grain": 4,
+          "grain_seed": 6,
+          "salt": 8
+        },
+        "investment_planned": false,
+        "last_simulated_day": 7,
+        "npc_id": "lao_li",
+        "production_recipes": [],
+        "reserve_targets": {
+          "grain_seed": 6,
+          "salt": 8
+        },
+        "sale_targets": {
+          "grain_seed": 3,
+          "salt": 4
+        }
+      },
+      {
+        "gold": 553,
+        "inventory": {
+          "coal": 3,
+          "farm_tools": 1,
+          "grain": 2,
+          "iron_ingot": 2,
+          "iron_ore": 4,
+          "plank": 0
+        },
+        "investment_planned": false,
+        "last_simulated_day": 7,
+        "npc_id": "tiejiang_zhang",
+        "production_recipes": [
+          "iron_ingot",
+          "farm_tools"
+        ],
+        "reserve_targets": {
+          "coal": 3,
+          "iron_ingot": 2,
+          "iron_ore": 4
+        },
+        "sale_targets": {
+          "farm_tools": 1,
+          "iron_ingot": 2
+        }
+      },
+      {
+        "gold": 364,
+        "inventory": {
+          "bouquet": 1,
+          "fiber": 1,
+          "grain": 2,
+          "honey": 2,
+          "rose": 3
+        },
+        "investment_planned": false,
+        "last_simulated_day": 7,
+        "npc_id": "xiao_hua",
+        "production_recipes": [
+          "bouquet"
+        ],
+        "reserve_targets": {
+          "fiber": 1,
+          "honey": 2,
+          "rose": 3
+        },
+        "sale_targets": {
+          "bouquet": 1,
+          "honey": 2
+        }
+      },
+      {
+        "gold": 878,
+        "inventory": {
+          "bread": 2,
+          "crystal": 1,
+          "gold_ore": 0,
+          "honey_cake": 1,
+          "jewelry": 1,
+          "rope": 2
+        },
+        "investment_planned": false,
+        "last_simulated_day": 7,
+        "npc_id": "xuezhe_lin",
+        "production_recipes": [
+          "jewelry"
+        ],
+        "reserve_targets": {
+          "crystal": 1,
+          "honey_cake": 1
+        },
+        "sale_targets": {
+          "jewelry": 1
+        }
+      }
+    ],
+    "pending_caravan_departures": []
+  },
+  "paddy_cells": [],
+  "production": {
+    "maintenance": [
+      {
+        "building_key": "barn:20:23",
+        "due_day": 21
+      },
+      {
+        "building_key": "barn:29:24",
+        "due_day": 21
+      },
+      {
+        "building_key": "food_workshop:20:19",
+        "due_day": 20
+      },
+      {
+        "building_key": "windmill:25:24",
+        "due_day": 21
+      }
+    ],
+    "repairing": [],
+    "resource_cycles": [],
+    "speed_accumulators": [],
+    "version": 3
+  },
+  "season": {
+    "day": 7,
+    "hour": 20,
+    "minute": 29,
+    "season": 0,
+    "total_days": 7
+  },
+  "stamina": 96,
+  "tools": {
+    "tools": [
+      {
+        "current": 100,
+        "max": 100,
+        "tool_id": "axe"
+      },
+      {
+        "current": 100,
+        "max": 100,
+        "tool_id": "fishing_rod"
+      },
+      {
+        "current": 100,
+        "max": 100,
+        "tool_id": "hoe"
+      },
+      {
+        "current": 100,
+        "max": 100,
+        "tool_id": "pickaxe"
+      },
+      {
+        "current": 100,
+        "max": 100,
+        "tool_id": "watering_can"
+      }
+    ],
+    "version": 1
+  },
+  "version": 4
+}

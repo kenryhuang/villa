@@ -16,7 +16,7 @@ project.godot                    项目配置，默认启动 scenes/farm3d/main.
 scenes/
   farm3d/
     main.tscn                    正式农庄场景：环境、角色、树木、相机
-    buildings/                  原生 3D 建筑：Blender 谷仓、风车
+    buildings/                  原生 3D 建筑：Blender 谷仓、风车、食品工坊
     inventory.tscn               3D 背包界面，继承原背包场景
     status_bar.tscn              从原 HUD 迁入的状态条组件
   preview/                      独立美术预览，目前仅橡树观察场景
@@ -55,10 +55,13 @@ scripts/
     farm_building_system.gd     原建造规则的角色距离、占地检查
     modeled_building.gd         谷仓模型、立体施工阶段、碰撞与放置预览
     modeled_windmill.gd         风车模型、生产叶片动画、院落交互范围
-    windmill_view.gd            风车加工、队列、成品与维护面板
+    modeled_food_workshop.gd    食品工坊模型、烹饪蒸汽、柜台交互范围
+    windmill_view.gd            风车／食品工坊共用加工、队列、成品与维护面板
     windmill_panel_controller.gd 原生产面板的 3D 适配与实时行情估算
     windmill_yard.gd            3D 风车院落、施工阶段与输出位置
     windmill_outputs.gd         可点击的袋装／瓶装成品
+    food_workshop_yard.gd       食品工坊石地院落、围栏与成品展台
+    food_workshop_outputs.gd    可点击的食品、罐装成品与花束
     crop_visual_system.gd      按地块状态生成土块和作物视觉
     painted_meadow.gd          设置手绘草地材质
     farm_tool_visual.gd        保留的早期锄头动画，当前未挂接
@@ -72,6 +75,7 @@ assets/
   models/vegetation/           手绘橡树 GLB 与贴图
   models/buildings/barn/       立体谷仓 GLB、木纹／石材／瓦片贴图
   models/buildings/windmill/   立体风车 GLB、木纹／石材／瓦片贴图
+  models/buildings/food_workshop/ 食品工坊 GLB、木纹／石材／陶瓦贴图
   models/crops/               3D 作物：玫瑰五阶段，其余 13 种两阶段
   crops/、buildings/           原作物图片供旧游戏使用；建筑美术继续共用
   terrain/、ui/               共用地面贴图与 UI 主题、图标
@@ -80,6 +84,7 @@ art/blender/
   painted_oak.blend            可编辑的橡树源模型
   barn.blend                   可编辑的谷仓，按施工阶段分组
   windmill.blend               可编辑风车，施工分组与独立叶片轴
+  food_workshop.blend          可编辑食品工坊，木屋、炉灶与厨房陈设
   rose.blend                   可编辑的玫瑰五阶段源模型
   <crop_id>.blend             13 种作物各自包含播种／树苗与成熟模型
 tools/                        游戏启动与独立美术预览命令
@@ -92,7 +97,7 @@ docs/validation/              操作说明、验证结果和截图
 - 正式 3D 场景和控制脚本放入 `scenes/farm3d/`、`scripts/farm3d/`。`preview` 仅用于模型观察等独立预览，不承载正式游戏入口。
 - 种植、季节、背包、经济等共用规则继续维护在原系统目录；需要 3D 特有行为时，在 `farm3d` 中适配。
 - 在 Blender 编辑 `art/blender/` 下的源文件，导出模型到 `assets/models/`。生成脚本已使用新路径；运行生成脚本会覆盖对应生成资产，具体见[模型说明](assets/models/farm3d/README.md)。
-- 3D 存档继续使用 `user://farm_3d_save.json`；当前 v4 增加高尔夫回合与最佳成绩，兼容 v1/v2/v3，保留市场行情、NPC 经济状态和市集位置。
+- 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v4 增加高尔夫回合与最佳成绩，兼容 v1/v2/v3，保留市场行情、NPC 经济状态和市集位置。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
 ## 操作与验证
@@ -100,6 +105,8 @@ docs/validation/              操作说明、验证结果和截图
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
 
 **风车**：从“建筑”菜单放置，完工后走到南面院门前点击建筑。选择面粉、动物饲料或葵花油，设置批量并投入背包原料。关闭面板后加工，完成后点击院落成品或在面板收进背包。面板支持两格队列、实时行情参考与原系统维护；打开时暂停游戏时间，Esc 关闭恢复。模型与验证见[3D 风车说明](docs/validation/windmill-3d.md)。
+
+**食品工坊**：从“建筑”菜单放置 4×4 工坊，完工后走到南面操作台前点击建筑。原有十种配方全部复用，包括风车面粉制作面包／蜂蜜蛋糕、普通鱼制作烤鱼／腌鱼，以及果酱、腌菜等加工。选择配方和批量后投入背包原料，Esc 关闭继续生产；点击成品或在面板收进背包，再到市集出售。配方列表可滚动，窄屏使用页签。模型、完整配方与验证见[3D 食品工坊说明](docs/validation/food-workshop-3d.md)。
 
 农庄西南侧新增实体市集（默认西 12 / 南 12 米，小地图标注“市集”）。走到南面的柜台前，**左键点击建筑**即可买卖；**Esc** 关闭。作物、鱼获和材料沿用原市场目录、批量报价、有限库存、NPC 供需和每日价格结算。说明与实景见[3D 市场移植](docs/validation/market-3d.md)。
 
@@ -124,6 +131,8 @@ godot_console.exe --headless --path . --script tests/run_3d_south_lake_tests.gd 
 godot_console.exe --headless --path . --script tests/run_3d_fishing_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_market_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_windmill_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_food_workshop_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_save_protection_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_golf_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.gd -- --farm-test
 ```

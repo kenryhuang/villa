@@ -58,7 +58,7 @@ func configure(farm_session: Farm3DSession, farmer: Farm3DPlayer, farm_hud: Canv
 	_camera.far = 400
 	add_child(_camera)
 	_build_hud()
-	for modal in [hud.windmill_view,hud.market_view,hud.inventory_ui,hud.history_panel]:
+	for modal in [hud.windmill_view,hud.food_workshop_view,hud.market_view,hud.inventory_ui,hud.history_panel]:
 		modal.visibility_changed.connect(func():
 			if modal.visible:
 				release_control()

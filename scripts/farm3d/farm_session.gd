@@ -25,7 +25,10 @@ const STARTER_MATERIALS := ["wood", "stone", "fiber", "plank", "stone_brick", "b
 
 @export var auto_restore := true
 @export var auto_save := true
-@export var save_path := "user://farm_3d_save.json"
+const DEFAULT_SAVE_PATH := "res://data/farm_3d_save.json"
+@export var save_path := DEFAULT_SAVE_PATH
+var save_error := ""
+var _backup_written_for := ""
 
 var grid: GridSystem
 var farming: FarmingSystem
@@ -112,8 +115,12 @@ func configure(next_player: Node3D) -> bool:
 		event_bus.day_changed.connect(production.apply_daily_effects)
 		event_bus.day_changed.connect(production.finish_daily_outputs)
 		event_bus.day_changed.connect(_settle_market_day)
-	if auto_restore and load_game():
-		return true
+	if auto_restore and FileAccess.file_exists(save_path):
+		# A missing or damaged project-local save starts a clean farm. The old
+		# user:// location is intentionally not consulted.
+		if load_game():
+			return true
+		push_warning("Farm save could not be loaded; starting a fresh farm")
 	_grant_initial_state()
 	market_site = MarketSite.find_available(grid)
 	_reserve_market_site()
@@ -227,12 +234,19 @@ func save_game() -> bool:
 		"market_site": {"x": market_site.x, "z": market_site.y},
 		"golf": golf_round.to_dict(),
 	}
-	file.store_string(JSON.stringify(data))
+	file.store_string(JSON.stringify(data, "  "))
 	file.flush()
 	var error := file.get_error()
 	file.close()
 	if error != OK:
 		return false
+	# Keep the farm from before this session's first overwrite. Frequent
+	# autosaves must not rotate that recovery copy away within seconds.
+	if _backup_written_for != save_path and FileAccess.file_exists(save_path):
+		if DirAccess.copy_absolute(ProjectSettings.globalize_path(save_path), ProjectSettings.globalize_path(save_path+".bak")) != OK:
+			save_error = "无法备份原存档，本次保存已停止"
+			return false
+		_backup_written_for = save_path
 	return DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary_path), ProjectSettings.globalize_path(save_path)) == OK
 
 
@@ -301,6 +315,7 @@ func load_game() -> bool:
 	golf_round = GolfRound.new()
 	if int(data.version) >= 4:
 		golf_round.restore(data.golf)
+	save_error = ""
 	state_loaded.emit()
 	return true
 

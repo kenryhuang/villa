@@ -30,6 +30,7 @@ var status_bar: PanelContainer
 var minimap: Control
 var market_view: Control
 var windmill_view: Control
+var food_workshop_view: Control
 var secondary: PanelContainer
 var secondary_grid: GridContainer
 var secondary_title: Label
@@ -99,6 +100,10 @@ func configure(session: Node) -> void:
 	_ui.add_child(windmill_view)
 	windmill_view.configure(session)
 	windmill_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
+	food_workshop_view = preload("res://scripts/farm3d/windmill_view.gd").new()
+	_ui.add_child(food_workshop_view)
+	food_workshop_view.configure(session,"food_workshop")
+	food_workshop_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
 	session.buildings.building_construction_completed.connect(func(building: BuildingInstance): notify_message("%s建造完成" % building.data.display_name, true))
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -278,6 +283,7 @@ func toggle_minimap() -> void:
 
 func toggle_inventory() -> void:
 	fishing_cancel_requested.emit()
+	food_workshop_view.close_panel()
 	windmill_view.close_panel()
 	market_view.close_market()
 	history_panel.hide()
@@ -285,11 +291,12 @@ func toggle_inventory() -> void:
 	_session.player.ui_blocked = is_modal_open()
 
 func is_modal_open() -> bool:
-	return inventory_ui != null and (inventory_ui.visible or history_panel.visible or (market_view != null and market_view.visible) or (windmill_view != null and windmill_view.visible))
+	return inventory_ui != null and (inventory_ui.visible or history_panel.visible or (market_view != null and market_view.visible) or (windmill_view != null and windmill_view.visible) or (food_workshop_view != null and food_workshop_view.visible))
 
 func open_windmill(building: BuildingInstance) -> bool:
 	close_panels()
-	var opened: bool = windmill_view.open_for(building)
+	var view: Control = food_workshop_view if building.building_id == "food_workshop" else windmill_view
+	var opened: bool = view.open_for(building)
 	_session.player.ui_blocked = opened
 	return opened
 
@@ -299,6 +306,8 @@ func open_market() -> void:
 	_session.player.ui_blocked = true
 
 func close_panels() -> void:
+	if food_workshop_view != null:
+		food_workshop_view.close_panel()
 	if windmill_view != null:
 		windmill_view.close_panel()
 	inventory_ui.close()
@@ -324,6 +333,7 @@ func _make_history() -> void:
 
 func _toggle_history() -> void:
 	fishing_cancel_requested.emit()
+	food_workshop_view.close_panel()
 	windmill_view.close_panel()
 	market_view.close_market()
 	inventory_ui.close()
