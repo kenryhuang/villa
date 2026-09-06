@@ -36,7 +36,7 @@ scripts/
     target_catalog.gd          将共用种子和建筑目录提供给目标菜单
     flat_grid.gd                扩展地形网格，保留原农庄坐标与存档
     terrain_profile.gd          平原、丘陵、山地、峡谷和河床的共享高度
-    landscape.gd                地形分块、碰撞、河水、木桥和区域橡树
+    landscape.gd                地形分块、碰撞、河湖、木桥、橡树与预留钓位
     farm3d_farming_system.gd    原种植规则的 3D 视觉、水田灌溉适配
     farm_building_system.gd     原建造规则的角色距离、占地检查
     modeled_building.gd         谷仓模型、立体施工阶段、碰撞与放置预览
@@ -78,9 +78,11 @@ docs/validation/              操作说明、验证结果和截图
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
 
-地图已扩展至 **160 × 160 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
+地图已扩展至 **160 × 224 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。南面从草地逐渐过渡到沙地，新增南湖和三处预留岸边钓位（钓鱼交互尚未接入）。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
 
-右下角小地图固定上北、下南、左西、右东；浅色箭头显示人物位置和朝向，标出农庄、山地、丘陵、河流及木桥。底部显示所在区域与相对地图中心的东西／南北距离（米），旋转相机不会改变地图方向。
+右下角小地图默认显示，按 **G** 关闭／打开，固定上北、下南、左西、右东；浅色箭头显示人物位置和朝向，标出农庄、山地、丘陵、河流、木桥、沙地及南湖。底部显示所在区域与相对原农庄中心（世界原点）的东西／南北距离（米），旋转相机不会改变地图方向。
+
+按住 **Shift** 奔跑，移动速度为普通行走的 **2.5 倍**（当前行走 4.2 米/秒、奔跑 10.5 米/秒），松开即恢复行走；奔跑时步行动画同步加快。
 
 ```powershell
 godot_console.exe --headless --editor --path . --quit
@@ -89,6 +91,7 @@ godot_console.exe --headless --path . --script tests/run_3d_farm_interaction_tes
 godot_console.exe --headless --path . --script tests/run_3d_target_system_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_landscape_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_minimap_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_south_lake_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。

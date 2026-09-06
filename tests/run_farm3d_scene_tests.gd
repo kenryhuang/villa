@@ -59,6 +59,37 @@ func _run() -> void:
 	await _frames(30)
 	Input.action_release("move_forward")
 	_check(player.global_position.distance_to(start) > 0.7, "Movement input moves the farmer in the real scene")
+	# Exercise physical Shift mapping, held sprint, release, and idle animation.
+	player.position = Vector3(0,0,5)
+	player.velocity = Vector3.ZERO
+	Input.action_press("move_back")
+	await _frames(3)
+	var walking_speed := Vector2(player.velocity.x,player.velocity.z).length()
+	_check(is_equal_approx(walking_speed, player.walk_speed), "Movement without Shift uses walking speed")
+	var shift := InputEventKey.new()
+	shift.physical_keycode = KEY_SHIFT
+	shift.pressed = true
+	Input.parse_input_event(shift)
+	await _frames(5)
+	_check(Input.is_action_pressed("sprint"), "Physical Shift is bound to sprint")
+	_check(is_equal_approx(Vector2(player.velocity.x,player.velocity.z).length(), walking_speed*2.5), "Holding Shift moves at exactly 2.5 times walking speed")
+	_check(is_equal_approx(player._animation_player.speed_scale,2.5), "Running speeds up the farmer stride animation")
+	Input.action_press("move_right")
+	await _frames(3)
+	_check(is_equal_approx(Vector2(player.velocity.x,player.velocity.z).length(),walking_speed*2.5), "Diagonal sprint does not multiply the speed again")
+	Input.action_release("move_right")
+	shift = InputEventKey.new()
+	shift.physical_keycode = KEY_SHIFT
+	shift.pressed = false
+	Input.parse_input_event(shift)
+	await _frames(3)
+	_check(is_equal_approx(Vector2(player.velocity.x,player.velocity.z).length(),walking_speed), "Releasing Shift restores walking speed")
+	_check(is_equal_approx(player._animation_player.speed_scale,1.0), "Releasing Shift restores walking cadence")
+	Input.action_release("move_back")
+	Input.action_press("sprint")
+	await _frames(3)
+	_check(Vector2(player.velocity.x,player.velocity.z).is_zero_approx() and player._animation_player.speed_scale == 1.0, "Shift alone keeps the farmer stationary with normal idle animation")
+	Input.action_release("sprint")
 	Input.action_press("jump")
 	await _frames(5)
 	Input.action_release("jump")

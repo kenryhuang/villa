@@ -1,8 +1,9 @@
 class_name Farm3DPlayer
 extends CharacterBody3D
 
+const SPRINT_MULTIPLIER := 2.5
+
 @export var walk_speed := 4.2
-@export var sprint_speed := 7.0
 @export var jump_velocity := 6.0
 @export var start_position := Vector3(-2.0, 0.0, 4.0)
 
@@ -32,7 +33,7 @@ func _physics_process(delta: float) -> void:
 	if ui_blocked or _farm_action_seconds > 0.0:
 		input_vector = Vector2.ZERO
 	var direction := Vector3(input_vector.x, 0.0, input_vector.y).rotated(Vector3.UP, camera_yaw)
-	var speed := sprint_speed if Input.is_action_pressed("sprint") else walk_speed
+	var speed := walk_speed * (SPRINT_MULTIPLIER if Input.is_action_pressed("sprint") else 1.0)
 	if Farm3DTerrainProfile.is_water(global_position.x,global_position.z) and global_position.y < Farm3DTerrainProfile.WATER_HEIGHT:
 		speed *= 0.6
 	velocity.x = direction.x * speed
@@ -41,7 +42,7 @@ func _physics_process(delta: float) -> void:
 		look_at(global_position + direction, Vector3.UP, true)
 	play_motion_animation(direction.length_squared() > 0.001)
 	move_and_slide()
-	if global_position.y < -8.0 or absf(global_position.x) > 81.0 or absf(global_position.z) > 81.0:
+	if global_position.y < -8.0 or not Farm3DTerrainProfile.is_in_world(global_position.x, global_position.z, 1.0):
 		reset_position()
 
 func reset_position() -> void:
@@ -65,6 +66,8 @@ func cancel_farm_action() -> void:
 func play_motion_animation(is_walking: bool) -> void:
 	if _animation_player == null:
 		return
+	# The imported farmer has Idle and Walk; match the stride cadence to running.
+	_animation_player.speed_scale = SPRINT_MULTIPLIER if is_walking and Input.is_action_pressed("sprint") else 1.0
 	var preferred := "Walk" if is_walking else "Idle"
 	for animation_name in _animation_player.get_animation_list():
 		if String(animation_name).get_file().to_lower() == preferred.to_lower():

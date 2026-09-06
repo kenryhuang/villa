@@ -207,6 +207,9 @@ func _refresh_status() -> void:
 func notify_message(text: String, success: bool = true) -> void:
 	bus.publish("农庄", "success" if success else "warning", text, {"game_time": "%02d:%02d" % [_session.season.hour, _session.season.minute]})
 
+func toggle_minimap() -> void:
+	minimap.visible = not minimap.visible
+
 func toggle_inventory() -> void:
 	history_panel.hide()
 	inventory_ui.toggle()

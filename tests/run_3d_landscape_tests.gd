@@ -29,7 +29,7 @@ func _run() -> void:
 	session.season.set_process(false)
 	await _frames(3)
 	var grid: Farm3DFlatGrid = session.grid
-	_check(grid._cells.size() == 25600,"160 x 160 metres of addressable farm cells")
+	_check(grid._cells.size() == 35840,"160 x 224 metres of addressable farm cells")
 	_check(Profile.region_at(0,0) == "平原","Original farm remains plains")
 	_check(Profile.region_at(-43,8) == "丘陵","Western region contains hills")
 	_check(Profile.region_at(-4,-66) == "山地","Northern region contains mountains")

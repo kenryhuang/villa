@@ -55,11 +55,11 @@ func _initialize_landscape() -> void:
 	var landscape := LandscapeScript.new()
 	landscape.name = "Landscape"
 	add_child(landscape)
-	overview_camera.position = Vector3(125,125,145)
+	overview_camera.position = Vector3(160,180,232)
 	overview_camera.fov = 50.0
-	overview_camera.look_at(Vector3(0,4,-7),Vector3.UP)
-	follow_camera.far = 280.0
-	overview_camera.far = 400.0
+	overview_camera.look_at(Vector3(0,4,32),Vector3.UP)
+	follow_camera.far = 340.0
+	overview_camera.far = 500.0
 
 func _initialize_gameplay() -> void:
 	var arguments := OS.get_cmdline_args() + OS.get_cmdline_user_args()

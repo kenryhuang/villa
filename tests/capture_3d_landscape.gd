@@ -21,7 +21,7 @@ func _run() -> void:
 	camera.far = 500
 	camera.fov = 50
 	var shots := [
-		["overview",Vector3(125,125,145),Vector3(0,4,-7)],
+		["overview",Vector3(160,180,232),Vector3(0,4,32)],
 		["hills",Vector3(-11,13,32),Vector3(-44,5,3)],
 		["mountains",Vector3(-9,16,-12),Vector3(-13,14,-59)],
 		["canyon",Vector3(54,27,-15),Vector3(34,3,-49)],

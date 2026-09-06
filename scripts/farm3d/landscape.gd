@@ -4,6 +4,8 @@ extends Node3D
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
 const Oak = preload("res://scenes/vegetation/painted_oak.tscn")
 const CHUNK_SIZE := 16
+const HEIGHT_COLUMNS := int(Profile.WORLD_SIZE.x) + 1
+const HEIGHT_ROWS := int(Profile.WORLD_SIZE.y) + 1
 var terrain_material: ShaderMaterial
 var _heights := PackedFloat32Array()
 
@@ -11,14 +13,18 @@ func _ready() -> void:
 	terrain_material = ShaderMaterial.new()
 	terrain_material.shader = preload("res://assets/terrain/landscape.gdshader")
 	terrain_material.set_shader_parameter("grass_texture",preload("res://assets/terrain/grass-seamless-blended.png"))
-	_heights.resize(161*161)
-	for z in 161:
-		for x in 161:
-			_heights[z*161+x] = Profile.height_at(x-80,z-80)
-	for z in range(-80,80,CHUNK_SIZE):
-		for x in range(-80,80,CHUNK_SIZE):
+	terrain_material.set_shader_parameter("sand_start", Profile.SAND_START)
+	terrain_material.set_shader_parameter("sand_end", Profile.SAND_END)
+	_heights.resize(HEIGHT_COLUMNS*HEIGHT_ROWS)
+	for z in HEIGHT_ROWS:
+		for x in HEIGHT_COLUMNS:
+			_heights[z*HEIGHT_COLUMNS+x] = Profile.height_at(x+Profile.WORLD_MIN.x,z+Profile.WORLD_MIN.y)
+	for z in range(int(Profile.WORLD_MIN.y),int(Profile.WORLD_MAX.y),CHUNK_SIZE):
+		for x in range(int(Profile.WORLD_MIN.x),int(Profile.WORLD_MAX.x),CHUNK_SIZE):
 			_build_chunk(x,z)
 	_build_river()
+	_build_lake()
+	_build_fishing_shores()
 	_build_bridge()
 	_build_trees()
 	_build_boundaries()
@@ -57,12 +63,12 @@ func _build_chunk(start_x: int, start_z: int) -> void:
 	instance.add_child(body)
 
 func _height(x: int, z: int) -> float:
-	return _heights[clampi(z+80,0,160)*161+clampi(x+80,0,160)]
+	return _heights[clampi(z-int(Profile.WORLD_MIN.y),0,HEIGHT_ROWS-1)*HEIGHT_COLUMNS+clampi(x-int(Profile.WORLD_MIN.x),0,HEIGHT_COLUMNS-1)]
 
 func _build_river() -> void:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for z in range(-80,80):
+	for z in range(int(Profile.WORLD_MIN.y),int(Profile.WORLD_MAX.y)):
 		for side in [-1,1]:
 			# Follow the shoreline at each end, never draw water through high banks.
 			var points: Array[Vector3] = []
@@ -83,6 +89,64 @@ func _build_river() -> void:
 	water.shader = preload("res://assets/terrain/river.gdshader")
 	river.material_override = water
 	add_child(river)
+
+func _build_lake() -> void:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var minimum := Vector2i((Profile.LAKE_CENTER - Profile.LAKE_RADII * 1.3).floor())
+	var maximum := Vector2i((Profile.LAKE_CENTER + Profile.LAKE_RADII * 1.3).ceil())
+	for z in range(minimum.y, maximum.y):
+		for x in range(minimum.x, maximum.x):
+			var a := Vector3(x, _height(x,z), z)
+			var b := Vector3(x+1, _height(x+1,z), z)
+			var c := Vector3(x+1, _height(x+1,z+1), z+1)
+			var d := Vector3(x, _height(x,z+1), z+1)
+			_add_lake_triangle(surface, [a,b,c])
+			_add_lake_triangle(surface, [a,c,d])
+	var lake := MeshInstance3D.new()
+	lake.name = "SouthLake"
+	lake.mesh = surface.commit()
+	var water := ShaderMaterial.new()
+	water.shader = preload("res://assets/terrain/lake.gdshader")
+	lake.material_override = water
+	lake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(lake)
+
+func _add_lake_triangle(surface: SurfaceTool, triangle: Array[Vector3]) -> void:
+	# Clip each real terrain triangle at water level for an exact, irregular shore.
+	var clipped: Array[Vector3] = []
+	var previous := triangle[-1]
+	for point in triangle:
+		var inside := point.y <= Profile.WATER_HEIGHT
+		if inside != (previous.y <= Profile.WATER_HEIGHT):
+			clipped.append(previous.lerp(point, (Profile.WATER_HEIGHT-previous.y)/(point.y-previous.y)))
+		if inside:
+			clipped.append(point)
+		previous = point
+	for index in range(1, clipped.size()-1):
+		for point in [clipped[0], clipped[index], clipped[index+1]]:
+			surface.set_normal(Vector3.UP)
+			surface.set_color(Color(clampf((Profile.WATER_HEIGHT-point.y)/4.0,0,1),0,0,1))
+			surface.add_vertex(Vector3(point.x, Profile.WATER_HEIGHT, point.z))
+
+func _build_fishing_shores() -> void:
+	var shores := Node3D.new()
+	shores.name = "LakeFishingShores"
+	add_child(shores)
+	for spot in Profile.LAKE_FISHING_SPOTS:
+		var shore := Marker3D.new()
+		shore.name = spot.id
+		shore.position = Vector3(spot.shore.x, Profile.surface_height(spot.shore.x,spot.shore.y), spot.shore.y)
+		shores.add_child(shore)
+		shore.add_to_group("farm3d_fishing_shores")
+		shore.set_meta("water_body_id", "south_lake")
+		var target := Marker3D.new()
+		target.name = "CastTarget"
+		shore.add_child(target)
+		target.global_position = Vector3(spot.water.x, Profile.WATER_HEIGHT, spot.water.y)
+		shore.look_at(Vector3(target.global_position.x,shore.global_position.y,target.global_position.z))
+		# Set after rotation so the cast target keeps its authored world position.
+		target.global_position = Vector3(spot.water.x, Profile.WATER_HEIGHT, spot.water.y)
 
 func _build_bridge() -> void:
 	var bridge := Node3D.new()
@@ -172,10 +236,14 @@ func _build_skirt() -> void:
 	# Close the outer mesh in overview instead of exposing a paper-thin edge.
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var corners := [Profile.WORLD_MIN, Vector2(Profile.WORLD_MAX.x,Profile.WORLD_MIN.y), Profile.WORLD_MAX, Vector2(Profile.WORLD_MIN.x,Profile.WORLD_MAX.y)]
 	for side in 4:
-		for offset in range(-80,80):
-			var a := Vector2(offset,-80) if side == 0 else Vector2(80,offset) if side == 1 else Vector2(-offset,80) if side == 2 else Vector2(-80,-offset)
-			var b := a+Vector2.RIGHT if side == 0 else a+Vector2.DOWN if side == 1 else a+Vector2.LEFT if side == 2 else a+Vector2.UP
+		var start: Vector2 = corners[side]
+		var end: Vector2 = corners[(side+1)%4]
+		var direction := (end-start).normalized()
+		for offset in int(start.distance_to(end)):
+			var a := start + direction*offset
+			var b := a + direction
 			var points := [Vector3(a.x,Profile.height_at(a.x,a.y),a.y),Vector3(b.x,Profile.height_at(b.x,b.y),b.y),Vector3(a.x,-8,a.y),Vector3(b.x,-8,b.y)]
 			for index in [0,2,3,0,3,1]:
 				surface.add_vertex(points[index])
@@ -208,10 +276,11 @@ func _build_boundaries() -> void:
 	# Player-only boundary: overview picking and the camera must see through it.
 	body.collision_layer = 16
 	add_child(body)
+	var center := (Profile.WORLD_MIN + Profile.WORLD_MAX) * .5
 	for side in 4:
 		var collision := CollisionShape3D.new()
 		var shape := BoxShape3D.new()
-		shape.size = Vector3(1,100,162) if side < 2 else Vector3(162,100,1)
+		shape.size = Vector3(1,100,Profile.WORLD_SIZE.y+2) if side < 2 else Vector3(Profile.WORLD_SIZE.x+2,100,1)
 		collision.shape = shape
-		collision.position = Vector3(-80 if side==0 else 80,35,0) if side<2 else Vector3(0,35,-80 if side==2 else 80)
+		collision.position = Vector3(Profile.WORLD_MIN.x if side==0 else Profile.WORLD_MAX.x,35,center.y) if side<2 else Vector3(center.x,35,Profile.WORLD_MIN.y if side==2 else Profile.WORLD_MAX.y)
 		body.add_child(collision)

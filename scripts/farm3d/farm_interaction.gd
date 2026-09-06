@@ -81,6 +81,9 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_I:
 			hud.toggle_inventory()
 			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_G:
+			hud.toggle_minimap()
+			get_viewport().set_input_as_handled()
 	if hud.is_modal_open() and event is InputEventKey:
 		get_viewport().set_input_as_handled()
 

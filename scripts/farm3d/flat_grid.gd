@@ -3,10 +3,10 @@ extends GridSystem
 
 const ROAD_HALF_WIDTH := 1.55 # path width plus the half-cell safety padding used by GridSystem
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
-const MIN_GX := -62
-const MAX_GX := 98
-const MIN_GZ := -66
-const MAX_GZ := 94
+const MIN_GX := int(Profile.WORLD_MIN.x - WORLD_ORIGIN_X)
+const MAX_GX := int(Profile.WORLD_MAX.x - WORLD_ORIGIN_X)
+const MIN_GZ := int(Profile.WORLD_MIN.y - WORLD_ORIGIN_Z)
+const MAX_GZ := int(Profile.WORLD_MAX.y - WORLD_ORIGIN_Z)
 
 var visual_system: Node
 
@@ -39,6 +39,8 @@ func _base_state(cell: GridCell) -> GridCell.State:
 			return GridCell.State.DECORATION
 		if Profile.is_water(point.x,point.y):
 			return GridCell.State.WATER
+		if Profile.is_fishing_shore(point.x,point.y):
+			return GridCell.State.DECORATION
 		if cell.slope > .18:
 			return GridCell.State.DECORATION
 		for tree in Profile.TREES:

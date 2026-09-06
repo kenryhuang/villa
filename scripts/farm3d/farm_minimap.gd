@@ -3,7 +3,9 @@ extends Control
 ## Fixed north-up map: world -Z is north and +X is east.
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
 const PANEL_SIZE := Vector2(248, 302)
-const MAP_RECT := Rect2(26, 48, 196, 196)
+const MAP_SCALE := 196.0 / maxf(Profile.WORLD_SIZE.x, Profile.WORLD_SIZE.y)
+const MAP_SIZE := Profile.WORLD_SIZE * MAP_SCALE
+const MAP_RECT := Rect2(Vector2(124, 146) - MAP_SIZE * .5, MAP_SIZE)
 const INK := Color("f8edcf")
 const GOLD := Color("e6c882")
 var player: Node3D
@@ -24,7 +26,7 @@ func _ready() -> void:
 	_terrain = _make_terrain()
 
 func world_to_map(point: Vector3) -> Vector2:
-	var normalized := (Vector2(point.x, point.z) + Vector2.ONE * Profile.HALF_SIZE) / (Profile.HALF_SIZE * 2.0)
+	var normalized := (Vector2(point.x, point.z) - Profile.WORLD_MIN) / Profile.WORLD_SIZE
 	return MAP_RECT.position + normalized.clamp(Vector2.ZERO, Vector2.ONE) * MAP_RECT.size
 
 func player_heading() -> Vector2:
@@ -33,28 +35,31 @@ func player_heading() -> Vector2:
 	return Vector2(forward.x, forward.z).normalized()
 
 func _process(_delta: float) -> void:
-	if is_instance_valid(player):
+	if is_visible_in_tree() and is_instance_valid(player):
 		queue_redraw()
 
 func _draw() -> void:
 	if _terrain == null:
 		return
 	draw_style_box(_panel, Rect2(Vector2.ZERO, size))
-	_text("农庄地图", Vector2(80, 21), 16, INK)
+	_centered("农庄地图 · G", Vector2(124, 21), 16, INK)
 	draw_texture_rect(_terrain, MAP_RECT, false)
 	draw_rect(MAP_RECT, Color("829365"), false, 1.0)
 	for offset in [-40.0, 0.0, 40.0]:
-		draw_line(world_to_map(Vector3(offset, 0, -80)), world_to_map(Vector3(offset, 0, 80)), Color(1, 1, 1, 0.08))
-		draw_line(world_to_map(Vector3(-80, 0, offset)), world_to_map(Vector3(80, 0, offset)), Color(1, 1, 1, 0.08))
+		draw_line(world_to_map(Vector3(offset, 0, Profile.WORLD_MIN.y)), world_to_map(Vector3(offset, 0, Profile.WORLD_MAX.y)), Color(1, 1, 1, 0.08))
+	for offset in range(int(Profile.WORLD_MIN.y)+40, int(Profile.WORLD_MAX.y), 40):
+		draw_line(world_to_map(Vector3(Profile.WORLD_MIN.x, 0, offset)), world_to_map(Vector3(Profile.WORLD_MAX.x, 0, offset)), Color(1, 1, 1, 0.08))
 	_centered("北", Vector2(124, 42), 17, GOLD)
 	_centered("南", Vector2(124, 263), 17, INK)
-	_centered("西", Vector2(13, 152), 17, INK)
-	_centered("东", Vector2(235, 152), 17, INK)
+	_centered("西", Vector2(MAP_RECT.position.x-13, 152), 17, INK)
+	_centered("东", Vector2(MAP_RECT.end.x+13, 152), 17, INK)
 	_map_label("山地", Vector3(-15, 0, -56))
 	_map_label("丘陵", Vector3(-51, 0, 13))
 	_map_label("河流", Vector3(58, 0, -9))
 	var farm := world_to_map(Vector3.ZERO)
-	var farm_half := Profile.CORE_HALF_SIZE / (Profile.HALF_SIZE * 2.0) * MAP_RECT.size
+	_map_label("沙地", Vector3(-48, 0, 83))
+	_map_label("南湖", Vector3(Profile.LAKE_CENTER.x, 0, Profile.LAKE_CENTER.y))
+	var farm_half := Vector2.ONE * Profile.CORE_HALF_SIZE * MAP_SCALE
 	draw_rect(Rect2(farm - farm_half, farm_half * 2), Color("dfcf9470"), false, 1.0)
 	_map_label("农庄", Vector3(0, 0, -17))
 	var bridge_x := Profile.river_x(Profile.BRIDGE_Z)
@@ -89,14 +94,15 @@ func _map_label(value: String, point: Vector3) -> void:
 
 func _make_terrain() -> ImageTexture:
 	# Cache a lightweight topographic map from the same surface as the 3D world.
-	var resolution := 160
-	var image := Image.create(resolution, resolution, false, Image.FORMAT_RGB8)
-	for row in resolution:
-		for column in resolution:
-			var x := (float(column) + 0.5) / resolution * Profile.HALF_SIZE * 2.0 - Profile.HALF_SIZE
-			var z := (float(row) + 0.5) / resolution * Profile.HALF_SIZE * 2.0 - Profile.HALF_SIZE
+	var resolution := Vector2i(Profile.WORLD_SIZE)
+	var image := Image.create(resolution.x, resolution.y, false, Image.FORMAT_RGB8)
+	for row in resolution.y:
+		for column in resolution.x:
+			var x := float(column) + 0.5 + Profile.WORLD_MIN.x
+			var z := float(row) + 0.5 + Profile.WORLD_MIN.y
 			var height := Profile.height_at(x, z)
 			var color := Color("83a15a").lerp(Color("b4ad83"), clampf(height / 28.0, 0, 1))
+			color = color.lerp(Color("cbb078"), Profile.sand_weight(x,z))
 			if Profile.is_water(x, z):
 				color = Color("5795aa")
 			else:
