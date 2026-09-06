@@ -99,6 +99,26 @@ func _run() -> void:
 	hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(barn.position+Vector3.UP*5,barn.position,16))
 	_check(not hit.is_empty() and hit.position.y-barn.position.y > 3,"Roof collision follows the model's ridge")
 	_check(barn.economy_effect_type() == "farm_storage" and barn.data.effect_value == 200,"Barn retains its storage effect")
+	# A due barn used to draw the original flat, depth-disabled damage art through
+	# its timber model, while a neighboring normal barn looked correct.
+	for maintenance_state in ["warning", "overdue", "repairing", "normal"]:
+		barn.set_maintenance_visual_state(maintenance_state, 2.0)
+		var maintenance := barn.get_node("BuildingMaintenanceVisual")
+		for sprite in maintenance.find_children("*", "Sprite3D", true, false):
+			_check(not sprite.is_visible_in_tree(), "3D maintenance never overlays flat damage or repair sprites on the barn")
+		var status := maintenance.get_node_or_null("Status") as Label3D
+		_check(status != null, "Modeled barn has a separate maintenance status above the roof")
+		if status != null:
+			_check(not status.no_depth_test and status.position.y > 3.17, "Maintenance status respects depth and clears the roof")
+			_check(status.visible if maintenance_state != "normal" else status.text == "维护完成", "Maintenance states remain visible without changing geometry")
+	# Restarting a warning during the completion message must not hide that warning.
+	barn.set_maintenance_visual_state("warning")
+	var maintenance := barn.get_node("BuildingMaintenanceVisual")
+	if maintenance.has_method("advance_animation"):
+		maintenance.advance_animation(2.0)
+	var status := maintenance.get_node_or_null("Status") as Label3D
+	_check(status != null and status.visible and status.text == "即将需要维护", "A new warning survives an earlier completion animation")
+	barn.set_maintenance_visual_state("normal")
 	# Construction record has the original schema: older saves need no migration.
 	barn.restore_construction(BuildingInstance.ConstructionStage.FRAME,3.5)
 	session.save_path = "user://barn_3d_integration_test.json"

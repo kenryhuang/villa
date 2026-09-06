@@ -1,6 +1,7 @@
 extends BuildingInstance
 
 ## 3D-only presentation. Construction, costs, storage and saves stay shared.
+const MaintenanceVisual = preload("res://scripts/farm3d/modeled_maintenance_visual.gd")
 @export var model_scene: PackedScene
 var _model_materials: Array[Dictionary] = []
 
@@ -10,6 +11,13 @@ func deactivate() -> void:
 
 func _ensure_nodes() -> void:
 	super._ensure_nodes()
+	var maintenance := get_node("BuildingMaintenanceVisual")
+	if maintenance.get_script() != MaintenanceVisual:
+		remove_child(maintenance)
+		maintenance.free()
+		maintenance = MaintenanceVisual.new()
+		maintenance.name = "BuildingMaintenanceVisual"
+		add_child(maintenance)
 	var root := get_node("VisualRoot")
 	if model_scene != null and root.get_node_or_null("Model") == null:
 		var model := model_scene.instantiate() as Node3D
@@ -29,6 +37,7 @@ func _configure_visuals() -> void:
 	_hide_legacy_art()
 	(get_node("ConstructionFeedback") as ConstructionFeedback).configure(data.visual_size)
 	get_node("BuildingMaintenanceVisual").configure(data.visual_size,data.ground_anchor_uv)
+	get_node("BuildingMaintenanceVisual").set_state(_maintenance_visual_state)
 	_apply_visual_color()
 
 func _hide_legacy_art() -> void:

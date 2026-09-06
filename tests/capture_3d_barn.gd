@@ -33,6 +33,16 @@ func _run() -> void:
 	camera.current = true
 	camera.fov = 43
 	var target := barn.position+Vector3.UP*1.4
+	if "--maintenance-only" in OS.get_cmdline_user_args():
+		camera.position = target + Vector3(4, 1.8, 6)
+		camera.look_at(target)
+		barn.set_maintenance_visual_state("overdue")
+		await _capture("maintenance_overdue")
+		farm.queue_free()
+		await process_frame
+		print("BARN MAINTENANCE CAPTURE: complete")
+		quit(0)
+		return
 	for shot in [["front",Vector3(4,1.8,6)],["rear",Vector3(-4,1.3,-6)],["low",Vector3(3,-.8,6)]]:
 		camera.position = target+shot[1]
 		camera.look_at(target)
