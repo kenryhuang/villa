@@ -4,6 +4,7 @@ const CAPTURE_WAIT_FRAMES := 8
 const FarmSessionScript = preload("res://scripts/farm3d/farm_session.gd")
 const MeadowScript = preload("res://scripts/farm3d/painted_meadow.gd")
 const InteractionScript = preload("res://scripts/farm3d/farm_interaction.gd")
+const LandscapeScript = preload("res://scripts/farm3d/landscape.gd")
 
 @onready var player: Farm3DPlayer = $Player
 @onready var camera_rig: Node3D = $CameraRig
@@ -26,6 +27,7 @@ func _ready() -> void:
 	overview_camera.look_at(Vector3(0.0, 1.0, -2.0), Vector3.UP)
 	$CameraRig/Pitch/SpringArm3D.add_excluded_object(player.get_rid())
 	_capture_path = _capture_argument()
+	_initialize_landscape()
 	_initialize_gameplay()
 	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--capture-overview"):
 		set_overview(true)
@@ -43,6 +45,21 @@ func _process(delta: float) -> void:
 		if _autosave_seconds >= 15.0:
 			_autosave_seconds = 0.0
 			farm_session.save_game()
+
+func _initialize_landscape() -> void:
+	# Keep the farm's authored path, fence and rocks, replacing only its square base.
+	for mesh_node in $EnvironmentModel.find_children("*", "MeshInstance3D", true, false):
+		var mesh_name: String = str(mesh_node.name).to_lower()
+		if "meadow" in mesh_name or "earth" in mesh_name:
+			mesh_node.hide()
+	var landscape := LandscapeScript.new()
+	landscape.name = "Landscape"
+	add_child(landscape)
+	overview_camera.position = Vector3(125,125,145)
+	overview_camera.fov = 50.0
+	overview_camera.look_at(Vector3(0,4,-7),Vector3.UP)
+	follow_camera.far = 280.0
+	overview_camera.far = 400.0
 
 func _initialize_gameplay() -> void:
 	var arguments := OS.get_cmdline_args() + OS.get_cmdline_user_args()

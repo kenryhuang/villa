@@ -32,7 +32,9 @@ scripts/
     farm_hud.gd                 两级目标菜单、状态条、消息与背包入口
     farm_inventory_ui.gd        原背包的 3D 交互适配
     target_catalog.gd          将共用种子和建筑目录提供给目标菜单
-    flat_grid.gd                原网格系统的平坦地图适配
+    flat_grid.gd                扩展地形网格，保留原农庄坐标与存档
+    terrain_profile.gd          平原、丘陵、山地、峡谷和河床的共享高度
+    landscape.gd                地形分块、碰撞、河水、木桥和区域橡树
     farm3d_farming_system.gd    原种植规则的 3D 视觉、水田灌溉适配
     farm_building_system.gd     原建造规则的角色距离、占地检查
     crop_visual_system.gd      按地块状态生成土块和作物视觉
@@ -71,11 +73,14 @@ docs/validation/              操作说明、验证结果和截图
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
 
+地图已扩展至 **160 × 160 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
+
 ```powershell
 godot_console.exe --headless --editor --path . --quit
 godot_console.exe --headless --path . --script tests/run_farm3d_scene_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_farm_interaction_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_target_system_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_landscape_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。

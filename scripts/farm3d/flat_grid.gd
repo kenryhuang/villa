@@ -2,6 +2,11 @@ class_name Farm3DFlatGrid
 extends GridSystem
 
 const ROAD_HALF_WIDTH := 1.55 # path width plus the half-cell safety padding used by GridSystem
+const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
+const MIN_GX := -62
+const MAX_GX := 98
+const MIN_GZ := -66
+const MAX_GZ := 94
 
 var visual_system: Node
 
@@ -12,13 +17,14 @@ func configure_flat(next_visual_system: Node = null) -> bool:
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	_cells.clear()
 	_base_states.clear()
-	for gz in GRID_DEPTH:
-		for gx in GRID_WIDTH:
+	for gz in range(MIN_GZ,MAX_GZ):
+		for gx in range(MIN_GX,MAX_GX):
 			var cell := GridCell.new()
 			cell.gx = gx
 			cell.gz = gz
-			cell.terrain_height = 0.0
-			cell.slope = 0.0
+			var point := cell.world_position()
+			cell.terrain_height = Profile.surface_height(point.x,point.y)
+			cell.slope = Profile.slope_at(point.x,point.y)
 			cell.state = _base_state(cell)
 			var key := cell_key(gx, gz)
 			_cells[key] = cell
@@ -28,6 +34,17 @@ func configure_flat(next_visual_system: Node = null) -> bool:
 
 func _base_state(cell: GridCell) -> GridCell.State:
 	var point := cell.world_position()
+	if not Profile.is_original_core(point.x,point.y):
+		if Profile.is_bridge(point.x,point.y):
+			return GridCell.State.DECORATION
+		if Profile.is_water(point.x,point.y):
+			return GridCell.State.WATER
+		if cell.slope > .18:
+			return GridCell.State.DECORATION
+		for tree in Profile.TREES:
+			if point.distance_to(tree) < 1.15:
+				return GridCell.State.DECORATION
+		return GridCell.State.WASTELAND
 	var road_x := -2.8 + sin(point.y * 0.14) * 1.3
 	if absf(point.x - road_x) <= ROAD_HALF_WIDTH:
 		return GridCell.State.ROAD
@@ -49,6 +66,15 @@ func _base_state(cell: GridCell) -> GridCell.State:
 	if point.x >= 0.2 and point.x <= 10.4 and absf(point.y + 9.66) <= 0.5:
 		return GridCell.State.DECORATION
 	return GridCell.State.WASTELAND
+
+func _is_in_bounds(gx: int, gz: int) -> bool:
+	return gx >= MIN_GX and gx < MAX_GX and gz >= MIN_GZ and gz < MAX_GZ
+
+func is_navigation_cell_walkable(cell: Vector2i) -> bool:
+	if cell.x <= MIN_GX or cell.x >= MAX_GX-1 or cell.y <= MIN_GZ or cell.y >= MAX_GZ-1:
+		return false
+	var data := get_cell(cell.x,cell.y)
+	return data != null and _state_is_navigation_walkable(data.state) and not is_navigation_cell_blocked(cell)
 
 
 func _sync_farmland_visual(cell: GridCell) -> void:

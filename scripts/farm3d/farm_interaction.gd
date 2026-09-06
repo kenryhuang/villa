@@ -57,6 +57,10 @@ func _process(delta: float) -> void:
 		session.buildings._preview_root.visible = false
 		return
 	_marker.global_position = target_cell.world_position_3d() + Vector3.UP * 0.075
+	var p := target_cell.world_position()
+	var profile = Farm3DTerrainProfile
+	var normal := Vector3(profile.surface_height(p.x-.5,p.y)-profile.surface_height(p.x+.5,p.y),1,profile.surface_height(p.x,p.y-.5)-profile.surface_height(p.x,p.y+.5)).normalized()
+	_marker.quaternion = Quaternion(Vector3.UP,normal)
 	var allowed: bool = session._in_range(target_cell)
 	if category == "building":
 		if not session.buildings.is_in_build_mode():
@@ -149,7 +153,7 @@ func cell_at_pointer(pointer: Vector2) -> GridCell:
 		return null
 	var origin := camera.project_ray_origin(pointer)
 	var direction := camera.project_ray_normal(pointer)
-	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 100, 1)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * camera.far, 1)
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	return null if hit.is_empty() else _cell_at(hit.position)
 

@@ -35,7 +35,7 @@ rotation_degrees = Vector3(-48, -32, 0)
 light_color = Color(1, 0.94, 0.82, 1)
 light_energy = 0.75
 shadow_enabled = true
-directional_shadow_max_distance = 55.0
+directional_shadow_max_distance = 150.0
 
 [node name="EnvironmentModel" parent="." instance=ExtResource("3_environment")]
 

@@ -74,6 +74,13 @@ func sync_cell(cell: GridCell) -> void:
 	collider.position.y = 0.0225
 	collider.add_child(collision_shape)
 	holder.add_child(collider)
+	# Keep the soil and its collider against gentle slopes; plants stay upright.
+	var point := cell.world_position()
+	var profile = Farm3DTerrainProfile
+	var normal := Vector3(profile.surface_height(point.x-.5,point.y)-profile.surface_height(point.x+.5,point.y),1,profile.surface_height(point.x,point.y-.5)-profile.surface_height(point.x,point.y+.5)).normalized()
+	var slope_rotation := Quaternion(Vector3.UP,normal)
+	soil.quaternion = slope_rotation
+	collider.quaternion = slope_rotation
 	if paddy_cells.has(key):
 		var water := MeshInstance3D.new()
 		water.name = "PaddyWater"

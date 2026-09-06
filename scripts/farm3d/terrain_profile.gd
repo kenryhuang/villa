@@ -1,0 +1,85 @@
+class_name Farm3DTerrainProfile
+extends RefCounted
+
+## One deterministic surface definition for rendering, collision and farm cells.
+## Existing world coordinates remain unchanged so old saves keep their farmland.
+const HALF_SIZE := 80.0
+const CORE_HALF_SIZE := 22.0
+const WATER_HEIGHT := -1.15
+const BRIDGE_Z := 18.0
+const TREES := [Vector2(-34,3), Vector2(-46,15), Vector2(-58,-8), Vector2(-38,-19), Vector2(-60,32), Vector2(-47,43), Vector2(-26,36), Vector2(-7,40), Vector2(17,36), Vector2(48,22), Vector2(62,9), Vector2(55,-13), Vector2(70,-35), Vector2(-58,-44), Vector2(59,48), Vector2(-31,60)]
+
+static func river_x(z: float) -> float:
+	return 36.0 + sin(z * 0.057) * 5.0 + sin(z * 0.123) * 1.7
+
+static func _hill(x: float, z: float, cx: float, cz: float, radius: float, height: float) -> float:
+	var distance := Vector2(x-cx,z-cz).length() / radius
+	return height * exp(-distance * distance * 2.0)
+
+static func height_at(x: float, z: float) -> float:
+	var core_distance := maxf(absf(x),absf(z))
+	if core_distance <= CORE_HALF_SIZE:
+		return 0.0
+	var edge_weight := smoothstep(22.0,32.0,core_distance)
+	var h := 0.6 + 0.45*sin(x*.09)*cos(z*.11)
+	# Broad, rounded western hills, with valleys wide enough to walk between.
+	h += _hill(x,z,-43,8,25,7) + _hill(x,z,-62,39,22,5.5)
+	h += _hill(x,z,-38,52,22,4.5) + _hill(x,z,-59,-24,23,8)
+	# Northern mountain massif, unequal peaks and lower connecting saddles.
+	h += _hill(x,z,-31,-57,23,25) + _hill(x,z,-4,-66,19,29)
+	h += _hill(x,z,18,-53,21,19) + _hill(x,z,-64,-64,24,15)
+	var mountain := smoothstep(5.0,20.0,h)
+	h += mountain*(1.1*sin(x*.35+z*.14)+.55*cos(z*.43-x*.18))
+	# The eastern river cuts through a raised shelf to form an actual canyon.
+	var canyon := smoothstep(-16.0,-43.0,z)
+	h += canyon * 12.0 * exp(-pow((x-40.0)/28.0,4.0))
+	h *= edge_weight
+	var river_distance := absf(x-river_x(z))
+	var bed := -2.0 + .12*sin(z*.13)
+	# Broad banks in the plains, narrow walls in the northern canyon.
+	var bank_width := lerpf(7.5,4.0,canyon)
+	var bank := smoothstep(2.5,bank_width,river_distance)
+	h = lerpf(bed,h,bank)
+	# Encircling hills hide the edge; the river stays open at either end.
+	h += smoothstep(71.0,80.0,core_distance)*8.0*smoothstep(6.0,13.0,river_distance)
+	return h
+
+static func slope_at(x: float, z: float) -> float:
+	return Vector2(height_at(x+.5,z)-height_at(x-.5,z),height_at(x,z+.5)-height_at(x,z-.5)).length()
+
+static func surface_height(x: float, z: float) -> float:
+	# Match the actual one-metre mesh triangles, including the diagonal.
+	var ix := floorf(x)
+	var iz := floorf(z)
+	var u := x-ix
+	var v := z-iz
+	var a := height_at(ix,iz)
+	var d := height_at(ix+1,iz+1)
+	if u >= v:
+		return a*(1-u)+height_at(ix+1,iz)*(u-v)+d*v
+	return a*(1-v)+height_at(ix,iz+1)*(v-u)+d*u
+
+static func bridge_height(x: float) -> float:
+	var center := river_x(BRIDGE_Z)
+	var t := clampf((x-center+8.0)/16.0,0,1)
+	return lerpf(surface_height(center-8,BRIDGE_Z),surface_height(center+8,BRIDGE_Z),t)+.10+.65*sin(t*PI)
+
+static func is_water(x: float, z: float) -> bool:
+	return height_at(x,z) < WATER_HEIGHT + .08
+
+static func is_bridge(x: float, z: float) -> bool:
+	return absf(z-BRIDGE_Z) < 1.8 and absf(x-river_x(BRIDGE_Z)) < 9.8
+
+static func is_original_core(x: float, z: float) -> bool:
+	return absf(x) < CORE_HALF_SIZE and absf(z) < CORE_HALF_SIZE
+
+static func region_at(x: float, z: float) -> String:
+	if is_water(x,z):
+		return "河流"
+	if z < -24.0 and absf(x-river_x(z)) < 17.0:
+		return "峡谷"
+	if z < -35.0 and height_at(x,z) > 9.0:
+		return "山地"
+	if height_at(x,z) > 2.0:
+		return "丘陵"
+	return "平原"

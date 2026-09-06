@@ -33,13 +33,15 @@ func _physics_process(delta: float) -> void:
 		input_vector = Vector2.ZERO
 	var direction := Vector3(input_vector.x, 0.0, input_vector.y).rotated(Vector3.UP, camera_yaw)
 	var speed := sprint_speed if Input.is_action_pressed("sprint") else walk_speed
+	if Farm3DTerrainProfile.is_water(global_position.x,global_position.z) and global_position.y < Farm3DTerrainProfile.WATER_HEIGHT:
+		speed *= 0.6
 	velocity.x = direction.x * speed
 	velocity.z = direction.z * speed
 	if direction.length_squared() > 0.001:
 		look_at(global_position + direction, Vector3.UP, true)
 	play_motion_animation(direction.length_squared() > 0.001)
 	move_and_slide()
-	if global_position.y < -8.0:
+	if global_position.y < -8.0 or absf(global_position.x) > 81.0 or absf(global_position.z) > 81.0:
 		reset_position()
 
 func reset_position() -> void:

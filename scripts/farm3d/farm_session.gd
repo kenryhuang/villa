@@ -302,7 +302,7 @@ func _in_range(cell: GridCell) -> bool:
 	if player == null:
 		return false
 	var position := player.global_position if player.is_inside_tree() else player.position
-	return Vector2(position.x, position.z).distance_to(cell.world_position()) <= ACTION_RANGE
+	return position.distance_to(cell.world_position_3d()) <= ACTION_RANGE
 
 
 func _plant_failure_reason() -> String:
