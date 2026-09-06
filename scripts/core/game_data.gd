@@ -253,7 +253,7 @@ const BUILDINGS := {
 		"category": "production", "palette_order": 10,
 		"footprint_x": 3, "footprint_z": 3,
 		"cost": {"plank": 12, "stone_brick": 8, "rope": 2},
-		"description": "加工作物（面粉、果酱等）",
+		"description": "加工谷物与向日葵，生产面粉、动物饲料和葵花油",
 		"effect": "crafting", "effect_value": 0, "station": "windmill",
 		"production_yard": {"size": Vector2i(3, 3), "structure_footprint": Vector2i(2, 2), "style": "timber", "building_offset_z": -0.35, "output_capacity": 6},
 	},

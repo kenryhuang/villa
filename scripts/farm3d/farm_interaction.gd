@@ -18,6 +18,7 @@ var _pointer := Vector2.ZERO
 var _front_target := false
 
 func configure(farm_session: Node, farmer: Node3D) -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	session = farm_session
 	player = farmer
 	_marker = Node3D.new()
@@ -44,6 +45,7 @@ func configure(farm_session: Node, farmer: Node3D) -> void:
 	hud.rest_requested.connect(_rest)
 	hud.save_requested.connect(_save)
 	fishing = FishingScript.new()
+	fishing.process_mode = Node.PROCESS_MODE_PAUSABLE
 	fishing.name = "Fishing"
 	add_child(fishing)
 	fishing.configure(session,player,hud)
@@ -90,7 +92,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			if hud.market_view.visible:
+			if hud.windmill_view.visible:
+				hud.windmill_view.handle_escape()
+			elif hud.market_view.visible:
 				hud.market_view.handle_escape()
 			else:
 				cancel_selection()
@@ -101,7 +105,7 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_G:
 			hud.toggle_minimap()
 			get_viewport().set_input_as_handled()
-	if hud.is_modal_open() and not hud.market_view.visible and event is InputEventKey:
+	if hud.is_modal_open() and not hud.market_view.visible and not hud.windmill_view.visible and event is InputEventKey:
 		get_viewport().set_input_as_handled()
 
 func cancel_selection() -> void:
@@ -159,7 +163,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		_pointer = event.position
 		_front_target = false
-		if market_at_pointer(event.position):
+		var windmill_hit := windmill_at_pointer(event.position)
+		if not windmill_hit.is_empty():
+			if str(windmill_hit.item_id).is_empty():
+				open_windmill(windmill_hit.building)
+			else:
+				collect_windmill(windmill_hit.building, windmill_hit.item_id)
+		elif market_at_pointer(event.position):
 			open_market()
 		else:
 			perform(cell_at_pointer(event.position))
@@ -172,6 +182,50 @@ func _unhandled_input(event: InputEvent) -> void:
 func front_cell() -> GridCell:
 	var point := player.global_position + player.global_basis.z * 1.25
 	return _cell_at(point)
+
+func windmill_at_pointer(pointer: Vector2) -> Dictionary:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return {}
+	var origin := camera.project_ray_origin(pointer)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + camera.project_ray_normal(pointer) * camera.far, 1 | 16 | 64 | 128)
+	query.collide_with_areas = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return {}
+	var node: Node = hit.collider
+	var item_id := str(node.get_meta("windmill_output", ""))
+	while node != null:
+		if node is BuildingInstance:
+			return {"building": node, "item_id": item_id} if node.building_id == "windmill" else {}
+		node = node.get_parent()
+	return {}
+
+func open_windmill(building: BuildingInstance) -> bool:
+	if hud.is_modal_open():
+		return false
+	if not building.is_construction_complete():
+		hud.notify_message("风车尚未建造完成", false)
+		return false
+	if not building.can_operate(player):
+		hud.notify_message("请走到风车南面的院门前，再点击风车操作", false)
+		return false
+	cancel_selection()
+	return hud.open_windmill(building)
+
+func collect_windmill(building: BuildingInstance, item_id: String) -> bool:
+	if hud.is_modal_open() or not building.can_operate(player):
+		hud.notify_message("请走到风车南面的院门前收取成品", false)
+		return false
+	cancel_selection()
+	var result: Dictionary = session.production.collect_outputs(building, session.inventory, item_id)
+	if not result.get("ok", false):
+		hud.notify_message("背包空间不足，请先整理背包" if str(result.get("reason", "")) == "inventory_capacity" else "暂无可收取的成品", false)
+		return false
+	hud.notify_message("%s已收进背包" % session.item_name(item_id), true)
+	if session.auto_save and not session.save_game():
+		hud.notify_message("自动保存失败，请手动保存", false)
+	return true
 
 func market_at_pointer(pointer: Vector2) -> bool:
 	var camera := get_viewport().get_camera_3d()

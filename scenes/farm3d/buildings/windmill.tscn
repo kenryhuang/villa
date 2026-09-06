@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/farm3d/modeled_windmill.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/buildings/windmill/windmill.glb" id="2"]
+
+[node name="Windmill" type="Node3D"]
+script = ExtResource("1")
+authored_building_id = "windmill"
+model_scene = ExtResource("2")
