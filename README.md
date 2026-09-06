@@ -32,6 +32,10 @@ scripts/
     farm_interaction.gd         鼠标选格、点击操作、Esc 取消
     farm_hud.gd                 两级目标菜单、状态条、消息与背包入口
     farm_minimap.gd             右下角北向小地图、人物位置与朝向、地形地标
+    market_building.gd          可点击的原生 3D 市集、木结构店铺与交易柜台
+    market_view.gd              原市场/交易面板的场景交互与窗口适配
+    market_panel.gd             共用市场面板的 3D 背包图标适配
+    market_site.gd              市集选址与占地，迁移时避开已有农田建筑
     farm_fishing.gd             3D 甩竿、概率咬钩、拉竿上鱼与背包结算
     fishing_location.gd         河湖岸边站位、水深、距离与抛线遮挡检测
     fishing_visual.gd           原生鱼竿／鱼线／浮漂／鱼模型及角色钓鱼骨骼动作
@@ -74,12 +78,14 @@ docs/validation/              操作说明、验证结果和截图
 - 正式 3D 场景和控制脚本放入 `scenes/farm3d/`、`scripts/farm3d/`。`preview` 仅用于模型观察等独立预览，不承载正式游戏入口。
 - 种植、季节、背包、经济等共用规则继续维护在原系统目录；需要 3D 特有行为时，在 `farm3d` 中适配。
 - 在 Blender 编辑 `art/blender/` 下的源文件，导出模型到 `assets/models/`。生成脚本已使用新路径；运行生成脚本会覆盖对应生成资产，具体见[模型说明](assets/models/farm3d/README.md)。
-- 3D 存档继续使用 `user://farm_3d_save.json`，目录迁移不更改存档名称和格式。
+- 3D 存档继续使用 `user://farm_3d_save.json`；当前 v3 增加市场行情、NPC 经济状态和市集位置，兼容 v1/v2。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
 ## 操作与验证
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
+
+农庄西南侧新增实体市集（默认西 12 / 南 12 米，小地图标注“市集”）。走到南面的柜台前，**左键点击建筑**即可买卖；**Esc** 关闭。作物、鱼获和材料沿用原市场目录、批量报价、有限库存、NPC 供需和每日价格结算。说明与实景见[3D 市场移植](docs/validation/market-3d.md)。
 
 地图已扩展至 **160 × 224 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。南面从草地逐渐过渡到沙地，南湖有三处保留岸边钓位，河流和湖泊的其他合适岸边也能钓鱼。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
 
@@ -98,6 +104,7 @@ godot_console.exe --headless --path . --script tests/run_3d_landscape_tests.gd -
 godot_console.exe --headless --path . --script tests/run_3d_minimap_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_south_lake_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_fishing_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_market_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。

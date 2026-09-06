@@ -11,7 +11,11 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
+const MarketScript = preload("res://scripts/systems/market_system.gd")
+const NpcEconomyScript = preload("res://scripts/systems/npc_economy_system.gd")
+const MarketSite = preload("res://scripts/farm3d/market_site.gd")
+signal state_loaded
 const EconomyScript = preload("res://scripts/systems/economy_system.gd")
 const BuildingsScript = preload("res://scripts/farm3d/farm_building_system.gd")
 const ProductionScript = preload("res://scripts/systems/production_system.gd")
@@ -31,6 +35,10 @@ var action_controller: PlayerActionController
 var visuals: Node3D
 var player: Node3D
 var economy: EconomySystem
+var market: MarketSystem
+var npc_economy: NpcEconomySystem
+var market_site := MarketSite.DEFAULT
+var _market_reserved: Dictionary = {}
 var buildings: BuildingSystem
 var production: ProductionSystem
 var paddy_cells: Dictionary = {}
@@ -75,7 +83,18 @@ func configure(next_player: Node3D) -> bool:
 	action_controller.set_selected_plant_item_id("grain_seed")
 	economy = EconomyScript.new()
 	add_child(economy)
-	economy.configure(inventory, _game_state())
+	market = MarketScript.new()
+	add_child(market)
+	if not market.configure(DataScript.get_market_items()):
+		return false
+	npc_economy = NpcEconomyScript.new()
+	add_child(npc_economy)
+	if not npc_economy.configure(market, DataScript.get_npc_economy_profiles(), DataScript.get_population_demand_profiles()):
+		return false
+	market.last_settled_day = season.total_days
+	npc_economy.reset_to_profile_defaults(season.total_days)
+	if not economy.configure(inventory, _game_state(), market, npc_economy):
+		return false
 	buildings = BuildingsScript.new()
 	buildings.farmer = player
 	add_child(buildings)
@@ -88,10 +107,42 @@ func configure(next_player: Node3D) -> bool:
 	if event_bus != null:
 		event_bus.day_changed.connect(production.apply_daily_effects)
 		event_bus.day_changed.connect(production.finish_daily_outputs)
+		event_bus.day_changed.connect(_settle_market_day)
 	if auto_restore and load_game():
 		return true
 	_grant_initial_state()
+	market_site = MarketSite.find_available(grid)
+	_reserve_market_site()
 	return true
+
+
+func _settle_market_day(day: int) -> void:
+	if day <= market.last_settled_day:
+		return
+	# Same economic order as the original daily simulation: NPC flows, then pricing.
+	if npc_economy.simulate_day(day):
+		market.settle_day(day)
+
+
+func _release_market_site() -> void:
+	for key in _market_reserved:
+		var cell: GridCell = grid._cells[key]
+		grid._base_states[key] = _market_reserved[key]
+		cell.state = _market_reserved[key]
+	_market_reserved.clear()
+
+
+func _reserve_market_site() -> void:
+	if not market_site.is_finite():
+		push_error("No free land for the village market")
+		return
+	for cell in MarketSite.cells(grid, market_site):
+		var key := GridSystem.cell_key(cell.gx, cell.gz)
+		_market_reserved[key] = grid._base_states[key]
+		grid._base_states[key] = GridCell.State.DECORATION
+		cell.state = GridCell.State.DECORATION
+	grid.rebuild_farmland_visuals()
+	grid.notify_navigation_state_changed()
 
 
 func act(cell: GridCell, mode: String, seed_id: String = "grain_seed") -> Dictionary:
@@ -167,6 +218,9 @@ func save_game() -> bool:
 		"production": production.to_dict(),
 		"buildings": buildings.get_all_buildings().map(func(b: BuildingInstance): return b.to_dict()),
 		"gold": int(state.gold) if state != null else 100,
+		"market": market.to_dict(),
+		"npc_economy": npc_economy.to_dict(),
+		"market_site": {"x": market_site.x, "z": market_site.y},
 	}
 	file.store_string(JSON.stringify(data))
 	file.flush()
@@ -196,6 +250,8 @@ func load_game() -> bool:
 	# All validation completed before any live state changes.
 	if is_instance_valid(fishing):
 		fishing.cancel()
+	_release_market_site()
+	grid.reset_state()
 	if not grid.from_dict(data.grid) or not tools.from_dict(data.tools):
 		return false
 	production.begin_restore_transaction()
@@ -210,6 +266,16 @@ func load_game() -> bool:
 	season.total_days = int(data.season.total_days)
 	season.hour = int(data.season.hour)
 	season.minute = int(data.season.minute)
+	if int(data.version) >= 3:
+		market.restore_from_dict_with_current_catalog(data.market)
+		npc_economy.from_dict(data.npc_economy)
+		market_site = Vector2(data.market_site.x, data.market_site.z)
+	else:
+		market.configure(DataScript.get_market_items())
+		market.last_settled_day = season.total_days
+		npc_economy.reset_to_profile_defaults(season.total_days)
+		market_site = MarketSite.find_available(grid)
+	_reserve_market_site()
 	var state := _game_state()
 	if state != null and state.player_state != null:
 		state.player_state.stamina = int(data.stamina)
@@ -225,6 +291,7 @@ func load_game() -> bool:
 	production.sync_daily_cursor(season.total_days)
 	production.end_restore_transaction()
 	farming.sync_growth_clock()
+	state_loaded.emit()
 	return true
 
 
@@ -352,11 +419,11 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if not _is_integer(data.get("version")) or int(data.version) not in [1, SAVE_VERSION]:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, SAVE_VERSION]:
 		return false
-	if data.size() != (9 if int(data.version) == 1 else 13):
+	if data.size() != {1: 9, 2: 13, 3: 16}[int(data.version)]:
 		return false
-	if int(data.version) == SAVE_VERSION:
+	if int(data.version) >= 2:
 		if not data.get("paddy_cells") is Array or not data.get("buildings") is Array or not _is_integer(data.get("gold")) or int(data.gold) < 0:
 			return false
 		if not data.get("production") is Dictionary or not production.validate_dict(data.production):
@@ -378,7 +445,37 @@ func _valid_save(value: Variant) -> bool:
 	for field in ["season", "day", "total_days", "hour", "minute"]:
 		if not _is_integer(clock.get(field)):
 			return false
+	if int(data.version) >= 3 and not _valid_market_save(data):
+		return false
 	return (int(clock.season) >= SeasonSystem.Season.SPRING and int(clock.season) <= SeasonSystem.Season.WINTER and int(clock.day) >= 1 and int(clock.day) <= SeasonSystem.DAYS_PER_SEASON and int(clock.total_days) >= 1 and int(clock.hour) >= 0 and int(clock.hour) < 24 and int(clock.minute) >= 0 and int(clock.minute) < 60 and int(data.stamina) >= 0 and int(data.stamina) <= 100 and int(data.experience) >= 0 and int(data.level) >= 1 and int(data.harvest_seed) >= 1 and int(data.harvest_seed) <= 2147483647)
+
+
+func _valid_market_save(data: Dictionary) -> bool:
+	if not data.get("market") is Dictionary or not data.get("npc_economy") is Dictionary or not data.get("market_site") is Dictionary:
+		return false
+	var site_data: Dictionary = data.market_site
+	if site_data.size() != 2 or not _is_integer(site_data.get("x")) or not _is_integer(site_data.get("z")):
+		return false
+	if absf(float(site_data.x)) > 72 or float(site_data.z) < -72 or float(site_data.z) > 136:
+		return false
+	var site := Vector2(site_data.x, site_data.z)
+	var footprint := MarketSite.cells(grid, site)
+	if footprint.size() != 48:
+		return false
+	for cell in footprint:
+		var key := GridSystem.cell_key(cell.gx, cell.gz)
+		if int(_market_reserved.get(key, grid._base_states[key])) != GridCell.State.WASTELAND or cell.slope >= .12:
+			return false
+	for entry in data.grid.cells:
+		var cell := grid.get_cell(int(entry.gx), int(entry.gz))
+		if cell != null and MarketSite.contains(site, cell.world_position()):
+			return false
+	var candidate := MarketScript.new()
+	candidate.configure(DataScript.get_market_items())
+	var valid := candidate.restore_from_dict_with_current_catalog(data.market)
+	valid = valid and candidate.last_settled_day == int(data.season.total_days)
+	candidate.free()
+	return valid and npc_economy.validate_dict(data.npc_economy) and int(data.npc_economy.last_simulated_day) == int(data.season.total_days)
 
 
 func _tool_failure(tool_id: String) -> String:

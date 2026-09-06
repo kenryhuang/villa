@@ -4,6 +4,7 @@ const HudScript = preload("res://scripts/farm3d/farm_hud.gd")
 const Catalog = preload("res://scripts/farm3d/target_catalog.gd")
 const FishingScript = preload("res://scripts/farm3d/farm_fishing.gd")
 var fishing: Node3D
+var market_building: Node3D
 var session: Node
 var player: Node3D
 var hud: CanvasLayer
@@ -50,6 +51,9 @@ func configure(farm_session: Node, farmer: Node3D) -> void:
 	hud.fishing_requested.connect(_toggle_fishing)
 	hud.fishing_action_requested.connect(func(): fishing.act())
 	hud.fishing_cancel_requested.connect(func(): fishing.cancel())
+	market_building = preload("res://scripts/farm3d/market_building.gd").new()
+	add_child(market_building)
+	market_building.configure(session)
 	session.action_controller.cancel_current_selection()
 
 func _process(delta: float) -> void:
@@ -86,7 +90,10 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			cancel_selection()
+			if hud.market_view.visible:
+				hud.market_view.handle_escape()
+			else:
+				cancel_selection()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_I:
 			hud.toggle_inventory()
@@ -94,7 +101,7 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_G:
 			hud.toggle_minimap()
 			get_viewport().set_input_as_handled()
-	if hud.is_modal_open() and event is InputEventKey:
+	if hud.is_modal_open() and not hud.market_view.visible and event is InputEventKey:
 		get_viewport().set_input_as_handled()
 
 func cancel_selection() -> void:
@@ -152,7 +159,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		_pointer = event.position
 		_front_target = false
-		perform(cell_at_pointer(event.position))
+		if market_at_pointer(event.position):
+			open_market()
+		else:
+			perform(cell_at_pointer(event.position))
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
 		_front_target = true
@@ -162,6 +172,25 @@ func _unhandled_input(event: InputEvent) -> void:
 func front_cell() -> GridCell:
 	var point := player.global_position + player.global_basis.z * 1.25
 	return _cell_at(point)
+
+func market_at_pointer(pointer: Vector2) -> bool:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return false
+	var origin := camera.project_ray_origin(pointer)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + camera.project_ray_normal(pointer) * camera.far, 1 | 64)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return not hit.is_empty() and bool(hit.collider.get_meta("farm_market", false))
+
+func open_market() -> bool:
+	if hud.is_modal_open():
+		return false
+	if not market_building.can_trade(player):
+		hud.notify_message("请走到市集南面的柜台前，再点击摊位交易", false)
+		return false
+	cancel_selection()
+	hud.open_market()
+	return true
 
 func cell_at_pointer(pointer: Vector2) -> GridCell:
 	var camera := get_viewport().get_camera_3d()

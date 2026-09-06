@@ -9,6 +9,7 @@ const MAP_RECT := Rect2(Vector2(124, 146) - MAP_SIZE * .5, MAP_SIZE)
 const INK := Color("f8edcf")
 const GOLD := Color("e6c882")
 var player: Node3D
+var session: Node
 var _terrain: ImageTexture
 var _panel: StyleBoxFlat
 
@@ -62,6 +63,10 @@ func _draw() -> void:
 	var farm_half := Vector2.ONE * Profile.CORE_HALF_SIZE * MAP_SCALE
 	draw_rect(Rect2(farm - farm_half, farm_half * 2), Color("dfcf9470"), false, 1.0)
 	_map_label("农庄", Vector3(0, 0, -17))
+	if is_instance_valid(session):
+		var market := Vector3(session.market_site.x, 0, session.market_site.y)
+		draw_circle(world_to_map(market), 3.5, GOLD)
+		_map_label("市集", market + Vector3(-8, 0, 16))
 	var bridge_x := Profile.river_x(Profile.BRIDGE_Z)
 	draw_line(world_to_map(Vector3(bridge_x - 8, 0, Profile.BRIDGE_Z)), world_to_map(Vector3(bridge_x + 8, 0, Profile.BRIDGE_Z)), GOLD, 4.0, true)
 	_map_label("木桥", Vector3(bridge_x + 8, 0, Profile.BRIDGE_Z + 14))
