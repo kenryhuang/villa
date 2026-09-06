@@ -134,7 +134,7 @@ func _run() -> void:
 	_simulate(moving_ball,cup)
 	_check(moving_ball.result == "holed" and moving_ball.position.y < Profile.surface_height(cup.x,cup.y),"Slow ball enters and drops into the cup")
 	moving_ball.place(cup+Vector2(0,-.23))
-	moving_ball.velocity = Vector3.BACK*4
+	moving_ball.velocity = Vector3.BACK*6
 	moving_ball.moving = true
 	moving_ball.advance(.1,cup)
 	_check(moving_ball.result != "holed","Fast ball can roll over the cup")
@@ -178,8 +178,18 @@ func _run() -> void:
 		_check(not hit.is_empty() and absf(hit.position.y-Profile.surface_height(hole.tee.x,hole.tee.y)) < .02,"Golf terrain collision agrees with shared height")
 		hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(hole.cup.x,8,hole.cup.y),Vector3(hole.cup.x,-2,hole.cup.y),1))
 		_check(hit.is_empty(),"Hole is cut through the terrain collider, not painted on top")
+		var rolling_ball := Ball.new()
+		rolling_ball.place(hole.cup+Vector2(0,-.5))
+		rolling_ball.velocity = Vector3.BACK*4
+		rolling_ball.moving = true
+		for frame in 15:
+			rolling_ball.advance(1.0/60,hole.cup,space)
+		_check(rolling_ball.result == "holed","Moderate rolling shot enters the real scene cup with collision enabled")
 		var coords := session.grid.world_to_grid(hole.tee.x,hole.tee.y)
 		_check(session.grid.get_cell(coords.x,coords.y).state == GridCell.State.DECORATION,"Golf playing surfaces are protected from farming placement")
+	for p in [Vector2(-148.2,84.3),Vector2(-125.2,121.3),Vector2(-94.2,96.3)]:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(p.x,20,p.y),Vector3(p.x,-4,p.y),1))
+		_check(not hit.is_empty() and absf(hit.position.y-Profile.surface_height(p.x,p.y)) < .01 and hit.normal.dot(Profile.surface_normal(p.x,p.y)) > .999,"Hill mesh height and slope agree with ball physics")
 	_check(not golf.start_round(),"Players cannot borrow clubs remotely")
 	player.global_position = golf.Art.ground(Course.ENTRANCE)+Vector3.BACK*2
 	_key(KEY_E)

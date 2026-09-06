@@ -25,6 +25,15 @@ func _run() -> void:
 	camera.make_current()
 	hud.hide()
 	await _capture("course")
+	camera.position = Vector3(-155,8,70)
+	camera.look_at(Vector3(-144,2,98))
+	await _capture("meadow_hills")
+	camera.position = Vector3(-146,8,135)
+	camera.look_at(Vector3(-120,2,122))
+	await _capture("dune_hills")
+	camera.position = Vector3(-84,9,120)
+	camera.look_at(Vector3(-94,2,92))
+	await _capture("side_slope")
 	camera.position = Vector3(-123,3.5,68)
 	camera.look_at(Vector3(-124,2,62))
 	await _capture("entrance")
@@ -67,7 +76,7 @@ func _run() -> void:
 	await _capture("cup")
 	farm.queue_free()
 	await process_frame
-	print("GOLF CAPTURE: 9 views")
+	print("GOLF CAPTURE: 12 views")
 	quit(0)
 
 func _capture(suffix: String) -> void:

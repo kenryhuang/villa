@@ -115,6 +115,18 @@ static func surface_height(x: float, z: float) -> float:
 		return a*(1-u)+height_at(ix+1,iz)*(u-v)+d*v
 	return a*(1-v)+height_at(ix,iz+1)*(v-u)+d*u
 
+static func surface_normal(x: float, z: float) -> Vector3:
+	# Use the same triangle as surface_height and the terrain collision mesh.
+	var ix := floorf(x)
+	var iz := floorf(z)
+	var a := height_at(ix,iz)
+	var d := height_at(ix+1,iz+1)
+	if x-ix >= z-iz:
+		var b := height_at(ix+1,iz)
+		return Vector3(a-b,1,b-d).normalized()
+	var c := height_at(ix,iz+1)
+	return Vector3(c-d,1,a-c).normalized()
+
 static func bridge_height(x: float) -> float:
 	var center := river_x(BRIDGE_Z)
 	var t := clampf((x-center+8.0)/16.0,0,1)

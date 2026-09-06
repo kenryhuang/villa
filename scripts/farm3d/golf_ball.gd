@@ -22,12 +22,17 @@ func place(point: Vector2) -> void:
 	moving = false
 	elapsed = 0
 	result = ""
+	bounced = false
 
 func strike(direction: Vector3, power: float, club: int, contact_height := -2.0) -> void:
 	velocity = launch_velocity(direction,power,club,Course.surface(Vector2(position.x,position.z)),contact_height)
+	if absf(velocity.y) < .01:
+		var speed := velocity.length()
+		velocity = velocity.slide(Profile.surface_normal(position.x,position.z)).normalized()*speed
 	moving = true
 	elapsed = 0
 	result = ""
+	bounced = false
 
 static func launch_velocity(direction: Vector3, power: float, club: int, surface_name := "fairway", contact_height := -2.0) -> Vector3:
 	var data: Dictionary = CLUBS[clampi(club,0,2)]
@@ -58,20 +63,22 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 		_stop("penalty")
 		return
 	var ground := Profile.surface_height(point.x,point.y)+RADIUS
-	if point.distance_to(cup) < Course.CUP_RADIUS-RADIUS*.4 and position.y < ground+.10 and velocity.length() < 2.3:
-		position = Vector3(cup.x,Profile.surface_height(cup.x,cup.y)-.20,cup.y)
-		_stop("holed")
-		return
+	var normal := Profile.surface_normal(point.x,point.y)
 	var old := position
-	if position.y <= ground+.012 and velocity.y <= .25:
-		var normal := Vector3(Profile.surface_height(point.x-.15,point.y)-Profile.surface_height(point.x+.15,point.y),.30,Profile.surface_height(point.x,point.y-.15)-Profile.surface_height(point.x,point.y+.15)).normalized()
+	var old_speed := velocity.length()
+	# Test speed away from the slope, not vertical speed: uphill rolling has
+	# a positive Y velocity and must remain attached to the ground.
+	var rolling := position.y <= ground+.012 and absf(velocity.dot(normal)) <= .3
+	if rolling:
 		velocity = velocity.slide(normal)
-		velocity += Vector3.DOWN.slide(normal)*9.8*dt
-		var friction: float = {"green":.30,"fairway":.8,"rough":2.2,"sand":4.5}[Course.surface(point)]
+		var gravity := Vector3.DOWN.slide(normal)*9.8
+		velocity += gravity*dt
+		var friction: float = Course.ROLLING_RESISTANCE[Course.surface(point)]*normal.y
 		velocity = velocity.move_toward(Vector3.ZERO,friction*dt)
 		position += velocity*dt
 		position.y = Profile.surface_height(position.x,position.z)+RADIUS
-		if velocity.length() < .055:
+		# Low speed on a steep slope is a turning point, not a resting ball.
+		if velocity.length() < .055 and gravity.length() <= friction:
 			_stop("rest")
 	else:
 		velocity.y -= 9.8*dt
@@ -89,8 +96,27 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 		if not hit.is_empty() and hit.normal.y < .55:
 			position = hit.position+hit.normal*RADIUS
 			velocity = velocity.bounce(hit.normal)*.4
+	if rolling and _capture_cup(old,position,cup,maxf(old_speed,velocity.length())):
+		return
 	if elapsed > 30:
 		_stop("rest")
+
+func _capture_cup(from: Vector3, to: Vector3, cup: Vector2, speed: float) -> bool:
+	if speed > Course.CUP_CAPTURE_SPEED:
+		return false
+	var a := Vector2(from.x,from.z)
+	var b := Vector2(to.x,to.z)
+	var segment := b-a
+	var t := clampf((cup-a).dot(segment)/segment.length_squared(),0,1) if segment.length_squared() > .00000001 else 0.0
+	var nearest := a.lerp(b,t)
+	if nearest.distance_to(cup) > Course.CUP_RADIUS:
+		return false
+	var gap := from.lerp(to,t).y-Profile.surface_height(nearest.x,nearest.y)-RADIUS
+	if absf(gap) > .035:
+		return false
+	position = Vector3(cup.x,Profile.surface_height(cup.x,cup.y)-.20,cup.y)
+	_stop("holed")
+	return true
 
 func _stop(reason: String) -> void:
 	moving = false

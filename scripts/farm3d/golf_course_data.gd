@@ -4,6 +4,8 @@ extends RefCounted
 const BOUNDS := Rect2(-164, 56, 80, 80)
 const ENTRANCE := Vector2(-124, 62)
 const CUP_RADIUS := .19
+const CUP_CAPTURE_SPEED := 4.5
+const ROLLING_RESISTANCE := {"green":.30,"fairway":.8,"rough":2.2,"sand":4.5}
 const HOLES := [
 	{"name": "草甸直道", "tee": Vector2(-147.5, 74.5), "cup": Vector2(-148.5, 106.5), "par": 3},
 	{"name": "沙丘弯道", "tee": Vector2(-143.5, 123.5), "cup": Vector2(-103.5, 122.5), "par": 3},
@@ -44,13 +46,27 @@ static func surface(point: Vector2) -> String:
 
 static func terrain_height(point: Vector2) -> float:
 	var height := 1.1 + .18*sin(point.x*.095)*cos(point.y*.12)
-	height += .8*exp(-point.distance_squared_to(Vector2(-125,121))/90.0)
-	height += .45*exp(-point.distance_squared_to(Vector2(-96,96))/120.0)
-	for hole in HOLES:
+	# Broad slopes are playable both on foot and with a rolling ball.
+	height += _mound(point,Vector2(-149,88),Vector2(7,6),2.0)
+	height += _mound(point,Vector2(-147,98),Vector2(6,4),-.4)
+	height += _mound(point,Vector2(-126,121),Vector2(8,6),3.1)
+	height += _mound(point,Vector2(-116,127),Vector2(6,5),1.1)
+	height += _mound(point,Vector2(-95,96),Vector2(5,9),3.4)
+	height += _mound(point,Vector2(-89,84),Vector2(5,6),1.2)
+	for i in HOLES.size():
+		var hole: Dictionary = HOLES[i]
 		var d := point.distance_to(hole.cup)
-		var flat: float = 1.12 + .009*(point.x-hole.cup.x) + .006*(point.y-hole.cup.y)
-		height = lerpf(flat,height,smoothstep(3.5,7,d))
-	return height - paint(point).a * .32
+		var slope: Vector2 = [Vector2(.022,.012),Vector2(-.014,.024),Vector2(.025,-.012)][i]
+		var green: float = [1.25,1.65,1.45][i]+slope.dot(point-hole.cup)*smoothstep(.8,2.8,d)
+		height = lerpf(green,height,smoothstep(3.5,7,d))
+		height = lerpf(float([1.15,1.35,1.65][i]),height,smoothstep(1.8,4,point.distance_to(hole.tee)))
+	for bunker in BUNKERS:
+		var distance := ((point-Vector2(bunker.x,bunker.y))/Vector2(1.3,.8)).length()
+		height -= (1-smoothstep(bunker.z-.7,bunker.z+1.2,distance))*.45
+	return lerpf(1.2,height,smoothstep(2,5,point.distance_to(ENTRANCE)))
+
+static func _mound(point: Vector2, center: Vector2, spread: Vector2, height: float) -> float:
+	return height*exp(-((point-center)/spread).length_squared())
 
 static func cup_for_cell(x: int, z: int) -> int:
 	for i in HOLES.size():

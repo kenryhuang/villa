@@ -125,6 +125,7 @@ godot_console.exe --headless --path . --script tests/run_3d_fishing_tests.gd -- 
 godot_console.exe --headless --path . --script tests/run_3d_market_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_windmill_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_golf_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。
