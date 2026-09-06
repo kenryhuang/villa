@@ -5,7 +5,7 @@ const FarmSessionScript = preload("res://scripts/farm3d/farm_session.gd")
 const MeadowScript = preload("res://scripts/farm3d/painted_meadow.gd")
 const InteractionScript = preload("res://scripts/farm3d/farm_interaction.gd")
 
-@onready var player: FarmPreviewPlayer = $Player
+@onready var player: Farm3DPlayer = $Player
 @onready var camera_rig: Node3D = $CameraRig
 @onready var pitch: Node3D = $CameraRig/Pitch
 @onready var follow_camera: Camera3D = $CameraRig/Pitch/SpringArm3D/Camera3D
@@ -86,7 +86,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_R:
 			player.reset_position()
 		elif event.keycode == KEY_F12:
-			await _save_screenshot("user://farm_3d_preview.png")
+			await _save_screenshot("user://farm3d.png")
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 

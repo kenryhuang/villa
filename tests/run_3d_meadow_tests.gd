@@ -1,6 +1,6 @@
 extends SceneTree
 
-const EnvironmentScene = preload("res://assets/models/farm_preview/farm_environment.glb")
+const EnvironmentScene = preload("res://assets/models/farm3d/farm_environment.glb")
 const MeadowScript = preload("res://scripts/farm3d/painted_meadow.gd")
 
 var failures: Array[String] = []

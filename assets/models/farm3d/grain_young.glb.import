@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dulk4jt7k5bdy"
-path="res://.godot/imported/player_farmer.glb-a37851d3c9d2de911e4bb491633a96a9.scn"
+uid="uid://2woywuh66qve"
+path="res://.godot/imported/grain_young.glb-5b639ab2e24cba1fd43a517861d80de8.scn"
 
 [deps]
 
-source_file="res://assets/models/farm_preview/player_farmer.glb"
-dest_files=["res://.godot/imported/player_farmer.glb-a37851d3c9d2de911e4bb491633a96a9.scn"]
+source_file="res://assets/models/farm3d/grain_young.glb"
+dest_files=["res://.godot/imported/grain_young.glb-5b639ab2e24cba1fd43a517861d80de8.scn"]
 
 [params]
 

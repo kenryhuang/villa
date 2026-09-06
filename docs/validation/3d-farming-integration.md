@@ -4,7 +4,9 @@
 
 ## 运行与操作
 
-从根目录打开 Godot，F5 启动当前 3D 农庄；也可运行 `./tools/preview_3d.ps1`。
+正式入口为 `scenes/farm3d/main.tscn`，场景与玩家脚本位于 `scripts/farm3d/`。完整目录分工见[根目录说明](../../README.md)。
+
+从根目录打开 Godot，F5 启动当前 3D 农庄；也可运行 `./tools/run_farm3d.ps1`。
 
 | 操作 | 行为 |
 | --- | --- |
@@ -50,7 +52,7 @@ NPC Agent、市场、建筑经营面板和完整经营界面的移植不属于�
 | `run_3d_target_system_tests.gd` | 107 项：全部 15 种作物、水田、季节、温室建造与柠檬、资源消耗、v1/v2 存档 |
 | `run_3d_farming_tests.gd` | 45 项：分钟生长、库存与经验事务、失败回滚、存档 |
 | `run_3d_meadow_tests.gd` | 3 项：保留手绘地表，无杂草 |
-| `run_farm_3d_preview_tests.gd` | 44 项：移动、跳跃、地面碰撞、橡树与镜头 |
+| `run_farm3d_scene_tests.gd` | 44 项：移动、跳跃、地面碰撞、橡树与镜头 |
 | `run_hud_shell_tests.gd` | 38 项：原 HUD 和消息组件 |
 | `run_inventory_storage_ui_tests.gd` | 61 项：原背包与仓库界面 |
 | `run_building_system_tests.gd` | 3461 项：原建筑系统；包含故意缺失美术资产的回退警告 |

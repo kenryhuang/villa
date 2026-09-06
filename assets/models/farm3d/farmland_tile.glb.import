@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://bx54d67x8n5gy"
-path="res://.godot/imported/tree_oak.glb-b8bd9c2490e9bb92555ec15408d46750.scn"
+uid="uid://5kscw3ai5lbt"
+path="res://.godot/imported/farmland_tile.glb-b53c0bd7bd18ce316805020a7d55a44c.scn"
 
 [deps]
 
-source_file="res://assets/models/farm_preview/tree_oak.glb"
-dest_files=["res://.godot/imported/tree_oak.glb-b8bd9c2490e9bb92555ec15408d46750.scn"]
+source_file="res://assets/models/farm3d/farmland_tile.glb"
+dest_files=["res://.godot/imported/farmland_tile.glb-b53c0bd7bd18ce316805020a7d55a44c.scn"]
 
 [params]
 

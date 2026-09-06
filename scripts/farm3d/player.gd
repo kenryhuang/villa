@@ -1,4 +1,4 @@
-class_name FarmPreviewPlayer
+class_name Farm3DPlayer
 extends CharacterBody3D
 
 @export var walk_speed := 4.2

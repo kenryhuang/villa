@@ -18,8 +18,8 @@ func _frames(count: int) -> void:
 	await process_frame
 
 func _run() -> void:
-	var path := "res://scenes/preview/farm_3d_preview.tscn"
-	_check(ResourceLoader.exists(path), "Standalone 3D preview scene exists")
+	var path := "res://scenes/farm3d/main.tscn"
+	_check(ResourceLoader.exists(path), "Main 3D farm scene exists")
 	if not failures.is_empty():
 		quit(1)
 		return
@@ -96,5 +96,5 @@ func _run() -> void:
 	_check(player.global_position.distance_to(Vector3(-2, 0, 4)) < 0.5, "Out-of-world farmer resets safely")
 	preview.queue_free()
 	await process_frame
-	print("3D FARM PREVIEW: %s" % ("PASS (%d checks)" % checks if failures.is_empty() else "FAIL (%d/%d checks)" % [failures.size(), checks]))
+	print("3D FARM SCENE: %s" % ("PASS (%d checks)" % checks if failures.is_empty() else "FAIL (%d/%d checks)" % [failures.size(), checks]))
 	quit(0 if failures.is_empty() else 1)

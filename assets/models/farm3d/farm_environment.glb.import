@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://2woywuh66qve"
-path="res://.godot/imported/grain_young.glb-65a6128aba7b9daae0f82e56d59f364e.scn"
+uid="uid://dg3fn5snuynrx"
+path="res://.godot/imported/farm_environment.glb-3dde60a4f369bb0255df0dbb296a0a45.scn"
 
 [deps]
 
-source_file="res://assets/models/farm_preview/grain_young.glb"
-dest_files=["res://.godot/imported/grain_young.glb-65a6128aba7b9daae0f82e56d59f364e.scn"]
+source_file="res://assets/models/farm3d/farm_environment.glb"
+dest_files=["res://.godot/imported/farm_environment.glb-3dde60a4f369bb0255df0dbb296a0a45.scn"]
 
 [params]
 

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://5kscw3ai5lbt"
-path="res://.godot/imported/farmland_tile.glb-85e6719e785c19db5d03a9f8b5acdefb.scn"
+uid="uid://dulk4jt7k5bdy"
+path="res://.godot/imported/player_farmer.glb-22553a516ca0d4acb59de8ed842738a4.scn"
 
 [deps]
 
-source_file="res://assets/models/farm_preview/farmland_tile.glb"
-dest_files=["res://.godot/imported/farmland_tile.glb-85e6719e785c19db5d03a9f8b5acdefb.scn"]
+source_file="res://assets/models/farm3d/player_farmer.glb"
+dest_files=["res://.godot/imported/player_farmer.glb-22553a516ca0d4acb59de8ed842738a4.scn"]
 
 [params]
 

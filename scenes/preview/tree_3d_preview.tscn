@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/preview/tree_3d_preview.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/vegetation/painted_oak.tscn" id="2_oak"]
-[ext_resource type="PackedScene" path="res://assets/models/farm_preview/player_farmer.glb" id="3_farmer"]
+[ext_resource type="PackedScene" path="res://assets/models/farm3d/player_farmer.glb" id="3_farmer"]
 
 [sub_resource type="Environment" id="PreviewEnvironment"]
 background_mode = 1

@@ -12,7 +12,7 @@ import sys
 from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / "assets/models/farm_preview"
+OUT = ROOT / "assets/models/farm3d"
 SOURCE = ROOT / "art/blender"
 OUT.mkdir(parents=True, exist_ok=True)
 SOURCE.mkdir(parents=True, exist_ok=True)
@@ -532,7 +532,7 @@ bpy.context.scene.camera = camera
 for area in bpy.context.screen.areas:
     if area.type == "VIEW_3D":
         area.spaces.active.region_3d.view_perspective = "CAMERA"
-bpy.ops.wm.save_as_mainfile(filepath=str(SOURCE / "farm_preview.blend"))
+bpy.ops.wm.save_as_mainfile(filepath=str(SOURCE / "farm3d.blend"))
 if "--render" in sys.argv:
     target = ROOT / "docs/validation/images/farm_3d_blender_overview.png"
     target.parent.mkdir(parents=True, exist_ok=True)

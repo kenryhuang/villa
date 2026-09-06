@@ -8,7 +8,7 @@ func _run() -> void:
 		quit(1)
 		return
 	root.size = Vector2i(1440, 960)
-	var preview := (load("res://scenes/preview/farm_3d_preview.tscn") as PackedScene).instantiate()
+	var preview := (load("res://scenes/farm3d/main.tscn") as PackedScene).instantiate()
 	root.add_child(preview)
 	var interaction = preview.get_node("FarmInteraction")
 	var session = preview.get_node("FarmSession")

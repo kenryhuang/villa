@@ -1,9 +1,9 @@
 class_name Farm3DCropVisualSystem
 extends Node3D
 
-const SOIL_SCENE := preload("res://assets/models/farm_preview/farmland_tile.glb")
-const YOUNG_SCENE := preload("res://assets/models/farm_preview/grain_young.glb")
-const MATURE_SCENE := preload("res://assets/models/farm_preview/grain_mature.glb")
+const SOIL_SCENE := preload("res://assets/models/farm3d/farmland_tile.glb")
+const YOUNG_SCENE := preload("res://assets/models/farm3d/grain_young.glb")
+const MATURE_SCENE := preload("res://assets/models/farm3d/grain_mature.glb")
 
 var _visuals := {}
 var paddy_cells: Dictionary = {}

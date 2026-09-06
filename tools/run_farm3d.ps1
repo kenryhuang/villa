@@ -12,9 +12,9 @@ $root = Split-Path -Parent $PSScriptRoot
 & $godot.Source --headless --editor --path $root --quit
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$previewArguments = @("--path", $root, "--resolution", "1440x960", "res://scenes/preview/farm_3d_preview.tscn")
-if ($CapturePreview -or $Overview) { $previewArguments += "--" }
-if ($CapturePreview) { $previewArguments += "--capture-preview=$CapturePreview" }
-if ($Overview) { $previewArguments += "--capture-overview" }
-& $godot.Source @previewArguments
+$gameArguments = @("--path", $root, "--resolution", "1440x960", "res://scenes/farm3d/main.tscn")
+if ($CapturePreview -or $Overview) { $gameArguments += "--" }
+if ($CapturePreview) { $gameArguments += "--capture-preview=$CapturePreview" }
+if ($Overview) { $gameArguments += "--capture-overview" }
+& $godot.Source @gameArguments
 exit $LASTEXITCODE

@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://dc8kptbr128gk"
-path="res://.godot/imported/grain_mature.glb-7774ccba4d3b605f1cf7de190ecff973.scn"
+path="res://.godot/imported/grain_mature.glb-64f554c8ed56acd416a33b8d57f16634.scn"
 
 [deps]
 
-source_file="res://assets/models/farm_preview/grain_mature.glb"
-dest_files=["res://.godot/imported/grain_mature.glb-7774ccba4d3b605f1cf7de190ecff973.scn"]
+source_file="res://assets/models/farm3d/grain_mature.glb"
+dest_files=["res://.godot/imported/grain_mature.glb-64f554c8ed56acd416a33b8d57f16634.scn"]
 
 [params]
 
