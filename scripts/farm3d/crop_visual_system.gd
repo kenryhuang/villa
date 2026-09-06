@@ -12,6 +12,11 @@ const ROSE_STAGES := [
 ]
 const ROSE_WITHERED := preload("res://assets/models/crops/rose/rose_withered.glb")
 const SOIL_SURFACE_Y := 0.045
+const TWO_STAGE_CROPS := {
+	"potato": [preload("res://assets/models/crops/potato/potato_seed.glb"), preload("res://assets/models/crops/potato/potato_mature.glb")],
+	"tomato": [preload("res://assets/models/crops/tomato/tomato_seed.glb"), preload("res://assets/models/crops/tomato/tomato_mature.glb")],
+	"lavender": [preload("res://assets/models/crops/lavender/lavender_seed.glb"), preload("res://assets/models/crops/lavender/lavender_mature.glb")],
+}
 
 var _visuals := {}
 var paddy_cells: Dictionary = {}
@@ -78,6 +83,9 @@ func sync_cell(cell: GridCell) -> void:
 
 func _add_crop(holder: Node3D, cell: GridCell) -> void:
 	var instance: CropInstance = cell.crop_instance
+	if TWO_STAGE_CROPS.has(instance.crop_data.crop_id):
+		_add_two_stage_crop(holder, cell)
+		return
 	if instance.crop_data.crop_id == "rose":
 		_add_rose(holder, cell)
 		return
@@ -134,6 +142,26 @@ func _add_crop(holder: Node3D, cell: GridCell) -> void:
 					var material := mesh_node.get_active_material(surface).duplicate() as StandardMaterial3D
 					material.albedo_color = Color("91794e")
 					mesh_node.set_surface_override_material(surface, material)
+
+
+func _add_two_stage_crop(holder: Node3D, cell: GridCell) -> void:
+	var instance: CropInstance = cell.crop_instance
+	var crop_id: String = instance.crop_data.crop_id
+	var withered := instance.lifecycle_state == CropInstance.LifecycleState.WITHERED
+	var grown := instance.growth_progress >= float(instance.crop_data.growth_days)
+	var packed: PackedScene = TWO_STAGE_CROPS[crop_id][1 if grown else 0]
+	var crop := packed.instantiate() as Node3D
+	crop.name = "Crop_" + crop_id
+	crop.position.y = SOIL_SURFACE_Y
+	crop.rotation.y = deg_to_rad(float(posmod(cell.gx * 37 + cell.gz * 19, 360)))
+	holder.add_child(crop)
+	for mesh_node in crop.find_children("*", "MeshInstance3D", true, false):
+		if withered:
+			var material := StandardMaterial3D.new()
+			material.albedo_color = Color("78613c")
+			material.roughness = 0.95
+			material.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mesh_node.material_override = material
 
 
 func _add_rose(holder: Node3D, cell: GridCell) -> void:

@@ -21,6 +21,6 @@ Blender 使用 Z 向上，导出 GLB 使用 Y 向上，单位米。五阶段共�
 godot_console.exe --headless --editor --path . --quit
 ```
 
-应保留 `.glb.import` 的 `scripts/tools/import_rose.gd` 后处理配置。它启用 GLB 的顶点颜色；否则 Godot 虽保留颜色数组，材质仍可能显示为白色。
+应保留 `.glb.import` 的 `scripts/tools/import_painted_crop.gd` 后处理配置。它启用 GLB 的顶点颜色；否则 Godot 虽保留颜色数组，材质仍可能显示为白色。
 
 运行接入：`scripts/farm3d/crop_visual_system.gd`。不修改玫瑰的物品 ID、生长时间、季节或收获规则，也不要求迁移存档。旧 3D 存档里的玫瑰在恢复地块时自动采用新模型。

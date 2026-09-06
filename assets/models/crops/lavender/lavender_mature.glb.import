@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://coxkj46mvjds5"
-path="res://.godot/imported/rose_seed.glb-c053328bd6587b67f2b95d40ddfb643e.scn"
+uid="uid://ds2uq7faxugpr"
+path="res://.godot/imported/lavender_mature.glb-c18a6eec424a4d74c6e869f03961e985.scn"
 
 [deps]
 
-source_file="res://assets/models/crops/rose/rose_seed.glb"
-dest_files=["res://.godot/imported/rose_seed.glb-c053328bd6587b67f2b95d40ddfb643e.scn"]
+source_file="res://assets/models/crops/lavender/lavender_mature.glb"
+dest_files=["res://.godot/imported/lavender_mature.glb-c18a6eec424a4d74c6e869f03961e985.scn"]
 
 [params]
 

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://coxkj46mvjds5"
-path="res://.godot/imported/rose_seed.glb-c053328bd6587b67f2b95d40ddfb643e.scn"
+uid="uid://l8elifo1355p"
+path="res://.godot/imported/tomato_seed.glb-e8acb356c16dbf8cd99aa186e0916985.scn"
 
 [deps]
 
-source_file="res://assets/models/crops/rose/rose_seed.glb"
-dest_files=["res://.godot/imported/rose_seed.glb-c053328bd6587b67f2b95d40ddfb643e.scn"]
+source_file="res://assets/models/crops/tomato/tomato_seed.glb"
+dest_files=["res://.godot/imported/tomato_seed.glb-e8acb356c16dbf8cd99aa186e0916985.scn"]
 
 [params]
 

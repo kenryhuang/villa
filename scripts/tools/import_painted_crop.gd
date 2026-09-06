@@ -1,6 +1,7 @@
 @tool
 extends EditorScenePostImport
 
+# Shared by the rose, potato, tomato and lavender models.
 # Godot may preserve GLB COLOR_0 without enabling its material contribution.
 # Bake this into the imported resource so editor and game use the same paint.
 func _post_import(scene: Node) -> Object:

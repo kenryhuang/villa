@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://coxkj46mvjds5"
-path="res://.godot/imported/rose_seed.glb-c053328bd6587b67f2b95d40ddfb643e.scn"
+uid="uid://b0fitooe56ovx"
+path="res://.godot/imported/potato_mature.glb-709f8d5a068f4ba3b49517fc8e8c8743.scn"
 
 [deps]
 
-source_file="res://assets/models/crops/rose/rose_seed.glb"
-dest_files=["res://.godot/imported/rose_seed.glb-c053328bd6587b67f2b95d40ddfb643e.scn"]
+source_file="res://assets/models/crops/potato/potato_mature.glb"
+dest_files=["res://.godot/imported/potato_mature.glb-709f8d5a068f4ba3b49517fc8e8c8743.scn"]
 
 [params]
 

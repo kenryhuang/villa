@@ -46,13 +46,14 @@ scripts/
 assets/
   models/farm3d/               角色、静态环境、田块、谷物 GLB
   models/vegetation/           手绘橡树 GLB 与贴图
-  models/crops/rose/           真正 3D 的玫瑰：播种、幼苗、花苞、成熟、枯萎
+  models/crops/               3D 作物：玫瑰五阶段；土豆、番茄、薰衣草两阶段
   crops/、buildings/           原作物和建筑美术资产，继续复用
   terrain/、ui/               共用地面贴图与 UI 主题、图标
 art/blender/
   farm3d.blend                 可编辑的农庄源模型
   painted_oak.blend            可编辑的橡树源模型
   rose.blend                   可编辑的玫瑰五阶段源模型
+  potato.blend、tomato.blend、lavender.blend  各自包含播种与成熟模型
 tools/                        游戏启动与独立美术预览命令
 tests/                        3D 集成测试、共用系统测试、截图脚本
 docs/validation/              操作说明、验证结果和截图
