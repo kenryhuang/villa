@@ -99,66 +99,6 @@
       }
     },
     {
-      "building_id": "barn",
-      "construction_duration": 9.0,
-      "construction_elapsed": 9.0,
-      "construction_stage": 3,
-      "gx": 20,
-      "gz": 23,
-      "occupied_cells": [
-        {
-          "gx": 20,
-          "gz": 23,
-          "previous_state": 0
-        },
-        {
-          "gx": 21,
-          "gz": 23,
-          "previous_state": 0
-        },
-        {
-          "gx": 20,
-          "gz": 24,
-          "previous_state": 0
-        },
-        {
-          "gx": 21,
-          "gz": 24,
-          "previous_state": 0
-        }
-      ]
-    },
-    {
-      "building_id": "barn",
-      "construction_duration": 9.0,
-      "construction_elapsed": 9.0,
-      "construction_stage": 3,
-      "gx": 29,
-      "gz": 24,
-      "occupied_cells": [
-        {
-          "gx": 29,
-          "gz": 24,
-          "previous_state": 0
-        },
-        {
-          "gx": 30,
-          "gz": 24,
-          "previous_state": 0
-        },
-        {
-          "gx": 29,
-          "gz": 25,
-          "previous_state": 0
-        },
-        {
-          "gx": 30,
-          "gz": 25,
-          "previous_state": 0
-        }
-      ]
-    },
-    {
       "building_id": "windmill",
       "construction_duration": 9.0,
       "construction_elapsed": 9.0,
@@ -553,30 +493,6 @@
         "watered": false
       },
       {
-        "gx": 20,
-        "gz": 23,
-        "state": 3,
-        "watered": false
-      },
-      {
-        "gx": 21,
-        "gz": 23,
-        "state": 3,
-        "watered": false
-      },
-      {
-        "gx": 20,
-        "gz": 24,
-        "state": 3,
-        "watered": false
-      },
-      {
-        "gx": 21,
-        "gz": 24,
-        "state": 3,
-        "watered": false
-      },
-      {
         "gx": 25,
         "gz": 24,
         "state": 3,
@@ -595,18 +511,6 @@
         "watered": false
       },
       {
-        "gx": 29,
-        "gz": 24,
-        "state": 3,
-        "watered": false
-      },
-      {
-        "gx": 30,
-        "gz": 24,
-        "state": 3,
-        "watered": false
-      },
-      {
         "gx": 25,
         "gz": 25,
         "state": 3,
@@ -620,18 +524,6 @@
       },
       {
         "gx": 27,
-        "gz": 25,
-        "state": 3,
-        "watered": false
-      },
-      {
-        "gx": 29,
-        "gz": 25,
-        "state": 3,
-        "watered": false
-      },
-      {
-        "gx": 30,
         "gz": 25,
         "state": 3,
         "watered": false
@@ -2661,14 +2553,6 @@
   "paddy_cells": [],
   "production": {
     "maintenance": [
-      {
-        "building_key": "barn:20:23",
-        "due_day": 21
-      },
-      {
-        "building_key": "barn:29:24",
-        "due_day": 21
-      },
       {
         "building_key": "food_workshop:20:19",
         "due_day": 20
