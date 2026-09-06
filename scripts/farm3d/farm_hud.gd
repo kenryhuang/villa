@@ -11,6 +11,9 @@ const StreamScene = preload("res://scenes/ui/hud_message_stream.tscn")
 const InventoryScene = preload("res://scenes/farm3d/inventory.tscn")
 const StatusScene = preload("res://scenes/farm3d/status_bar.tscn")
 const INK := Color("f8edcf")
+const TOP_MARGIN := 18.0
+const TOP_BAR_HEIGHT := 62.0
+const MESSAGE_WIDTH := 344.0
 var _session: Node
 var category := ""
 var target_id := ""
@@ -41,20 +44,26 @@ func configure(session: Node) -> void:
 	add_child(bus)
 	status_bar = StatusScene.instantiate()
 	_ui.add_child(status_bar)
-	status_bar.position = Vector2(18, 18)
-	status_bar.size = Vector2(750, 58)
+	status_bar.position = Vector2(TOP_MARGIN, TOP_MARGIN)
+	status_bar.size = Vector2(750, TOP_BAR_HEIGHT)
 	for child in status_bar.get_node("StatusRow").get_children():
+		child.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		if child is Label:
+			child.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			child.add_theme_font_size_override("font_size", 17)
 			child.custom_minimum_size.x = 70
 	status_bar.get_node("StatusRow/StaminaBar").custom_minimum_size.x = 115
 	status_bar.get_node("StatusRow/ExpBar").custom_minimum_size.x = 95
 	message_stream = StreamScene.instantiate()
 	_ui.add_child(message_stream)
-	message_stream.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	message_stream.position = Vector2(18, 88)
-	message_stream.size = Vector2(344, 280)
-	message_stream.set_expanded_bottom(368)
+	message_stream.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	message_stream.offset_left = -TOP_MARGIN - MESSAGE_WIDTH
+	message_stream.offset_right = -TOP_MARGIN
+	message_stream.offset_top = TOP_MARGIN
+	message_stream.set_expanded_bottom(TOP_MARGIN + 320.0)
+	# Match the status bar's centerline, including the panel's one-pixel border.
+	message_stream.get_node("Margin").add_theme_constant_override("margin_top", 9)
+	message_stream.get_node("Margin").add_theme_constant_override("margin_bottom", 9)
 	message_stream.title_label.text = "消息"
 	message_stream.configure(bus)
 	message_stream.history_requested.connect(_toggle_history)

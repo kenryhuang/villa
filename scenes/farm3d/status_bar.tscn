@@ -33,6 +33,7 @@ theme_override_constants/separation = 8
 [node name="StaminaBar" type="ProgressBar" parent="StatusRow"]
 custom_minimum_size = Vector2(150, 32)
 layout_mode = 2
+size_flags_vertical = 4
 max_value = 100.0
 value = 100.0
 show_percentage = false
@@ -60,6 +61,7 @@ vertical_alignment = 1
 [node name="ExpBar" type="ProgressBar" parent="StatusRow"]
 custom_minimum_size = Vector2(130, 32)
 layout_mode = 2
+size_flags_vertical = 4
 max_value = 100.0
 show_percentage = false
 
@@ -90,7 +92,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 17
 text = "体力 100"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -100,7 +102,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 17
 text = "经验"
 horizontal_alignment = 1
 vertical_alignment = 1
