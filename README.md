@@ -31,6 +31,7 @@ scripts/
     farm_session.gd             组装共用系统、目标操作、独立 3D 存档
     farm_interaction.gd         鼠标选格、点击操作、Esc 取消
     farm_hud.gd                 两级目标菜单、状态条、消息与背包入口
+    farm_minimap.gd             右下角北向小地图、人物位置与朝向、地形地标
     farm_inventory_ui.gd        原背包的 3D 交互适配
     target_catalog.gd          将共用种子和建筑目录提供给目标菜单
     flat_grid.gd                扩展地形网格，保留原农庄坐标与存档
@@ -79,12 +80,15 @@ docs/validation/              操作说明、验证结果和截图
 
 地图已扩展至 **160 × 160 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
 
+右下角小地图固定上北、下南、左西、右东；浅色箭头显示人物位置和朝向，标出农庄、山地、丘陵、河流及木桥。底部显示所在区域与相对地图中心的东西／南北距离（米），旋转相机不会改变地图方向。
+
 ```powershell
 godot_console.exe --headless --editor --path . --quit
 godot_console.exe --headless --path . --script tests/run_farm3d_scene_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_farm_interaction_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_target_system_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_landscape_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_minimap_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。

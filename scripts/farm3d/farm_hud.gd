@@ -10,6 +10,7 @@ const BusScript = preload("res://scripts/ui/hud_message_bus.gd")
 const StreamScene = preload("res://scenes/ui/hud_message_stream.tscn")
 const InventoryScene = preload("res://scenes/farm3d/inventory.tscn")
 const StatusScene = preload("res://scenes/farm3d/status_bar.tscn")
+const MinimapScript = preload("res://scripts/farm3d/farm_minimap.gd")
 const INK := Color("f8edcf")
 const TOP_MARGIN := 18.0
 const TOP_BAR_HEIGHT := 62.0
@@ -23,6 +24,7 @@ var bus: Node
 var message_stream: PanelContainer
 var inventory_ui: Control
 var status_bar: PanelContainer
+var minimap: Control
 var secondary: PanelContainer
 var secondary_grid: GridContainer
 var secondary_title: Label
@@ -68,6 +70,9 @@ func configure(session: Node) -> void:
 	message_stream.configure(bus)
 	message_stream.history_requested.connect(_toggle_history)
 	_make_menu()
+	minimap = MinimapScript.new()
+	minimap.player = session.player
+	_ui.add_child(minimap)
 	_make_history()
 	inventory_ui = InventoryScene.instantiate()
 	_ui.add_child(inventory_ui)
@@ -249,6 +254,10 @@ func _layout() -> void:
 
 func _position_menu() -> void:
 	_menu.position = Vector2((_ui.size.x - _menu.size.x) * 0.5, _ui.size.y - _menu.size.y - 18)
+	if minimap != null:
+		minimap.position = _ui.size - minimap.size - Vector2(18, 18)
+		if minimap.position.x < _menu.position.x + _menu.size.x + 12:
+			minimap.position.y = _menu.position.y - minimap.size.y - 12
 
 func _button(text: String, minimum: Vector2) -> Button:
 	var button := Button.new()
