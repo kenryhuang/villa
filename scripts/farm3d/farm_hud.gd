@@ -4,6 +4,9 @@ signal target_requested(category: String, target_id: String)
 signal category_requested(category: String)
 signal rest_requested
 signal save_requested
+signal fishing_requested
+signal fishing_action_requested
+signal fishing_cancel_requested
 
 const Catalog = preload("res://scripts/farm3d/target_catalog.gd")
 const BusScript = preload("res://scripts/ui/hud_message_bus.gd")
@@ -33,6 +36,11 @@ var history_text: RichTextLabel
 var _ui: Control
 var _menu: VBoxContainer
 var _status_seconds := 0.0
+var fishing_button: Button
+var fishing_panel: PanelContainer
+var fishing_hint: Label
+var fishing_action: Button
+var fishing_progress: ProgressBar
 
 func configure(session: Node) -> void:
 	_session = session
@@ -135,6 +143,52 @@ func _make_menu() -> void:
 		var button := _button(entry[0], Vector2(78, 48))
 		button.pressed.connect(entry[1])
 		row.add_child(button)
+	fishing_button = _button("鱼竿",Vector2(88,48))
+	fishing_button.disabled = true
+	fishing_button.icon = preload("res://assets/ui/action_icons/fishing_rod.png")
+	fishing_button.expand_icon = true
+	fishing_button.add_theme_constant_override("icon_max_width",22)
+	fishing_button.pressed.connect(func(): fishing_requested.emit())
+	row.add_child(fishing_button)
+	row.move_child(fishing_button,3)
+	fishing_panel = PanelContainer.new()
+	fishing_panel.name = "FishingPanel"
+	fishing_panel.add_theme_stylebox_override("panel",_style(Color("202e25f2"),Color("c4ab70")))
+	_menu.add_child(fishing_panel)
+	_menu.move_child(fishing_panel,0)
+	var fishing_box := VBoxContainer.new()
+	fishing_panel.add_child(fishing_box)
+	var fishing_row := HBoxContainer.new()
+	fishing_box.add_child(fishing_row)
+	fishing_hint = Label.new()
+	fishing_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fishing_hint.add_theme_font_size_override("font_size",18)
+	fishing_row.add_child(fishing_hint)
+	fishing_action = _button("甩竿  E / 左键",Vector2(170,42))
+	fishing_action.pressed.connect(func(): fishing_action_requested.emit())
+	fishing_row.add_child(fishing_action)
+	var stow := _button("收竿 Esc",Vector2(100,42))
+	stow.pressed.connect(func(): fishing_cancel_requested.emit())
+	fishing_row.add_child(stow)
+	fishing_progress = ProgressBar.new()
+	fishing_progress.custom_minimum_size.y = 10
+	fishing_progress.max_value = 1
+	fishing_progress.show_percentage = false
+	fishing_box.add_child(fishing_progress)
+	fishing_panel.hide()
+
+func set_fishing_status(equipped: bool, hint: String, action: String, can_act: bool, bite_progress: float) -> void:
+	var layout_changed := fishing_panel.visible != equipped or fishing_progress.visible != (bite_progress >= 0)
+	fishing_panel.visible = equipped
+	fishing_hint.text = hint
+	fishing_hint.add_theme_color_override("font_color",Color("ffe38e") if bite_progress >= 0 else INK)
+	fishing_action.text = action
+	fishing_action.disabled = not can_act
+	fishing_progress.visible = bite_progress >= 0
+	fishing_progress.value = maxf(0,bite_progress)
+	fishing_button.text = "收竿" if equipped else "鱼竿"
+	if layout_changed:
+		_layout.call_deferred()
 
 func show_category(next_category: String) -> void:
 	category = next_category
@@ -211,6 +265,7 @@ func toggle_minimap() -> void:
 	minimap.visible = not minimap.visible
 
 func toggle_inventory() -> void:
+	fishing_cancel_requested.emit()
 	history_panel.hide()
 	inventory_ui.toggle()
 	_session.player.ui_blocked = is_modal_open()
@@ -239,6 +294,7 @@ func _make_history() -> void:
 	history_panel.hide()
 
 func _toggle_history() -> void:
+	fishing_cancel_requested.emit()
 	inventory_ui.close()
 	history_panel.visible = not history_panel.visible
 	history_text.text = ""

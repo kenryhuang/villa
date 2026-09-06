@@ -27,11 +27,11 @@
 ![草地到沙地的过渡](images/south_3d_transition.png)
 ![南湖与沙地](images/south_3d_lake.png)
 
-## 钓鱼准备
+## 湖岸钓鱼
 
-从农庄沿小地图向南走即可穿过草沙混合带到达南湖北岸。湖水高度为 `Y=-1.15`，中央湖底约 `Y=-3.8`；水面使用缓慢的碎波纹，岸边是能步行站立的缓坡。湖内沿用现有涉水减速，当前没有新增游泳或钓鱼交互。
+从农庄沿小地图向南走即可穿过草沙混合带到达南湖北岸。湖水高度为 `Y=-1.15`，中央湖底约 `Y=-3.8`；水面使用缓慢的碎波纹，岸边是能步行站立的缓坡。河流与湖泊均已接入[完整钓鱼流程](fishing-3d.md)，湖内沿用现有涉水减速。
 
-预留三处岸边站位；每处半径 2.4 米内禁止新放农田和建筑，方便接入钓鱼时保持可达：
+保留三处岸边站位；每处半径 2.4 米内禁止新放农田和建筑，保持钓位可达：
 
 | 钓位 | 站位 `(X,Z)` | 水中落点 `(X,Z)` |
 | --- | --- | --- |
@@ -39,7 +39,7 @@
 | 西岸 | `(-40,108)` | `(-29,108)` |
 | 南岸 | `(-6,132)` | `(-6,124)` |
 
-场景节点位于 `Landscape/LakeFishingShores`，三个 `Marker3D` 加入 `farm3d_fishing_shores` 组，提供 `water_body_id=south_lake` 元数据和 `CastTarget` 子节点。岸边标记的本地 `-Z` 指向落点；后续可据此接入钓鱼检测、人物朝向和浮漂位置。定义统一维护在 `terrain_profile.gd` 的 `LAKE_FISHING_SPOTS`。
+场景节点位于 `Landscape/LakeFishingShores`，三个 `Marker3D` 加入 `farm3d_fishing_shores` 组，提供 `water_body_id=south_lake` 元数据和参考 `CastTarget` 子节点。定义统一维护在 `terrain_profile.gd` 的 `LAKE_FISHING_SPOTS`。实际钓鱼系统按玩家位置实时查找水面落点，河湖其他满足坡度、水深与无遮挡条件的岸边也可钓鱼。
 
 ![人物在北岸与小地图定位](images/south_3d_shore.png)
 

@@ -101,6 +101,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_TAB:
 			set_overview(not overview_enabled)
 		elif event.keycode == KEY_R:
+			get_node("FarmInteraction").fishing.cancel()
 			player.reset_position()
 		elif event.keycode == KEY_F12:
 			await _save_screenshot("user://farm3d.png")
@@ -110,6 +111,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		if has_node("FarmInteraction") and get_node("FarmInteraction").fishing != null:
+			get_node("FarmInteraction").fishing.cancel()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if farm_session != null and farm_session.auto_save:
 			farm_session.save_game()

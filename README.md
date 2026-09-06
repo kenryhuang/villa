@@ -32,6 +32,9 @@ scripts/
     farm_interaction.gd         鼠标选格、点击操作、Esc 取消
     farm_hud.gd                 两级目标菜单、状态条、消息与背包入口
     farm_minimap.gd             右下角北向小地图、人物位置与朝向、地形地标
+    farm_fishing.gd             3D 甩竿、概率咬钩、拉竿上鱼与背包结算
+    fishing_location.gd         河湖岸边站位、水深、距离与抛线遮挡检测
+    fishing_visual.gd           原生鱼竿／鱼线／浮漂／鱼模型及角色钓鱼骨骼动作
     farm_inventory_ui.gd        原背包的 3D 交互适配
     target_catalog.gd          将共用种子和建筑目录提供给目标菜单
     flat_grid.gd                扩展地形网格，保留原农庄坐标与存档
@@ -78,11 +81,13 @@ docs/validation/              操作说明、验证结果和截图
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
 
-地图已扩展至 **160 × 224 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。南面从草地逐渐过渡到沙地，新增南湖和三处预留岸边钓位（钓鱼交互尚未接入）。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
+地图已扩展至 **160 × 224 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。南面从草地逐渐过渡到沙地，南湖有三处保留岸边钓位，河流和湖泊的其他合适岸边也能钓鱼。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
 
 右下角小地图默认显示，按 **G** 关闭／打开，固定上北、下南、左西、右东；浅色箭头显示人物位置和朝向，标出农庄、山地、丘陵、河流、木桥、沙地及南湖。底部显示所在区域与相对原农庄中心（世界原点）的东西／南北距离（米），旋转相机不会改变地图方向。
 
 按住 **Shift** 奔跑，移动速度为普通行走的 **2.5 倍**（当前行走 4.2 米/秒、奔跑 10.5 米/秒），松开即恢复行走；奔跑时步行动画同步加快。
+
+**钓鱼**：走到平缓干燥的河岸或湖岸，工具栏的“鱼竿”亮起后选择。按 **E／左键** 甩竿，等待浮漂下沉和“咬钩”提示，再按 **E／左键** 拉竿；上鱼动画结束后渔获自动入包，按 **I** 查看。每竿有概率咬钩，空竿或错过后可重试；**Esc** 收竿离开。详见[3D 钓鱼说明与实景](docs/validation/fishing-3d.md)。
 
 ```powershell
 godot_console.exe --headless --editor --path . --quit
@@ -92,6 +97,7 @@ godot_console.exe --headless --path . --script tests/run_3d_target_system_tests.
 godot_console.exe --headless --path . --script tests/run_3d_landscape_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_minimap_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_south_lake_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_fishing_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。

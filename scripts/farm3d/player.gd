@@ -12,6 +12,7 @@ var camera_yaw := 0.0
 var _animation_player: AnimationPlayer
 var _farm_action_seconds := 0.0
 var ui_blocked := false
+var fishing_locked := false
 
 func _ready() -> void:
 	collision_layer = 2
@@ -27,10 +28,10 @@ func _physics_process(delta: float) -> void:
 	_farm_action_seconds = maxf(0.0, _farm_action_seconds - delta)
 	if not is_on_floor():
 		velocity.y -= gravity * delta
-	if not ui_blocked and Input.is_action_just_pressed("jump") and is_on_floor():
+	if not ui_blocked and not fishing_locked and Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = jump_velocity
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if ui_blocked or _farm_action_seconds > 0.0:
+	if ui_blocked or fishing_locked or _farm_action_seconds > 0.0:
 		input_vector = Vector2.ZERO
 	var direction := Vector3(input_vector.x, 0.0, input_vector.y).rotated(Vector3.UP, camera_yaw)
 	var speed := walk_speed * (SPRINT_MULTIPLIER if Input.is_action_pressed("sprint") else 1.0)
@@ -64,7 +65,7 @@ func cancel_farm_action() -> void:
 	play_motion_animation(moving)
 
 func play_motion_animation(is_walking: bool) -> void:
-	if _animation_player == null:
+	if _animation_player == null or fishing_locked:
 		return
 	# The imported farmer has Idle and Walk; match the stride cadence to running.
 	_animation_player.speed_scale = SPRINT_MULTIPLIER if is_walking and Input.is_action_pressed("sprint") else 1.0

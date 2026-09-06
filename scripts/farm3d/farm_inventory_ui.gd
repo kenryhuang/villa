@@ -100,6 +100,6 @@ func _item_priority(index: int) -> int:
 	if _is_planting_item(item_id):
 		return 1
 	var item: Variant = GameDataScript.get_item(item_id)
-	if item != null and str(item.get("category", "")) in ["crop", "fruit", "flower"]:
+	if item != null and str(item.get("category", "")) in ["crop", "fruit", "flower", "fish"]:
 		return 0
 	return 2

@@ -2,6 +2,8 @@ extends Node3D
 
 const HudScript = preload("res://scripts/farm3d/farm_hud.gd")
 const Catalog = preload("res://scripts/farm3d/target_catalog.gd")
+const FishingScript = preload("res://scripts/farm3d/farm_fishing.gd")
+var fishing: Node3D
 var session: Node
 var player: Node3D
 var hud: CanvasLayer
@@ -40,13 +42,21 @@ func configure(farm_session: Node, farmer: Node3D) -> void:
 	hud.category_requested.connect(select_category)
 	hud.rest_requested.connect(_rest)
 	hud.save_requested.connect(_save)
+	fishing = FishingScript.new()
+	fishing.name = "Fishing"
+	add_child(fishing)
+	fishing.configure(session,player,hud)
+	session.fishing = fishing
+	hud.fishing_requested.connect(_toggle_fishing)
+	hud.fishing_action_requested.connect(func(): fishing.act())
+	hud.fishing_cancel_requested.connect(func(): fishing.cancel())
 	session.action_controller.cancel_current_selection()
 
 func _process(delta: float) -> void:
 	if session == null:
 		return
 	_cooldown = maxf(0, _cooldown - delta)
-	if target_id.is_empty() or hud.is_modal_open() or get_viewport().gui_get_hovered_control() != null:
+	if target_id.is_empty() or fishing.is_equipped() or hud.is_modal_open() or get_viewport().gui_get_hovered_control() != null:
 		target_cell = null
 		_marker.hide()
 		session.buildings._preview_root.visible = false
@@ -88,6 +98,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func cancel_selection() -> void:
+	if fishing != null:
+		fishing.cancel()
 	category = ""
 	target_id = ""
 	target_cell = null
@@ -113,6 +125,7 @@ func select_target(next_category: String, id: String) -> void:
 			selected = entry
 	if selected.is_empty():
 		return
+	fishing.cancel()
 	session.buildings.exit_preview_mode()
 	category = next_category
 	target_id = id
@@ -167,6 +180,8 @@ func _cell_at(point: Vector3) -> GridCell:
 func perform(cell: GridCell) -> Dictionary:
 	if hud.is_modal_open():
 		return {"ok": false, "reason": "ui_blocked"}
+	if fishing.is_equipped():
+		return fishing.act()
 	if _cooldown > 0:
 		return {"ok": false, "reason": "busy"}
 	# A category alone isn't a placement target; keep the world unchanged until a leaf is chosen.
@@ -188,9 +203,21 @@ func _target_allowed(cell: GridCell) -> bool:
 	return false
 
 func _rest() -> void:
+	fishing.cancel()
 	var result: Dictionary = session.rest()
 	hud.notify_message(str(result.message), bool(result.ok))
 
 func _save() -> void:
 	var saved: bool = session.save_game()
 	hud.notify_message("农庄已保存" if saved else "保存失败，请检查存储空间", saved)
+
+func _toggle_fishing() -> void:
+	if fishing.is_equipped():
+		fishing.cancel()
+		return
+	# Verify the position again even when invoked without clicking the HUD button.
+	fishing.refresh_location()
+	if fishing.available_location.is_empty() or hud.is_modal_open():
+		return
+	cancel_selection()
+	fishing.equip()

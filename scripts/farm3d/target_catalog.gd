@@ -23,6 +23,9 @@ static func entries(category: String) -> Array[Dictionary]:
 	return rows
 
 static func item_icon(item_id: String) -> Texture2D:
+	var item: Variant = Data.get_item(item_id)
+	if item != null and item.get("category","") == "fish":
+		return _load_icon("res://assets/ui/material_icons/fish.svg")
 	var crop_id := item_id.trim_suffix("_seed").trim_suffix("_sapling")
 	var path := "res://assets/crops/%s/painted/stage_3/variant_0_front.png" % crop_id
 	if ResourceLoader.exists(path):

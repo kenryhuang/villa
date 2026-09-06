@@ -34,6 +34,7 @@ var economy: EconomySystem
 var buildings: BuildingSystem
 var production: ProductionSystem
 var paddy_cells: Dictionary = {}
+var fishing: Node
 
 
 func configure(next_player: Node3D) -> bool:
@@ -129,6 +130,8 @@ func act(cell: GridCell, mode: String, seed_id: String = "grain_seed") -> Dictio
 
 
 func rest() -> Dictionary:
+	if is_instance_valid(fishing):
+		fishing.cancel()
 	season.advance_to_next_day()
 	var state := _game_state()
 	if state != null and state.player_state != null:
@@ -191,6 +194,8 @@ func load_game() -> bool:
 	if normalized == null:
 		return false
 	# All validation completed before any live state changes.
+	if is_instance_valid(fishing):
+		fishing.cancel()
 	if not grid.from_dict(data.grid) or not tools.from_dict(data.tools):
 		return false
 	production.begin_restore_transaction()
