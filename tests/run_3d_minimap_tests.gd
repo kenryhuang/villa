@@ -24,10 +24,10 @@ func _run() -> void:
 	var player: Node3D = farm.player
 	player.set_physics_process(false)
 	_check(map.is_visible_in_tree() and map.player == player, "Formal 3D HUD has a visible map bound to the actual player")
-	_check(map.world_to_map(Vector3.ZERO).is_equal_approx(Vector2(124, 118)), "Farm origin retains its position north of the expanded map center")
-	_check(map.world_to_map(Vector3(-80, 0, -80)).is_equal_approx(Vector2(54, 48)), "Northwest world corner maps to top left")
-	_check(map.world_to_map(Vector3(80, 0, 144)).is_equal_approx(Vector2(194, 244)), "Expanded southeast world corner maps to bottom right")
-	_check(map.world_to_map(Vector3(-6, 0, 108)).is_equal_approx(Vector2(118.75, 212.5)), "Southern lake is visible within the map")
+	_check(map.world_to_map(Vector3.ZERO).is_equal_approx(Vector2(160.75, 121.5)), "Farm origin retains its world position after westward extension")
+	_check(map.world_to_map(Vector3(-176, 0, -80)).is_equal_approx(Vector2(26, 60.25)), "Northwest world corner maps to top left")
+	_check(map.world_to_map(Vector3(80, 0, 144)).is_equal_approx(Vector2(222, 231.75)), "Expanded southeast world corner maps to bottom right")
+	_check(map.world_to_map(Vector3(-6, 0, 108)).is_equal_approx(Vector2(156.15625, 204.1875)), "Southern lake is visible within the map")
 	var east_step: Vector2 = map.world_to_map(Vector3(10,0,0)) - map.world_to_map(Vector3.ZERO)
 	var south_step: Vector2 = map.world_to_map(Vector3(0,0,10)) - map.world_to_map(Vector3.ZERO)
 	_check(is_equal_approx(east_step.length(), south_step.length()), "Rectangular map preserves equal distance scale on both axes")
@@ -36,7 +36,7 @@ func _run() -> void:
 		player.look_at(player.position + entry[0], Vector3.UP, true)
 		_check(map.player_heading().is_equal_approx(entry[1]), "Arrow follows actual farmer facing %s" % entry[0])
 	player.position = Vector3(40, 0, -40)
-	_check(map.world_to_map(player.position).is_equal_approx(Vector2(159, 83)), "Player movement updates map coordinates")
+	_check(map.world_to_map(player.position).is_equal_approx(Vector2(191.375, 90.875)), "Player movement updates map coordinates")
 	var before: Vector2 = map.world_to_map(player.position)
 	farm.yaw += PI
 	farm._apply_camera_rotation()

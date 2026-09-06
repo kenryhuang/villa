@@ -3,7 +3,8 @@ extends RefCounted
 
 ## One deterministic surface definition for rendering, collision and farm cells.
 ## Existing world coordinates remain unchanged so old saves keep their farmland.
-const WORLD_MIN := Vector2(-80, -80)
+const WORLD_MIN := Vector2(-176, -80)
+const Golf = preload("res://scripts/farm3d/golf_course_data.gd")
 const WORLD_MAX := Vector2(80, 144)
 const WORLD_SIZE := WORLD_MAX - WORLD_MIN
 const CORE_HALF_SIZE := 22.0
@@ -48,6 +49,9 @@ static func is_in_world(x: float, z: float, margin: float = 0.0) -> bool:
 	return x >= WORLD_MIN.x - margin and x <= WORLD_MAX.x + margin and z >= WORLD_MIN.y - margin and z <= WORLD_MAX.y + margin
 
 static func height_at(x: float, z: float) -> float:
+	if x < -80:
+		var west := _western_height(x,z)
+		return lerpf(height_at(-80,z),west,smoothstep(-80,-88,x)) if x > -88 else west
 	var core_distance := maxf(absf(x),absf(z))
 	if core_distance <= CORE_HALF_SIZE:
 		return 0.0
@@ -80,11 +84,21 @@ static func height_at(x: float, z: float) -> float:
 		var lake_bed := -3.8 + .15*sin(x*.12)*cos(z*.16)
 		h = lerpf(lake_bed, h, smoothstep(.62, 1.24, lake))
 	# Move the southern edge to the new boundary, removing the old blocking ridge.
-	var edge_distance := minf(minf(x-WORLD_MIN.x, WORLD_MAX.x-x), minf(z-WORLD_MIN.y, WORLD_MAX.y-z))
+	var edge_distance := minf(minf(x+80, WORLD_MAX.x-x), minf(z-WORLD_MIN.y, WORLD_MAX.y-z))
 	var dune_ridge := 4.8 + 1.8*sin(x*.09+z*.07) + .8*cos(x*.21)
 	var ridge_height := lerpf(8.0, dune_ridge, smoothstep(60.0,96.0,z))
 	h += (1.0-smoothstep(0.0,9.0,edge_distance))*ridge_height*smoothstep(6.0,13.0,river_distance)
+	if x < -72:
+		var opening := (1-smoothstep(8,17,absf(z-72))) * smoothstep(-72,-80,x)
+		h = lerpf(h,_western_height(x,z),opening)
 	return h
+
+static func _western_height(x: float, z: float) -> float:
+	var point := Vector2(x,z)
+	var mask := Golf.paint(point).r
+	var h := lerpf(1.5+.65*sin(x*.07)*cos(z*.09),Golf.terrain_height(point),mask)
+	var edge := minf(x-WORLD_MIN.x,minf(z-WORLD_MIN.y,WORLD_MAX.y-z))
+	return h + (1-smoothstep(0,9,edge))*5.0
 
 static func slope_at(x: float, z: float) -> float:
 	return Vector2(height_at(x+.5,z)-height_at(x-.5,z),height_at(x,z+.5)-height_at(x,z-.5)).length()
@@ -116,6 +130,8 @@ static func is_original_core(x: float, z: float) -> bool:
 	return absf(x) < CORE_HALF_SIZE and absf(z) < CORE_HALF_SIZE
 
 static func region_at(x: float, z: float) -> String:
+	if Golf.contains(Vector2(x,z)):
+		return "高尔夫球场"
 	if is_lake(x,z):
 		return "南湖"
 	if is_water(x,z):

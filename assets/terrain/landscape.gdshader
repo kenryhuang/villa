@@ -7,10 +7,12 @@ uniform float sand_start = 50.0;
 uniform float sand_end = 86.0;
 varying vec3 world_point;
 varying vec3 world_normal;
+varying vec4 golf_paint;
 
 void vertex() {
 	world_point = (MODEL_MATRIX * vec4(VERTEX,1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	golf_paint = COLOR;
 }
 
 float hash(vec3 p) {
@@ -42,6 +44,13 @@ void fragment() {
 	float wet_sand = 1.0-smoothstep(-1.12,-.30,world_point.y);
 	sand = mix(sand,vec3(.43,.37,.25),wet_sand*.6);
 	base = mix(base,sand,sand_mix);
+	vec3 course_grass = grass * vec3(.64,.78,.52);
+	float stripe = mod(floor(world_point.z / 3.0),2.0);
+	vec3 fairway = mix(vec3(.34,.48,.19),vec3(.40,.54,.24),stripe) * (.85+brush*.25);
+	course_grass = mix(course_grass,fairway,golf_paint.g);
+	course_grass = mix(course_grass,vec3(.49,.62,.29)*(.92+brush*.12),golf_paint.b);
+	course_grass = mix(course_grass,vec3(.82,.70,.46)*(.93+brush*.12),golf_paint.a);
+	base = mix(base,course_grass,golf_paint.r);
 	ALBEDO = base;
 	ROUGHNESS = 0.96;
 }

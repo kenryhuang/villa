@@ -109,7 +109,7 @@ func _run() -> void:
 	legacy.erase("gold")
 	legacy.erase("buildings")
 	legacy.erase("production")
-	for field in ["market", "npc_economy", "market_site"]:
+	for field in ["market", "npc_economy", "market_site", "golf"]:
 		legacy.erase(field)
 	for entry in legacy.grid.cells:
 		if int(entry.state) == GridCell.State.BUILDING:

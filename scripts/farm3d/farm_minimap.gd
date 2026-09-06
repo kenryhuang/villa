@@ -56,6 +56,9 @@ func _draw() -> void:
 	_centered("东", Vector2(MAP_RECT.end.x+13, 152), 17, INK)
 	_map_label("山地", Vector3(-15, 0, -56))
 	_map_label("丘陵", Vector3(-51, 0, 13))
+	_map_label("球场", Vector3(-129,0,96))
+	var entrance := Profile.Golf.ENTRANCE
+	draw_circle(world_to_map(Vector3(entrance.x,0,entrance.y)),3,Color("e6c882"))
 	_map_label("河流", Vector3(58, 0, -9))
 	var farm := world_to_map(Vector3.ZERO)
 	_map_label("沙地", Vector3(-48, 0, 83))
@@ -64,6 +67,13 @@ func _draw() -> void:
 	draw_rect(Rect2(farm - farm_half, farm_half * 2), Color("dfcf9470"), false, 1.0)
 	_map_label("农庄", Vector3(0, 0, -17))
 	if is_instance_valid(session):
+		if session.golf != null and session.golf_round.active:
+			var target: Vector3 = session.golf.target_point()
+			draw_circle(world_to_map(target),3.5,Color.WHITE)
+			var cup: Vector2 = Profile.Golf.HOLES[session.golf_round.hole].cup
+			var flag := world_to_map(Vector3(cup.x,0,cup.y))
+			draw_line(flag,flag-Vector2(0,7),Color.WHITE,1)
+			draw_colored_polygon(PackedVector2Array([flag-Vector2(0,7),flag+Vector2(5,-5),flag-Vector2(0,3)]),Color("ef9c70"))
 		var market := Vector3(session.market_site.x, 0, session.market_site.y)
 		draw_circle(world_to_map(market), 3.5, GOLD)
 		_map_label("市集", market + Vector3(-8, 0, 16))
@@ -108,6 +118,8 @@ func _make_terrain() -> ImageTexture:
 			var height := Profile.height_at(x, z)
 			var color := Color("83a15a").lerp(Color("b4ad83"), clampf(height / 28.0, 0, 1))
 			color = color.lerp(Color("cbb078"), Profile.sand_weight(x,z))
+			var golf := Profile.Golf.paint(Vector2(x,z))
+			color = color.lerp(Color("5d8245").lerp(Color("a9bf73"),golf.g).lerp(Color("dfc593"),golf.a),golf.r)
 			if Profile.is_water(x, z):
 				color = Color("5795aa")
 			else:

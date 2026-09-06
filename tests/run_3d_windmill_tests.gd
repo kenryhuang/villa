@@ -192,6 +192,21 @@ func _run() -> void:
 	view.controller.refresh_snapshot()
 	view._collect("")
 	_check(session.inventory.get_item_count("sunflower_oil") == 2, "Freeing backpack space allows collection")
+	# Exercise the generic blocked-storage path with occupied test storage.
+	# The current three recipes normally fit all three output types together.
+	view.close_panel()
+	windmill.producer_state.add_outputs({"wood": 1, "stone": 1, "grain": 1})
+	session.production.start_recipe(windmill, "flour", 1, session.inventory)
+	session.production.advance_minutes(27)
+	windmill._process(2.0)
+	interaction.open_windmill(windmill)
+	_check(view.controller.queue_slots[0].state == "output-full" and is_zero_approx(windmill.rotor_speed), "Blocked outputs stop the sails and display the authoritative queue state")
+	view._collect("wood")
+	view.close_panel()
+	session.production.advance_minutes(1)
+	_check(windmill.producer_state.outputs.get("flour", 0) == 1, "Collecting blocked storage releases the completed job without losing its goods")
+	session.production.collect_outputs(windmill, session.inventory)
+	interaction.open_windmill(windmill)
 	view.controller.select_recipe("flour")
 	view.controller.set_batches(9999)
 	grain = session.inventory.get_item_count("grain")
@@ -199,6 +214,7 @@ func _run() -> void:
 	view._start()
 	_check(session.inventory.get_item_count("grain") == grain, "Insufficient-material retry is atomic")
 	view.controller.set_batches(1)
+	_check(view.controller.failure_message.is_empty() and not view.start_button.disabled, "Correcting a failed batch removes stale failure feedback")
 	view._start()
 	view.close_panel()
 	session.production.advance_minutes(7)
@@ -213,6 +229,12 @@ func _run() -> void:
 	_key(KEY_ESCAPE)
 	_check(not view.repair_modal.visible and view.visible and paused, "First Escape dismisses maintenance confirmation only")
 	view.maintenance_button.pressed.emit()
+	var saved_gold: int = wallet.gold
+	wallet.gold = 0
+	view._refresh_repair()
+	_check(view.repair_confirm.disabled, "Insufficient maintenance funds disable payment")
+	wallet.gold = saved_gold
+	view._refresh_repair()
 	var gold: int = wallet.gold
 	var wood := session.inventory.get_item_count("wood")
 	view.repair_confirm.pressed.emit()

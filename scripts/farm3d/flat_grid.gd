@@ -34,6 +34,8 @@ func configure_flat(next_visual_system: Node = null) -> bool:
 
 func _base_state(cell: GridCell) -> GridCell.State:
 	var point := cell.world_position()
+	if Profile.Golf.BOUNDS.grow(2).has_point(point):
+		return GridCell.State.DECORATION
 	if not Profile.is_original_core(point.x,point.y):
 		if Profile.is_bridge(point.x,point.y):
 			return GridCell.State.DECORATION

@@ -29,7 +29,7 @@ func _run() -> void:
 	session.season.set_process(false)
 	await _frames(3)
 	var grid: Farm3DFlatGrid = session.grid
-	_check(grid._cells.size() == 35840,"160 x 224 metres of addressable farm cells")
+	_check(grid._cells.size() == 57344,"256 x 224 metres of addressable farm cells")
 	_check(Profile.region_at(0,0) == "平原","Original farm remains plains")
 	_check(Profile.region_at(-43,8) == "丘陵","Western region contains hills")
 	_check(Profile.region_at(-4,-66) == "山地","Northern region contains mountains")
@@ -45,7 +45,7 @@ func _run() -> void:
 		_check(not hit.is_empty(),"Terrain collision exists outside old map: %s" % point)
 		if not hit.is_empty():
 			_check(absf(hit.position.y-Profile.surface_height(point.x,point.y)) < .015,"Collision matches shared triangulated height: %s" % point)
-	_check(grid.get_cell(-63,0) == null and grid.get_cell(98,0) == null,"Expanded bounds reject outside cells")
+	_check(grid.get_cell(Farm3DFlatGrid.MIN_GX-1,0) == null and grid.get_cell(98,0) == null,"Expanded bounds reject outside cells")
 	_check(grid.is_navigation_cell_walkable(Vector2i(0,15)),"Former 2D boundary no longer blocks 3D navigation")
 	# Settle on a hill, then move under real CharacterBody collision.
 	player.position = Vector3(-43,Profile.surface_height(-43,10)+.6,10)

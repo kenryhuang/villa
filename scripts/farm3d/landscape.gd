@@ -34,12 +34,17 @@ func _build_chunk(start_x: int, start_z: int) -> void:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var indices := PackedInt32Array()
+	var colors := PackedColorArray()
 	for z in range(start_z,start_z+CHUNK_SIZE+1):
 		for x in range(start_x,start_x+CHUNK_SIZE+1):
 			vertices.append(Vector3(x,_height(x,z),z))
+			colors.append(Profile.Golf.paint(Vector2(x,z)))
 			normals.append(Vector3(_height(x-1,z)-_height(x+1,z),2,_height(x,z-1)-_height(x,z+1)).normalized())
 	for z in CHUNK_SIZE:
 		for x in CHUNK_SIZE:
+			if Profile.Golf.cup_for_cell(start_x+x,start_z+z) >= 0:
+				_add_cup_rim(vertices,normals,colors,indices,start_x+x,start_z+z)
+				continue
 			var a := z*(CHUNK_SIZE+1)+x
 			indices.append_array(PackedInt32Array([a,a+1,a+CHUNK_SIZE+2,a,a+CHUNK_SIZE+2,a+CHUNK_SIZE+1]))
 	var arrays: Array = []
@@ -47,6 +52,7 @@ func _build_chunk(start_x: int, start_z: int) -> void:
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = indices
+	arrays[Mesh.ARRAY_COLOR] = colors
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var instance := MeshInstance3D.new()
@@ -61,6 +67,22 @@ func _build_chunk(start_x: int, start_z: int) -> void:
 	collision.shape = mesh.create_trimesh_shape()
 	body.add_child(collision)
 	instance.add_child(body)
+
+func _add_cup_rim(vertices: PackedVector3Array, normals: PackedVector3Array, colors: PackedColorArray, indices: PackedInt32Array, x: int, z: int) -> void:
+	# Cut the actual terrain mesh and collider around the cup, not a dark decal.
+	var center := Vector2(x+.5,z+.5)
+	var base := vertices.size()
+	for i in 16:
+		var direction := Vector2(cos(i*TAU/16),sin(i*TAU/16))
+		for radius in [.5/maxf(absf(direction.x),absf(direction.y)),Profile.Golf.CUP_RADIUS]:
+			var point: Vector2 = center + direction*radius
+			vertices.append(Vector3(point.x,Profile.surface_height(point.x,point.y),point.y))
+			normals.append(Vector3.UP)
+			colors.append(Profile.Golf.paint(point))
+	for i in 16:
+		var a := base+i*2
+		var b := base+((i+1)%16)*2
+		indices.append_array(PackedInt32Array([a,b,b+1,a,b+1,a+1]))
 
 func _height(x: int, z: int) -> float:
 	return _heights[clampi(z-int(Profile.WORLD_MIN.y),0,HEIGHT_ROWS-1)*HEIGHT_COLUMNS+clampi(x-int(Profile.WORLD_MIN.x),0,HEIGHT_COLUMNS-1)]

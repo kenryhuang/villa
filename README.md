@@ -16,7 +16,7 @@ project.godot                    项目配置，默认启动 scenes/farm3d/main.
 scenes/
   farm3d/
     main.tscn                    正式农庄场景：环境、角色、树木、相机
-    buildings/                  原生 3D 建筑，目前为 Blender 谷仓
+    buildings/                  原生 3D 建筑：Blender 谷仓、风车
     inventory.tscn               3D 背包界面，继承原背包场景
     status_bar.tscn              从原 HUD 迁入的状态条组件
   preview/                      独立美术预览，目前仅橡树观察场景
@@ -39,6 +39,13 @@ scripts/
     farm_fishing.gd             3D 甩竿、概率咬钩、拉竿上鱼与背包结算
     fishing_location.gd         河湖岸边站位、水深、距离与抛线遮挡检测
     fishing_visual.gd           原生鱼竿／鱼线／浮漂／鱼模型及角色钓鱼骨骼动作
+    farm_golf.gd                鼠标挥杆、站位、跟球、三洞流程与操作条
+    golf_course_data.gd         湖西球场布局、果岭、沙坑与地表规则
+    golf_course_visual.gd       原生球杆架、旗杆、洞杯、发球台和连接小路
+    golf_visual.gd              三种球杆、角色挥杆骨骼动作、球与参考轨迹
+    golf_ball.gd                球的飞行、反弹、坡面滚动、进洞与出界
+    golf_swing.gd               鼠标后拉、前推速度和左右偏差计算
+    golf_round.gd               三洞杆数、球位检查点与个人最佳存档
     farm_inventory_ui.gd        原背包的 3D 交互适配
     target_catalog.gd          将共用种子和建筑目录提供给目标菜单
     flat_grid.gd                扩展地形网格，保留原农庄坐标与存档
@@ -47,6 +54,11 @@ scripts/
     farm3d_farming_system.gd    原种植规则的 3D 视觉、水田灌溉适配
     farm_building_system.gd     原建造规则的角色距离、占地检查
     modeled_building.gd         谷仓模型、立体施工阶段、碰撞与放置预览
+    modeled_windmill.gd         风车模型、生产叶片动画、院落交互范围
+    windmill_view.gd            风车加工、队列、成品与维护面板
+    windmill_panel_controller.gd 原生产面板的 3D 适配与实时行情估算
+    windmill_yard.gd            3D 风车院落、施工阶段与输出位置
+    windmill_outputs.gd         可点击的袋装／瓶装成品
     crop_visual_system.gd      按地块状态生成土块和作物视觉
     painted_meadow.gd          设置手绘草地材质
     farm_tool_visual.gd        保留的早期锄头动画，当前未挂接
@@ -59,6 +71,7 @@ assets/
   models/farm3d/               角色、静态环境、田块、谷物 GLB
   models/vegetation/           手绘橡树 GLB 与贴图
   models/buildings/barn/       立体谷仓 GLB、木纹／石材／瓦片贴图
+  models/buildings/windmill/   立体风车 GLB、木纹／石材／瓦片贴图
   models/crops/               3D 作物：玫瑰五阶段，其余 13 种两阶段
   crops/、buildings/           原作物图片供旧游戏使用；建筑美术继续共用
   terrain/、ui/               共用地面贴图与 UI 主题、图标
@@ -66,6 +79,7 @@ art/blender/
   farm3d.blend                 可编辑的农庄源模型
   painted_oak.blend            可编辑的橡树源模型
   barn.blend                   可编辑的谷仓，按施工阶段分组
+  windmill.blend               可编辑风车，施工分组与独立叶片轴
   rose.blend                   可编辑的玫瑰五阶段源模型
   <crop_id>.blend             13 种作物各自包含播种／树苗与成熟模型
 tools/                        游戏启动与独立美术预览命令
@@ -78,16 +92,20 @@ docs/validation/              操作说明、验证结果和截图
 - 正式 3D 场景和控制脚本放入 `scenes/farm3d/`、`scripts/farm3d/`。`preview` 仅用于模型观察等独立预览，不承载正式游戏入口。
 - 种植、季节、背包、经济等共用规则继续维护在原系统目录；需要 3D 特有行为时，在 `farm3d` 中适配。
 - 在 Blender 编辑 `art/blender/` 下的源文件，导出模型到 `assets/models/`。生成脚本已使用新路径；运行生成脚本会覆盖对应生成资产，具体见[模型说明](assets/models/farm3d/README.md)。
-- 3D 存档继续使用 `user://farm_3d_save.json`；当前 v3 增加市场行情、NPC 经济状态和市集位置，兼容 v1/v2。
+- 3D 存档继续使用 `user://farm_3d_save.json`；当前 v4 增加高尔夫回合与最佳成绩，兼容 v1/v2/v3，保留市场行情、NPC 经济状态和市集位置。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
 ## 操作与验证
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
 
+**风车**：从“建筑”菜单放置，完工后走到南面院门前点击建筑。选择面粉、动物饲料或葵花油，设置批量并投入背包原料。关闭面板后加工，完成后点击院落成品或在面板收进背包。面板支持两格队列、实时行情参考与原系统维护；打开时暂停游戏时间，Esc 关闭恢复。模型与验证见[3D 风车说明](docs/validation/windmill-3d.md)。
+
 农庄西南侧新增实体市集（默认西 12 / 南 12 米，小地图标注“市集”）。走到南面的柜台前，**左键点击建筑**即可买卖；**Esc** 关闭。作物、鱼获和材料沿用原市场目录、批量报价、有限库存、NPC 供需和每日价格结算。说明与实景见[3D 市场移植](docs/validation/market-3d.md)。
 
-地图已扩展至 **160 × 224 米**，中央为原农庄平原，西侧为丘陵，北侧为山地，东侧河流穿过峡谷。南面从草地逐渐过渡到沙地，南湖有三处保留岸边钓位，河流和湖泊的其他合适岸边也能钓鱼。按 **Tab** 查看全景，按 **R** 返回农庄。地形布局、实景截图与验证见[扩展地图说明](docs/validation/landscape-3d.md)。
+地图已扩展至 **256 × 224 米**，中央为原农庄平原，西侧为丘陵及新增湖西球场，北侧为山地，东侧河流穿过峡谷。南面从草地逐渐过渡到沙地，南湖有三处保留岸边钓位，河流和湖泊的其他合适岸边也能钓鱼。按 **Tab** 查看全景，按 **R** 返回农庄。原地形布局见[扩展地图说明](docs/validation/landscape-3d.md)，新增球场见下文。
+
+**高尔夫（C：鼠标挥杆）**：从市集旁“湖西高尔夫”路牌沿小路到球杆架（西 124 / 南 62 米），点击或按 **E** 免费开始。走到球旁按 **E** 站位，**按住左键向后拉鼠标，再向前推过击球点**；后拉幅度与前推速度影响力度，横向偏移影响出球方向。**A/D** 瞄准，**1/2/3** 选择开球杆、挖起杆、推杆，**− / =** 调整本次游戏的挥杆灵敏度。球停后走过去继续，进洞后前往下一发球台按 E。三洞计分并保存个人最佳，Esc 退出站位／跟球。实景与验证见[高尔夫说明](docs/validation/golf-3d.md)。
 
 右下角小地图默认显示，按 **G** 关闭／打开，固定上北、下南、左西、右东；浅色箭头显示人物位置和朝向，标出农庄、山地、丘陵、河流、木桥、沙地及南湖。底部显示所在区域与相对原农庄中心（世界原点）的东西／南北距离（米），旋转相机不会改变地图方向。
 
@@ -105,6 +123,8 @@ godot_console.exe --headless --path . --script tests/run_3d_minimap_tests.gd -- 
 godot_console.exe --headless --path . --script tests/run_3d_south_lake_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_fishing_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_market_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_windmill_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_golf_tests.gd -- --farm-test
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。

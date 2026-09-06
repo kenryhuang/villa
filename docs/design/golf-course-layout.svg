@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="740" viewBox="0 0 960 740">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 6 3 0 6" fill="none" stroke="#4d6d48" stroke-width="1.5"/></marker></defs>
+<rect width="960" height="740" rx="20" fill="#f7f3e6"/>
+<g font-family="Microsoft YaHei, sans-serif" fill="#344632">
+<text x="38" y="48" font-size="25" font-weight="bold">湖西球场 · 三洞路线示意</text>
+<text x="38" y="78" font-size="15" fill="#78816b">设计草案，非最终地形；上北、下南、左西、右东</text>
+<path d="M900 140V90m-9 12 9-12 9 12" stroke="#344632" fill="none" stroke-width="3"/><text x="892" y="78" font-size="18">北</text>
+<rect x="645" y="125" width="105" height="68" rx="12" fill="#c8a579"/><text x="668" y="165" font-size="23">市集</text>
+<path d="M655 185C586 222 601 286 491 291S408 257 359 300" fill="none" stroke="#d6c39e" stroke-width="16" stroke-linecap="round"/>
+<text x="465" y="246" font-size="16">步行连接小路</text>
+<rect x="78" y="281" width="510" height="384" rx="62" fill="#d7ddbe" stroke="#99ab83" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="98" y="687" font-size="15" fill="#78816b">向西拓展 · 低缓坡地 · 草地与沙地自然过渡</text>
+<rect x="285" y="272" width="96" height="40" rx="8" fill="#bb9667"/><text x="298" y="299" font-size="18">球杆架</text>
+<path d="M196 342C164 379 153 465 185 510" fill="none" stroke="#a4bf80" stroke-width="61" stroke-linecap="round"/>
+<path d="M223 584C301 604 346 602 411 570" fill="none" stroke="#a4bf80" stroke-width="64" stroke-linecap="round"/>
+<path d="M504 557C524 476 448 443 488 354" fill="none" stroke="#a4bf80" stroke-width="57" stroke-linecap="round"/>
+<g fill="#c9dc96" stroke="#8da867" stroke-width="2"><ellipse cx="185" cy="508" rx="39" ry="28"/><ellipse cx="411" cy="570" rx="40" ry="28"/><ellipse cx="488" cy="354" rx="34" ry="29"/></g>
+<path d="M309 550c-25-14-46 4-35 19s51 14 54-1-8-18-19-18" fill="#ead4a3" stroke="#c3ae7b" stroke-width="2"/>
+<path d="M229 534c45-14 86-11 119 0m-109-10c42-12 67-10 92-2" fill="none" stroke="#92a47f" stroke-width="2"/>
+<path d="M196 353 184 470M239 583 371 579M502 535C513 468 451 427 483 391" fill="none" stroke="#4d6d48" stroke-width="2" marker-end="url(#arrow)"/>
+<g fill="#faf7e8" stroke="#4d6d48" stroke-width="2"><circle cx="196" cy="339" r="11"/><circle cx="221" cy="580" r="11"/><circle cx="506" cy="557" r="11"/></g>
+<g stroke="#6c6a4b" stroke-width="2" fill="#ca7554"><path d="M185 508v-36l23 7-23 7M411 570v-36l23 7-23 7M488 354v-36l23 7-23 7"/></g>
+<text x="95" y="382" font-size="18">① 直线</text><text x="315" y="643" font-size="18">② 缓坡＋沙坑</text><text x="400" y="420" font-size="18">③ 湖景</text>
+<path d="M674 358C706 332 814 344 851 405S868 548 819 576 692 562 658 504 636 401 674 358" fill="#d5c296"/>
+<path d="M687 376C734 353 801 375 832 420S849 521 803 552 700 534 679 493 655 408 687 376" fill="#85b9bf"/>
+<path d="M720 415h57m-69 63h69m-54 36h40" stroke="#b5d6d7" stroke-width="3" stroke-linecap="round"/>
+<text x="729" y="462" font-size="28" fill="#335b61">南湖</text>
+<path d="M605 319C622 382 600 451 626 565" stroke="#d6c39e" stroke-width="12" fill="none" stroke-linecap="round"/>
+<circle cx="633" cy="481" r="8" fill="#a07f50"/><text x="646" y="602" font-size="18">保留湖西钓位与通道</text>
+<path d="M644 580 634 492" stroke="#a07f50" fill="none" stroke-width="1.5"/>
+<text x="663" y="645" font-size="15" fill="#78816b">湖在球场东侧</text>
+</g></svg>

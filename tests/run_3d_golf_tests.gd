@@ -1,0 +1,237 @@
+extends SceneTree
+
+const Course = preload("res://scripts/farm3d/golf_course_data.gd")
+const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
+const Swing = preload("res://scripts/farm3d/golf_swing.gd")
+const Ball = preload("res://scripts/farm3d/golf_ball.gd")
+const Round = preload("res://scripts/farm3d/golf_round.gd")
+var checks := 0
+var failures: Array[String] = []
+
+func _initialize() -> void:
+	create_timer(65).timeout.connect(func(): push_error("Golf tests timed out"); quit(1))
+	_run.call_deferred()
+
+func _check(value: bool, message: String) -> void:
+	checks += 1
+	if not value:
+		failures.append(message)
+		push_error(message)
+
+func _frames(count := 3) -> void:
+	for i in count:
+		await physics_frame
+		await process_frame
+
+func _key(code: Key) -> void:
+	var event := InputEventKey.new()
+	event.keycode = code
+	event.pressed = true
+	root.push_input(event,true)
+
+func _mouse(pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	root.push_input(event,true)
+
+func _motion(relative: Vector2) -> void:
+	var event := InputEventMouseMotion.new()
+	event.relative = relative
+	root.push_input(event,true)
+
+func _simulate(ball: Farm3DGolfBall, cup: Vector2) -> void:
+	for i in 2100:
+		ball.advance(1.0/60,cup)
+		if not ball.moving:
+			return
+
+func _run() -> void:
+	var swing := Swing.new()
+	swing.begin(1)
+	_check(swing.motion(Vector2(0,-120),1.2).is_empty(),"Forward flick without backswing does not strike")
+	swing.begin(2)
+	_check(swing.motion(Vector2(0,160),2.2).is_empty(),"Backswing alone never strikes")
+	var shot := swing.motion(Vector2(0,-165),2.4)
+	_check(not shot.is_empty() and shot.power > .6 and absf(shot.deviation) < .001,"Straight back-and-forward mouse movement generates power and a square strike")
+	_check(swing.motion(Vector2(0,-40),2.5).is_empty(),"One gesture can only trigger one strike")
+	swing.begin(3)
+	swing.motion(Vector2(0,160),3.2)
+	var slow := swing.motion(Vector2(40,-165),3.9)
+	_check(slow.power < shot.power and slow.deviation > .03,"Forward speed changes power and lateral mouse motion changes direction")
+	swing.begin(4)
+	swing.motion(Vector2(0,160),4.2)
+	swing.cancel()
+	_check(swing.motion(Vector2(0,-165),4.4).is_empty(),"Releasing before impact cancels the swing")
+	var whole := Swing.new()
+	var sampled := Swing.new()
+	whole.begin(0)
+	sampled.begin(0)
+	whole.motion(Vector2(0,160),.2)
+	for i in 20:
+		sampled.motion(Vector2(0,8),float(i+1)*.01)
+	var one := whole.motion(Vector2(0,-145),.4)
+	var many := {}
+	for i in 20:
+		var result := sampled.motion(Vector2(0,-7.25),.2+float(i+1)*.01)
+		if not result.is_empty():
+			many = result
+	_check(not many.is_empty() and absf(one.power-many.power) < .02,"Swing power is stable across mouse event frequencies")
+	var round_state := Round.new()
+	_check(Round.valid(round_state.to_dict()),"Empty round state has a valid save schema")
+	round_state.start()
+	_check(Round.valid(round_state.to_dict()),"New round checkpoint validates")
+	for field in ["hole","strokes","best"]:
+		var malformed := round_state.to_dict()
+		malformed[field] = -1
+		_check(not Round.valid(malformed),"Invalid saved %s is rejected" % field)
+	var malformed := round_state.to_dict()
+	malformed.ball.x = NAN
+	_check(not Round.valid(malformed),"Non-finite saved ball coordinates are rejected")
+	for i in 3:
+		var hole: Dictionary = Course.HOLES[i]
+		_check(Course.BOUNDS.has_point(hole.tee) and hole.tee.x < -80 and hole.cup.x < -80,"Each hole stays in newly added land")
+		_check(Course.surface(hole.cup) == "green" and Course.surface(hole.tee) == "fairway","Tees and greens have matching surface definitions")
+	var moving_ball := Ball.new()
+	moving_ball.place(Course.HOLES[0].tee)
+	var launch := moving_ball.position
+	moving_ball.strike(Vector3.BACK,.6,0)
+	moving_ball.advance(.1,Course.HOLES[0].cup)
+	_check(moving_ball.position.y > launch.y and moving_ball.position.z > launch.z,"Driver sends the ball into a visible airborne arc")
+	_simulate(moving_ball,Course.HOLES[0].cup)
+	_check(not moving_ball.moving and moving_ball.position.distance_to(launch) > 15,"Driver ball lands, rolls and eventually stops")
+	_check(moving_ball.position.y >= Profile.surface_height(moving_ball.position.x,moving_ball.position.z),"Ball does not sink through the terrain")
+	var green_ball := Ball.new()
+	var rough_ball := Ball.new()
+	green_ball.place(Course.HOLES[0].cup+Vector2(0,-2.5))
+	rough_ball.place(Vector2(-158,95))
+	green_ball.strike(Vector3.RIGHT,.1,2)
+	rough_ball.strike(Vector3.RIGHT,.1,2)
+	var green_start := green_ball.position
+	var rough_start := rough_ball.position
+	_simulate(green_ball,Vector2.ZERO)
+	_simulate(rough_ball,Vector2.ZERO)
+	_check(green_ball.position.distance_to(green_start) > rough_ball.position.distance_to(rough_start),"Short green grass rolls farther than rough")
+	var cup: Vector2 = Course.HOLES[0].cup
+	moving_ball.place(cup+Vector2(0,-.23))
+	moving_ball.velocity = Vector3.BACK*.4
+	moving_ball.moving = true
+	_simulate(moving_ball,cup)
+	_check(moving_ball.result == "holed" and moving_ball.position.y < Profile.surface_height(cup.x,cup.y),"Slow ball enters and drops into the cup")
+	moving_ball.place(cup+Vector2(0,-.23))
+	moving_ball.velocity = Vector3.BACK*4
+	moving_ball.moving = true
+	moving_ball.advance(.1,cup)
+	_check(moving_ball.result != "holed","Fast ball can roll over the cup")
+	moving_ball.place(Vector2(-166,90))
+	moving_ball.velocity = Vector3.LEFT*12
+	moving_ball.moving = true
+	_simulate(moving_ball,cup)
+	_check(moving_ball.result == "penalty","Out-of-bounds ball produces a single penalty result")
+	root.size = Vector2i(1440,960)
+	var farm := (load("res://scenes/farm3d/main.tscn") as PackedScene).instantiate()
+	root.add_child(farm)
+	farm.set_process(false)
+	var session: Farm3DSession = farm.farm_session
+	var interaction = farm.get_node("FarmInteraction")
+	var golf = session.golf
+	var player = session.player
+	var hud = interaction.hud
+	player.set_physics_process(false)
+	session.season.set_process(false)
+	session.save_path = "user://golf_integration_test.json"
+	await _frames()
+	_check(session.grid._cells.size() == 57344,"West extension produces 256 by 224 metres of terrain")
+	_check(golf.course.flags.size() == 3 and golf.visual.club != null,"Native three-hole course and golf club exist in formal scene")
+	for z in [55,72,90,120]:
+		_check(absf(Profile.height_at(-80.001,z)-Profile.height_at(-79.999,z)) < .01,"Expanded west terrain meets the existing terrain continuously")
+	player.global_position = Vector3(-74,Profile.surface_height(-74,72)+.2,72)
+	player.camera_yaw = 0
+	player.velocity = Vector3.ZERO
+	player.set_physics_process(true)
+	await _frames(20)
+	Input.action_press("move_left")
+	Input.action_press("sprint")
+	await _frames(110)
+	Input.action_release("move_left")
+	Input.action_release("sprint")
+	_check(player.global_position.x < -88 and player.is_on_floor(),"Player can walk across the old west boundary to the golf course")
+	player.set_physics_process(false)
+	var space: PhysicsDirectSpaceState3D = farm.get_world_3d().direct_space_state
+	for hole in Course.HOLES:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(hole.tee.x,20,hole.tee.y),Vector3(hole.tee.x,-4,hole.tee.y),1))
+		_check(not hit.is_empty() and absf(hit.position.y-Profile.surface_height(hole.tee.x,hole.tee.y)) < .02,"Golf terrain collision agrees with shared height")
+		hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(hole.cup.x,8,hole.cup.y),Vector3(hole.cup.x,-2,hole.cup.y),1))
+		_check(hit.is_empty(),"Hole is cut through the terrain collider, not painted on top")
+		var coords := session.grid.world_to_grid(hole.tee.x,hole.tee.y)
+		_check(session.grid.get_cell(coords.x,coords.y).state == GridCell.State.DECORATION,"Golf playing surfaces are protected from farming placement")
+	_check(not golf.start_round(),"Players cannot borrow clubs remotely")
+	player.global_position = golf.Art.ground(Course.ENTRANCE)+Vector3.BACK*2
+	_key(KEY_E)
+	_check(golf.round_state.active and golf.phase == golf.Phase.WALK,"E near the rack starts a free round")
+	_check(not golf.enter_address(),"Players must walk to the ball before addressing it")
+	player.global_position = golf.ball.position+Vector3.RIGHT
+	_key(KEY_E)
+	_check(golf.phase == golf.Phase.ADDRESS and player.golf_locked and (DisplayServer.get_name() == "headless" or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED),"E at ball locks a golf stance and captures relative mouse input")
+	await _frames(10)
+	_check(golf._panel.size.y < 240,"Golf HUD remains compact and leaves the player and ball visible")
+	_key(KEY_3)
+	_check(golf.club == 2,"Number keys select the putter")
+	_key(KEY_1)
+	_mouse(true)
+	_motion(Vector2(0,150))
+	await create_timer(.12).timeout
+	_motion(Vector2(12,-150))
+	_check(golf.phase == golf.Phase.SWING,"Real back-forward mouse events trigger swing animation")
+	_mouse(false)
+	await create_timer(.3).timeout
+	_check(golf.phase == golf.Phase.FLIGHT and golf.ball.moving,"Ball launches at the animation's impact frame")
+	_check(not golf.enter_address(),"Moving balls cannot be struck a second time")
+	var checkpoint := session.golf_round.to_dict()
+	_check(checkpoint.strokes == 0 and checkpoint.ball.x == Course.HOLES[0].tee.x,"Mid-flight save keeps the preceding settled checkpoint")
+	_key(KEY_ESCAPE)
+	_check(not player.golf_locked and not golf.watch_camera and golf.ball.moving,"Escape releases camera and player while the struck ball continues")
+	golf.set_process(false)
+	_simulate(golf.ball,Course.HOLES[0].cup)
+	golf._settle()
+	_check(golf.round_state.strokes == 1 and golf.phase == golf.Phase.WALK,"Settled shot records exactly one stroke")
+	_check(session.save_game(),"Golf checkpoint saves through the main farm save")
+	_check(session.load_game() and session.golf_round.strokes == 1,"Golf checkpoint restores with the rest of the farm")
+	_check(not player.golf_locked and not golf.watch_camera,"Loading cannot leave a stuck stance or golf camera")
+	var file := FileAccess.open(session.save_path,FileAccess.READ)
+	var saved: Dictionary = JSON.parse_string(file.get_as_text())
+	file.close()
+	var legacy := saved.duplicate(true)
+	legacy.version = 3
+	legacy.erase("golf")
+	_check(session._valid_save(legacy),"Existing v3 saves remain valid without golf data")
+	var invalid := saved.duplicate(true)
+	invalid.golf.ball.x = 1000
+	_check(not session._valid_save(invalid),"Invalid golf data cannot partially restore a farm")
+	player.global_position = golf.ball.position+Vector3.RIGHT
+	golf.enter_address()
+	_key(KEY_I)
+	_check(hud.inventory_ui.visible and not player.golf_locked,"Inventory interrupts a pending swing safely")
+	_check(not golf._panel.visible,"Golf HUD immediately yields to a modal inventory")
+	hud.close_panels()
+	# Complete all holes through the same physics settlement and transition API.
+	for i in 3:
+		cup = Course.HOLES[i].cup
+		golf.ball.place(cup+Vector2(0,-.23))
+		golf.ball.velocity = Vector3.BACK*.4
+		golf.ball.moving = true
+		golf.phase = golf.Phase.FLIGHT
+		_simulate(golf.ball,cup)
+		golf._settle()
+		_check(golf.round_state.scores.size() == i+1,"A holed ball appends exactly one hole score")
+		if i < 2:
+			_check(not golf.next_hole(),"Next tee cannot be started from the previous green")
+			player.global_position = golf.Art.ground(Course.HOLES[i+1].tee)+Vector3.RIGHT
+			_check(golf.next_hole(),"Walking to the next tee begins the next hole")
+	_check(golf.phase == golf.Phase.FINISHED and not golf.round_state.active and golf.round_state.best == 4,"Three-hole finish records total score and personal best")
+	_check(session.save_game() and session.load_game() and session.golf_round.best == 4,"Best score survives save and reload")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(session.save_path))
+	farm.queue_free()
+	await _frames()
+	print("3D GOLF: %s (%d checks)" % ["PASS" if failures.is_empty() else "FAIL " + str(failures),checks])
+	quit(0 if failures.is_empty() else 1)

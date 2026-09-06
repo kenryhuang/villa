@@ -55,11 +55,12 @@ func _initialize_landscape() -> void:
 	var landscape := LandscapeScript.new()
 	landscape.name = "Landscape"
 	add_child(landscape)
-	overview_camera.position = Vector3(160,180,232)
+	var map_center := (Farm3DTerrainProfile.WORLD_MIN+Farm3DTerrainProfile.WORLD_MAX)*.5
+	overview_camera.position = Vector3(map_center.x+190,205,map_center.y+250)
 	overview_camera.fov = 50.0
-	overview_camera.look_at(Vector3(0,4,32),Vector3.UP)
+	overview_camera.look_at(Vector3(map_center.x,4,map_center.y),Vector3.UP)
 	follow_camera.far = 340.0
-	overview_camera.far = 500.0
+	overview_camera.far = 650.0
 
 func _initialize_gameplay() -> void:
 	var arguments := OS.get_cmdline_args() + OS.get_cmdline_user_args()
@@ -84,7 +85,7 @@ func _initialize_gameplay() -> void:
 		get_tree().auto_accept_quit = false
 
 func _unhandled_input(event: InputEvent) -> void:
-	if player.ui_blocked:
+	if player.ui_blocked or player.golf_locked:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT:
@@ -113,6 +114,8 @@ func _notification(what: int) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		if has_node("FarmInteraction") and get_node("FarmInteraction").fishing != null:
 			get_node("FarmInteraction").fishing.cancel()
+		if farm_session != null and farm_session.golf != null:
+			farm_session.golf.release_control()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if farm_session != null and farm_session.auto_save:
 			farm_session.save_game()

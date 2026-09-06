@@ -29,7 +29,7 @@ func _run() -> void:
 	session.season.set_process(false)
 	var grid: Farm3DFlatGrid = session.grid
 	await _frames(3)
-	_check(grid._cells.size() == 35840, "Southern extension adds 64 metres without changing grid origin")
+	_check(grid._cells.size() == 57344, "West and south extensions preserve the original grid origin")
 	_check(Profile.is_in_world(0,143) and not Profile.is_in_world(0,146), "World bounds include the new south and reject outside terrain")
 	_check(Profile.sand_weight(0,40) == 0 and Profile.sand_weight(0,95) == 1, "Farm-side grass gradually becomes southern sand")
 	_check(Profile.sand_weight(0,65) > .1 and Profile.sand_weight(0,65) < .9, "Transition includes mixed grass and sand")

@@ -11,7 +11,8 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 3
+const SAVE_VERSION := 4
+const GolfRound = preload("res://scripts/farm3d/golf_round.gd")
 const MarketScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomyScript = preload("res://scripts/systems/npc_economy_system.gd")
 const MarketSite = preload("res://scripts/farm3d/market_site.gd")
@@ -43,6 +44,9 @@ var buildings: BuildingSystem
 var production: ProductionSystem
 var paddy_cells: Dictionary = {}
 var fishing: Node
+var golf: Node
+var golf_round := GolfRound.new()
+var golf_sensitivity := 1.0
 
 
 func configure(next_player: Node3D) -> bool:
@@ -221,6 +225,7 @@ func save_game() -> bool:
 		"market": market.to_dict(),
 		"npc_economy": npc_economy.to_dict(),
 		"market_site": {"x": market_site.x, "z": market_site.y},
+		"golf": golf_round.to_dict(),
 	}
 	file.store_string(JSON.stringify(data))
 	file.flush()
@@ -250,6 +255,8 @@ func load_game() -> bool:
 	# All validation completed before any live state changes.
 	if is_instance_valid(fishing):
 		fishing.cancel()
+	if is_instance_valid(golf):
+		golf.release_control()
 	_release_market_site()
 	grid.reset_state()
 	if not grid.from_dict(data.grid) or not tools.from_dict(data.tools):
@@ -291,6 +298,9 @@ func load_game() -> bool:
 	production.sync_daily_cursor(season.total_days)
 	production.end_restore_transaction()
 	farming.sync_growth_clock()
+	golf_round = GolfRound.new()
+	if int(data.version) >= 4:
+		golf_round.restore(data.golf)
 	state_loaded.emit()
 	return true
 
@@ -419,9 +429,11 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, SAVE_VERSION]:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, SAVE_VERSION]:
 		return false
-	if data.size() != {1: 9, 2: 13, 3: 16}[int(data.version)]:
+	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17}[int(data.version)]:
+		return false
+	if int(data.version) >= 4 and not GolfRound.valid(data.get("golf")):
 		return false
 	if int(data.version) >= 2:
 		if not data.get("paddy_cells") is Array or not data.get("buildings") is Array or not _is_integer(data.get("gold")) or int(data.gold) < 0:

@@ -4,6 +4,7 @@ const HudScript = preload("res://scripts/farm3d/farm_hud.gd")
 const Catalog = preload("res://scripts/farm3d/target_catalog.gd")
 const FishingScript = preload("res://scripts/farm3d/farm_fishing.gd")
 var fishing: Node3D
+var golf: Node3D
 var market_building: Node3D
 var session: Node
 var player: Node3D
@@ -56,6 +57,10 @@ func configure(farm_session: Node, farmer: Node3D) -> void:
 	market_building = preload("res://scripts/farm3d/market_building.gd").new()
 	add_child(market_building)
 	market_building.configure(session)
+	golf = preload("res://scripts/farm3d/farm_golf.gd").new()
+	add_child(golf)
+	session.golf = golf
+	golf.configure(session,player,hud)
 	session.action_controller.cancel_current_selection()
 
 func _process(delta: float) -> void:
@@ -90,6 +95,9 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if session == null:
 		return
+	if golf != null and golf.handle_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			if hud.windmill_view.visible:
@@ -109,6 +117,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func cancel_selection() -> void:
+	if golf != null and golf.visual != null:
+		golf.release_control()
 	if fishing != null:
 		fishing.cancel()
 	category = ""
@@ -136,6 +146,8 @@ func select_target(next_category: String, id: String) -> void:
 			selected = entry
 	if selected.is_empty():
 		return
+	if golf != null:
+		golf.release_control()
 	fishing.cancel()
 	session.buildings.exit_preview_mode()
 	category = next_category
@@ -163,6 +175,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		_pointer = event.position
 		_front_target = false
+		if golf != null and golf.try_world_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
 		var windmill_hit := windmill_at_pointer(event.position)
 		if not windmill_hit.is_empty():
 			if str(windmill_hit.item_id).is_empty():
@@ -286,6 +301,8 @@ func _target_allowed(cell: GridCell) -> bool:
 	return false
 
 func _rest() -> void:
+	if golf != null:
+		golf.release_control()
 	fishing.cancel()
 	var result: Dictionary = session.rest()
 	hud.notify_message(str(result.message), bool(result.ok))
