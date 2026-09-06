@@ -4,6 +4,14 @@ extends Node3D
 const SOIL_SCENE := preload("res://assets/models/farm3d/farmland_tile.glb")
 const YOUNG_SCENE := preload("res://assets/models/farm3d/grain_young.glb")
 const MATURE_SCENE := preload("res://assets/models/farm3d/grain_mature.glb")
+const ROSE_STAGES := [
+	preload("res://assets/models/crops/rose/rose_seed.glb"),
+	preload("res://assets/models/crops/rose/rose_sprout.glb"),
+	preload("res://assets/models/crops/rose/rose_growing.glb"),
+	preload("res://assets/models/crops/rose/rose_mature.glb"),
+]
+const ROSE_WITHERED := preload("res://assets/models/crops/rose/rose_withered.glb")
+const SOIL_SURFACE_Y := 0.045
 
 var _visuals := {}
 var paddy_cells: Dictionary = {}
@@ -70,6 +78,9 @@ func sync_cell(cell: GridCell) -> void:
 
 func _add_crop(holder: Node3D, cell: GridCell) -> void:
 	var instance: CropInstance = cell.crop_instance
+	if instance.crop_data.crop_id == "rose":
+		_add_rose(holder, cell)
+		return
 	if instance.crop_data.crop_id != "grain":
 		var paths: Array[String] = instance.crop_data.stage_scenes
 		var stage := clampi(instance.get_current_stage(), 0, paths.size() - 1)
@@ -123,3 +134,26 @@ func _add_crop(holder: Node3D, cell: GridCell) -> void:
 					var material := mesh_node.get_active_material(surface).duplicate() as StandardMaterial3D
 					material.albedo_color = Color("91794e")
 					mesh_node.set_surface_override_material(surface, material)
+
+
+func _add_rose(holder: Node3D, cell: GridCell) -> void:
+	var instance: CropInstance = cell.crop_instance
+	var stage := clampi(instance.get_current_stage(), 0, ROSE_STAGES.size() - 1)
+	var withered := instance.lifecycle_state == CropInstance.LifecycleState.WITHERED
+	var packed: PackedScene = ROSE_WITHERED if withered and stage >= 2 else ROSE_STAGES[stage]
+	var rose := packed.instantiate() as Node3D
+	rose.name = "Crop_rose"
+	# All exported stages share a root at zero; roots and seeds intersect the soil.
+	# Never offset by image dimensions or face the camera.
+	rose.position.y = SOIL_SURFACE_Y
+	rose.rotation.y = deg_to_rad(float(posmod(cell.gx * 37 + cell.gz * 19, 360)))
+	if withered and stage == 2:
+		rose.scale = Vector3.ONE * 0.65
+	holder.add_child(rose)
+	if withered and stage < 2:
+		for mesh_node in rose.find_children("*", "MeshInstance3D", true, false):
+			var material := StandardMaterial3D.new()
+			material.albedo_color = Color("78613c")
+			material.roughness = 0.95
+			material.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mesh_node.material_override = material
