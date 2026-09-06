@@ -23,17 +23,23 @@ func place(point: Vector2) -> void:
 	elapsed = 0
 	result = ""
 
-func strike(direction: Vector3, power: float, club: int) -> void:
-	velocity = launch_velocity(direction,power,club,Course.surface(Vector2(position.x,position.z)))
+func strike(direction: Vector3, power: float, club: int, contact_height := -2.0) -> void:
+	velocity = launch_velocity(direction,power,club,Course.surface(Vector2(position.x,position.z)),contact_height)
 	moving = true
 	elapsed = 0
 	result = ""
 
-static func launch_velocity(direction: Vector3, power: float, club: int, surface_name := "fairway") -> Vector3:
+static func launch_velocity(direction: Vector3, power: float, club: int, surface_name := "fairway", contact_height := -2.0) -> Vector3:
 	var data: Dictionary = CLUBS[clampi(club,0,2)]
 	var penalty := .65 if surface_name == "sand" and club != 1 else .85 if surface_name == "rough" and club == 0 else 1.0
 	var speed := float(data.speed) * sqrt(clampf(power,.01,1)) * penalty
 	var angle := deg_to_rad(float(data.angle))
+	if contact_height >= -1.0:
+		var below := clampf(-contact_height,0,1)
+		var lift := smoothstep(.04,.45,power)
+		angle = deg_to_rad(minf(65,maxf(18,float(data.angle))*below/.6))*lift
+		var ground_speed := minf(float(data.speed),5.0)
+		speed = lerpf(ground_speed,float(data.speed),smoothstep(0,.25,below)*lift)*sqrt(clampf(power,.01,1))*penalty
 	return direction.normalized()*cos(angle)*speed + Vector3.UP*sin(angle)*speed
 
 func advance(delta: float, cup: Vector2, space: PhysicsDirectSpaceState3D = null) -> void:

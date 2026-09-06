@@ -15,6 +15,13 @@ var gesture := Farm3DGolfSwing.new()
 var round_state: Farm3DGolfRound
 var club := 0
 var direction := Vector3.FORWARD
+var contact_height := -.6
+var stance_distance := .8
+var _orbiting := false
+var _orbit_yaw := 0.0
+var _orbit_pitch := .42
+var _orbit_distance := 6.2
+var _contact_display: Control
 var shot: Dictionary = {}
 var swing_seconds := 0.0
 var watch_camera := false
@@ -99,6 +106,12 @@ func enter_address() -> bool:
 	var cup: Vector2 = Course.HOLES[round_state.hole].cup
 	direction = Vector3(cup.x-ball.position.x,0,cup.y-ball.position.z).normalized()
 	club = 2 if Course.surface(round_state.ball) == "green" else 1 if Course.surface(round_state.ball) == "sand" else 0
+	contact_height = 0 if club == 2 else -.6
+	stance_distance = .8
+	_orbiting = false
+	var offset := Vector3.UP.cross(direction)*4.2-direction*3.5
+	_orbit_yaw = atan2(offset.x,offset.z)
+	_orbit_pitch = .42
 	phase = Phase.ADDRESS
 	_feedback_time = 0
 	player.golf_locked = true
@@ -108,21 +121,47 @@ func enter_address() -> bool:
 	_camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_stance()
+	_update_camera()
+	visual.set_contact(ball.position,direction,contact_height)
+	visual.pose(0,club)
 	_update_hud()
 	return true
 
 func _stance() -> void:
 	var right := Vector3.UP.cross(direction)
-	var point := ball.position-right*.75-direction*.25
+	# Face the ball side-on: the target is to the golfer's left. In the
+	# default frontal camera the golfer stands to the right of the ball.
+	var point := ball.position-right*stance_distance
 	point.y = Art.ground(Vector2(point.x,point.z)).y
 	player.global_position = point
-	player.look_at(point+direction,Vector3.UP,true)
-	_camera.global_position = ball.position-direction*4.7+right*2.0+Vector3.UP*2.9
-	_camera.look_at(ball.position+direction*2.2+Vector3.UP*.45)
+	player.look_at(point+right,Vector3.UP,true)
+
+func _update_camera(blend := 1.0) -> void:
+	var focus := ball.position+Vector3.UP*(.4 if phase == Phase.FLIGHT else .75)
+	var offset := Vector3(sin(_orbit_yaw)*cos(_orbit_pitch),sin(_orbit_pitch),cos(_orbit_yaw)*cos(_orbit_pitch))*_orbit_distance
+	var desired := focus+offset
+	desired.y = maxf(desired.y,Art.ground(Vector2(desired.x,desired.z)).y+.3)
+	var query := PhysicsRayQueryParameters3D.create(focus,desired,1|16|32)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		desired = hit.position+(focus-hit.position).normalized()*.25
+	_camera.global_position = _camera.global_position.lerp(desired,blend)
+	_camera.look_at(focus)
 
 func handle_input(event: InputEvent) -> bool:
 	if hud.is_modal_open():
 		return false
+	if is_controlling():
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+			_orbiting = event.pressed
+			if _orbiting:
+				gesture.cancel()
+			return true
+		if event is InputEventMouseMotion and _orbiting:
+			_orbit_yaw -= event.relative.x*.006
+			_orbit_pitch = clampf(_orbit_pitch+event.relative.y*.006,.08,1.25)
+			_update_camera()
+			return true
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_I:
 			release_control()
@@ -145,6 +184,7 @@ func handle_input(event: InputEvent) -> bool:
 		if phase == Phase.ADDRESS:
 			if event.keycode in [KEY_1,KEY_2,KEY_3]:
 				club = int(event.keycode)-KEY_1
+				contact_height = 0 if club == 2 else -.6
 				gesture.cancel()
 				_update_hud()
 				return true
@@ -154,8 +194,12 @@ func handle_input(event: InputEvent) -> bool:
 				_update_hud()
 				return true
 	if phase == Phase.ADDRESS:
+		if event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP,MOUSE_BUTTON_WHEEL_DOWN]:
+			if not gesture.dragging and not _orbiting:
+				contact_height = clampf(contact_height+(.1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -.1),-1,1)
+			return true
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
+			if event.pressed and not _orbiting:
 				gesture.begin(Time.get_ticks_usec()/1000000.0)
 			elif gesture.dragging:
 				gesture.cancel()
@@ -186,20 +230,29 @@ func try_world_click(pointer: Vector2) -> bool:
 		return true
 	return false
 
+func _short_stroke() -> bool:
+	return club == 2 or contact_height >= -.05
+
+func _backswing_angle() -> float:
+	return clampf(gesture.peak/190,0,1)*(.75 if _short_stroke() else 2.6)
+
 func begin_swing(value: Dictionary) -> bool:
 	if phase != Phase.ADDRESS or not is_finite(float(value.get("power",NAN))) or not is_finite(float(value.get("deviation",NAN))):
 		return false
 	shot = value.duplicate()
 	shot.power = clampf(shot.power,.035,1)
 	shot.deviation = clampf(shot.deviation,-.255,.255)
-	shot["angle"] = clampf(gesture.peak/190,0,1)*2.6
+	shot["angle"] = _backswing_angle()
+	shot["followthrough"] = .65 if _short_stroke() else 2.1
+	shot["contact_height"] = contact_height
 	phase = Phase.SWING
 	swing_seconds = 0
 	gesture.cancel()
+	visual.hide_aim()
 	return true
 
 func _impact() -> void:
-	ball.strike(direction.rotated(Vector3.UP,-shot.deviation),shot.power,club)
+	ball.strike(direction.rotated(Vector3.UP,-shot.deviation),shot.power,club,shot.contact_height)
 	# Keep saved round state at the last settled checkpoint until this ball stops.
 	phase = Phase.FLIGHT
 	watch_camera = true
@@ -219,28 +272,32 @@ func _process(delta: float) -> void:
 	if hud.is_modal_open() and is_controlling():
 		release_control()
 	if phase == Phase.ADDRESS:
-		if not gesture.dragging:
+		if not gesture.dragging and not _orbiting:
 			var turn := Input.get_axis("move_left","move_right")
 			direction = direction.rotated(Vector3.UP,-turn*delta*.6)
+			var vertical := float(Input.is_physical_key_pressed(KEY_W))-float(Input.is_physical_key_pressed(KEY_S))
+			contact_height = clampf(contact_height+vertical*delta*.8,-1,1)
+			var distance_step := float(Input.is_physical_key_pressed(KEY_Q))-float(Input.is_physical_key_pressed(KEY_E))
+			stance_distance = clampf(stance_distance+distance_step*delta*.3,.68,.98)
 			_stance()
-		visual.pose(clampf(gesture.peak/190,0,1)*2.6 if gesture.dragging else 0,club)
-		visual.show_aim(ball.position,direction,club,clampf(gesture.peak/190,.05,1) if gesture.dragging else .65)
+		_update_camera()
+		visual.set_contact(ball.position,direction,contact_height)
+		visual.pose(_backswing_angle() if gesture.dragging else 0,club)
+		visual.show_aim(ball.position,direction,club,clampf(gesture.peak/190,.05,1) if gesture.dragging else .65,contact_height)
 	elif phase == Phase.SWING:
+		_update_camera()
 		swing_seconds += delta
 		visual.pose(lerpf(float(shot.angle),0,clampf(swing_seconds/.18,0,1)),club)
 		if swing_seconds >= .18:
 			_impact()
 	elif phase == Phase.FLIGHT:
 		swing_seconds += delta
-		visual.pose(-smoothstep(.18,.70,swing_seconds)*2.1,club)
+		visual.pose(-smoothstep(.18,.70,swing_seconds)*float(shot.followthrough),club)
 		if swing_seconds > .9:
 			visual.set_equipped(false)
 		ball.advance(delta,Course.HOLES[round_state.hole].cup,get_world_3d().direct_space_state)
 		if watch_camera:
-			var target := ball.position-direction*5.5+Vector3.UP*3.5
-			target.y = maxf(target.y,Art.ground(Vector2(target.x,target.z)).y+1.2)
-			_camera.global_position = _camera.global_position.lerp(target,1-exp(-delta*3))
-			_camera.look_at(ball.position+direction*1.1)
+			_update_camera(1-exp(-delta*8))
 		if not ball.moving:
 			_settle()
 	if round_state.active and phase != Phase.HOLED:
@@ -290,6 +347,7 @@ func next_hole() -> bool:
 
 func release_control() -> void:
 	gesture.cancel()
+	_orbiting = false
 	if phase in [Phase.ADDRESS,Phase.SWING]:
 		phase = Phase.WALK
 	player.golf_locked = false
@@ -340,6 +398,20 @@ func _build_hud() -> void:
 	_info.add_theme_font_size_override("font_size",16)
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_info)
+	var contact_row := HBoxContainer.new()
+	box.add_child(contact_row)
+	_contact_display = Control.new()
+	_contact_display.custom_minimum_size = Vector2(60,60)
+	contact_row.add_child(_contact_display)
+	_contact_display.draw.connect(func():
+		_contact_display.draw_circle(Vector2(30,30),24,Color("eee9d7"))
+		_contact_display.draw_line(Vector2(8,30),Vector2(52,30),Color("aab69a"),1)
+		_contact_display.draw_circle(Vector2(30,30-contact_height*20),5,Color("b96843"))
+	)
+	var contact_help := Label.new()
+	contact_help.text = "W/S 或滚轮：触球点上/下\n下部＋力度：挑高球；中心轻击：推球"
+	contact_help.add_theme_font_size_override("font_size",14)
+	contact_row.add_child(contact_help)
 	_power = ProgressBar.new()
 	_power.custom_minimum_size.y = 12
 	_power.show_percentage = false
@@ -372,6 +444,8 @@ func _update_hud() -> void:
 	_panel.position = Vector2((hud._ui.size.x-width)*.5,hud._ui.size.y-_panel.size.y-(18 if is_controlling() else hud._menu.size.y+30))
 	hud._menu.visible = not is_controlling()
 	_power.visible = phase == Phase.ADDRESS
+	_contact_display.get_parent().visible = phase == Phase.ADDRESS
+	_contact_display.queue_redraw()
 	_power.value = clampf(gesture.peak/190,0,1)*100
 	_action.visible = not is_controlling() and phase != Phase.FINISHED
 	if not round_state.active:
@@ -386,8 +460,8 @@ func _update_hud() -> void:
 	_title.text = "%d / 3 洞 · %s · %d 杆 · 距洞 %.1f 米" % [round_state.hole+1,Course.HOLES[round_state.hole].name,round_state.strokes+(1 if phase == Phase.FLIGHT else 0),distance]
 	if phase == Phase.WALK:
 		_title.text += " · 距球 %.1f 米" % player.global_position.distance_to(ball.position)
-	_info.text = "%s  ·  %s  ·  1/2/3 换杆  ·  A/D 瞄准  ·  灵敏度 %.2f（− / =）" % [Farm3DGolfBall.CLUBS[club].name,{"green":"果岭","fairway":"球道","rough":"长草","sand":"沙坑"}[Course.surface(Vector2(ball.position.x,ball.position.z))],session.golf_sensitivity]
-	_hint.text = _feedback if _feedback_time > 0 else "按住左键向后拉，再向前推过击球点；提前松开可收杆。虚线为参考轨迹，Esc 退出站位。" if phase == Phase.ADDRESS else "球正在移动 · Esc 返回角色，球会继续运动" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else "走到球旁按 E 准备，WASD 行走，Shift 奔跑"
+	_info.text = "%s · A/D 方向 · Q/E 站距 · 1/2/3 换杆 · 灵敏度 %.2f（− / =）" % [Farm3DGolfBall.CLUBS[club].name,session.golf_sensitivity]
+	_hint.text = _feedback if _feedback_time > 0 else "右键拖动转镜头；左键后拉、前推挥杆，提前松开收杆。Esc 退出。" if phase == Phase.ADDRESS else "球正在移动 · 右键转镜头，Esc 返回角色" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else "走到球旁按 E 准备，WASD 行走，Shift 奔跑"
 	_action.text = "下一洞  E" if phase == Phase.HOLED else "准备击球  E"
 	_action.disabled = player.global_position.distance_to(target_point()) > 2.8 or phase == Phase.FLIGHT
 

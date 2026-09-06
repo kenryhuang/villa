@@ -16,6 +16,8 @@ var _equipped := false
 var _head_point := Vector3.ZERO
 var _head_meshes: Array[Mesh] = []
 var _last_club := -1
+var _contact_local := Vector3(0,.065,.8)
+var _contact_marker: MeshInstance3D
 
 func configure(player: Farm3DPlayer) -> void:
 	_player = player
@@ -30,6 +32,11 @@ func configure(player: Farm3DPlayer) -> void:
 	ball_mesh = Art.mesh(self,sphere,Vector3.ZERO,Color("fffcec"))
 	ball_mesh.name = "GolfBall"
 	marker = Art.label(self,"球",Vector3.ZERO,.006)
+	var contact_dot := SphereMesh.new()
+	contact_dot.radius = .012
+	contact_dot.height = .024
+	_contact_marker = Art.mesh(self,contact_dot,Vector3.ZERO,Color("c96e3d"))
+	_contact_marker.hide()
 	club = Node3D.new()
 	club.name = "GolfClub"
 	add_child(club)
@@ -72,21 +79,34 @@ func set_equipped(enabled: bool) -> void:
 			_player._animation_player.stop()
 	else:
 		_player.play_motion_animation(false)
+	hide_aim()
+
+func hide_aim() -> void:
 	for dot in aim_dots:
 		dot.hide()
+	_contact_marker.hide()
+
+func set_contact(ball_position: Vector3, direction: Vector3, height: float) -> void:
+	var vertical := clampf(height,-1,1)*.8
+	var point := ball_position-direction*Farm3DGolfBall.RADIUS*sqrt(1-vertical*vertical)+Vector3.UP*Farm3DGolfBall.RADIUS*vertical
+	_contact_local = _player.to_local(point)
+	_contact_marker.global_position = point
+	_contact_marker.visible = _equipped
 
 func pose(angle: float, club_index: int) -> void:
 	if not _equipped:
 		return
-	var grip := Vector3(.25,1.02,.25)
+	var grip := Vector3(.12,1.04,.35)
 	grip.y += absf(angle)*.08
-	var endpoint := Vector3(.75,.065,.25)
-	endpoint = grip + (endpoint-grip).rotated(Vector3.RIGHT,angle)
+	# Player faces the ball along local +Z; the shot travels toward local -X.
+	# Raise the club to the right, then sweep left through the contact point.
+	var endpoint := grip + (_contact_local-grip).rotated(Vector3.BACK,angle)
+	var head_center := endpoint+Vector3(.075,.025,0).rotated(Vector3.BACK,angle)
 	club.global_transform = _player.global_transform
-	_segment(shaft,grip,endpoint)
-	_segment(grip_mesh,grip,grip.lerp(endpoint,.17))
-	head.position = endpoint+Vector3(0,-.015,-.105).rotated(Vector3.RIGHT,angle)
-	head.rotation.x = angle
+	_segment(shaft,grip,head_center)
+	_segment(grip_mesh,grip,grip.lerp(head_center,.17))
+	head.position = head_center
+	head.rotation = Vector3(0,0,angle)
 	if club_index != _last_club:
 		_last_club = club_index
 		head.mesh = _head_meshes[club_index]
@@ -96,7 +116,7 @@ func pose(angle: float, club_index: int) -> void:
 		var spine := _skeleton.find_bone("spine")
 		_skeleton.set_bone_pose_rotation(spine,Quaternion(Vector3.UP,angle*.18)*Quaternion(Vector3.RIGHT,.1))
 		_aim_arm("R",grip)
-		_aim_arm("L",grip+Vector3(-.04,.055,0))
+		_aim_arm("L",grip+(grip-head_center).normalized()*.065)
 
 func update_ball(position: Vector3, moving: bool, show_marker: bool) -> void:
 	ball_mesh.global_position = position
@@ -114,13 +134,13 @@ func clear_trail() -> void:
 	for item in trail:
 		item.hide()
 
-func show_aim(origin: Vector3, direction: Vector3, club_index: int, power: float) -> void:
-	var velocity := Farm3DGolfBall.launch_velocity(direction,power,club_index,Farm3DGolfCourse.surface(Vector2(origin.x,origin.z)))
+func show_aim(origin: Vector3, direction: Vector3, club_index: int, power: float, contact_height := -2.0) -> void:
+	var velocity := Farm3DGolfBall.launch_velocity(direction,power,club_index,Farm3DGolfCourse.surface(Vector2(origin.x,origin.z)),contact_height)
 	var time := maxf(.1,velocity.y*2/9.8)
 	for i in aim_dots.size():
 		var t := float(i+1)/aim_dots.size()*time
 		var p := origin+velocity*t+Vector3.DOWN*4.9*t*t
-		if club_index == 2:
+		if velocity.y < .01:
 			p = origin+direction*float(i+1)/aim_dots.size()*velocity.length_squared()/1.1
 		p.y = maxf(p.y,Art.ground(Vector2(p.x,p.z)).y+.09)
 		aim_dots[i].global_position = p

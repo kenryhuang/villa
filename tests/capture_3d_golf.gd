@@ -34,10 +34,26 @@ func _run() -> void:
 	session.player.global_position = golf.ball.position+Vector3.RIGHT
 	golf.enter_address()
 	await _capture("address")
+	var initial_yaw: float = golf._orbit_yaw
+	golf._orbit_yaw += .7
+	await _capture("orbit")
+	golf._orbit_yaw = initial_yaw
+	golf.club = 2
+	golf.contact_height = 0
+	await _capture("putting")
+	golf.club = 0
+	golf.contact_height = -.6
 	golf.gesture.begin(Time.get_ticks_usec()/1000000.0)
 	golf.gesture.motion(Vector2(0,165),Time.get_ticks_usec()/1000000.0+.01)
 	await _capture("backswing")
 	golf.begin_swing({"power":.72,"deviation":.035})
+	golf.set_process(false)
+	golf._impact()
+	golf.swing_seconds = .48
+	golf._process(.02)
+	golf._update_hud()
+	await _capture("followthrough")
+	golf.set_process(true)
 	for frame in 32:
 		await process_frame
 	await _capture("flight")
@@ -51,7 +67,7 @@ func _run() -> void:
 	await _capture("cup")
 	farm.queue_free()
 	await process_frame
-	print("GOLF CAPTURE: 6 views")
+	print("GOLF CAPTURE: 9 views")
 	quit(0)
 
 func _capture(suffix: String) -> void:

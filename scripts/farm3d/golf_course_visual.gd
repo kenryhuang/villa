@@ -39,8 +39,11 @@ func configure(session: Farm3DSession) -> void:
 		var tee := Node3D.new()
 		tee.position = ground(hole.tee)
 		add_child(tee)
+		var tee_direction: Vector2 = (hole.cup-hole.tee).normalized()
 		for side in [-1,1]:
-			box(tee,Vector3(side*.65,.09,0),Vector3(.18,.16,.3),Color("e2d7b1"))
+			var point: Vector2 = hole.tee+Vector2(tee_direction.y,-tee_direction.x)*side*1.7-tee_direction*.4
+			var tee_marker := box(tee,ground(point)-tee.position+Vector3.UP*.09,Vector3(.18,.16,.3),Color("e2d7b1"))
+			tee_marker.name = "TeeMarkerLeft" if side < 0 else "TeeMarkerRight"
 		label(tee,"%d  %s\nPAR 3  ·  %d 米" % [i+1,hole.name,roundi(hole.tee.distance_to(hole.cup))],Vector3(-2.6,1.0,-1.4),.0045)
 		for side in [-1,1]:
 			cylinder(tee,Vector3(-2.6+side*.55,.45,-1.45),.035,.9,Color("81623f"))

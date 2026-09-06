@@ -29,11 +29,18 @@ func _key(code: Key) -> void:
 	event.pressed = true
 	root.push_input(event,true)
 
-func _mouse(pressed: bool) -> void:
+func _mouse(pressed: bool, button := MOUSE_BUTTON_LEFT) -> void:
 	var event := InputEventMouseButton.new()
-	event.button_index = MOUSE_BUTTON_LEFT
+	event.button_index = button
 	event.pressed = pressed
 	root.push_input(event,true)
+
+func _held(code: Key, pressed: bool) -> void:
+	var event := InputEventKey.new()
+	event.keycode = code
+	event.physical_keycode = code
+	event.pressed = pressed
+	Input.parse_input_event(event)
 
 func _motion(relative: Vector2) -> void:
 	var event := InputEventMouseMotion.new()
@@ -93,6 +100,14 @@ func _run() -> void:
 		_check(Course.BOUNDS.has_point(hole.tee) and hole.tee.x < -80 and hole.cup.x < -80,"Each hole stays in newly added land")
 		_check(Course.surface(hole.cup) == "green" and Course.surface(hole.tee) == "fairway","Tees and greens have matching surface definitions")
 	var moving_ball := Ball.new()
+	var lifted := Ball.launch_velocity(Vector3.BACK,.8,0,"fairway",-.8)
+	var centered := Ball.launch_velocity(Vector3.BACK,.8,0,"fairway",0)
+	var gentle := Ball.launch_velocity(Vector3.BACK,.035,0,"fairway",-.8)
+	_check(lifted.y > 5 and centered.y == 0,"Same club can launch or roll according to the contact point")
+	_check(gentle.y == 0 and gentle.length() < centered.length(),"Light strokes roll even with a low contact point")
+	_check(Ball.launch_velocity(Vector3.BACK,.8,0,"fairway",.8).y == 0,"Top contact does not launch a ball upward")
+	_check(Ball.launch_velocity(Vector3.BACK,.2,0,"fairway",-.8).y < lifted.y,"Loft responds to both contact point and power")
+	_check(Ball.launch_velocity(Vector3.BACK,.8,2,"fairway",0).y == 0,"Default putter contact remains a ground stroke")
 	moving_ball.place(Course.HOLES[0].tee)
 	var launch := moving_ball.position
 	moving_ball.strike(Vector3.BACK,.6,0)
@@ -175,17 +190,83 @@ func _run() -> void:
 	_check(golf.phase == golf.Phase.ADDRESS and player.golf_locked and (DisplayServer.get_name() == "headless" or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED),"E at ball locks a golf stance and captures relative mouse input")
 	await _frames(10)
 	_check(golf._panel.size.y < 240,"Golf HUD remains compact and leaves the player and ball visible")
+	var ball_position: Vector3 = golf.ball.position
+	var neutral: Vector3 = player.to_local(golf.visual._head_point)
+	var clear_markers := true
+	for tee_marker in golf.course.find_children("TeeMarker*","MeshInstance3D",true,false):
+		clear_markers = clear_markers and tee_marker.global_position.distance_to(player.global_position) > .5
+	_check(clear_markers,"Tee markers leave enough space for the player's feet")
+	_check(golf.direction.dot(-player.global_basis.x) > .99,"Golfer faces the ball side-on and swings toward the left")
+	_check(golf._camera.unproject_position(player.global_position+Vector3.UP*.8).x > golf._camera.unproject_position(ball_position).x,"Default camera shows the golfer to the right of the ball")
+	_check(golf._camera.unproject_position(ball_position+golf.direction*2).x < golf._camera.unproject_position(ball_position).x,"Default camera shows the shot traveling left")
+	_check(golf.visual._head_point.distance_to(ball_position) < .08,"Addressed club face meets the selected point on the ball")
+	golf.visual.pose(1,0)
+	_check(player.to_local(golf.visual._head_point).x > neutral.x+.5,"Backswing lifts the club to the golfer's right")
+	golf.visual.pose(-1,0)
+	_check(player.to_local(golf.visual._head_point).x < neutral.x-.5,"Follow-through sweeps left past the ball")
+	golf.visual.pose(0,0)
+	var original_direction: Vector3 = golf.direction
+	var original_camera: Vector3 = golf._camera.global_position
+	_mouse(true)
+	_motion(Vector2(0,80))
+	_mouse(true,MOUSE_BUTTON_RIGHT)
+	_motion(Vector2(110,-20))
+	_check(not golf.gesture.dragging and golf.phase == golf.Phase.ADDRESS,"Right drag cancels a pending backswing without striking")
+	_check(golf._camera.global_position.distance_to(original_camera) > 1,"Right mouse drag rotates the stance camera")
+	_check(golf.direction.is_equal_approx(original_direction) and golf.ball.position == ball_position,"Camera orbit changes neither aim nor ball position")
+	_mouse(false,MOUSE_BUTTON_RIGHT)
+	_mouse(false)
+	var orbited: Vector3 = golf._camera.global_position
+	await _frames()
+	_check(golf._camera.global_position.distance_to(orbited) < .01,"Camera retains the chosen view after right drag ends")
+	_mouse(true,MOUSE_BUTTON_WHEEL_UP)
+	_check(is_equal_approx(golf.contact_height,-.5),"Mouse wheel moves the contact point upward")
+	_held(KEY_W,true)
+	await _frames(6)
+	_held(KEY_W,false)
+	_check(golf.contact_height > -.5,"W raises the contact point while in stance")
+	var raised: float = golf.contact_height
+	_held(KEY_S,true)
+	await _frames(6)
+	_held(KEY_S,false)
+	_check(golf.contact_height < raised,"S lowers the contact point while in stance")
+	_held(KEY_Q,true)
+	await _frames(6)
+	_held(KEY_Q,false)
+	_check(golf.stance_distance > .8 and golf.ball.position == ball_position,"Q adjusts standing distance while leaving the ball fixed")
+	_check(golf.visual._head_point.distance_to(ball_position) < .08,"Club still addresses the ball after standing distance changes")
+	Input.action_press("move_right")
+	await _frames(6)
+	Input.action_release("move_right")
+	_check(golf.direction.distance_to(original_direction) > .01,"A/D changes the shot direction before striking")
+	_check(golf._camera.global_position.distance_to(orbited) < .01,"Changing aim does not reset the camera orbit")
 	_key(KEY_3)
-	_check(golf.club == 2,"Number keys select the putter")
+	_check(golf.club == 2 and golf.contact_height == 0,"Number keys select the putter and center its contact point")
+	golf.gesture.peak = 190
+	_check(golf._backswing_angle() <= .75,"Putting uses a compact pendulum stroke")
 	_key(KEY_1)
+	golf.gesture.peak = 190
+	_check(golf._backswing_angle() > 2,"Low contact with the driver allows a full backswing")
+	golf.gesture.cancel()
+	_mouse(true,MOUSE_BUTTON_WHEEL_DOWN)
 	_mouse(true)
 	_motion(Vector2(0,150))
 	await create_timer(.12).timeout
 	_motion(Vector2(12,-150))
 	_check(golf.phase == golf.Phase.SWING,"Real back-forward mouse events trigger swing animation")
+	_check(is_equal_approx(golf.shot.contact_height,-.7),"Strike snapshots the chosen contact point")
+	_mouse(true,MOUSE_BUTTON_RIGHT)
+	_motion(Vector2(-30,10))
+	_mouse(false,MOUSE_BUTTON_RIGHT)
+	_check(golf.phase == golf.Phase.SWING and is_equal_approx(golf.shot.contact_height,-.7),"Orbit during a committed swing does not cancel or alter the shot")
 	_mouse(false)
 	await create_timer(.3).timeout
 	_check(golf.phase == golf.Phase.FLIGHT and golf.ball.moving,"Ball launches at the animation's impact frame")
+	var flight_yaw: float = golf._orbit_yaw
+	_mouse(true,MOUSE_BUTTON_RIGHT)
+	_motion(Vector2(30,0))
+	_mouse(false,MOUSE_BUTTON_RIGHT)
+	_check(not is_equal_approx(golf._orbit_yaw,flight_yaw),"Right mouse orbit also works while following the flying ball")
 	_check(not golf.enter_address(),"Moving balls cannot be struck a second time")
 	var checkpoint := session.golf_round.to_dict()
 	_check(checkpoint.strokes == 0 and checkpoint.ball.x == Course.HOLES[0].tee.x,"Mid-flight save keeps the preceding settled checkpoint")
