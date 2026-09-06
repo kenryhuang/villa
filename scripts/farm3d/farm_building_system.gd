@@ -2,6 +2,15 @@ extends BuildingSystem
 
 var farmer: Node3D
 
+func _resolve_data(building: Variant) -> BuildingData:
+	var resolved := super._resolve_data(building)
+	if resolved != null and resolved.building_id == "barn":
+		# Copy so the shared catalogue and original game keep their own visuals.
+		resolved = resolved.duplicate() as BuildingData
+		resolved.scene_path = "res://scenes/farm3d/buildings/barn.tscn"
+		resolved.visual_size = Vector2(2.4,3.2)
+	return resolved
+
 func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 	var result := super.diagnose_placement(building, gx, gz)
 	if not result.allowed:

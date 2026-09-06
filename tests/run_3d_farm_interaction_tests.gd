@@ -80,8 +80,31 @@ func _run() -> void:
 	for label in first_slot.find_children("*", "Label", true, false):
 		texts.append(label.text)
 	_check("胡萝卜" in texts, "Backpack places harvested items before planting supplies")
+	await _frames(3)
+	var item_scroll: ScrollContainer = hud.inventory_ui.grid_container.get_parent()
+	item_scroll.scroll_vertical = 450
+	_check(item_scroll.scroll_vertical > 0, "Backpack can scroll down to building materials")
 	_press(KEY_ESCAPE)
 	_check(not hud.inventory_ui.visible and not player.ui_blocked, "Esc closes inventory and restores movement")
+	# Harvest after browsing materials: reopening must reveal crops rather than
+	# preserving a scroll offset that clips every harvested item above the panel.
+	_check(session.apply_target(cell, "seed", "carrot_seed").ok, "Plant another crop after browsing the backpack")
+	cell.crop_instance.set_growth_state(cell.crop_instance.crop_data.growth_days, CropInstance.LifecycleState.MATURE)
+	interaction._cooldown = 0
+	var previous_carrots: int = session.inventory.get_item_count("carrot")
+	_check(interaction.perform(cell).ok, "Harvest after closing a scrolled backpack succeeds")
+	var carrot_total: int = session.inventory.get_item_count("carrot")
+	_check(carrot_total > previous_carrots, "Second harvest adds to the existing inventory stack")
+	_press(KEY_I)
+	await _frames(3)
+	_check(item_scroll.scroll_vertical == 0, "Reopened backpack starts with harvested items in view")
+	first_slot = hud.inventory_ui.grid_container.get_child(0)
+	_check(item_scroll.get_global_rect().encloses(first_slot.get_global_rect()), "Harvested slot is actually inside the visible scroll area")
+	texts.clear()
+	for label in first_slot.find_children("*", "Label", true, false):
+		texts.append(label.text)
+	_check("胡萝卜" in texts and "x%d" % carrot_total in texts, "Visible crop slot shows the updated harvest total")
+	_press(KEY_ESCAPE)
 	hud.category_buttons.building.pressed.emit()
 	_check(hud.buttons.size() == 17, "All original buildings are listed")
 	var fence_button: Button

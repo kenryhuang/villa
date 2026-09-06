@@ -16,6 +16,7 @@ project.godot                    项目配置，默认启动 scenes/farm3d/main.
 scenes/
   farm3d/
     main.tscn                    正式农庄场景：环境、角色、树木、相机
+    buildings/                  原生 3D 建筑，目前为 Blender 谷仓
     inventory.tscn               3D 背包界面，继承原背包场景
     status_bar.tscn              从原 HUD 迁入的状态条组件
   preview/                      独立美术预览，目前仅橡树观察场景
@@ -37,6 +38,7 @@ scripts/
     landscape.gd                地形分块、碰撞、河水、木桥和区域橡树
     farm3d_farming_system.gd    原种植规则的 3D 视觉、水田灌溉适配
     farm_building_system.gd     原建造规则的角色距离、占地检查
+    modeled_building.gd         谷仓模型、立体施工阶段、碰撞与放置预览
     crop_visual_system.gd      按地块状态生成土块和作物视觉
     painted_meadow.gd          设置手绘草地材质
     farm_tool_visual.gd        保留的早期锄头动画，当前未挂接
@@ -48,12 +50,14 @@ scripts/
 assets/
   models/farm3d/               角色、静态环境、田块、谷物 GLB
   models/vegetation/           手绘橡树 GLB 与贴图
+  models/buildings/barn/       立体谷仓 GLB、木纹／石材／瓦片贴图
   models/crops/               3D 作物：玫瑰五阶段，其余 13 种两阶段
   crops/、buildings/           原作物图片供旧游戏使用；建筑美术继续共用
   terrain/、ui/               共用地面贴图与 UI 主题、图标
 art/blender/
   farm3d.blend                 可编辑的农庄源模型
   painted_oak.blend            可编辑的橡树源模型
+  barn.blend                   可编辑的谷仓，按施工阶段分组
   rose.blend                   可编辑的玫瑰五阶段源模型
   <crop_id>.blend             13 种作物各自包含播种／树苗与成熟模型
 tools/                        游戏启动与独立美术预览命令

@@ -32,6 +32,14 @@ func _ready() -> void:
 func _refresh_quick_bar() -> void:
 	pass
 
+func open() -> void:
+	super.open()
+	# Crops are sorted first. A retained materials/empty-slot scroll position
+	# otherwise hides newly harvested items when the backpack is reopened.
+	var scroll := grid_container.get_parent() as ScrollContainer
+	if scroll != null:
+		scroll.scroll_vertical = 0
+
 func _create_slot_ui(index: int) -> PanelContainer:
 	var slot := super._create_slot_ui(index)
 	slot.tooltip_text = ""
