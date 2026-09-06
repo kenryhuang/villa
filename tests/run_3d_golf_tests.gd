@@ -88,6 +88,16 @@ func _run() -> void:
 	_check(Round.valid(round_state.to_dict()),"Empty round state has a valid save schema")
 	round_state.start()
 	_check(Round.valid(round_state.to_dict()),"New round checkpoint validates")
+	var long_round := Round.new()
+	long_round.start()
+	for i in 3:
+		long_round.hole = i
+		long_round.strokes = 13
+		long_round.complete_hole()
+	_check(long_round.scores == [13,13,13] and long_round.best == 39,"Actual completed scores above twelve and totals above thirty-six are retained")
+	_check(Round.valid(long_round.to_dict()),"Extended scores remain valid save data")
+	var restored_long_round := Round.new()
+	_check(restored_long_round.restore(long_round.to_dict()) and restored_long_round.best == 39,"Completed long round survives restoration")
 	for field in ["hole","strokes","best"]:
 		var malformed := round_state.to_dict()
 		malformed[field] = -1
@@ -182,7 +192,7 @@ func _run() -> void:
 		rolling_ball.place(hole.cup+Vector2(0,-.5))
 		rolling_ball.velocity = Vector3.BACK*4
 		rolling_ball.moving = true
-		for frame in 15:
+		for frame in 45:
 			rolling_ball.advance(1.0/60,hole.cup,space)
 		_check(rolling_ball.result == "holed","Moderate rolling shot enters the real scene cup with collision enabled")
 		var coords := session.grid.world_to_grid(hole.tee.x,hole.tee.y)
@@ -305,6 +315,20 @@ func _run() -> void:
 	_check(hud.inventory_ui.visible and not player.golf_locked,"Inventory interrupts a pending swing safely")
 	_check(not golf._panel.visible,"Golf HUD immediately yields to a modal inventory")
 	hud.close_panels()
+	# A stroke limit must never masquerade as a holed ball.
+	golf.round_state.strokes = 11
+	golf.ball.place(Course.HOLES[0].tee)
+	golf.ball.result = "rest"
+	golf.phase = golf.Phase.FLIGHT
+	golf._settle()
+	_check(golf.phase == golf.Phase.WALK and golf.round_state.scores.is_empty() and golf.round_state.strokes == 12,"Twelve strokes without entering the cup do not complete the hole")
+	golf._settle()
+	_check(golf.round_state.strokes == 12,"Repeated settlement cannot add strokes or finish a hole")
+	golf.phase = golf.Phase.FLIGHT
+	golf._settle()
+	_check(golf.round_state.strokes == 13 and golf.round_state.scores.is_empty(),"Player can continue the same hole beyond twelve strokes")
+	_check(session.save_game() and session.load_game() and session.golf_round.strokes == 13 and golf.phase == golf.Phase.WALK,"Unfinished hole beyond twelve strokes saves and restores as playable")
+	golf.round_state.strokes = 1
 	# Complete all holes through the same physics settlement and transition API.
 	for i in 3:
 		cup = Course.HOLES[i].cup
@@ -312,6 +336,11 @@ func _run() -> void:
 		golf.ball.velocity = Vector3.BACK*.4
 		golf.ball.moving = true
 		golf.phase = golf.Phase.FLIGHT
+		while golf.ball._drop_seconds < 0 and golf.ball.moving:
+			golf.ball.advance(1.0/180,cup)
+		golf.visual.update_ball(golf.ball.position,true,false)
+		golf._settle()
+		_check(golf.phase == golf.Phase.FLIGHT and golf.round_state.scores.size() == i and golf.visual.ball_mesh.visible,"Visible cup drop must finish before the round records a completed hole")
 		_simulate(golf.ball,cup)
 		golf._settle()
 		_check(golf.round_state.scores.size() == i+1,"A holed ball appends exactly one hole score")
@@ -321,6 +350,37 @@ func _run() -> void:
 			_check(golf.next_hole(),"Walking to the next tee begins the next hole")
 	_check(golf.phase == golf.Phase.FINISHED and not golf.round_state.active and golf.round_state.best == 4,"Three-hole finish records total score and personal best")
 	_check(session.save_game() and session.load_game() and session.golf_round.best == 4,"Best score survives save and reload")
+	# R restarts only golf in its own context, including interrupted shots.
+	player.global_position = golf.Art.ground(Course.HOLES[2].cup)
+	_key(KEY_R)
+	_check(golf.phase == golf.Phase.ADDRESS and golf.round_state.hole == 0 and golf.round_state.strokes == 0 and golf.round_state.scores.is_empty(),"R after restoring a finished round starts a fresh first hole")
+	_check(player.global_position.distance_to(golf.ball.position) < 1.1 and golf.round_state.best == 4,"Reset brings player to the first ball and preserves the best score")
+	golf.begin_swing({"power":.7,"deviation":0.0})
+	_key(KEY_R)
+	_check(golf.phase == golf.Phase.ADDRESS and golf.shot.is_empty() and not golf.ball.moving,"R cancels a committed swing safely")
+	golf.begin_swing({"power":.7,"deviation":0.0})
+	golf._impact()
+	golf.ball.advance(.1,Course.HOLES[0].cup)
+	_key(KEY_R)
+	_check(golf.phase == golf.Phase.ADDRESS and not golf.ball.moving and golf.round_state.ball == Course.HOLES[0].tee and golf.ball.result.is_empty(),"R cancels flight and resets the ball to the first tee")
+	golf._settle()
+	_check(golf.round_state.strokes == 0,"Cancelled flight cannot settle into the restarted round")
+	golf.release_control()
+	golf.ball.place(Course.HOLES[0].cup+Vector2(0,-.23))
+	golf.ball.velocity = Vector3.BACK
+	golf.ball.moving = true
+	golf.phase = golf.Phase.FLIGHT
+	while golf.ball._drop_seconds < 0:
+		golf.ball.advance(1.0/180,Course.HOLES[0].cup)
+	_key(KEY_R)
+	_check(golf.ball._drop_seconds < 0 and golf.round_state.scores.is_empty() and golf.phase == golf.Phase.ADDRESS,"R also cancels a pending cup drop")
+	_check(session.save_game() and session.load_game() and session.golf_round.hole == 0 and session.golf_round.strokes == 0 and session.golf_round.best == 4,"Restarted round and preserved best score survive save and reload")
+	player.global_position = Vector3.ZERO
+	_check(not golf.restart_round(),"Golf restart does not hijack the farm's R key outside the course")
+	player.global_position = golf.Art.ground(Course.HOLES[0].tee)
+	hud.inventory_ui.show()
+	_check(not golf.restart_round(),"Open modal prevents an accidental golf reset")
+	hud.close_panels()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(session.save_path))
 	farm.queue_free()
 	await _frames()

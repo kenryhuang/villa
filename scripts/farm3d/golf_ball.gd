@@ -4,6 +4,7 @@ extends RefCounted
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
 const Course = preload("res://scripts/farm3d/golf_course_data.gd")
 const RADIUS := .065
+const CUP_DROP_TIME := .4
 const CLUBS := [
 	{"name":"开球杆","speed":20.0,"angle":28.0},
 	{"name":"挖起杆","speed":13.0,"angle":55.0},
@@ -15,6 +16,9 @@ var moving := false
 var elapsed := 0.0
 var result := ""
 var bounced := false
+var _drop_seconds := -1.0
+var _drop_from := Vector3.ZERO
+var _drop_target := Vector3.ZERO
 
 func place(point: Vector2) -> void:
 	position = Vector3(point.x,Profile.surface_height(point.x,point.y)+RADIUS,point.y)
@@ -23,6 +27,7 @@ func place(point: Vector2) -> void:
 	elapsed = 0
 	result = ""
 	bounced = false
+	_drop_seconds = -1
 
 func strike(direction: Vector3, power: float, club: int, contact_height := -2.0) -> void:
 	velocity = launch_velocity(direction,power,club,Course.surface(Vector2(position.x,position.z)),contact_height)
@@ -33,6 +38,7 @@ func strike(direction: Vector3, power: float, club: int, contact_height := -2.0)
 	elapsed = 0
 	result = ""
 	bounced = false
+	_drop_seconds = -1
 
 static func launch_velocity(direction: Vector3, power: float, club: int, surface_name := "fairway", contact_height := -2.0) -> Vector3:
 	var data: Dictionary = CLUBS[clampi(club,0,2)]
@@ -57,6 +63,13 @@ func advance(delta: float, cup: Vector2, space: PhysicsDirectSpaceState3D = null
 		_step(dt,cup,space)
 
 func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
+	if _drop_seconds >= 0:
+		_drop_seconds += dt
+		var t := clampf(_drop_seconds/CUP_DROP_TIME,0,1)
+		position = _drop_from.lerp(_drop_target,smoothstep(0,1,t))
+		if t >= 1:
+			_stop("holed")
+		return
 	elapsed += dt
 	var point := Vector2(position.x,position.z)
 	if not Course.BOUNDS.grow(3).has_point(point) or Profile.is_water(point.x,point.y):
@@ -114,8 +127,14 @@ func _capture_cup(from: Vector3, to: Vector3, cup: Vector2, speed: float) -> boo
 	var gap := from.lerp(to,t).y-Profile.surface_height(nearest.x,nearest.y)-RADIUS
 	if absf(gap) > .035:
 		return false
-	position = Vector3(cup.x,Profile.surface_height(cup.x,cup.y)-.20,cup.y)
-	_stop("holed")
+	# Show the ball entering the cup before reporting completion to the round.
+	_drop_from = from.lerp(to,t)
+	_drop_target = Vector3(cup.x,Profile.surface_height(cup.x,cup.y)-.20,cup.y)
+	position = _drop_from
+	_drop_seconds = 0
+	velocity = Vector3.ZERO
+	moving = true
+	result = ""
 	return true
 
 func _stop(reason: String) -> void:

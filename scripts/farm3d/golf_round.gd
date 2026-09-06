@@ -19,7 +19,7 @@ func start() -> void:
 func complete_hole() -> void:
 	if not active or scores.size() != hole:
 		return
-	scores.append(clampi(strokes,1,12))
+	scores.append(maxi(strokes,1))
 	ball = Course.HOLES[hole].cup
 	if hole == 2:
 		active = false
@@ -37,10 +37,10 @@ static func valid(value: Variant) -> bool:
 	for key in ["hole","strokes","best"]:
 		if not _integer(value.get(key)):
 			return false
-	if value.hole < 0 or value.hole > 2 or value.strokes < 0 or value.strokes > 12 or value.best < 0 or value.best > 36 or (value.best > 0 and value.best < 3):
+	if value.hole < 0 or value.hole > 2 or value.strokes < 0 or value.best < 0 or (value.best > 0 and value.best < 3):
 		return false
 	for score in value.scores:
-		if not _integer(score) or score < 1 or score > 12:
+		if not _integer(score) or score < 1:
 			return false
 	if value.ball.size() != 2:
 		return false

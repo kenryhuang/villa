@@ -20,6 +20,27 @@ func _run() -> void:
 	farm.add_child(camera)
 	camera.far = 400
 	camera.fov = 52
+	if "--cup-drop-only" in OS.get_cmdline_user_args():
+		golf.set_process(false)
+		hud.hide()
+		var drop_cup: Vector2 = golf.Course.HOLES[0].cup
+		camera.position = golf.Art.ground(drop_cup)+Vector3(1.0,.65,1.6)
+		camera.look_at(golf.Art.ground(drop_cup))
+		camera.make_current()
+		golf.ball.place(drop_cup+Vector2(0,-.3))
+		golf.ball.velocity = Vector3.BACK*2
+		golf.ball.moving = true
+		for step in 180:
+			golf.ball.advance(1.0/180,drop_cup)
+			if golf.ball._drop_seconds >= .13:
+				break
+		golf.visual.update_ball(golf.ball.position,false,false)
+		await _capture("cup_drop")
+		farm.queue_free()
+		await process_frame
+		print("GOLF CAPTURE: cup drop")
+		quit(0)
+		return
 	camera.position = Vector3(-106,75,177)
 	camera.look_at(Vector3(-118,1,92))
 	camera.make_current()

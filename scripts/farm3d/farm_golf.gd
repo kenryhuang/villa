@@ -99,6 +99,29 @@ func start_round() -> bool:
 	_update_hud()
 	return true
 
+func restart_round() -> bool:
+	var at_course := Course.BOUNDS.grow(12).has_point(Vector2(player.global_position.x,player.global_position.z))
+	if hud.is_modal_open() or (not round_state.active and round_state.scores.is_empty()) or (not at_course and not is_controlling()):
+		return false
+	get_parent().cancel_selection()
+	release_control()
+	round_state.start()
+	ball.place(round_state.ball)
+	phase = Phase.WALK
+	shot.clear()
+	swing_seconds = 0
+	visual.clear_trail()
+	_particles.emitting = false
+	_audio.stop()
+	player.global_position = ball.position+Vector3.RIGHT
+	player.velocity = Vector3.ZERO
+	enter_address()
+	visual.update_ball(ball.position,false,false)
+	_feedback_message("已复位到 1 号洞 · 本轮杆数清零，个人最佳保留")
+	_save()
+	_update_hud()
+	return true
+
 func enter_address() -> bool:
 	if phase != Phase.WALK or not round_state.active or hud.is_modal_open() or player.global_position.distance_to(ball.position) > 2.8:
 		return false
@@ -163,6 +186,8 @@ func handle_input(event: InputEvent) -> bool:
 			_update_camera()
 			return true
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_R and restart_round():
+			return true
 		if event.keycode == KEY_I:
 			release_control()
 			return false
@@ -311,20 +336,22 @@ func _process(delta: float) -> void:
 		_update_hud()
 
 func _settle() -> void:
-	round_state.strokes = mini(12,round_state.strokes+1)
+	if phase != Phase.FLIGHT or ball.moving or ball.result not in ["rest","penalty","holed"]:
+		return
+	round_state.strokes += 1
 	if ball.result == "penalty":
-		round_state.strokes = mini(12,round_state.strokes+1)
+		round_state.strokes += 1
 		ball.place(round_state.ball)
 		_feedback_message("出界或入水，罚 1 杆，球已放回本杆起点")
 	else:
 		round_state.ball = Vector2(ball.position.x,ball.position.z)
-	var holed := ball.result == "holed" or round_state.strokes >= 12
+	var holed := ball.result == "holed"
 	release_control()
 	visual.clear_trail()
 	if holed:
 		round_state.complete_hole()
 		phase = Phase.HOLED if round_state.active else Phase.FINISHED
-		_feedback_message("本洞 %d 杆！%s" % [round_state.strokes,"前往下一发球台" if round_state.active else "三洞完成"])
+		_feedback_message("进洞！本洞 %d 杆 · %s" % [round_state.strokes,"前往下一发球台" if round_state.active else "三洞完成"])
 	else:
 		phase = Phase.WALK
 	_save()
@@ -450,8 +477,8 @@ func _update_hud() -> void:
 	_action.visible = not is_controlling() and phase != Phase.FINISHED
 	if not round_state.active:
 		_title.text = "三洞完成 · %d 杆 / 标准 9 杆" % round_state.scores.reduce(func(a,b):return a+b,0) if phase == Phase.FINISHED else "湖西高尔夫 · 免费借杆"
-		_info.text = "个人最佳：%d 杆" % round_state.best if round_state.best > 0 else "三洞短场 · 每洞最多 12 杆"
-		_hint.text = "Esc 收起成绩，回球杆架可开始新一轮" if phase == Phase.FINISHED else "走到球杆架前，点击开始。后拉鼠标蓄势，前推挥杆。"
+		_info.text = "个人最佳：%d 杆" % round_state.best if round_state.best > 0 else "三洞短场 · 进洞后完成本洞"
+		_hint.text = "R 回到 1 号洞重开 · Esc 收起成绩" if phase == Phase.FINISHED else "走到球杆架前，点击开始。后拉鼠标蓄势，前推挥杆。"
 		_action.disabled = not near_entrance()
 		_action.text = "借杆开始  E"
 		return
@@ -461,6 +488,7 @@ func _update_hud() -> void:
 	if phase == Phase.WALK:
 		_title.text += " · 距球 %.1f 米" % player.global_position.distance_to(ball.position)
 	_info.text = "%s · A/D 方向 · Q/E 站距 · 1/2/3 换杆 · 灵敏度 %.2f（− / =）" % [Farm3DGolfBall.CLUBS[club].name,session.golf_sensitivity]
+	_title.text += " · R 重开"
 	_hint.text = _feedback if _feedback_time > 0 else "右键拖动转镜头；左键后拉、前推挥杆，提前松开收杆。Esc 退出。" if phase == Phase.ADDRESS else "球正在移动 · 右键转镜头，Esc 返回角色" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else "走到球旁按 E 准备，WASD 行走，Shift 奔跑"
 	_action.text = "下一洞  E" if phase == Phase.HOLED else "准备击球  E"
 	_action.disabled = player.global_position.distance_to(target_point()) > 2.8 or phase == Phase.FLIGHT

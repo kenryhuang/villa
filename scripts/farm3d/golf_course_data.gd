@@ -45,6 +45,27 @@ static func surface(point: Vector2) -> String:
 	return "fairway" if mask.g > .45 else "rough"
 
 static func terrain_height(point: Vector2) -> float:
+	var height := _hill_terrain_height(point)
+	# Keep the third fairway and its green intact while easing the first two.
+	var third_clearance := smoothstep(6.3,9,line_distance(point,HOLES[2].tee,HOLES[2].cup))
+	for i in 2:
+		var hole: Dictionary = HOLES[i]
+		var weight := (1-smoothstep(5,9,line_distance(point,hole.tee,hole.cup)))*third_clearance
+		if weight <= 0:
+			continue
+		var gentle := _gentle_height(point,i)
+		# A tiny level collar supports the cup, without raising a green platform.
+		for anchor in [hole.tee,hole.cup]:
+			gentle = lerpf(_gentle_height(anchor,i),gentle,smoothstep(.8,1.8,point.distance_to(anchor)))
+		height = lerpf(height,gentle,weight)
+	return height
+
+static func _gentle_height(point: Vector2, hole: int) -> float:
+	if hole == 0:
+		return 1.15+.10*sin((point.y-74.5)*.13)+.03*sin((point.x+148)*.2)
+	return 1.25+.05*(point.y-123)+.10*sin((point.x+130)*.10)
+
+static func _hill_terrain_height(point: Vector2) -> float:
 	var height := 1.1 + .18*sin(point.x*.095)*cos(point.y*.12)
 	# Broad slopes are playable both on foot and with a rolling ball.
 	height += _mound(point,Vector2(-149,88),Vector2(7,6),2.0)
