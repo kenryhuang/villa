@@ -13,6 +13,16 @@ const ROSE_STAGES := [
 const ROSE_WITHERED := preload("res://assets/models/crops/rose/rose_withered.glb")
 const SOIL_SURFACE_Y := 0.045
 const TWO_STAGE_CROPS := {
+	"carrot": [preload("res://assets/models/crops/carrot/carrot_seed.glb"), preload("res://assets/models/crops/carrot/carrot_mature.glb")],
+	"strawberry": [preload("res://assets/models/crops/strawberry/strawberry_seed.glb"), preload("res://assets/models/crops/strawberry/strawberry_mature.glb")],
+	"blueberry": [preload("res://assets/models/crops/blueberry/blueberry_seed.glb"), preload("res://assets/models/crops/blueberry/blueberry_mature.glb")],
+	"watermelon": [preload("res://assets/models/crops/watermelon/watermelon_seed.glb"), preload("res://assets/models/crops/watermelon/watermelon_mature.glb")],
+	"sunflower": [preload("res://assets/models/crops/sunflower/sunflower_seed.glb"), preload("res://assets/models/crops/sunflower/sunflower_mature.glb")],
+	"pumpkin": [preload("res://assets/models/crops/pumpkin/pumpkin_seed.glb"), preload("res://assets/models/crops/pumpkin/pumpkin_mature.glb")],
+	"apple": [preload("res://assets/models/crops/apple/apple_seed.glb"), preload("res://assets/models/crops/apple/apple_mature.glb")],
+	"peach": [preload("res://assets/models/crops/peach/peach_seed.glb"), preload("res://assets/models/crops/peach/peach_mature.glb")],
+	"grape": [preload("res://assets/models/crops/grape/grape_seed.glb"), preload("res://assets/models/crops/grape/grape_mature.glb")],
+	"lemon": [preload("res://assets/models/crops/lemon/lemon_seed.glb"), preload("res://assets/models/crops/lemon/lemon_mature.glb")],
 	"potato": [preload("res://assets/models/crops/potato/potato_seed.glb"), preload("res://assets/models/crops/potato/potato_mature.glb")],
 	"tomato": [preload("res://assets/models/crops/tomato/tomato_seed.glb"), preload("res://assets/models/crops/tomato/tomato_mature.glb")],
 	"lavender": [preload("res://assets/models/crops/lavender/lavender_seed.glb"), preload("res://assets/models/crops/lavender/lavender_mature.glb")],
@@ -90,17 +100,7 @@ func _add_crop(holder: Node3D, cell: GridCell) -> void:
 		_add_rose(holder, cell)
 		return
 	if instance.crop_data.crop_id != "grain":
-		var paths: Array[String] = instance.crop_data.stage_scenes
-		var stage := clampi(instance.get_current_stage(), 0, paths.size() - 1)
-		var packed := load(paths[stage]) as PackedScene
-		if packed != null:
-			var crop := packed.instantiate() as Node3D
-			crop.name = "Crop_" + instance.crop_data.crop_id
-			crop.position.y = 0.06
-			holder.add_child(crop)
-			if instance.lifecycle_state == CropInstance.LifecycleState.WITHERED:
-				for sprite in crop.find_children("*", "Sprite3D", true, false):
-					sprite.modulate = Color("91794e")
+		push_error("Missing 3D crop model: " + str(instance.crop_data.crop_id))
 		return
 	var progress := instance.growth_progress
 	var maturity := maxf(1.0, float(instance.crop_data.growth_days))

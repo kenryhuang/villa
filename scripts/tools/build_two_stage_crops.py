@@ -242,41 +242,46 @@ def lavender(palette):
     return g
 
 
-for crop in ["potato","tomato","lavender"]:
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete(use_global=False)
-    for collection in list(bpy.data.collections):
-        bpy.data.collections.remove(collection)
-    # Pack the original illustration as an editable art reference, not a card.
-    reference = bpy.data.images.load(str(ROOT/"assets/crops"/crop/"painted/stage_3/variant_0_front.png"))
-    reference.pack()
-    reference.name = crop+" - original painted reference"
-    palette = {"stems":(.28,.36,.075),"leaves":(.32,.44,.09)}
-    if crop == "lavender":
-        palette = {"stems":(.32,.39,.18),"leaves":(.40,.47,.25)}
-    materials = {kind: material(kind,kind in ["leaves","flowers","fruit"]) for kind in ["stems","leaves","flowers","fruit","seeds"]}
-    seeds = MeshPaint(palette)
-    for i,(x,y) in enumerate([(-.14,-.12),(.14,-.11),(-.11,.14),(.14,.15),(0,0)]):
-        radii = (.044,.035,.028) if crop == "potato" else ((.023,.016,.010) if crop == "tomato" else (.018,.011,.010))
-        center = Vector((x,y,-.015 if crop == "potato" else -.004))
-        color = (.46,.30,.13) if crop == "potato" else ((.64,.47,.23) if crop == "tomato" else (.32,.22,.14))
-        seeds.oval("seeds",center,radii,color,phase=i,lobes=.07 if crop == "potato" else 0)
-        if crop == "potato":
-            for j in range(3):
-                eye = center+Vector((.018*math.cos(i+j*2),.018*math.sin(i+j*2),.025))
-                seeds.oval("seeds",eye,(.003,.003,.002),(.22,.13,.045),detail=8)
-    seed_collection = seeds.export(crop,"seed",materials)
-    grown = lavender(palette) if crop == "lavender" else broad_plant(crop,palette)
-    grown.export(crop,"mature",materials)
-    seed_collection.hide_viewport = True
-    seed_collection.hide_render = True
-    bpy.ops.object.camera_add(location=(1.3,-1.8,1.2))
-    camera = bpy.context.object
-    camera.rotation_euler = (Vector((0,0,.4))-camera.location).to_track_quat("-Z","Y").to_euler()
-    camera.data.lens = 55
-    bpy.context.scene.camera = camera
-    bpy.ops.object.light_add(type="AREA",location=(-2,-3,4))
-    bpy.context.object.data.energy = 450
-    bpy.context.object.data.size = 4
-    bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/"art/blender"/(crop+".blend")))
-print("TWO_STAGE_CROPS_READY",flush=True)
+def main():
+    for crop in ["potato","tomato","lavender"]:
+        bpy.ops.object.select_all(action="SELECT")
+        bpy.ops.object.delete(use_global=False)
+        for collection in list(bpy.data.collections):
+            bpy.data.collections.remove(collection)
+        # Pack the original illustration as an editable art reference, not a card.
+        reference = bpy.data.images.load(str(ROOT/"assets/crops"/crop/"painted/stage_3/variant_0_front.png"))
+        reference.pack()
+        reference.name = crop+" - original painted reference"
+        palette = {"stems":(.28,.36,.075),"leaves":(.32,.44,.09)}
+        if crop == "lavender":
+            palette = {"stems":(.32,.39,.18),"leaves":(.40,.47,.25)}
+        materials = {kind: material(kind,kind in ["leaves","flowers","fruit"]) for kind in ["stems","leaves","flowers","fruit","seeds"]}
+        seeds = MeshPaint(palette)
+        for i,(x,y) in enumerate([(-.14,-.12),(.14,-.11),(-.11,.14),(.14,.15),(0,0)]):
+            radii = (.044,.035,.028) if crop == "potato" else ((.023,.016,.010) if crop == "tomato" else (.018,.011,.010))
+            center = Vector((x,y,-.015 if crop == "potato" else -.004))
+            color = (.46,.30,.13) if crop == "potato" else ((.64,.47,.23) if crop == "tomato" else (.32,.22,.14))
+            seeds.oval("seeds",center,radii,color,phase=i,lobes=.07 if crop == "potato" else 0)
+            if crop == "potato":
+                for j in range(3):
+                    eye = center+Vector((.018*math.cos(i+j*2),.018*math.sin(i+j*2),.025))
+                    seeds.oval("seeds",eye,(.003,.003,.002),(.22,.13,.045),detail=8)
+        seed_collection = seeds.export(crop,"seed",materials)
+        grown = lavender(palette) if crop == "lavender" else broad_plant(crop,palette)
+        grown.export(crop,"mature",materials)
+        seed_collection.hide_viewport = True
+        seed_collection.hide_render = True
+        bpy.ops.object.camera_add(location=(1.3,-1.8,1.2))
+        camera = bpy.context.object
+        camera.rotation_euler = (Vector((0,0,.4))-camera.location).to_track_quat("-Z","Y").to_euler()
+        camera.data.lens = 55
+        bpy.context.scene.camera = camera
+        bpy.ops.object.light_add(type="AREA",location=(-2,-3,4))
+        bpy.context.object.data.energy = 450
+        bpy.context.object.data.size = 4
+        bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/"art/blender"/(crop+".blend")))
+    print("TWO_STAGE_CROPS_READY",flush=True)
+
+
+if __name__ == "__main__":
+    main()
