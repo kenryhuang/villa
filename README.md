@@ -100,6 +100,25 @@ docs/validation/              操作说明、验证结果和截图
 - 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v5 增加 NPC Agent 决策状态、真实农田任务与租用订单归属，兼容 v1/v2/v3/v4，保留市场行情、NPC 经济状态、市集位置和高尔夫成绩。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
+### 本地文件与版本管理
+
+以下文件不提交 Git；忽略规则不会删除本地存档或配置。
+
+| 路径 | 用途 |
+| --- | --- |
+| `data/farm_3d_save.json` | 3D 游戏主存档，包括农场、建筑、背包、经济和 NPC 状态 |
+| `data/farm_3d_save.json.bak` | 本次启动首次覆盖保存前的恢复备份 |
+| `data/farm_3d_save.json.agent-memory.json` | 主存档对应的 Agent 记忆检查点清单与校验信息 |
+| `data/farm_3d_save.json*.tmp` | 保存过程中原子写入产生的临时文件 |
+| `services/agent-service/data/` | Agent SQLite 记忆数据库、`-wal` / `-shm` 文件和 `checkpoints/` 记忆快照 |
+| `config/agent-client.local.json`、`services/agent-service/config/agent-service.local.json` | 本机服务连接、模型和密钥配置，手工创建，不属于存档 |
+| `tmp/`、`output/` | 本地调试日志、请求追踪和临时截图；当前客户端配置将 `.ndjson` 请求追踪写入 `tmp/` |
+| `.godot/`、`services/agent-service/node_modules/`、`services/agent-service/dist/` | Godot 导入缓存、Node 依赖及构建产物 |
+
+客户端请求追踪的默认目录为 `user://agent_sessions/`，旧版游戏存档位于 `user://villa_saves/`，均在 Godot 用户数据目录中，不属于项目 Git 工作目录。3D 主存档不会从旧路径读取。
+
+需要提交的文件包括 `data/agents/*.json`（NPC 初始档案、职业、合作模板和转职规则）、两份 `*.example.json` 配置模板、`data/.gdignore`，以及 Godot 的 `.uid` 和资源旁的 `.import`（稳定资源标识和导入设置）。`assets/` 下的模型、纹理等游戏资产以及 `art/blender/` 源模型也需要提交，即使部分资产由生成脚本制作。
+
 ## 操作与验证
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
