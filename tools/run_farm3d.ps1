@@ -4,6 +4,7 @@ param(
     [switch]$Agents,
     [switch]$CheckAgents,
     [switch]$ServiceOnly,
+    [switch]$StopAgents,
     [string]$AgentClientConfig = "",
     [string]$AgentServiceConfig = ""
 )
@@ -31,10 +32,11 @@ function Test-VillaAgentProcess($ProcessInfo, $Health, [string[]]$ProjectRoots) 
         ($configArgument -eq 'config/agent-service.local.json' -or $configArgument -in $knownConfigs))
 }
 
+if ($StopAgents -and ($ServiceOnly -or $CheckAgents -or $CapturePreview -or $Overview)) { throw '-StopAgents 不能与启动、检查或截图选项同时使用。' }
 if ($ServiceOnly -and ($CheckAgents -or $CapturePreview)) { throw '-ServiceOnly 不能与 -CheckAgents 或 -CapturePreview 同时使用。' }
-if ($CheckAgents -or $ServiceOnly) { $Agents = $true }
+if ($CheckAgents -or $ServiceOnly -or $StopAgents) { $Agents = $true }
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $CheckAgents -and -not $ServiceOnly) {
+if (-not $CheckAgents -and -not $ServiceOnly -and -not $StopAgents) {
     $godot = Get-Command godot_console.exe -ErrorAction SilentlyContinue
     if ($null -eq $godot) {
         $godot = Get-Command godot.exe -ErrorAction Stop
@@ -72,23 +74,33 @@ try {
         $alreadyRunning = $false
         $health = $null
         try { $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2; $alreadyRunning = $true } catch {}
-        if ($alreadyRunning -and -not (Test-AgentServiceHealth $health)) {
+        if ($StopAgents -or ($alreadyRunning -and -not (Test-AgentServiceHealth $health))) {
             $endpoint = [uri]$clientSettings.service_url
-            if (-not $endpoint.IsLoopback) { throw '远端 Agent 服务版本过旧，请更新远端服务后重试。' }
+            if (-not $endpoint.IsLoopback) { throw '此脚本只能停止或替换本机 Agent 服务。' }
             $serviceSettings = Get-Content -LiteralPath $AgentServiceConfig -Raw | ConvertFrom-Json
             if ($endpoint.Port -ne $serviceSettings.service.port) { throw '客户端端口与服务端配置不一致，未停止任何进程。' }
-            $owners = @(Get-NetTCPConnection -LocalPort $endpoint.Port -State Listen -ErrorAction Stop |
+            $owners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop |
+                Where-Object { $_.LocalPort -eq $endpoint.Port } |
                 Where-Object { $_.LocalAddress -in @('127.0.0.1', '::1', '0.0.0.0', '::') } |
                 Select-Object -ExpandProperty OwningProcess -Unique)
+            if ($StopAgents -and $owners.Count -eq 0) {
+                Write-Host "Agent 服务未运行（端口 $($endpoint.Port)）。"
+                return
+            }
             if ($owners.Count -ne 1) { throw '无法唯一确认旧 Agent 服务进程，未停止任何进程。' }
             $oldInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($owners[0])" -ErrorAction Stop
             if (-not (Test-VillaAgentProcess $oldInfo $health $configRoots)) {
                 throw "端口 $($endpoint.Port) 的进程 $($owners[0]) 无法识别为本项目 Agent 服务，未停止该进程。"
             }
-            Write-Host "正在替换旧 Agent 服务（PID $($owners[0])，端口 $($endpoint.Port)）……"
+            $operation = if ($StopAgents) { '停止' } else { '替换旧' }
+            Write-Host "正在$operation Agent 服务（PID $($owners[0])，端口 $($endpoint.Port)）……"
             $oldProcess = Get-Process -Id $owners[0] -ErrorAction Stop
             Stop-Process -InputObject $oldProcess -ErrorAction Stop
             if (-not $oldProcess.WaitForExit(5000)) { throw '旧 Agent 服务尚未退出，请稍后重试。' }
+            if ($StopAgents) {
+                Write-Host 'Agent 服务已停止。'
+                return
+            }
             $alreadyRunning = $false
         }
         if (-not $alreadyRunning) {

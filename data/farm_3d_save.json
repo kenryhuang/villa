@@ -5,7 +5,8 @@
         "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406": {
           "activity_id": "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406",
           "agent_id": "xuezhe_lin",
-          "complete_at_minute": 9101,
+          "complete_at_minute": 9101.0,
+          "completed_minute": 9101,
           "kind": "travel",
           "payload": {
             "action_id": "call_bd34fe00ab954e9a9da14406",
@@ -14,8 +15,8 @@
             "region_id": "hills",
             "tool_name": "travel"
           },
-          "started_minute": 8981,
-          "status": "in_progress"
+          "started_minute": 8981.0,
+          "status": "completed"
         }
       },
       "version": 1
@@ -32,19 +33,19 @@
       "buildings": {},
       "version": 1
     },
-    "checkpoint_sequence": 122,
+    "checkpoint_sequence": 133,
     "event_schema_version": 1,
     "event_store": {
       "aggregate_versions": [
         {
           "aggregate_id": "xuezhe_lin",
           "aggregate_type": "actor",
-          "version": 1
+          "version": 3
         },
         {
           "aggregate_id": "farmer_ahe",
           "aggregate_type": "farm",
-          "version": 1
+          "version": 4
         },
         {
           "aggregate_id": "animal_feed",
@@ -489,7 +490,7 @@
         {
           "aggregate_id": "clock",
           "aggregate_type": "public_world",
-          "version": 11
+          "version": 17
         },
         {
           "aggregate_id": "season",
@@ -4346,7 +4347,7 @@
           "payload": {
             "agreement_id": "",
             "arguments": {
-              "plot": 0.0
+              "plot": 0
             },
             "changed_entities": [
               "npc_farm:farmer_ahe:0"
@@ -4441,7 +4442,7 @@
             "agreement_id": "",
             "arguments": {
               "item_id": "jewelry",
-              "quantity": 1.0
+              "quantity": 1
             },
             "changed_entities": [
               "npc_inventory:xuezhe_lin",
@@ -4475,7 +4476,7 @@
           "payload": {
             "agreement_id": "",
             "arguments": {
-              "duration_minutes": 120.0,
+              "duration_minutes": 120,
               "region_id": "hills"
             },
             "changed_entities": [
@@ -4514,6 +4515,316 @@
             "actor_ids": [],
             "scope": "public"
           }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 12,
+          "causation_event_id": "",
+          "command_id": "time:9060",
+          "correlation_id": "clock",
+          "event_id": "evt-00000123",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9060,
+          "global_sequence": 123,
+          "idempotency_key": "world-fact:time:9060",
+          "payload": {
+            "absolute_game_minute": 9060,
+            "hour": 13,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "farmer_ahe",
+          "aggregate_id": "farmer_ahe",
+          "aggregate_type": "farm",
+          "aggregate_version": 2,
+          "causation_event_id": "",
+          "command_id": "call_3a651b20efd643a784b04611",
+          "correlation_id": "agent-action:farmer_ahe",
+          "event_id": "evt-00000124",
+          "event_schema_version": 1,
+          "event_type": "CropPlanted",
+          "game_minute": 9063,
+          "global_sequence": 124,
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "plot": 0.0,
+              "seed_item_id": "grain_seed"
+            },
+            "changed_entities": [
+              "npc_farm:farmer_ahe:0",
+              "npc_inventory:farmer_ahe"
+            ],
+            "region_id": "farm",
+            "resource_delta": {
+              "grain_seed": -1
+            },
+            "status": "completed",
+            "tool_name": "plant"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "region"
+          }
+        },
+        {
+          "actor_id": "farmer_ahe",
+          "aggregate_id": "farmer_ahe",
+          "aggregate_type": "farm",
+          "aggregate_version": 3,
+          "causation_event_id": "",
+          "command_id": "call_1da5843fd5734cf7a002a1b8",
+          "correlation_id": "agent-action:farmer_ahe",
+          "event_id": "evt-00000125",
+          "event_schema_version": 1,
+          "event_type": "FieldTilled",
+          "game_minute": 9067,
+          "global_sequence": 125,
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "plot": 1.0
+            },
+            "changed_entities": [
+              "npc_farm:farmer_ahe:1"
+            ],
+            "region_id": "farm",
+            "resource_delta": {},
+            "status": "completed",
+            "tool_name": "till"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "region"
+          }
+        },
+        {
+          "actor_id": "farmer_ahe",
+          "aggregate_id": "farmer_ahe",
+          "aggregate_type": "farm",
+          "aggregate_version": 4,
+          "causation_event_id": "",
+          "command_id": "call_dca72ee1c9ad4f1a8990c942",
+          "correlation_id": "agent-action:farmer_ahe",
+          "event_id": "evt-00000126",
+          "event_schema_version": 1,
+          "event_type": "FieldTilled",
+          "game_minute": 9072,
+          "global_sequence": 126,
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "plot": 2.0
+            },
+            "changed_entities": [
+              "npc_farm:farmer_ahe:2"
+            ],
+            "region_id": "farm",
+            "resource_delta": {},
+            "status": "completed",
+            "tool_name": "till"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "region"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "aggregate_version": 2,
+          "causation_event_id": "",
+          "command_id": "call_bd34fe00ab954e9a9da14406",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000127",
+          "event_schema_version": 1,
+          "event_type": "ActorRegionChanged",
+          "game_minute": 9101,
+          "global_sequence": 127,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "agreement_id": "",
+              "region_id": "hills"
+            },
+            "changed_entities": [
+              "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+            ],
+            "region_id": "hills",
+            "resource_delta": {},
+            "status": "completed",
+            "tool_name": "travel"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "aggregate_version": 3,
+          "causation_event_id": "",
+          "command_id": "call_bd34fe00ab954e9a9da14406",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000128",
+          "event_schema_version": 1,
+          "event_type": "PublicStatusChanged",
+          "game_minute": 9101,
+          "global_sequence": 128,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "agreement_id": "",
+              "region_id": "hills"
+            },
+            "changed_entities": [
+              "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+            ],
+            "region_id": "hills",
+            "resource_delta": {},
+            "status": "idle",
+            "tool_name": "travel"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 13,
+          "causation_event_id": "",
+          "command_id": "time:9120",
+          "correlation_id": "clock",
+          "event_id": "evt-00000129",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9120,
+          "global_sequence": 129,
+          "idempotency_key": "world-fact:time:9120",
+          "payload": {
+            "absolute_game_minute": 9120,
+            "hour": 14,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 14,
+          "causation_event_id": "",
+          "command_id": "time:9180",
+          "correlation_id": "clock",
+          "event_id": "evt-00000130",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9180,
+          "global_sequence": 130,
+          "idempotency_key": "world-fact:time:9180",
+          "payload": {
+            "absolute_game_minute": 9180,
+            "hour": 15,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 15,
+          "causation_event_id": "",
+          "command_id": "time:9240",
+          "correlation_id": "clock",
+          "event_id": "evt-00000131",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9240,
+          "global_sequence": 131,
+          "idempotency_key": "world-fact:time:9240",
+          "payload": {
+            "absolute_game_minute": 9240,
+            "hour": 16,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 16,
+          "causation_event_id": "",
+          "command_id": "time:9300",
+          "correlation_id": "clock",
+          "event_id": "evt-00000132",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9300,
+          "global_sequence": 132,
+          "idempotency_key": "world-fact:time:9300",
+          "payload": {
+            "absolute_game_minute": 9300,
+            "hour": 17,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 17,
+          "causation_event_id": "",
+          "command_id": "time:9360",
+          "correlation_id": "clock",
+          "event_id": "evt-00000133",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9360,
+          "global_sequence": 133,
+          "idempotency_key": "world-fact:time:9360",
+          "payload": {
+            "absolute_game_minute": 9360,
+            "hour": 18,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
         }
       ],
       "idempotency_results": [
@@ -4538,7 +4849,7 @@
                 "payload": {
                   "agreement_id": "",
                   "arguments": {
-                    "plot": 0.0
+                    "plot": 0
                   },
                   "changed_entities": [
                     "npc_farm:farmer_ahe:0"
@@ -4555,6 +4866,133 @@
               }
             ],
             "last_sequence": 117,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611:completed",
+          "result": {
+            "events": [
+              {
+                "actor_id": "farmer_ahe",
+                "aggregate_id": "farmer_ahe",
+                "aggregate_type": "farm",
+                "aggregate_version": 2,
+                "causation_event_id": "",
+                "command_id": "call_3a651b20efd643a784b04611",
+                "correlation_id": "agent-action:farmer_ahe",
+                "event_id": "evt-00000124",
+                "event_schema_version": 1,
+                "event_type": "CropPlanted",
+                "game_minute": 9063,
+                "global_sequence": 124,
+                "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "plot": 0.0,
+                    "seed_item_id": "grain_seed"
+                  },
+                  "changed_entities": [
+                    "npc_farm:farmer_ahe:0",
+                    "npc_inventory:farmer_ahe"
+                  ],
+                  "region_id": "farm",
+                  "resource_delta": {
+                    "grain_seed": -1
+                  },
+                  "status": "completed",
+                  "tool_name": "plant"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "region"
+                }
+              }
+            ],
+            "last_sequence": 124,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8:completed",
+          "result": {
+            "events": [
+              {
+                "actor_id": "farmer_ahe",
+                "aggregate_id": "farmer_ahe",
+                "aggregate_type": "farm",
+                "aggregate_version": 3,
+                "causation_event_id": "",
+                "command_id": "call_1da5843fd5734cf7a002a1b8",
+                "correlation_id": "agent-action:farmer_ahe",
+                "event_id": "evt-00000125",
+                "event_schema_version": 1,
+                "event_type": "FieldTilled",
+                "game_minute": 9067,
+                "global_sequence": 125,
+                "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "plot": 1.0
+                  },
+                  "changed_entities": [
+                    "npc_farm:farmer_ahe:1"
+                  ],
+                  "region_id": "farm",
+                  "resource_delta": {},
+                  "status": "completed",
+                  "tool_name": "till"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "region"
+                }
+              }
+            ],
+            "last_sequence": 125,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942:completed",
+          "result": {
+            "events": [
+              {
+                "actor_id": "farmer_ahe",
+                "aggregate_id": "farmer_ahe",
+                "aggregate_type": "farm",
+                "aggregate_version": 4,
+                "causation_event_id": "",
+                "command_id": "call_dca72ee1c9ad4f1a8990c942",
+                "correlation_id": "agent-action:farmer_ahe",
+                "event_id": "evt-00000126",
+                "event_schema_version": 1,
+                "event_type": "FieldTilled",
+                "game_minute": 9072,
+                "global_sequence": 126,
+                "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "plot": 2.0
+                  },
+                  "changed_entities": [
+                    "npc_farm:farmer_ahe:2"
+                  ],
+                  "region_id": "farm",
+                  "resource_delta": {},
+                  "status": "completed",
+                  "tool_name": "till"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "region"
+                }
+              }
+            ],
+            "last_sequence": 126,
             "ok": true
           }
         },
@@ -4580,7 +5018,7 @@
                   "agreement_id": "",
                   "arguments": {
                     "item_id": "jewelry",
-                    "quantity": 1.0
+                    "quantity": 1
                   },
                   "changed_entities": [
                     "npc_inventory:xuezhe_lin",
@@ -4599,6 +5037,81 @@
               }
             ],
             "last_sequence": 120,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+          "result": {
+            "events": [
+              {
+                "actor_id": "xuezhe_lin",
+                "aggregate_id": "xuezhe_lin",
+                "aggregate_type": "actor",
+                "aggregate_version": 2,
+                "causation_event_id": "",
+                "command_id": "call_bd34fe00ab954e9a9da14406",
+                "correlation_id": "agent-action:xuezhe_lin",
+                "event_id": "evt-00000127",
+                "event_schema_version": 1,
+                "event_type": "ActorRegionChanged",
+                "game_minute": 9101,
+                "global_sequence": 127,
+                "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "agreement_id": "",
+                    "region_id": "hills"
+                  },
+                  "changed_entities": [
+                    "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+                  ],
+                  "region_id": "hills",
+                  "resource_delta": {},
+                  "status": "completed",
+                  "tool_name": "travel"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              },
+              {
+                "actor_id": "xuezhe_lin",
+                "aggregate_id": "xuezhe_lin",
+                "aggregate_type": "actor",
+                "aggregate_version": 3,
+                "causation_event_id": "",
+                "command_id": "call_bd34fe00ab954e9a9da14406",
+                "correlation_id": "agent-action:xuezhe_lin",
+                "event_id": "evt-00000128",
+                "event_schema_version": 1,
+                "event_type": "PublicStatusChanged",
+                "game_minute": 9101,
+                "global_sequence": 128,
+                "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "agreement_id": "",
+                    "region_id": "hills"
+                  },
+                  "changed_entities": [
+                    "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+                  ],
+                  "region_id": "hills",
+                  "resource_delta": {},
+                  "status": "idle",
+                  "tool_name": "travel"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 128,
             "ok": true
           }
         },
@@ -4623,7 +5136,7 @@
                 "payload": {
                   "agreement_id": "",
                   "arguments": {
-                    "duration_minutes": 120.0,
+                    "duration_minutes": 120,
                     "region_id": "hills"
                   },
                   "changed_entities": [
@@ -9631,9 +10144,207 @@
             "last_sequence": 122,
             "ok": true
           }
+        },
+        {
+          "idempotency_key": "world-fact:time:9060",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 12,
+                "causation_event_id": "",
+                "command_id": "time:9060",
+                "correlation_id": "clock",
+                "event_id": "evt-00000123",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9060,
+                "global_sequence": 123,
+                "idempotency_key": "world-fact:time:9060",
+                "payload": {
+                  "absolute_game_minute": 9060,
+                  "hour": 13,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 123,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:9120",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 13,
+                "causation_event_id": "",
+                "command_id": "time:9120",
+                "correlation_id": "clock",
+                "event_id": "evt-00000129",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9120,
+                "global_sequence": 129,
+                "idempotency_key": "world-fact:time:9120",
+                "payload": {
+                  "absolute_game_minute": 9120,
+                  "hour": 14,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 129,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:9180",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 14,
+                "causation_event_id": "",
+                "command_id": "time:9180",
+                "correlation_id": "clock",
+                "event_id": "evt-00000130",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9180,
+                "global_sequence": 130,
+                "idempotency_key": "world-fact:time:9180",
+                "payload": {
+                  "absolute_game_minute": 9180,
+                  "hour": 15,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 130,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:9240",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 15,
+                "causation_event_id": "",
+                "command_id": "time:9240",
+                "correlation_id": "clock",
+                "event_id": "evt-00000131",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9240,
+                "global_sequence": 131,
+                "idempotency_key": "world-fact:time:9240",
+                "payload": {
+                  "absolute_game_minute": 9240,
+                  "hour": 16,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 131,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:9300",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 16,
+                "causation_event_id": "",
+                "command_id": "time:9300",
+                "correlation_id": "clock",
+                "event_id": "evt-00000132",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9300,
+                "global_sequence": 132,
+                "idempotency_key": "world-fact:time:9300",
+                "payload": {
+                  "absolute_game_minute": 9300,
+                  "hour": 17,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 132,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:9360",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 17,
+                "causation_event_id": "",
+                "command_id": "time:9360",
+                "correlation_id": "clock",
+                "event_id": "evt-00000133",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9360,
+                "global_sequence": 133,
+                "idempotency_key": "world-fact:time:9360",
+                "payload": {
+                  "absolute_game_minute": 9360,
+                  "hour": 18,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 133,
+            "ok": true
+          }
         }
       ],
-      "next_global_sequence": 123,
+      "next_global_sequence": 134,
       "version": 1
     },
     "executor": {
@@ -9648,11 +10359,75 @@
           "changed_entities": [
             "npc_farm:farmer_ahe:0"
           ],
-          "committed_revision": 1,
+          "committed_revision": 1.0,
           "decision_id": "chatcmpl-c137e6f7-6bad-9870-bba2-ca5611ac138d",
-          "game_minute": 8934,
+          "game_minute": 8934.0,
           "hud_message": "阿禾开垦了地块 0。",
           "idempotency_key": "v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275",
+          "protocol_version": 2.0,
+          "resource_delta": {},
+          "status": "completed",
+          "tool_name": "till"
+        },
+        "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611": {
+          "action_id": "call_3a651b20efd643a784b04611",
+          "agent_id": "farmer_ahe",
+          "agreement_id": "",
+          "arguments": {
+            "plot": 0.0,
+            "seed_item_id": "grain_seed"
+          },
+          "changed_entities": [
+            "npc_farm:farmer_ahe:0",
+            "npc_inventory:farmer_ahe"
+          ],
+          "committed_revision": 4,
+          "decision_id": "chatcmpl-22b7fc23-7ae0-97f6-897b-11bb353a5ab8",
+          "game_minute": 9063,
+          "hud_message": "阿禾播种了谷物。",
+          "idempotency_key": "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611",
+          "protocol_version": 2,
+          "resource_delta": {
+            "grain_seed": -1
+          },
+          "status": "completed",
+          "tool_name": "plant"
+        },
+        "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8": {
+          "action_id": "call_1da5843fd5734cf7a002a1b8",
+          "agent_id": "farmer_ahe",
+          "agreement_id": "",
+          "arguments": {
+            "plot": 1.0
+          },
+          "changed_entities": [
+            "npc_farm:farmer_ahe:1"
+          ],
+          "committed_revision": 5,
+          "decision_id": "chatcmpl-22b7fc23-7ae0-97f6-897b-11bb353a5ab8",
+          "game_minute": 9067,
+          "hud_message": "阿禾开垦了地块 1。",
+          "idempotency_key": "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8",
+          "protocol_version": 2,
+          "resource_delta": {},
+          "status": "completed",
+          "tool_name": "till"
+        },
+        "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942": {
+          "action_id": "call_dca72ee1c9ad4f1a8990c942",
+          "agent_id": "farmer_ahe",
+          "agreement_id": "",
+          "arguments": {
+            "plot": 2.0
+          },
+          "changed_entities": [
+            "npc_farm:farmer_ahe:2"
+          ],
+          "committed_revision": 6,
+          "decision_id": "chatcmpl-22b7fc23-7ae0-97f6-897b-11bb353a5ab8",
+          "game_minute": 9072,
+          "hud_message": "阿禾开垦了地块 2。",
+          "idempotency_key": "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942",
           "protocol_version": 2,
           "resource_delta": {},
           "status": "completed",
@@ -9670,14 +10445,14 @@
             "npc_inventory:xuezhe_lin",
             "market:jewelry"
           ],
-          "committed_revision": 2,
+          "committed_revision": 2.0,
           "decision_id": "chatcmpl-203977e6-761d-9e00-9d09-0c19681fdcf1",
-          "game_minute": 8981,
+          "game_minute": 8981.0,
           "hud_message": "学者林出售了jewelry ×1。",
           "idempotency_key": "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f",
-          "protocol_version": 2,
+          "protocol_version": 2.0,
           "resource_delta": {
-            "jewelry": -1
+            "jewelry": -1.0
           },
           "status": "completed",
           "tool_name": "sell"
@@ -9687,24 +10462,42 @@
           "agent_id": "xuezhe_lin",
           "agreement_id": "",
           "arguments": {
-            "duration_minutes": 120.0,
+            "agreement_id": "",
             "region_id": "hills"
           },
           "changed_entities": [
             "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
           ],
-          "committed_revision": 3,
+          "committed_revision": 7,
           "decision_id": "chatcmpl-203977e6-761d-9e00-9d09-0c19681fdcf1",
-          "game_minute": 8981,
-          "hud_message": "学者林出发前往hills。",
+          "game_minute": 9101,
+          "hud_message": "xuezhe_lin完成了travel",
           "idempotency_key": "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406",
           "protocol_version": 2,
           "resource_delta": {},
-          "status": "in_progress",
+          "status": "completed",
           "tool_name": "travel"
+        },
+        "v2:xuezhe_lin-65ad95aa381a0-fead00ef9b-3:0:call_97b8b19c5e654c63a4b17e5e": {
+          "action_id": "call_97b8b19c5e654c63a4b17e5e",
+          "agent_id": "xuezhe_lin",
+          "agreement_id": "",
+          "arguments": {
+            "reason": "travel(120min) 于 8981 开始，现 9014 仍在途；hills/forest/creek 的 inspect_region 均 found:false 且 known_discoveries 为空，无可核实发现点。crystal/honey_cake 恰满足 reserve_targets，bread 无溢价(mid=base=116, stock 34>30)，rope 为出行必需。jewelry 售出目标已完成。故等待抵达后再勘测。"
+          },
+          "changed_entities": [],
+          "committed_revision": 7,
+          "decision_id": "chatcmpl-0525378b-6aa9-9de5-b4b4-175bef478f5f",
+          "game_minute": 9126,
+          "hud_message": "",
+          "idempotency_key": "v2:xuezhe_lin-65ad95aa381a0-fead00ef9b-3:0:call_97b8b19c5e654c63a4b17e5e",
+          "protocol_version": 2,
+          "resource_delta": {},
+          "status": "completed",
+          "tool_name": "wait"
         }
       },
-      "world_revision": 3
+      "world_revision": 7
     },
     "farm": {
       "agent_id": "farmer_ahe",
@@ -9718,6 +10511,33 @@
             "npc_farm:farmer_ahe:0"
           ],
           "message": "阿禾开垦了地块 0。",
+          "ok": true,
+          "resource_delta": {}
+        },
+        "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611": {
+          "changed_entities": [
+            "npc_farm:farmer_ahe:0",
+            "npc_inventory:farmer_ahe"
+          ],
+          "message": "阿禾播种了谷物。",
+          "ok": true,
+          "resource_delta": {
+            "grain_seed": -1
+          }
+        },
+        "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8": {
+          "changed_entities": [
+            "npc_farm:farmer_ahe:1"
+          ],
+          "message": "阿禾开垦了地块 1。",
+          "ok": true,
+          "resource_delta": {}
+        },
+        "v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942": {
+          "changed_entities": [
+            "npc_farm:farmer_ahe:2"
+          ],
+          "message": "阿禾开垦了地块 2。",
           "ok": true,
           "resource_delta": {}
         }
@@ -9893,7 +10713,7 @@
       "consumption_cursors": [
         {
           "agent_id": "farmer_ahe",
-          "consumed_sequence": 114
+          "consumed_sequence": 129
         },
         {
           "agent_id": "lao_li",
@@ -9901,7 +10721,7 @@
         },
         {
           "agent_id": "xuezhe_lin",
-          "consumed_sequence": 114
+          "consumed_sequence": 131
         }
       ],
       "version": 1
@@ -9928,10 +10748,110 @@
               "payload": {
                 "agreement_id": "",
                 "arguments": {
-                  "plot": 0.0
+                  "plot": 0
                 },
                 "changed_entities": [
                   "npc_farm:farmer_ahe:0"
+                ],
+                "region_id": "farm",
+                "resource_delta": {},
+                "status": "completed",
+                "tool_name": "till"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "region"
+              }
+            },
+            {
+              "actor_id": "farmer_ahe",
+              "aggregate_id": "farmer_ahe",
+              "aggregate_type": "farm",
+              "aggregate_version": 2,
+              "causation_event_id": "",
+              "command_id": "call_3a651b20efd643a784b04611",
+              "correlation_id": "agent-action:farmer_ahe",
+              "event_id": "evt-00000124",
+              "event_schema_version": 1,
+              "event_type": "CropPlanted",
+              "game_minute": 9063,
+              "global_sequence": 124,
+              "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:0:call_3a651b20efd643a784b04611:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "plot": 0.0,
+                  "seed_item_id": "grain_seed"
+                },
+                "changed_entities": [
+                  "npc_farm:farmer_ahe:0",
+                  "npc_inventory:farmer_ahe"
+                ],
+                "region_id": "farm",
+                "resource_delta": {
+                  "grain_seed": -1
+                },
+                "status": "completed",
+                "tool_name": "plant"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "region"
+              }
+            },
+            {
+              "actor_id": "farmer_ahe",
+              "aggregate_id": "farmer_ahe",
+              "aggregate_type": "farm",
+              "aggregate_version": 3,
+              "causation_event_id": "",
+              "command_id": "call_1da5843fd5734cf7a002a1b8",
+              "correlation_id": "agent-action:farmer_ahe",
+              "event_id": "evt-00000125",
+              "event_schema_version": 1,
+              "event_type": "FieldTilled",
+              "game_minute": 9067,
+              "global_sequence": 125,
+              "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:1:call_1da5843fd5734cf7a002a1b8:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "plot": 1.0
+                },
+                "changed_entities": [
+                  "npc_farm:farmer_ahe:1"
+                ],
+                "region_id": "farm",
+                "resource_delta": {},
+                "status": "completed",
+                "tool_name": "till"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "region"
+              }
+            },
+            {
+              "actor_id": "farmer_ahe",
+              "aggregate_id": "farmer_ahe",
+              "aggregate_type": "farm",
+              "aggregate_version": 4,
+              "causation_event_id": "",
+              "command_id": "call_dca72ee1c9ad4f1a8990c942",
+              "correlation_id": "agent-action:farmer_ahe",
+              "event_id": "evt-00000126",
+              "event_schema_version": 1,
+              "event_type": "FieldTilled",
+              "game_minute": 9072,
+              "global_sequence": 126,
+              "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad95aa381a0-fead00ef9b-1:2:call_dca72ee1c9ad4f1a8990c942:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "plot": 2.0
+                },
+                "changed_entities": [
+                  "npc_farm:farmer_ahe:2"
                 ],
                 "region_id": "farm",
                 "resource_delta": {},
@@ -9974,7 +10894,7 @@
                 "agreement_id": "",
                 "arguments": {
                   "item_id": "jewelry",
-                  "quantity": 1.0
+                  "quantity": 1
                 },
                 "changed_entities": [
                   "npc_inventory:xuezhe_lin",
@@ -10008,7 +10928,7 @@
               "payload": {
                 "agreement_id": "",
                 "arguments": {
-                  "duration_minutes": 120.0,
+                  "duration_minutes": 120,
                   "region_id": "hills"
                 },
                 "changed_entities": [
@@ -10017,6 +10937,72 @@
                 "region_id": "forest",
                 "resource_delta": {},
                 "status": "traveling",
+                "tool_name": "travel"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "public"
+              }
+            },
+            {
+              "actor_id": "xuezhe_lin",
+              "aggregate_id": "xuezhe_lin",
+              "aggregate_type": "actor",
+              "aggregate_version": 2,
+              "causation_event_id": "",
+              "command_id": "call_bd34fe00ab954e9a9da14406",
+              "correlation_id": "agent-action:xuezhe_lin",
+              "event_id": "evt-00000127",
+              "event_schema_version": 1,
+              "event_type": "ActorRegionChanged",
+              "game_minute": 9101,
+              "global_sequence": 127,
+              "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "agreement_id": "",
+                  "region_id": "hills"
+                },
+                "changed_entities": [
+                  "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+                ],
+                "region_id": "hills",
+                "resource_delta": {},
+                "status": "completed",
+                "tool_name": "travel"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "public"
+              }
+            },
+            {
+              "actor_id": "xuezhe_lin",
+              "aggregate_id": "xuezhe_lin",
+              "aggregate_type": "actor",
+              "aggregate_version": 3,
+              "causation_event_id": "",
+              "command_id": "call_bd34fe00ab954e9a9da14406",
+              "correlation_id": "agent-action:xuezhe_lin",
+              "event_id": "evt-00000128",
+              "event_schema_version": 1,
+              "event_type": "PublicStatusChanged",
+              "game_minute": 9101,
+              "global_sequence": 128,
+              "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "agreement_id": "",
+                  "region_id": "hills"
+                },
+                "changed_entities": [
+                  "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+                ],
+                "region_id": "hills",
+                "resource_delta": {},
+                "status": "idle",
                 "tool_name": "travel"
               },
               "visibility": {
@@ -10069,280 +11055,16 @@
           "actor_type": "npc_agent",
           "current_public_state": {
             "public_role": "explorer",
-            "region_id": "forest",
-            "status": "traveling"
+            "region_id": "hills",
+            "status": "idle"
           },
           "display_name": "学者林",
           "public_role": "explorer",
-          "region_id": "forest"
+          "region_id": "hills"
         }
       ],
-      "checkpoint_sequence": 122,
+      "checkpoint_sequence": 133,
       "global_public_events": [
-        {
-          "actor_id": "system",
-          "aggregate_id": "iron_ingot",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:iron_ingot",
-          "correlation_id": "iron_ingot",
-          "event_id": "evt-00000058",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 58,
-          "idempotency_key": "world-fact:bootstrap-market:iron_ingot",
-          "payload": {
-            "base_price": 51,
-            "daily_liquidity": 10,
-            "demand": 0,
-            "history": [
-              51
-            ],
-            "item_id": "iron_ingot",
-            "mid_price": 51,
-            "price": 51,
-            "stock": 18,
-            "supply": 0,
-            "target_stock": 25
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "steel",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:steel",
-          "correlation_id": "steel",
-          "event_id": "evt-00000059",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 59,
-          "idempotency_key": "world-fact:bootstrap-market:steel",
-          "payload": {
-            "base_price": 156,
-            "daily_liquidity": 4,
-            "demand": 0,
-            "history": [
-              156
-            ],
-            "item_id": "steel",
-            "mid_price": 156,
-            "price": 156,
-            "stock": 8,
-            "supply": 0,
-            "target_stock": 12
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "honey",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:honey",
-          "correlation_id": "honey",
-          "event_id": "evt-00000060",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 60,
-          "idempotency_key": "world-fact:bootstrap-market:honey",
-          "payload": {
-            "base_price": 14,
-            "daily_liquidity": 12,
-            "demand": 0,
-            "history": [
-              14
-            ],
-            "item_id": "honey",
-            "mid_price": 14,
-            "price": 14,
-            "stock": 22,
-            "supply": 0,
-            "target_stock": 30
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "beeswax",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:beeswax",
-          "correlation_id": "beeswax",
-          "event_id": "evt-00000061",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 61,
-          "idempotency_key": "world-fact:bootstrap-market:beeswax",
-          "payload": {
-            "base_price": 14,
-            "daily_liquidity": 9,
-            "demand": 0,
-            "history": [
-              14
-            ],
-            "item_id": "beeswax",
-            "mid_price": 14,
-            "price": 14,
-            "stock": 18,
-            "supply": 0,
-            "target_stock": 25
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "egg",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:egg",
-          "correlation_id": "egg",
-          "event_id": "evt-00000062",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 62,
-          "idempotency_key": "world-fact:bootstrap-market:egg",
-          "payload": {
-            "base_price": 14,
-            "daily_liquidity": 18,
-            "demand": 0,
-            "history": [
-              14
-            ],
-            "item_id": "egg",
-            "mid_price": 14,
-            "price": 14,
-            "stock": 32,
-            "supply": 0,
-            "target_stock": 40
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "feather",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:feather",
-          "correlation_id": "feather",
-          "event_id": "evt-00000063",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 63,
-          "idempotency_key": "world-fact:bootstrap-market:feather",
-          "payload": {
-            "base_price": 14,
-            "daily_liquidity": 14,
-            "demand": 0,
-            "history": [
-              14
-            ],
-            "item_id": "feather",
-            "mid_price": 14,
-            "price": 14,
-            "stock": 28,
-            "supply": 0,
-            "target_stock": 35
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "glass_jar",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:glass_jar",
-          "correlation_id": "glass_jar",
-          "event_id": "evt-00000064",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 64,
-          "idempotency_key": "world-fact:bootstrap-market:glass_jar",
-          "payload": {
-            "base_price": 13,
-            "daily_liquidity": 11,
-            "demand": 0,
-            "history": [
-              13
-            ],
-            "item_id": "glass_jar",
-            "mid_price": 13,
-            "price": 13,
-            "stock": 22,
-            "supply": 0,
-            "target_stock": 30
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "glass_bottle",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:glass_bottle",
-          "correlation_id": "glass_bottle",
-          "event_id": "evt-00000065",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 65,
-          "idempotency_key": "world-fact:bootstrap-market:glass_bottle",
-          "payload": {
-            "base_price": 14,
-            "daily_liquidity": 11,
-            "demand": 0,
-            "history": [
-              14
-            ],
-            "item_id": "glass_bottle",
-            "mid_price": 14,
-            "price": 14,
-            "stock": 22,
-            "supply": 0,
-            "target_stock": 30
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
         {
           "actor_id": "system",
           "aggregate_id": "salt",
@@ -12140,7 +12862,7 @@
             "agreement_id": "",
             "arguments": {
               "item_id": "jewelry",
-              "quantity": 1.0
+              "quantity": 1
             },
             "changed_entities": [
               "npc_inventory:xuezhe_lin",
@@ -12174,7 +12896,7 @@
           "payload": {
             "agreement_id": "",
             "arguments": {
-              "duration_minutes": 120.0,
+              "duration_minutes": 120,
               "region_id": "hills"
             },
             "changed_entities": [
@@ -12213,10 +12935,220 @@
             "actor_ids": [],
             "scope": "public"
           }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 12,
+          "causation_event_id": "",
+          "command_id": "time:9060",
+          "correlation_id": "clock",
+          "event_id": "evt-00000123",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9060,
+          "global_sequence": 123,
+          "idempotency_key": "world-fact:time:9060",
+          "payload": {
+            "absolute_game_minute": 9060,
+            "hour": 13,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "aggregate_version": 2,
+          "causation_event_id": "",
+          "command_id": "call_bd34fe00ab954e9a9da14406",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000127",
+          "event_schema_version": 1,
+          "event_type": "ActorRegionChanged",
+          "game_minute": 9101,
+          "global_sequence": 127,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "agreement_id": "",
+              "region_id": "hills"
+            },
+            "changed_entities": [
+              "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+            ],
+            "region_id": "hills",
+            "resource_delta": {},
+            "status": "completed",
+            "tool_name": "travel"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "aggregate_version": 3,
+          "causation_event_id": "",
+          "command_id": "call_bd34fe00ab954e9a9da14406",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000128",
+          "event_schema_version": 1,
+          "event_type": "PublicStatusChanged",
+          "game_minute": 9101,
+          "global_sequence": 128,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "agreement_id": "",
+              "region_id": "hills"
+            },
+            "changed_entities": [
+              "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+            ],
+            "region_id": "hills",
+            "resource_delta": {},
+            "status": "idle",
+            "tool_name": "travel"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 13,
+          "causation_event_id": "",
+          "command_id": "time:9120",
+          "correlation_id": "clock",
+          "event_id": "evt-00000129",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9120,
+          "global_sequence": 129,
+          "idempotency_key": "world-fact:time:9120",
+          "payload": {
+            "absolute_game_minute": 9120,
+            "hour": 14,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 14,
+          "causation_event_id": "",
+          "command_id": "time:9180",
+          "correlation_id": "clock",
+          "event_id": "evt-00000130",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9180,
+          "global_sequence": 130,
+          "idempotency_key": "world-fact:time:9180",
+          "payload": {
+            "absolute_game_minute": 9180,
+            "hour": 15,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 15,
+          "causation_event_id": "",
+          "command_id": "time:9240",
+          "correlation_id": "clock",
+          "event_id": "evt-00000131",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9240,
+          "global_sequence": 131,
+          "idempotency_key": "world-fact:time:9240",
+          "payload": {
+            "absolute_game_minute": 9240,
+            "hour": 16,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 16,
+          "causation_event_id": "",
+          "command_id": "time:9300",
+          "correlation_id": "clock",
+          "event_id": "evt-00000132",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9300,
+          "global_sequence": 132,
+          "idempotency_key": "world-fact:time:9300",
+          "payload": {
+            "absolute_game_minute": 9300,
+            "hour": 17,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 17,
+          "causation_event_id": "",
+          "command_id": "time:9360",
+          "correlation_id": "clock",
+          "event_id": "evt-00000133",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9360,
+          "global_sequence": 133,
+          "idempotency_key": "world-fact:time:9360",
+          "payload": {
+            "absolute_game_minute": 9360,
+            "hour": 18,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
         }
       ],
       "public_world_state": {
-        "absolute_game_minute": 9000,
+        "absolute_game_minute": 9360,
         "environment_conditions": {},
         "game_day": 9,
         "last_market_pressure": {
@@ -13514,7 +14446,7 @@
         "public_hazards": {},
         "season": 0,
         "time_of_day": {
-          "hour": 12,
+          "hour": 18,
           "minute": 0
         },
         "unlocked_regions": [],
@@ -13737,7 +14669,26 @@
   "grid": {
     "cells": [
       {
+        "crop": {
+          "crop_id": "grain",
+          "growth_progress": 3.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 3,
+        "gz": 0,
+        "state": 2,
+        "watered": false
+      },
+      {
+        "gx": 4,
+        "gz": 0,
+        "state": 1,
+        "watered": false
+      },
+      {
+        "gx": 5,
         "gz": 0,
         "state": 1,
         "watered": false
@@ -13815,15 +14766,29 @@
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "tomato",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 19,
         "gz": 8,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "tomato",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 20,
         "gz": 8,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
@@ -13851,15 +14816,29 @@
         "watered": true
       },
       {
+        "crop": {
+          "crop_id": "tomato",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 19,
         "gz": 9,
-        "state": 1,
-        "watered": false
+        "state": 2,
+        "watered": true
       },
       {
+        "crop": {
+          "crop_id": "tomato",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 20,
         "gz": 9,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
@@ -13887,9 +14866,16 @@
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "tomato",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 19,
         "gz": 11,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
@@ -13911,15 +14897,29 @@
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "lavender",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 25,
         "gz": 11,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "lavender",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 26,
         "gz": 11,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
@@ -13947,15 +14947,29 @@
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "lavender",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 25,
         "gz": 12,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
+        "crop": {
+          "crop_id": "lavender",
+          "growth_progress": 4.0,
+          "harvest_count": 0,
+          "is_watered_today": false,
+          "lifecycle_state": 1
+        },
         "gx": 26,
         "gz": 12,
-        "state": 1,
+        "state": 2,
         "watered": false
       },
       {
@@ -14136,7 +15150,7 @@
       },
       {
         "item_id": "tomato_seed",
-        "quantity": 16
+        "quantity": 11
       },
       {
         "item_id": "strawberry_seed",
@@ -14156,7 +15170,7 @@
       },
       {
         "item_id": "lavender_seed",
-        "quantity": 20
+        "quantity": 16
       },
       {
         "item_id": "pumpkin_seed",
@@ -15994,7 +17008,7 @@
         "inventory": {
           "carrot_seed": 6,
           "grain": 3,
-          "grain_seed": 8,
+          "grain_seed": 7,
           "potato_seed": 6
         },
         "investment_planned": false,
@@ -16131,12 +17145,12 @@
   },
   "season": {
     "day": 2,
-    "hour": 12,
-    "minute": 13,
+    "hour": 18,
+    "minute": 10,
     "season": 1,
     "total_days": 9
   },
-  "stamina": 96,
+  "stamina": 94,
   "tools": {
     "tools": [
       {

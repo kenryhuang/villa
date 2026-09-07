@@ -1,8 +1,8 @@
 {
   "checkpoint": {
-    "path": "D:\\UnityProject\\villa\\services\\agent-service\\data\\checkpoints\\farm3d-ebd406eb2b80f3f542e04cef.sqlite",
+    "path": "D:\\UnityProject\\villa\\services\\agent-service\\data\\checkpoints\\farm3d-275fa1fe1e6ee0a9b6677223.sqlite",
     "session_id": "farm3d-65ad84c762598-fead00ef9b",
-    "sha256": "ba83e1954892d8383e6a77a690a0d9662dc9fe52b5921eb9624ba6d06330f0b0"
+    "sha256": "89e3a143bfe72d96438cc40082bc9562d93b7b54f17b3de556677d415b9885f7"
   },
-  "world_sha256": "ebd406eb2b80f3f542e04cefe5c0b589203ade98e56088fda94f1f0c090e6ddc"
+  "world_sha256": "275fa1fe1e6ee0a9b66772237de7a601e8296893cb42412a9a871abc81a36a65"
 }

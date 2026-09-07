@@ -1,7 +1,23 @@
 {
   "agents": {
     "activities": {
-      "activities": {},
+      "activities": {
+        "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406": {
+          "activity_id": "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406",
+          "agent_id": "xuezhe_lin",
+          "complete_at_minute": 9101,
+          "kind": "travel",
+          "payload": {
+            "action_id": "call_bd34fe00ab954e9a9da14406",
+            "agreement_id": "",
+            "decision_id": "chatcmpl-203977e6-761d-9e00-9d09-0c19681fdcf1",
+            "region_id": "hills",
+            "tool_name": "travel"
+          },
+          "started_minute": 8981,
+          "status": "in_progress"
+        }
+      },
       "version": 1
     },
     "agreements": {
@@ -16,10 +32,20 @@
       "buildings": {},
       "version": 1
     },
-    "checkpoint_sequence": 114,
+    "checkpoint_sequence": 122,
     "event_schema_version": 1,
     "event_store": {
       "aggregate_versions": [
+        {
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "version": 1
+        },
+        {
+          "aggregate_id": "farmer_ahe",
+          "aggregate_type": "farm",
+          "version": 1
+        },
         {
           "aggregate_id": "animal_feed",
           "aggregate_type": "market",
@@ -233,7 +259,7 @@
         {
           "aggregate_id": "jewelry",
           "aggregate_type": "market",
-          "version": 2
+          "version": 3
         },
         {
           "aggregate_id": "lamp",
@@ -456,9 +482,14 @@
           "version": 1
         },
         {
+          "aggregate_id": "call_e5ef8f91c608482889a1249f",
+          "aggregate_type": "market_trade",
+          "version": 1
+        },
+        {
           "aggregate_id": "clock",
           "aggregate_type": "public_world",
-          "version": 7
+          "version": 11
         },
         {
           "aggregate_id": "season",
@@ -4249,9 +4280,370 @@
             "actor_ids": [],
             "scope": "public"
           }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 8,
+          "causation_event_id": "",
+          "command_id": "time:8820",
+          "correlation_id": "clock",
+          "event_id": "evt-00000115",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 8820,
+          "global_sequence": 115,
+          "idempotency_key": "world-fact:time:8820",
+          "payload": {
+            "absolute_game_minute": 8820,
+            "hour": 9,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 9,
+          "causation_event_id": "",
+          "command_id": "time:8880",
+          "correlation_id": "clock",
+          "event_id": "evt-00000116",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 8880,
+          "global_sequence": 116,
+          "idempotency_key": "world-fact:time:8880",
+          "payload": {
+            "absolute_game_minute": 8880,
+            "hour": 10,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "farmer_ahe",
+          "aggregate_id": "farmer_ahe",
+          "aggregate_type": "farm",
+          "aggregate_version": 1,
+          "causation_event_id": "",
+          "command_id": "call_864bd16bec804ffdb6ea4275",
+          "correlation_id": "agent-action:farmer_ahe",
+          "event_id": "evt-00000117",
+          "event_schema_version": 1,
+          "event_type": "FieldTilled",
+          "game_minute": 8934,
+          "global_sequence": 117,
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "plot": 0.0
+            },
+            "changed_entities": [
+              "npc_farm:farmer_ahe:0"
+            ],
+            "region_id": "farm",
+            "resource_delta": {},
+            "status": "completed",
+            "tool_name": "till"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "region"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 10,
+          "causation_event_id": "",
+          "command_id": "time:8940",
+          "correlation_id": "clock",
+          "event_id": "evt-00000118",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 8940,
+          "global_sequence": 118,
+          "idempotency_key": "world-fact:time:8940",
+          "payload": {
+            "absolute_game_minute": 8940,
+            "hour": 11,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "jewelry",
+          "aggregate_type": "market",
+          "aggregate_version": 3,
+          "causation_event_id": "",
+          "command_id": "market-stock:jewelry:8981:7",
+          "correlation_id": "jewelry",
+          "event_id": "evt-00000119",
+          "event_schema_version": 1,
+          "event_type": "MarketStockChanged",
+          "game_minute": 8981,
+          "global_sequence": 119,
+          "idempotency_key": "world-fact:market-stock:jewelry:8981:7",
+          "payload": {
+            "base_price": 340,
+            "daily_liquidity": 2,
+            "demand": 0,
+            "history": [
+              333,
+              284,
+              242,
+              209,
+              240,
+              276,
+              299
+            ],
+            "item_id": "jewelry",
+            "mid_price": 299,
+            "stock": 7,
+            "supply": 1,
+            "target_stock": 5
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "call_e5ef8f91c608482889a1249f",
+          "aggregate_type": "market_trade",
+          "aggregate_version": 1,
+          "causation_event_id": "",
+          "command_id": "call_e5ef8f91c608482889a1249f",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000120",
+          "event_schema_version": 1,
+          "event_type": "PublicMarketTradeExecuted",
+          "game_minute": 8981,
+          "global_sequence": 120,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "item_id": "jewelry",
+              "quantity": 1.0
+            },
+            "changed_entities": [
+              "npc_inventory:xuezhe_lin",
+              "market:jewelry"
+            ],
+            "resource_delta": {
+              "jewelry": -1
+            },
+            "status": "completed",
+            "tool_name": "sell"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "aggregate_version": 1,
+          "causation_event_id": "",
+          "command_id": "call_bd34fe00ab954e9a9da14406",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000121",
+          "event_schema_version": 1,
+          "event_type": "PublicStatusChanged",
+          "game_minute": 8981,
+          "global_sequence": 121,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:in_progress",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "duration_minutes": 120.0,
+              "region_id": "hills"
+            },
+            "changed_entities": [
+              "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+            ],
+            "region_id": "forest",
+            "resource_delta": {},
+            "status": "traveling",
+            "tool_name": "travel"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 11,
+          "causation_event_id": "",
+          "command_id": "time:9000",
+          "correlation_id": "clock",
+          "event_id": "evt-00000122",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9000,
+          "global_sequence": 122,
+          "idempotency_key": "world-fact:time:9000",
+          "payload": {
+            "absolute_game_minute": 9000,
+            "hour": 12,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
         }
       ],
       "idempotency_results": [
+        {
+          "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275:completed",
+          "result": {
+            "events": [
+              {
+                "actor_id": "farmer_ahe",
+                "aggregate_id": "farmer_ahe",
+                "aggregate_type": "farm",
+                "aggregate_version": 1,
+                "causation_event_id": "",
+                "command_id": "call_864bd16bec804ffdb6ea4275",
+                "correlation_id": "agent-action:farmer_ahe",
+                "event_id": "evt-00000117",
+                "event_schema_version": 1,
+                "event_type": "FieldTilled",
+                "game_minute": 8934,
+                "global_sequence": 117,
+                "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "plot": 0.0
+                  },
+                  "changed_entities": [
+                    "npc_farm:farmer_ahe:0"
+                  ],
+                  "region_id": "farm",
+                  "resource_delta": {},
+                  "status": "completed",
+                  "tool_name": "till"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "region"
+                }
+              }
+            ],
+            "last_sequence": 117,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f:completed",
+          "result": {
+            "events": [
+              {
+                "actor_id": "xuezhe_lin",
+                "aggregate_id": "call_e5ef8f91c608482889a1249f",
+                "aggregate_type": "market_trade",
+                "aggregate_version": 1,
+                "causation_event_id": "",
+                "command_id": "call_e5ef8f91c608482889a1249f",
+                "correlation_id": "agent-action:xuezhe_lin",
+                "event_id": "evt-00000120",
+                "event_schema_version": 1,
+                "event_type": "PublicMarketTradeExecuted",
+                "game_minute": 8981,
+                "global_sequence": 120,
+                "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f:completed",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "item_id": "jewelry",
+                    "quantity": 1.0
+                  },
+                  "changed_entities": [
+                    "npc_inventory:xuezhe_lin",
+                    "market:jewelry"
+                  ],
+                  "resource_delta": {
+                    "jewelry": -1
+                  },
+                  "status": "completed",
+                  "tool_name": "sell"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 120,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:in_progress",
+          "result": {
+            "events": [
+              {
+                "actor_id": "xuezhe_lin",
+                "aggregate_id": "xuezhe_lin",
+                "aggregate_type": "actor",
+                "aggregate_version": 1,
+                "causation_event_id": "",
+                "command_id": "call_bd34fe00ab954e9a9da14406",
+                "correlation_id": "agent-action:xuezhe_lin",
+                "event_id": "evt-00000121",
+                "event_schema_version": 1,
+                "event_type": "PublicStatusChanged",
+                "game_minute": 8981,
+                "global_sequence": 121,
+                "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:in_progress",
+                "payload": {
+                  "agreement_id": "",
+                  "arguments": {
+                    "duration_minutes": 120.0,
+                    "region_id": "hills"
+                  },
+                  "changed_entities": [
+                    "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+                  ],
+                  "region_id": "forest",
+                  "resource_delta": {},
+                  "status": "traveling",
+                  "tool_name": "travel"
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 121,
+            "ok": true
+          }
+        },
         {
           "idempotency_key": "world-fact:bootstrap-day:1",
           "result": {
@@ -8883,6 +9275,53 @@
           }
         },
         {
+          "idempotency_key": "world-fact:market-stock:jewelry:8981:7",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "jewelry",
+                "aggregate_type": "market",
+                "aggregate_version": 3,
+                "causation_event_id": "",
+                "command_id": "market-stock:jewelry:8981:7",
+                "correlation_id": "jewelry",
+                "event_id": "evt-00000119",
+                "event_schema_version": 1,
+                "event_type": "MarketStockChanged",
+                "game_minute": 8981,
+                "global_sequence": 119,
+                "idempotency_key": "world-fact:market-stock:jewelry:8981:7",
+                "payload": {
+                  "base_price": 340,
+                  "daily_liquidity": 2,
+                  "demand": 0,
+                  "history": [
+                    333,
+                    284,
+                    242,
+                    209,
+                    240,
+                    276,
+                    299
+                  ],
+                  "item_id": "jewelry",
+                  "mid_price": 299,
+                  "stock": 7,
+                  "supply": 1,
+                  "target_stock": 5
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 119,
+            "ok": true
+          }
+        },
+        {
           "idempotency_key": "world-fact:market-stock:plank:8640:28",
           "result": {
             "events": [
@@ -9060,14 +9499,212 @@
             "last_sequence": 114,
             "ok": true
           }
+        },
+        {
+          "idempotency_key": "world-fact:time:8820",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 8,
+                "causation_event_id": "",
+                "command_id": "time:8820",
+                "correlation_id": "clock",
+                "event_id": "evt-00000115",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 8820,
+                "global_sequence": 115,
+                "idempotency_key": "world-fact:time:8820",
+                "payload": {
+                  "absolute_game_minute": 8820,
+                  "hour": 9,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 115,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:8880",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 9,
+                "causation_event_id": "",
+                "command_id": "time:8880",
+                "correlation_id": "clock",
+                "event_id": "evt-00000116",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 8880,
+                "global_sequence": 116,
+                "idempotency_key": "world-fact:time:8880",
+                "payload": {
+                  "absolute_game_minute": 8880,
+                  "hour": 10,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 116,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:8940",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 10,
+                "causation_event_id": "",
+                "command_id": "time:8940",
+                "correlation_id": "clock",
+                "event_id": "evt-00000118",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 8940,
+                "global_sequence": 118,
+                "idempotency_key": "world-fact:time:8940",
+                "payload": {
+                  "absolute_game_minute": 8940,
+                  "hour": 11,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 118,
+            "ok": true
+          }
+        },
+        {
+          "idempotency_key": "world-fact:time:9000",
+          "result": {
+            "events": [
+              {
+                "actor_id": "system",
+                "aggregate_id": "clock",
+                "aggregate_type": "public_world",
+                "aggregate_version": 11,
+                "causation_event_id": "",
+                "command_id": "time:9000",
+                "correlation_id": "clock",
+                "event_id": "evt-00000122",
+                "event_schema_version": 1,
+                "event_type": "TimeChanged",
+                "game_minute": 9000,
+                "global_sequence": 122,
+                "idempotency_key": "world-fact:time:9000",
+                "payload": {
+                  "absolute_game_minute": 9000,
+                  "hour": 12,
+                  "minute": 0
+                },
+                "visibility": {
+                  "actor_ids": [],
+                  "scope": "public"
+                }
+              }
+            ],
+            "last_sequence": 122,
+            "ok": true
+          }
         }
       ],
-      "next_global_sequence": 115,
+      "next_global_sequence": 123,
       "version": 1
     },
     "executor": {
-      "outcomes": {},
-      "world_revision": 0
+      "outcomes": {
+        "v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275": {
+          "action_id": "call_864bd16bec804ffdb6ea4275",
+          "agent_id": "farmer_ahe",
+          "agreement_id": "",
+          "arguments": {
+            "plot": 0.0
+          },
+          "changed_entities": [
+            "npc_farm:farmer_ahe:0"
+          ],
+          "committed_revision": 1,
+          "decision_id": "chatcmpl-c137e6f7-6bad-9870-bba2-ca5611ac138d",
+          "game_minute": 8934,
+          "hud_message": "阿禾开垦了地块 0。",
+          "idempotency_key": "v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275",
+          "protocol_version": 2,
+          "resource_delta": {},
+          "status": "completed",
+          "tool_name": "till"
+        },
+        "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f": {
+          "action_id": "call_e5ef8f91c608482889a1249f",
+          "agent_id": "xuezhe_lin",
+          "agreement_id": "",
+          "arguments": {
+            "item_id": "jewelry",
+            "quantity": 1.0
+          },
+          "changed_entities": [
+            "npc_inventory:xuezhe_lin",
+            "market:jewelry"
+          ],
+          "committed_revision": 2,
+          "decision_id": "chatcmpl-203977e6-761d-9e00-9d09-0c19681fdcf1",
+          "game_minute": 8981,
+          "hud_message": "学者林出售了jewelry ×1。",
+          "idempotency_key": "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f",
+          "protocol_version": 2,
+          "resource_delta": {
+            "jewelry": -1
+          },
+          "status": "completed",
+          "tool_name": "sell"
+        },
+        "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406": {
+          "action_id": "call_bd34fe00ab954e9a9da14406",
+          "agent_id": "xuezhe_lin",
+          "agreement_id": "",
+          "arguments": {
+            "duration_minutes": 120.0,
+            "region_id": "hills"
+          },
+          "changed_entities": [
+            "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+          ],
+          "committed_revision": 3,
+          "decision_id": "chatcmpl-203977e6-761d-9e00-9d09-0c19681fdcf1",
+          "game_minute": 8981,
+          "hud_message": "学者林出发前往hills。",
+          "idempotency_key": "v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406",
+          "protocol_version": 2,
+          "resource_delta": {},
+          "status": "in_progress",
+          "tool_name": "travel"
+        }
+      },
+      "world_revision": 3
     },
     "farm": {
       "agent_id": "farmer_ahe",
@@ -9075,7 +9712,16 @@
         3,
         0
       ],
-      "finished": {},
+      "finished": {
+        "v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275": {
+          "changed_entities": [
+            "npc_farm:farmer_ahe:0"
+          ],
+          "message": "阿禾开垦了地块 0。",
+          "ok": true,
+          "resource_delta": {}
+        }
+      },
       "plots": [
         {
           "coordinate": [
@@ -9223,7 +9869,15 @@
     },
     "interactions": {
       "external_reservations": [],
-      "idempotency_results": [],
+      "idempotency_results": [
+        {
+          "idempotency_key": "v2:lao_li-65ad93c048460-fead00ef9b-8:0:call_e5746d728de749dbb6d9e330",
+          "result": {
+            "error": "invalid_trade_offer",
+            "ok": false
+          }
+        }
+      ],
       "next_offer_id": 1,
       "offers": [],
       "settled_pressure": [],
@@ -9239,15 +9893,15 @@
       "consumption_cursors": [
         {
           "agent_id": "farmer_ahe",
-          "consumed_sequence": 0
+          "consumed_sequence": 114
         },
         {
           "agent_id": "lao_li",
-          "consumed_sequence": 0
+          "consumed_sequence": 121
         },
         {
           "agent_id": "xuezhe_lin",
-          "consumed_sequence": 0
+          "consumed_sequence": 114
         }
       ],
       "version": 1
@@ -9256,7 +9910,40 @@
       "actor_public_events": [
         {
           "actor_id": "farmer_ahe",
-          "events": []
+          "events": [
+            {
+              "actor_id": "farmer_ahe",
+              "aggregate_id": "farmer_ahe",
+              "aggregate_type": "farm",
+              "aggregate_version": 1,
+              "causation_event_id": "",
+              "command_id": "call_864bd16bec804ffdb6ea4275",
+              "correlation_id": "agent-action:farmer_ahe",
+              "event_id": "evt-00000117",
+              "event_schema_version": 1,
+              "event_type": "FieldTilled",
+              "game_minute": 8934,
+              "global_sequence": 117,
+              "idempotency_key": "agent-outcome:v2:farmer_ahe-65ad93c048460-fead00ef9b-1:0:call_864bd16bec804ffdb6ea4275:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "plot": 0.0
+                },
+                "changed_entities": [
+                  "npc_farm:farmer_ahe:0"
+                ],
+                "region_id": "farm",
+                "resource_delta": {},
+                "status": "completed",
+                "tool_name": "till"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "region"
+              }
+            }
+          ]
         },
         {
           "actor_id": "lao_li",
@@ -9268,7 +9955,76 @@
         },
         {
           "actor_id": "xuezhe_lin",
-          "events": []
+          "events": [
+            {
+              "actor_id": "xuezhe_lin",
+              "aggregate_id": "call_e5ef8f91c608482889a1249f",
+              "aggregate_type": "market_trade",
+              "aggregate_version": 1,
+              "causation_event_id": "",
+              "command_id": "call_e5ef8f91c608482889a1249f",
+              "correlation_id": "agent-action:xuezhe_lin",
+              "event_id": "evt-00000120",
+              "event_schema_version": 1,
+              "event_type": "PublicMarketTradeExecuted",
+              "game_minute": 8981,
+              "global_sequence": 120,
+              "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f:completed",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "item_id": "jewelry",
+                  "quantity": 1.0
+                },
+                "changed_entities": [
+                  "npc_inventory:xuezhe_lin",
+                  "market:jewelry"
+                ],
+                "resource_delta": {
+                  "jewelry": -1
+                },
+                "status": "completed",
+                "tool_name": "sell"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "public"
+              }
+            },
+            {
+              "actor_id": "xuezhe_lin",
+              "aggregate_id": "xuezhe_lin",
+              "aggregate_type": "actor",
+              "aggregate_version": 1,
+              "causation_event_id": "",
+              "command_id": "call_bd34fe00ab954e9a9da14406",
+              "correlation_id": "agent-action:xuezhe_lin",
+              "event_id": "evt-00000121",
+              "event_schema_version": 1,
+              "event_type": "PublicStatusChanged",
+              "game_minute": 8981,
+              "global_sequence": 121,
+              "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:in_progress",
+              "payload": {
+                "agreement_id": "",
+                "arguments": {
+                  "duration_minutes": 120.0,
+                  "region_id": "hills"
+                },
+                "changed_entities": [
+                  "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+                ],
+                "region_id": "forest",
+                "resource_delta": {},
+                "status": "traveling",
+                "tool_name": "travel"
+              },
+              "visibility": {
+                "actor_ids": [],
+                "scope": "public"
+              }
+            }
+          ]
         }
       ],
       "actors": [
@@ -9314,246 +10070,15 @@
           "current_public_state": {
             "public_role": "explorer",
             "region_id": "forest",
-            "status": "idle"
+            "status": "traveling"
           },
           "display_name": "学者林",
           "public_role": "explorer",
           "region_id": "forest"
         }
       ],
-      "checkpoint_sequence": 114,
+      "checkpoint_sequence": 122,
       "global_public_events": [
-        {
-          "actor_id": "system",
-          "aggregate_id": "plank",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:plank",
-          "correlation_id": "plank",
-          "event_id": "evt-00000051",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 51,
-          "idempotency_key": "world-fact:bootstrap-market:plank",
-          "payload": {
-            "base_price": 34,
-            "daily_liquidity": 18,
-            "demand": 0,
-            "history": [
-              34
-            ],
-            "item_id": "plank",
-            "mid_price": 34,
-            "price": 34,
-            "stock": 35,
-            "supply": 0,
-            "target_stock": 45
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "charcoal",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:charcoal",
-          "correlation_id": "charcoal",
-          "event_id": "evt-00000052",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 52,
-          "idempotency_key": "world-fact:bootstrap-market:charcoal",
-          "payload": {
-            "base_price": 51,
-            "daily_liquidity": 16,
-            "demand": 0,
-            "history": [
-              51
-            ],
-            "item_id": "charcoal",
-            "mid_price": 51,
-            "price": 51,
-            "stock": 30,
-            "supply": 0,
-            "target_stock": 40
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "stone_brick",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:stone_brick",
-          "correlation_id": "stone_brick",
-          "event_id": "evt-00000053",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 53,
-          "idempotency_key": "world-fact:bootstrap-market:stone_brick",
-          "payload": {
-            "base_price": 34,
-            "daily_liquidity": 16,
-            "demand": 0,
-            "history": [
-              34
-            ],
-            "item_id": "stone_brick",
-            "mid_price": 34,
-            "price": 34,
-            "stock": 30,
-            "supply": 0,
-            "target_stock": 40
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "brick",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:brick",
-          "correlation_id": "brick",
-          "event_id": "evt-00000054",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 54,
-          "idempotency_key": "world-fact:bootstrap-market:brick",
-          "payload": {
-            "base_price": 26,
-            "daily_liquidity": 14,
-            "demand": 0,
-            "history": [
-              26
-            ],
-            "item_id": "brick",
-            "mid_price": 26,
-            "price": 26,
-            "stock": 25,
-            "supply": 0,
-            "target_stock": 35
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "rope",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:rope",
-          "correlation_id": "rope",
-          "event_id": "evt-00000055",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 55,
-          "idempotency_key": "world-fact:bootstrap-market:rope",
-          "payload": {
-            "base_price": 51,
-            "daily_liquidity": 18,
-            "demand": 0,
-            "history": [
-              51
-            ],
-            "item_id": "rope",
-            "mid_price": 51,
-            "price": 51,
-            "stock": 35,
-            "supply": 0,
-            "target_stock": 45
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "cloth",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:cloth",
-          "correlation_id": "cloth",
-          "event_id": "evt-00000056",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 56,
-          "idempotency_key": "world-fact:bootstrap-market:cloth",
-          "payload": {
-            "base_price": 68,
-            "daily_liquidity": 12,
-            "demand": 0,
-            "history": [
-              68
-            ],
-            "item_id": "cloth",
-            "mid_price": 68,
-            "price": 68,
-            "stock": 22,
-            "supply": 0,
-            "target_stock": 30
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
-        {
-          "actor_id": "system",
-          "aggregate_id": "copper_ingot",
-          "aggregate_type": "market",
-          "aggregate_version": 1,
-          "causation_event_id": "",
-          "command_id": "bootstrap-market:copper_ingot",
-          "correlation_id": "copper_ingot",
-          "event_id": "evt-00000057",
-          "event_schema_version": 1,
-          "event_type": "MarketPriceChanged",
-          "game_minute": 0,
-          "global_sequence": 57,
-          "idempotency_key": "world-fact:bootstrap-market:copper_ingot",
-          "payload": {
-            "base_price": 51,
-            "daily_liquidity": 10,
-            "demand": 0,
-            "history": [
-              51
-            ],
-            "item_id": "copper_ingot",
-            "mid_price": 51,
-            "price": 51,
-            "stock": 18,
-            "supply": 0,
-            "target_stock": 25
-          },
-          "visibility": {
-            "actor_ids": [],
-            "scope": "public"
-          }
-        },
         {
           "actor_id": "system",
           "aggregate_id": "iron_ingot",
@@ -11486,10 +12011,212 @@
             "actor_ids": [],
             "scope": "public"
           }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 8,
+          "causation_event_id": "",
+          "command_id": "time:8820",
+          "correlation_id": "clock",
+          "event_id": "evt-00000115",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 8820,
+          "global_sequence": 115,
+          "idempotency_key": "world-fact:time:8820",
+          "payload": {
+            "absolute_game_minute": 8820,
+            "hour": 9,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 9,
+          "causation_event_id": "",
+          "command_id": "time:8880",
+          "correlation_id": "clock",
+          "event_id": "evt-00000116",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 8880,
+          "global_sequence": 116,
+          "idempotency_key": "world-fact:time:8880",
+          "payload": {
+            "absolute_game_minute": 8880,
+            "hour": 10,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 10,
+          "causation_event_id": "",
+          "command_id": "time:8940",
+          "correlation_id": "clock",
+          "event_id": "evt-00000118",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 8940,
+          "global_sequence": 118,
+          "idempotency_key": "world-fact:time:8940",
+          "payload": {
+            "absolute_game_minute": 8940,
+            "hour": 11,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "jewelry",
+          "aggregate_type": "market",
+          "aggregate_version": 3,
+          "causation_event_id": "",
+          "command_id": "market-stock:jewelry:8981:7",
+          "correlation_id": "jewelry",
+          "event_id": "evt-00000119",
+          "event_schema_version": 1,
+          "event_type": "MarketStockChanged",
+          "game_minute": 8981,
+          "global_sequence": 119,
+          "idempotency_key": "world-fact:market-stock:jewelry:8981:7",
+          "payload": {
+            "base_price": 340,
+            "daily_liquidity": 2,
+            "demand": 0,
+            "history": [
+              333,
+              284,
+              242,
+              209,
+              240,
+              276,
+              299
+            ],
+            "item_id": "jewelry",
+            "mid_price": 299,
+            "stock": 7,
+            "supply": 1,
+            "target_stock": 5
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "call_e5ef8f91c608482889a1249f",
+          "aggregate_type": "market_trade",
+          "aggregate_version": 1,
+          "causation_event_id": "",
+          "command_id": "call_e5ef8f91c608482889a1249f",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000120",
+          "event_schema_version": 1,
+          "event_type": "PublicMarketTradeExecuted",
+          "game_minute": 8981,
+          "global_sequence": 120,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:0:call_e5ef8f91c608482889a1249f:completed",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "item_id": "jewelry",
+              "quantity": 1.0
+            },
+            "changed_entities": [
+              "npc_inventory:xuezhe_lin",
+              "market:jewelry"
+            ],
+            "resource_delta": {
+              "jewelry": -1
+            },
+            "status": "completed",
+            "tool_name": "sell"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "xuezhe_lin",
+          "aggregate_id": "xuezhe_lin",
+          "aggregate_type": "actor",
+          "aggregate_version": 1,
+          "causation_event_id": "",
+          "command_id": "call_bd34fe00ab954e9a9da14406",
+          "correlation_id": "agent-action:xuezhe_lin",
+          "event_id": "evt-00000121",
+          "event_schema_version": 1,
+          "event_type": "PublicStatusChanged",
+          "game_minute": 8981,
+          "global_sequence": 121,
+          "idempotency_key": "agent-outcome:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406:in_progress",
+          "payload": {
+            "agreement_id": "",
+            "arguments": {
+              "duration_minutes": 120.0,
+              "region_id": "hills"
+            },
+            "changed_entities": [
+              "npc_activity:v2:xuezhe_lin-65ad93c048460-fead00ef9b-3:1:call_bd34fe00ab954e9a9da14406"
+            ],
+            "region_id": "forest",
+            "resource_delta": {},
+            "status": "traveling",
+            "tool_name": "travel"
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
+        },
+        {
+          "actor_id": "system",
+          "aggregate_id": "clock",
+          "aggregate_type": "public_world",
+          "aggregate_version": 11,
+          "causation_event_id": "",
+          "command_id": "time:9000",
+          "correlation_id": "clock",
+          "event_id": "evt-00000122",
+          "event_schema_version": 1,
+          "event_type": "TimeChanged",
+          "game_minute": 9000,
+          "global_sequence": 122,
+          "idempotency_key": "world-fact:time:9000",
+          "payload": {
+            "absolute_game_minute": 9000,
+            "hour": 12,
+            "minute": 0
+          },
+          "visibility": {
+            "actor_ids": [],
+            "scope": "public"
+          }
         }
       ],
       "public_world_state": {
-        "absolute_game_minute": 8760,
+        "absolute_game_minute": 9000,
         "environment_conditions": {},
         "game_day": 9,
         "last_market_pressure": {
@@ -12164,8 +12891,8 @@
             "item_id": "jewelry",
             "mid_price": 299,
             "price": 299,
-            "stock": 6,
-            "supply": 0,
+            "stock": 7,
+            "supply": 1,
             "target_stock": 5
           },
           "lamp": {
@@ -12787,7 +13514,7 @@
         "public_hazards": {},
         "season": 0,
         "time_of_day": {
-          "hour": 8,
+          "hour": 12,
           "minute": 0
         },
         "unlocked_regions": [],
@@ -13009,6 +13736,12 @@
   },
   "grid": {
     "cells": [
+      {
+        "gx": 3,
+        "gz": 0,
+        "state": 1,
+        "watered": false
+      },
       {
         "gx": 19,
         "gz": 5,
@@ -14378,8 +15111,8 @@
         ],
         "item_id": "jewelry",
         "mid_price": 299,
-        "stock": 6,
-        "supply": 0,
+        "stock": 7,
+        "supply": 1,
         "target_stock": 5
       },
       "lamp": {
@@ -15353,13 +16086,13 @@
         }
       },
       {
-        "gold": 878,
+        "gold": 1147,
         "inventory": {
           "bread": 2,
           "crystal": 1,
           "gold_ore": 0,
           "honey_cake": 1,
-          "jewelry": 1,
+          "jewelry": 0,
           "rope": 2
         },
         "investment_planned": false,
@@ -15398,8 +16131,8 @@
   },
   "season": {
     "day": 2,
-    "hour": 8,
-    "minute": 8,
+    "hour": 12,
+    "minute": 13,
     "season": 1,
     "total_days": 9
   },
