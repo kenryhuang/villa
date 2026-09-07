@@ -1,5 +1,7 @@
 extends Control
 
+signal location_selected(point: Vector2)
+
 ## Fixed north-up map: world -Z is north and +X is east.
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
 const PANEL_SIZE := Vector2(248, 302)
@@ -10,6 +12,7 @@ const INK := Color("f8edcf")
 const GOLD := Color("e6c882")
 var player: Node3D
 var session: Node
+var teleport_enabled := false
 var _terrain: ImageTexture
 var _panel: StyleBoxFlat
 
@@ -25,6 +28,17 @@ func _ready() -> void:
 	_panel.set_border_width_all(1)
 	_panel.set_corner_radius_all(9)
 	_terrain = _make_terrain()
+	if teleport_enabled:
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+func map_to_world(point: Vector2) -> Vector2:
+	return Profile.WORLD_MIN + (point - MAP_RECT.position) / MAP_RECT.size * Profile.WORLD_SIZE
+
+func _gui_input(event: InputEvent) -> void:
+	if teleport_enabled and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if MAP_RECT.has_point(event.position):
+			location_selected.emit(map_to_world(event.position))
+		accept_event()
 
 func world_to_map(point: Vector3) -> Vector2:
 	var normalized := (Vector2(point.x, point.z) - Profile.WORLD_MIN) / Profile.WORLD_SIZE
@@ -43,7 +57,7 @@ func _draw() -> void:
 	if _terrain == null:
 		return
 	draw_style_box(_panel, Rect2(Vector2.ZERO, size))
-	_centered("农庄地图 · G", Vector2(124, 21), 16, INK)
+	_centered("点击地图 · 传送" if teleport_enabled else "农庄地图 · G", Vector2(124, 21), 16, INK)
 	draw_texture_rect(_terrain, MAP_RECT, false)
 	draw_rect(MAP_RECT, Color("829365"), false, 1.0)
 	for offset in [-40.0, 0.0, 40.0]:

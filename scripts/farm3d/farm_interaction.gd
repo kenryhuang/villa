@@ -138,6 +138,38 @@ func cancel_selection() -> void:
 	hud.close_panels()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+func debug_teleport(point: Vector2) -> Vector3:
+	if not OS.is_debug_build() or not point.is_finite():
+		return player.global_position
+	# Keep the capsule inside the landscape, even when clicking the map border.
+	var target := point.clamp(Farm3DTerrainProfile.WORLD_MIN + Vector2.ONE, Farm3DTerrainProfile.WORLD_MAX - Vector2.ONE)
+	var height := Farm3DTerrainProfile.surface_height(target.x, target.y)
+	var query := PhysicsRayQueryParameters3D.create(Vector3(target.x, 256, target.y), Vector3(target.x, -32, target.y), player.collision_mask)
+	query.exclude = [player.get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		height = maxf(height, hit.position.y)
+	# Cancel tools and selection without closing the debug panel.
+	fishing.cancel()
+	golf.release_control()
+	category = ""
+	target_id = ""
+	target_cell = null
+	_cooldown = 0
+	_marker.hide()
+	session.buildings.exit_preview_mode()
+	session.action_controller.cancel_current_selection()
+	hud.show_category("")
+	player.set_dialogue_input_blocked(false)
+	player.global_position = Vector3(target.x, height + 0.15, target.y)
+	player.reset_physics_interpolation()
+	player.ui_blocked = hud.is_modal_open()
+	var farm := player.get_parent()
+	farm.set_overview(false)
+	farm.camera_rig.global_position = player.global_position + Vector3.UP * 1.2
+	farm.camera_rig.reset_physics_interpolation()
+	return player.global_position
+
 func select_category(next_category: String) -> void:
 	cancel_selection()
 	if next_category in ["farmland", "seed", "building"]:

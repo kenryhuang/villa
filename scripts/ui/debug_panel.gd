@@ -62,6 +62,8 @@ var agent_trace_window: CanvasLayer
 var _farm3d_runtime: Node
 var _farm3d_summary: TextEdit
 var _farm3d_environment: TextEdit
+var teleport_map: Control
+var _teleport_status: Label
 
 
 func configure_farm3d(runtime: Node) -> void:
@@ -103,6 +105,7 @@ func configure_farm3d(runtime: Node) -> void:
 	_farm3d_environment.name = "环境与租费"
 	_farm3d_environment.editable = false
 	tabs.add_child(_farm3d_environment)
+	_build_teleport_tab(runtime.farm3d_session)
 	for text_view in [_farm3d_summary, _farm3d_environment]:
 		text_view.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 		text_view.add_theme_color_override("font_readonly_color", PANEL_TEXT_COLOR)
@@ -118,6 +121,35 @@ func configure_farm3d(runtime: Node) -> void:
 	agent_debug_requested.connect(func(): agent_trace_window.open())
 	refresh_requested.connect(_refresh_farm3d)
 	_refresh_farm3d()
+
+
+func _build_teleport_tab(session: Node) -> void:
+	var page := HBoxContainer.new()
+	page.name = "地图传送"
+	page.add_theme_constant_override("separation", 28)
+	tabs.add_child(page)
+	var center := CenterContainer.new()
+	page.add_child(center)
+	teleport_map = preload("res://scripts/farm3d/farm_minimap.gd").new()
+	teleport_map.player = session.player
+	teleport_map.session = session
+	teleport_map.teleport_enabled = true
+	center.add_child(teleport_map)
+	teleport_map.location_selected.connect(func(point: Vector2):
+		var destination: Vector3 = session.player.get_parent().get_node("FarmInteraction").debug_teleport(point)
+		_teleport_status.text = "已传送到 %s\nX %.1f / Z %.1f · 高度 %.1f 米" % [Farm3DTerrainProfile.region_at(destination.x, destination.z), destination.x, destination.z, destination.y])
+	var description := VBoxContainer.new()
+	description.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	description.alignment = BoxContainer.ALIGNMENT_CENTER
+	page.add_child(description)
+	var hint := Label.new()
+	hint.text = "左键点击地图，立即传送玩家。\n\n上北下南，左西右东。\n箭头表示玩家当前位置和朝向。\n\n自动落在地面、桥面或建筑顶部；\n水域会落在河床或湖底。\n传送后可继续点选，或关闭面板走动。"
+	hint.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+	description.add_child(hint)
+	_teleport_status = Label.new()
+	_teleport_status.text = "请选择目的地"
+	_teleport_status.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+	description.add_child(_teleport_status)
 
 
 func _refresh_farm3d() -> void:
