@@ -5,6 +5,7 @@ signal apply_requested(draft: Dictionary)
 signal refresh_requested
 signal agent_debug_requested
 signal agent_settings_apply_requested(intervals: Dictionary)
+signal closed
 
 const EconomyLimitsScript := preload("res://scripts/core/economy_limits.gd")
 const PlayerStateScript := preload("res://scripts/data/player_state.gd")
@@ -57,6 +58,76 @@ var _all_item_ids: Array[String] = []
 var _loading := false
 var _configured := false
 var _agent_intervals: Dictionary = {}
+var agent_trace_window: CanvasLayer
+var _farm3d_runtime: Node
+var _farm3d_summary: TextEdit
+var _farm3d_environment: TextEdit
+
+
+func configure_farm3d(runtime: Node) -> void:
+	_farm3d_runtime = runtime
+	_configured = true
+	title_label.text = "开发调试"
+	tabs.set_tab_hidden(0, true)
+	tabs.set_tab_hidden(1, true)
+	tabs.set_tab_title(2, "决策间隔")
+	apply_button.hide()
+	status_label.text = "调试入口 · 自动决策间隔设为 0 可暂停该角色"
+	configure_agent_settings(runtime.get_agent_debug_settings())
+	agent_settings_apply_requested.connect(func(intervals: Dictionary): show_agent_settings_result(runtime.apply_agent_debug_intervals(intervals)))
+	var overview := VBoxContainer.new()
+	overview.name = "NPC Agents"
+	overview.add_theme_constant_override("separation", 12)
+	tabs.add_child(overview)
+	tabs.current_tab = 3
+	var toolbar := HBoxContainer.new()
+	overview.add_child(toolbar)
+	var selector := OptionButton.new()
+	toolbar.add_child(selector)
+	for id in runtime.registry.get_agent_ids():
+		selector.add_item(runtime.get_agent_display_name(id))
+		selector.set_item_metadata(selector.item_count - 1, id)
+	var trigger := Button.new()
+	trigger.text = "立即决策"
+	toolbar.add_child(trigger)
+	trigger.pressed.connect(func():
+		var id := str(selector.get_item_metadata(selector.selected))
+		var ok: bool = runtime.service_enabled and runtime.scheduler.notify_event(id, 2, runtime._absolute_game_minute())
+		status_label.text = "已请求决策，请查看请求追踪。" if ok else "远程服务未启用或请求未能提交，请检查 Agent 客户端配置。")
+	_farm3d_summary = TextEdit.new()
+	_farm3d_summary.editable = false
+	_farm3d_summary.custom_minimum_size.y = 300
+	_farm3d_summary.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	overview.add_child(_farm3d_summary)
+	_farm3d_environment = TextEdit.new()
+	_farm3d_environment.name = "环境与租费"
+	_farm3d_environment.editable = false
+	tabs.add_child(_farm3d_environment)
+	for text_view in [_farm3d_summary, _farm3d_environment]:
+		text_view.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+		text_view.add_theme_color_override("font_readonly_color", PANEL_TEXT_COLOR)
+		var paper := StyleBoxFlat.new()
+		paper.bg_color = Color("fffaf0")
+		paper.content_margin_left = 12
+		paper.content_margin_top = 10
+		text_view.add_theme_stylebox_override("read_only", paper)
+	agent_trace_window = preload("res://scenes/ui/agent_debug_window.tscn").instantiate()
+	add_child(agent_trace_window)
+	agent_trace_window.configure(runtime.get_session_trace())
+	agent_debug_button.text = "Agent 请求追踪"
+	agent_debug_requested.connect(func(): agent_trace_window.open())
+	refresh_requested.connect(_refresh_farm3d)
+	_refresh_farm3d()
+
+
+func _refresh_farm3d() -> void:
+	var records: Array[Dictionary] = []
+	for id in _farm3d_runtime.registry.get_agent_ids():
+		var state: Variant = _farm3d_runtime.farm3d_session.npc_economy.get_npc_state(id)
+		records.append({"角色": _farm3d_runtime.get_agent_display_name(id), "职业": _farm3d_runtime.role_system.get_active_role(id),
+			"金币": state.gold, "背包": state.inventory, "当前请求": _farm3d_runtime.get_in_flight_request_id(id)})
+	_farm3d_summary.text = ("远程决策已启用" if _farm3d_runtime.service_enabled else "远程决策未启用（需配置并启动原 agent-service）") + "\n" + JSON.stringify(records, "  ")
+	_farm3d_environment.text = JSON.stringify(_farm3d_runtime.get_farm3d_environment(), "  ")
 
 
 func _ready() -> void:
@@ -140,11 +211,18 @@ func open(snapshot_value: Dictionary = {}) -> void:
 	if not _configured:
 		return
 	visible = true
-	level_input.get_line_edit().grab_focus()
+	if _farm3d_runtime != null:
+		_refresh_farm3d()
+		close_button.grab_focus()
+	else:
+		level_input.get_line_edit().grab_focus()
 
 
 func close() -> void:
 	visible = false
+	if agent_trace_window != null:
+		agent_trace_window.close()
+	closed.emit()
 
 
 func refresh_from_snapshot(snapshot_value: Dictionary) -> void:

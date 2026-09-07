@@ -44,6 +44,12 @@ var fishing_panel: PanelContainer
 var fishing_hint: Label
 var fishing_action: Button
 var fishing_progress: ProgressBar
+var debug_panel: CanvasLayer
+var dialogue_ui: Control
+var _dialogue_pause_active := false
+var _dialogue_previous_pause := false
+var _dialogue_gateway: Node
+var _dialogue_gateway_mode := Node.PROCESS_MODE_INHERIT
 
 func configure(session: Node) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -54,8 +60,9 @@ func configure(session: Node) -> void:
 	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.theme = preload("res://assets/ui/hud/hud_theme.tres")
 	add_child(_ui)
-	bus = BusScript.new()
-	add_child(bus)
+	bus = session.agent_bus if is_instance_valid(session.agent_bus) else BusScript.new()
+	if bus.get_parent() == null:
+		add_child(bus)
 	status_bar = StatusScene.instantiate()
 	_ui.add_child(status_bar)
 	status_bar.position = Vector2(TOP_MARGIN, TOP_MARGIN)
@@ -104,6 +111,19 @@ func configure(session: Node) -> void:
 	_ui.add_child(food_workshop_view)
 	food_workshop_view.configure(session,"food_workshop")
 	food_workshop_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
+	if is_instance_valid(session.agent_runtime):
+		dialogue_ui = preload("res://scenes/ui/dialogue_ui.tscn").instantiate()
+		dialogue_ui.process_mode = Node.PROCESS_MODE_ALWAYS
+		dialogue_ui.mouse_filter = Control.MOUSE_FILTER_STOP
+		_ui.add_child(dialogue_ui)
+		dialogue_ui.configure_agent_runtime(session.agent_runtime)
+		dialogue_ui.agent_dialogue_opened.connect(_on_dialogue_opened)
+		dialogue_ui.agent_dialogue_closed.connect(_on_dialogue_closed)
+		if OS.is_debug_build():
+			debug_panel = preload("res://scenes/ui/debug_panel.tscn").instantiate()
+			add_child(debug_panel)
+			debug_panel.configure_farm3d(session.agent_runtime)
+			debug_panel.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
 	session.buildings.building_construction_completed.connect(func(building: BuildingInstance): notify_message("%s建造完成" % building.data.display_name, true))
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -111,6 +131,35 @@ func configure(session: Node) -> void:
 	_refresh_status()
 	notify_message("选择农田、种子或建筑后点击地面放置；Esc 收起。", true)
 	bus.publish("操作", "info", "空手点击成熟作物收获、枯萎作物清理、生长中的作物浇水。I 打开背包。")
+
+func _on_dialogue_opened(_agent_id: String) -> void:
+	if _dialogue_pause_active:
+		return
+	_dialogue_previous_pause = get_tree().paused
+	_dialogue_pause_active = true
+	_session.player.set_dialogue_input_blocked(true)
+	_session.player.ui_blocked = true
+	_dialogue_gateway = _session.agent_runtime.gateway
+	_dialogue_gateway_mode = _dialogue_gateway.process_mode
+	_dialogue_gateway.process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _on_dialogue_closed(_agent_id: String, _request_id: String) -> void:
+	_release_dialogue_pause()
+	_session.player.ui_blocked = is_modal_open()
+
+func _release_dialogue_pause() -> void:
+	if not _dialogue_pause_active:
+		return
+	_dialogue_pause_active = false
+	_session.player.set_dialogue_input_blocked(false)
+	if is_instance_valid(_dialogue_gateway):
+		_dialogue_gateway.process_mode = _dialogue_gateway_mode
+	get_tree().paused = _dialogue_previous_pause
+
+func _exit_tree() -> void:
+	_release_dialogue_pause()
 
 func _make_menu() -> void:
 	_menu = VBoxContainer.new()
@@ -168,6 +217,15 @@ func _make_menu() -> void:
 	fishing_button.pressed.connect(func(): fishing_requested.emit())
 	row.add_child(fishing_button)
 	row.move_child(fishing_button,3)
+	if OS.is_debug_build() and is_instance_valid(_session.agent_runtime):
+		var debug := _button("调试", Vector2(70, 48))
+		debug.name = "DebugEntry"
+		debug.pressed.connect(func():
+			close_panels()
+			debug_panel.open()
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			_session.player.ui_blocked = true)
+		row.add_child(debug)
 	fishing_panel = PanelContainer.new()
 	fishing_panel.name = "FishingPanel"
 	fishing_panel.add_theme_stylebox_override("panel",_style(Color("202e25f2"),Color("c4ab70")))
@@ -291,6 +349,8 @@ func toggle_inventory() -> void:
 	_session.player.ui_blocked = is_modal_open()
 
 func is_modal_open() -> bool:
+	if (debug_panel != null and debug_panel.visible) or (dialogue_ui != null and dialogue_ui.visible):
+		return true
 	return inventory_ui != null and (inventory_ui.visible or history_panel.visible or (market_view != null and market_view.visible) or (windmill_view != null and windmill_view.visible) or (food_workshop_view != null and food_workshop_view.visible))
 
 func open_windmill(building: BuildingInstance) -> bool:
@@ -306,6 +366,10 @@ func open_market() -> void:
 	_session.player.ui_blocked = true
 
 func close_panels() -> void:
+	if debug_panel != null:
+		debug_panel.close()
+	if dialogue_ui != null:
+		dialogue_ui.close()
 	if food_workshop_view != null:
 		food_workshop_view.close_panel()
 	if windmill_view != null:
@@ -346,7 +410,7 @@ func _toggle_history() -> void:
 
 func _layout() -> void:
 	var viewport_size := _ui.size
-	var width := minf(760, viewport_size.x - 36)
+	var width := minf(840, viewport_size.x - 36)
 	_menu.size = Vector2(width, 0)
 	_position_menu()
 	history_panel.position = (viewport_size - Vector2(720, 480)) * 0.5

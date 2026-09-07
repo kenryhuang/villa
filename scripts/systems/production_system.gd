@@ -48,6 +48,75 @@ var _passive_output_blocked: Dictionary = {}
 var _active_player_input_transactions: Dictionary = {}
 var resource_cycle_progress: Dictionary = {}
 var resource_completed_cycles: Dictionary = {}
+var _rental_economy: Node
+var _rental_wallet: Node
+signal rental_completed(agent_id: String, building: BuildingInstance, recipe_id: String, outputs: Dictionary)
+
+class RentalInventory extends InventorySystem:
+	var counts: Dictionary = {}
+	func get_item_count(item_id: String) -> int:
+		return int(counts.get(item_id, 0))
+
+
+func configure_rentals(economy: Node, wallet: Node) -> void:
+	_rental_economy = economy
+	_rental_wallet = wallet
+
+
+# Prices are per batch and per real building; inputs remain the tenant's property.
+func get_rental_fee_table(building: BuildingInstance) -> Array[Dictionary]:
+	var table: Array[Dictionary] = []
+	var state := _get_state(building)
+	if state == null:
+		return table
+	for recipe in RecipeDatabaseScript.get_recipes_for_station(state.station_id):
+		var base_fee := 4 if state.station_id == "food_workshop" else 2
+		table.append({"recipe_id": str(recipe.id), "fee_per_batch": base_fee + ceili(float(recipe.duration_minutes) / 15.0),
+			"inputs": recipe.inputs.duplicate(true), "input_selectors": recipe.get("input_selectors", []).duplicate(true),
+			"outputs": recipe.outputs.duplicate(true), "duration_minutes": int(recipe.duration_minutes)})
+	return table
+
+
+func start_rented_recipe(building: BuildingInstance, agent_id: String, recipe_id: String, batches: int, max_fee: int) -> Dictionary:
+	var failure := {"ok": false, "error": "rental_unavailable"}
+	if _router_required or not is_instance_valid(_rental_economy) or not is_instance_valid(_rental_wallet) or batches < 1 or batches > 100:
+		return failure
+	var npc: Variant = _rental_economy.get_npc_state(agent_id)
+	if npc == null:
+		return failure
+	var fee := -1
+	for row in get_rental_fee_table(building):
+		if row.recipe_id == recipe_id:
+			fee = int(row.fee_per_batch) * batches
+	if fee < 0:
+		return failure
+	if fee > max_fee:
+		return {"ok": false, "error": "rental_price_changed"}
+	if int(npc.gold) < fee or int(_rental_wallet.gold) > MAX_SAFE_INTEGER - fee:
+		return {"ok": false, "error": "insufficient_rental_gold"}
+	# Reuse recipe validation (including fish selectors), queue and maintenance rules.
+	var inputs := RentalInventory.new()
+	inputs.counts = npc.inventory.duplicate()
+	var quote := preflight_recipe(building, recipe_id, batches, inputs)
+	inputs.free()
+	if not quote.ok:
+		return {"ok": false, "error": str(quote.reason)}
+	var delta: Dictionary = {}
+	for item_id in quote.inputs:
+		delta[item_id] = -int(quote.inputs[item_id])
+	if not _rental_economy.can_apply_agent_asset_delta(agent_id, delta, -fee):
+		return {"ok": false, "error": "missing_inputs"}
+	var state := _get_state(building)
+	if not state.enqueue_job({"recipe_id": recipe_id, "batches": batches, "remaining_minutes": int(quote.duration_minutes),
+		"status": "running" if state.jobs.is_empty() else "queued", "tenant_id": agent_id, "rental_fee": fee}):
+		return {"ok": false, "error": "queue_full"}
+	if not _rental_economy.apply_agent_asset_delta(agent_id, delta, -fee):
+		state.jobs.pop_back()
+		return failure
+	_rental_wallet.gold += fee
+	refresh_indicator(building)
+	return {"ok": true, "mutated": true, "changed_entities": ["npc_inventory:" + agent_id, "player:gold", "building:" + ProgressionScript.building_key(building)],
+		"resource_delta": delta.merged({"gold": -fee}), "message": "%s支付 %d 金币租用%s加工，成品完成后交付。" % [agent_id, fee, building.data.display_name]}
 
 
 func _init() -> void:
@@ -2191,6 +2260,17 @@ func _store_completed_job(
 		job.status = "invalid_recipe"
 		return false
 	var produced := _multiplied_counts(recipe.outputs, int(job.batches))
+	var tenant_id := str(job.get("tenant_id", ""))
+	if not tenant_id.is_empty():
+		# Deliver atomically to the tenant; never mix rented output into player storage.
+		if not is_instance_valid(_rental_economy) or not _rental_economy.apply_agent_asset_delta(tenant_id, produced, 0):
+			job.status = "output_full"
+			return false
+		state.jobs.pop_front()
+		if not state.jobs.is_empty():
+			state.jobs[0].status = "running"
+		rental_completed.emit(tenant_id, building, str(job.recipe_id), produced.duplicate(true))
+		return true
 	if not state.can_store_outputs(produced):
 		var was_blocked := str(job.get("status", "")) == "output_full"
 		job.status = "output_full"

@@ -11,7 +11,7 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 4
+const SAVE_VERSION := 5
 const GolfRound = preload("res://scripts/farm3d/golf_round.gd")
 const MarketScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomyScript = preload("res://scripts/systems/npc_economy_system.gd")
@@ -50,6 +50,21 @@ var fishing: Node
 var golf: Node
 var golf_round := GolfRound.new()
 var golf_sensitivity := 1.0
+@export var enable_agents := false
+@export var agent_client_config_path := "res://config/agent-client.local.json"
+var agent_runtime: Node
+var agent_bus: Node
+
+
+func _configure_agents() -> bool:
+	if not enable_agents:
+		return true
+	agent_bus = preload("res://scripts/ui/hud_message_bus.gd").new()
+	add_child(agent_bus)
+	agent_runtime = preload("res://scripts/ai_agent/agent_runtime.gd").new()
+	agent_runtime.name = "AgentRuntime"
+	add_child(agent_runtime)
+	return agent_runtime.configure_farm3d(self, agent_bus, auto_save, agent_client_config_path)
 
 
 func configure(next_player: Node3D) -> bool:
@@ -109,12 +124,15 @@ func configure(next_player: Node3D) -> bool:
 	production = ProductionScript.new()
 	add_child(production)
 	production.configure(grid, farming, buildings, inventory)
+	production.configure_rentals(npc_economy, _game_state())
 	production.sync_clock(season.hour, season.minute)
 	production.sync_daily_cursor(season.total_days)
 	if event_bus != null:
 		event_bus.day_changed.connect(production.apply_daily_effects)
 		event_bus.day_changed.connect(production.finish_daily_outputs)
 		event_bus.day_changed.connect(_settle_market_day)
+	if not _configure_agents():
+		return false
 	if auto_restore and FileAccess.file_exists(save_path):
 		# A missing or damaged project-local save starts a clean farm. The old
 		# user:// location is intentionally not consulted.
@@ -159,6 +177,8 @@ func _reserve_market_site() -> void:
 func act(cell: GridCell, mode: String, seed_id: String = "grain_seed") -> Dictionary:
 	if cell == null:
 		return _failure("invalid_cell")
+	if not grid.can_actor_use_cell(cell.gx, cell.gz, "player"):
+		return {"ok": false, "reason": "npc_land", "message": "这是 NPC 的专属农田"}
 	if not _in_range(cell):
 		return _failure("out_of_range")
 	if mode in ["hoe", "seed", "water"] and cell.crop_instance != null and cell.crop_instance.is_mature():
@@ -233,6 +253,7 @@ func save_game() -> bool:
 		"npc_economy": npc_economy.to_dict(),
 		"market_site": {"x": market_site.x, "z": market_site.y},
 		"golf": golf_round.to_dict(),
+		"agents": agent_runtime.to_dict() if is_instance_valid(agent_runtime) else {},
 	}
 	file.store_string(JSON.stringify(data, "  "))
 	file.flush()
@@ -247,7 +268,10 @@ func save_game() -> bool:
 			save_error = "无法备份原存档，本次保存已停止"
 			return false
 		_backup_written_for = save_path
-	return DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary_path), ProjectSettings.globalize_path(save_path)) == OK
+	var saved := DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary_path), ProjectSettings.globalize_path(save_path)) == OK
+	if saved and is_instance_valid(agent_runtime):
+		agent_runtime.save_farm3d_memory(save_path)
+	return saved
 
 
 func load_game() -> bool:
@@ -315,6 +339,17 @@ func load_game() -> bool:
 	golf_round = GolfRound.new()
 	if int(data.version) >= 4:
 		golf_round.restore(data.golf)
+	if is_instance_valid(agent_runtime):
+		if int(data.version) >= 5 and not data.agents.is_empty():
+			if not agent_runtime.from_dict(data.agents):
+				return false
+		else:
+			grid.release_cells("farmer_ahe")
+			if not agent_runtime.farm_registry.configure(grid, farming, npc_economy, get_node("/root/GameData"), "farmer_ahe", Vector3(-12, 0, -12)):
+				return false
+		if not agent_runtime.farm3d_actors.is_empty():
+			agent_runtime.spawn_farm3d_actors()
+		agent_runtime.load_farm3d_memory(save_path)
 	save_error = ""
 	state_loaded.emit()
 	return true
@@ -444,10 +479,15 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, SAVE_VERSION]:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, SAVE_VERSION]:
 		return false
-	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17}[int(data.version)]:
+	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18}[int(data.version)]:
 		return false
+	if int(data.version) >= 5:
+		if not data.get("agents") is Dictionary:
+			return false
+		if not data.agents.is_empty() and (not is_instance_valid(agent_runtime) or not agent_runtime.validate_dict(data.agents)):
+			return false
 	if int(data.version) >= 4 and not GolfRound.valid(data.get("golf")):
 		return false
 	if int(data.version) >= 2:
@@ -462,6 +502,10 @@ func _valid_save(value: Variant) -> bool:
 		return false
 	if not buildings.validate_restore_buildings(data.get("buildings", []), data.grid):
 		return false
+	for saved_building in data.get("buildings", []):
+		for job in saved_building.get("producer_state", {}).get("jobs", []):
+			if job.has("tenant_id") and not npc_economy.has_npc(str(job.tenant_id)):
+				return false
 	if not data.get("inventory") is Dictionary or not data.inventory.has("slots") or not data.inventory.has("quick"):
 		return false
 	if not data.get("tools") is Dictionary or not tools.validate_dict(data.tools):
@@ -542,6 +586,8 @@ func item_name(item_id: String) -> String:
 func apply_target(cell: GridCell, category: String, target_id: String) -> Dictionary:
 	if cell == null:
 		return _failure("invalid_cell")
+	if not grid.can_actor_use_cell(cell.gx, cell.gz, "player"):
+		return {"ok": false, "reason": "npc_land", "message": "这是 NPC 的专属农田"}
 	if not _in_range(cell):
 		return _failure("out_of_range")
 	var result: Dictionary

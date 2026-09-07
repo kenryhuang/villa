@@ -168,6 +168,13 @@ static func _normalized_job(job: Dictionary, expected_station: String) -> Varian
 	if remaining > maximum:
 		return null
 	var result := job.duplicate(true)
+	if job.has("tenant_id") or job.has("rental_fee"):
+		if not _is_valid_string(job.get("tenant_id")) or str(job.tenant_id).length() > 80:
+			return null
+		var fee: Variant = _integer_number(job.get("rental_fee"))
+		if fee == null or int(fee) < 1:
+			return null
+		result.rental_fee = int(fee)
 	result.batches = batches
 	result.remaining_minutes = remaining
 	return result

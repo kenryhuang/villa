@@ -362,6 +362,8 @@ func _build_queue_slots() -> void:
 			"display_name": str(recipe.get("display_name", job.get("recipe_id", ""))),
 			"batches": int(job.get("batches", 1)),
 			"remaining_minutes": remaining,
+			"tenant_id": str(job.get("tenant_id", "")),
+			"rental_fee": int(job.get("rental_fee", 0)),
 			"progress": clampf(1.0 - float(remaining) / float(total), 0.0, 1.0),
 		})
 

@@ -67,6 +67,10 @@ func _draw() -> void:
 	draw_rect(Rect2(farm - farm_half, farm_half * 2), Color("dfcf9470"), false, 1.0)
 	_map_label("农庄", Vector3(0, 0, -17))
 	if is_instance_valid(session):
+		if is_instance_valid(session.agent_runtime):
+			for actor in session.agent_runtime.farm3d_actors.values():
+				if is_instance_valid(actor):
+					draw_circle(world_to_map(actor.global_position), 3, Color("92d9ec"))
 		if session.golf != null and session.golf_round.active:
 			var target: Vector3 = session.golf.target_point()
 			draw_circle(world_to_map(target),3.5,Color.WHITE)

@@ -11,6 +11,10 @@ const MAX_GZ := int(Profile.WORLD_MAX.y - WORLD_ORIGIN_Z)
 var visual_system: Node
 
 
+func get_navigation_bounds() -> Rect2i:
+	return Rect2i(MIN_GX, MIN_GZ, MAX_GX - MIN_GX, MAX_GZ - MIN_GZ)
+
+
 func configure_flat(next_visual_system: Node = null) -> bool:
 	visual_system = next_visual_system
 	terrain = null

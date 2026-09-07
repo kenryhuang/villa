@@ -95,6 +95,9 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if session == null:
 		return
+	if hud.dialogue_ui != null and hud.dialogue_ui.visible:
+		player.filter_dialogue_input(event)
+		return
 	if golf != null and golf.handle_input(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -177,6 +180,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		_pointer = event.position
 		_front_target = false
+		if try_npc_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
 		if golf != null and golf.try_world_click(event.position):
 			get_viewport().set_input_as_handled()
 			return
@@ -199,6 +205,34 @@ func _unhandled_input(event: InputEvent) -> void:
 func front_cell() -> GridCell:
 	var point := player.global_position + player.global_basis.z * 1.25
 	return _cell_at(point)
+
+func try_npc_click(pointer: Vector2) -> bool:
+	if hud.dialogue_ui == null:
+		return false
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return false
+	var origin := camera.project_ray_origin(pointer)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + camera.project_ray_normal(pointer) * camera.far, 1 | 4 | 16 | 64 | 128)
+	query.collide_with_areas = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return false
+	var actor: Node = hit.collider
+	while actor != null and not actor.has_method("configure_agent"):
+		actor = actor.get_parent()
+	if actor == null:
+		return false
+	if not actor.is_player_in_dialogue_range():
+		hud.notify_message("请走近这位村民再交谈。", false)
+		return true
+	cancel_selection()
+	hud.close_panels()
+	hud.dialogue_ui.open_agent_dialogue(actor.villager_id, session.agent_runtime.get_agent_display_name(actor.villager_id))
+	hud.dialogue_ui.set_agent_interactions(actor.villager_id, session.agent_runtime.get_player_interactions(actor.villager_id))
+	player.ui_blocked = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	return true
 
 func windmill_at_pointer(pointer: Vector2) -> Dictionary:
 	var camera := get_viewport().get_camera_3d()

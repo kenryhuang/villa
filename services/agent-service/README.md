@@ -33,6 +33,10 @@ If the Godot client configuration is missing or invalid, the game reports a warn
 
 ## Tests and API
 
+The formal 3D farm reuses this service and the existing Godot runtime directly. Use `./tools/run_farm3d.ps1 -ServiceOnly` to leave the service running in the background and launch Godot manually, or `-Agents` to launch both. Existing local configs in Git worktrees are read in place, including manual editor launches. The 3D bottom HUD has a debug-only **调试** button for actor state, schedule controls, environment/rental schedules, and the original request trace. NPC dialogue pauses the game and disables gameplay shortcuts while retaining text editing and network streaming; closing clears held movement actions and restores the previous pause state.
+
+`inspect_map`, `inspect_characters`, `inspect_buildings`, and `inspect_building` read the current immutable world snapshot. Existing market tools remain available. `rent_production` requires the real building instance ID, recipe, batch count and a total fee cap. Godot validates and transfers tenant inputs/gold, shares the original production queue, and delivers goods to the tenant. The 3D save includes Agent state and paid jobs; asynchronous memory manifests live beside `data/farm_3d_save.json` and are matched using its SHA-256 before import.
+
 Run offline tests with `npm test`. Tests use temporary configuration files and local fake HTTP endpoints; they never use public network or real credentials. The runtime contains no simulated Provider.
 
 HTTP endpoints:

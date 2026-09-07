@@ -21,6 +21,20 @@ var _dialogue_busy := false
 var _prompt_tween: Tween
 var _prompt_visible_state := false
 var _agent_work_arrived := false
+var _farm3d_grid: GridSystem
+var _farm3d_pathfinder: GridPathfinder
+var _farm3d_path: Array[Vector3] = []
+
+
+func configure_farm3d(grid: GridSystem) -> void:
+	_farm3d_grid = grid
+	_farm3d_pathfinder = GridPathfinder.new()
+	_farm3d_pathfinder.configure(grid)
+	# The original actor is reused with a feet-based origin for uneven 3D ground.
+	$CollisionShape3D.position.y = 0.65
+	if placeholder_mesh != null:
+		placeholder_mesh.position.y = 0.65
+	collision_mask = 1 | 16
 
 const INTERACTION_DISTANCE := 3.0
 const PROMPT_INTERACTION_LAYER := 64
@@ -200,6 +214,8 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector3.ZERO
 	_sync_visual_motion()
 	refresh_dialogue_prompt()
+	if _farm3d_grid != null:
+		global_position.y = Farm3DTerrainProfile.surface_height(global_position.x, global_position.z)
 
 
 func _sync_visual_motion() -> void:
@@ -223,6 +239,11 @@ func _sync_visual_motion() -> void:
 
 
 func _move_toward_target(delta: float) -> void:
+	if not _farm3d_path.is_empty():
+		var point := _farm3d_path[0]
+		if Vector2(global_position.x, global_position.z).distance_to(Vector2(point.x, point.z)) < 0.55:
+			_farm3d_path.pop_front()
+		_target_position = _farm3d_path[0] if not _farm3d_path.is_empty() else point
 	var to_target = _target_position - global_position
 	to_target.y = 0
 	var dist = to_target.length()
@@ -254,6 +275,13 @@ func _move_toward_target(delta: float) -> void:
 func begin_agent_work(target: Vector3) -> bool:
 	if health <= 0:
 		return false
+	if _farm3d_pathfinder != null:
+		_farm3d_path.clear()
+		var cells := _farm3d_pathfinder.find_path_cells(_farm3d_grid.world_to_grid(global_position.x, global_position.z), _farm3d_grid.world_to_grid(target.x, target.z))
+		if cells.is_empty():
+			return false
+		for coordinate in cells:
+			_farm3d_path.append(_farm3d_grid.get_cell(coordinate.x, coordinate.y).world_position_3d())
 	_target_position = target
 	_target_position.y = global_position.y
 	_agent_work_arrived = false

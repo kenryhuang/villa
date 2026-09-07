@@ -33,6 +33,8 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 	match tool_name:
+		"rent_production":
+			return _exact_keys(arguments, ["building_id", "recipe_id", "batches", "max_fee"]) and _bounded_id(arguments.building_id) and _bounded_id(arguments.recipe_id) and _integer_in_range(arguments.batches, 1, 100) and _integer_in_range(arguments.max_fee, 0, 1000000)
 		"till":
 			return _exact_keys(arguments, ["plot"]) and _integer_in_range(arguments.plot, 0, 255)
 		"harvest":

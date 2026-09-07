@@ -36,6 +36,7 @@ var _owned: Label
 var _input_icon: TextureRect
 var _output_icon: TextureRect
 var _duration: Label
+var _rental_fee: Label
 var _waiting: Label
 var _prices: Label
 var _margin: Label
@@ -182,6 +183,7 @@ func _make_process() -> void:
 	_label(batch, "批", 16, MUTED)
 	_button(batch, "最大", func(): controller.set_batches(maxi(1, controller.max_batches)))
 	_duration = _metric(box, "本单加工时间")
+	_rental_fee = _metric(box, "NPC 租用费")
 	_waiting = _metric(box, "排队等待时间")
 	_metric(box, "原料来源").text = "我的背包"
 	_prices = _metric(box, "原料 / 成品卖出参考")
@@ -315,6 +317,12 @@ func _render() -> void:
 	_output_icon.texture = Icons.item_icon(id)
 	batches_spin.set_value_no_signal(controller.batches)
 	_duration.text = "%d 游戏分钟" % int(detail.duration_minutes)
+	for fee in session.production.get_rental_fee_table(building):
+		if str(fee.recipe_id) == id:
+			_rental_fee.text = "%d 金币/批 · 租金归我" % int(fee.fee_per_batch)
+		var recipe_button: Button = recipe_buttons.get(str(fee.recipe_id))
+		if recipe_button != null:
+			recipe_button.tooltip_text = "NPC 自备原料租用：%d 金币/批，成品归租客。" % int(fee.fee_per_batch)
 	var waiting := 0
 	for job in snapshot.get("jobs", []):
 		waiting += int(job.remaining_minutes)
@@ -365,6 +373,11 @@ func _render_queue() -> void:
 			_label(box, "选择配方后添加订单", 13, MUTED)
 			continue
 		_label(box, "%s ×%d" % [slot.display_name, int(slot.batches) * int(RecipeDatabase.get_recipe(slot.recipe_id).outputs.values()[0])], 17)
+		if not str(slot.get("tenant_id", "")).is_empty():
+			var tenant := str(slot.tenant_id)
+			if is_instance_valid(session.agent_runtime):
+				tenant = session.agent_runtime.get_agent_display_name(tenant)
+			_label(box, "%s租用 · 已付 %d 金币 · 成品归租客" % [tenant, int(slot.rental_fee)], 14, GREEN)
 		var progress := ProgressBar.new()
 		progress.custom_minimum_size.y = 7
 		progress.show_percentage = false

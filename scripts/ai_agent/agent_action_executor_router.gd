@@ -13,6 +13,7 @@ const SURVEY_RESULTS := {"creek": "crop:moonflower", "hills": "terrain:cliff", "
 const SAMPLE_ITEMS := {"crop:moonflower": "moonflower", "crop:stardust_fruit": "stardust_fruit"}
 
 var world_revision := 0
+var farm3d_session: Node
 var _registry: Variant
 var _farm: Variant
 var _buildings: Variant
@@ -276,6 +277,13 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 
 func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String) -> Dictionary:
 	match tool_name:
+		"rent_production":
+			if not is_instance_valid(farm3d_session):
+				return _error("rental_unavailable")
+			for building in farm3d_session.buildings.get_all_buildings():
+				if EconomyProgressionSystem.building_key(building) == str(arguments.get("building_id", "")):
+					return farm3d_session.production.start_rented_recipe(building, agent_id, str(arguments.get("recipe_id", "")), int(arguments.get("batches", 0)), int(arguments.get("max_fee", 0)))
+			return _error("building_not_found")
 		"till":
 			var plot := int(arguments.get("plot", -1))
 			if not _farm.call("till", agent_id, plot):

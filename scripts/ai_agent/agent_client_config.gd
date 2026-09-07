@@ -13,7 +13,23 @@ const ALLOWED_FIELDS := [
 ]
 
 
+static func resolve_default_path() -> String:
+	if FileAccess.file_exists(DEFAULT_PATH):
+		return DEFAULT_PATH
+	# Manual editor launches share existing private configuration in place.
+	if DirAccess.dir_exists_absolute("res://.worktrees"):
+		var worktrees := DirAccess.get_directories_at("res://.worktrees")
+		worktrees.sort()
+		for worktree in worktrees:
+			var candidate := "res://.worktrees".path_join(worktree).path_join("config/agent-client.local.json")
+			if FileAccess.file_exists(candidate):
+				return candidate
+	return DEFAULT_PATH
+
+
 static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
+	if path == DEFAULT_PATH:
+		path = resolve_default_path()
 	if path.strip_edges().is_empty() or not FileAccess.file_exists(path):
 		return _failure("missing_config_file")
 	var source := FileAccess.get_file_as_string(path)

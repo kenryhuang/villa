@@ -1,5 +1,6 @@
 class_name AgentDebugWindow
 extends CanvasLayer
+signal closed
 
 @onready var close_button: Button = $Overlay/Center/Panel/Margin/Layout/Header/CloseButton
 @onready var clear_button: Button = $Overlay/Center/Panel/Margin/Layout/Header/ClearButton
@@ -57,6 +58,7 @@ func open() -> void:
 
 func close() -> void:
 	visible = false
+	closed.emit()
 
 
 func toggle() -> void:

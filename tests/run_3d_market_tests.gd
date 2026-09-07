@@ -150,7 +150,7 @@ func _run() -> void:
 	_check(not session._valid_save(invalid), "Incoherent market/day cursor is rejected")
 	var legacy := saved.duplicate(true)
 	legacy.version = 2
-	for field in ["market", "npc_economy", "market_site", "golf"]:
+	for field in ["market", "npc_economy", "market_site", "golf", "agents"]:
 		legacy.erase(field)
 	var occupied: GridCell = session.MarketSite.cells(session.grid, Vector2(-12, 12))[0]
 	legacy.grid.cells.append({"gx": occupied.gx, "gz": occupied.gz, "state": GridCell.State.FARMLAND, "watered": true})

@@ -73,6 +73,146 @@ var _request_triggers: Dictionary = {}
 var _farm_port: Variant
 var _base_actor_profiles: Array[Dictionary] = []
 var _pending_market_pressure_facts: Dictionary = {}
+var farm3d_session: Node
+var farm3d_actors: Dictionary = {}
+var _farm3d_memory_export_pending := false
+const FARM3D_SPAWNS := {"farmer_ahe": Vector2(-12, -12), "lao_li": Vector2(-2, -10), "xuezhe_lin": Vector2(7, -12)}
+
+
+func configure_farm3d(session: Node, hud_bus: Node, remote_enabled: bool, client_config_path: String = AgentClientConfigScript.DEFAULT_PATH) -> bool:
+	farm3d_session = session
+	session_id = "farm3d-" + _request_namespace
+	var farm := VisibleNpcFarmSystem.new()
+	add_child(farm)
+	if not farm.configure(session.grid, session.farming, session.npc_economy, get_node("/root/GameData"), "farmer_ahe", Vector3(-12, 0, -12)):
+		return false
+	set_farm_port(farm)
+	if not configure(session.npc_economy, session.market, session.season, hud_bus, client_config_path, remote_enabled):
+		return false
+	executor.farm3d_session = session
+	configure_player_assets(session.inventory, get_node("/root/GameState"))
+	session.production.rental_completed.connect(_on_rental_completed)
+	dialogue_ready.connect(func(agent_id: String, _request_id: String, speech: String):
+		if not speech.is_empty(): _publish("info", get_agent_display_name(agent_id) + "：" + speech, {}))
+	return true
+
+
+func spawn_farm3d_actors() -> void:
+	for actor in farm3d_actors.values():
+		actor.process_mode = Node.PROCESS_MODE_DISABLED
+		actor.queue_free()
+	farm3d_actors.clear()
+	for agent_id in registry.get_agent_ids():
+		var actor := preload("res://scenes/actors/npc.tscn").instantiate()
+		actor.villager_id = agent_id
+		var spawn: Vector2 = FARM3D_SPAWNS[agent_id]
+		actor.position = Vector3(spawn.x, Farm3DTerrainProfile.surface_height(spawn.x, spawn.y), spawn.y)
+		add_child(actor)
+		actor.configure_agent(farm3d_session.player, agent_id, get_agent_display_name(agent_id))
+		actor.configure_farm3d(farm3d_session.grid)
+		var atlas := load("res://assets/characters/npcs/%s/%s_directions.png" % [agent_id, agent_id]) as Texture2D
+		actor.configure_agent_visual(atlas)
+		farm3d_actors[agent_id] = actor
+		if agent_id == "farmer_ahe":
+			var controller := NpcFarmActionController.new()
+			actor.add_child(controller)
+			controller.configure(farm_registry, actor, actor.farm_action_visual)
+
+
+func get_farm3d_environment() -> Dictionary:
+	if not is_instance_valid(farm3d_session):
+		return {}
+	var s: Node = farm3d_session
+	var buildings: Array[Dictionary] = []
+	for building in s.buildings.get_all_buildings():
+		var p: Vector3 = building.global_position
+		buildings.append({"building_id": EconomyProgressionSystem.building_key(building), "type": building.building_id,
+			"name": building.data.display_name, "owner_id": "player", "position": {"x": p.x, "y": p.y, "z": p.z},
+			"construction_complete": building.is_construction_complete(), "production": s.production.get_building_snapshot(building),
+			"rental_fees": s.production.get_rental_fee_table(building)})
+	var characters: Array[Dictionary] = []
+	for id in ["player"] + registry.get_agent_ids():
+		var actor: Node3D = s.player if id == "player" else farm3d_actors.get(id)
+		var point: Vector3 = actor.global_position if is_instance_valid(actor) else Vector3.ZERO
+		characters.append({"actor_id": id, "name": "玩家" if id == "player" else get_agent_display_name(id),
+			"position": {"x": point.x, "y": point.y, "z": point.z}, "role": "player" if id == "player" else role_system.get_active_role(id)})
+	return {"buildings": buildings, "characters": characters, "map": {
+		"coordinate_system": "east=+x, west=-x, south=+z, north=-z; world metres",
+		"bounds": {"min_x": Farm3DTerrainProfile.WORLD_MIN.x, "min_z": Farm3DTerrainProfile.WORLD_MIN.y, "max_x": Farm3DTerrainProfile.WORLD_MAX.x, "max_z": Farm3DTerrainProfile.WORLD_MAX.y},
+		"market": {"x": s.market_site.x, "z": s.market_site.y},
+		"lake": {"x": Farm3DTerrainProfile.LAKE_CENTER.x, "z": Farm3DTerrainProfile.LAKE_CENTER.y},
+		"regions": [{"id": "farm", "description": "中央农场；玩家建筑与阿禾的专属农田"}, {"id": "creek", "description": "东侧河流，可钓鱼；南部有桥"}, {"id": "forest", "description": "西北林地"}, {"id": "hills", "description": "外围丘陵"}, {"id": "lake", "description": "南部沙地湖泊，可钓鱼"}, {"id": "golf", "description": "湖泊西侧高尔夫球场"}],
+		"rental_rules": "使用 inspect_building 查询实际 building_id、配方与每批租费，再用 rent_production；自备原料，租金归玩家，共用队列，完成后成品自动交付给自己。max_fee 是总租金上限。"}}
+
+
+func _on_rental_completed(agent_id: String, building: BuildingInstance, recipe_id: String, outputs: Dictionary) -> void:
+	_publish("info", "%s在%s的租用加工完成，已收取成品。" % [get_agent_display_name(agent_id), building.data.display_name], {})
+	perception_inbox.push_event(agent_id, "rental_completed", recipe_id, {"outputs": outputs}, _absolute_game_minute(), 2)
+	if service_enabled:
+		scheduler.notify_event(agent_id, 2, _absolute_game_minute())
+
+
+func save_farm3d_memory(save_path: String) -> void:
+	if not service_enabled or _farm3d_memory_export_pending:
+		return
+	var world_hash := FileAccess.get_sha256(save_path)
+	var epoch: int = gateway.session_epoch
+	_farm3d_memory_export_pending = true
+	var callback := func(ok: bool, record: Dictionary, error: String):
+		_farm3d_memory_export_pending = false
+		if epoch != gateway.session_epoch or FileAccess.get_sha256(save_path) != world_hash:
+			return
+		if not ok or not _valid_checkpoint_record(record) or str(record.session_id) != session_id:
+			_publish("warning", "NPC 记忆检查点未保存，农场存档已保留：" + error, {})
+			return
+		var path := save_path + ".agent-memory.json"
+		var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
+		if file == null:
+			_publish("warning", "NPC 记忆清单写入失败，农场存档已保留。", {})
+			return
+		file.store_string(JSON.stringify({"world_sha256": world_hash, "checkpoint": record}, "  "))
+		file.flush()
+		var write_error := file.get_error()
+		file.close()
+		if write_error != OK or DirAccess.rename_absolute(ProjectSettings.globalize_path(path + ".tmp"), ProjectSettings.globalize_path(path)) != OK:
+			_publish("warning", "NPC 记忆清单写入失败，农场存档已保留。", {})
+	if not gateway.export_checkpoint(session_id, "farm3d-" + world_hash.left(24), callback):
+		_farm3d_memory_export_pending = false
+
+
+func load_farm3d_memory(save_path: String) -> void:
+	if not service_enabled:
+		return
+	var path := save_path + ".agent-memory.json"
+	var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
+	if not manifest is Dictionary or manifest.get("world_sha256", "") != FileAccess.get_sha256(save_path) or not manifest.get("checkpoint") is Dictionary:
+		gateway.sync_session(session_id, true)
+		_publish("warning", "此存档没有匹配的 NPC 记忆检查点，已从农场当前状态继续决策。", {})
+		return
+	var record: Dictionary = manifest.checkpoint
+	if not _valid_checkpoint_record(record) or str(record.session_id) != session_id:
+		gateway.sync_session(session_id, true)
+		return
+	var epoch: int = gateway.session_epoch
+	var callback := func(ok: bool, _response: Dictionary, error: String):
+		if epoch != gateway.session_epoch:
+			return
+		if not ok:
+			gateway.sync_session(session_id, true)
+			_publish("warning", "NPC 记忆恢复失败，已从农场当前状态继续：" + error, {})
+	if not gateway.import_checkpoint(record, callback):
+		gateway.sync_session(session_id, true)
+
+
+func flush_farm3d_memory(save_path: String) -> void:
+	if not service_enabled:
+		return
+	var deadline := Time.get_ticks_msec() + 2500
+	while _farm3d_memory_export_pending and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.05, true).timeout
+	save_farm3d_memory(save_path)
+	while _farm3d_memory_export_pending and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.05, true).timeout
 
 
 func _init() -> void:
@@ -87,7 +227,8 @@ func configure(
 	market: Variant,
 	season: Variant,
 	hud_bus: Variant,
-	client_config_path: String = AgentClientConfigScript.DEFAULT_PATH
+	client_config_path: String = AgentClientConfigScript.DEFAULT_PATH,
+	remote_enabled: bool = true
 ) -> bool:
 	if npc_economy == null or market == null or season == null or not registry.load_defaults():
 		return false
@@ -127,9 +268,9 @@ func configure(
 	if not client_config.ok:
 		_publish("warning", "Agent 客户端配置不可用，远程决策已关闭：%s" % str(client_config.error), {})
 	else:
-		_store_agent_session = bool(client_config.value.store_agent_session)
+		_store_agent_session = remote_enabled and bool(client_config.value.store_agent_session)
 		_agent_session_directory = str(client_config.value.agent_session_directory)
-		if bool(client_config.value.enabled):
+		if remote_enabled and bool(client_config.value.enabled):
 			service_enabled = gateway.configure(
 				str(client_config.value.service_url),
 				str(client_config.value.token),
@@ -488,6 +629,8 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 	session_id = str(value.session_id)
 	if gateway != null:
 		gateway.bump_epoch()
+		if is_instance_valid(farm3d_session) and service_enabled:
+			gateway.sync_session(session_id, false)
 	return true
 
 
@@ -932,10 +1075,17 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 		"known_discoveries": knowledge_registry.to_dict().public,
 		"relationships": relationships,
 	}
+	if is_instance_valid(farm3d_session):
+		var environment := get_farm3d_environment()
+		projected.actor_context.world_map = environment.map
+		projected.actor_context.player_buildings = environment.buildings
+		projected.actor_context.characters = environment.characters
 	projected.active_role = str(capabilities.get("role_id", ""))
 	projected.goals = (capabilities.get("goals", []) as Array).duplicate()
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
+	if not is_instance_valid(farm3d_session):
+		projected.allowed_command_tools.erase("rent_production")
 	projected.market_summary = market_summary.build(
 		str(capabilities.get("role_id", "")),
 		game_minute,

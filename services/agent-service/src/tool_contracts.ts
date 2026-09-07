@@ -2,6 +2,7 @@ type JsonSchema = Record<string, unknown>;
 import type {AgentContext} from "./agents.ts";
 
 export const READ_TOOL_NAMES = [
+  "inspect_map", "inspect_buildings", "inspect_building", "inspect_characters",
   "inspect_market_item", "compare_market_items", "inspect_known_actor",
   "inspect_relationship", "inspect_trade_offer", "inspect_agreement",
   "inspect_role_option", "inspect_self_resources", "inspect_farm_plots",
@@ -46,6 +47,7 @@ function objectSchema(properties: Record<string, unknown>, required: string[]): 
 }
 
 const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
+  rent_production: objectSchema({building_id: ITEM_ID_SCHEMA, recipe_id: ITEM_ID_SCHEMA, batches: QUANTITY_SCHEMA, max_fee: {type: "integer", minimum: 0, maximum: 1000000}}, ["building_id", "recipe_id", "batches", "max_fee"]),
   till: objectSchema({plot: PLOT_SCHEMA}, ["plot"]),
   harvest: objectSchema({plot: PLOT_SCHEMA, agreement_id: AGREEMENT_ID_SCHEMA}, ["plot"]),
   plant: objectSchema({
@@ -105,6 +107,10 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
 };
 
 const READ_TOOL_PARAMETERS: Readonly<Record<ReadToolName, JsonSchema>> = {
+  inspect_map: objectSchema({}, []),
+  inspect_buildings: objectSchema({}, []),
+  inspect_building: objectSchema({building_id: ITEM_ID_SCHEMA}, ["building_id"]),
+  inspect_characters: objectSchema({}, []),
   inspect_market_item: objectSchema({item_id: ITEM_ID_SCHEMA}, ["item_id"]),
   compare_market_items: objectSchema({item_ids: ID_LIST_SCHEMA}, ["item_ids"]),
   inspect_known_actor: objectSchema({actor_id: ITEM_ID_SCHEMA}, ["actor_id"]),
@@ -194,6 +200,10 @@ function validCooperationTerms(value: unknown): boolean {
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name) {
+    case "rent_production":
+      return hasExactKeys(value, ["building_id", "recipe_id", "batches", "max_fee"])
+        && isBoundedId(value.building_id) && isBoundedId(value.recipe_id)
+        && isIntegerInRange(value.batches, 1, 100) && isIntegerInRange(value.max_fee, 0, 1000000);
     case "till":
     case "harvest":
 	  return hasExactKeysWithOptionalAgreement(value, ["plot"]) && isIntegerInRange(value.plot, 0, 255);
@@ -281,6 +291,7 @@ export function toolDescription(name: string): Record<string, unknown> {
   const parameters = TOOL_PARAMETERS[name];
   if (!parameters) throw new Error(`unknown_tool_contract:${name}`);
   const farmingDescriptions: Record<string, string> = {
+    rent_production: "Place a paid processing order in a real player-owned building. Inspect buildings for the exact instance building_id, recipe, fee per batch, shared queue and maintenance state. Supply your own ingredients; total fee is paid to the player and must not exceed max_fee. Output is delivered automatically to your inventory after game-time processing. Consider input cost, rental fee and market sale value before ordering; acceptance means the order was placed, not that goods are ready.",
     harvest: "Harvest a mature crop for produce, or clear a withered crop to leave tilled soil with no items or inventory rewards. Rejects growing and dormant crops. Use the plot state and available_actions from the current farm context.",
     plant: "Plant one seed on a tilled plot. Check crop_options (or inspect_crop_options) for plantable_plots, unavailable_reason, and seed_quantity. Season names in public_world_state are authoritative; do not infer planting validity from an empty plot or numeric season alone.",
   };
@@ -297,6 +308,12 @@ export function toolDescription(name: string): Record<string, unknown> {
 export function validReadToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name as ReadToolName) {
+    case "inspect_map":
+    case "inspect_buildings":
+    case "inspect_characters":
+      return hasExactKeys(value, []);
+    case "inspect_building":
+      return hasExactKeys(value, ["building_id"]) && isBoundedId(value.building_id);
     case "compare_market_items":
     case "inspect_self_resources":
       return hasExactKeys(value, ["item_ids"]) && isIdList(value.item_ids);
@@ -355,6 +372,10 @@ export function executeReadTool(context: AgentContext, name: string, args: Recor
   if (!context.allowed_read_tools.includes(name)) throw new Error("provider_unauthorized_read_tool");
   if (!validReadToolArguments(name, args)) throw new Error("provider_invalid_read_arguments");
   switch (name as ReadToolName) {
+    case "inspect_map": return {map: structuredClone(context.actor_context.world_map ?? {})};
+    case "inspect_buildings": return {buildings: structuredClone(context.actor_context.player_buildings ?? [])};
+    case "inspect_building": return found(findRecord(context.actor_context.player_buildings, "building_id", String(args.building_id)));
+    case "inspect_characters": return {characters: structuredClone(context.actor_context.characters ?? [])};
     case "inspect_market_item": return found(context.market_view[String(args.item_id)]);
     case "compare_market_items": return {items: Object.fromEntries((args.item_ids as string[]).map((id) => [id, structuredClone(context.market_view[id] ?? null)]))};
     case "inspect_known_actor": return found(findRecord(context.known_actors, "actor_id", String(args.actor_id)));

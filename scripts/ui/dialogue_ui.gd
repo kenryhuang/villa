@@ -2,6 +2,7 @@ class_name DialogueUI
 extends Control
 
 signal agent_message_submitted(villager_id: String, message: String)
+signal agent_dialogue_opened(villager_id: String)
 signal agent_dialogue_cancelled(villager_id: String, request_id: String)
 signal agent_dialogue_closed(villager_id: String, request_id: String)
 signal interaction_response_requested(agent_id: String, interaction_id: String, response: String, counter_terms: Dictionary)
@@ -29,6 +30,22 @@ var _agent_request_id := ""
 var _pending_history_index := -1
 var _agent_stream_pending := false
 var _is_open := false
+
+
+# Shared binding used by the 3D farm; the original dialogue/history UI is retained.
+func configure_agent_runtime(runtime: Node) -> void:
+	agent_message_submitted.connect(func(id: String, message: String):
+		if not runtime.trigger_dialogue(id, message): fail_agent_submission(id))
+	runtime.dialogue_stream_started.connect(func(id: String, request_id: String):
+		if _is_open and id == _current_villager_id: begin_agent_dialogue(id, request_id))
+	runtime.dialogue_stream_delta.connect(func(_id: String, request_id: String, delta: String): append_agent_dialogue(request_id, delta))
+	runtime.dialogue_ready.connect(func(_id: String, request_id: String, speech: String): finish_agent_dialogue(request_id, speech))
+	runtime.dialogue_stream_failed.connect(func(_id: String, request_id: String, _error: String): fail_agent_dialogue(request_id))
+	agent_dialogue_cancelled.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
+	agent_dialogue_closed.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
+	interaction_response_requested.connect(func(id: String, interaction_id: String, response: String, terms: Dictionary):
+		runtime.respond_to_player_interaction(id, interaction_id, response, terms)
+		set_agent_interactions(id, runtime.get_player_interactions(id)))
 
 
 func _ready() -> void:
@@ -59,6 +76,7 @@ func open_agent_dialogue(villager_id: String, display_name: String) -> bool:
 	status_label.text = "输入消息后按 Enter 发送，Shift+Enter 换行。"
 	_render_history()
 	_render_interactions()
+	agent_dialogue_opened.emit(villager_id)
 	message_input.grab_focus()
 	return true
 

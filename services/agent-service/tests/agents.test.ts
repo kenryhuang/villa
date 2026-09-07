@@ -1,7 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentRegistry } from "../src/agents.ts";
-import {executeReadTool, toolDescription} from "../src/tool_contracts.ts";
+import {executeReadTool, toolDescription, validToolArguments} from "../src/tool_contracts.ts";
+
+test("3D environment tools expose current instance prices without mutating the snapshot", () => {
+  const building = {building_id: "windmill:32:31", owner_id: "player", rental_fees: [{recipe_id: "flour", fee_per_batch: 4}]};
+  const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", {
+    protocol_version: 2, request_id: "rental-context", session_id: "farm3d", session_epoch: 1,
+    agent_id: "farmer_ahe", trigger: "schedule", game_minute: 360, world_revision: 1,
+    projection_schema_version: 1, actor_context: {world_map: {market: {x: 5, z: 40}}, player_buildings: [building], characters: [{actor_id: "player"}]}, active_role: "farmer",
+    goals: ["earn_stable_profit"], allowed_read_tools: ["inspect_map", "inspect_buildings", "inspect_building", "inspect_characters"], allowed_command_tools: ["rent_production"],
+    public_world_state: {}, global_public_events: [], known_actors: [], own_event_delta: [],
+    market_summary: summary("farmer", 360), market_view: {}, interaction_view: {}, agreement_view: {},
+  }, []);
+  assert.deepEqual(context.allowed_command_tools, ["rent_production"]);
+  assert.deepEqual(executeReadTool(context, "inspect_map", {}), {map: {market: {x: 5, z: 40}}});
+  assert.deepEqual(executeReadTool(context, "inspect_characters", {}), {characters: [{actor_id: "player"}]});
+  const detail = executeReadTool(context, "inspect_building", {building_id: building.building_id});
+  assert.deepEqual(detail, {found: true, value: building});
+  (detail.value as typeof building).rental_fees[0].fee_per_batch = 0;
+  assert.deepEqual(executeReadTool(context, "inspect_buildings", {}), {buildings: [building]});
+  assert.deepEqual(executeReadTool(context, "inspect_building", {building_id: "missing"}), {found: false});
+  assert.throws(() => executeReadTool(context, "inspect_map", {path: "private"}), /invalid_read_arguments/);
+});
+
+test("rental commands require bounded quantities and an explicit total price cap", () => {
+  const args = {building_id: "windmill:32:31", recipe_id: "flour", batches: 2, max_fee: 8};
+  assert.equal(validToolArguments("rent_production", args), true);
+  for (const invalid of [{...args, batches: 0}, {...args, batches: 1.5}, {...args, max_fee: -1}, {...args, tenant_id: "player"}, {building_id: args.building_id, recipe_id: args.recipe_id, batches: 2}]) {
+    assert.equal(validToolArguments("rent_production", invalid), false);
+  }
+});
 
 const summary = (roleId: string, gameMinute: number, signals: Record<string, unknown>[] = []) => ({
   schema_version: 1, role_id: roleId, generated_game_minute: gameMinute,

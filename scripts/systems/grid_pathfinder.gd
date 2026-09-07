@@ -109,12 +109,15 @@ func _ensure_built() -> void:
 	if _grid == null or _built_revision == _grid.get_navigation_revision():
 		return
 	_astar = AStarGrid2D.new()
-	_astar.region = Rect2i(0, 0, GridSystem.GRID_WIDTH, GridSystem.GRID_DEPTH)
+	var bounds := Rect2i(0, 0, GridSystem.GRID_WIDTH, GridSystem.GRID_DEPTH)
+	if _grid.has_method("get_navigation_bounds"):
+		bounds = _grid.call("get_navigation_bounds")
+	_astar.region = bounds
 	_astar.cell_size = Vector2.ONE * GridSystem.CELL_SIZE
 	_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_astar.update()
-	for gz in range(GridSystem.GRID_DEPTH):
-		for gx in range(GridSystem.GRID_WIDTH):
+	for gz in range(bounds.position.y, bounds.end.y):
+		for gx in range(bounds.position.x, bounds.end.x):
 			var cell := Vector2i(gx, gz)
 			_astar.set_point_solid(cell, not _grid.is_navigation_cell_walkable(cell))
 	_built_revision = _grid.get_navigation_revision()

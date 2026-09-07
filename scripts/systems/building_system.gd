@@ -403,6 +403,11 @@ func place_building_by_id(building_id: String, gx: int, gz: int) -> BuildingInst
 
 
 func remove_building(building: Variant) -> bool:
+	var instance: BuildingInstance = building if building is BuildingInstance else get_all_buildings()[building] if building is int and building >= 0 and building < _buildings.size() else null
+	if instance != null and instance.producer_state != null:
+		for job in instance.producer_state.jobs:
+			if not str(job.get("tenant_id", "")).is_empty():
+				return false
 	return _remove_building_internal(building, true)
 
 

@@ -19,6 +19,7 @@ var _capture_path := ""
 var farm_session: Node
 var meadow: Node3D
 var _autosave_seconds := 0.0
+var _quitting := false
 
 func _ready() -> void:
 	get_window().content_scale_size = Vector2i(1440, 960)
@@ -68,6 +69,10 @@ func _initialize_gameplay() -> bool:
 	var transient := not _capture_path.is_empty() or arguments.has("--farm-test") or DisplayServer.get_name() == "headless"
 	farm_session = FarmSessionScript.new()
 	farm_session.name = "FarmSession"
+	farm_session.enable_agents = true
+	for argument in arguments:
+		if argument.begins_with("--agent-client-config="):
+			farm_session.agent_client_config_path = argument.trim_prefix("--agent-client-config=")
 	farm_session.auto_restore = not transient and not arguments.has("--fresh-farm")
 	farm_session.auto_save = not transient
 	add_child(farm_session)
@@ -93,6 +98,7 @@ func _initialize_gameplay() -> bool:
 	interaction.name = "FarmInteraction"
 	add_child(interaction)
 	interaction.configure(farm_session, player)
+	farm_session.agent_runtime.spawn_farm3d_actors()
 	if not transient:
 		get_tree().auto_accept_quit = false
 	return true
@@ -130,8 +136,17 @@ func _notification(what: int) -> void:
 		if farm_session != null and farm_session.golf != null:
 			farm_session.golf.release_control()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if _quitting:
+			return
+		_quitting = true
 		if farm_session != null and farm_session.auto_save:
+			get_tree().paused = true
+			if is_instance_valid(farm_session.agent_runtime):
+				farm_session.agent_runtime.gateway.process_mode = Node.PROCESS_MODE_ALWAYS
+				farm_session.agent_runtime.gateway.cancel_all()
 			farm_session.save_game()
+			if is_instance_valid(farm_session.agent_runtime):
+				await farm_session.agent_runtime.flush_farm3d_memory(farm_session.save_path)
 		get_tree().quit()
 
 func set_overview(enabled: bool) -> void:

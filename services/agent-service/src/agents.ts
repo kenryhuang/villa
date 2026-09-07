@@ -49,6 +49,7 @@ export interface AgentContext {
 }
 
 const GENERAL_COMMAND_TOOLS = [
+	"rent_production",
   "send_message", "propose_trade", "counter_trade", "accept_trade",
   "reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
   "propose_cooperation", "counter_cooperation", "accept_cooperation",
@@ -101,7 +102,7 @@ export class AgentRegistry {
     const role = this.#roles.get(request.active_role);
     if (!role) throw new Error(`Unknown role: ${request.active_role}`);
     const goals = request.goals.filter((goal) => role.goals.includes(goal));
-    const allowedReadTools = request.allowed_read_tools.filter((tool) => (role.read_tools ?? []).includes(tool));
+    const allowedReadTools = request.allowed_read_tools.filter((tool) => [...(role.read_tools ?? []), "inspect_map", "inspect_buildings", "inspect_building", "inspect_characters"].includes(tool));
     const localCommands = new Set([...role.tools, ...GENERAL_COMMAND_TOOLS]);
     const allowedCommandTools = request.allowed_command_tools.filter((tool) => localCommands.has(tool));
     return {

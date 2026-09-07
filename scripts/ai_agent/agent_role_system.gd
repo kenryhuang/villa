@@ -8,11 +8,13 @@ const GENERAL_TOOLS := [
 	"reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation",
 	"accept_cooperation", "reject_cooperation", "commit_contribution",
 	"cancel_cooperation", "speak", "wait", "propose_role_change",
+	"rent_production",
 ]
 const GENERAL_READ_TOOLS := [
 	"inspect_market_item", "compare_market_items", "inspect_known_actor",
 	"inspect_relationship", "inspect_trade_offer", "inspect_agreement",
 	"inspect_role_option", "inspect_self_resources",
+	"inspect_map", "inspect_buildings", "inspect_building", "inspect_characters",
 ]
 
 var _registry: Variant

@@ -14,6 +14,31 @@ var _farm_action_seconds := 0.0
 var ui_blocked := false
 var fishing_locked := false
 var golf_locked := false
+var _dialogue_input_blocked := false
+var _input_rearm_actions: Dictionary = {}
+const MOVEMENT_ACTIONS := [&"move_left", &"move_right", &"move_forward", &"move_back", &"jump", &"sprint"]
+
+func set_dialogue_input_blocked(blocked: bool) -> void:
+	_dialogue_input_blocked = blocked
+	velocity = Vector3.ZERO
+	_farm_action_seconds = 0
+	play_motion_animation(false)
+	for action in MOVEMENT_ACTIONS:
+		Input.action_release(action)
+		_input_rearm_actions[action] = true
+
+func filter_dialogue_input(event: InputEvent) -> void:
+	# Releasing gameplay actions must not consume TextEdit's event.
+	for action in MOVEMENT_ACTIONS:
+		if not event.is_action(action):
+			continue
+		if not _dialogue_input_blocked and event.is_pressed() and not (event is InputEventKey and event.echo):
+			_input_rearm_actions.erase(action)
+		elif _dialogue_input_blocked or _input_rearm_actions.has(action):
+			Input.action_release(action)
+
+func _input(event: InputEvent) -> void:
+	filter_dialogue_input(event)
 
 func _ready() -> void:
 	collision_layer = 2
@@ -29,10 +54,10 @@ func _physics_process(delta: float) -> void:
 	_farm_action_seconds = maxf(0.0, _farm_action_seconds - delta)
 	if not is_on_floor():
 		velocity.y -= gravity * delta
-	if not ui_blocked and not fishing_locked and not golf_locked and Input.is_action_just_pressed("jump") and is_on_floor():
+	if not ui_blocked and not _dialogue_input_blocked and not fishing_locked and not golf_locked and Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = jump_velocity
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if ui_blocked or fishing_locked or golf_locked or _farm_action_seconds > 0.0:
+	if ui_blocked or _dialogue_input_blocked or fishing_locked or golf_locked or _farm_action_seconds > 0.0:
 		input_vector = Vector2.ZERO
 	var direction := Vector3(input_vector.x, 0.0, input_vector.y).rotated(Vector3.UP, camera_yaw)
 	var speed := walk_speed * (SPRINT_MULTIPLIER if Input.is_action_pressed("sprint") else 1.0)

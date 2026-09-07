@@ -97,12 +97,22 @@ docs/validation/              操作说明、验证结果和截图
 - 正式 3D 场景和控制脚本放入 `scenes/farm3d/`、`scripts/farm3d/`。`preview` 仅用于模型观察等独立预览，不承载正式游戏入口。
 - 种植、季节、背包、经济等共用规则继续维护在原系统目录；需要 3D 特有行为时，在 `farm3d` 中适配。
 - 在 Blender 编辑 `art/blender/` 下的源文件，导出模型到 `assets/models/`。生成脚本已使用新路径；运行生成脚本会覆盖对应生成资产，具体见[模型说明](assets/models/farm3d/README.md)。
-- 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v4 增加高尔夫回合与最佳成绩，兼容 v1/v2/v3，保留市场行情、NPC 经济状态和市集位置。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
+- 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v5 增加 NPC Agent 决策状态、真实农田任务与租用订单归属，兼容 v1/v2/v3/v4，保留市场行情、NPC 经济状态、市集位置和高尔夫成绩。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
 ## 操作与验证
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
+
+**NPC Agents**：复用原 `scripts/ai_agent/`、NPC 场景、农田执行器、对话和调试界面。阿禾、老李、学者林出现在农庄，小地图蓝点标记位置；走近点击可对话与回应交易／合作。阿禾使用独立的真实农田。Agent 可查询地图、市场行情、角色、玩家建筑、队列和租费，提交自备原料的租用加工订单。风车每批 4 金币，食品工坊每批 6 金币；其他配方站按基础费加加工时间计算。租金进入玩家账户，NPC 与玩家共用队列，租客成品完成后自动进入自己的背包，维护会暂停订单，有租用订单的建筑不能拆除。
+
+开发构建底部 **调试** → **NPC Agents / 决策间隔 / 环境与租费**，可查看状态、手动触发决策、调整间隔、打开原有 Input/Reasoning/Output 请求追踪；不暂停游戏时间。原服务仍负责远程模型与独立角色记忆，未配置服务时角色和调试界面可用，自动决策关闭。
+
+**只启动服务、手工运行游戏**：运行 `./tools/run_farm3d.ps1 -ServiceOnly`，服务在后台持续运行，不启动 Godot；随后自行从编辑器运行正式 3D 场景即可。游戏优先读取当前目录的客户端配置，缺失时自动读取 `.worktrees` 内已有的配置文件，无需复制。`-Agents` 仍用于同时启动服务和游戏，`-CheckAgents` 用于短暂检查服务后退出。
+
+**NPC 对话输入**：打开对话框时暂停游戏时间与角色运动，保留文字编辑、发送和关闭操作，Agent 网络通信继续运行。输入 I/G/WASD 等字符不会触发背包、小地图或移动；Enter 发送，Shift+Enter 换行，Esc 或关闭按钮退出。关闭后恢复原来的暂停状态，清除残留移动输入，需要重新按下移动键才会行走。
+
+用 `./tools/run_farm3d.ps1 -Agents` 同时启动当前分支的服务和 3D 游戏。脚本优先使用当前项目配置，再查找 Git worktree 中已有的本地配置，直接读取原文件；也可传 `-AgentClientConfig <路径> -AgentServiceConfig <路径>`。本机旧服务经健康响应和进程启动参数确认后会自动替换，其他程序占用端口时保留该进程并报错。脚本在退出或启动失败时关闭自己启动的服务。`-CheckAgents` 仅验证服务启动和能力，不启动游戏，检查完成后清理本次启动的服务。单独启动 Godot 可传 `-- --agent-client-config=<现有客户端配置路径>`。远程记忆沿用原服务的 SQLite 数据库，以存档中的独立 session ID 隔离。保存后异步导出记忆检查点，并在农场存档旁写入 `.agent-memory.json` 清单；读档时验证世界文件 SHA-256，缺失、不匹配或服务不可用时提示并从农场当前状态继续。
 
 **风车**：从“建筑”菜单放置，完工后走到南面院门前点击建筑。选择面粉、动物饲料或葵花油，设置批量并投入背包原料。关闭面板后加工，完成后点击院落成品或在面板收进背包。面板支持两格队列、实时行情参考与原系统维护；打开时暂停游戏时间，Esc 关闭恢复。模型与验证见[3D 风车说明](docs/validation/windmill-3d.md)。
 
@@ -132,6 +142,7 @@ godot_console.exe --headless --path . --script tests/run_3d_fishing_tests.gd -- 
 godot_console.exe --headless --path . --script tests/run_3d_market_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_windmill_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_food_workshop_tests.gd -- --farm-test
+godot_console.exe --headless --path . --script tests/run_3d_agent_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_save_protection_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_golf_tests.gd -- --farm-test
 godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.gd -- --farm-test

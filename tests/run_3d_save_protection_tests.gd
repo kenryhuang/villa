@@ -55,7 +55,7 @@ func _run() -> void:
 		_check(fresh.buildings.get_all_buildings().is_empty(),"Fresh startup does not restore buildings from a damaged save")
 		_check(fresh.save_game(),"Fresh startup can replace the damaged save")
 		var rebuilt: Variant = JSON.parse_string(FileAccess.get_file_as_string(test_path))
-		_check(rebuilt is Dictionary and int(rebuilt.get("version",0)) == 4 and rebuilt.buildings.is_empty(),"Replacement save is a valid fresh snapshot")
+		_check(rebuilt is Dictionary and int(rebuilt.get("version",0)) == Farm3DSession.SAVE_VERSION and rebuilt.buildings.is_empty(),"Replacement save is a valid fresh snapshot")
 		fresh.free()
 	for suffix in ["", ".bak", ".tmp"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path+suffix))
