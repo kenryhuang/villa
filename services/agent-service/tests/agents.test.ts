@@ -4,7 +4,7 @@ import { AgentRegistry } from "../src/agents.ts";
 import {executeReadTool, toolDescription, validToolArguments} from "../src/tool_contracts.ts";
 
 test("3D environment tools expose current instance prices without mutating the snapshot", () => {
-  const building = {building_id: "windmill:32:31", owner_id: "player", rental_fees: [{recipe_id: "flour", fee_per_batch: 4}]};
+  const building = {building_id: "windmill:32:31", owner_id: "lao_li", instance_id: "stable-windmill-1", rental_fees: [{recipe_id: "flour", fee_per_batch: 4}]};
   const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", {
     protocol_version: 2, request_id: "rental-context", session_id: "farm3d", session_epoch: 1,
     agent_id: "farmer_ahe", trigger: "schedule", game_minute: 360, world_revision: 1,
@@ -18,6 +18,7 @@ test("3D environment tools expose current instance prices without mutating the s
   assert.deepEqual(executeReadTool(context, "inspect_characters", {}), {characters: [{actor_id: "player"}]});
   const detail = executeReadTool(context, "inspect_building", {building_id: building.building_id});
   assert.deepEqual(detail, {found: true, value: building});
+  assert.deepEqual(executeReadTool(context, "inspect_building", {building_id: building.instance_id}), {found: true, value: building});
   (detail.value as typeof building).rental_fees[0].fee_per_batch = 0;
   assert.deepEqual(executeReadTool(context, "inspect_buildings", {}), {buildings: [building]});
   assert.deepEqual(executeReadTool(context, "inspect_building", {building_id: "missing"}), {found: false});

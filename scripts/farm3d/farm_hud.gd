@@ -29,6 +29,7 @@ var inventory_ui: Control
 var status_bar: PanelContainer
 var minimap: Control
 var market_view: Control
+var commission_view: Control
 var windmill_view: Control
 var food_workshop_view: Control
 var secondary: PanelContainer
@@ -103,6 +104,10 @@ func configure(session: Node) -> void:
 	_ui.add_child(market_view)
 	market_view.configure(session)
 	market_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
+	commission_view = preload("res://scripts/farm3d/commission_view.gd").new()
+	_ui.add_child(commission_view)
+	commission_view.configure(session)
+	commission_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
 	windmill_view = preload("res://scripts/farm3d/windmill_view.gd").new()
 	_ui.add_child(windmill_view)
 	windmill_view.configure(session)
@@ -137,6 +142,7 @@ func _on_dialogue_opened(_agent_id: String) -> void:
 		return
 	_dialogue_previous_pause = get_tree().paused
 	_dialogue_pause_active = true
+	_session.production.dialogue_paused = true
 	_session.player.set_dialogue_input_blocked(true)
 	_session.player.ui_blocked = true
 	_dialogue_gateway = _session.agent_runtime.gateway
@@ -148,11 +154,13 @@ func _on_dialogue_opened(_agent_id: String) -> void:
 func _on_dialogue_closed(_agent_id: String, _request_id: String) -> void:
 	_release_dialogue_pause()
 	_session.player.ui_blocked = is_modal_open()
+	if not _session.living_world.pending_player_terms.is_empty(): commission_view.offer_draft.call_deferred()
 
 func _release_dialogue_pause() -> void:
 	if not _dialogue_pause_active:
 		return
 	_dialogue_pause_active = false
+	_session.production.dialogue_paused = false
 	_session.player.set_dialogue_input_blocked(false)
 	if is_instance_valid(_dialogue_gateway):
 		_dialogue_gateway.process_mode = _dialogue_gateway_mode
@@ -349,6 +357,7 @@ func toggle_inventory() -> void:
 	_session.player.ui_blocked = is_modal_open()
 
 func is_modal_open() -> bool:
+	if commission_view != null and commission_view.visible: return true
 	if (debug_panel != null and debug_panel.visible) or (dialogue_ui != null and dialogue_ui.visible):
 		return true
 	return inventory_ui != null and (inventory_ui.visible or history_panel.visible or (market_view != null and market_view.visible) or (windmill_view != null and windmill_view.visible) or (food_workshop_view != null and food_workshop_view.visible))
@@ -366,6 +375,7 @@ func open_market() -> void:
 	_session.player.ui_blocked = true
 
 func close_panels() -> void:
+	if commission_view != null: commission_view.close_panel()
 	if debug_panel != null:
 		debug_panel.close()
 	if dialogue_ui != null:

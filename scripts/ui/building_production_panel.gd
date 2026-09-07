@@ -363,12 +363,16 @@ func _build_queue_slots() -> void:
 			"batches": int(job.get("batches", 1)),
 			"remaining_minutes": remaining,
 			"tenant_id": str(job.get("tenant_id", "")),
+			"order_id": str(job.get("order_id", "")),
+			"payment_state": str(job.get("payment_state", "paid")),
+			"job_status": str(job.status),
 			"rental_fee": int(job.get("rental_fee", 0)),
 			"progress": clampf(1.0 - float(remaining) / float(total), 0.0, 1.0),
 		})
 
 
 func _queue_state(job: Dictionary, index: int) -> String:
+	if str(job.get("status", "")) == "queued": return "queued"
 	var status := str(job.get("status", "queued"))
 	if status == "maintenance_paused" or bool(snapshot.get("maintenance_paused", false)) and index == 0:
 		return "maintenance-paused"

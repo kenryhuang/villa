@@ -19,6 +19,8 @@ const GeographicQueryServiceScript = preload(
 const BUILDABLE_STATES := [GridCell.State.WASTELAND, GridCell.State.FARMLAND]
 
 var grid_system_ref: GridSystem
+var actor_assets: RefCounted
+var land_permission: Callable
 var economy_ref: Variant
 var progression_ref: Variant
 var geographic_query_service: RefCounted
@@ -166,10 +168,14 @@ func can_place(building: Variant, gx: int, gz: int) -> bool:
 	return bool(diagnose_placement(building, gx, gz).allowed)
 
 
-func diagnose_resources(building: Variant) -> Dictionary:
+func diagnose_resources(building: Variant, actor_id := "player") -> Dictionary:
 	var resolved := _resolve_data(building)
 	if not _is_valid_building_data(resolved):
 		return _diagnostic(false, "invalid_building", "无法建造：建筑数据无效")
+	if actor_id != "player":
+		var delta := {}
+		for item in resolved.cost: delta[item] = -int(resolved.cost[item])
+		return _diagnostic(actor_assets != null and actor_assets.can_apply(actor_id, delta, 0), "resources", "建造材料不足")
 	if economy_ref == null or not economy_ref.has_method("has_resources"):
 		return _diagnostic(false, "system_unavailable", "建造系统尚未就绪")
 	var report: Dictionary = (
@@ -196,12 +202,12 @@ func diagnose_resources(building: Variant) -> Dictionary:
 	return result
 
 
-func diagnose_availability(building: Variant) -> Dictionary:
+func diagnose_availability(building: Variant, actor_id := "player") -> Dictionary:
 	var resolved := _resolve_data(building)
 	if not _is_valid_building_data(resolved):
 		return _diagnostic(false, "invalid_building", "建筑数据不可用")
 	var managed_blueprint: bool = (
-		progression_ref != null
+		actor_id == "player" and progression_ref != null
 		and (
 			not progression_ref.has_method("is_blueprint_managed")
 			or bool(progression_ref.call("is_blueprint_managed", resolved.building_id))
@@ -222,10 +228,10 @@ func diagnose_availability(building: Variant) -> Dictionary:
 		locked.building_id = resolved.building_id
 		locked.unlock_service_id = str(info.get("service_id", ""))
 		return locked
-	return diagnose_resources(resolved)
+	return diagnose_resources(resolved, actor_id)
 
 
-func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
+func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player", _check_distance := true) -> Dictionary:
 	var resolved := _resolve_data(building)
 	if not _is_valid_building_data(resolved):
 		var invalid := _diagnostic(false, "invalid_building", "无法建造：建筑数据无效")
@@ -237,6 +243,7 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 		unavailable.grid = Vector2i(gx, gz)
 		return unavailable
 	for cell_data in _footprint_cells(resolved, gx, gz):
+		if land_permission.is_valid() and not land_permission.call(actor_id, cell_data.x, cell_data.y): return _diagnostic(false, "leased_land", "该地块已被其他人预约")
 		var cell := grid_system_ref.get_cell(cell_data.x, cell_data.y)
 		if cell == null:
 			return _blocked_diagnostic(
@@ -251,7 +258,7 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 		if (
 			grid_system_ref.has_method("can_actor_use_cell")
 			and not bool(grid_system_ref.call(
-				"can_actor_use_cell", cell_data.x, cell_data.y, "player"
+				"can_actor_use_cell", cell_data.x, cell_data.y, actor_id
 			))
 		):
 			return _blocked_diagnostic(
@@ -285,7 +292,7 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 			"water_required",
 			"无法建造%s：水车必须紧邻水域" % resolved.display_name
 		)
-	var availability := diagnose_availability(resolved)
+	var availability := diagnose_availability(resolved, actor_id)
 	availability.building_id = resolved.building_id
 	availability.grid = Vector2i(gx, gz)
 	if resolved.effect_type == "irrigation" and bool(availability.allowed):
@@ -299,9 +306,9 @@ func can_place_building(building_id: String, gx: int, gz: int) -> bool:
 	return can_place(building_id, gx, gz)
 
 
-func try_place_building(building: Variant, gx: int, gz: int) -> Dictionary:
+func try_place_building(building: Variant, gx: int, gz: int, actor_id := "player") -> Dictionary:
 	var resolved := _resolve_data(building)
-	var diagnostic := diagnose_placement(resolved, gx, gz)
+	var diagnostic := diagnose_placement(resolved, gx, gz, actor_id)
 	if not bool(diagnostic.allowed):
 		return _placement_result(null, diagnostic)
 
@@ -327,6 +334,7 @@ func try_place_building(building: Variant, gx: int, gz: int) -> Dictionary:
 			"previous_state": cell.state,
 		})
 	instance.configure(resolved, gx, gz, snapshots)
+	instance.owner_id = actor_id
 	instance.position = _world_position_for(resolved, gx, gz)
 
 	var applied: Array[Dictionary] = []
@@ -347,7 +355,7 @@ func try_place_building(building: Variant, gx: int, gz: int) -> Dictionary:
 		applied.append(snapshot)
 
 	if economy_ref != null:
-		if not economy_ref.has_method("spend_resources") or not bool(economy_ref.spend_resources(resolved.cost)):
+		if not _spend_actor_resources(actor_id, resolved.cost):
 			_restore_snapshots(snapshots)
 			instance.free()
 			return _placement_result(
@@ -402,9 +410,11 @@ func place_building_by_id(building_id: String, gx: int, gz: int) -> BuildingInst
 	return place_building(building_id, gx, gz)
 
 
-func remove_building(building: Variant) -> bool:
+func remove_building(building: Variant, actor_id := "player") -> bool:
 	var instance: BuildingInstance = building if building is BuildingInstance else get_all_buildings()[building] if building is int and building >= 0 and building < _buildings.size() else null
+	if instance != null and instance.owner_id != actor_id: return false
 	if instance != null and instance.producer_state != null:
+		if not instance.producer_state.customer_outputs.is_empty(): return false
 		for job in instance.producer_state.jobs:
 			if not str(job.get("tenant_id", "")).is_empty():
 				return false
@@ -938,3 +948,10 @@ func _clear_children(parent: Node) -> void:
 	for child in parent.get_children():
 		parent.remove_child(child)
 		child.free()
+
+
+func _spend_actor_resources(actor_id: String, cost: Dictionary) -> bool:
+	if actor_id == "player": return economy_ref.has_method("spend_resources") and bool(economy_ref.spend_resources(cost))
+	var delta := {}
+	for item in cost: delta[item] = -int(cost[item])
+	return actor_assets != null and actor_assets.apply(actor_id, delta, 0)

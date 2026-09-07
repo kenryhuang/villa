@@ -8,6 +8,7 @@ var _session: Node
 var _window: PanelContainer
 var _wallet: Label
 var _back: Button
+var _society: Label
 
 func configure(session: Node) -> void:
 	_session = session
@@ -44,6 +45,9 @@ func configure(session: Node) -> void:
 	close.custom_minimum_size = Vector2(180, 44)
 	close.pressed.connect(close_market)
 	header.add_child(close)
+	_society = Label.new()
+	_society.add_theme_font_size_override("font_size", 16)
+	box.add_child(_society)
 	market_panel = PanelScene.instantiate()
 	market_panel.set_script(preload("res://scripts/farm3d/market_panel.gd"))
 	market_panel.theme = theme
@@ -79,6 +83,7 @@ func _after_trade() -> void:
 func _process(_delta: float) -> void:
 	if not visible:
 		return
+	_society.text = _session.living_world.society.summary()
 	_wallet.text = "金币 %d   " % int(get_node("/root/GameState").gold)
 	_back.visible = market_panel.get_layout_mode() == "drawer" and market_panel._drawer_open
 

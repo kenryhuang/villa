@@ -19,6 +19,14 @@ var recipe_buttons: Dictionary = {}
 var start_button: Button
 var batches_spin: SpinBox
 var collect_button: Button
+var _owner_label: Label
+var _policy_button: Button
+var _policy_dialog: ConfirmationDialog
+var _policy_open: CheckBox
+var _policy_reserve: SpinBox
+var _policy_fees: Dictionary = {}
+var _policy_allowed: Dictionary = {}
+var _policy_version := 0
 var maintenance_button: Button
 var repair_confirm: Button
 var repair_modal: Control
@@ -103,6 +111,11 @@ func configure(farm_session: Farm3DSession, station := "windmill") -> void:
 	_make_recipes()
 	_make_process()
 	_make_queue()
+	var service_row := _hbox(shell, 12)
+	_owner_label = _label(service_row, "", 15)
+	_owner_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_policy_button = _button(service_row, "经营设置", _open_policy)
+	_make_policy()
 	var footer := _hbox(shell, 12)
 	_maintenance = _label(footer, "", 15, MUTED)
 	_maintenance.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -183,7 +196,7 @@ func _make_process() -> void:
 	_label(batch, "批", 16, MUTED)
 	_button(batch, "最大", func(): controller.set_batches(maxi(1, controller.max_batches)))
 	_duration = _metric(box, "本单加工时间")
-	_rental_fee = _metric(box, "NPC 租用费")
+	_rental_fee = _metric(box, "对外加工费")
 	_waiting = _metric(box, "排队等待时间")
 	_metric(box, "原料来源").text = "我的背包"
 	_prices = _metric(box, "原料 / 成品卖出参考")
@@ -234,6 +247,7 @@ func open_for(target: BuildingInstance) -> bool:
 	return true
 
 func close_panel() -> void:
+	if _policy_dialog != null: _policy_dialog.hide()
 	if is_instance_valid(building) and building.tree_exiting.is_connected(close_panel):
 		building.tree_exiting.disconnect(close_panel)
 	building = null
@@ -319,10 +333,10 @@ func _render() -> void:
 	_duration.text = "%d 游戏分钟" % int(detail.duration_minutes)
 	for fee in session.production.get_rental_fee_table(building):
 		if str(fee.recipe_id) == id:
-			_rental_fee.text = "%d 金币/批 · 租金归我" % int(fee.fee_per_batch)
+			_rental_fee.text = "%d 金币/批 · 收款：%s" % [int(fee.fee_per_batch), "我" if building.owner_id == "player" else session.agent_runtime.get_agent_display_name(building.owner_id)]
 		var recipe_button: Button = recipe_buttons.get(str(fee.recipe_id))
 		if recipe_button != null:
-			recipe_button.tooltip_text = "NPC 自备原料租用：%d 金币/批，成品归租客。" % int(fee.fee_per_batch)
+			recipe_button.tooltip_text = "客户自备原料加工：%d 金币/批，成品归租客。" % int(fee.fee_per_batch)
 	var waiting := 0
 	for job in snapshot.get("jobs", []):
 		waiting += int(job.remaining_minutes)
@@ -344,7 +358,9 @@ func _render() -> void:
 	if state == "warning":
 		_maintenance.text = "即将需要维护 · 还有 %d 天" % int(snapshot.maintenance_days_remaining)
 	maintenance_button.text = "进行维护" if state in ["warning", "overdue"] else "查看维护"
-	maintenance_button.disabled = state == "repairing"
+	maintenance_button.disabled = state == "repairing" or building.owner_id != "player"
+	_owner_label.text = "所有者：%s · 成品归下单客户 · 排队托管，开工付费" % ("我" if building.owner_id == "player" else session.agent_runtime.get_agent_display_name(building.owner_id))
+	_policy_button.visible = building.owner_id == "player"
 	for key in recipe_buttons:
 		recipe_buttons[key].add_theme_stylebox_override("normal", _style(Color("e5eddc") if key == id else Color("fffdf6")))
 	_render_queue()
@@ -377,7 +393,9 @@ func _render_queue() -> void:
 			var tenant := str(slot.tenant_id)
 			if is_instance_valid(session.agent_runtime):
 				tenant = session.agent_runtime.get_agent_display_name(tenant)
-			_label(box, "%s租用 · 已付 %d 金币 · 成品归租客" % [tenant, int(slot.rental_fee)], 14, GREEN)
+			_label(box, "%s · %s %d 金币 · 成品归客户" % ["我" if slot.tenant_id == "player" else tenant, "托管" if slot.payment_state == "escrow" else "自用" if slot.payment_state == "self" else "已付", int(slot.rental_fee)], 14, GREEN)
+		if str(slot.get("tenant_id", "")) == "player" and str(slot.get("job_status", "")) == "queued" and not str(slot.get("order_id", "")).is_empty():
+			_button(box, "取消订单并退款", _cancel_order.bind(str(slot.order_id)))
 		var progress := ProgressBar.new()
 		progress.custom_minimum_size.y = 7
 		progress.show_percentage = false
@@ -560,3 +578,75 @@ func _clear(parent: Node) -> void:
 	for child in parent.get_children():
 		parent.remove_child(child)
 		child.queue_free()
+
+func _make_policy() -> void:
+	_policy_dialog = ConfirmationDialog.new()
+	_policy_dialog.title = "建筑经营设置（只影响新订单）"
+	_policy_dialog.theme = theme.duplicate()
+	_policy_dialog.theme.set_stylebox("panel", "AcceptDialog", _style(PAPER, 16))
+	_policy_dialog.theme.set_color("font_color", "CheckBox", INK)
+	_policy_dialog.ok_button_text = "保存设置"
+	_policy_dialog.cancel_button_text = "取消"
+	for color_name in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color"]:
+		_policy_dialog.theme.set_color(color_name, "CheckBox", INK)
+	for button in [_policy_dialog.get_ok_button(), _policy_dialog.get_cancel_button()]:
+		button.add_theme_stylebox_override("normal", _style(Color("e5eadb")))
+		button.add_theme_stylebox_override("hover", _style(Color("dce6cf")))
+		button.add_theme_color_override("font_color", INK)
+		button.add_theme_color_override("font_hover_color", INK)
+		button.add_theme_color_override("font_focus_color", INK)
+		button.add_theme_color_override("font_pressed_color", INK)
+	add_child(_policy_dialog)
+	var box := _vbox(_policy_dialog, 10)
+	_policy_open = CheckBox.new()
+	_policy_open.text = "接受外部加工委托"
+	box.add_child(_policy_open)
+	var reserve := _hbox(box)
+	_label(reserve, "所有者保留队列数", 16)
+	_policy_reserve = SpinBox.new()
+	_policy_reserve.max_value = 2
+	reserve.add_child(_policy_reserve)
+	for recipe in RecipeDatabase.get_recipes_for_station(station_id):
+		var row := _hbox(box)
+		var enabled := CheckBox.new()
+		enabled.text = session.item_name(str(recipe.id))
+		enabled.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(enabled)
+		_policy_allowed[str(recipe.id)] = enabled
+		var fee := SpinBox.new()
+		fee.max_value = 1000000
+		row.add_child(fee)
+		_policy_fees[str(recipe.id)] = fee
+		_label(row, "金币/批", 15)
+	_policy_dialog.confirmed.connect(_save_policy)
+
+func _open_policy() -> void:
+	if not is_instance_valid(building) or building.owner_id != "player": return
+	var policy := building.service_policy
+	_policy_version = int(policy.version)
+	_policy_open.button_pressed = bool(policy.open)
+	_policy_reserve.value = int(policy.reserved_slots)
+	for fee in session.production.get_rental_fee_table(building):
+		_policy_fees[str(fee.recipe_id)].value = int(fee.fee_per_batch)
+		_policy_allowed[str(fee.recipe_id)].button_pressed = policy.allowed_recipes.is_empty() or str(fee.recipe_id) in policy.allowed_recipes
+	_policy_dialog.popup_centered(Vector2i(520, 300))
+
+func _save_policy() -> void:
+	if not is_instance_valid(building): return
+	var policy := {"open": _policy_open.button_pressed, "reserved_slots": int(_policy_reserve.value), "fees": {}, "allowed_recipes": [], "version": _policy_version}
+	for id in _policy_fees:
+		policy.fees[id] = int(_policy_fees[id].value)
+		if _policy_allowed[id].button_pressed: policy.allowed_recipes.append(id)
+	if policy.allowed_recipes.is_empty(): policy.open = false
+	var result: Dictionary = session.production.building_service.set_policy(building, "player", policy, _policy_version)
+	_feedback = "经营设置已保存，现有订单价格不变" if result.ok else "设置未保存：" + str(result.error)
+	_feedback_seconds = 5.0
+	if result.ok and session.auto_save: session.save_game()
+	controller.refresh_snapshot()
+
+func _cancel_order(id: String) -> void:
+	var result: Dictionary = session.production.building_service.cancel(building, "player", id)
+	_feedback = "订单已取消，原料与托管费用已退还" if result.ok else "取消失败：" + str(result.error)
+	_feedback_seconds = 5.0
+	if result.ok and session.auto_save: session.save_game()
+	controller.refresh_snapshot()

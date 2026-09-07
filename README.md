@@ -2,12 +2,30 @@
 
 当前持续开发分支：`feature/3d-farm-preview`。使用同一个 Godot 项目，第三人称 3D 农庄是默认入口。
 
+NPC 自主社会：[设计 v2](docs/design/2026-09-07-npc-agent-living-world-design.md) · [分阶段实施与验收计划](docs/plans/2026-09-07-npc-agent-living-world-implementation-plan.md)。P0 对话交易、P1 建筑产权与双向加工已实现；[P0 验收](docs/validation/living-world/P0.md) · [P1 验收](docs/validation/living-world/P1.md)。
+
 ## 启动
 
 - 在 Godot 中打开根目录 `project.godot`，按 **F5** 运行正式 3D 游戏。
 - 命令行：`./tools/run_farm3d.ps1`，或 `godot_console.exe --path .`。
 - 单独查看橡树：`./tools/preview_tree.ps1`；这是美术预览，不加载农庄玩法。
 - 原游戏保留在 `scenes/main.tscn`，在编辑器打开该场景后按 **F6** 可单独运行。
+
+## NPC 社会 P0 / P1 试玩
+
+```powershell
+# 两座实体风车：玩家所有、老李所有；独立测试资源与存档
+godot_console.exe --path . -- --living-world-scenario=P1
+# 真实 NPC 对话与加工委托（先单独启动 Agent 服务）
+.\tools\run_farm3d.ps1 -ServiceOnly
+godot_console.exe --path . -- --living-world-scenario=P1 --living-world-live-agents
+# 确定性验收与已有系统回归
+.\tests\run_living_world_tests.ps1 -Stage P1 -IncludeDependencies
+```
+
+`P0` 场景预置一座风车和一笔可议价交易；`P1` 预置玩家与老李各一座风车。真实模型模式通过对话生成报价。测试场景不自动读写正式农场，手动保存写到 `tmp/living-world/P0.json` 或 `P1.json`。
+
+正常游戏点击工作建筑：所有者可以配置经营政策，客户按费表加工。订单排队时托管费用，开工后转给所有者；取消未开工订单退原料和费用。旧存档建筑默认归玩家，原有预付款订单不会再次收费。
 
 ## 目录分工
 
@@ -170,3 +188,24 @@ godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.g
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。
+
+
+## NPC 自主社会 P2～P5
+
+村庄有 12 名持续生活的居民、旅店和公共储备账户。底部「调试」→「居民社会」可查看工作、食物消费、账目和 NPC 项目。少量普通居民会在市场附近活动。已有 3 名重点 AI 角色可以自主规划采购/加工/销售，老李等 NPC 还能筹料建成自己的 3D 风车并开放收费；预算、材料、位置与订单均由原游戏规则核验。
+
+走近市场前侧木制「村庄委托」牌，点击查看、接取和交付采购/加工订单，也可发布自己的需求。报酬先从发布者钱包托管，交货后结算。与 NPC 对话也能拟定由玩家出资的委托草稿，关闭对话后核对条款；只有确认后才发布。面板打开时暂停时钟并阻止游戏按键，关闭后恢复。
+
+存档仍为 `data/farm_3d_save.json`，格式升级到版本 7；保留旧居民资产，仅为新增主体初始化一次，不读取旧 `user://` 游戏存档。项目余款/材料、地块预约、施工、委托额度与交货凭证一起恢复。
+
+```powershell
+# 规则测试与原功能回归，不连接真实模型
+.\tests\run_living_world_tests.ps1 -Stage P5 -IncludeDependencies
+# 隔离试玩，不触碰玩家存档
+godot_console.exe --path . -- --living-world-scenario=P5
+# 真实 AI 验收；先启动原 Agent 服务
+.\tools\run_farm3d.ps1 -ServiceOnly
+.\tests\run_living_world_tests.ps1 -Stage P4 -LiveAgents
+```
+
+范围、复现命令和已知边界见 [P2](docs/validation/living-world/P2.md)、[P3](docs/validation/living-world/P3.md)、[P4](docs/validation/living-world/P4.md)、[P5](docs/validation/living-world/P5.md)。临时插单和 GameEnvAgent 分别在后续 P6/P7。

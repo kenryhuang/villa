@@ -13,7 +13,7 @@ import {executeReadTool, readToolDescription, toolDescription} from "./tool_cont
 const DIALOGUE_COMMANDS = new Set([
   "send_message", "propose_trade", "counter_trade", "accept_trade", "reject_trade",
   "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation",
-  "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak",
+  "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
 ]);
 
 async function withProviderTimeout<T>(
@@ -72,8 +72,8 @@ export class OpenAICompatibleProvider {
       ? context.allowed_command_tools.filter((name) => DIALOGUE_COMMANDS.has(name))
       : [...context.allowed_command_tools];
     const systemContent = isDialogue
-      ? "You are a game NPC Agent speaking directly with the player. Reply in character in one to three concise sentences. You may use local read tools, then optionally issue at most one authorized interaction command. Never perform farming, travel, harvesting, or market speculation during dialogue. Never invent world assets."
-      : "You are a game NPC Agent. You may use local read tools to inspect only the supplied context, then use zero to three authorized command tools in execution order. Use no command when no action is needed. Put travel or build last. Never invent world assets.";
+      ? "You are a game NPC Agent speaking directly with the player. Reply in character in one to three concise sentences. You may use local read tools, then optionally issue at most one authorized interaction command. Never perform farming, travel, harvesting, or market speculation during dialogue. A rental command is a request to queue production: while dialogue pauses the world, Godot defers and revalidates it after resume. Never describe a proposal, queued request, or processing order as completed goods. If you promise a trade or rental, issue the corresponding authorized command in this response; otherwise clearly say no operation was submitted. Never invent world assets."
+      : "You are a game NPC Agent. You may use local read tools to inspect only the supplied context, then use zero to three authorized command tools in execution order. For farm3d, inspect actor_context.living_world and prefer submit_project for multi-step goals that you choose yourself. Choose milestones and budgets from resources and opportunities; decline uneconomic plans. Existing accepted projects execute without more model calls. Use no command when no action is needed. Put travel or build last. Never invent world assets.";
     const {market_view: _marketView, ...promptContext} = context;
     const userContent = isDialogue
       ? {context: promptContext, dialogue_input: request.dialogue_input ?? ""}

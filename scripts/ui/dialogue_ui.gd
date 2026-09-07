@@ -39,13 +39,16 @@ func configure_agent_runtime(runtime: Node) -> void:
 	runtime.dialogue_stream_started.connect(func(id: String, request_id: String):
 		if _is_open and id == _current_villager_id: begin_agent_dialogue(id, request_id))
 	runtime.dialogue_stream_delta.connect(func(_id: String, request_id: String, delta: String): append_agent_dialogue(request_id, delta))
-	runtime.dialogue_ready.connect(func(_id: String, request_id: String, speech: String): finish_agent_dialogue(request_id, speech))
+	runtime.dialogue_ready.connect(func(id: String, request_id: String, speech: String):
+		finish_agent_dialogue(request_id, speech)
+		set_agent_interactions(id, runtime.get_player_interactions(id)))
 	runtime.dialogue_stream_failed.connect(func(_id: String, request_id: String, _error: String): fail_agent_dialogue(request_id))
 	agent_dialogue_cancelled.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
 	agent_dialogue_closed.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
 	interaction_response_requested.connect(func(id: String, interaction_id: String, response: String, terms: Dictionary):
-		runtime.respond_to_player_interaction(id, interaction_id, response, terms)
-		set_agent_interactions(id, runtime.get_player_interactions(id)))
+		var result: Dictionary = runtime.respond_to_player_interaction(id, interaction_id, response, terms)
+		set_agent_interactions(id, runtime.get_player_interactions(id))
+		status_label.text = "操作已确认，请查看条款状态。" if result.get("ok", false) else "未能完成：" + _failure_reason(str(result.get("error", "transaction_failed"))))
 
 
 func _ready() -> void:
@@ -269,7 +272,11 @@ func _render_interactions() -> void:
 	for child in interaction_cards.get_children():
 		interaction_cards.remove_child(child)
 		child.queue_free()
-	var records: Array = _interaction_views.get(_current_villager_id, [])
+	var records: Array = _interaction_views.get(_current_villager_id, []).duplicate()
+	records.sort_custom(func(a: Dictionary, b: Dictionary):
+		var a_open := str(a.get("status", "")) in ["open", "proposed", "negotiating"]
+		var b_open := str(b.get("status", "")) in ["open", "proposed", "negotiating"]
+		return a_open and not b_open if a_open != b_open else str(a.get("offer_id", a.get("agreement_id", ""))) > str(b.get("offer_id", b.get("agreement_id", ""))))
 	interaction_scroll.visible = not records.is_empty()
 	for record_value in records:
 		var record := record_value as Dictionary
@@ -283,7 +290,7 @@ func _render_interactions() -> void:
 		var title := Label.new()
 		title.name = "TermsLabel"
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		title.text = _interaction_title(record) + "\n" + JSON.stringify(record)
+		title.text = _interaction_title(record) + "\n" + _terms_text(record)
 		content.add_child(title)
 		var actions := HBoxContainer.new()
 		actions.name = "Actions"
@@ -312,9 +319,43 @@ func _render_interactions() -> void:
 
 func _interaction_title(record: Dictionary) -> String:
 	var status := str(record.get("status", "unknown"))
+	status = {"open": "待确认", "proposed": "待确认", "negotiating": "协商中", "accepted": "已接受", "settled": "已成交", "completed": "已完成", "cancelled": "已取消", "rejected": "已拒绝", "expired": "已过期", "active": "履行中"}.get(status, status)
 	if record.has("offer_id"):
 		return "交易报价 · %s" % status
 	return "合作协议 · %s" % status
+
+
+func _bundle_text(bundle: Dictionary) -> String:
+	var parts: Array[String] = []
+	for id in bundle.get("items", {}):
+		var item: Variant = GameDataScript.get_item(str(id))
+		parts.append("%s ×%d" % [str(item.get("name", id)) if item is Dictionary else str(id), int(bundle.items[id])])
+	if int(bundle.get("gold", 0)) > 0:
+		parts.append("金币 %d" % int(bundle.gold))
+	return "、".join(parts) if not parts.is_empty() else "无"
+
+
+func _terms_text(record: Dictionary) -> String:
+	var lines: Array[String] = []
+	if record.has("offer_id"):
+		var own := str(record.get("proposer_id", "")) == "player"
+		lines.append("你提供：" + _bundle_text(record.get("proposer_gives", {}) if own else record.get("proposer_receives", {})))
+		lines.append("你获得：" + _bundle_text(record.get("proposer_receives", {}) if own else record.get("proposer_gives", {})))
+		lines.append("有效时间：剩余 %d 游戏分钟" % maxi(0, int(record.get("expires_game_minute", 0)) - _current_game_minute(record)))
+	else:
+		for entry in record.get("commitments", []):
+			var actor := str(entry.get("participant_id", ""))
+			lines.append("%s投入：%s" % ["你" if actor == "player" else _display_names.get(actor, actor), _bundle_text(entry)])
+		lines.append("截止：剩余 %d 游戏分钟" % maxi(0, int(record.get("deadline", 0)) - _current_game_minute(record)))
+		for actor in record.get("reward_split", {}):
+			lines.append("%s收益权重：%d" % ["你" if actor == "player" else _display_names.get(actor, actor), int(record.reward_split[actor])])
+	if not str(record.get("note", "")).is_empty():
+		lines.append(str(record.note))
+	return "\n".join(lines)
+
+
+func _failure_reason(code: String) -> String:
+	return {"insufficient_resources": "物品或金币不足", "player_assets_changed": "你的物品或金币不足，交易未成交", "proposer_assets_changed": "对方资产已变化，交易未成交", "insufficient_gold": "金币不足", "offer_expired": "报价已过期", "offer_not_open": "报价已失效", "interaction_not_found": "该提案已不存在", "stale_terms": "条款已更新，请重新确认"}.get(code, "条款或资产状态已变化（%s）" % code)
 
 
 func _request_interaction_response(interaction_id: String, response: String, terms: Dictionary) -> void:

@@ -62,6 +62,7 @@ var agent_trace_window: CanvasLayer
 var _farm3d_runtime: Node
 var _farm3d_summary: TextEdit
 var _farm3d_environment: TextEdit
+var _society_view: TextEdit
 var teleport_map: Control
 var _teleport_status: Label
 
@@ -105,6 +106,10 @@ func configure_farm3d(runtime: Node) -> void:
 	_farm3d_environment.name = "环境与租费"
 	_farm3d_environment.editable = false
 	tabs.add_child(_farm3d_environment)
+	_society_view = TextEdit.new()
+	_society_view.name = "居民社会"
+	_society_view.editable = false
+	tabs.add_child(_society_view)
 	_build_teleport_tab(runtime.farm3d_session)
 	for text_view in [_farm3d_summary, _farm3d_environment]:
 		text_view.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
@@ -159,6 +164,7 @@ func _refresh_farm3d() -> void:
 		records.append({"角色": _farm3d_runtime.get_agent_display_name(id), "职业": _farm3d_runtime.role_system.get_active_role(id),
 			"金币": state.gold, "背包": state.inventory, "当前请求": _farm3d_runtime.get_in_flight_request_id(id)})
 	_farm3d_summary.text = ("远程决策已启用" if _farm3d_runtime.service_enabled else "远程决策未启用（需配置并启动原 agent-service）") + "\n" + JSON.stringify(records, "  ")
+	_society_view.text = _farm3d_runtime.farm3d_session.living_world.debug_text()
 	_farm3d_environment.text = JSON.stringify(_farm3d_runtime.get_farm3d_environment(), "  ")
 
 

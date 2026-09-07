@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "residents": [
+    {"id": "farmer_ahe", "name": "阿禾", "occupation": "自营农户"},
+    {"id": "lao_li", "name": "老李", "occupation": "自营商人"},
+    {"id": "xuezhe_lin", "name": "学者林", "occupation": "研究员"},
+    {"id": "xiao_hua", "name": "小花", "occupation": "花艺师"},
+    {"id": "tiejiang_zhang", "name": "铁匠张", "occupation": "工匠"},
+    {"id": "afu_shui", "name": "阿水", "occupation": "渔民"},
+    {"id": "resident_mei", "name": "阿梅", "occupation": "旅店杂务"},
+    {"id": "resident_zhou", "name": "小周", "occupation": "搬运工"},
+    {"id": "resident_chen", "name": "老陈", "occupation": "木工"},
+    {"id": "resident_yun", "name": "云姐", "occupation": "厨工"},
+    {"id": "resident_shan", "name": "阿山", "occupation": "园丁"},
+    {"id": "resident_xiu", "name": "阿秀", "occupation": "裁缝"}
+  ],
+  "organizations": [
+    {"id": "village_inn", "name": "溪畔旅店", "gold": 30000},
+    {"id": "village_public", "name": "村庄公共储备", "gold": 5000}
+  ],
+  "new_resident_gold": 180,
+  "new_resident_inventory": {"bread": 1},
+  "shift_wage": 90,
+  "shift_minutes": 180,
+  "shift_slots": 3,
+  "food_preferences": ["bread", "grilled_fish", "carrot", "potato"],
+  "food_reserve_days": 2
+}

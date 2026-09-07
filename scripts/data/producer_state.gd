@@ -12,6 +12,8 @@ var output_capacity := 3
 var jobs: Array[Dictionary] = []
 var outputs: Dictionary = {}
 var inputs: Dictionary = {}
+var customer_outputs: Dictionary = {}
+var service_records: Dictionary = {}
 
 
 func _init(initial_station_id: String = "") -> void:
@@ -26,10 +28,28 @@ func to_dict() -> Dictionary:
 		"jobs": jobs.duplicate(true),
 		"outputs": outputs.duplicate(true),
 		"inputs": inputs.duplicate(true),
+		"customer_outputs": customer_outputs.duplicate(true),
+		"service_records": service_records.duplicate(true),
 	}
 
 
 func from_dict(data: Dictionary) -> bool:
+	var customers: Variant = data.get("customer_outputs", {})
+	var records: Variant = data.get("service_records", {})
+	if not customers is Dictionary or not records is Dictionary or records.size() > 2048:
+		return false
+	records = records.duplicate(true)
+	for actor in customers:
+		if not _is_valid_string(actor) or not customers[actor] is Dictionary or _normalized_count_map(customers[actor]) == null:
+			return false
+	for id in records:
+		var record: Variant = records[id]
+		if not _is_valid_string(id) or not record is Dictionary or not record.get("job") is Dictionary or str(record.get("stage", "")) not in ["queued", "running", "ready", "delivered", "cancelled"]:
+			return false
+		var normalized_record: Variant = _normalized_job(record.job, str(data.get("station_id", "")))
+		if normalized_record == null or str(record.job.get("order_id", "")) != id:
+			return false
+		record.job = normalized_record
 	if not _is_valid_string(data.get("station_id")):
 		return false
 	var parsed_max_slots: Variant = _integer_number(data.get("max_queue_slots"))
@@ -67,12 +87,38 @@ func from_dict(data: Dictionary) -> bool:
 	if next_outputs.size() > next_output_capacity:
 		return false
 
+	var seen := {}
+	for job in next_jobs:
+		if not job.has("order_id"): continue
+		if seen.has(job.order_id) or not records.has(job.order_id) or job.payment_state == "refunded": return false
+		seen[job.order_id] = true
+		var record: Dictionary = records[job.order_id]
+		if record.stage not in ["queued", "running"]: return false
+		for field in ["tenant_id", "fee_owner", "rental_fee", "payment_state", "service_inputs", "recipe_id", "batches", "request_id"]:
+			if job[field] != record.job[field]: return false
+	for id in records:
+		var record: Dictionary = records[id]
+		if (record.stage in ["queued", "running"]) != seen.has(id): return false
+		if record.stage == "cancelled" and record.job.payment_state != "refunded": return false
+		if record.stage in ["ready", "delivered"] and record.job.payment_state not in ["paid", "self"]: return false
+		if not record.get("events") is Array or record.events.is_empty() or record.events.size() > 6: return false
+		for event in record.events:
+			if not event is Dictionary or not event.get("stage") is String or _integer_number(event.get("game_minute")) == null: return false
+	for actor in customers:
+		if customers[actor].size() > next_output_capacity: return false
+
 	station_id = next_station
 	max_queue_slots = next_max_slots
 	output_capacity = next_output_capacity
 	jobs.assign(next_jobs)
 	outputs = next_outputs
 	inputs = next_inputs
+	customer_outputs = {}
+	for actor in customers: customer_outputs[actor] = _normalized_count_map(customers[actor])
+	service_records = records.duplicate(true)
+	for record in service_records.values():
+		record.job = _normalized_job(record.job, station_id)
+		for event in record.events: event.game_minute = int(event.game_minute)
 	return true
 
 
@@ -172,9 +218,41 @@ static func _normalized_job(job: Dictionary, expected_station: String) -> Varian
 		if not _is_valid_string(job.get("tenant_id")) or str(job.tenant_id).length() > 80:
 			return null
 		var fee: Variant = _integer_number(job.get("rental_fee"))
-		if fee == null or int(fee) < 1:
+		if fee == null or int(fee) < (0 if job.has("order_id") else 1):
 			return null
 		result.rental_fee = int(fee)
+	if job.has("order_id"):
+		if not _is_valid_string(job.order_id) or not _is_valid_string(job.get("tenant_id")) or not _is_valid_string(job.get("fee_owner")) or str(job.get("payment_state", "")) not in ["escrow", "paid", "self", "refunded"]:
+			return null
+		if not job.get("service_inputs") is Dictionary or _normalized_count_map(job.service_inputs) == null:
+			return null
+		var maximum_fee: Variant = _integer_number(job.get("max_fee"))
+		if maximum_fee == null or int(maximum_fee) < int(result.rental_fee): return null
+		result.max_fee = int(maximum_fee)
+		result.service_inputs = _normalized_count_map(job.service_inputs)
+		if _integer_number(job.get("policy_version")) == null or int(job.policy_version) < 1 or not job.get("request_id") is String: return null
+		result.policy_version = int(job.policy_version)
+		if job.payment_state == "self" and (job.tenant_id != job.fee_owner or int(job.rental_fee) != 0): return null
+		if job.payment_state in ["escrow", "paid"] and job.tenant_id == job.fee_owner: return null
+		if job.payment_state == "escrow" and (job.status != "queued" or remaining != maximum): return null
+		var required := {}
+		for id in recipe.inputs: required[id] = int(recipe.inputs[id]) * batches
+		var actual: Dictionary = job.service_inputs.duplicate()
+		for id in required:
+			if int(actual.get(id, 0)) < int(required[id]): return null
+			actual[id] = int(actual[id]) - int(required[id])
+			if actual[id] == 0: actual.erase(id)
+		for selector in recipe.get("input_selectors", []):
+			var needed := int(selector.quantity) * batches
+			for id in actual.keys():
+				var item: Variant = GameDataScript.get_item(id)
+				if str(selector.tag) in item.get("tags", []):
+					var used := mini(needed, int(actual[id]))
+					needed -= used
+					actual[id] = int(actual[id]) - used
+					if actual[id] == 0: actual.erase(id)
+			if needed != 0: return null
+		if not actual.is_empty(): return null
 	result.batches = batches
 	result.remaining_minutes = remaining
 	return result

@@ -158,6 +158,7 @@ test("dialogue disables thinking for every Provider round", async () => {
   const dialogueRequest: DecisionRequest = {
     ...request,
     request_id: "dialogue-request-1",
+    allowed_command_tools: [...request.allowed_command_tools, "rent_production"],
     trigger: "dialogue",
     dialogue_input: "今天胡萝卜价格怎么样？",
   };
@@ -181,11 +182,11 @@ test("dialogue disables thinking for every Provider round", async () => {
   };
   assert.equal(dialoguePayload.dialogue_input, "今天胡萝卜价格怎么样？");
   assert.deepEqual(dialoguePayload.context.allowed_read_tools, ["inspect_self_resources", "inspect_farm_plots", "inspect_market_item"]);
-  assert.deepEqual(dialoguePayload.context.allowed_command_tools, ["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait"]);
+  assert.deepEqual(dialoguePayload.context.allowed_command_tools, ["till", "plant", "harvest", "build", "buy", "sell", "speak", "wait", "rent_production"]);
   assert.equal("tools" in providerBody, true);
   assert.equal("tool_choice" in providerBody, true);
   assert.deepEqual(providerBody.tools?.map((tool) => tool.function.name), [
-    "inspect_self_resources", "inspect_farm_plots", "inspect_market_item", "speak",
+    "inspect_self_resources", "inspect_farm_plots", "inspect_market_item", "speak", "rent_production",
   ]);
   assert.match(systemMessage?.content || "", /in character/i);
   assert.match(systemMessage?.content || "", /at most one authorized interaction command/i);

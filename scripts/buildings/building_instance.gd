@@ -59,6 +59,9 @@ var construction_stage := ConstructionStage.COMPLETE
 var construction_elapsed := 0.0
 var construction_duration := 0.0
 var producer_state: ProducerState
+var instance_id := "building-" + Crypto.new().generate_random_bytes(16).hex_encode()
+var owner_id := "player"
+var service_policy: Dictionary = {"open": true, "fees": {}, "allowed_recipes": [], "reserved_slots": 0, "version": 1}
 var _preview_mode := false
 var _preview_valid := true
 var _opacity_target := CLEAR_OPACITY
@@ -442,6 +445,9 @@ func _on_output_pile_collection_requested(item_id: String) -> void:
 
 func to_dict() -> Dictionary:
 	var result := {
+		"instance_id": instance_id,
+		"owner_id": owner_id,
+		"service_policy": service_policy.duplicate(true),
 		"building_id": data.building_id if data else authored_building_id,
 		"gx": grid_x,
 		"gz": grid_z,
@@ -456,6 +462,11 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(source: Dictionary) -> bool:
+	var identity: Variant = source.get("instance_id", "legacy-%s-%s-%s" % [source.get("building_id", ""), source.get("gx", 0), source.get("gz", 0)])
+	var owner: Variant = source.get("owner_id", "player")
+	var policy: Variant = source.get("service_policy", {"open": true, "fees": {}, "allowed_recipes": [], "reserved_slots": 0, "version": 1})
+	if not identity is String or identity.is_empty() or identity.length() > 128 or not owner is String or owner.is_empty() or owner.length() > 80 or not valid_service_policy(policy, str(source.get("building_id", ""))):
+		return false
 	if typeof(source.get("building_id")) != TYPE_STRING:
 		return false
 	var parsed_gx: Variant = _integer_number(source.get("gx"))
@@ -535,6 +546,7 @@ func from_dict(source: Dictionary) -> bool:
 			return false
 	elif RecipeDatabaseScript.has_station(str(source.building_id)):
 		next_producer = ProducerStateScript.new(str(source.building_id))
+	if next_producer != null and int(policy.reserved_slots) > next_producer.max_queue_slots: return false
 	if next_producer != null and next_producer.station_id != str(source.building_id):
 		return false
 
@@ -550,6 +562,29 @@ func from_dict(source: Dictionary) -> bool:
 	construction_duration = float(saved_duration)
 	_completion_emitted = construction_stage == ConstructionStage.COMPLETE
 	producer_state = next_producer
+	instance_id = identity
+	owner_id = owner
+	service_policy = policy.duplicate(true)
+	service_policy.version = int(service_policy.version)
+	service_policy.reserved_slots = int(service_policy.reserved_slots)
+	for id in service_policy.fees: service_policy.fees[id] = int(service_policy.fees[id])
+	return true
+
+
+static func valid_service_policy(value: Variant, station: String) -> bool:
+	if not value is Dictionary or value.size() != 5 or not value.get("open") is bool or not value.get("fees") is Dictionary or not value.get("allowed_recipes") is Array:
+		return false
+	var version: Variant = _integer_number(value.get("version"))
+	var slots: Variant = _integer_number(value.get("reserved_slots"))
+	if version == null or int(version) < 1 or slots == null or int(slots) < 0 or int(slots) > 100:
+		return false
+	for recipe_id in value.fees:
+		var fee: Variant = _integer_number(value.fees[recipe_id])
+		if not recipe_id is String or fee == null or int(fee) < 0 or int(fee) > 1000000 or str(RecipeDatabaseScript.get_recipe(recipe_id).get("station", "")) != station:
+			return false
+	for recipe_id in value.allowed_recipes:
+		if not recipe_id is String or str(RecipeDatabaseScript.get_recipe(recipe_id).get("station", "")) != station:
+			return false
 	return true
 
 

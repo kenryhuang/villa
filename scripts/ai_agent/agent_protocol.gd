@@ -40,7 +40,9 @@ static func parse_action_intent(value: Variant, allowed_tools: Array) -> Diction
 			return _failure("unauthorized_tool")
 		if not action.get("arguments") is Dictionary:
 			return _failure("invalid_arguments")
-		actions.append(action.duplicate(true))
+		var normalized_action := action.duplicate(true)
+		normalized_action.arguments = _normalize_json_numbers(action.arguments)
+		actions.append(normalized_action)
 	if actions.size() > 1:
 		for action in actions:
 			if str(action.tool_name) == "wait":
@@ -104,3 +106,18 @@ static func _failure(error: String) -> Dictionary:
 
 static func _is_non_negative_integer(value: Variant) -> bool:
 	return (typeof(value) == TYPE_INT or (typeof(value) == TYPE_FLOAT and value == floor(value))) and int(value) >= 0
+
+
+static func _normalize_json_numbers(value: Variant) -> Variant:
+	# Godot JSON parses all numbers as floats; domain transaction APIs require ints.
+	if value is float and is_finite(value) and absf(value) <= 9007199254740991.0 and floorf(value) == value:
+		return int(value)
+	if value is Dictionary:
+		var result := {}
+		for key in value: result[key] = _normalize_json_numbers(value[key])
+		return result
+	if value is Array:
+		var result: Array = []
+		for entry in value: result.append(_normalize_json_numbers(entry))
+		return result
+	return value

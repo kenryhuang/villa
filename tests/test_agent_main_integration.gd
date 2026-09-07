@@ -176,7 +176,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	dialogue_response.erase("speech")
 	dialogue_response.actions = [{"tool_name": "unauthorized"}]
 	runtime.call("_handle_response", "farmer_ahe", dialogue_response)
-	assertions.equal(dialogue_speech, [["farmer_ahe", "runtime-dialogue-invalid-action", "我先回答你的问题。"]], "dialogue summary completes conversation even when world action rejects")
+	assertions.truthy(dialogue_speech.size() == 1 and str(dialogue_speech[0][2]).contains("请求未执行"), "rejected world action replaces premature dialogue summary with verified failure")
 	var player_inventory := InventoryScript.new()
 	var player_wallet := GameStateScript.new()
 	tree.root.add_child(player_inventory)

@@ -1,6 +1,7 @@
 extends BuildingSystem
 
 var farmer: Node3D
+var actor_lookup: Callable
 
 func _resolve_data(building: Variant) -> BuildingData:
 	var resolved := super._resolve_data(building)
@@ -13,8 +14,8 @@ func _resolve_data(building: Variant) -> BuildingData:
 			resolved.visual_size = Vector2(3.8,3.6)
 	return resolved
 
-func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
-	var result := super.diagnose_placement(building, gx, gz)
+func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player", check_distance := true) -> Dictionary:
+	var result := super.diagnose_placement(building, gx, gz, actor_id, check_distance)
 	if not result.allowed:
 		return result
 	var data := _resolve_data(building)
@@ -29,11 +30,15 @@ func diagnose_placement(building: Variant, gx: int, gz: int) -> Dictionary:
 		result.code = "uneven_terrain"
 		result.message = "地面高差过大，请选择平坦区域建造"
 		return result
-	if farmer == null:
+	if not check_distance: return result
+	var actor: Node3D = farmer if actor_id == "player" else (actor_lookup.call(actor_id) if actor_lookup.is_valid() else null)
+	if actor == null:
+		result.allowed = actor_id == "player"
+		result.code = "actor_unavailable"
 		return result
 	var cell := grid_system_ref.get_cell(gx, gz)
-	var point := Vector2(farmer.global_position.x, farmer.global_position.z)
-	if farmer.global_position.distance_to(cell.world_position_3d()) > 2.6:
+	var point := Vector2(actor.global_position.x, actor.global_position.z)
+	if actor.global_position.distance_to(cell.world_position_3d()) > 2.6:
 		result.allowed = false
 		result.code = "out_of_range"
 		result.message = "离建筑位置太远，请走近后再放置"

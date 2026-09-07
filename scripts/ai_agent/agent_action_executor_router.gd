@@ -111,6 +111,7 @@ func execute_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
 		var action := (action_value as Dictionary).duplicate(true)
 		action.agent_id = str(intent.get("agent_id", ""))
 		action.decision_id = str(intent.get("decision_id", ""))
+		action.request_id = str(intent.get("request_id", action.decision_id))
 		action.expected_revision = int(intent.get("expected_revision", 0))
 		var outcome := execute(action, game_minute)
 		outcomes.append(outcome)
@@ -224,7 +225,8 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 		game_minute,
 		idempotency_key,
 		str(intent.get("decision_id", "")),
-		str(intent.get("action_id", ""))
+		str(intent.get("action_id", "")),
+		str(intent.get("request_id", intent.get("decision_id", "")))
 	)
 	if not result.ok:
 		return _failure(intent, game_minute, str(result.error))
@@ -275,14 +277,17 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 	return outcomes
 
 
-func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String) -> Dictionary:
+func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String, request_id := "") -> Dictionary:
 	match tool_name:
+		"submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior":
+			if not is_instance_valid(farm3d_session): return {"ok": false, "error": "farm3d_only"}
+			return farm3d_session.living_world.command(agent_id, tool_name, arguments, key)
 		"rent_production":
 			if not is_instance_valid(farm3d_session):
 				return _error("rental_unavailable")
 			for building in farm3d_session.buildings.get_all_buildings():
-				if EconomyProgressionSystem.building_key(building) == str(arguments.get("building_id", "")):
-					return farm3d_session.production.start_rented_recipe(building, agent_id, str(arguments.get("recipe_id", "")), int(arguments.get("batches", 0)), int(arguments.get("max_fee", 0)))
+				if str(arguments.get("building_id", "")) in [EconomyProgressionSystem.building_key(building), building.instance_id]:
+					return farm3d_session.production.start_rented_recipe(building, agent_id, str(arguments.get("recipe_id", "")), int(arguments.get("batches", 0)), int(arguments.get("max_fee", 0)), key, request_id)
 			return _error("building_not_found")
 		"till":
 			var plot := int(arguments.get("plot", -1))
@@ -302,6 +307,7 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 				return _error("travel_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s出发前往%s。" % [_display_name(agent_id), region_id], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"build":
+			if is_instance_valid(farm3d_session): return {"ok": false, "error": "use_project_physical_construction"}
 			var building_type := str(arguments.get("building_type", ""))
 			var building_id := str(arguments.get("building_id", key))
 			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id, "action_id": action_id, "tool_name": "build", "agreement_id": str(arguments.get("agreement_id", ""))}):

@@ -306,6 +306,7 @@ func _run() -> void:
 	legacy.version = 3
 	legacy.erase("golf")
 	legacy.erase("agents")
+	legacy.erase("living_world")
 	_check(session._valid_save(legacy),"Existing v3 saves remain valid without golf data")
 	var invalid := saved.duplicate(true)
 	invalid.golf.ball.x = 1000

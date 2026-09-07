@@ -30,7 +30,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		await tree.process_frame
 		return
 	var panel := dialogue.get_node("DialoguePanel") as PanelContainer
-	assertions.equal(panel.custom_minimum_size, Vector2(760, 420), "Agent dialogue panel has a fixed readable size")
+	assertions.equal(panel.custom_minimum_size, Vector2(760, 650), "Agent dialogue panel has a fixed readable size")
 	var input := dialogue.get_node("DialoguePanel/Margin/VBox/Composer/MessageInput") as TextEdit
 	var send := dialogue.get_node("DialoguePanel/Margin/VBox/Composer/SendButton") as Button
 	var close_button := dialogue.get_node("DialoguePanel/Margin/VBox/Header/CloseButton") as Button
@@ -51,7 +51,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.equal(cards.get_child_count(), 1, "pending interaction renders one authority-backed card")
 	var first_card := cards.get_child(0)
 	var terms_label := first_card.find_child("TermsLabel", true, false) as Label
-	assertions.truthy(terms_label.text.contains("offer-1") and terms_label.text.contains("carrot"), "card renders exact current structured terms")
+	assertions.truthy(terms_label.text.contains("你提供") and terms_label.text.contains("×2") and not terms_label.text.contains("proposer_gives"), "card renders quantities and clear trade sides without protocol JSON")
 	(first_card.find_child("AcceptButton", true, false) as Button).pressed.emit()
 	assertions.equal(interaction_responses.size(), 1, "accept button emits one explicit Player command")
 	assertions.equal(interaction_responses[0].slice(0, 3), ["farmer_ahe", "offer-1", "accept"], "accept identifies Agent and interaction")

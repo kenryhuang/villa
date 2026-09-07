@@ -6,6 +6,7 @@ const FishingScript = preload("res://scripts/farm3d/farm_fishing.gd")
 var fishing: Node3D
 var golf: Node3D
 var market_building: Node3D
+var commission_board: Node3D
 var session: Node
 var player: Node3D
 var hud: CanvasLayer
@@ -57,6 +58,9 @@ func configure(farm_session: Node, farmer: Node3D) -> void:
 	market_building = preload("res://scripts/farm3d/market_building.gd").new()
 	add_child(market_building)
 	market_building.configure(session)
+	commission_board = preload("res://scripts/farm3d/commission_board.gd").new()
+	add_child(commission_board)
+	commission_board.configure(session)
 	golf = preload("res://scripts/farm3d/farm_golf.gd").new()
 	add_child(golf)
 	session.golf = golf
@@ -94,6 +98,13 @@ func _process(delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if session == null:
+		return
+	if hud.commission_view.visible:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			if hud.commission_view.confirm.visible: hud.commission_view.confirm.hide()
+			else: hud.commission_view.close_panel()
+			get_viewport().set_input_as_handled()
+		player.filter_dialogue_input(event)
 		return
 	if hud.dialogue_ui != null and hud.dialogue_ui.visible:
 		player.filter_dialogue_input(event)
@@ -212,6 +223,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		_pointer = event.position
 		_front_target = false
+		if try_board_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
 		if try_npc_click(event.position):
 			get_viewport().set_input_as_handled()
 			return
@@ -389,3 +403,19 @@ func _toggle_fishing() -> void:
 		return
 	cancel_selection()
 	fishing.equip()
+
+
+func try_board_click(pointer: Vector2) -> bool:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null: return false
+	var origin := camera.project_ray_origin(pointer)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + camera.project_ray_normal(pointer) * camera.far, 1 | 64 | 128 | 256)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or not hit.collider.get_meta("commission_board", false): return false
+	if player.global_position.distance_to(commission_board.global_position) > 4.0:
+		hud.notify_message("请走近市场旁的委托牌。", true)
+		return true
+	cancel_selection()
+	hud.close_panels()
+	hud.commission_view.open_panel()
+	return true

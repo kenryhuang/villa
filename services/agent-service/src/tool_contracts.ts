@@ -47,6 +47,14 @@ function objectSchema(properties: Record<string, unknown>, required: string[]): 
 }
 
 const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
+  submit_project: objectSchema({goal: {type: "string", minLength: 1, maxLength: 500}, budget: {type: "integer", minimum: 0, maximum: 1000000}, deadline_minutes: {type: "integer", minimum: 60, maximum: 10080}, materials: ITEM_QUANTITIES_SCHEMA, steps: {type: "array", minItems: 1, maxItems: 12, items: objectSchema({id: ITEM_ID_SCHEMA, capability: {type: "string", enum: ["buy", "sell", "move", "rent", "wait_production", "reserve_plot", "build", "wait_construction", "set_policy", "claim", "deliver"]}, depends_on: {type: "array", items: ITEM_ID_SCHEMA}, arguments: {type: "object"}}, ["id", "capability", "depends_on", "arguments"])}}, ["goal", "budget", "deadline_minutes", "materials", "steps"]),
+  retry_project: objectSchema({project_id: ITEM_ID_SCHEMA}, ["project_id"]),
+  cancel_project: objectSchema({project_id: ITEM_ID_SCHEMA}, ["project_id"]),
+  suggest_behavior: objectSchema({text: TEXT_SCHEMA, ttl: {type: "integer", minimum: 1, maximum: 1080}}, ["text", "ttl"]),
+  publish_commission: objectSchema({demand_id: ITEM_ID_SCHEMA, item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, unit_reward: {type: "integer", minimum: 1, maximum: 1000000}, kind: {type: "string", enum: ["purchase", "processing"]}, max_claims: {type: "integer", minimum: 1, maximum: 10}, deadline_minutes: {type: "integer", minimum: 1, maximum: 10080}}, ["demand_id", "item_id", "quantity", "unit_reward", "kind", "max_claims", "deadline_minutes"]),
+  propose_player_commission: objectSchema({demand_id: ITEM_ID_SCHEMA, item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, unit_reward: {type: "integer", minimum: 1, maximum: 1000000}, kind: {type: "string", enum: ["purchase", "processing"]}, max_claims: {type: "integer", minimum: 1, maximum: 10}, deadline_minutes: {type: "integer", minimum: 1, maximum: 10080}}, ["demand_id", "item_id", "quantity", "unit_reward", "kind", "max_claims", "deadline_minutes"]),
+  claim_commission: objectSchema({commission_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["commission_id", "quantity"]),
+  deliver_commission: objectSchema({claim_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}, order_id: {type: "string", maxLength: 100}}, ["claim_id", "quantity", "version", "order_id"]),
   rent_production: objectSchema({building_id: ITEM_ID_SCHEMA, recipe_id: ITEM_ID_SCHEMA, batches: QUANTITY_SCHEMA, max_fee: {type: "integer", minimum: 0, maximum: 1000000}}, ["building_id", "recipe_id", "batches", "max_fee"]),
   till: objectSchema({plot: PLOT_SCHEMA}, ["plot"]),
   harvest: objectSchema({plot: PLOT_SCHEMA, agreement_id: AGREEMENT_ID_SCHEMA}, ["plot"]),
@@ -200,6 +208,12 @@ function validCooperationTerms(value: unknown): boolean {
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name) {
+    case "submit_project": return validProject(value);
+    case "retry_project": case "cancel_project": return hasExactKeys(value, ["project_id"]) && isBoundedId(value.project_id);
+    case "suggest_behavior": return hasExactKeys(value, ["text", "ttl"]) && isText(value.text, 500) && isIntegerInRange(value.ttl, 1, 1080);
+    case "propose_player_commission": case "publish_commission": return hasExactKeys(value, ["demand_id", "item_id", "quantity", "unit_reward", "kind", "max_claims", "deadline_minutes"]) && isBoundedId(value.demand_id) && isBoundedId(value.item_id) && isIntegerInRange(value.quantity, 1, 100) && isIntegerInRange(value.unit_reward, 1, 1000000) && isOneOf(value.kind, ["purchase", "processing"]) && isIntegerInRange(value.max_claims, 1, 10) && isIntegerInRange(value.deadline_minutes, 1, 10080);
+    case "claim_commission": return hasExactKeys(value, ["commission_id", "quantity"]) && isBoundedId(value.commission_id) && isIntegerInRange(value.quantity, 1, 100);
+    case "deliver_commission": return hasExactKeys(value, ["claim_id", "quantity", "version", "order_id"]) && isBoundedId(value.claim_id) && isIntegerInRange(value.quantity, 1, 100) && isIntegerInRange(value.version, 1, 1000000) && isText(value.order_id, 100, true);
     case "rent_production":
       return hasExactKeys(value, ["building_id", "recipe_id", "batches", "max_fee"])
         && isBoundedId(value.building_id) && isBoundedId(value.recipe_id)
@@ -291,7 +305,17 @@ export function toolDescription(name: string): Record<string, unknown> {
   const parameters = TOOL_PARAMETERS[name];
   if (!parameters) throw new Error(`unknown_tool_contract:${name}`);
   const farmingDescriptions: Record<string, string> = {
-    rent_production: "Place a paid processing order in a real player-owned building. Inspect buildings for the exact instance building_id, recipe, fee per batch, shared queue and maintenance state. Supply your own ingredients; total fee is paid to the player and must not exceed max_fee. Output is delivered automatically to your inventory after game-time processing. Consider input cost, rental fee and market sale value before ordering; acceptance means the order was placed, not that goods are ready.",
+    propose_trade: "Create a proposal for target_actor_id. give is what YOU supply from your own inventory; receive is what the OTHER actor supplies to you upon acceptance. You only need to own give, not receive. A player recipient must explicitly confirm in the game UI. A proposal reserves assets but is not a completed trade.",
+    counter_trade: "Replace a received offer with your counterproposal. give is your contribution; receive is what you request from the other actor. The previous offer becomes invalid; the recipient must accept the new proposal.",
+    submit_project: "Choose an autonomous goal based on actual opportunities, submit a budgeted DAG using actor_context.living_world.rules. No need for a player request or commission. Materials and budget are escrowed from YOUR account. Plan acceptance is not completion. Decline if economics or resources are unsuitable. Inspect market prices, building fees and legal sites first.",
+    retry_project: "Revalidate blocked steps of your existing project after a relevant change. Do not retry blindly.",
+    cancel_project: "Cancel your project and return unused escrow; committed work must finish first.",
+    suggest_behavior: "Record a bounded optional behavioral intention for your next decisions, not a guaranteed promise.",
+    propose_player_commission: "Only when the player asks you to draft their commission: propose exact goods, quantity, unit reward, type, deadline and claim slots. This opens a player confirmation card after dialogue closes. No money is moved and nothing is published until the player confirms. Ask for missing essential terms first.",
+    publish_commission: "Publish a purchase or new-processing demand using ONLY your own funds, prepaid into escrow. Never spend player money. Player terms require their UI confirmation.",
+    claim_commission: "Claim an available quantity of a funded public commission, up to its remaining quota and claim slots.",
+    deliver_commission: "Deliver real inventory for a claimed commission at its current version; processing requires order_id of new production started after claim. Reward transfers only after validation.",
+    rent_production: "Place a paid processing order in a real building owned by any actor. Inspect buildings for the exact instance building_id, recipe, fee per batch, shared queue and maintenance state. Supply your own ingredients; the per-building policy defines permitted recipes and reserved owner capacity; total fee must not exceed max_fee, is escrowed while queued and paid to owner_id on actual start. Self-use has zero fee. Output is delivered automatically to your inventory after game-time processing. Consider input cost, rental fee and market sale value before ordering; acceptance means the order was placed, not that goods are ready.",
     harvest: "Harvest a mature crop for produce, or clear a withered crop to leave tilled soil with no items or inventory rewards. Rejects growing and dormant crops. Use the plot state and available_actions from the current farm context.",
     plant: "Plant one seed on a tilled plot. Check crop_options (or inspect_crop_options) for plantable_plots, unavailable_reason, and seed_quantity. Season names in public_world_state are authoritative; do not infer planting validity from an empty plot or numeric season alone.",
   };
@@ -374,7 +398,7 @@ export function executeReadTool(context: AgentContext, name: string, args: Recor
   switch (name as ReadToolName) {
     case "inspect_map": return {map: structuredClone(context.actor_context.world_map ?? {})};
     case "inspect_buildings": return {buildings: structuredClone(context.actor_context.player_buildings ?? [])};
-    case "inspect_building": return found(findRecord(context.actor_context.player_buildings, "building_id", String(args.building_id)));
+    case "inspect_building": return found(findRecord(context.actor_context.player_buildings, "building_id", String(args.building_id)) ?? findRecord(context.actor_context.player_buildings, "instance_id", String(args.building_id)));
     case "inspect_characters": return {characters: structuredClone(context.actor_context.characters ?? [])};
     case "inspect_market_item": return found(context.market_view[String(args.item_id)]);
     case "compare_market_items": return {items: Object.fromEntries((args.item_ids as string[]).map((id) => [id, structuredClone(context.market_view[id] ?? null)]))};
@@ -396,4 +420,41 @@ export function executeReadTool(context: AgentContext, name: string, args: Recor
     case "inspect_known_discoveries": return {discoveries: structuredClone(context.actor_context.known_discoveries ?? context.public_world_state.known_discoveries ?? [])};
     default: throw new Error("provider_unknown_read_tool");
   }
+}
+
+
+export function validProject(v: Record<string, unknown>): boolean {
+  if (!hasExactKeys(v, ["goal", "budget", "deadline_minutes", "materials", "steps"]) || !isText(v.goal, 500) || !isIntegerInRange(v.budget, 0, 1000000) || !isIntegerInRange(v.deadline_minutes, 60, 10080) || !isRecord(v.materials) || Object.keys(v.materials).length > 32 || !Object.keys(v.materials).every(isBoundedId) || !Object.values(v.materials).every(n => isIntegerInRange(n, 1, 1000000)) || !Array.isArray(v.steps) || v.steps.length < 1 || v.steps.length > 12) return false;
+  const seen = new Map<string, {capability: string; ancestors: Set<string>}>();
+  for (const step of v.steps) {
+    if (!isRecord(step) || !hasExactKeys(step, ["id", "capability", "depends_on", "arguments"]) || !isBoundedId(step.id) || step.id.length > 40 || seen.has(step.id) || !Array.isArray(step.depends_on) || !step.depends_on.every(id => typeof id === "string" && seen.has(id)) || !isRecord(step.arguments)) return false;
+    const a = step.arguments;
+    const id = (key: string) => isBoundedId(a[key]);
+    const n = (key: string, min = 1, max = 100) => isIntegerInRange(a[key], min, max);
+    const keys = (...expected: string[]) => hasExactKeys(a, expected);
+    let valid = false;
+    switch (step.capability) {
+      case "buy": case "sell": valid = keys("item_id", "quantity", "limit") && id("item_id") && n("quantity") && n("limit", 0, 1000000); break;
+      case "move": valid = keys("x", "z") && typeof a.x === "number" && Number.isFinite(a.x) && a.x >= -176 && a.x <= 80 && typeof a.z === "number" && Number.isFinite(a.z) && a.z >= -80 && a.z <= 144; break;
+      case "rent": valid = validToolArguments("rent_production", a); break;
+      case "wait_production": valid = keys("order_step") && id("order_step"); break;
+      case "reserve_plot": valid = keys("gx", "gz") && n("gx", -1024, 1024) && n("gz", -1024, 1024); break;
+      case "build": valid = keys("lease_step") && id("lease_step"); break;
+      case "wait_construction": valid = keys("build_step") && id("build_step"); break;
+      case "set_policy": valid = keys("build_step", "open", "fee") && id("build_step") && typeof a.open === "boolean" && n("fee", 0, 1000000); break;
+      case "claim": valid = validToolArguments("claim_commission", a); break;
+      case "deliver": valid = keys("claim_step", "quantity", "order_step") && id("claim_step") && n("quantity") && isText(a.order_step, 100, true); break;
+    }
+    if (!valid) return false;
+    const ancestors = new Set<string>();
+    for (const dep of step.depends_on as string[]) { ancestors.add(dep); for (const prior of seen.get(dep)!.ancestors) ancestors.add(prior); }
+    const refs: Record<string, Record<string, string>> = {wait_production: {order_step: "rent"}, build: {lease_step: "reserve_plot"}, wait_construction: {build_step: "build"}, set_policy: {build_step: "build"}, deliver: {claim_step: "claim", order_step: "rent"}};
+    for (const [field, cap] of Object.entries(refs[String(step.capability)] ?? {})) {
+      if (step.capability === "deliver" && field === "order_step" && a[field] === "") continue;
+      if (typeof a[field] !== "string" || !ancestors.has(a[field]) || seen.get(a[field])?.capability !== cap) return false;
+    }
+    if (step.capability === "rent" && typeof a.building_id === "string" && a.building_id.startsWith("@")) { const ref = a.building_id.slice(1); if (!ancestors.has(ref) || seen.get(ref)?.capability !== "build") return false; }
+    seen.set(step.id, {capability: String(step.capability), ancestors});
+  }
+  return true;
 }

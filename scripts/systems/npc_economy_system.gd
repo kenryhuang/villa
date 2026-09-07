@@ -1,6 +1,8 @@
 class_name NpcEconomySystem
 extends Node
 
+signal market_trade_committed(actor_id: String, items: Dictionary, total: int, buying: bool)
+
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 
 const NpcEconomyStateScript = preload("res://scripts/data/npc_economy_state.gd")
@@ -582,6 +584,7 @@ func _execute_market_bundle(
 	if not bool(_market_system.call("dispatch_finalized_publication", batch)):
 		_restore_failed_market_bundle(state, npc_before, market_before, null, null, batch)
 		return false
+	market_trade_committed.emit(state.npc_id, items.duplicate(true), total, is_buy)
 	return true
 
 

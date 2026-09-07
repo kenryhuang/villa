@@ -11,7 +11,9 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 5
+const SAVE_VERSION := 7
+const LivingWorld = preload("res://scripts/farm3d/living_world_system.gd")
+var living_world: Node
 const GolfRound = preload("res://scripts/farm3d/golf_round.gd")
 const MarketScript = preload("res://scripts/systems/market_system.gd")
 const NpcEconomyScript = preload("res://scripts/systems/npc_economy_system.gd")
@@ -51,6 +53,7 @@ var golf: Node
 var golf_round := GolfRound.new()
 var golf_sensitivity := 1.0
 @export var enable_agents := false
+@export var live_test_agents := false
 @export var agent_client_config_path := "res://config/agent-client.local.json"
 var agent_runtime: Node
 var agent_bus: Node
@@ -64,7 +67,7 @@ func _configure_agents() -> bool:
 	agent_runtime = preload("res://scripts/ai_agent/agent_runtime.gd").new()
 	agent_runtime.name = "AgentRuntime"
 	add_child(agent_runtime)
-	return agent_runtime.configure_farm3d(self, agent_bus, auto_save, agent_client_config_path)
+	return agent_runtime.configure_farm3d(self, agent_bus, auto_save or live_test_agents, agent_client_config_path)
 
 
 func configure(next_player: Node3D) -> bool:
@@ -111,7 +114,7 @@ func configure(next_player: Node3D) -> bool:
 		return false
 	npc_economy = NpcEconomyScript.new()
 	add_child(npc_economy)
-	if not npc_economy.configure(market, DataScript.get_npc_economy_profiles(), DataScript.get_population_demand_profiles()):
+	if not npc_economy.configure(market, LivingWorld.Society.economy_profiles(), LivingWorld.Society.external_population()):
 		return false
 	market.last_settled_day = season.total_days
 	npc_economy.reset_to_profile_defaults(season.total_days)
@@ -133,6 +136,10 @@ func configure(next_player: Node3D) -> bool:
 		event_bus.day_changed.connect(_settle_market_day)
 	if not _configure_agents():
 		return false
+	living_world = LivingWorld.new()
+	living_world.name = "LivingWorld"
+	add_child(living_world)
+	living_world.configure(self)
 	if auto_restore and FileAccess.file_exists(save_path):
 		# A missing or damaged project-local save starts a clean farm. The old
 		# user:// location is intentionally not consulted.
@@ -148,6 +155,7 @@ func configure(next_player: Node3D) -> bool:
 func _settle_market_day(day: int) -> void:
 	if day <= market.last_settled_day:
 		return
+	if living_world != null: living_world.advance()
 	# Same economic order as the original daily simulation: NPC flows, then pricing.
 	if npc_economy.simulate_day(day):
 		market.settle_day(day)
@@ -237,6 +245,7 @@ func save_game() -> bool:
 	var harvest_seed := int(state.harvest_seed) if state != null else 42
 	var data := {
 		"version": SAVE_VERSION,
+		"living_world": living_world.to_dict(),
 		"grid": grid.to_dict(),
 		"inventory": {"slots": inventory.slots, "quick": inventory.quick_slot_mappings},
 		"season": {"season": season.current_season, "day": season.current_day, "total_days": season.total_days, "hour": season.hour, "minute": season.minute},
@@ -284,6 +293,7 @@ func load_game() -> bool:
 	if json.parse(file.get_as_text()) != OK:
 		return false
 	var parsed = json.data
+	_migrate_residents(parsed)
 	if not _valid_save(parsed):
 		return false
 	var data: Dictionary = parsed
@@ -350,6 +360,8 @@ func load_game() -> bool:
 		if not agent_runtime.farm3d_actors.is_empty():
 			agent_runtime.spawn_farm3d_actors()
 		agent_runtime.load_farm3d_memory(save_path)
+	if int(data.version) >= 7: living_world.restore(data.living_world)
+	else: living_world.reset_for_legacy()
 	save_error = ""
 	state_loaded.emit()
 	return true
@@ -479,10 +491,11 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, SAVE_VERSION]:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, 5, 6, SAVE_VERSION]:
 		return false
-	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18}[int(data.version)]:
+	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18, 6: 18, 7: 19}[int(data.version)]:
 		return false
+	if int(data.version) >= 7 and not living_world.validate_save(data): return false
 	if int(data.version) >= 5:
 		if not data.get("agents") is Dictionary:
 			return false
@@ -502,9 +515,19 @@ func _valid_save(value: Variant) -> bool:
 		return false
 	if not buildings.validate_restore_buildings(data.get("buildings", []), data.grid):
 		return false
+	var identities := {}
 	for saved_building in data.get("buildings", []):
+		var owner := str(saved_building.get("owner_id", "player"))
+		var identity := str(saved_building.get("instance_id", "legacy-%s-%s-%s" % [saved_building.building_id, saved_building.gx, saved_building.gz]))
+		if identities.has(identity) or (owner != "player" and not npc_economy.has_npc(owner)): return false
+		identities[identity] = true
+		var producer: Dictionary = saved_building.get("producer_state", {})
+		for customer in producer.get("customer_outputs", {}):
+			if customer != "player" and not npc_economy.has_npc(customer): return false
+		for record in producer.get("service_records", {}).values():
+			if str(record.job.fee_owner) != owner or (record.job.tenant_id != "player" and not npc_economy.has_npc(record.job.tenant_id)): return false
 		for job in saved_building.get("producer_state", {}).get("jobs", []):
-			if job.has("tenant_id") and not npc_economy.has_npc(str(job.tenant_id)):
+			if job.has("tenant_id") and str(job.tenant_id) != "player" and not npc_economy.has_npc(str(job.tenant_id)):
 				return false
 	if not data.get("inventory") is Dictionary or not data.inventory.has("slots") or not data.inventory.has("quick"):
 		return false
@@ -648,3 +671,19 @@ func _sync_paddy() -> void:
 	visuals.paddy_cells = paddy_cells.duplicate()
 	farming.paddy_cells = paddy_cells.duplicate()
 	visuals.rebuild(grid._cells.values())
+
+
+func _migrate_residents(value: Variant) -> void:
+	if not value is Dictionary or not _is_integer(value.get("version")) or int(value.version) > 6: return
+	if not value.get("npc_economy") is Dictionary or not value.npc_economy.get("npc_states") is Array: return
+	var entries: Array = value.npc_economy.npc_states
+	if entries.size() != 6: return
+	var known := {}
+	for entry in entries:
+		if not entry is Dictionary or not entry.get("npc_id") is String or known.has(entry.npc_id): return
+		known[entry.npc_id] = true
+	for profile in DataScript.get_npc_economy_profiles():
+		if not known.has(profile.id): return
+	for profile in LivingWorld.Society.economy_profiles():
+		if known.has(profile.id): continue
+		entries.append({"npc_id": profile.id, "gold": profile.gold, "inventory": profile.inventory.duplicate(true), "reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "last_simulated_day": value.npc_economy.last_simulated_day, "investment_planned": false})

@@ -49,7 +49,7 @@ export interface AgentContext {
 }
 
 const GENERAL_COMMAND_TOOLS = [
-	"rent_production",
+	"rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
   "send_message", "propose_trade", "counter_trade", "accept_trade",
   "reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
   "propose_cooperation", "counter_cooperation", "accept_cooperation",

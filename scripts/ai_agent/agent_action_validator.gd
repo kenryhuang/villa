@@ -33,6 +33,12 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 	match tool_name:
+		"submit_project": return preload("res://scripts/systems/npc_project_system.gd").valid_plan(arguments)
+		"retry_project", "cancel_project": return _exact_keys(arguments, ["project_id"]) and _bounded_id(arguments.project_id)
+		"suggest_behavior": return _exact_keys(arguments, ["text", "ttl"]) and _text(arguments.text, 500) and _integer_in_range(arguments.ttl, 1, 1080)
+		"publish_commission", "propose_player_commission": return preload("res://scripts/systems/commission_system.gd").valid_terms(arguments)
+		"claim_commission": return _exact_keys(arguments, ["commission_id", "quantity"]) and _bounded_id(arguments.commission_id) and _integer_in_range(arguments.quantity, 1, 100)
+		"deliver_commission": return _exact_keys(arguments, ["claim_id", "quantity", "version", "order_id"]) and _bounded_id(arguments.claim_id) and _integer_in_range(arguments.quantity, 1, 100) and _integer_in_range(arguments.version, 1, 1000000) and _text(arguments.order_id, 100, true)
 		"rent_production":
 			return _exact_keys(arguments, ["building_id", "recipe_id", "batches", "max_fee"]) and _bounded_id(arguments.building_id) and _bounded_id(arguments.recipe_id) and _integer_in_range(arguments.batches, 1, 100) and _integer_in_range(arguments.max_fee, 0, 1000000)
 		"till":

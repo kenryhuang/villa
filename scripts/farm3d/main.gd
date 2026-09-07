@@ -66,10 +66,14 @@ func _initialize_landscape() -> void:
 
 func _initialize_gameplay() -> bool:
 	var arguments := OS.get_cmdline_args() + OS.get_cmdline_user_args()
-	var transient := not _capture_path.is_empty() or arguments.has("--farm-test") or DisplayServer.get_name() == "headless"
+	var scenario := ""
+	for argument in arguments:
+		if argument.begins_with("--living-world-scenario="): scenario = argument.trim_prefix("--living-world-scenario=")
+	var transient := not scenario.is_empty() or not _capture_path.is_empty() or arguments.has("--farm-test") or DisplayServer.get_name() == "headless"
 	farm_session = FarmSessionScript.new()
 	farm_session.name = "FarmSession"
 	farm_session.enable_agents = true
+	farm_session.live_test_agents = not scenario.is_empty() and arguments.has("--living-world-live-agents")
 	for argument in arguments:
 		if argument.begins_with("--agent-client-config="):
 			farm_session.agent_client_config_path = argument.trim_prefix("--agent-client-config=")
@@ -99,6 +103,11 @@ func _initialize_gameplay() -> bool:
 	add_child(interaction)
 	interaction.configure(farm_session, player)
 	farm_session.agent_runtime.spawn_farm3d_actors()
+	farm_session.living_world.bind_scene()
+	if not scenario.is_empty() and not preload("res://scripts/farm3d/living_world_scenarios.gd").setup(self, scenario):
+		push_error("Living world scenario could not initialize: " + scenario)
+		get_tree().quit(1)
+		return false
 	if not transient:
 		get_tree().auto_accept_quit = false
 	return true

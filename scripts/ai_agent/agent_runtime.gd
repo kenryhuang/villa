@@ -76,6 +76,8 @@ var _pending_market_pressure_facts: Dictionary = {}
 var farm3d_session: Node
 var farm3d_actors: Dictionary = {}
 var _farm3d_memory_export_pending := false
+var _deferred_responses: Array[Dictionary] = []
+var _cancelled_requests: Dictionary = {}
 const FARM3D_SPAWNS := {"farmer_ahe": Vector2(-12, -12), "lao_li": Vector2(-2, -10), "xuezhe_lin": Vector2(7, -12)}
 
 
@@ -91,7 +93,9 @@ func configure_farm3d(session: Node, hud_bus: Node, remote_enabled: bool, client
 		return false
 	executor.farm3d_session = session
 	configure_player_assets(session.inventory, get_node("/root/GameState"))
+	session.production.actor_assets.resolve_port = func(): return interaction_system
 	session.production.rental_completed.connect(_on_rental_completed)
+	session.production.service_order_changed.connect(_on_service_order_changed)
 	dialogue_ready.connect(func(agent_id: String, _request_id: String, speech: String):
 		if not speech.is_empty(): _publish("info", get_agent_display_name(agent_id) + "：" + speech, {}))
 	return true
@@ -127,7 +131,7 @@ func get_farm3d_environment() -> Dictionary:
 	for building in s.buildings.get_all_buildings():
 		var p: Vector3 = building.global_position
 		buildings.append({"building_id": EconomyProgressionSystem.building_key(building), "type": building.building_id,
-			"name": building.data.display_name, "owner_id": "player", "position": {"x": p.x, "y": p.y, "z": p.z},
+			"name": building.data.display_name, "owner_id": building.owner_id, "instance_id": building.instance_id, "service_policy": building.service_policy.duplicate(true), "position": {"x": p.x, "y": p.y, "z": p.z},
 			"construction_complete": building.is_construction_complete(), "production": s.production.get_building_snapshot(building),
 			"rental_fees": s.production.get_rental_fee_table(building)})
 	var characters: Array[Dictionary] = []
@@ -136,16 +140,41 @@ func get_farm3d_environment() -> Dictionary:
 		var point: Vector3 = actor.global_position if is_instance_valid(actor) else Vector3.ZERO
 		characters.append({"actor_id": id, "name": "玩家" if id == "player" else get_agent_display_name(id),
 			"position": {"x": point.x, "y": point.y, "z": point.z}, "role": "player" if id == "player" else role_system.get_active_role(id)})
+	if s.living_world != null:
+		for resident in s.living_world.society.residents.values():
+			if resident.id not in registry.get_agent_ids(): characters.append({"actor_id": resident.id, "name": resident.name, "role": resident.occupation, "state": resident.state, "position": resident.position.duplicate(true)})
 	return {"buildings": buildings, "characters": characters, "map": {
 		"coordinate_system": "east=+x, west=-x, south=+z, north=-z; world metres",
 		"bounds": {"min_x": Farm3DTerrainProfile.WORLD_MIN.x, "min_z": Farm3DTerrainProfile.WORLD_MIN.y, "max_x": Farm3DTerrainProfile.WORLD_MAX.x, "max_z": Farm3DTerrainProfile.WORLD_MAX.y},
 		"market": {"x": s.market_site.x, "z": s.market_site.y},
 		"lake": {"x": Farm3DTerrainProfile.LAKE_CENTER.x, "z": Farm3DTerrainProfile.LAKE_CENTER.y},
 		"regions": [{"id": "farm", "description": "中央农场；玩家建筑与阿禾的专属农田"}, {"id": "creek", "description": "东侧河流，可钓鱼；南部有桥"}, {"id": "forest", "description": "西北林地"}, {"id": "hills", "description": "外围丘陵"}, {"id": "lake", "description": "南部沙地湖泊，可钓鱼"}, {"id": "golf", "description": "湖泊西侧高尔夫球场"}],
-		"rental_rules": "使用 inspect_building 查询实际 building_id、配方与每批租费，再用 rent_production；自备原料，租金归玩家，共用队列，完成后成品自动交付给自己。max_fee 是总租金上限。"}}
+		"rental_rules": "使用 inspect_building 查询实际 building_id、配方与每批租费，再用 rent_production；自备原料，加工费按该建筑费目表收取，排队托管，开工付给 owner_id；使用自有建筑免费。共用队列，完成后成品交付客户。max_fee 是总租金上限。"}}
+
+
+func _on_service_order_changed(building: BuildingInstance, record: Dictionary) -> void:
+	session_trace.record_action_event(str(record.job.request_id), "production_" + str(record.stage), {"order_id": record.job.order_id, "building_id": building.instance_id, "customer_id": record.job.tenant_id, "owner_id": building.owner_id, "payment_state": record.job.payment_state})
+	var key := str(record.job.order_id)
+	if str(record.stage) not in ["delivered", "cancelled"] or not executor._outcomes.has(key): return
+	var outcome: Dictionary = executor._outcomes[key].duplicate(true)
+	if str(outcome.status) != "in_progress": return
+	executor.world_revision += 1
+	outcome.status = "completed" if record.stage == "delivered" else "failed"
+	outcome.committed_revision = executor.world_revision
+	outcome.game_minute = _absolute_game_minute()
+	outcome.hud_message = "订单 %s：%s" % [key, "成品已交付" if record.stage == "delivered" else "已取消并退款"]
+	if record.stage == "cancelled": outcome.failure_code = "order_cancelled"
+	executor._outcomes[key] = outcome.duplicate(true)
+	_record_world_action_outcome(outcome)
+	agreement_system.record_action_outcome(outcome, _absolute_game_minute())
+	_publish_committed_outcome(str(outcome.agent_id), outcome)
+	if service_enabled: gateway.report_outcome(str(outcome.agent_id), session_id, outcome)
 
 
 func _on_rental_completed(agent_id: String, building: BuildingInstance, recipe_id: String, outputs: Dictionary) -> void:
+	if agent_id == "player":
+		_publish("info", "加工完成，请到建筑收取你的成品。", {})
+		return
 	_publish("info", "%s在%s的租用加工完成，已收取成品。" % [get_agent_display_name(agent_id), building.data.display_name], {})
 	perception_inbox.push_event(agent_id, "rental_completed", recipe_id, {"outputs": outputs}, _absolute_game_minute(), 2)
 	if service_enabled:
@@ -405,6 +434,7 @@ func get_in_flight_request_id(agent_id: String) -> String:
 func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 	if str(_request_triggers.get(request_id, "")) != "dialogue":
 		return false
+	_cancelled_requests[request_id] = true
 	var cancelled := gateway != null and bool(gateway.call("cancel_agent", agent_id, "dialogue_closed"))
 	if not cancelled:
 		context_projection.release(agent_id, request_id)
@@ -473,6 +503,8 @@ func set_save_slot(slot: int) -> void:
 		return
 	session_id = next_session_id
 	_request_triggers.clear()
+	_deferred_responses.clear()
+	_cancelled_requests.clear()
 	if gateway != null:
 		gateway.bump_epoch()
 	if session_trace != null:
@@ -627,6 +659,9 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 			session_id = previous_session_id
 			return false
 	session_id = str(value.session_id)
+	_deferred_responses.clear()
+	_request_triggers.clear()
+	_cancelled_requests.clear()
 	if gateway != null:
 		gateway.bump_epoch()
 		if is_instance_valid(farm3d_session) and service_enabled:
@@ -725,6 +760,7 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	role_system = restored_roles
 	interaction_system = restored_interactions
 	agreement_system = restored_agreements
+	restored_executor.farm3d_session = farm3d_session
 	executor = restored_executor
 	_pending_market_pressure_facts = _normalize_pending_market_pressure_facts(value.pending_market_pressure_facts)
 	return true
@@ -1013,6 +1049,9 @@ func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: i
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
+	if trigger != "dialogue" and farm3d_session != null and farm3d_session.living_world != null:
+		var project: Dictionary = farm3d_session.living_world.projects.active(agent_id)
+		if not project.is_empty() and not project.steps.values().any(func(step): return step.status == "blocked"): return {}
 	if (
 		trigger != "dialogue"
 		and farm_registry.has_method("has_pending_work")
@@ -1077,6 +1116,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	}
 	if is_instance_valid(farm3d_session):
 		var environment := get_farm3d_environment()
+		projected.actor_context.living_world = farm3d_session.living_world.context(agent_id)
 		projected.actor_context.world_map = environment.map
 		projected.actor_context.player_buildings = environment.buildings
 		projected.actor_context.characters = environment.characters
@@ -1085,7 +1125,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
 	if not is_instance_valid(farm3d_session):
-		projected.allowed_command_tools.erase("rent_production")
+		for name in ["rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
 	projected.market_summary = market_summary.build(
 		str(capabilities.get("role_id", "")),
 		game_minute,
@@ -1121,7 +1161,7 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 	var trigger := str(_request_triggers.get(request_id, ""))
 	if event_name == "stream.started" and trigger == "dialogue":
 		dialogue_stream_started.emit(agent_id, request_id)
-	elif event_name == "content.delta" and trigger == "dialogue":
+	elif event_name == "content.delta" and trigger == "dialogue" and farm3d_session == null:
 		dialogue_stream_delta.emit(agent_id, request_id, str((data.payload as Dictionary).get("delta", "")))
 	elif event_name == "stream.error":
 		context_projection.release(agent_id, request_id)
@@ -1146,25 +1186,42 @@ func _handle_stream_failure(agent_id: String, request_id: String, error: String)
 	_request_triggers.erase(request_id)
 
 
+func _process(_delta: float) -> void:
+	if get_tree().paused or _deferred_responses.is_empty():
+		return
+	var pending: Dictionary = _deferred_responses.pop_front()
+	_handle_response(str(pending.agent_id), pending.response)
+
+
 func _handle_response(agent_id: String, response: Dictionary) -> void:
 	var request_id := str(response.get("request_id", ""))
+	if _cancelled_requests.has(request_id):
+		context_projection.release(agent_id, request_id)
+		_request_triggers.erase(request_id)
+		return
 	var trigger := str(_request_triggers.get(request_id, ""))
+	if farm3d_session != null and get_tree().paused and validator.validate(response, registry, executor.world_revision, role_system).ok:
+		var safe_dialogue := trigger == "dialogue"
+		for action in response.get("actions", []):
+			if str(action.get("tool_name", "")) not in ["propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
+				safe_dialogue = false
+		if not safe_dialogue:
+			if not _deferred_responses.any(func(entry: Dictionary): return str(entry.response.get("request_id", "")) == request_id):
+				_deferred_responses.append({"agent_id": agent_id, "response": response.duplicate(true)})
+			if trigger == "dialogue":
+				dialogue_ready.emit(agent_id, request_id, "行动请求已排队，恢复游戏后将重新核验并执行；尚未扣费或完成。")
+			return
 	_request_triggers.erase(request_id)
-	if trigger == "dialogue":
-		var speech := str(response.get("speech", "")).strip_edges()
-		if speech.is_empty():
-			speech = str(response.get("decision_summary", "")).strip_edges()
-		if speech.is_empty():
-			speech = "……"
-		dialogue_ready.emit(agent_id, request_id, speech)
 	var checked := validator.validate(response, registry, executor.world_revision, role_system)
 	if not checked.ok:
 		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
+		if trigger == "dialogue": dialogue_ready.emit(agent_id, request_id, "请求未执行：动作或当前状态不符合要求（%s）。" % str(checked.error))
 		return
 	if not _event_pipeline_synchronized():
 		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 事件投影暂不同步，动作已推迟。" % agent_id, {"agent_id": agent_id})
+		if trigger == "dialogue": dialogue_ready.emit(agent_id, request_id, "当前状态尚未同步，请稍后重试；本次操作未执行。")
 		return
 	context_projection.acknowledge(agent_id, request_id)
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
@@ -1183,6 +1240,23 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 			_publish_committed_outcome(agent_id, outcome)
 		if service_enabled:
 			gateway.report_outcome(agent_id, session_id, outcome)
+	if trigger == "dialogue":
+		var failed := outcomes.filter(func(outcome: Dictionary): return str(outcome.get("status", "")) in ["rejected", "failed"])
+		var speech := str(response.get("speech", response.get("decision_summary", "……")))
+		var facts: Array[String] = []
+		for outcome in outcomes:
+			if str(outcome.get("tool_name", "")) not in ["speak", "wait"]:
+				var fact := str(outcome.get("hud_message", ""))
+				if fact.is_empty():
+					fact = str({"propose_trade": "交易报价已生成，等待对方确认。", "counter_trade": "新报价已生成，原报价已失效，等待对方确认。", "accept_trade": "交易已成交，物品与金币已按确认条款结算。", "reject_trade": "交易已拒绝。", "cancel_trade": "报价已取消。"}.get(str(outcome.get("tool_name", "")), "操作结果已记录，请查看当前协议状态。"))
+				facts.append(fact)
+		if not facts.is_empty():
+			speech = "\n".join(facts)
+		elif farm3d_session != null:
+			speech += "\n（本次仅交谈，没有提交交易或生产操作。）"
+		if not failed.is_empty():
+			speech = "本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。请查看实际条款和订单状态。"
+		dialogue_ready.emit(agent_id, request_id, speech)
 
 
 func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:

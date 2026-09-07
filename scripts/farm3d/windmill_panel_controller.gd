@@ -11,7 +11,9 @@ func configure_farm(farm_session: Farm3DSession) -> void:
 	_connect_event_bus()
 
 func _render() -> void:
-	pass
+	var building := _building()
+	if building != null and building.owner_id != "player":
+		storage = building.producer_state.customer_outputs.get("player", {}).duplicate(true)
 
 func _maximum_batches(building: BuildingInstance, recipe: Dictionary) -> int:
 	var maximum := MAX_UI_BATCHES
@@ -68,6 +70,21 @@ func _build_recipe_detail(building: BuildingInstance) -> void:
 		for key in resolution.missing:
 			if str(key).begins_with("tag:"):
 				recipe_detail.inputs[key] = resolution.missing[key]
+	if building.owner_id != "player":
+		preflight = _production.building_service.quote(building, "player", selected_recipe_id, batches)
+		disabled_reason = _reason_text(preflight)
+		recipe_detail.margin -= int(preflight.get("fee", 0))
+
+func request_start() -> void:
+	var building := _building()
+	if building == null or (building.owner_id == "player" and not _needs_processing_proof()):
+		super.request_start()
+		return
+	var cap := 0 if building.owner_id == "player" else int(preflight.get("fee", -1))
+	var result: Dictionary = _production.start_rented_recipe(building, "player", selected_recipe_id, batches, cap)
+	failure_reason = "" if result.ok else str(result.error)
+	failure_message = "" if result.ok else _reason_text(result)
+	refresh_snapshot()
 
 func _pricing(recipe: Dictionary, multiplier: int) -> Dictionary:
 	var input_value := 0
@@ -83,7 +100,17 @@ func _pricing(recipe: Dictionary, multiplier: int) -> Dictionary:
 func _reason_text(result: Dictionary) -> String:
 	if str(result.get("reason", "")) == "maintenance_in_progress":
 		return "维护中，请稍候"
-	return super._reason_text(result)
+	var reason := str(result.get("reason", result.get("error", "")))
+	var messages := {"service_closed": "建筑未开放此配方", "reserved_capacity": "外部加工名额已满", "insufficient_rental_gold": "加工费不足", "rental_price_changed": "加工费已变化，请查看新报价", "not_building_owner": "只有建筑所有者可以操作"}
+	return str(messages[reason]) if messages.has(reason) else super._reason_text(result)
 
 func _item_name(id: String) -> String:
 	return "普通鱼" if id == "tag:common_fish" else super._item_name(id)
+
+
+func _needs_processing_proof() -> bool:
+	if session.living_world == null: return false
+	var board: RefCounted = session.living_world.board
+	for claim in board.claims.values():
+		if claim.actor_id == "player" and claim.status == "active" and board.commissions[claim.commission_id].terms.kind == "processing": return true
+	return false

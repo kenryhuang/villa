@@ -8,7 +8,7 @@ const GENERAL_TOOLS := [
 	"reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation",
 	"accept_cooperation", "reject_cooperation", "commit_contribution",
 	"cancel_cooperation", "speak", "wait", "propose_role_change",
-	"rent_production",
+	"rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
 ]
 const GENERAL_READ_TOOLS := [
 	"inspect_market_item", "compare_market_items", "inspect_known_actor",
