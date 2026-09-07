@@ -4,7 +4,6 @@ extends RefCounted
 const BOUNDS := Rect2(-164, 56, 80, 80)
 const ENTRANCE := Vector2(-124, 62)
 const CUP_RADIUS := .19
-const CUP_CAPTURE_SPEED := 4.5
 const ROLLING_RESISTANCE := {"green":.30,"fairway":.8,"rough":2.2,"sand":4.5}
 const HOLES := [
 	{"name": "草甸直道", "tee": Vector2(-147.5, 74.5), "cup": Vector2(-148.5, 106.5), "par": 3},

@@ -214,16 +214,17 @@ test("does not replay a decision when the same request id carries different dial
 test("stores one idempotent dialogue memory event with both speakers", async () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-dialogue-memory-"));
   const memory = new MemoryRepository(join(directory, "memory.sqlite"));
+  let omitSpeech = false;
   const provider = {
     decide: async (request: DecisionRequest): Promise<ActionIntent> => makeWaitIntent(request),
     streamDecision: async (request: DecisionRequest): Promise<ActionIntent> => ({
       protocol_version: 2,
-      decision_id: "dialogue-decision-1",
+      decision_id: omitSpeech ? "dialogue-decision-2" : "dialogue-decision-1",
       request_id: request.request_id,
       agent_id: request.agent_id,
       expected_revision: request.world_revision,
       actions: [],
-      speech: "今天价格稳定。",
+      ...(omitSpeech ? {} : {speech: "今天价格稳定。"}),
       decision_summary: "回答玩家的价格问题",
     }),
   };
@@ -247,6 +248,12 @@ test("stores one idempotent dialogue memory event with both speakers", async () 
   await post();
   const dialogueEvents = memory.recent(dialogueRequest.session_id, dialogueRequest.agent_id, 8)
     .filter((event) => event.kind === "dialogue");
+  omitSpeech = true;
+  dialogueRequest.request_id = "dialogue-memory-request-silent";
+  await post();
+  const silentEvent = memory.recent(dialogueRequest.session_id, dialogueRequest.agent_id, 8)
+    .find((event) => event.event_id === "dialogue:dialogue-decision-2");
+  assert.equal(silentEvent?.payload.agent_speech, "", "internal summary must not be stored as spoken dialogue");
   await new Promise<void>((resolve) => server.close(() => resolve()));
   memory.close(); rmSync(directory, {recursive: true, force: true});
   assert.equal(dialogueEvents.length, 1);

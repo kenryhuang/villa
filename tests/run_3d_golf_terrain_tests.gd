@@ -40,8 +40,8 @@ func _run() -> void:
 		_check(Profile.slope_at(hole.cup.x,hole.cup.y) < .01,"Cup has a stable level collar: "+hole.name)
 		for heading in 8:
 			var direction := Vector3.BACK.rotated(Vector3.UP,heading*TAU/8)
-			for speed in [.4,2.5,4.0]:
-				for dt in [1.0/30,1.0/144]:
+			for speed in [.4,2.5,4.0,6.0,12.0,30.0]:
+				for dt in [1.0/10,1.0/30,1.0/144]:
 					var start: Vector2 = hole.cup-Vector2(direction.x,direction.z)*(.28 if speed < 1 else .5)
 					var ball := _roll(start,direction*speed)
 					_advance(ball,1.5,hole.cup,dt)
@@ -55,7 +55,16 @@ func _run() -> void:
 		_check(miss.result != "holed","Near miss outside cup is not pulled in")
 		var fast := _roll(cup+Vector2(0,-.5),Vector3.BACK*6)
 		_advance(fast,.2,cup)
-		_check(fast.result != "holed","Very fast ground-level shot can pass over cup")
+		_check(fast._drop_seconds >= 0 and fast.moving,"Fast grounded crossing starts the visible cup drop")
+		_advance(fast,.5,cup)
+		_check(fast.result == "holed","Fast grounded crossing completes the hole after the drop")
+		var fast_edge := _roll(cup+Vector2(.178,-.5),Vector3.BACK*30)
+		_advance(fast_edge,.8,cup)
+		_check(fast_edge.result == "holed","Fast crossing at the visible inner edge also counts")
+		var low_flying := _roll(cup+Vector2(0,-.5),Vector3.BACK*30)
+		low_flying.position.y += .04
+		_advance(low_flying,.05,cup)
+		_check(low_flying._drop_seconds < 0,"Airborne crossing just above the ground is not pulled into the cup")
 		var flying := _roll(cup+Vector2(0,-.5),Vector3.BACK*3)
 		flying.position.y += .6
 		_advance(flying,.25,cup)

@@ -237,6 +237,10 @@ export class AgentStreamAssembler {
     }
     const rawMessage = this.rawMessage();
     const rawOutput = this.rawOutput();
+    const speech = this.#content.trim() || (request.trigger === "dialogue"
+      ? actions.filter((action) => action.tool_name === "speak" && action.arguments.target_actor_id === "player")
+        .map((action) => String(action.arguments.text).trim()).join("\n")
+      : "");
     const intentValue: unknown = {
       protocol_version: 2,
       decision_id: this.#responseId || `${request.request_id}:decision`,
@@ -244,7 +248,7 @@ export class AgentStreamAssembler {
       agent_id: request.agent_id,
       expected_revision: request.world_revision,
       actions,
-      ...(this.#content ? {speech: this.#content.slice(0, 500)} : {}),
+      ...(speech ? {speech: speech.slice(0, 500)} : {}),
       decision_summary: actions.length === 0
         ? "Selected no action from current context"
         : `Selected ${actions.map((action) => action.tool_name).join(", ")} from current context`,

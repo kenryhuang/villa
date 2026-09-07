@@ -78,7 +78,7 @@ function storeDecision(
       game_minute: request.game_minute,
       payload: {
         player_text: request.dialogue_input,
-        agent_speech: intent.speech ?? intent.decision_summary,
+        agent_speech: intent.speech ?? "",
       },
     });
   }

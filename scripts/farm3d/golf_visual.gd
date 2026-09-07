@@ -18,6 +18,8 @@ var _head_meshes: Array[Mesh] = []
 var _last_club := -1
 var _contact_local := Vector3(0,.065,.8)
 var _contact_marker: MeshInstance3D
+var _aim_signature: Array = []
+var _aim_updated := -1000
 
 func configure(player: Farm3DPlayer) -> void:
 	_player = player
@@ -55,7 +57,10 @@ func configure(player: Farm3DPlayer) -> void:
 		var dot := SphereMesh.new()
 		dot.radius = .032
 		dot.height = .064
-		aim_dots.append(Art.mesh(self,dot,Vector3.ZERO,Color("e5dba7")))
+		var guide_dot := Art.mesh(self,dot,Vector3.ZERO,Color("e5dba7"))
+		guide_dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		(guide_dot.material_override as StandardMaterial3D).shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		aim_dots.append(guide_dot)
 	for i in 12:
 		var dot := SphereMesh.new()
 		dot.radius = .025*(1-float(i)/15)
@@ -82,6 +87,7 @@ func set_equipped(enabled: bool) -> void:
 	hide_aim()
 
 func hide_aim() -> void:
+	_aim_signature.clear()
 	for dot in aim_dots:
 		dot.hide()
 	_contact_marker.hide()
@@ -135,15 +141,16 @@ func clear_trail() -> void:
 		item.hide()
 
 func show_aim(origin: Vector3, direction: Vector3, club_index: int, power: float, contact_height := -2.0) -> void:
-	var velocity := Farm3DGolfBall.launch_velocity(direction,power,club_index,Farm3DGolfCourse.surface(Vector2(origin.x,origin.z)),contact_height)
-	var time := maxf(.1,velocity.y*2/9.8)
+	var signature := [origin,direction,club_index,power,contact_height]
+	var now := Time.get_ticks_msec()
+	if signature == _aim_signature or (not _aim_signature.is_empty() and now-_aim_updated < 80):
+		return
+	_aim_signature = signature
+	_aim_updated = now
+	var points := Farm3DGolfBall.preview_path(origin,direction,power,club_index,contact_height)
 	for i in aim_dots.size():
-		var t := float(i+1)/aim_dots.size()*time
-		var p := origin+velocity*t+Vector3.DOWN*4.9*t*t
-		if velocity.y < .01:
-			p = origin+direction*float(i+1)/aim_dots.size()*velocity.length_squared()/1.1
-		p.y = maxf(p.y,Art.ground(Vector2(p.x,p.z)).y+.09)
-		aim_dots[i].global_position = p
+		var index := roundi(float(i+1)/aim_dots.size()*(points.size()-1))
+		aim_dots[i].global_position = points[index]+Vector3.UP*.035
 		aim_dots[i].show()
 
 func _aim_arm(suffix: String, hand_local: Vector3) -> void:

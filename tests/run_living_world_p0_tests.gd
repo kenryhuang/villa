@@ -103,5 +103,15 @@ func run() -> void:
 	runtime._request_triggers[failed.request_id] = "dialogue"
 	runtime._handle_response("farmer_ahe", failed)
 	check(building.producer_state.jobs.is_empty() and facts.back().contains("未全部完成"), "Missing ingredients shows actual failure without enqueue")
+	for mode in ["silent", "spoken", "whitespace"]:
+		var reply := {"protocol_version": 2, "agent_id": "farmer_ahe", "request_id": "p0-reply-"+mode, "decision_id": "p0-reply-"+mode,
+			"expected_revision": runtime.executor.world_revision, "decision_summary": "Selected speak from current context", "actions": []}
+		if mode != "silent":
+			reply.actions = [{"action_id": "p0-speak-"+mode, "idempotency_key": "p0-speak-"+mode, "tool_name": "speak", "tool_version": 1, "arguments": {"target_actor_id": "player", "text": "今天可以去湖边钓鱼。"}}]
+		if mode == "whitespace": reply.speech = "  "
+		runtime._request_triggers[reply.request_id] = "dialogue"
+		runtime._handle_response("farmer_ahe", reply)
+		check(not facts.back().contains("current context"), "Diagnostic summary never becomes dialogue: "+mode)
+		check(facts.back().contains("暂时没有回应") if mode == "silent" else facts.back().contains("今天可以去湖边钓鱼"), "Missing content resolves to actual speak text or an honest empty response: "+mode)
 	print("P0: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)

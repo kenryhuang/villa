@@ -123,6 +123,20 @@ function assemblerFor(toolName: string, args: Record<string, unknown>): AgentStr
   return assembler;
 }
 
+test("dialogue recovers a tool-only player reply without exposing diagnostic summaries", () => {
+  const spoken = assemblerFor("speak", {target_actor_id: "player", text: "今天可以去湖边钓鱼。"});
+  assert.equal(spoken.finish(request, ["speak"]).intent.speech, "今天可以去湖边钓鱼。");
+  assert.equal(spoken.rawMessage().content, "");
+  const otherActor = assemblerFor("speak", {target_actor_id: "lao_li", text: "给老李的消息。"});
+  assert.equal(otherActor.finish(request, ["speak"]).intent.speech, undefined);
+  const silent = new AgentStreamAssembler();
+  silent.accept({choices: [{delta: {content: "  "}, finish_reason: "stop"}]});
+  assert.equal(silent.finish(request, []).intent.speech, undefined);
+  assert.match(silent.finish(request, []).intent.decision_summary, /current context/);
+  spoken.accept({choices: [{delta: {content: "先聊聊吧。"}, finish_reason: "stop"}]});
+  assert.equal(spoken.finish(request, ["speak"]).intent.speech, "先聊聊吧。");
+});
+
 test("rejects Provider tool arguments outside the authoritative contract", () => {
   const invalidCases: Array<[string, Record<string, unknown>]> = [
     ["till", {plot_index: "0"}],

@@ -65,7 +65,26 @@ func _run() -> void:
 	swing.begin(3)
 	swing.motion(Vector2(0,160),3.2)
 	var slow := swing.motion(Vector2(40,-165),3.9)
-	_check(slow.power < shot.power and slow.deviation > .03,"Forward speed changes power and lateral mouse motion changes direction")
+	_check(is_equal_approx(slow.power,shot.power) and slow.deviation > 0 and slow.deviation < deg_to_rad(3.5),"Forward speed preserves selected power and deliberate lateral motion gives bounded deviation")
+	for duration in [.01,.08,.3,1.5]:
+		swing.begin(0)
+		swing.motion(Vector2(3,160),.2)
+		var steady := swing.motion(Vector2(8,-200),.2+duration)
+		_check(not steady.is_empty() and is_equal_approx(steady.power,shot.power) and steady.deviation == 0,"Natural hand jitter and different forward speeds preserve a square shot: %.2f" % duration)
+	swing.begin(0)
+	swing.motion(Vector2(0,120),.2)
+	var normal_short := swing.power()
+	var precise_short := swing.power(true)
+	var short_shot := swing.motion(Vector2(75,-140),.4,true)
+	_check(precise_short < normal_short and is_equal_approx(short_shot.power,precise_short),"Short-stroke power offers finer distance control and matches the live gauge")
+	_check(short_shot.deviation > 0 and short_shot.deviation <= deg_to_rad(1.21),"Putting retains a lateral skill penalty with a tighter angle limit")
+	swing.begin(0)
+	swing.motion(Vector2(0,900),.2)
+	_check(swing.peak == Swing.FULL_PULL and swing.offset.y == Swing.FULL_PULL,"Full backswing has no invisible excess travel")
+	_check(not swing.motion(Vector2(0,-190),.4).is_empty(),"Returning from a saturated backswing reliably strikes")
+	swing.begin(0)
+	swing.motion(Vector2(0,8),.2)
+	_check(swing.motion(Vector2(0,-12),.4).is_empty(),"An accidental click or tiny drag does not consume a stroke")
 	swing.begin(4)
 	swing.motion(Vector2(0,160),4.2)
 	swing.cancel()
@@ -84,6 +103,24 @@ func _run() -> void:
 		if not result.is_empty():
 			many = result
 	_check(not many.is_empty() and absf(one.power-many.power) < .02,"Swing power is stable across mouse event frequencies")
+	whole.begin(0)
+	sampled.begin(0)
+	whole.motion(Vector2(0,160),.2)
+	sampled.motion(Vector2(0,160),.2)
+	one = whole.motion(Vector2(100,-400),.4)
+	many = {}
+	for i in 40:
+		var result := sampled.motion(Vector2(2.5,-10),.2+float(i+1)*.005)
+		if not result.is_empty(): many = result
+	_check(not many.is_empty() and is_equal_approx(one.deviation,many.deviation),"Mouse travel after contact cannot change deviation at different event rates")
+	var preview_origin := Vector2(-106,123)
+	var preview_ball := Ball.new()
+	preview_ball.place(preview_origin)
+	var guide := Ball.preview_path(preview_ball.position,Vector3.RIGHT,.5,2,0)
+	preview_ball.strike(Vector3.RIGHT,.5,2,0)
+	for i in guide.size()-1:
+		preview_ball.advance(1.0/60,Vector2.ZERO)
+	_check(guide.size() == 73 and guide[-1].distance_to(preview_ball.position) < .0001 and preview_ball.moving,"Partial rolling guide uses actual slope and friction without revealing the final stopping point")
 	var round_state := Round.new()
 	_check(Round.valid(round_state.to_dict()),"Empty round state has a valid save schema")
 	round_state.start()
@@ -147,7 +184,9 @@ func _run() -> void:
 	moving_ball.velocity = Vector3.BACK*6
 	moving_ball.moving = true
 	moving_ball.advance(.1,cup)
-	_check(moving_ball.result != "holed","Fast ball can roll over the cup")
+	_check(moving_ball._drop_seconds >= 0 and moving_ball.result.is_empty(),"Fast grounded ball starts dropping instead of skipping the cup")
+	_simulate(moving_ball,cup)
+	_check(moving_ball.result == "holed","Fast grounded ball finishes the same visible drop as a slow putt")
 	moving_ball.place(Vector2(-166,90))
 	moving_ball.velocity = Vector3.LEFT*12
 	moving_ball.moving = true
@@ -190,11 +229,11 @@ func _run() -> void:
 		_check(hit.is_empty(),"Hole is cut through the terrain collider, not painted on top")
 		var rolling_ball := Ball.new()
 		rolling_ball.place(hole.cup+Vector2(0,-.5))
-		rolling_ball.velocity = Vector3.BACK*4
+		rolling_ball.velocity = Vector3.BACK*12
 		rolling_ball.moving = true
 		for frame in 45:
 			rolling_ball.advance(1.0/60,hole.cup,space)
-		_check(rolling_ball.result == "holed","Moderate rolling shot enters the real scene cup with collision enabled")
+		_check(rolling_ball.result == "holed","Fast rolling shot enters the real scene cup with collision enabled")
 		var coords := session.grid.world_to_grid(hole.tee.x,hole.tee.y)
 		_check(session.grid.get_cell(coords.x,coords.y).state == GridCell.State.DECORATION,"Golf playing surfaces are protected from farming placement")
 	for p in [Vector2(-148.2,84.3),Vector2(-125.2,121.3),Vector2(-94.2,96.3)]:
@@ -260,6 +299,21 @@ func _run() -> void:
 	Input.action_release("move_right")
 	_check(golf.direction.distance_to(original_direction) > .01,"A/D changes the shot direction before striking")
 	_check(golf._camera.global_position.distance_to(orbited) < .01,"Changing aim does not reset the camera orbit")
+	golf.set_process(false)
+	var normal_aim: Vector3 = golf.direction
+	Input.action_press("move_right")
+	golf._process(.1)
+	var coarse_angle: float = normal_aim.angle_to(golf.direction)
+	normal_aim = golf.direction
+	_held(KEY_SHIFT,true)
+	Input.flush_buffered_events()
+	golf._process(.1)
+	var fine_angle: float = normal_aim.angle_to(golf.direction)
+	_held(KEY_SHIFT,false)
+	Input.flush_buffered_events()
+	Input.action_release("move_right")
+	golf.set_process(true)
+	_check(fine_angle > 0 and fine_angle < coarse_angle*.25,"Holding Shift gives precise aiming without changing the camera or stance mode")
 	_key(KEY_3)
 	_check(golf.club == 2 and golf.contact_height == 0,"Number keys select the putter and center its contact point")
 	golf.gesture.peak = 190
@@ -271,9 +325,15 @@ func _run() -> void:
 	_mouse(true,MOUSE_BUTTON_WHEEL_DOWN)
 	_mouse(true)
 	_motion(Vector2(0,150))
+	var pull_angle: float = golf._backswing_angle()
+	_motion(Vector2(0,-60))
+	_check(golf.gesture.dragging and golf._backswing_angle() < pull_angle*.7,"Club follows the player's forward movement before committing contact")
+	golf._update_hud()
+	var displayed_power: float = golf._power.value/100
 	await create_timer(.12).timeout
-	_motion(Vector2(12,-150))
+	_motion(Vector2(12,-90))
 	_check(golf.phase == golf.Phase.SWING,"Real back-forward mouse events trigger swing animation")
+	_check(absf(golf.shot.power-displayed_power) < .01 and golf.shot.impact_delay <= .08,"Impact uses displayed power and responds without a second full backswing")
 	_check(is_equal_approx(golf.shot.contact_height,-.7),"Strike snapshots the chosen contact point")
 	_mouse(true,MOUSE_BUTTON_RIGHT)
 	_motion(Vector2(-30,10))

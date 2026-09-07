@@ -1242,7 +1242,18 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 			gateway.report_outcome(agent_id, session_id, outcome)
 	if trigger == "dialogue":
 		var failed := outcomes.filter(func(outcome: Dictionary): return str(outcome.get("status", "")) in ["rejected", "failed"])
-		var speech := str(response.get("speech", response.get("decision_summary", "……")))
+		# Decision summaries are diagnostics, never NPC dialogue. Some providers
+		# return the actual reply only in a speak tool call instead of content.
+		var speech := str(response.get("speech", "")).strip_edges()
+		if speech.is_empty():
+			var spoken: Array[String] = []
+			for outcome in outcomes:
+				var arguments: Dictionary = outcome.get("arguments", {})
+				if outcome.get("status") == "completed" and outcome.get("tool_name") == "speak" and arguments.get("target_actor_id") == "player":
+					var text := str(arguments.get("text", "")).strip_edges()
+					if not text.is_empty(): spoken.append(text)
+			speech = "\n".join(spoken)
+		if speech.is_empty(): speech = "（对方暂时没有回应。）"
 		var facts: Array[String] = []
 		for outcome in outcomes:
 			if str(outcome.get("tool_name", "")) not in ["speak", "wait"]:

@@ -53,6 +53,21 @@ static func launch_velocity(direction: Vector3, power: float, club: int, surface
 		speed = lerpf(ground_speed,float(data.speed),smoothstep(0,.25,below)*lift)*sqrt(clampf(power,.01,1))*penalty
 	return direction.normalized()*cos(angle)*speed + Vector3.UP*sin(angle)*speed
 
+## A partial guide, using the same slope, friction and bounce integration as play.
+## Stop at the first landing or 1.2 seconds of rolling; never predict a made putt.
+static func preview_path(origin: Vector3, direction: Vector3, power: float, club: int, contact_height: float) -> PackedVector3Array:
+	var preview := Farm3DGolfBall.new()
+	preview.place(Vector2(origin.x,origin.z))
+	preview.strike(direction,power,club,contact_height)
+	var airborne := preview.velocity.dot(Profile.surface_normal(origin.x,origin.z)) > .3
+	var points := PackedVector3Array([preview.position])
+	for frame in (300 if airborne else 72):
+		preview.advance(1.0/60,Vector2.ZERO)
+		points.append(preview.position)
+		if not preview.moving or (airborne and preview.bounced):
+			break
+	return points
+
 func advance(delta: float, cup: Vector2, space: PhysicsDirectSpaceState3D = null) -> void:
 	if not moving or delta <= 0 or not is_finite(delta):
 		return
@@ -78,7 +93,6 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 	var ground := Profile.surface_height(point.x,point.y)+RADIUS
 	var normal := Profile.surface_normal(point.x,point.y)
 	var old := position
-	var old_speed := velocity.length()
 	# Test speed away from the slope, not vertical speed: uphill rolling has
 	# a positive Y velocity and must remain attached to the ground.
 	var rolling := position.y <= ground+.012 and absf(velocity.dot(normal)) <= .3
@@ -109,14 +123,14 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 		if not hit.is_empty() and hit.normal.y < .55:
 			position = hit.position+hit.normal*RADIUS
 			velocity = velocity.bounce(hit.normal)*.4
-	if rolling and _capture_cup(old,position,cup,maxf(old_speed,velocity.length())):
+	if rolling and _capture_cup(old,position,cup):
 		return
 	if elapsed > 30:
 		_stop("rest")
 
-func _capture_cup(from: Vector3, to: Vector3, cup: Vector2, speed: float) -> bool:
-	if speed > Course.CUP_CAPTURE_SPEED:
-		return false
+func _capture_cup(from: Vector3, to: Vector3, cup: Vector2) -> bool:
+	# Any grounded crossing counts, regardless of speed. Sweep the whole path
+	# so a fast ball cannot skip the cup between two simulation samples.
 	var a := Vector2(from.x,from.z)
 	var b := Vector2(to.x,to.z)
 	var segment := b-a

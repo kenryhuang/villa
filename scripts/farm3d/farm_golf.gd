@@ -22,6 +22,8 @@ var _orbit_yaw := 0.0
 var _orbit_pitch := .42
 var _orbit_distance := 6.2
 var _contact_display: Control
+var _stroke_display: Control
+var _stroke_readout: Label
 var shot: Dictionary = {}
 var swing_seconds := 0.0
 var watch_camera := false
@@ -232,7 +234,7 @@ func handle_input(event: InputEvent) -> bool:
 			return true
 		if event is InputEventMouseMotion:
 			if gesture.dragging:
-				var strike := gesture.motion(event.relative * session.golf_sensitivity,Time.get_ticks_usec()/1000000.0)
+				var strike := gesture.motion(event.relative * session.golf_sensitivity,Time.get_ticks_usec()/1000000.0,_short_stroke())
 				if not strike.is_empty():
 					begin_swing(strike)
 			return true
@@ -259,15 +261,20 @@ func _short_stroke() -> bool:
 	return club == 2 or contact_height >= -.05
 
 func _backswing_angle() -> float:
-	return clampf(gesture.peak/190,0,1)*(.75 if _short_stroke() else 2.6)
+	var pull := gesture.offset.y if gesture.dragging else gesture.peak
+	return clampf(pull/Farm3DGolfSwing.FULL_PULL,0,1)*(.75 if _short_stroke() else 2.6)
 
 func begin_swing(value: Dictionary) -> bool:
 	if phase != Phase.ADDRESS or not is_finite(float(value.get("power",NAN))) or not is_finite(float(value.get("deviation",NAN))):
 		return false
 	shot = value.duplicate()
-	shot.power = clampf(shot.power,.035,1)
+	shot.power = clampf(shot.power,.01,1)
 	shot.deviation = clampf(shot.deviation,-.255,.255)
 	shot["angle"] = _backswing_angle()
+	# A real mouse stroke already moved the club down to the contact gate.
+	if shot.has("backswing"):
+		shot.angle *= .12
+	shot["impact_delay"] = .07 if shot.has("backswing") else .18
 	shot["followthrough"] = .65 if _short_stroke() else 2.1
 	shot["contact_height"] = contact_height
 	phase = Phase.SWING
@@ -287,7 +294,8 @@ func _impact() -> void:
 	_particles.emitting = true
 	_audio.pitch_scale = 1.4 if club == 2 else 1.0
 	_audio.play()
-	_feedback_message("力度 %d%% · %s" % [roundi(shot.power*100),"击球方正" if absf(shot.deviation) < .035 else "向右偏" if shot.deviation > 0 else "向左偏"])
+	var airborne := ball.velocity.dot(Farm3DTerrainProfile.surface_normal(ball.position.x,ball.position.z)) > .3
+	_feedback_message("力度 %d%% · %s · %s" % [roundi(shot.power*100),"甜点击球" if absf(shot.deviation) < .001 else ("右偏 %.1f°" if shot.deviation > 0 else "左偏 %.1f°") % rad_to_deg(absf(shot.deviation)),"挑高球" if airborne else "地滚球"])
 
 func _process(delta: float) -> void:
 	if session == null:
@@ -299,7 +307,8 @@ func _process(delta: float) -> void:
 	if phase == Phase.ADDRESS:
 		if not gesture.dragging and not _orbiting:
 			var turn := Input.get_axis("move_left","move_right")
-			direction = direction.rotated(Vector3.UP,-turn*delta*.6)
+			var fine_aim := Input.is_physical_key_pressed(KEY_SHIFT)
+			direction = direction.rotated(Vector3.UP,-turn*delta*(.06 if fine_aim else .35))
 			var vertical := float(Input.is_physical_key_pressed(KEY_W))-float(Input.is_physical_key_pressed(KEY_S))
 			contact_height = clampf(contact_height+vertical*delta*.8,-1,1)
 			var distance_step := float(Input.is_physical_key_pressed(KEY_Q))-float(Input.is_physical_key_pressed(KEY_E))
@@ -308,16 +317,16 @@ func _process(delta: float) -> void:
 		_update_camera()
 		visual.set_contact(ball.position,direction,contact_height)
 		visual.pose(_backswing_angle() if gesture.dragging else 0,club)
-		visual.show_aim(ball.position,direction,club,clampf(gesture.peak/190,.05,1) if gesture.dragging else .65,contact_height)
+		visual.show_aim(ball.position,direction,club,maxf(.01,gesture.power(_short_stroke())) if gesture.dragging else .65,contact_height)
 	elif phase == Phase.SWING:
 		_update_camera()
 		swing_seconds += delta
-		visual.pose(lerpf(float(shot.angle),0,clampf(swing_seconds/.18,0,1)),club)
-		if swing_seconds >= .18:
+		visual.pose(lerpf(float(shot.angle),0,clampf(swing_seconds/float(shot.impact_delay),0,1)),club)
+		if swing_seconds >= float(shot.impact_delay):
 			_impact()
 	elif phase == Phase.FLIGHT:
 		swing_seconds += delta
-		visual.pose(-smoothstep(.18,.70,swing_seconds)*float(shot.followthrough),club)
+		visual.pose(-smoothstep(float(shot.impact_delay),float(shot.impact_delay)+.52,swing_seconds)*float(shot.followthrough),club)
 		if swing_seconds > .9:
 			visual.set_equipped(false)
 		ball.advance(delta,Course.HOLES[round_state.hole].cup,get_world_3d().direct_space_state)
@@ -439,6 +448,25 @@ func _build_hud() -> void:
 	contact_help.text = "W/S 或滚轮：触球点上/下\n下部＋力度：挑高球；中心轻击：推球"
 	contact_help.add_theme_font_size_override("font_size",14)
 	contact_row.add_child(contact_help)
+	_stroke_display = Control.new()
+	_stroke_display.custom_minimum_size = Vector2(100,60)
+	contact_row.add_child(_stroke_display)
+	var stroke_style: StyleBox = hud._style(Color("152c23"),Color("517663"))
+	_stroke_display.draw.connect(func():
+		var center := Vector2(50,8)
+		var width := gesture.corridor()*.6
+		_stroke_display.draw_style_box(stroke_style,Rect2(8,2,84,56))
+		_stroke_display.draw_rect(Rect2(50-width,5,width*2,50),Color("438c6970"))
+		_stroke_display.draw_line(center,Vector2(50,54),Color("d8dfb4"),1)
+		_stroke_display.draw_line(Vector2(12,8),Vector2(88,8),Color("d8dfb4"),1)
+		if gesture.dragging:
+			var point := Vector2(50+clampf(gesture.offset.x*.6,-38,38),8+gesture.offset.y/Farm3DGolfSwing.FULL_PULL*44)
+			_stroke_display.draw_line(center,point,Color("93bba0"),2)
+			_stroke_display.draw_circle(point,4,Color("b7edaf") if absf(gesture.offset.x) <= gesture.corridor() else Color("f1be73"))
+	)
+	_stroke_readout = Label.new()
+	_stroke_readout.add_theme_font_size_override("font_size",14)
+	contact_row.add_child(_stroke_readout)
 	_power = ProgressBar.new()
 	_power.custom_minimum_size.y = 12
 	_power.show_percentage = false
@@ -473,7 +501,9 @@ func _update_hud() -> void:
 	_power.visible = phase == Phase.ADDRESS
 	_contact_display.get_parent().visible = phase == Phase.ADDRESS
 	_contact_display.queue_redraw()
-	_power.value = clampf(gesture.peak/190,0,1)*100
+	_stroke_display.queue_redraw()
+	_power.value = gesture.power(_short_stroke())*100 if gesture.dragging else 0
+	_stroke_readout.text = "力度 %d%% · %s\n%s" % [roundi(_power.value),"推球" if _short_stroke() else "挑高",("绿色区内直出" if absf(gesture.offset.x) <= gesture.corridor() else "斜推将偏球") if gesture.dragging else "虚线预览 65% 力度"]
 	_action.visible = not is_controlling() and phase != Phase.FINISHED
 	if not round_state.active:
 		_title.text = "三洞完成 · %d 杆 / 标准 9 杆" % round_state.scores.reduce(func(a,b):return a+b,0) if phase == Phase.FINISHED else "湖西高尔夫 · 免费借杆"
@@ -487,9 +517,9 @@ func _update_hud() -> void:
 	_title.text = "%d / 3 洞 · %s · %d 杆 · 距洞 %.1f 米" % [round_state.hole+1,Course.HOLES[round_state.hole].name,round_state.strokes+(1 if phase == Phase.FLIGHT else 0),distance]
 	if phase == Phase.WALK:
 		_title.text += " · 距球 %.1f 米" % player.global_position.distance_to(ball.position)
-	_info.text = "%s · A/D 方向 · Q/E 站距 · 1/2/3 换杆 · 灵敏度 %.2f（− / =）" % [Farm3DGolfBall.CLUBS[club].name,session.golf_sensitivity]
+	_info.text = "%s · A/D 瞄准（Shift 精调）· Q/E 站距 · 1/2/3 换杆 · 灵敏度 %.2f（−/=）" % [Farm3DGolfBall.CLUBS[club].name,session.golf_sensitivity]
 	_title.text += " · R 重开"
-	_hint.text = _feedback if _feedback_time > 0 else "右键拖动转镜头；左键后拉、前推挥杆，提前松开收杆。Esc 退出。" if phase == Phase.ADDRESS else "球正在移动 · 右键转镜头，Esc 返回角色" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else "走到球旁按 E 准备，WASD 行走，Shift 奔跑"
+	_hint.text = _feedback if _feedback_time > 0 else "左键后拉定力度、前推击球，松开取消 · 右键转镜头 · 虚线仅示前段球路 · Esc 退出" if phase == Phase.ADDRESS else "球正在移动 · 右键转镜头，Esc 返回角色" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else "走到球旁按 E 准备，WASD 行走，Shift 奔跑"
 	_action.text = "下一洞  E" if phase == Phase.HOLED else "准备击球  E"
 	_action.disabled = player.global_position.distance_to(target_point()) > 2.8 or phase == Phase.FLIGHT
 
