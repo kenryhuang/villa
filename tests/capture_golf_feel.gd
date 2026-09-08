@@ -23,6 +23,12 @@ func _run() -> void:
 	golf.gesture.begin(0)
 	golf.gesture.motion(Vector2(7,132),.2)
 	await capture("golf-feel-backswing")
+	golf.toggle_handedness()
+	await capture("golf-left-address")
+	golf.gesture.begin(0)
+	golf.gesture.motion(Vector2(7,132),.2)
+	await capture("golf-left-backswing")
+	golf.toggle_handedness()
 	golf.gesture.cancel()
 	golf.club = 2
 	golf.contact_height = 0

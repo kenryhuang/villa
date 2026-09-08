@@ -113,7 +113,7 @@ func _run() -> void:
 		var result := sampled.motion(Vector2(2.5,-10),.2+float(i+1)*.005)
 		if not result.is_empty(): many = result
 	_check(not many.is_empty() and is_equal_approx(one.deviation,many.deviation),"Mouse travel after contact cannot change deviation at different event rates")
-	var preview_origin := Vector2(-106,123)
+	var preview_origin: Vector2 = Course.HOLES[0].cup+Vector2(0,-2.5)
 	var preview_ball := Ball.new()
 	preview_ball.place(preview_origin)
 	var guide := Ball.preview_path(preview_ball.position,Vector3.RIGHT,.5,2,0)
@@ -127,14 +127,14 @@ func _run() -> void:
 	_check(Round.valid(round_state.to_dict()),"New round checkpoint validates")
 	var long_round := Round.new()
 	long_round.start()
-	for i in 3:
+	for i in Course.HOLES.size():
 		long_round.hole = i
 		long_round.strokes = 13
 		long_round.complete_hole()
-	_check(long_round.scores == [13,13,13] and long_round.best == 39,"Actual completed scores above twelve and totals above thirty-six are retained")
+	_check(long_round.scores.size() == 7 and long_round.scores.all(func(score): return score == 13) and long_round.best == 91,"Actual completed scores above twelve and totals above thirty-six are retained")
 	_check(Round.valid(long_round.to_dict()),"Extended scores remain valid save data")
 	var restored_long_round := Round.new()
-	_check(restored_long_round.restore(long_round.to_dict()) and restored_long_round.best == 39,"Completed long round survives restoration")
+	_check(restored_long_round.restore(long_round.to_dict()) and restored_long_round.best == 91,"Completed long round survives restoration")
 	for field in ["hole","strokes","best"]:
 		var malformed := round_state.to_dict()
 		malformed[field] = -1
@@ -142,7 +142,7 @@ func _run() -> void:
 	var malformed := round_state.to_dict()
 	malformed.ball.x = NAN
 	_check(not Round.valid(malformed),"Non-finite saved ball coordinates are rejected")
-	for i in 3:
+	for i in Course.HOLES.size():
 		var hole: Dictionary = Course.HOLES[i]
 		_check(Course.BOUNDS.has_point(hole.tee) and hole.tee.x < -80 and hole.cup.x < -80,"Each hole stays in newly added land")
 		_check(Course.surface(hole.cup) == "green" and Course.surface(hole.tee) == "fairway","Tees and greens have matching surface definitions")
@@ -206,7 +206,7 @@ func _run() -> void:
 	session.save_path = "user://golf_integration_test.json"
 	await _frames()
 	_check(session.grid._cells.size() == 57344,"West extension produces 256 by 224 metres of terrain")
-	_check(golf.course.flags.size() == 3 and golf.visual.club != null,"Native three-hole course and golf club exist in formal scene")
+	_check(golf.course.flags.size() == 7 and golf.visual.club != null,"Native seven-hole course and golf club exist in formal scene")
 	for z in [55,72,90,120]:
 		_check(absf(Profile.height_at(-80.001,z)-Profile.height_at(-79.999,z)) < .01,"Expanded west terrain meets the existing terrain continuously")
 	player.global_position = Vector3(-74,Profile.surface_height(-74,72)+.2,72)
@@ -264,6 +264,28 @@ func _run() -> void:
 	golf.visual.pose(-1,0)
 	_check(player.to_local(golf.visual._head_point).x < neutral.x-.5,"Follow-through sweeps left past the ball")
 	golf.visual.pose(0,0)
+	var right_stance: Vector3 = player.global_position
+	var hand_aim: Vector3 = golf.direction
+	var hand_camera: Vector3 = golf._camera.global_position
+	_mouse(true)
+	_motion(Vector2(0,80))
+	_key(KEY_H)
+	_check(golf.left_handed and not golf.gesture.dragging and golf.phase == golf.Phase.ADDRESS,"H switches to left-handed stance and safely cancels the uncommitted pull")
+	_check(golf.direction.is_equal_approx(hand_aim) and golf.ball.position == ball_position and golf.round_state.strokes == 0,"Switching hands changes neither shot aim, ball nor score")
+	_check(golf._camera.global_position.is_equal_approx(hand_camera),"Switching hands preserves the chosen orbit camera")
+	_check(player.global_position.distance_to(right_stance) > 1.5 and golf.direction.dot(player.global_basis.x) > .99,"Left-handed golfer stands across the ball and strikes toward local right")
+	_check(golf._camera.unproject_position(player.global_position+Vector3.UP*.8).x < golf._camera.unproject_position(ball_position).x,"Left stance appears on the opposite side of the ball in the default view")
+	for club_index in 3:
+		golf.visual.pose(0,club_index)
+		var left_neutral: Vector3 = player.to_local(golf.visual._head_point)
+		_check(golf.visual._head_point.distance_to(ball_position) < .08,"Left-handed club meets the ball: %d" % club_index)
+		golf.visual.pose(.7,club_index)
+		_check(player.to_local(golf.visual._head_point).x < left_neutral.x-.3,"Left-handed backswing raises the club to local left: %d" % club_index)
+		golf.visual.pose(-.7,club_index)
+		_check(player.to_local(golf.visual._head_point).x > left_neutral.x+.3,"Left-handed follow-through sweeps to local right: %d" % club_index)
+	_key(KEY_H)
+	_mouse(false)
+	_check(not golf.left_handed and player.global_position.distance_to(right_stance) < .01 and golf.visual._head_point.distance_to(ball_position) < .08,"Switching back restores the right-handed stance and club contact")
 	var original_direction: Vector3 = golf.direction
 	var original_camera: Vector3 = golf._camera.global_position
 	_mouse(true)
@@ -323,6 +345,7 @@ func _run() -> void:
 	_check(golf._backswing_angle() > 2,"Low contact with the driver allows a full backswing")
 	golf.gesture.cancel()
 	_mouse(true,MOUSE_BUTTON_WHEEL_DOWN)
+	_key(KEY_H)
 	_mouse(true)
 	_motion(Vector2(0,150))
 	var pull_angle: float = golf._backswing_angle()
@@ -335,6 +358,8 @@ func _run() -> void:
 	_check(golf.phase == golf.Phase.SWING,"Real back-forward mouse events trigger swing animation")
 	_check(absf(golf.shot.power-displayed_power) < .01 and golf.shot.impact_delay <= .08,"Impact uses displayed power and responds without a second full backswing")
 	_check(is_equal_approx(golf.shot.contact_height,-.7),"Strike snapshots the chosen contact point")
+	_key(KEY_H)
+	_check(golf.left_handed and golf.phase == golf.Phase.SWING,"Committed left-handed shot cannot change hands during the swing")
 	_mouse(true,MOUSE_BUTTON_RIGHT)
 	_motion(Vector2(-30,10))
 	_mouse(false,MOUSE_BUTTON_RIGHT)
@@ -342,6 +367,7 @@ func _run() -> void:
 	_mouse(false)
 	await create_timer(.3).timeout
 	_check(golf.phase == golf.Phase.FLIGHT and golf.ball.moving,"Ball launches at the animation's impact frame")
+	_check(golf.left_handed and not golf.toggle_handedness(),"Left-handed shot follows the normal ball flight and cannot switch sides in flight")
 	var flight_yaw: float = golf._orbit_yaw
 	_mouse(true,MOUSE_BUTTON_RIGHT)
 	_motion(Vector2(30,0))
@@ -392,7 +418,7 @@ func _run() -> void:
 	_check(session.save_game() and session.load_game() and session.golf_round.strokes == 13 and golf.phase == golf.Phase.WALK,"Unfinished hole beyond twelve strokes saves and restores as playable")
 	golf.round_state.strokes = 1
 	# Complete all holes through the same physics settlement and transition API.
-	for i in 3:
+	for i in Course.HOLES.size():
 		cup = Course.HOLES[i].cup
 		golf.ball.place(cup+Vector2(0,-.23))
 		golf.ball.velocity = Vector3.BACK*.4
@@ -406,17 +432,17 @@ func _run() -> void:
 		_simulate(golf.ball,cup)
 		golf._settle()
 		_check(golf.round_state.scores.size() == i+1,"A holed ball appends exactly one hole score")
-		if i < 2:
+		if i < Course.HOLES.size()-1:
 			_check(not golf.next_hole(),"Next tee cannot be started from the previous green")
 			player.global_position = golf.Art.ground(Course.HOLES[i+1].tee)+Vector3.RIGHT
 			_check(golf.next_hole(),"Walking to the next tee begins the next hole")
-	_check(golf.phase == golf.Phase.FINISHED and not golf.round_state.active and golf.round_state.best == 4,"Three-hole finish records total score and personal best")
-	_check(session.save_game() and session.load_game() and session.golf_round.best == 4,"Best score survives save and reload")
+	_check(golf.phase == golf.Phase.FINISHED and not golf.round_state.active and golf.round_state.best == 8,"Seven-hole finish records total score and personal best")
+	_check(session.save_game() and session.load_game() and session.golf_round.best == 8,"Best score survives save and reload")
 	# R restarts only golf in its own context, including interrupted shots.
 	player.global_position = golf.Art.ground(Course.HOLES[2].cup)
 	_key(KEY_R)
 	_check(golf.phase == golf.Phase.ADDRESS and golf.round_state.hole == 0 and golf.round_state.strokes == 0 and golf.round_state.scores.is_empty(),"R after restoring a finished round starts a fresh first hole")
-	_check(player.global_position.distance_to(golf.ball.position) < 1.1 and golf.round_state.best == 4,"Reset brings player to the first ball and preserves the best score")
+	_check(player.global_position.distance_to(golf.ball.position) < 1.1 and golf.round_state.best == 8,"Reset brings player to the first ball and preserves the best score")
 	golf.begin_swing({"power":.7,"deviation":0.0})
 	_key(KEY_R)
 	_check(golf.phase == golf.Phase.ADDRESS and golf.shot.is_empty() and not golf.ball.moving,"R cancels a committed swing safely")
@@ -436,7 +462,7 @@ func _run() -> void:
 		golf.ball.advance(1.0/180,Course.HOLES[0].cup)
 	_key(KEY_R)
 	_check(golf.ball._drop_seconds < 0 and golf.round_state.scores.is_empty() and golf.phase == golf.Phase.ADDRESS,"R also cancels a pending cup drop")
-	_check(session.save_game() and session.load_game() and session.golf_round.hole == 0 and session.golf_round.strokes == 0 and session.golf_round.best == 4,"Restarted round and preserved best score survive save and reload")
+	_check(session.save_game() and session.load_game() and session.golf_round.hole == 0 and session.golf_round.strokes == 0 and session.golf_round.best == 8,"Restarted round and preserved best score survive save and reload")
 	player.global_position = Vector3.ZERO
 	_check(not golf.restart_round(),"Golf restart does not hijack the farm's R key outside the course")
 	player.global_position = golf.Art.ground(Course.HOLES[0].tee)

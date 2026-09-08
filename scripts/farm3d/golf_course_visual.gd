@@ -44,7 +44,7 @@ func configure(session: Farm3DSession) -> void:
 			var point: Vector2 = hole.tee+Vector2(tee_direction.y,-tee_direction.x)*side*1.7-tee_direction*.4
 			var tee_marker := box(tee,ground(point)-tee.position+Vector3.UP*.09,Vector3(.18,.16,.3),Color("e2d7b1"))
 			tee_marker.name = "TeeMarkerLeft" if side < 0 else "TeeMarkerRight"
-		label(tee,"%d  %s\nPAR 3  ·  %d 米" % [i+1,hole.name,roundi(hole.tee.distance_to(hole.cup))],Vector3(-2.6,1.0,-1.4),.0045)
+		label(tee,"%d  %s\nPAR %d  ·  %d 米" % [i+1,hole.name,hole.par,roundi(hole.tee.distance_to(hole.cup))],Vector3(-2.6,1.0,-1.4),.0045)
 		for side in [-1,1]:
 			cylinder(tee,Vector3(-2.6+side*.55,.45,-1.45),.035,.9,Color("81623f"))
 		box(tee,Vector3(-2.6,.96,-1.45),Vector3(1.3,.56,.10),Color("3f5740"))
@@ -56,7 +56,7 @@ func configure(session: Farm3DSession) -> void:
 		box(entry,Vector3(x,1.25,0),Vector3(.15,2.5,.15),Color("8b6b43"))
 	box(entry,Vector3(0,2.05,0),Vector3(3.5,1.0,.17),Color("3f5740"))
 	box(entry,Vector3(0,2.69,0),Vector3(3.8,.17,.7),Color("a3865a"))
-	label(entry,"湖西高尔夫\n点击借杆 · 三洞短场",Vector3(0,2.1,.11),.009)
+	label(entry,"湖西高尔夫\n点击借杆 · 七洞球场",Vector3(0,2.1,.11),.009)
 	score_label = label(entry,"免费练习  ·  鼠标挥杆",Vector3(0,1.3,.12),.006)
 	box(entry,Vector3(0,.18,.35),Vector3(2.8,.2,.65),Color("96774b"))
 	for x in [-1.0,-.5,0,.5,1.0]:
@@ -74,17 +74,39 @@ func configure(session: Farm3DSession) -> void:
 	shape.position.y = 1.3
 	entrance_body.add_child(shape)
 	for x in range(-164,-83,8):
-		for z in [56,136]:
+		for z in [int(Course.BOUNDS.position.y),int(Course.BOUNDS.end.y)]:
 			var p := ground(Vector2(x,z))
 			cylinder(self,p+Vector3.UP*.45,.045,.9,Color("9e8d67"))
-	for z in range(64,136,8):
+	for z in range(int(Course.BOUNDS.position.y)+8,int(Course.BOUNDS.end.y),8):
 		for x in [-164,-84]:
 			cylinder(self,ground(Vector2(x,z))+Vector3.UP*.45,.045,.9,Color("9e8d67"))
-	for point in [Vector2(-161,66),Vector2(-161,113),Vector2(-118,64),Vector2(-116,97),Vector2(-87,130),Vector2(-132,133)]:
+	var obstacles := Node3D.new()
+	obstacles.name = "CourseObstacles"
+	add_child(obstacles)
+	for definition in Course.TREES:
 		var tree := preload("res://scenes/vegetation/painted_oak.tscn").instantiate() as Node3D
-		tree.position = ground(point)
-		tree.scale = Vector3.ONE*.65
-		add_child(tree)
+		tree.position = ground(Vector2(definition.x,definition.y))
+		tree.scale = Vector3.ONE*definition.z
+		obstacles.add_child(tree)
+		for body in tree.find_children("*","StaticBody3D",true,false):
+			body.set_meta("golf_obstacle",true)
+		var mulch := SurfaceTool.new()
+		mulch.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var center := Vector2(definition.x,definition.y)
+		for segment in 24:
+			var a := Vector2.from_angle(segment*TAU/24)
+			var b := Vector2.from_angle((segment+1)*TAU/24)
+			for point in [center+a*.6,center+b*1.5,center+b*.6,center+a*.6,center+a*1.5,center+b*1.5]:
+				mulch.set_normal(Vector3.UP)
+				mulch.add_vertex(ground(point)+Vector3.UP*.02)
+		mesh(obstacles,mulch.commit(),Vector3.ZERO,Color("796344"))
+	# Direction stakes guide walking between the winding fairways.
+	for i in Course.HOLES.size()-1:
+		var a: Vector2 = Course.HOLES[i].cup
+		var b: Vector2 = Course.HOLES[i+1].tee
+		var p := ground(a.lerp(b,.55))
+		cylinder(self,p+Vector3.UP*.55,.045,1.1,Color("896b45"))
+		label(self,"%d 号发球台 →" % (i+2),p+Vector3.UP*1.25,.005)
 	# Drape the path over shared terrain. Skip occupied legacy cells.
 	var route: Array[Vector2] = [session.market_site+Vector2(-4,3),Vector2(-32,36),Vector2(-53,61),Vector2(-75,72),Vector2(-98,64),Course.ENTRANCE]
 	var path := SurfaceTool.new()

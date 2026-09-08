@@ -125,6 +125,17 @@ func _build_lake() -> void:
 			var d := Vector3(x, _height(x,z+1), z+1)
 			_add_lake_triangle(surface, [a,b,c])
 			_add_lake_triangle(surface, [a,c,d])
+	for pond in Profile.Golf.PONDS:
+		var low: Vector2i = Vector2i((pond.center-pond.radii*1.6).floor())
+		var high: Vector2i = Vector2i((pond.center+pond.radii*1.6).ceil())
+		for z in range(low.y,high.y):
+			for x in range(low.x,high.x):
+				var a := Vector3(x,_height(x,z),z)
+				var b := Vector3(x+1,_height(x+1,z),z)
+				var c := Vector3(x+1,_height(x+1,z+1),z+1)
+				var d := Vector3(x,_height(x,z+1),z+1)
+				_add_lake_triangle(surface,[a,b,c])
+				_add_lake_triangle(surface,[a,c,d])
 	var lake := MeshInstance3D.new()
 	lake.name = "SouthLake"
 	lake.mesh = surface.commit()

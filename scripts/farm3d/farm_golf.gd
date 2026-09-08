@@ -16,7 +16,9 @@ var round_state: Farm3DGolfRound
 var club := 0
 var direction := Vector3.FORWARD
 var contact_height := -.6
+var contact_side := 0.0
 var stance_distance := .8
+var left_handed := false
 var _orbiting := false
 var _orbit_yaw := 0.0
 var _orbit_pitch := .42
@@ -81,6 +83,9 @@ func _restore() -> void:
 	visual.ball_mesh.visible = round_state.active and phase != Phase.HOLED
 	visual.marker.visible = visual.ball_mesh.visible
 	course.score_label.text = "个人最佳 %d 杆 · 免费借杆" % round_state.best if round_state.best > 0 else "免费练习 · 鼠标后拉、前推挥杆"
+	if round_state.layout_changed:
+		hud.notify_message("球场已扩建为七洞，旧球场进度与纪录已重置；农庄存档保留。",true)
+		round_state.layout_changed = false
 	_update_hud()
 
 func is_controlling() -> bool:
@@ -132,6 +137,7 @@ func enter_address() -> bool:
 	direction = Vector3(cup.x-ball.position.x,0,cup.y-ball.position.z).normalized()
 	club = 2 if Course.surface(round_state.ball) == "green" else 1 if Course.surface(round_state.ball) == "sand" else 0
 	contact_height = 0 if club == 2 else -.6
+	contact_side = 0
 	stance_distance = .8
 	_orbiting = false
 	var offset := Vector3.UP.cross(direction)*4.2-direction*3.5
@@ -147,26 +153,38 @@ func enter_address() -> bool:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_stance()
 	_update_camera()
-	visual.set_contact(ball.position,direction,contact_height)
+	visual.set_contact(ball.position,direction,contact_height,contact_side)
 	visual.pose(0,club)
 	_update_hud()
 	return true
 
 func _stance() -> void:
 	var right := Vector3.UP.cross(direction)
-	# Face the ball side-on: the target is to the golfer's left. In the
-	# default frontal camera the golfer stands to the right of the ball.
-	var point := ball.position-right*stance_distance
+	var side := -1.0 if left_handed else 1.0
+	# Switch sides relative to the shot, independently of the orbit camera.
+	var point := ball.position-right*stance_distance*side
 	point.y = Art.ground(Vector2(point.x,point.z)).y
 	player.global_position = point
-	player.look_at(point+right,Vector3.UP,true)
+	player.look_at(point+right*side,Vector3.UP,true)
+	visual.left_handed = left_handed
+
+func toggle_handedness() -> bool:
+	if phase != Phase.ADDRESS or hud.is_modal_open():
+		return false
+	gesture.cancel()
+	left_handed = not left_handed
+	_stance()
+	visual.set_contact(ball.position,direction,contact_height,contact_side)
+	visual.pose(0,club)
+	_update_hud()
+	return true
 
 func _update_camera(blend := 1.0) -> void:
 	var focus := ball.position+Vector3.UP*(.4 if phase == Phase.FLIGHT else .75)
 	var offset := Vector3(sin(_orbit_yaw)*cos(_orbit_pitch),sin(_orbit_pitch),cos(_orbit_yaw)*cos(_orbit_pitch))*_orbit_distance
 	var desired := focus+offset
 	desired.y = maxf(desired.y,Art.ground(Vector2(desired.x,desired.z)).y+.3)
-	var query := PhysicsRayQueryParameters3D.create(focus,desired,1|16|32)
+	var query := PhysicsRayQueryParameters3D.create(focus,desired,1|4|16|32)
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if not hit.is_empty():
 		desired = hit.position+(focus-hit.position).normalized()*.25
@@ -209,6 +227,12 @@ func handle_input(event: InputEvent) -> bool:
 			if not round_state.active and near_entrance():
 				return start_round()
 		if phase == Phase.ADDRESS:
+			if event.keycode == KEY_X:
+				gesture.cancel()
+				contact_side = 0
+				return true
+			if event.keycode == KEY_H:
+				return toggle_handedness()
 			if event.keycode in [KEY_1,KEY_2,KEY_3]:
 				club = int(event.keycode)-KEY_1
 				contact_height = 0 if club == 2 else -.6
@@ -277,6 +301,7 @@ func begin_swing(value: Dictionary) -> bool:
 	shot["impact_delay"] = .07 if shot.has("backswing") else .18
 	shot["followthrough"] = .65 if _short_stroke() else 2.1
 	shot["contact_height"] = contact_height
+	shot["contact_side"] = contact_side
 	phase = Phase.SWING
 	swing_seconds = 0
 	gesture.cancel()
@@ -284,7 +309,7 @@ func begin_swing(value: Dictionary) -> bool:
 	return true
 
 func _impact() -> void:
-	ball.strike(direction.rotated(Vector3.UP,-shot.deviation),shot.power,club,shot.contact_height)
+	ball.strike(direction.rotated(Vector3.UP,-shot.deviation),shot.power,club,shot.contact_height,float(shot.get("contact_side",0)))
 	# Keep saved round state at the last settled checkpoint until this ball stops.
 	phase = Phase.FLIGHT
 	watch_camera = true
@@ -311,13 +336,15 @@ func _process(delta: float) -> void:
 			direction = direction.rotated(Vector3.UP,-turn*delta*(.06 if fine_aim else .35))
 			var vertical := float(Input.is_physical_key_pressed(KEY_W))-float(Input.is_physical_key_pressed(KEY_S))
 			contact_height = clampf(contact_height+vertical*delta*.8,-1,1)
+			var lateral := float(Input.is_physical_key_pressed(KEY_C))-float(Input.is_physical_key_pressed(KEY_Z))
+			contact_side = clampf(contact_side+lateral*delta*.8,-1,1)
 			var distance_step := float(Input.is_physical_key_pressed(KEY_Q))-float(Input.is_physical_key_pressed(KEY_E))
 			stance_distance = clampf(stance_distance+distance_step*delta*.3,.68,.98)
 			_stance()
 		_update_camera()
-		visual.set_contact(ball.position,direction,contact_height)
+		visual.set_contact(ball.position,direction,contact_height,contact_side)
 		visual.pose(_backswing_angle() if gesture.dragging else 0,club)
-		visual.show_aim(ball.position,direction,club,maxf(.01,gesture.power(_short_stroke())) if gesture.dragging else .65,contact_height)
+		visual.show_aim(ball.position,direction,club,maxf(.01,gesture.power(_short_stroke())) if gesture.dragging else .65,contact_height,contact_side)
 	elif phase == Phase.SWING:
 		_update_camera()
 		swing_seconds += delta
@@ -360,14 +387,14 @@ func _settle() -> void:
 	if holed:
 		round_state.complete_hole()
 		phase = Phase.HOLED if round_state.active else Phase.FINISHED
-		_feedback_message("进洞！本洞 %d 杆 · %s" % [round_state.strokes,"前往下一发球台" if round_state.active else "三洞完成"])
+		_feedback_message("进洞！本洞 %d 杆 · %s" % [round_state.strokes,"前往下一发球台" if round_state.active else "七洞完成"])
 	else:
 		phase = Phase.WALK
 	_save()
 	_update_hud()
 
 func next_hole() -> bool:
-	if phase != Phase.HOLED or round_state.hole >= 2:
+	if phase != Phase.HOLED or round_state.hole >= Course.HOLES.size()-1:
 		return false
 	var next: Vector2 = Course.HOLES[round_state.hole+1].tee
 	if player.global_position.distance_to(Art.ground(next)) > 3.0:
@@ -406,7 +433,7 @@ func _exit_tree() -> void:
 
 func target_point() -> Vector3:
 	if phase == Phase.HOLED:
-		return Art.ground(Course.HOLES[mini(2,round_state.hole+1)].tee)
+		return Art.ground(Course.HOLES[mini(Course.HOLES.size()-1,round_state.hole+1)].tee)
 	return ball.position
 
 func _save() -> void:
@@ -442,10 +469,11 @@ func _build_hud() -> void:
 	_contact_display.draw.connect(func():
 		_contact_display.draw_circle(Vector2(30,30),24,Color("eee9d7"))
 		_contact_display.draw_line(Vector2(8,30),Vector2(52,30),Color("aab69a"),1)
-		_contact_display.draw_circle(Vector2(30,30-contact_height*20),5,Color("b96843"))
+		_contact_display.draw_line(Vector2(30,8),Vector2(30,52),Color("aab69a"),1)
+		_contact_display.draw_circle(Vector2(30,30)+Vector2(contact_side,-contact_height).limit_length(1)*20,5,Color("b96843"))
 	)
 	var contact_help := Label.new()
-	contact_help.text = "W/S 或滚轮：触球点上/下\n下部＋力度：挑高球；中心轻击：推球"
+	contact_help.text = "W/S 上下 · Z/C 左右 · X 侧旋归零\n下部挑高 · 左/右侧旋绕障碍"
 	contact_help.add_theme_font_size_override("font_size",14)
 	contact_row.add_child(contact_help)
 	_stroke_display = Control.new()
@@ -503,23 +531,25 @@ func _update_hud() -> void:
 	_contact_display.queue_redraw()
 	_stroke_display.queue_redraw()
 	_power.value = gesture.power(_short_stroke())*100 if gesture.dragging else 0
-	_stroke_readout.text = "力度 %d%% · %s\n%s" % [roundi(_power.value),"推球" if _short_stroke() else "挑高",("绿色区内直出" if absf(gesture.offset.x) <= gesture.corridor() else "斜推将偏球") if gesture.dragging else "虚线预览 65% 力度"]
+	_stroke_readout.text = "力度 %d%% · %s\n%s" % [roundi(_power.value),"地滚球" if _short_stroke() else "左曲 %d%%" % roundi(-contact_side*100) if contact_side < -.02 else "右曲 %d%%" % roundi(contact_side*100) if contact_side > .02 else "直球",("挥杆方正" if absf(gesture.offset.x) <= gesture.corridor() else "斜推将偏球") if gesture.dragging else "虚线预览 65% 力度"]
 	_action.visible = not is_controlling() and phase != Phase.FINISHED
 	if not round_state.active:
-		_title.text = "三洞完成 · %d 杆 / 标准 9 杆" % round_state.scores.reduce(func(a,b):return a+b,0) if phase == Phase.FINISHED else "湖西高尔夫 · 免费借杆"
-		_info.text = "个人最佳：%d 杆" % round_state.best if round_state.best > 0 else "三洞短场 · 进洞后完成本洞"
+		_title.text = "七洞完成 · %d 杆 / 标准 %d 杆" % [round_state.scores.reduce(func(a,b):return a+b,0),Course.total_par()] if phase == Phase.FINISHED else "湖西高尔夫 · 免费借杆"
+		_info.text = "个人最佳：%d 杆" % round_state.best if round_state.best > 0 else "七洞球场 · 进洞后完成本洞"
 		_hint.text = "R 回到 1 号洞重开 · Esc 收起成绩" if phase == Phase.FINISHED else "走到球杆架前，点击开始。后拉鼠标蓄势，前推挥杆。"
 		_action.disabled = not near_entrance()
 		_action.text = "借杆开始  E"
 		return
 	var cup: Vector2 = Course.HOLES[round_state.hole].cup
 	var distance := Vector2(ball.position.x,ball.position.z).distance_to(cup)
-	_title.text = "%d / 3 洞 · %s · %d 杆 · 距洞 %.1f 米" % [round_state.hole+1,Course.HOLES[round_state.hole].name,round_state.strokes+(1 if phase == Phase.FLIGHT else 0),distance]
+	_title.text = "%d / %d 洞 · %s · %d 杆 · 距洞 %.1f 米" % [round_state.hole+1,Course.HOLES.size(),Course.HOLES[round_state.hole].name,round_state.strokes+(1 if phase == Phase.FLIGHT else 0),distance]
+	if phase == Phase.ADDRESS:
+		_title.text += " · %s手（H 切换）" % ("左" if left_handed else "右")
 	if phase == Phase.WALK:
 		_title.text += " · 距球 %.1f 米" % player.global_position.distance_to(ball.position)
 	_info.text = "%s · A/D 瞄准（Shift 精调）· Q/E 站距 · 1/2/3 换杆 · 灵敏度 %.2f（−/=）" % [Farm3DGolfBall.CLUBS[club].name,session.golf_sensitivity]
 	_title.text += " · R 重开"
-	_hint.text = _feedback if _feedback_time > 0 else "左键后拉定力度、前推击球，松开取消 · 右键转镜头 · 虚线仅示前段球路 · Esc 退出" if phase == Phase.ADDRESS else "球正在移动 · 右键转镜头，Esc 返回角色" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else "走到球旁按 E 准备，WASD 行走，Shift 奔跑"
+	_hint.text = _feedback if _feedback_time > 0 else "左键后拉定力度、前推击球，松开取消 · 右键转镜头 · 虚线仅示前段球路 · Esc 退出" if phase == Phase.ADDRESS else "球正在移动 · 右键转镜头，Esc 返回角色" if phase == Phase.FLIGHT else "本洞完成，前往下一洞发球台按 E" if phase == Phase.HOLED else str(Course.HOLES[round_state.hole].hint)+" · 球旁 E 准备"
 	_action.text = "下一洞  E" if phase == Phase.HOLED else "准备击球  E"
 	_action.disabled = player.global_position.distance_to(target_point()) > 2.8 or phase == Phase.FLIGHT
 

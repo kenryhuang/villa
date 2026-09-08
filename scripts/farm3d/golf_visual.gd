@@ -20,6 +20,7 @@ var _contact_local := Vector3(0,.065,.8)
 var _contact_marker: MeshInstance3D
 var _aim_signature: Array = []
 var _aim_updated := -1000
+var left_handed := false
 
 func configure(player: Farm3DPlayer) -> void:
 	_player = player
@@ -92,9 +93,10 @@ func hide_aim() -> void:
 		dot.hide()
 	_contact_marker.hide()
 
-func set_contact(ball_position: Vector3, direction: Vector3, height: float) -> void:
-	var vertical := clampf(height,-1,1)*.8
-	var point := ball_position-direction*Farm3DGolfBall.RADIUS*sqrt(1-vertical*vertical)+Vector3.UP*Farm3DGolfBall.RADIUS*vertical
+func set_contact(ball_position: Vector3, direction: Vector3, height: float, horizontal := 0.0) -> void:
+	var contact := Vector2(horizontal,height).limit_length(1)*.8
+	var right := direction.cross(Vector3.UP)
+	var point := ball_position-direction*Farm3DGolfBall.RADIUS*sqrt(1-contact.length_squared())+(Vector3.UP*contact.y+right*contact.x)*Farm3DGolfBall.RADIUS
 	_contact_local = _player.to_local(point)
 	_contact_marker.global_position = point
 	_contact_marker.visible = _equipped
@@ -102,17 +104,18 @@ func set_contact(ball_position: Vector3, direction: Vector3, height: float) -> v
 func pose(angle: float, club_index: int) -> void:
 	if not _equipped:
 		return
-	var grip := Vector3(.12,1.04,.35)
+	var side := -1.0 if left_handed else 1.0
+	var swing_angle := angle*side
+	var grip := Vector3(.12*side,1.04,.35)
 	grip.y += absf(angle)*.08
-	# Player faces the ball along local +Z; the shot travels toward local -X.
-	# Raise the club to the right, then sweep left through the contact point.
-	var endpoint := grip + (_contact_local-grip).rotated(Vector3.BACK,angle)
-	var head_center := endpoint+Vector3(.075,.025,0).rotated(Vector3.BACK,angle)
+	# Mirror the grip, club path and leading hand with the stance.
+	var endpoint := grip + (_contact_local-grip).rotated(Vector3.BACK,swing_angle)
+	var head_center := endpoint+Vector3(.075*side,.025,0).rotated(Vector3.BACK,swing_angle)
 	club.global_transform = _player.global_transform
 	_segment(shaft,grip,head_center)
 	_segment(grip_mesh,grip,grip.lerp(head_center,.17))
 	head.position = head_center
-	head.rotation = Vector3(0,0,angle)
+	head.rotation = Vector3(0,0,swing_angle)
 	if club_index != _last_club:
 		_last_club = club_index
 		head.mesh = _head_meshes[club_index]
@@ -120,9 +123,9 @@ func pose(angle: float, club_index: int) -> void:
 	_head_point = club.to_global(endpoint)
 	if _skeleton != null:
 		var spine := _skeleton.find_bone("spine")
-		_skeleton.set_bone_pose_rotation(spine,Quaternion(Vector3.UP,angle*.18)*Quaternion(Vector3.RIGHT,.1))
-		_aim_arm("R",grip)
-		_aim_arm("L",grip+(grip-head_center).normalized()*.065)
+		_skeleton.set_bone_pose_rotation(spine,Quaternion(Vector3.UP,swing_angle*.18)*Quaternion(Vector3.RIGHT,.1))
+		_aim_arm("L" if left_handed else "R",grip)
+		_aim_arm("R" if left_handed else "L",grip+(grip-head_center).normalized()*.065)
 
 func update_ball(position: Vector3, moving: bool, show_marker: bool) -> void:
 	ball_mesh.global_position = position
@@ -140,14 +143,14 @@ func clear_trail() -> void:
 	for item in trail:
 		item.hide()
 
-func show_aim(origin: Vector3, direction: Vector3, club_index: int, power: float, contact_height := -2.0) -> void:
-	var signature := [origin,direction,club_index,power,contact_height]
+func show_aim(origin: Vector3, direction: Vector3, club_index: int, power: float, contact_height := -2.0, contact_side := 0.0) -> void:
+	var signature := [origin,direction,club_index,power,contact_height,contact_side]
 	var now := Time.get_ticks_msec()
 	if signature == _aim_signature or (not _aim_signature.is_empty() and now-_aim_updated < 80):
 		return
 	_aim_signature = signature
 	_aim_updated = now
-	var points := Farm3DGolfBall.preview_path(origin,direction,power,club_index,contact_height)
+	var points := Farm3DGolfBall.preview_path(origin,direction,power,club_index,contact_height,contact_side,get_world_3d().direct_space_state)
 	for i in aim_dots.size():
 		var index := roundi(float(i+1)/aim_dots.size()*(points.size()-1))
 		aim_dots[i].global_position = points[index]+Vector3.UP*.035

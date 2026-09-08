@@ -95,7 +95,7 @@ static func height_at(x: float, z: float) -> float:
 
 static func _western_height(x: float, z: float) -> float:
 	var point := Vector2(x,z)
-	var mask := Golf.paint(point).r
+	var mask := Golf.coverage(point)
 	var h := lerpf(1.5+.65*sin(x*.07)*cos(z*.09),Golf.terrain_height(point),mask)
 	var edge := minf(x-WORLD_MIN.x,minf(z-WORLD_MIN.y,WORLD_MAX.y-z))
 	return h + (1-smoothstep(0,9,edge))*5.0

@@ -16,6 +16,8 @@ var moving := false
 var elapsed := 0.0
 var result := ""
 var bounced := false
+var side_spin := 0.0
+var obstacle_hits := 0
 var _drop_seconds := -1.0
 var _drop_from := Vector3.ZERO
 var _drop_target := Vector3.ZERO
@@ -27,10 +29,14 @@ func place(point: Vector2) -> void:
 	elapsed = 0
 	result = ""
 	bounced = false
+	side_spin = 0
+	obstacle_hits = 0
 	_drop_seconds = -1
 
-func strike(direction: Vector3, power: float, club: int, contact_height := -2.0) -> void:
+func strike(direction: Vector3, power: float, club: int, contact_height := -2.0, contact_side := 0.0) -> void:
 	velocity = launch_velocity(direction,power,club,Course.surface(Vector2(position.x,position.z)),contact_height)
+	side_spin = clampf(contact_side,-1,1)*.55 if velocity.y > .01 else 0.0
+	obstacle_hits = 0
 	if absf(velocity.y) < .01:
 		var speed := velocity.length()
 		velocity = velocity.slide(Profile.surface_normal(position.x,position.z)).normalized()*speed
@@ -55,14 +61,14 @@ static func launch_velocity(direction: Vector3, power: float, club: int, surface
 
 ## A partial guide, using the same slope, friction and bounce integration as play.
 ## Stop at the first landing or 1.2 seconds of rolling; never predict a made putt.
-static func preview_path(origin: Vector3, direction: Vector3, power: float, club: int, contact_height: float) -> PackedVector3Array:
+static func preview_path(origin: Vector3, direction: Vector3, power: float, club: int, contact_height: float, contact_side := 0.0, space: PhysicsDirectSpaceState3D = null) -> PackedVector3Array:
 	var preview := Farm3DGolfBall.new()
 	preview.place(Vector2(origin.x,origin.z))
-	preview.strike(direction,power,club,contact_height)
+	preview.strike(direction,power,club,contact_height,contact_side)
 	var airborne := preview.velocity.dot(Profile.surface_normal(origin.x,origin.z)) > .3
 	var points := PackedVector3Array([preview.position])
 	for frame in (300 if airborne else 72):
-		preview.advance(1.0/60,Vector2.ZERO)
+		preview.advance(1.0/60,Vector2.ZERO,space)
 		points.append(preview.position)
 		if not preview.moving or (airborne and preview.bounced):
 			break
@@ -87,7 +93,7 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 		return
 	elapsed += dt
 	var point := Vector2(position.x,position.z)
-	if not Course.BOUNDS.grow(3).has_point(point) or Profile.is_water(point.x,point.y):
+	if not Course.BOUNDS.grow(3).has_point(point) or (Profile.is_water(point.x,point.y) and position.y <= Profile.WATER_HEIGHT+RADIUS):
 		_stop("penalty")
 		return
 	var ground := Profile.surface_height(point.x,point.y)+RADIUS
@@ -108,6 +114,9 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 		if velocity.length() < .055 and gravity.length() <= friction:
 			_stop("rest")
 	else:
+		# Gameplay approximation of spin-axis lift: curve only while airborne.
+		velocity = velocity.rotated(Vector3.UP,-side_spin*dt)
+		side_spin *= exp(-.22*dt)
 		velocity.y -= 9.8*dt
 		position += velocity*dt
 		var floor_height := Profile.surface_height(position.x,position.z)+RADIUS
@@ -118,11 +127,14 @@ func _step(dt: float, cup: Vector2, space: PhysicsDirectSpaceState3D) -> void:
 			velocity.x *= .78
 			velocity.z *= .78
 			bounced = true
+			side_spin *= .35
 	if space != null and position.distance_squared_to(old) > .000001:
-		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(old,position,1|16))
-		if not hit.is_empty() and hit.normal.y < .55:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(old,position,1|4|16))
+		if not hit.is_empty() and (hit.normal.y < .55 or hit.collider.has_meta("golf_obstacle")) and velocity.dot(hit.normal) < 0:
 			position = hit.position+hit.normal*RADIUS
 			velocity = velocity.bounce(hit.normal)*.4
+			side_spin *= .25
+			obstacle_hits += 1
 	if rolling and _capture_cup(old,position,cup):
 		return
 	if elapsed > 30:

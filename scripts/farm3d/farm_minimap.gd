@@ -70,7 +70,12 @@ func _draw() -> void:
 	_centered("东", Vector2(MAP_RECT.end.x+13, 152), 17, INK)
 	_map_label("山地", Vector3(-15, 0, -56))
 	_map_label("丘陵", Vector3(-51, 0, 13))
-	_map_label("球场", Vector3(-129,0,96))
+	_map_label("七洞球场", Vector3(-137,0,40))
+	for hole_index in Profile.Golf.HOLES.size():
+		var cup: Vector2 = Profile.Golf.HOLES[hole_index].cup
+		var point := world_to_map(Vector3(cup.x,0,cup.y))
+		draw_circle(point,2,Color("eedc9a"))
+		_centered(str(hole_index+1),point+Vector2(0,-4),10,INK)
 	var entrance := Profile.Golf.ENTRANCE
 	draw_circle(world_to_map(Vector3(entrance.x,0,entrance.y)),3,Color("e6c882"))
 	_map_label("河流", Vector3(58, 0, -9))
