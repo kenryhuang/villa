@@ -58,6 +58,8 @@ func submit(actor: String, id: String, plan: Dictionary) -> Dictionary:
 	if not valid_plan(plan) or not world.assets.exists(actor) or actor == "player": return _error("invalid_project")
 	if projects.has(id): return {"ok": projects[id].actor_id == actor and projects[id].plan == plan, "project_id": id}
 	if not active(actor).is_empty(): return _error("primary_project_exists")
+	var commission_check := _check_commissions(actor, plan)
+	if not commission_check.ok: return commission_check
 	for item in plan.materials:
 		if world.session.market.get_item_state(item).is_empty(): return _error("unknown_material")
 	var debit := {}
@@ -72,6 +74,27 @@ func active(actor: String) -> Dictionary:
 	for p in projects.values():
 		if p.actor_id == actor and p.status == "active": return p
 	return {}
+
+func _check_commissions(actor: String, plan: Dictionary, states: Dictionary = {}) -> Dictionary:
+	var reserved := {}
+	for step in plan.steps:
+		var state: Dictionary = states.get(step.id, {})
+		if step.capability == "claim" and state.get("status") != "done":
+			var id: String = step.arguments.commission_id
+			var counts: Vector2i = reserved.get(id, Vector2i.ZERO)
+			var result: Dictionary = world.board.check_claim(actor, id, int(step.arguments.quantity), counts.x, counts.y)
+			if not result.ok:
+				result.merge({"step_id": step.id, "commission_id": id, "message": "委托条件已变化，未继续采购；请根据当前委托重新规划。"})
+				return result
+			reserved[id] = counts + Vector2i(int(step.arguments.quantity), 1)
+		elif step.capability == "deliver" and state.get("status") != "done":
+			var claim_state: Dictionary = states.get(step.arguments.claim_step, {})
+			if claim_state.get("status") != "done": continue
+			var task: Dictionary = world.board.claims.get(claim_state.get("result", {}).get("claim_id", ""), {})
+			var commission: Dictionary = world.board.commissions.get(task.get("commission_id", ""), {})
+			if task.get("actor_id") != actor or task.get("status") != "active" or commission.get("status") != "open" or world.minute() >= int(commission.get("deadline", 0)):
+				return {"ok": false, "error": "commission_unavailable", "step_id": step.id, "commission_id": task.get("commission_id", "")}
+	return {"ok": true}
 
 func suggest(actor: String, text: String, ttl: int) -> Dictionary:
 	if not world.assets.exists(actor) or text.is_empty() or text.length() > 500 or ttl < 1 or ttl > 1080: return _error("invalid_suggestion")
@@ -95,6 +118,13 @@ func advance() -> void:
 		if p.status != "active": continue
 		var waiting := false
 		for state in p.steps.values(): waiting = waiting or (state.result.has("order_id") and not state.result.get("delivered", false) and not state.result.get("cancelled", false))
+		var commission_check := _check_commissions(p.actor_id, p.plan, p.steps)
+		if not commission_check.ok:
+			p.reason = str(commission_check.error)
+			# Preserve already committed production until its actual goods return.
+			# No new purchases or rentals may run against an invalid goal.
+			if not waiting: _finish(p, "cancelled")
+			continue
 		if world.minute() >= int(p.deadline) and not waiting:
 			_finish(p, "expired")
 			continue
@@ -157,6 +187,9 @@ func _execute(p: Dictionary, step: Dictionary, state: Dictionary) -> Dictionary:
 			var target := Vector3(float(a.x), Farm3DTerrainProfile.surface_height(float(a.x), float(a.z)), float(a.z))
 			if state.result.has("target"):
 				target = Vector3(state.result.target.x, state.result.target.y, state.result.target.z)
+			elif world.session.MarketSite.contains(world.session.market_site, Vector2(a.x, a.z)):
+				target = world.session.MarketSite.reachable_counter(world.session.grid, actor.position, world.session.market_site)
+				if not target.is_finite(): return _error("no_route")
 			else:
 				for b in world.session.buildings.get_all_buildings():
 					var cell: GridCell = world.session.grid.get_cell(b.grid_x, b.grid_z)
@@ -240,6 +273,10 @@ func _hold(p: Dictionary, items: Dictionary, gold: int) -> bool:
 
 func _finish(p: Dictionary, status: String) -> bool:
 	if not _release(p, p.items.duplicate(), int(p.gold)): return false
+	if status != "completed":
+		for step in p.plan.steps:
+			if step.capability == "claim" and p.steps[step.id].result.has("claim_id"):
+				world.board.abandon(p.actor_id, str(p.steps[step.id].result.claim_id))
 	var body: Node = world.actor(p.actor_id)
 	if body != null: body.stop_agent_work()
 	p.status = status

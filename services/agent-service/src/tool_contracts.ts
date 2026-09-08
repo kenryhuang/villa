@@ -416,7 +416,11 @@ export function executeReadTool(context: AgentContext, name: string, args: Recor
     case "inspect_crop_options": return {crop_options: structuredClone(context.actor_context.crop_options ?? context.public_world_state.crop_options ?? [])};
     case "inspect_market_depth": return found(isRecord(context.market_view[String(args.item_id)]) ? (context.market_view[String(args.item_id)] as Record<string, unknown>).depth : undefined);
     case "inspect_price_history": return found(isRecord(context.market_view[String(args.item_id)]) ? (context.market_view[String(args.item_id)] as Record<string, unknown>).price_history : undefined);
-    case "inspect_region": return found(findRecord(context.public_world_state.regions ?? context.actor_context.regions, "region_id", String(args.region_id)));
+    case "inspect_region": {
+      const map = isRecord(context.actor_context.world_map) ? context.actor_context.world_map : {};
+      return found(findRecord(map.regions, "id", String(args.region_id))
+        ?? findRecord(context.public_world_state.regions ?? context.actor_context.regions, "region_id", String(args.region_id)));
+    }
     case "inspect_known_discoveries": return {discoveries: structuredClone(context.actor_context.known_discoveries ?? context.public_world_state.known_discoveries ?? [])};
     default: throw new Error("provider_unknown_read_tool");
   }

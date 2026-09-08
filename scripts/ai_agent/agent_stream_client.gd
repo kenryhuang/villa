@@ -21,7 +21,7 @@ func configure(base_url: String, token: String, epoch: int, timeout_seconds: flo
 	var parsed := _parse_url(base_url.strip_edges().trim_suffix("/"))
 	if not parsed.ok or epoch < 0 or timeout_seconds <= 0.0:
 		return false
-	cancel_all()
+	cancel_all("client_reconfigured")
 	_base_url = base_url.strip_edges().trim_suffix("/")
 	_token = token
 	session_epoch = epoch
@@ -77,16 +77,16 @@ func cancel_agent(agent_id: String, reason: String = "cancelled") -> bool:
 	return true
 
 
-func cancel_all() -> void:
+func cancel_all(reason: String = "cancelled") -> void:
 	for agent_id_value in _streams.keys().duplicate():
-		cancel_agent(str(agent_id_value))
+		cancel_agent(str(agent_id_value), reason)
 
 
 func set_epoch(epoch: int) -> bool:
 	if epoch < 0:
 		return false
 	session_epoch = epoch
-	cancel_all()
+	cancel_all("session_changed")
 	return true
 
 

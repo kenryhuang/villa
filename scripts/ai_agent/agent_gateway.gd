@@ -78,9 +78,9 @@ func bump_epoch() -> int:
 	return session_epoch
 
 
-func cancel_all() -> void:
+func cancel_all(reason: String = "cancelled") -> void:
 	if _stream_client != null:
-		_stream_client.call("cancel_all")
+		_stream_client.call("cancel_all", reason)
 
 
 func cancel_agent(agent_id: String, reason: String = "cancelled") -> bool:

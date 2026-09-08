@@ -39,6 +39,10 @@ The formal 3D farm reuses this service and the existing Godot runtime directly. 
 
 Run offline tests with `npm test`. Tests use temporary configuration files and local fake HTTP endpoints; they never use public network or real credentials. The runtime contains no simulated Provider.
 
+Decisions have two batched read rounds. Each round advertises its remaining reads consistently in both the prompt and tool list. A mixed read/command batch performs only the authorized reads and asks the model to reissue commands; exhausted reads or invalid read arguments also receive explicit feedback. There is at most one tool-correction attempt per decision. Unknown tools remain unauthorized. An autonomous Provider timeout gets one retry with extended thinking disabled; a second timeout remains an error. Dialogue and external cancellation do not use this timeout retry.
+
+The 3D region reader resolves `world_map.regions`, and market depth contains authoritative total buy/sell quotes including slippage and separate stock availability. Project submission checks current commission status, deadline, quota and claim slots before escrow. If its commission becomes invalid during execution, the project stops new spending, waits for already committed production to settle, then returns unused funds and goods and releases its claims. Moving to the market center resolves to a reachable south counter. Game close, session change and client reconfiguration are recorded as cancellations with distinct reasons, not decision errors. See [trace recovery validation](../../docs/validation/agent-trace-recovery.md).
+
 HTTP endpoints:
 
 - `GET /health`

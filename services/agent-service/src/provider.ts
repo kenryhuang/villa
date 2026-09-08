@@ -83,11 +83,18 @@ export class OpenAICompatibleProvider {
       {role: "user", content: JSON.stringify(userContent)},
     ];
     let readRounds = 0;
+    let corrections = 0;
+    let timeoutRetried = false;
     while (true) {
       const availableReads = readRounds < 2 ? [...context.allowed_read_tools] : [];
+      // Keep the embedded capability list in agreement with this round's tool menu.
+      const roundContext = {...promptContext, allowed_read_tools: availableReads};
+      messages[1] = {role: "user", content: JSON.stringify(isDialogue
+        ? {context: roundContext, dialogue_input: request.dialogue_input ?? ""} : roundContext)};
+      messages[0] = {role: "system", content: `${systemContent} You have at most two read-only rounds, with ${Math.max(0, 2 - readRounds)} remaining. Batch useful reads. Never mix read tools and command tools in one response. After reading, use only the current command tools or return no action. Keep analysis concise; do not repeatedly enumerate speculative plans. Context is a snapshot: commission deadlines may pass while you decide; Godot revalidates before spending.`};
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
-        ...(isDialogue ? {enable_thinking: false} : {}),
+        ...(isDialogue || corrections > 0 || timeoutRetried ? {enable_thinking: false} : {}),
         temperature: this.#config.temperature,
         max_tokens: this.#config.maxOutputTokens,
         stream: true,
@@ -104,43 +111,75 @@ export class OpenAICompatibleProvider {
         delete providerBody.tools;
       }
       emit({type: "input", body: structuredClone(providerBody)});
-      const {assembler, rawOutput} = await this.#concurrencyGate.run(
-        externalSignal,
-        () => withProviderTimeout(
-          this.#config.timeoutMs,
+      let round: {assembler: AgentStreamAssembler; rawOutput: ReturnType<AgentStreamAssembler["rawOutput"]>};
+      try {
+        round = await this.#concurrencyGate.run(
           externalSignal,
-          async (signal) => {
-            const response = await fetch(endpoint, {
-              method: "POST",
-              signal,
-              headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
-              body: JSON.stringify(providerBody),
-            });
-            if (!response.ok) throw new Error(`provider_http_${response.status}`);
-            if (!response.body) throw new Error("provider_missing_stream_body");
-            const roundAssembler = new AgentStreamAssembler();
-            for await (const chunk of decodeProviderSse(response.body)) {
-              for (const event of roundAssembler.accept(chunk)) emit(event);
-            }
-            return {assembler: roundAssembler, rawOutput: roundAssembler.rawOutput()};
-          },
-        ),
-      );
+          () => withProviderTimeout(
+            this.#config.timeoutMs,
+            externalSignal,
+            async (signal) => {
+              const response = await fetch(endpoint, {
+                method: "POST",
+                signal,
+                headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
+                body: JSON.stringify(providerBody),
+              });
+              if (!response.ok) throw new Error(`provider_http_${response.status}`);
+              if (!response.body) throw new Error("provider_missing_stream_body");
+              const roundAssembler = new AgentStreamAssembler();
+              for await (const chunk of decodeProviderSse(response.body)) {
+                for (const event of roundAssembler.accept(chunk)) emit(event);
+              }
+              return {assembler: roundAssembler, rawOutput: roundAssembler.rawOutput()};
+            },
+          ),
+        );
+      } catch (error) {
+        // No command has left this service yet. Retry one timed-out autonomous
+        // round without extended thinking; cancellation is never retried.
+        if (!isDialogue && !timeoutRetried && !externalSignal?.aborted && error instanceof Error && error.message === "provider_timeout") {
+          timeoutRetried = true;
+          messages.push({role: "system", content: "The previous provider round timed out; no commands were submitted. Decide briefly from the available facts, or return no action."});
+          continue;
+        }
+        throw error;
+      }
+      const {assembler, rawOutput} = round;
       emit({type: "output", output: rawOutput});
       const calls = assembler.toolCalls();
-      const reads = calls.filter((call) => availableReads.includes(call.name));
+      const reads = calls.filter((call) => context.allowed_read_tools.includes(call.name));
       if (reads.length > 0) {
-        if (reads.length !== calls.length) throw new Error("provider_mixed_read_and_command_tools");
-        readRounds += 1;
-        messages.push({role: "assistant", content: rawOutput.message.content || null, tool_calls: rawOutput.message.tool_calls});
-        for (const call of reads) {
-          messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            name: call.name,
-            content: JSON.stringify(executeReadTool(context, call.name, call.arguments)),
-          });
+        // Unknown tools still fail closed. A mixed batch never executes commands.
+        if (calls.some((call) => !context.allowed_read_tools.includes(call.name) && !allowedCommands.includes(call.name))) {
+          throw new Error("provider_invalid_intent:unauthorized_tool");
         }
+        let correction = reads.length !== calls.length;
+        const canRead = readRounds < 2;
+        const results = calls.map((call) => {
+          let result: Record<string, unknown>;
+          if (!context.allowed_read_tools.includes(call.name)) {
+            result = {ok: false, error: "command_not_executed", message: "Reissue in a command-only response after inspecting read results."};
+          } else if (!canRead) {
+            correction = true;
+            result = {ok: false, error: "read_round_limit", message: "No read rounds remain. Decide using existing results or return no action."};
+          } else {
+            try { result = executeReadTool(context, call.name, call.arguments); }
+            catch (error) {
+              if (!(error instanceof Error) || error.message !== "provider_invalid_read_arguments") throw error;
+              correction = true;
+              result = {ok: false, error: "invalid_read_arguments", message: "Use the advertised JSON schema; arrays must be JSON arrays, not strings."};
+            }
+          }
+          return {role: "tool", tool_call_id: call.id, name: call.name, content: JSON.stringify(result)};
+        });
+        if (correction) {
+          if (corrections >= 1) throw new Error("provider_tool_correction_exhausted");
+          corrections += 1;
+        }
+        if (canRead) readRounds += 1;
+        messages.push({role: "assistant", content: rawOutput.message.content || null, tool_calls: rawOutput.message.tool_calls});
+        messages.push(...results);
         continue;
       }
       return assembler.finish(request, allowedCommands, isDialogue ? 1 : 3).intent;

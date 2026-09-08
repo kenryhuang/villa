@@ -11,6 +11,7 @@ try {
     $firstStage = if ($IncludeDependencies) { 0 } else { $stageNumber }
     $tests = @($firstStage..$stageNumber | ForEach-Object { "run_living_world_p$($_)_tests.gd" })
     if ($IncludeDependencies) {
+        $tests += 'run_agent_trace_recovery_tests.gd'
         $tests += 'run_agent_system_tests.gd', 'run_3d_agent_tests.gd', 'run_production_system_tests.gd', 'run_3d_windmill_tests.gd', 'run_3d_food_workshop_tests.gd', 'run_3d_save_protection_tests.gd'
         $tests += 'run_3d_farm_interaction_tests.gd', 'run_3d_target_system_tests.gd', 'run_3d_farming_tests.gd', 'run_3d_market_tests.gd', 'run_3d_fishing_tests.gd', 'run_3d_golf_tests.gd', 'run_3d_minimap_tests.gd'
     }

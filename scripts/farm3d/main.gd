@@ -152,7 +152,7 @@ func _notification(what: int) -> void:
 			get_tree().paused = true
 			if is_instance_valid(farm_session.agent_runtime):
 				farm_session.agent_runtime.gateway.process_mode = Node.PROCESS_MODE_ALWAYS
-				farm_session.agent_runtime.gateway.cancel_all()
+				farm_session.agent_runtime.gateway.cancel_all("game_closed")
 			farm_session.save_game()
 			if is_instance_valid(farm_session.agent_runtime):
 				await farm_session.agent_runtime.flush_farm3d_memory(farm_session.save_path)

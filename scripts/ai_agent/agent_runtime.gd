@@ -33,6 +33,11 @@ const EVENT_SCHEMA_VERSION := 1
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
 const EXPECTED_STREAM_CANCELLATIONS := {
+	"cancelled": true,
+	"game_closed": true,
+	"session_changed": true,
+	"client_reconfigured": true,
+	"replaced": true,
 	"dialogue_replaced": true,
 	"dialogue_closed": true,
 }
@@ -1085,7 +1090,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	for definition in GameDataScript.get_market_items():
 		var item_id := str(definition.id)
 		market_catalog[item_id] = definition.duplicate(true)
-		market_snapshot[item_id] = _market.call("get_item_state", item_id)
+		market_snapshot[item_id] = _market.call("get_agent_item_view", item_id)
 		if agent_pressure.has(item_id):
 			(market_snapshot[item_id] as Dictionary)["agent_pressure"] = (agent_pressure[item_id] as Dictionary).duplicate(true)
 	projected.market_view = market_snapshot.duplicate(true)

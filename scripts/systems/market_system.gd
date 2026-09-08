@@ -136,6 +136,16 @@ func get_stock(item_id: String) -> int:
 	return int((_items[item_id] as Dictionary).get("stock", 0))
 
 
+func get_agent_item_view(item_id: String) -> Dictionary:
+	var state := get_item_state(item_id)
+	if state.is_empty(): return {}
+	var quotes: Array = []
+	for quantity in [1, 2, 5, 10, 20]:
+		quotes.append({"quantity": quantity, "buy_total": quote_buy(item_id, quantity), "sell_total": quote_sell(item_id, quantity), "buy_available": can_buy(item_id, quantity)})
+	state.depth = {"stock": state.stock, "daily_liquidity": state.daily_liquidity, "quotes": quotes, "price_basis": "total gold including slippage; snapshot only, revalidated on execution"}
+	return state
+
+
 func get_mid_price(item_id: String) -> int:
 	_recover_abandoned_state()
 	if not _items.has(item_id):

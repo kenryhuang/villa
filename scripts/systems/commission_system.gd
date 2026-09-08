@@ -49,18 +49,24 @@ func publish(actor: String, id: String, terms: Dictionary) -> Dictionary:
 
 func claim(actor: String, id: String, commission_id: String, quantity: int) -> Dictionary:
 	if claims.has(id): return {"ok": claims[id].actor_id == actor and claims[id].commission_id == commission_id and int(claims[id].quantity) == quantity, "claim_id": id}
-	var c: Dictionary = commissions.get(commission_id, {})
-	if c.is_empty() or c.actor_id == actor or not world.assets.exists(actor) or c.status != "open" or world.minute() >= int(c.deadline): return _error("commission_unavailable")
-	if quantity < 1 or quantity > int(c.terms.quantity) - int(c.delivered) - int(c.claimed): return _error("claim_quota")
-	var active := 0
-	for old in claims.values():
-		if old.commission_id == commission_id and old.status == "active": active += 1
-	if active >= int(c.terms.max_claims): return _error("claim_slots_full")
+	var available := check_claim(actor, commission_id, quantity)
+	if not available.ok: return available
+	var c: Dictionary = commissions[commission_id]
 	sequence += 1
 	claims[id] = {"id": id, "actor_id": actor, "commission_id": commission_id, "quantity": quantity, "delivered": 0, "status": "active", "sequence": sequence}
 	c.claimed = int(c.claimed) + quantity
 	c.version = int(c.version) + 1
 	return {"ok": true, "claim_id": id, "version": c.version}
+
+func check_claim(actor: String, commission_id: String, quantity: int, reserved_quantity := 0, reserved_slots := 0) -> Dictionary:
+	var c: Dictionary = commissions.get(commission_id, {})
+	if c.is_empty() or c.actor_id == actor or not world.assets.exists(actor) or c.status != "open" or world.minute() >= int(c.deadline): return _error("commission_unavailable")
+	if quantity < 1 or quantity > int(c.terms.quantity) - int(c.delivered) - int(c.claimed) - reserved_quantity: return _error("claim_quota")
+	var active := 0
+	for old in claims.values():
+		if old.commission_id == commission_id and old.status == "active": active += 1
+	if active + reserved_slots >= int(c.terms.max_claims): return _error("claim_slots_full")
+	return {"ok": true}
 
 func deliver(actor: String, receipt_id: String, claim_id: String, quantity: int, version: int, order_id := "") -> Dictionary:
 	var intent := {"actor_id": actor, "claim_id": claim_id, "quantity": quantity, "version": version, "order_id": order_id}
