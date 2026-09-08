@@ -16,6 +16,59 @@ const DIALOGUE_COMMANDS = new Set([
   "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
 ]);
 
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function pick(value: unknown, keys: string[]): Record<string, unknown> {
+  const source = record(value);
+  return Object.fromEntries(keys.filter((key) => key in source).map((key) => [key, source[key]]));
+}
+
+function brief(value: unknown, depth = 2): unknown {
+  if (typeof value === "string") return value.length > 600 ? value.slice(0, 600) + "…" : value;
+  if (value === null || typeof value !== "object") return value;
+  if (depth <= 0) return "[details available through inspection]";
+  if (Array.isArray(value)) return value.slice(0, 8).map((entry) => brief(entry, depth - 1));
+  return Object.fromEntries(Object.entries(value).slice(0, 16).map(([key, entry]) => [key, brief(entry, depth - 1)]));
+}
+
+function projectBrief(value: unknown): Record<string, unknown> {
+  const project = record(value);
+  if (Object.keys(project).length === 0) return {};
+  return {...pick(project, ["id", "status", "reason", "created", "deadline"]),
+    goal: record(project.plan).goal,
+    steps: Object.fromEntries(Object.entries(record(project.steps)).map(([id, step]) => [id, pick(step, ["status", "error"])]))};
+}
+
+export function buildDialogueContext(context: AgentContext): Omit<AgentContext, "market_view"> {
+  const {market_view: _market, ...base} = context;
+  const actor = context.actor_context;
+  const living = record(actor.living_world);
+  const buildings = Array.isArray(actor.player_buildings) ? actor.player_buildings : [];
+  const plots = Array.isArray(actor.farm) ? actor.farm : [];
+  const recent = Array.isArray(living.recent_projects) ? living.recent_projects : [];
+  const own = context.known_actors.find((entry) => entry.actor_id === context.agent.agent_id);
+  return {...base,
+    actor_context: {
+      ...pick(actor, ["self", "relationships", "world_map", "crop_options", "characters"]),
+      current_activity: brief(pick(own, ["observable_status", "current_public_state"])),
+      farm_summary: {plot_count: plots.length, states: plots.reduce((counts: Record<string, number>, plot: unknown) => {
+        const state = String(record(plot).state ?? "unknown"); counts[state] = (counts[state] ?? 0) + 1; return counts;
+      }, {})},
+      player_buildings: buildings.map((building) => ({...pick(building, ["building_id", "instance_id", "name", "owner_id", "position", "construction_complete", "rental_fees"]),
+        production: pick(record(building).production, ["maintenance_state", "maintenance_paused", "maintenance_days_remaining", "max_queue_slots"])})),
+      living_world: {...pick(living, ["capabilities", "commissions", "own_claims", "suggestion", "society"]),
+        project: living.project ?? {}, recent_projects: recent.slice(0, 2).map(projectBrief)},
+      detail_policy: "This is a compact conversation view. Inspect tools read the original complete snapshot, including plots, building recipes and active terms. Do not treat omitted detail as absence.",
+    },
+    global_public_events: context.global_public_events.slice(-3).map((event) => brief(pick(event, ["event_type", "game_minute", "actor_id", "payload"])) as Record<string, unknown>),
+    own_event_delta: context.own_event_delta.slice(-4).map((event) => brief(pick(event, ["event_type", "game_minute", "payload"])) as Record<string, unknown>),
+    known_actors: context.known_actors.slice(0, 16).map((actor) => brief(pick(actor, ["actor_id", "display_name", "public_role", "observable_status", "relationship"])) as Record<string, unknown>),
+    memories: context.memories.slice(0, 6).map((memory) => brief(pick(memory, ["summary", "kind", "game_minute", "payload"])) as Record<string, unknown>),
+  };
+}
+
 async function withProviderTimeout<T>(
   timeoutMs: number,
   externalSignal: AbortSignal | undefined,
@@ -74,7 +127,8 @@ export class OpenAICompatibleProvider {
     const systemContent = isDialogue
       ? "You are a game NPC Agent speaking directly with the player. Reply in character in one to three concise sentences. You may use local read tools, then optionally issue at most one authorized interaction command. Never perform farming, travel, harvesting, or market speculation during dialogue. A rental command is a request to queue production: while dialogue pauses the world, Godot defers and revalidates it after resume. Never describe a proposal, queued request, or processing order as completed goods. If you promise a trade or rental, issue the corresponding authorized command in this response; otherwise clearly say no operation was submitted. Never invent world assets."
       : "You are a game NPC Agent. You may use local read tools to inspect only the supplied context, then use zero to three authorized command tools in execution order. For farm3d, inspect actor_context.living_world and prefer submit_project for multi-step goals that you choose yourself. Choose milestones and budgets from resources and opportunities; decline uneconomic plans. Existing accepted projects execute without more model calls. Use no command when no action is needed. Put travel or build last. Never invent world assets.";
-    const {market_view: _marketView, ...promptContext} = context;
+    const {market_view: _marketView, ...fullPromptContext} = context;
+    const promptContext = isDialogue ? buildDialogueContext(context) : fullPromptContext;
     const userContent = isDialogue
       ? {context: promptContext, dialogue_input: request.dialogue_input ?? ""}
       : promptContext;
@@ -91,7 +145,7 @@ export class OpenAICompatibleProvider {
       const roundContext = {...promptContext, allowed_read_tools: availableReads};
       messages[1] = {role: "user", content: JSON.stringify(isDialogue
         ? {context: roundContext, dialogue_input: request.dialogue_input ?? ""} : roundContext)};
-      messages[0] = {role: "system", content: `${systemContent} You have at most two read-only rounds, with ${Math.max(0, 2 - readRounds)} remaining. Batch useful reads. Never mix read tools and command tools in one response. After reading, use only the current command tools or return no action. Keep analysis concise; do not repeatedly enumerate speculative plans. Context is a snapshot: commission deadlines may pass while you decide; Godot revalidates before spending.`};
+      messages[0] = {role: "system", content: `${systemContent} You have at most two read-only rounds, with ${Math.max(0, 2 - readRounds)} remaining. Batch useful reads. Never mix read tools and command tools in one response. After reading, use only the current command tools or return no action. Keep analysis concise; do not repeatedly enumerate speculative plans. Context is a snapshot: commission deadlines may pass while you decide; Godot revalidates before spending.${isDialogue ? " For greetings or questions about what you are doing, answer directly from your activity/project and recent events without tools. Inspect only when details are needed for this player's request; do not start an economic analysis during small talk." : ""}`};
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
         ...(isDialogue || corrections > 0 || timeoutRetried ? {enable_thinking: false} : {}),
@@ -115,9 +169,9 @@ export class OpenAICompatibleProvider {
       try {
         round = await this.#concurrencyGate.run(
           externalSignal,
-          () => withProviderTimeout(
+          (scheduledSignal) => withProviderTimeout(
             this.#config.timeoutMs,
-            externalSignal,
+            scheduledSignal,
             async (signal) => {
               const response = await fetch(endpoint, {
                 method: "POST",
@@ -134,6 +188,7 @@ export class OpenAICompatibleProvider {
               return {assembler: roundAssembler, rawOutput: roundAssembler.rawOutput()};
             },
           ),
+          isDialogue ? "dialogue" : "background",
         );
       } catch (error) {
         // No command has left this service yet. Retry one timed-out autonomous
@@ -190,9 +245,9 @@ export class OpenAICompatibleProvider {
     if (events.length === 0) throw new Error("memory_compaction_requires_events");
     const payload = await this.#concurrencyGate.run(
       undefined,
-      () => withProviderTimeout(
+      (scheduledSignal) => withProviderTimeout(
         this.#config.timeoutMs,
-        undefined,
+        scheduledSignal,
         async (signal) => {
           const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
             ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
