@@ -2,6 +2,7 @@ extends RefCounted
 
 const VERSION := 1
 var _activities: Dictionary = {}
+var completion_guard: Callable
 
 
 func start(agent_id: String, kind: String, activity_id: String, started_minute: int, complete_at_minute: int, payload: Dictionary) -> bool:
@@ -27,7 +28,13 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 		var record: Dictionary = _activities[activity_id]
 		if record.status != "in_progress" or int(record.complete_at_minute) > game_minute:
 			continue
-		record.status = "completed"
+		var result := {"ready": true, "ok": true}
+		if record.payload.get("physical", false):
+			if not completion_guard.is_valid(): continue
+			result = completion_guard.call(record, game_minute)
+			if not result.get("ready", false): continue
+		record.status = "completed" if result.get("ok", false) else "failed"
+		if not result.get("ok", false): record.payload.error = str(result.get("error", "activity_failed"))
 		record["completed_minute"] = game_minute
 		completed.append(record.duplicate(true))
 	return completed
@@ -41,6 +48,7 @@ func from_dict(value: Dictionary) -> bool:
 	if value.get("version") != VERSION or not value.get("activities") is Dictionary:
 		return false
 	var candidate: Dictionary = {}
+	var occupied := {}
 	for id_value in (value.activities as Dictionary).keys():
 		var record_value: Variant = value.activities[id_value]
 		if not record_value is Dictionary:
@@ -49,6 +57,20 @@ func from_dict(value: Dictionary) -> bool:
 		var activity_id := str(id_value)
 		if activity_id.is_empty() or str(record.get("activity_id", "")) != activity_id or str(record.get("agent_id", "")).is_empty() or not ["in_progress", "completed", "failed"].has(str(record.get("status", ""))):
 			return false
+		if record.status == "in_progress":
+			if occupied.has(record.agent_id): return false
+			occupied[record.agent_id] = true
+		if not record.get("payload") is Dictionary: return false
+		if record.payload.get("physical", false):
+			var rules = preload("res://scripts/systems/npc_project_system.gd")
+			var p: Dictionary = record.payload
+			if record.get("kind") not in ["travel", "survey"] or not rules._count(record.get("started_minute"), 0, 9007199254740991) or not rules._count(record.get("complete_at_minute"), int(record.started_minute), 9007199254740991): return false
+			if not p.get("target") is Dictionary or p.target.size() != 2 or not rules._number(p.target.get("x"), -176, 80) or not rules._number(p.target.get("z"), -80, 144) or not p.get("region_id") is String: return false
+			for field in ["worked", "last_minute", "deadline"]:
+				if not rules._count(p.get(field), 0, 9007199254740991): return false
+			if record.status == "completed":
+				if not rules._count(record.get("completed_minute"), int(record.complete_at_minute), 9007199254740991): return false
+				if record.kind == "survey" and (int(p.worked) < 20 or not rules._id(p.get("discovery_id"))): return false
 		candidate[activity_id] = record.duplicate(true)
 	_activities = candidate
 	return true

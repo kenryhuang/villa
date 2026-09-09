@@ -5,12 +5,27 @@
     "display_name": "阿禾",
     "role_id": "farmer",
     "soul": {
-      "traits": ["踏实", "耐心", "略保守"],
-      "values": ["土地可持续", "粮食储备", "稳定收益"],
+      "traits": [
+        "踏实",
+        "耐心",
+        "略保守"
+      ],
+      "values": [
+        "土地可持续",
+        "粮食储备",
+        "稳定收益"
+      ],
       "speech_style": "朴素、友善、简洁",
       "risk_tolerance": 0.3
     },
-    "initial_resources": {"gold": 500, "inventory": {"grain_seed": 8, "carrot_seed": 6, "potato_seed": 6}}
+    "initial_resources": {
+      "gold": 500,
+      "inventory": {
+        "grain_seed": 8,
+        "carrot_seed": 6,
+        "potato_seed": 6
+      }
+    }
   },
   {
     "agent_id": "lao_li",
@@ -18,12 +33,22 @@
     "display_name": "老李",
     "role_id": "merchant",
     "soul": {
-      "traits": ["精明", "健谈", "风险适中"],
-      "values": ["持续利润", "关键库存", "人情关系"],
+      "traits": [
+        "精明",
+        "健谈",
+        "风险适中"
+      ],
+      "values": [
+        "持续利润",
+        "关键库存",
+        "人情关系"
+      ],
       "speech_style": "常联系库存、价格与人情",
       "risk_tolerance": 0.55
     },
-    "initial_resources": {"resource_ledger": "npc_economy"}
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
   },
   {
     "agent_id": "xuezhe_lin",
@@ -31,11 +56,784 @@
     "display_name": "学者林",
     "role_id": "explorer",
     "soul": {
-      "traits": ["好奇", "严谨", "谨慎"],
-      "values": ["可靠证据", "新发现", "知识共享"],
+      "traits": [
+        "好奇",
+        "严谨",
+        "谨慎"
+      ],
+      "values": [
+        "可靠证据",
+        "新发现",
+        "知识共享"
+      ],
       "speech_style": "先陈述证据，再表达判断",
       "risk_tolerance": 0.4
     },
-    "initial_resources": {"resource_ledger": "npc_economy", "inventory_add": {"rope": 2, "bread": 2}}
+    "initial_resources": {
+      "resource_ledger": "npc_economy",
+      "inventory_add": {
+        "rope": 2,
+        "bread": 2
+      }
+    }
+  },
+  {
+    "agent_id": "xiao_hua",
+    "npc_id": "xiao_hua",
+    "display_name": "小花",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "tiejiang_zhang",
+    "npc_id": "tiejiang_zhang",
+    "display_name": "铁匠张",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "谨慎",
+        "重视手艺"
+      ],
+      "values": [
+        "设施维护",
+        "筹料自建工坊",
+        "合理加工费"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "afu_shui",
+    "npc_id": "afu_shui",
+    "display_name": "阿水",
+    "role_id": "explorer",
+    "background": true,
+    "soul": {
+      "traits": [
+        "熟悉湖岸",
+        "乐于合作"
+      ],
+      "values": [
+        "可靠水域观察",
+        "有限样本",
+        "组织钓鱼观赛"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_mei",
+    "npc_id": "resident_mei",
+    "display_name": "阿梅",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_zhou",
+    "npc_id": "resident_zhou",
+    "display_name": "小周",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_chen",
+    "npc_id": "resident_chen",
+    "display_name": "老陈",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_yun",
+    "npc_id": "resident_yun",
+    "display_name": "云姐",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "细心",
+        "热爱烹饪"
+      ],
+      "values": [
+        "食品品质",
+        "加工利润",
+        "学习原料选配"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_shan",
+    "npc_id": "resident_shan",
+    "display_name": "阿山",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_xiu",
+    "npc_id": "resident_xiu",
+    "display_name": "阿秀",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_13",
+    "npc_id": "resident_13",
+    "display_name": "小桐",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_14",
+    "npc_id": "resident_14",
+    "display_name": "阿松",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_15",
+    "npc_id": "resident_15",
+    "display_name": "小荷",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_16",
+    "npc_id": "resident_16",
+    "display_name": "阿枫",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_17",
+    "npc_id": "resident_17",
+    "display_name": "小岚",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_18",
+    "npc_id": "resident_18",
+    "display_name": "阿朴",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_19",
+    "npc_id": "resident_19",
+    "display_name": "青竹",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_20",
+    "npc_id": "resident_20",
+    "display_name": "小溪",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_21",
+    "npc_id": "resident_21",
+    "display_name": "阿梨",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_22",
+    "npc_id": "resident_22",
+    "display_name": "小杏",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_23",
+    "npc_id": "resident_23",
+    "display_name": "小穗",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_24",
+    "npc_id": "resident_24",
+    "display_name": "阿良",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_25",
+    "npc_id": "resident_25",
+    "display_name": "阿陶",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_26",
+    "npc_id": "resident_26",
+    "display_name": "小禾",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_27",
+    "npc_id": "resident_27",
+    "display_name": "阿岩",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_28",
+    "npc_id": "resident_28",
+    "display_name": "小榆",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_29",
+    "npc_id": "resident_29",
+    "display_name": "阿宁",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_30",
+    "npc_id": "resident_30",
+    "display_name": "小晨",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_31",
+    "npc_id": "resident_31",
+    "display_name": "阿舟",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_32",
+    "npc_id": "resident_32",
+    "display_name": "小满",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_33",
+    "npc_id": "resident_33",
+    "display_name": "阿棠",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_34",
+    "npc_id": "resident_34",
+    "display_name": "小秋",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_35",
+    "npc_id": "resident_35",
+    "display_name": "阿青",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
+  },
+  {
+    "agent_id": "resident_36",
+    "npc_id": "resident_36",
+    "display_name": "小麦",
+    "role_id": "merchant",
+    "background": true,
+    "soul": {
+      "traits": [
+        "务实",
+        "重视生活余暇"
+      ],
+      "values": [
+        "保留伙食钱",
+        "按时履行工作",
+        "量力参与活动"
+      ],
+      "speech_style": "用简洁的话说明自己的目标、报价和约束",
+      "risk_tolerance": 0.35
+    },
+    "initial_resources": {
+      "resource_ledger": "npc_economy"
+    }
   }
 ]

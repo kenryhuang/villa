@@ -83,6 +83,7 @@ func accept_event(event: Dictionary) -> bool:
 			(record.tool_deltas as Array).append(payload.duplicate(true))
 		"provider.output":
 			record.output = payload.duplicate(true)
+			record.provider_rounds.append({"usage": payload.get("usage", {}).duplicate(true), "metrics": payload.get("metrics", {}).duplicate(true)})
 		"decision.final":
 			record.final = payload.duplicate(true)
 		"stream.completed":
@@ -234,6 +235,7 @@ func _append_record(
 		"content_parts": [],
 		"tool_deltas": [],
 		"output": {},
+		"provider_rounds": [],
 		"final": {},
 		"error": {},
 		"cancellation": {},
@@ -273,6 +275,7 @@ func _disk_record(record: Dictionary) -> Dictionary:
 			"content": str(materialized.content),
 			"tool_call_deltas": (materialized.tool_deltas as Array).duplicate(true),
 			"provider_output": (materialized.output as Dictionary).duplicate(true),
+			"provider_rounds": materialized.get("provider_rounds", []).duplicate(true),
 			"decision": (materialized.final as Dictionary).duplicate(true),
 			"error": (materialized.error as Dictionary).duplicate(true),
 			"cancellation": (materialized.cancellation as Dictionary).duplicate(true),

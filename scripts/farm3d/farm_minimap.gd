@@ -86,6 +86,21 @@ func _draw() -> void:
 	draw_rect(Rect2(farm - farm_half, farm_half * 2), Color("dfcf9470"), false, 1.0)
 	_map_label("农庄", Vector3(0, 0, -17))
 	if is_instance_valid(session):
+		if session.living_world != null:
+			var cooperative: VisibleNpcFarmSystem = session.living_world.society.cooperative
+			if cooperative != null:
+				var field: GridCell = cooperative.get_plot_cell("village_coop", 40)
+				_map_label("合作社", field.world_position_3d())
+			for e in session.living_world.social.context().events:
+				var site := Vector3(e.site.x, 0, e.site.z)
+				draw_circle(world_to_map(site), 5, Color("e9a5dc"), false, 2)
+				_map_label("活动", site + Vector3(0, 0, 9))
+			if not session.living_world.environment.route_open():
+				draw_circle(world_to_map(session.living_world.environment.SITE), 5, Color("ef9c70"), false, 2)
+		if session.living_world != null and session.living_world.knowledge != null:
+			for report in session.living_world.knowledge.cards("player", true).reports:
+				var marker := world_to_map(Vector3(report.position.x, 0, report.position.z))
+				draw_circle(marker, 4, Color("b0e88c") if session.living_world.knowledge.fresh(report.id) else Color("8d918a"), false, 1.5)
 		if is_instance_valid(session.agent_runtime):
 			for actor in session.agent_runtime.farm3d_actors.values():
 				if is_instance_valid(actor):

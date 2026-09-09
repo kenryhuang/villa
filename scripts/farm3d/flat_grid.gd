@@ -82,7 +82,22 @@ func is_navigation_cell_walkable(cell: Vector2i) -> bool:
 	if cell.x <= MIN_GX or cell.x >= MAX_GX-1 or cell.y <= MIN_GZ or cell.y >= MAX_GZ-1:
 		return false
 	var data := get_cell(cell.x,cell.y)
-	return data != null and _state_is_navigation_walkable(data.state) and not is_navigation_cell_blocked(cell)
+	if data == null or is_navigation_cell_blocked(cell): return false
+	if _state_is_navigation_walkable(data.state): return true
+	# Decoration also marks land that cannot be farmed/built on. Gentle hills,
+	# bridges and golf turf are still physically walkable; trunks/water are not.
+	if data.state != GridCell.State.DECORATION: return false
+	var point := data.world_position()
+	if Profile.is_original_core(point.x, point.y): return false
+	if Profile.is_bridge(point.x, point.y): return true
+	if Profile.is_water(point.x, point.y) or data.slope > 1.0: return false
+	for tree in Profile.TREES:
+		if point.distance_to(tree) < 1.15: return false
+	if Profile.Golf.contains(point):
+		if Profile.Golf.surface(point) == "water": return false
+		for tree in Profile.Golf.TREES:
+			if point.distance_to(Vector2(tree.x, tree.y)) < .6 * tree.z + .5: return false
+	return true
 
 
 func _sync_farmland_visual(cell: GridCell) -> void:

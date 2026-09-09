@@ -8,6 +8,7 @@ func run(assertions: TestAssert) -> void:
 	_test_fragmented_utf8_and_sequence(assertions)
 	_test_terminal_validation(assertions)
 	_test_memory_trace(assertions)
+	_test_round_metrics(assertions)
 	_test_ndjson_and_retention(assertions)
 
 
@@ -71,6 +72,21 @@ func _test_memory_trace(assertions: TestAssert) -> void:
 	assertions.equal(trace.get_log_path(), "", "memory-only trace creates no file")
 	trace.free()
 
+
+func _test_round_metrics(assertions: TestAssert) -> void:
+	var trace = AgentSessionTraceScript.new()
+	trace.configure(false, "metrics")
+	trace.accept_event(_event_value("stream.started", 1, {"trigger": "schedule"}))
+	trace.accept_event(_event_value("provider.output", 2, {"usage": {"total_tokens": 30}, "metrics": {"queue_wait_ms": 4}}))
+	trace.accept_event(_event_value("provider.output", 3, {"usage": {"total_tokens": 50}, "metrics": {"queue_wait_ms": 2}}))
+	trace.accept_event(_event_value("stream.completed", 4, {}))
+	trace.accept_event(_event_value("provider.output", 5, {"usage": {"total_tokens": 999}}))
+	var record: Dictionary = trace.get_request("request-1")
+	assertions.equal(record.provider_rounds.size(), 2, "Retains read and decision round usage without late duplicate output")
+	assertions.equal(int(record.provider_rounds[0].usage.total_tokens) + int(record.provider_rounds[1].usage.total_tokens), 80, "Total usage includes read-tool rounds")
+	assertions.equal(record.provider_rounds[0].metrics.queue_wait_ms, 4, "Provider queue wait remains a separate measurement")
+	assertions.equal(trace._disk_record(record).response.provider_rounds, record.provider_rounds, "Per-round metrics persist in the trace")
+	trace.free()
 
 func _test_ndjson_and_retention(assertions: TestAssert) -> void:
 	var directory := "user://agent-session-test-%d" % Time.get_ticks_usec()

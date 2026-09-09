@@ -1,10 +1,16 @@
 class_name GridPathfinder
 extends RefCounted
 
+static var _shared_grid: WeakRef
+static var _shared_revision := -1
+static var _shared_astar: AStarGrid2D
+static var _shared_components := {}
+
 var _grid: GridSystem
 var _astar := AStarGrid2D.new()
 var _built_revision := -1
 var _rebuild_count := 0
+var _components: Dictionary = {}
 
 
 func configure(grid: GridSystem) -> bool:
@@ -49,6 +55,7 @@ func find_path_cells(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 		or not _grid.is_navigation_cell_walkable(goal)
 	):
 		return empty
+	if _components.get(start, -1) != _components.get(goal, -2): return empty
 	return _astar.get_id_path(start, goal)
 
 
@@ -76,6 +83,7 @@ func find_path_to_interaction(
 			var candidate := Vector2i(gx, gz)
 			if candidate == target_cell or not _grid.is_navigation_cell_walkable(candidate):
 				continue
+			if _components.get(start, -1) != _components.get(candidate, -2): continue
 			var candidate_world := _grid.grid_to_world(gx, gz)
 			var flat_distance := candidate_world.distance_to(
 				Vector2(target_position.x, target_position.z)
@@ -108,6 +116,9 @@ func find_path_to_interaction(
 func _ensure_built() -> void:
 	if _grid == null or _built_revision == _grid.get_navigation_revision():
 		return
+	if _shared_grid != null and _shared_grid.get_ref() == _grid and _shared_revision == _grid.get_navigation_revision():
+		_astar = _shared_astar; _components = _shared_components; _built_revision = _shared_revision; _rebuild_count += 1
+		return
 	_astar = AStarGrid2D.new()
 	var bounds := Rect2i(0, 0, GridSystem.GRID_WIDTH, GridSystem.GRID_DEPTH)
 	if _grid.has_method("get_navigation_bounds"):
@@ -116,11 +127,28 @@ func _ensure_built() -> void:
 	_astar.cell_size = Vector2.ONE * GridSystem.CELL_SIZE
 	_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_astar.update()
+	var free := {}
 	for gz in range(bounds.position.y, bounds.end.y):
 		for gx in range(bounds.position.x, bounds.end.x):
 			var cell := Vector2i(gx, gz)
-			_astar.set_point_solid(cell, not _grid.is_navigation_cell_walkable(cell))
+			var solid := not _grid.is_navigation_cell_walkable(cell)
+			_astar.set_point_solid(cell, solid)
+			if not solid: free[cell] = true
+	_components = {}
+	var component := 0
+	for origin in free:
+		if _components.has(origin): continue
+		component += 1
+		var queue := [origin]
+		_components[origin] = component
+		var cursor := 0
+		while cursor < queue.size():
+			var current: Vector2i = queue[cursor]; cursor += 1
+			for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				var next: Vector2i = current + offset
+				if free.has(next) and not _components.has(next): _components[next] = component; queue.append(next)
 	_built_revision = _grid.get_navigation_revision()
+	_shared_grid = weakref(_grid); _shared_revision = _built_revision; _shared_astar = _astar; _shared_components = _components
 	_rebuild_count += 1
 
 

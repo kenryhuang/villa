@@ -65,6 +65,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	_test_loaded_maintenance_refreshes_greenhouse_on_cursor_sync(assertions)
 	_test_beehive_flowers_and_storage_pause(assertions)
 	_test_beehive_flower_ownership(assertions)
+	_test_beehive_distance_cycles(assertions)
 	_test_coop_feed_is_atomic(assertions)
 	_test_waterwheel_geometry_and_daily_order(assertions)
 	_test_maintenance_disables_and_restores_daily_coverage(assertions)
@@ -147,7 +148,7 @@ func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
 		_add_mature_flower(grid, position)
 	production.register_building(hive)
 	assertions.equal(production.count_nearby_mature_flowers(hive), 4, "hive counts Euclidean-radius mature flowers and caps at four")
-	production.finish_daily_outputs(2)
+	production.advance_minutes(int(production.get_beehive_snapshot(hive).remaining_minutes))
 	assertions.equal(hive.producer_state.outputs, {"honey": 2, "beeswax": 1}, "boosted hive output is stored")
 	production.finish_daily_outputs(2)
 	assertions.equal(hive.producer_state.outputs, {"honey": 2, "beeswax": 1}, "same-day hive settlement is idempotent")
@@ -159,7 +160,7 @@ func _test_beehive_flowers_and_storage_pause(assertions: TestAssert) -> void:
 	_add_mature_flower(grid, Vector2i(21, 19))
 	_add_mature_flower(grid, Vector2i(21, 20))
 	production.register_building(blocked)
-	production.finish_daily_outputs(4)
+	production.advance_minutes(int(production.get_beehive_snapshot(blocked).remaining_minutes))
 	assertions.equal(blocked.producer_state.outputs, {"honey": 1, "wood": 1, "stone": 1}, "full hive storage pauses the complete output without loss")
 
 
@@ -172,10 +173,48 @@ func _test_beehive_flower_ownership(assertions: TestAssert) -> void:
 	_add_mature_flower(grid, Vector2i(12, 10), "rose")
 	for hive in [far_hive, nearest_hive, second_hive]:
 		production.register_building(hive)
-	production.finish_daily_outputs(2)
+	production.advance_minutes(maxi(int(production.get_beehive_snapshot(nearest_hive).remaining_minutes),int(production.get_beehive_snapshot(second_hive).remaining_minutes)))
 	assertions.equal(nearest_hive.producer_state.outputs, {"honey": 1}, "nearest hive owns the shared flower")
 	assertions.equal(second_hive.producer_state.outputs, {"honey": 1}, "second-nearest hive also owns the shared flower")
 	assertions.equal(far_hive.producer_state.outputs, {}, "one flower never feeds a third hive")
+
+
+func _test_beehive_distance_cycles(assertions: TestAssert) -> void:
+	var grid := _grid()
+	var production := _production(grid,_farming(grid))
+	var hive := _building("beehive",4,10,true)
+	_add_mature_flower(grid,Vector2i(7,11),"rose")
+	production.register_building(hive)
+	var nearby := production.get_beehive_snapshot(hive)
+	assertions.equal(nearby.average_distance,2.0,"Distance is measured from hive center, outside its footprint")
+	production.advance_minutes(100)
+	assertions.equal(hive.producer_state.beehive_cycle.elapsed_minutes,100,"Honey accumulates real game minutes")
+	var saved := hive.producer_state.to_dict()
+	var restored := ProducerStateScript.new()
+	assertions.truthy(restored.from_dict(saved) and restored.beehive_cycle == hive.producer_state.beehive_cycle,"Partial nectar batch survives producer serialization")
+	var legacy := saved.duplicate(true)
+	legacy.erase("beehive_cycle")
+	assertions.truthy(restored.from_dict(legacy) and restored.beehive_cycle.elapsed_minutes==0,"Old honey storage loads with a fresh timed cycle")
+	var malformed := saved.duplicate(true)
+	malformed.beehive_cycle.elapsed_minutes = -1
+	assertions.truthy(not restored.from_dict(malformed),"Invalid cycle timing cannot enter a save")
+	grid.get_cell(7,11).state = GridCell.State.FARMLAND
+	_add_mature_flower(grid,Vector2i(17,11),"rose")
+	var distant := production.get_beehive_snapshot(hive)
+	assertions.equal(distant.flower_count,1,"Bees discover flowers twelve cells away")
+	assertions.truthy(distant.duration_minutes > nearby.duration_minutes,"Longer foraging distance increases honey production time")
+	production.advance_minutes(int(nearby.duration_minutes))
+	assertions.equal(hive.producer_state.outputs,{},"Distant nectar cannot finish in the time a near flower takes")
+	assertions.equal(hive.producer_state.beehive_cycle.elapsed_minutes,nearby.duration_minutes,"Changing flowers resets progress instead of transferring old nectar")
+	production.advance_minutes(int(production.get_beehive_snapshot(hive).remaining_minutes))
+	assertions.equal(hive.producer_state.outputs,{"honey":1},"Far flowers produce once their longer cycle finishes")
+	production.finish_daily_outputs(2)
+	assertions.equal(hive.producer_state.outputs,{"honey":1},"Day rollover does not produce extra honey")
+	grid.get_cell(17,11).state = GridCell.State.FARMLAND
+	_add_mature_flower(grid,Vector2i(31,11),"rose")
+	production.advance_minutes(10000)
+	assertions.equal(hive.producer_state.outputs,{"honey":1},"Flowers outside the 24-cell radius cannot produce")
+	assertions.equal(hive.producer_state.beehive_cycle.elapsed_minutes,0,"Removing all usable flowers discards incomplete nectar progress")
 
 
 func _test_coop_feed_is_atomic(assertions: TestAssert) -> void:
@@ -239,7 +278,7 @@ func _test_waterwheel_geometry_and_daily_order(assertions: TestAssert) -> void:
 	assertions.truthy(irrigated.has(Vector2i(14, 10)), "Euclidean radius four includes near valid farm cell")
 	assertions.truthy(not irrigated.has(Vector2i(15, 10)), "Euclidean radius four excludes distant farm cell")
 	production.apply_daily_effects(2)
-	assertions.truthy(near.watered and near.crop_instance.is_watered_today, "waterwheel waters planted cells before growth")
+	assertions.truthy(farming.is_automatically_irrigated_cell(near), "waterwheel supplies automatic irrigation before growth")
 	assertions.truthy(not distant.watered, "waterwheel leaves distant cells dry")
 	farming.advance_growth_minutes(1)
 	assertions.near(near.crop_instance.growth_progress, 1.5, 0.001, "waterwheel irrigation affects same-day crop growth")
@@ -265,13 +304,13 @@ func _test_maintenance_disables_and_restores_daily_coverage(assertions: TestAsse
 	assertions.truthy(production.set_maintenance_due_day(wheel, 2), "wheel maintenance fixture sets due day")
 	assertions.truthy(production.set_maintenance_due_day(greenhouse, 2), "greenhouse maintenance fixture sets due day")
 	production.apply_daily_effects(1)
-	assertions.truthy(irrigated.watered, "waterwheel coverage remains active before due day")
+	assertions.truthy(farming.is_automatically_irrigated_cell(irrigated), "waterwheel coverage remains active before due day")
 	var greenhouse_cell := production.get_greenhouse_cells(greenhouse)[0]
 	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "greenhouse coverage remains active before due day")
 	farming.on_day_changed(1)
 	irrigated.watered = false
 	production.apply_daily_effects(2)
-	assertions.truthy(not irrigated.watered, "waterwheel coverage stops on maintenance due day")
+	assertions.truthy(not farming.is_automatically_irrigated_cell(irrigated), "waterwheel coverage stops on maintenance due day")
 	assertions.truthy(not farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "greenhouse season coverage stops on maintenance due day")
 	var inventory := _inventory()
 	inventory.add_item("wood", 2)
@@ -282,7 +321,7 @@ func _test_maintenance_disables_and_restores_daily_coverage(assertions: TestAsse
 	production.advance_repair_time(ProductionSystemScript.REPAIR_DURATION_SECONDS)
 	assertions.truthy(farming.is_greenhouse_cell(grid.get_cell(greenhouse_cell.x, greenhouse_cell.y)), "maintenance immediately restores greenhouse coverage")
 	production.apply_daily_effects(3)
-	assertions.truthy(irrigated.watered, "maintenance restores waterwheel coverage next day")
+	assertions.truthy(farming.is_automatically_irrigated_cell(irrigated), "maintenance restores waterwheel coverage next day")
 
 
 func _test_waterwheel_placement_rule(assertions: TestAssert, tree: SceneTree) -> void:

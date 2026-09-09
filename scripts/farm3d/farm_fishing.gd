@@ -22,6 +22,7 @@ var visual: Node3D
 var elapsed := 0.0
 var duration := 0.0
 var catch_id := ""
+var gameplay_id := ""
 var rng := RandomNumberGenerator.new()
 var _session: Node
 var _player: Farm3DPlayer
@@ -92,9 +93,13 @@ func _cast() -> Dictionary:
 	if _reservation == null:
 		_hud.notify_message("背包已满，请腾出渔获空间后再甩竿",false)
 		return {"ok":false,"reason":"inventory_full"}
-	_will_bite = rng.randf() < BITE_CHANCE
+	gameplay_id = _session.living_world.social.begin_gameplay("fishing")
+	_will_bite = rng.randf() < bite_chance()
 	_transition(State.CASTING,CAST_TIME)
 	return {"ok":true,"reason":""}
+
+func bite_chance() -> float:
+	return .82 if _session.living_world != null and _session.living_world.environment.raining() else BITE_CHANCE
 
 func _process(delta: float) -> void:
 	if _session == null:
@@ -144,6 +149,7 @@ func _settle_catch() -> void:
 		_session.inventory.release_item_capacity_reservation(token)
 		_hud.notify_message("渔获未能入包，请检查背包后重试",false)
 		return
+	_session.living_world.social.finish_gameplay(gameplay_id, "fishing", {"item_id": catch_id, "quantity": 1})
 	_hud.notify_message("钓到%s ×1，已收进背包" % _session.item_name(catch_id),true)
 	if _session.auto_save:
 		_session.save_game()

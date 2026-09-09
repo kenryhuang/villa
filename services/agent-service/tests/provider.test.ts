@@ -83,7 +83,7 @@ test("sends credentials only in the header and accepts one role tool", async () 
   };
   assert.equal(providerBody.tool_choice, "auto");
   assert.equal(providerBody.stream, true);
-  assert.equal(Object.hasOwn(providerBody, "enable_thinking"), false);
+  assert.equal(providerBody.enable_thinking, true);
   const sentContext = JSON.parse(providerBody.messages.find((message) => message.role === "user")?.content || "{}") as Record<string, unknown>;
   assert.deepEqual(sentContext.market_summary, request.market_summary);
   assert.equal(Object.hasOwn(sentContext, "market_view"), false);

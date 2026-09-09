@@ -9,8 +9,10 @@ var scores: Array[int] = []
 var ball := Course.HOLES[0].tee as Vector2
 var best := 0
 var layout_changed := false
+var gameplay_id := ""
 
 func start() -> void:
+	gameplay_id = ""
 	active = true
 	hole = 0
 	strokes = 0
@@ -28,13 +30,15 @@ func complete_hole() -> void:
 		best = total if best == 0 else mini(best,total)
 
 func to_dict() -> Dictionary:
-	return {"course_version":Course.VERSION,"active":active,"hole":hole,"strokes":strokes,"scores":scores.duplicate(),"ball":{"x":ball.x,"z":ball.y},"best":best}
+	return {"gameplay_id": gameplay_id, "course_version":Course.VERSION,"active":active,"hole":hole,"strokes":strokes,"scores":scores.duplicate(),"ball":{"x":ball.x,"z":ball.y},"best":best}
 
 static func valid(value: Variant) -> bool:
-	if not value is Dictionary or value.size() not in [6,7]:
+	if not value is Dictionary or value.size() not in [6,7,8]:
 		return false
+	if value.size() == 8 and not value.has("gameplay_id"): return false
+	if value.has("gameplay_id") and (not value.gameplay_id is String or value.gameplay_id.length() > 80): return false
 	var legacy: bool = not value.has("course_version")
-	if (legacy and value.size() != 6) or (not legacy and (value.size() != 7 or not _integer(value.course_version) or int(value.course_version) != Course.VERSION)): return false
+	if (legacy and value.size() != 6) or (not legacy and (value.size() not in [7,8] or not _integer(value.course_version) or int(value.course_version) != Course.VERSION)): return false
 	var count := 3 if legacy else Course.HOLES.size()
 	if not value.get("active") is bool or not value.get("scores") is Array or not value.get("ball") is Dictionary:
 		return false
@@ -68,6 +72,7 @@ func restore(value: Dictionary) -> bool:
 		active = bool(value.active)
 		best = 0
 		return true
+	gameplay_id = str(value.get("gameplay_id", ""))
 	layout_changed = false
 	active = value.active
 	hole = int(value.hole)

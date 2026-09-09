@@ -112,7 +112,7 @@ func advance() -> void:
 			t.status = "returning" if t.status == "delivering" else "refund_pending"
 			t.movement = {}
 		if t.status == "queued":
-			if not running(t.actor_id).is_empty() or world.session.agent_runtime.farm_registry.has_pending_work(t.actor_id): continue
+			if not running(t.actor_id).is_empty() or world.work.owns_schedule(t.actor_id) or world.session.agent_runtime.farm_registry.has_pending_work(t.actor_id): continue
 			var p: Dictionary = world.projects.active(t.actor_id)
 			if not p.is_empty():
 				if t.terms.schedule == "queue" or not _interruptible(p, t.terms.schedule): continue

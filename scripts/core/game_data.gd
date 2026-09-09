@@ -272,9 +272,9 @@ const BUILDINGS := {
 		"category": "farming", "palette_order": 20,
 		"footprint_x": 3, "footprint_z": 3,
 		"cost": {"wood": 15},
-		"description": "产蜂蜜，加速附近花卉生长",
+		"description": "24 格内成熟花卉酿蜜，越远越慢；产物归花田主人",
 		"effect": "honey", "effect_value": 0,
-		"effect_config": {"flower_radius": 4, "flower_cap": 4, "output_capacity": 3, "storage_quantity_capacity": 6},
+		"effect_config": {"flower_radius": 24, "flower_cap": 4, "honey_base_minutes": 1080, "honey_minutes_per_cell": 270, "output_capacity": 3, "storage_quantity_capacity": 6},
 		"production_yard": {"size": Vector2i(3, 3), "structure_footprint": Vector2i(1, 1), "style": "timber", "building_offset_z": -0.35, "output_capacity": 6},
 	},
 	"well": {

@@ -1,6 +1,7 @@
 import type { AgentContext, AgentDefinition } from "./agents.ts";
 import type { ProviderConfig } from "./config.ts";
 import type { MemoryEvent } from "./memory.ts";
+import {existsSync, readFileSync, writeFileSync, renameSync} from "node:fs";
 import type { ActionIntent, DecisionRequest } from "./protocol.ts";
 import {ProviderConcurrencyGate} from "./provider_concurrency_gate.ts";
 import {
@@ -12,9 +13,9 @@ import {
 import {executeReadTool, readToolDescription, toolDescription, toolArgumentErrors} from "./tool_contracts.ts";
 
 const DIALOGUE_COMMANDS = new Set([
-  "send_message", "propose_trade", "counter_trade", "accept_trade", "reject_trade",
+  "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "send_message", "propose_trade", "counter_trade", "accept_trade", "reject_trade",
   "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation",
-  "public_food_plan", "public_wait", "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "rent_production", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
+  "public_food_plan", "public_wait", "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "rent_production", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
 ]);
 
 function record(value: unknown): Record<string, unknown> {
@@ -52,14 +53,14 @@ export function buildDialogueContext(context: AgentContext): Omit<AgentContext, 
   const own = context.known_actors.find((entry) => entry.actor_id === context.agent.agent_id);
   return {...base,
     actor_context: {
-      ...pick(actor, ["self", "relationships", "world_map", "crop_options", "characters"]),
+      ...pick(actor, ["self", "relationships", "world_map", "crop_options", "characters", "exploration", "environment", "social"]),
       current_activity: brief(pick(own, ["observable_status", "current_public_state"])),
       farm_summary: {plot_count: plots.length, states: plots.reduce((counts: Record<string, number>, plot: unknown) => {
         const state = String(record(plot).state ?? "unknown"); counts[state] = (counts[state] ?? 0) + 1; return counts;
       }, {})},
       player_buildings: buildings.map((building) => ({...pick(building, ["building_id", "instance_id", "name", "owner_id", "position", "construction_complete", "rental_fees"]),
         production: pick(record(building).production, ["maintenance_state", "maintenance_paused", "maintenance_days_remaining", "max_queue_slots"])})),
-      living_world: {...pick(living, ["capabilities", "commissions", "own_claims", "suggestion", "society", "interruptions"]),
+      living_world: {...pick(living, ["capabilities", "commissions", "own_claims", "suggestion", "society", "interruptions", "work"]),
         project: living.project ?? {}, recent_projects: recent.slice(0, 2).map(projectBrief)},
       detail_policy: "This is a compact conversation view. Inspect tools read the original complete snapshot, including plots, building recipes and active terms. Do not treat omitted detail as absence.",
     },
@@ -103,10 +104,38 @@ async function withProviderTimeout<T>(
 export class OpenAICompatibleProvider {
   readonly #config: ProviderConfig;
   readonly #concurrencyGate: ProviderConcurrencyGate;
+  readonly #dailyUsage = new Map<string, {day: number; reserved: number}>();
+  readonly #budgetPath?: string;
 
-  constructor(config: ProviderConfig) {
+  #reserveTokens(request: Pick<DecisionRequest, "session_id" | "game_minute">, body: Record<string, unknown>): void {
+    const day = Math.floor(request.game_minute / 1080);
+    const key = request.session_id;
+    const previous = this.#dailyUsage.get(key);
+    const usage = previous && day <= previous.day ? previous : {day, reserved: 0};
+    // UTF-8 bytes conservatively bound visible prompt tokens. Reserve completion
+    // capacity and template overhead before every network round, including retries.
+    const upperBound = new TextEncoder().encode(JSON.stringify(body)).length + Number(body.max_tokens ?? 16384) + 8192;
+    if (usage.reserved + upperBound > 8_000_000) throw new Error("provider_daily_budget_exhausted");
+    usage.reserved += upperBound;
+    this.#dailyUsage.set(key, usage);
+    if (this.#budgetPath) {
+      writeFileSync(this.#budgetPath + ".tmp", JSON.stringify(Object.fromEntries(this.#dailyUsage), null, 2) + "\n");
+      renameSync(this.#budgetPath + ".tmp", this.#budgetPath);
+    }
+  }
+
+  constructor(config: ProviderConfig, budgetPath?: string) {
     this.#config = config;
     this.#concurrencyGate = new ProviderConcurrencyGate(config.maxConcurrency);
+    this.#budgetPath = budgetPath;
+    if (budgetPath && existsSync(budgetPath)) {
+      const saved = JSON.parse(readFileSync(budgetPath, "utf8"));
+      for (const [id, value] of Object.entries(saved)) {
+        const row = record(value);
+        if (!Number.isSafeInteger(row.day) || Number(row.day) < 0 || !Number.isSafeInteger(row.reserved) || Number(row.reserved) < 0 || Number(row.reserved) > 8_000_000) throw new Error("provider_budget_store_invalid");
+        this.#dailyUsage.set(id, {day: Number(row.day), reserved: Number(row.reserved)});
+      }
+    }
   }
 
   async decide(request: DecisionRequest, context: AgentContext): Promise<ActionIntent> {
@@ -122,14 +151,41 @@ export class OpenAICompatibleProvider {
     const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
       ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
     const isDialogue = request.trigger === "dialogue";
+    const work = record(record(context.actor_context.living_world).work);
+    const pendingWork = Array.isArray(work.contracts) && work.contracts.some((value) => {
+      const c = record(value), terms = record(c.terms);
+      return c.status === "proposed" && [c.employer, terms.worker_id].includes(request.agent_id)
+        && Array.isArray(c.accepted_by) && !c.accepted_by.includes(request.agent_id);
+    });
+    const pendingJoint = Array.isArray(work.ventures) && work.ventures.some((value) => {
+      const v = record(value); return v.status === "proposed" && record(v.terms).partner_id === request.agent_id;
+    });
+    const exploration = record(context.actor_context.exploration);
+    const pendingResearch = Array.isArray(exploration.assignments) && exploration.assignments.some(value => {
+      const c = record(value), t = record(c.terms);
+      return c.status === "proposed" && [t.worker_id, t.funder_id].includes(request.agent_id)
+        && Array.isArray(c.accepted_by) && !c.accepted_by.includes(request.agent_id);
+    });
+    const pendingIntel = Array.isArray(exploration.offers) && exploration.offers.some(value => {
+      const o = record(value); return o.status === "proposed" && o.buyer === request.agent_id && o.known === false;
+    });
+    const social = record(context.actor_context.social);
+    const pendingEvent = Array.isArray(social.events) && social.events.some(value => {
+      const e = record(value); return e.status === "enrolling" && e.owner !== request.agent_id && Array.isArray(e.enrolled) && !e.enrolled.includes(request.agent_id);
+    });
+    const negotiating = !isDialogue && (pendingWork || pendingJoint || pendingResearch || pendingIntel || pendingEvent);
+    const commandLimit = isDialogue || negotiating ? 1 : 3;
     const allowedCommands = isDialogue
       ? context.allowed_command_tools.filter((name) => DIALOGUE_COMMANDS.has(name))
       : [...context.allowed_command_tools];
-    const systemContent = isDialogue
+    let systemContent = isDialogue
       ? "You are a game NPC Agent speaking directly with the player. Reply in character in one to three concise sentences. You may use local read tools, then optionally issue at most one authorized interaction command. Never perform farming, travel, harvesting, or market speculation during dialogue. A rental command is a request to queue production: while dialogue pauses the world, Godot defers and revalidates it after resume. Never describe a proposal, queued request, or processing order as completed goods. If you promise a trade or rental, issue the corresponding authorized command in this response; otherwise clearly say no operation was submitted. Never invent world assets."
       : "You are a game NPC Agent. You may use local read tools to inspect only the supplied context, then use zero to three authorized command tools in execution order. For farm3d, inspect actor_context.living_world and prefer submit_project for multi-step goals that you choose yourself. Choose milestones and budgets from resources and opportunities; decline uneconomic plans. Existing accepted projects execute without more model calls. Use no command when no action is needed. Put travel or build last. Never invent world assets.";
     const {market_view: _marketView, ...fullPromptContext} = context;
-    const promptContext = isDialogue ? buildDialogueContext(context) : fullPromptContext;
+    if (negotiating) systemContent = "You are independently reviewing another actor's voluntary proposal. Use living_world.work for exact parties, cargo_provider, contributions, current version and prior performance. Choose at most ONE authorized command: accept, counter, decline/cancel, wait, or prioritize another goal. You are not required to accept. For delivery, the EMPLOYER supplies cargo on acceptance: empty proposal escrow does NOT mean the worker supplies goods. Only supply kind uses worker-owned goods. Evaluate time, wage and obligations concisely; avoid re-analyzing the entire economy. The executor stops a batch on an asynchronous order, so do not combine negotiations behind production/travel. Do not claim agreement or delivery without its actual receipt.";
+    const promptContext = isDialogue || negotiating ? buildDialogueContext(context) : fullPromptContext;
+    systemContent += " Exploration proposals and intelligence are in actor_context.exploration. A funded investigation escrows the funder's two bread and reward only after both parties consent; no sample means no guaranteed reward. Buy only valuable unknown intelligence you can afford. Declining or waiting is valid. Unknown paid reports expose summary only; never invent their contents or coordinates. Use share_intelligence to authorize a free disclosure before revealing usable private findings.";
+    if (pendingEvent) systemContent += " A voluntary local activity is listed in actor_context.social. Independently weigh your interests, ticket price, route and prior commitments; you may enroll as a spectator, decline or prioritize another goal. Never fabricate a score or assume other actors enrolled. One command per review.";
     const userContent = isDialogue
       ? {context: promptContext, dialogue_input: request.dialogue_input ?? ""}
       : promptContext;
@@ -151,7 +207,7 @@ export class OpenAICompatibleProvider {
         catch { return [`${call.function.name || "tool"}: incomplete or invalid JSON; submit a complete JSON object`]; }
       });
       if (code.endsWith("wait_must_be_exclusive")) errors.push("wait must be the only command; omit wait when recording an intention or sending a message");
-      if (code === "provider_too_many_tool_calls") errors.push(`maximum commands is ${isDialogue ? 1 : 3}`);
+      if (code === "provider_too_many_tool_calls") errors.push(`maximum commands is ${commandLimit}`);
       if (code === "provider_output_truncated") errors.push("output was truncated; keep text and analysis short and regenerate the entire batch");
       emit({type: "output", output: {...output, validation_errors: [code, ...errors].slice(0, 9)}});
       if (corrections >= 1) throw error;
@@ -183,7 +239,9 @@ export class OpenAICompatibleProvider {
       messages[0] = {role: "system", content: `${systemContent} You have at most two read-only rounds, with ${Math.max(0, 2 - readRounds)} remaining. Batch useful reads. Never mix read tools and command tools in one response. After reading, use only the current command tools or return no action. Keep analysis concise; do not repeatedly enumerate speculative plans. Context is a snapshot: commission deadlines may pass while you decide; Godot revalidates before spending.${isDialogue ? " For greetings or questions about what you are doing, answer directly from your activity/project and recent events without tools. Inspect only when details are needed for this player's request; do not start an economic analysis during small talk." : ""}`};
       const providerBody: Record<string, unknown> = {
         model: this.#config.model,
-        ...(isDialogue || corrections > 0 || timeoutRetried ? {enable_thinking: false} : {}),
+        // Concise population plans and voluntary negotiations still need reasoning.
+        // Only dialogue and bounded recovery rounds use the fast non-thinking path.
+        enable_thinking: !(isDialogue || corrections > 0 || timeoutRetried),
         temperature: this.#config.temperature,
         max_tokens: this.#config.maxOutputTokens,
         stream: true,
@@ -200,6 +258,9 @@ export class OpenAICompatibleProvider {
         delete providerBody.tools;
       }
       emit({type: "input", body: structuredClone(providerBody)});
+      this.#reserveTokens(request, providerBody);
+      const queuedAt = performance.now();
+      let queueWaitMs = 0;
       let round: {assembler: AgentStreamAssembler; rawOutput: ReturnType<AgentStreamAssembler["rawOutput"]>};
       try {
         round = await this.#concurrencyGate.run(
@@ -208,6 +269,7 @@ export class OpenAICompatibleProvider {
             this.#config.timeoutMs,
             scheduledSignal,
             async (signal) => {
+              queueWaitMs = performance.now() - queuedAt;
               const response = await fetch(endpoint, {
                 method: "POST",
                 signal,
@@ -236,6 +298,8 @@ export class OpenAICompatibleProvider {
         throw error;
       }
       const {assembler, rawOutput} = round;
+      const reservation = this.#dailyUsage.get(request.session_id)!;
+      rawOutput.metrics = {queue_wait_ms: queueWaitMs, game_day: reservation.day, reserved_tokens_day: reservation.reserved};
       emit({type: "output", output: rawOutput});
       externalSignal?.throwIfAborted();
       // Check names even when another call has broken JSON or a truncated body.
@@ -286,14 +350,14 @@ export class OpenAICompatibleProvider {
         continue;
       }
       try {
-        return assembler.finish(request, allowedCommands, isDialogue ? 1 : 3).intent;
+        return assembler.finish(request, allowedCommands, commandLimit).intent;
       } catch (error) {
         correctCommands(error, rawOutput);
       }
     }
   }
 
-  async compactMemory(agent: AgentDefinition, events: MemoryEvent[]): Promise<{summary: string; importance: number}> {
+  async compactMemory(agent: AgentDefinition, events: MemoryEvent[], sessionId = "memory"): Promise<{summary: string; importance: number}> {
     if (events.length === 0) throw new Error("memory_compaction_requires_events");
     const payload = await this.#concurrencyGate.run(
       undefined,
@@ -303,6 +367,7 @@ export class OpenAICompatibleProvider {
         async (signal) => {
           const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
             ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
+          this.#reserveTokens({session_id: sessionId, game_minute: Math.max(...events.map(e => e.game_minute))}, {events, max_tokens: Math.min(600, this.#config.maxOutputTokens)});
           const response = await fetch(endpoint, {
             method: "POST", signal,
             headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},

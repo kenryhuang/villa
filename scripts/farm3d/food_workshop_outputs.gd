@@ -27,7 +27,7 @@ func _make_pile(id: String, count: int) -> Area3D:
 		jar.top_radius = .11
 		jar.bottom_radius = .12
 		jar.height = .27
-		_mesh(pile,jar,Vector3(0,.16,0),{"fruit_jam":Color("b85c53"),"pickles":Color("91a36a"),"tomato_sauce":Color("b75b3b"),"fruit_juice":Color("d59450"),"pickled_fish":Color("aea789"),"perfume":Color("baa3bc")}.get(id,Color("c1ac83")))
+		_mesh(pile,jar,Vector3(0,.16,0),{"honey":Color("d99a29"),"beeswax":Color("e6c46a"),"fruit_jam":Color("b85c53"),"pickles":Color("91a36a"),"tomato_sauce":Color("b75b3b"),"fruit_juice":Color("d59450"),"pickled_fish":Color("aea789"),"perfume":Color("baa3bc")}.get(id,Color("c1ac83")))
 		var lid := CylinderMesh.new()
 		lid.top_radius = .12
 		lid.bottom_radius = .12

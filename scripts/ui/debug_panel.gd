@@ -97,6 +97,16 @@ func configure_farm3d(runtime: Node) -> void:
 		var id := str(selector.get_item_metadata(selector.selected))
 		var ok: bool = runtime.service_enabled and runtime.scheduler.notify_event(id, 2, runtime._absolute_game_minute())
 		status_label.text = "已请求决策，请查看请求追踪。" if ok else "远程服务未启用或请求未能提交，请检查 Agent 客户端配置。")
+	var focus_bar := HBoxContainer.new()
+	overview.add_child(focus_bar)
+	for enabled in [true, false]:
+		var focus_button := Button.new()
+		focus_button.text = "提升为重点 NPC" if enabled else "转为普通居民"
+		focus_bar.add_child(focus_button)
+		focus_button.pressed.connect(func():
+			var result: Dictionary = runtime.farm3d_session.living_world.society.set_focus(str(selector.get_item_metadata(selector.selected)), enabled)
+			status_label.text = str(result.get("message", "切换完成")) if result.ok else str({"focus_pool_full": "最多同时关注 8 名角色", "finish_existing_commitment_before_demotion": "请等角色完成当前工作和请求后再降级"}.get(result.error, result.error))
+			_refresh_farm3d())
 	_farm3d_summary = TextEdit.new()
 	_farm3d_summary.editable = false
 	_farm3d_summary.custom_minimum_size.y = 300

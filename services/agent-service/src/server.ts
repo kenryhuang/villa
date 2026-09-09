@@ -17,7 +17,7 @@ if (memory.upgradedFromPreV2) removeLegacyCheckpointDatabases(config.checkpointR
 const app = createApp({
   memory,
   registry: AgentRegistry.loadDefault(),
-  provider: new OpenAICompatibleProvider(config.provider),
+  provider: new OpenAICompatibleProvider(config.provider, databasePath + ".provider-budget.json"),
   checkpointRoot: config.checkpointRoot,
 });
 const server = createServer(app);

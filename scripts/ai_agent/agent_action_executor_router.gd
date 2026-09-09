@@ -270,17 +270,29 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 		for internal_field in ["decision_id", "action_id", "tool_name"]:
 			completed_arguments.erase(internal_field)
 		var outcome := {"protocol_version": 2, "decision_id": str(record.payload.get("decision_id", "")), "action_id": str(record.payload.get("action_id", record.activity_id)), "idempotency_key": str(record.activity_id), "agent_id": str(record.agent_id), "tool_name": str(record.payload.get("tool_name", record.kind)), "arguments": completed_arguments, "agreement_id": str(record.payload.get("agreement_id", "")), "status": "completed", "committed_revision": world_revision, "changed_entities": changed, "resource_delta": {}, "hud_message": message, "game_minute": game_minute}
+		if record.status == "failed":
+			outcome.status = "failed"
+			outcome.error_code = str(record.payload.get("error", "activity_failed"))
+			outcome.hud_message = "%s的%s未完成：%s" % [_display_name(record.agent_id), record.kind, outcome.error_code]
 		_outcomes[str(record.activity_id)] = outcome.duplicate(true)
 		outcomes.append(outcome)
 		if _publish_hud.is_valid():
-			_publish_hud.call(message)
+			_publish_hud.call(outcome.hud_message)
 	return outcomes
 
 
 func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String, request_id := "") -> Dictionary:
 	if is_instance_valid(farm3d_session) and not farm3d_session.living_world.interruptions.running(agent_id).is_empty() and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "gather_sample", "deliver_commission"]: return _error("delivery_in_progress")
+	if is_instance_valid(farm3d_session) and farm3d_session.living_world.work.owns_schedule(agent_id) and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "collect_sample", "rent_production"]: return _error("work_schedule_conflict")
 	match tool_name:
-		"propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior":
+		"propose_activity", "enroll_activity", "leave_activity", "cancel_activity":
+			return farm3d_session.living_world.social.command(agent_id, tool_name, arguments, key) if is_instance_valid(farm3d_session) else _error("requires_3d_world")
+		"contribute_route_repair":
+			return farm3d_session.living_world.environment.command(agent_id, tool_name, arguments, key) if is_instance_valid(farm3d_session) else _error("requires_3d_world")
+		"offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation":
+			if not is_instance_valid(farm3d_session): return _error("farm3d_only")
+			return _knowledge.command(agent_id, tool_name, arguments, key)
+		"propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior":
 			if not is_instance_valid(farm3d_session): return {"ok": false, "error": "farm3d_only"}
 			return farm3d_session.living_world.command(agent_id, tool_name, arguments, key)
 		"rent_production":
@@ -304,6 +316,7 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 		"travel":
 			var region_id := str(arguments.get("region_id", ""))
 			var duration := clampi(int(arguments.get("duration_minutes", 60)), 10, 240)
+			if is_instance_valid(farm3d_session): return _knowledge.begin_fieldwork(agent_id, "travel", region_id, key, {"decision_id": decision_id, "action_id": action_id}, duration)
 			if region_id.is_empty() or not _activities.call("start", agent_id, "travel", key, game_minute, game_minute + duration, {"region_id": region_id, "decision_id": decision_id, "action_id": action_id, "tool_name": "travel", "agreement_id": str(arguments.get("agreement_id", ""))}):
 				return _error("travel_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s出发前往%s。" % [_display_name(agent_id), region_id], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
@@ -316,6 +329,7 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s开始建造%s。" % [_display_name(agent_id), building_type], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"survey":
 			var region_id := str(arguments.get("region_id", ""))
+			if is_instance_valid(farm3d_session): return _knowledge.begin_fieldwork(agent_id, "survey", region_id, key, {"decision_id": decision_id, "action_id": action_id})
 			var discovery_id := str(SURVEY_RESULTS.get(region_id, ""))
 			if discovery_id.is_empty() or not _knowledge.call("discover", agent_id, discovery_id, region_id, game_minute):
 				return _error("nothing_new_found")
@@ -327,6 +341,7 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 			return _success("%s登记了发现%s。" % [_display_name(agent_id), discovery_id], ["public_knowledge:" + discovery_id])
 		"collect_sample":
 			var discovery_id := str(arguments.get("discovery_id", ""))
+			if is_instance_valid(farm3d_session): return _knowledge.collect(agent_id, discovery_id, key)
 			var item_id := str(SAMPLE_ITEMS.get(discovery_id, ""))
 			if item_id.is_empty() or not _economy.call("receive_item", agent_id, item_id, 1):
 				return _error("sample_unavailable")

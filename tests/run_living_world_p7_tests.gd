@@ -33,7 +33,7 @@ func run() -> void:
 	check(not env.command("lao_li", "public_food_plan", args, "private").ok, "Private NPC cannot authorize public spending")
 	check(not env.command("village_public", "set_price", args, "price").ok, "Public agent cannot set prices or invent assets")
 	var request: Dictionary = preload("res://scripts/ai_agent/game_env_context.gd").build(env, "projection", "event")
-	check(request.allowed_command_tools == ["public_food_plan", "public_wait"] and request.allowed_read_tools.is_empty(), "Public capability set is separate from private tools")
+	check(request.allowed_command_tools == ["public_food_plan", "public_wait", "public_repair_plan", "public_activity_plan"] and request.allowed_read_tools.is_empty(), "Public capability set is separate from private tools")
 	check(not request.actor_context.has("self") and request.known_actors.is_empty() and request.agreement_view.is_empty() and not JSON.stringify(request).contains("xuezhe_lin"), "Public projection omits private inventories, memories, projects and knowledge")
 	env.set_mode("observe")
 	args.expected_version = env.revision
@@ -73,6 +73,7 @@ func run() -> void:
 	check(not w.validate(corrupt), "Saved purchase cannot contradict its authorized decision receipt")
 	# Domain meal settlement consumes the procured food; it is not just a UI counter.
 	w.society._feed_day(1)
+	w.society.advance_to(w.society.last_minute)
 	check(int(w.society.day_reports["1"].consumed.get("bread", 0)) >= 2, "Procured bread supports real food consumption")
 	check(s.save_game() and s.load_game(), "Consumption and public evidence reload")
 	env.set_mode("execute")

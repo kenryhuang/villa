@@ -11,7 +11,7 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 9
+const SAVE_VERSION := 13
 const LivingWorld = preload("res://scripts/farm3d/living_world_system.gd")
 var living_world: Node
 const GolfRound = preload("res://scripts/farm3d/golf_round.gd")
@@ -155,7 +155,14 @@ func configure(next_player: Node3D) -> bool:
 func _settle_market_day(day: int) -> void:
 	if day <= market.last_settled_day:
 		return
-	if living_world != null: living_world.advance()
+	if living_world != null:
+		living_world.advance()
+		if not living_world.society.caught_up((day - 1) * 1080): return
+	_commit_market_day(day)
+
+
+func _commit_market_day(day: int) -> void:
+	if day <= market.last_settled_day: return
 	# Same economic order as the original daily simulation: NPC flows, then pricing.
 	if npc_economy.simulate_day(day):
 		market.settle_day(day)
@@ -294,6 +301,7 @@ func load_game() -> bool:
 		return false
 	var parsed = json.data
 	_migrate_residents(parsed)
+	_migrate_population(parsed)
 	if not _valid_save(parsed):
 		return false
 	var data: Dictionary = parsed
@@ -492,9 +500,9 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, 5, 6, 7, 8, SAVE_VERSION]:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SAVE_VERSION]:
 		return false
-	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18, 6: 18, 7: 19, 8: 19, 9: 19}[int(data.version)]:
+	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18, 6: 18, 7: 19, 8: 19, 9: 19, 10: 19, 11: 19, 12: 19, 13: 19}[int(data.version)]:
 		return false
 	if int(data.version) >= 7 and not living_world.validate_save(data): return false
 	if int(data.version) >= 5:
@@ -568,9 +576,16 @@ func _valid_market_save(data: Dictionary) -> bool:
 	var candidate := MarketScript.new()
 	candidate.configure(DataScript.get_market_items())
 	var valid := candidate.restore_from_dict_with_current_catalog(data.market)
-	valid = valid and candidate.last_settled_day == int(data.season.total_days)
+	var settled_day: int = candidate.last_settled_day
+	if int(data.version) >= 13 and data.get("living_world", {}).get("society") is Dictionary:
+		# A rest can advance the clock while the saved resident batch is still
+		# pending. Market and NPC cursors must agree and bracket that batch.
+		var social_minute := int(data.living_world.society.last_minute)
+		valid = valid and settled_day >= 1 and settled_day <= int(data.season.total_days) and social_minute >= (settled_day - 1) * 1080 and social_minute <= settled_day * 1080
+	else:
+		valid = valid and settled_day == int(data.season.total_days)
 	candidate.free()
-	return valid and npc_economy.validate_dict(data.npc_economy) and int(data.npc_economy.last_simulated_day) == int(data.season.total_days)
+	return valid and npc_economy.validate_dict(data.npc_economy) and int(data.npc_economy.last_simulated_day) == settled_day
 
 
 func _tool_failure(tool_id: String) -> String:
@@ -692,6 +707,50 @@ func _migrate_residents(value: Variant) -> void:
 		known[entry.npc_id] = true
 	for profile in DataScript.get_npc_economy_profiles():
 		if not known.has(profile.id): return
-	for profile in LivingWorld.Society.economy_profiles():
+	for profile in LivingWorld.Society.economy_profiles(true):
 		if known.has(profile.id): continue
 		entries.append({"npc_id": profile.id, "gold": profile.gold, "inventory": profile.inventory.duplicate(true), "reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "last_simulated_day": value.npc_economy.last_simulated_day, "investment_planned": false})
+
+func _migrate_population(value: Variant) -> void:
+	if not LivingWorld.Society.expanded() or not value is Dictionary or not _is_integer(value.get("version")) or int(value.version) >= 13 or not value.get("npc_economy", {}).get("npc_states") is Array or value.npc_economy.npc_states.size() != 14: return
+	# Validate the original snapshot against its original population before adding
+	# configured immigrants. Existing event history, assets and liabilities stay intact.
+	var original_config: Dictionary = living_world.society.config
+	var original_profiles: Dictionary = npc_economy._profiles
+	var original_states: Dictionary = npc_economy._states
+	var original_registry: RefCounted = agent_runtime.registry
+	var original_actors: Array = agent_runtime._base_actor_profiles.duplicate(true)
+	var old_registry = preload("res://scripts/ai_agent/agent_registry.gd").new()
+	if not old_registry.load_defaults(): return
+	living_world.society.config = LivingWorld.Society.configuration(true)
+	var small_profiles := {}
+	var small_states := {}
+	for p in LivingWorld.Society.economy_profiles(true): small_profiles[p.id] = original_profiles[p.id]
+	for id in small_profiles: small_states[id] = original_states[id]
+	npc_economy._profiles = small_profiles
+	npc_economy._states = small_states
+	agent_runtime.registry = old_registry
+	agent_runtime._base_actor_profiles.assign(original_actors.filter(func(p): return p.actor_id == "player" or old_registry.is_agent_managed(p.actor_id)))
+	var valid := _valid_save(value)
+	if not valid and "--farm-test" in OS.get_cmdline_user_args(): print("MIGRATION CHECK world=", living_world.validate_save(value), " agents=", agent_runtime.validate_dict(value.agents), " economy=", npc_economy.validate_dict(value.npc_economy))
+	living_world.society.config = original_config
+	npc_economy._profiles = original_profiles
+	npc_economy._states = original_states
+	agent_runtime.registry = original_registry
+	agent_runtime._base_actor_profiles.assign(original_actors)
+	if not valid: return
+	var added_gold := 0
+	for p in LivingWorld.Society.economy_profiles():
+		if small_profiles.has(p.id): continue
+		value.npc_economy.npc_states.append({"npc_id": p.id, "gold": p.gold, "inventory": p.inventory.duplicate(true), "reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "last_simulated_day": value.npc_economy.last_simulated_day, "investment_planned": false})
+		added_gold += int(p.gold)
+	if value.has("agents") and not value.agents.is_empty(): agent_runtime.expand_saved_population(value.agents)
+	if int(value.version) >= 7:
+		var society: Dictionary = value.living_world.society
+		for id in living_world.society.residents:
+			if not society.residents.has(id): society.residents[id] = living_world.society.residents[id].duplicate(true)
+		society.initial_gold = int(society.initial_gold) + added_gold
+		society.ledger.append({"minute": int(society.last_minute), "kind": "population_migration", "actor_id": "society", "gold": added_gold, "items": {}, "source": "P12一次性移入人口与组织初始资金"})
+		if society.ledger.size() > 4096: society.ledger.pop_front()
+		society.version = 2; society.focus = original_config.focus_actors.duplicate()
+		value.version = 13

@@ -46,7 +46,39 @@ function objectSchema(properties: Record<string, unknown>, required: string[]): 
   return {type: "object", properties, required, additionalProperties: false};
 }
 
+const WORK_TERMS = objectSchema({
+  worker_id: ITEM_ID_SCHEMA, recipient_id: ITEM_ID_SCHEMA, kind: {type: "string", enum: ["delivery", "processing", "supply"]},
+  item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, wage: {type: "integer", minimum: 0, maximum: 100000},
+  building_id: {type: "string", maxLength: 100}, recipe_id: {type: "string", maxLength: 100},
+  max_fee: {type: "integer", minimum: 0, maximum: 100000}, deadline_minutes: {type: "integer", minimum: 30, maximum: 10080},
+  cycles: {type: "integer", minimum: 1, maximum: 7}, interval_minutes: {type: "integer", minimum: 0, maximum: 1080},
+  parent_contract: {type: "string", maxLength: 100}, note: {type: "string", maxLength: 300},
+}, ["worker_id", "recipient_id", "kind", "item_id", "quantity", "wage", "building_id", "recipe_id", "max_fee", "deadline_minutes", "cycles", "interval_minutes", "parent_contract", "note"]);
+
 const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
+  propose_investigation: objectSchema({worker_id: ITEM_ID_SCHEMA, funder_id: ITEM_ID_SCHEMA, region_id: {type: "string", enum: [...REGION_IDS]}, reward: {type: "integer", minimum: 0, maximum: 100000}, deadline_minutes: {type: "integer", minimum: 60, maximum: 10080}, allow_old_report: {type: "boolean"}, require_sample: {type: "boolean"}}, ["worker_id", "funder_id", "region_id", "reward", "deadline_minutes", "allow_old_report", "require_sample"]),
+  accept_investigation: objectSchema({assignment_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["assignment_id", "version"]),
+  cancel_investigation: objectSchema({assignment_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["assignment_id", "version"]),
+  propose_activity: objectSchema({kind: {type: "string", enum: ["fishing", "golf"]}, starts_in: {type: "integer", minimum: 60, maximum: 1080}, duration: {type: "integer", minimum: 120, maximum: 1080}, capacity: {type: "integer", minimum: 2, maximum: 16}, minimum: {type: "integer", minimum: 1, maximum: 16}, ticket: {type: "integer", minimum: 0, maximum: 50}, sponsor: {type: "integer", minimum: 0, maximum: 1000}, reward: {type: "integer", minimum: 0, maximum: 100}, food_quantity: {type: "integer", minimum: 1, maximum: 16}, food_price: {type: "integer", minimum: 1, maximum: 100}}, ["kind", "starts_in", "duration", "capacity", "minimum", "ticket", "sponsor", "reward", "food_quantity", "food_price"]),
+  public_activity_plan: objectSchema({expected_version: {type: "integer", minimum: 1, maximum: 1000000000}, reason: {type: "string", minLength: 1, maxLength: 100}, terms: objectSchema({kind: {type: "string", enum: ["fishing", "golf"]}, starts_in: {type: "integer", minimum: 60, maximum: 1080}, duration: {type: "integer", minimum: 120, maximum: 1080}, capacity: {type: "integer", minimum: 2, maximum: 16}, minimum: {type: "integer", minimum: 1, maximum: 16}, ticket: {type: "integer", minimum: 0, maximum: 50}, sponsor: {type: "integer", minimum: 0, maximum: 1000}, reward: {type: "integer", minimum: 0, maximum: 100}, food_quantity: {type: "integer", minimum: 1, maximum: 16}, food_price: {type: "integer", minimum: 1, maximum: 100}}, ["kind", "starts_in", "duration", "capacity", "minimum", "ticket", "sponsor", "reward", "food_quantity", "food_price"])}, ["expected_version", "reason", "terms"]),
+  enroll_activity: objectSchema({event_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["event_id", "version"]),
+  leave_activity: objectSchema({event_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["event_id", "version"]),
+  cancel_activity: objectSchema({event_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["event_id", "version"]),
+  public_repair_plan: objectSchema({expected_version: {type: "integer", minimum: 1, maximum: 1000000000}, reason: {type: "string", minLength: 1, maxLength: 100}}, ["expected_version", "reason"]),
+  contribute_route_repair: objectSchema({event_id: ITEM_ID_SCHEMA, materials: objectSchema({wood: {type: "integer", minimum: 1, maximum: 6}, stone: {type: "integer", minimum: 1, maximum: 4}}, []), labor_minutes: {type: "integer", minimum: 0, maximum: 60}}, ["event_id", "materials", "labor_minutes"]),
+  offer_intelligence: objectSchema({target_actor_id: ITEM_ID_SCHEMA, discovery_id: ITEM_ID_SCHEMA, price: {type: "integer", minimum: 1, maximum: 100000}, ttl: {type: "integer", minimum: 10, maximum: 1080}}, ["target_actor_id", "discovery_id", "price", "ttl"]),
+  buy_intelligence: objectSchema({offer_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["offer_id", "version"]),
+  share_intelligence: objectSchema({target_actor_id: ITEM_ID_SCHEMA, discovery_id: ITEM_ID_SCHEMA}, ["target_actor_id", "discovery_id"]),
+  propose_joint_project: objectSchema({partner_id: ITEM_ID_SCHEMA, plan: {type: "object"}, partner_gold: {type: "integer", minimum: 0, maximum: 1000000}, partner_materials: ITEM_QUANTITIES_SCHEMA, partner_profit_percent: {type: "integer", minimum: 1, maximum: 99}, equipment_id: ITEM_ID_SCHEMA}, ["partner_id", "plan", "partner_gold", "partner_materials", "partner_profit_percent"]),
+  accept_joint_project: objectSchema({venture_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["venture_id", "version"]),
+  exit_joint_project: objectSchema({venture_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["venture_id", "version"]),
+  propose_work: WORK_TERMS,
+  counter_work: objectSchema({contract_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}, terms: WORK_TERMS}, ["contract_id", "version", "terms"]),
+  accept_work: objectSchema({contract_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["contract_id", "version"]),
+  cancel_work: objectSchema({contract_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["contract_id", "version"]),
+  start_learning: objectSchema({skill_id: {type: "string", enum: ["ingredient_selection"]}}, ["skill_id"]),
+  start_leisure: objectSchema({activity: {type: "string", enum: ["visit", "rest"]}, partner_id: ITEM_ID_SCHEMA}, ["activity", "partner_id"]),
+  manage_building: objectSchema({building_id: ITEM_ID_SCHEMA, operation: {type: "string", enum: ["maintain", "pricing", "open", "close"]}, fee: {type: "integer", minimum: 0, maximum: 1000000}, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["building_id", "operation", "fee", "version"]),
   submit_project: objectSchema({goal: {type: "string", minLength: 1, maxLength: 500}, budget: {type: "integer", minimum: 0, maximum: 1000000}, deadline_minutes: {type: "integer", minimum: 60, maximum: 10080}, materials: ITEM_QUANTITIES_SCHEMA, steps: {type: "array", minItems: 1, maxItems: 12, items: objectSchema({id: ITEM_ID_SCHEMA, capability: {type: "string", enum: ["buy", "sell", "move", "rent", "wait_production", "reserve_plot", "build", "wait_construction", "set_policy", "claim", "deliver"]}, depends_on: {type: "array", items: ITEM_ID_SCHEMA}, arguments: {type: "object"}}, ["id", "capability", "depends_on", "arguments"])}}, ["goal", "budget", "deadline_minutes", "materials", "steps"]),
   propose_delivery: objectSchema({task_id: {type: "string", maxLength: 100}, version: {type: "integer", minimum: 0, maximum: 1000000}, recipient_id: ITEM_ID_SCHEMA, item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, reward: {type: "integer", minimum: 0, maximum: 1000000}, deadline_minutes: {type: "integer", minimum: 1, maximum: 1080}, schedule: {type: "string", enum: ["now", "after_step", "queue"]}, note: NOTE_SCHEMA}, ["task_id", "version", "recipient_id", "item_id", "quantity", "reward", "deadline_minutes", "schedule", "note"]),
   cancel_delivery: objectSchema({task_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["task_id", "version"]),
@@ -105,11 +137,11 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
 	agreement_id: AGREEMENT_ID_SCHEMA,
   }, ["region_id"]),
   collect_sample: objectSchema({
-    discovery_id: {type: "string", enum: [...DISCOVERY_IDS]},
+    discovery_id: ITEM_ID_SCHEMA,
 	agreement_id: AGREEMENT_ID_SCHEMA,
   }, ["discovery_id"]),
   register_discovery: objectSchema({
-    discovery_id: {type: "string", enum: [...DISCOVERY_IDS]},
+    discovery_id: ITEM_ID_SCHEMA,
   }, ["discovery_id"]),
   propose_role_change: objectSchema({
     target_role_id: {type: "string", enum: [...ROLE_IDS]},
@@ -210,9 +242,36 @@ function validCooperationTerms(value: unknown): boolean {
     && Object.values(value.reward_split).every((weight) => isIntegerInRange(weight, 1, 1000));
 }
 
+function validWorkTerms(v: unknown): boolean {
+  return isRecord(v) && hasExactKeys(v, WORK_TERMS.required as string[]) && isBoundedId(v.worker_id) && isBoundedId(v.recipient_id)
+    && isOneOf(v.kind, ["delivery", "processing", "supply"]) && isBoundedId(v.item_id)
+    && isIntegerInRange(v.quantity, 1, 100) && isIntegerInRange(v.wage, 0, 100000) && isIntegerInRange(v.max_fee, 0, 100000)
+    && isText(v.building_id, 100, true) && isText(v.recipe_id, 100, true) && isText(v.parent_contract, 100, true) && isText(v.note, 300, true)
+    && isIntegerInRange(v.deadline_minutes, 30, 10080) && isIntegerInRange(v.cycles, 1, 7) && isIntegerInRange(v.interval_minutes, 0, 1080)
+    && (v.cycles === 1 || v.interval_minutes >= 60) && (v.kind !== "processing" || (isBoundedId(v.building_id) && isBoundedId(v.recipe_id)));
+}
+
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name) {
+    case "propose_investigation": return hasExactKeys(value, ["worker_id", "funder_id", "region_id", "reward", "deadline_minutes", "allow_old_report", "require_sample"]) && isBoundedId(value.worker_id) && isBoundedId(value.funder_id) && value.worker_id !== value.funder_id && isOneOf(value.region_id, REGION_IDS) && isIntegerInRange(value.reward, 0, 100000) && isIntegerInRange(value.deadline_minutes, 60, 10080) && typeof value.allow_old_report === "boolean" && typeof value.require_sample === "boolean";
+    case "accept_investigation": case "cancel_investigation": return hasExactKeys(value, ["assignment_id", "version"]) && isBoundedId(value.assignment_id) && isIntegerInRange(value.version, 1, 1000000);
+    case "propose_activity": return hasExactKeys(value, ["kind", "starts_in", "duration", "capacity", "minimum", "ticket", "sponsor", "reward", "food_quantity", "food_price"]) && ["fishing", "golf"].includes(String(value.kind)) && isIntegerInRange(value.starts_in, 60, 1080) && isIntegerInRange(value.duration, 120, 1080) && isIntegerInRange(value.capacity, 2, 16) && isIntegerInRange(value.minimum, 1, Number(value.capacity)) && isIntegerInRange(value.ticket, 0, 50) && isIntegerInRange(value.sponsor, 0, 1000) && isIntegerInRange(value.reward, 0, 100) && isIntegerInRange(value.food_quantity, 1, Number(value.capacity)) && isIntegerInRange(value.food_price, 1, 100);
+    case "public_activity_plan": return hasExactKeys(value, ["expected_version", "reason", "terms"]) && isIntegerInRange(value.expected_version, 1, 1000000000) && isText(value.reason, 100) && validToolArguments("propose_activity", value.terms);
+    case "enroll_activity": case "leave_activity": case "cancel_activity": return hasExactKeys(value, ["event_id", "version"]) && isBoundedId(value.event_id) && isIntegerInRange(value.version, 1, 1000000);
+    case "public_repair_plan": return hasExactKeys(value, ["expected_version", "reason"]) && isIntegerInRange(value.expected_version, 1, 1000000000) && isText(value.reason, 100);
+    case "contribute_route_repair": return hasExactKeys(value, ["event_id", "materials", "labor_minutes"]) && isBoundedId(value.event_id) && isRecord(value.materials) && Object.entries(value.materials).every(([k,v]) => (k === "wood" || k === "stone") && isIntegerInRange(v, 1, k === "wood" ? 6 : 4)) && isIntegerInRange(value.labor_minutes, 0, 60) && (Object.keys(value.materials).length > 0 || Number(value.labor_minutes) > 0);
+    case "offer_intelligence": return hasExactKeys(value, ["target_actor_id", "discovery_id", "price", "ttl"]) && isBoundedId(value.target_actor_id) && isBoundedId(value.discovery_id) && isIntegerInRange(value.price, 1, 100000) && isIntegerInRange(value.ttl, 10, 1080);
+    case "buy_intelligence": return hasExactKeys(value, ["offer_id", "version"]) && isBoundedId(value.offer_id) && isIntegerInRange(value.version, 1, 1000000);
+    case "share_intelligence": return hasExactKeys(value, ["target_actor_id", "discovery_id"]) && isBoundedId(value.target_actor_id) && isBoundedId(value.discovery_id);
+    case "propose_joint_project": return validVenture(value);
+    case "accept_joint_project": case "exit_joint_project": return hasExactKeys(value, ["venture_id", "version"]) && isBoundedId(value.venture_id) && isIntegerInRange(value.version, 1, 1000000);
+    case "propose_work": return validWorkTerms(value);
+    case "counter_work": return hasExactKeys(value, ["contract_id", "version", "terms"]) && isBoundedId(value.contract_id) && isIntegerInRange(value.version, 1, 1000000) && validWorkTerms(value.terms);
+    case "accept_work": case "cancel_work": return hasExactKeys(value, ["contract_id", "version"]) && isBoundedId(value.contract_id) && isIntegerInRange(value.version, 1, 1000000);
+    case "start_learning": return hasExactKeys(value, ["skill_id"]) && value.skill_id === "ingredient_selection";
+    case "start_leisure": return hasExactKeys(value, ["activity", "partner_id"]) && isOneOf(value.activity, ["visit", "rest"]) && isBoundedId(value.partner_id);
+    case "manage_building": return hasExactKeys(value, ["building_id", "operation", "fee", "version"]) && isBoundedId(value.building_id) && isOneOf(value.operation, ["maintain", "pricing", "open", "close"]) && isIntegerInRange(value.fee, 0, 1000000) && isIntegerInRange(value.version, 1, 1000000);
     case "propose_delivery": return hasExactKeys(value, ["task_id", "version", "recipient_id", "item_id", "quantity", "reward", "deadline_minutes", "schedule", "note"]) && isText(value.task_id, 100, true) && isIntegerInRange(value.version, 0, 1000000) && isBoundedId(value.recipient_id) && isBoundedId(value.item_id) && isIntegerInRange(value.quantity, 1, 100) && isIntegerInRange(value.reward, 0, 1000000) && isIntegerInRange(value.deadline_minutes, 1, 1080) && isOneOf(value.schedule, ["now", "after_step", "queue"]) && isText(value.note, 500, true);
     case "cancel_delivery": return hasExactKeys(value, ["task_id", "version"]) && isBoundedId(value.task_id) && isIntegerInRange(value.version, 1, 1000000);
     case "revise_project": return hasExactKeys(value, ["project_id", "version", "plan", "source"]) && isBoundedId(value.project_id) && isIntegerInRange(value.version, 1, 1000000) && validProject(value.plan) && isOneOf(value.source, ["dialogue", "self_review"]);
@@ -291,10 +350,10 @@ export function validToolArguments(name: string, value: unknown): boolean {
         && isOneOf(value.region_id, REGION_IDS);
 	case "collect_sample":
 	  return hasExactKeysWithOptionalAgreement(value, ["discovery_id"])
-		&& isOneOf(value.discovery_id, DISCOVERY_IDS);
+		&& isBoundedId(value.discovery_id);
     case "register_discovery":
       return hasExactKeys(value, ["discovery_id"])
-        && isOneOf(value.discovery_id, DISCOVERY_IDS);
+        && isBoundedId(value.discovery_id);
     case "propose_role_change":
       return hasExactKeys(value, ["target_role_id", "motivation"])
         && isOneOf(value.target_role_id, ROLE_IDS)
@@ -311,10 +370,47 @@ export function validToolArguments(name: string, value: unknown): boolean {
   }
 }
 
+function validVenture(value: Record<string, unknown>): boolean {
+  const fields = ["partner_id", "plan", "partner_gold", "partner_materials", "partner_profit_percent"];
+  if (Object.hasOwn(value, "equipment_id")) fields.push("equipment_id");
+  if (!hasExactKeys(value, fields) || !isBoundedId(value.partner_id) || !isRecord(value.plan) || !validProject(value.plan)
+      || !isIntegerInRange(value.partner_gold, 0, Number(value.plan.budget)) || !isIntegerInRange(value.partner_profit_percent, 1, 99)
+      || !isRecord(value.partner_materials)) return false;
+  const plan = value.plan as {materials: Record<string, number>; steps: Array<{capability: string; arguments: Record<string, unknown>}>};
+  if (!Object.entries(value.partner_materials).every(([id, qty]) => isIntegerInRange(qty, 1, Number(plan.materials[id])))) return false;
+  return !Object.hasOwn(value, "equipment_id") || (isBoundedId(value.equipment_id) && plan.steps.some(step => step.capability === "rent" && step.arguments.building_id === value.equipment_id));
+}
+
 export function toolDescription(name: string): Record<string, unknown> {
   const parameters = TOOL_PARAMETERS[name];
   if (!parameters) throw new Error(`unknown_tool_contract:${name}`);
   const farmingDescriptions: Record<string, string> = {
+    travel: "In farm3d travel walks to the named real region. Arrival and minimum game time are required; no teleport. Wait for completed outcome before survey. Actor schedule is occupied. Regions creek, forest and hills are current-map field sites, not new map unlocks.",
+    survey: "Investigate only after actual arrival at the named field site, consuming ONE bread and 20 game minutes at the site. Returns a durable observation ID only on completion, never a guaranteed resource. Seeded daily sites can have no sample; inspect exploration reports afterwards.",
+    collect_sample: "Collect one finite sample from a known, fresh, physically reached report discovery_id. One sample per daily site, even across actors; cannot repeatedly mint samples. No-find reports cannot supply samples.",
+    propose_activity: "Propose and prepay a voluntary fishing/golf activity. Supply procurement and reward must be covered by actual sponsor cash, not projected tickets. Capacity/site conflict and all costs are verified. NPCs attend only as spectators. Minimum enrollment and food shortfall cancels with refunds.",
+    enroll_activity: "Independently accept a current activity, pay own ticket and reserve own schedule. Walk to its site to attend. NPCs are spectators; no fabricated scores. Reject by issuing no enrollment.",
+    leave_activity: "Withdraw own enrollment and refund ticket before the activity starts.",
+    cancel_activity: "Organizer cancels own activity; refund tickets and unused assets, preserving already completed supplier payments.",
+    public_activity_plan: "Public coordinator only: actual funded activity, maximum sponsor 500, shared daily budget and cooldown. Essential food takes priority; waiting is allowed. terms use the same ten fields as propose_activity.",
+    public_repair_plan: "Public coordinator only: fund repair materials through existing commissions and actual labor subsidy from the shared daily budget. Only a currently blocked unfunded route qualifies; natural recovery/wait is valid.",
+    contribute_route_repair: "Must physically arrive at environment.repair_site first. Donate owned wood/stone within remaining quota and optionally work up to 60 actual game minutes. Paid labor requires existing public funding; leaving stops labor accumulation. Route recovery stops further spending.",
+    offer_intelligence: "Offer one known fresh report to target_actor_id for a bounded price. Only a value summary is shown before confirmation. Player must confirm in UI; this never authorizes payment. Already known/public reports cannot be charged. Do not disclose protected contents in speech; use share_intelligence for free disclosure.",
+    buy_intelligence: "Accept only an offer addressed to you with current offer_id/version. Your real money and knowledge access transfer atomically. Known/public facts are free; failed payment grants nothing. Never buy on behalf of player.",
+    share_intelligence: "Explicitly disclose a known fresh report for free to target_actor_id. This grants usable report and map information; the recipient can never be charged for that same known report afterwards. Use before discussing otherwise protected contents.",
+    propose_investigation: "Propose voluntary funding between worker_id and funder_id; you must be one party. Other party independently accepts, player via UI. Acceptance escrows TWO bread from funder and reward; actual travel consumes one bread, survey one. allow_old_report controls reuse of eligible existing evidence. require_sample=true pays reward only if actual sample is delivered; no-find returns reward with an honest report. Unused supplies/funds refund; consumed supplies do not. Deadline 60..10080 minutes. No promised discoveries.",
+    accept_investigation: "Independently accept the other party's current investigation proposal. Requires free investigator schedule and funded bread/reward. Execution physically travels, surveys, returns and delivers a report/sample. Proposal or acceptance alone is not a completed investigation.",
+    cancel_investigation: "Cancel your own investigation at current version. Stop future fieldwork, return unused bread and unpaid reward. Consumed provisions are not fabricated back; never claim a failed investigation found resources.",
+    propose_work: "Voluntarily offer a paid job to a DIFFERENT worker_id from your own account. Use living_world.work and actor schedules. Exact delivery/processing/supply terms require the other party's current-version acceptance; no work or charge on proposal. quantity is units for delivery/supply, batches for processing. Employer escrows wage per cycle plus inputs and max_fee for processing; supply worker provides own goods. Recipient receives goods after actual transport. parent_contract optionally links work you subcontract while retaining liability. Do not accept for player or invent IDs.",
+    counter_work: "Negotiate an existing proposed job with exact contract_id, current version and complete replacement terms. Keep worker and parent unchanged. Only the other participant can accept this revision. Never report a counteroffer as accepted.",
+    accept_work: "Voluntarily accept the other party's latest proposed terms using current contract_id and version. Your real schedule must be free if you are the worker; accepted wages/inputs are prepaid. Failure to deliver does not complete any parent commission.",
+    cancel_work: "Cancel your own job contract at its current version. Future cycles stop; completed payments remain valid. Begun processing settles and unused assets return to employer. Picked-up cargo requires return travel.",
+    start_learning: "Choose ingredient_selection training at village_inn only with free schedule and 30 actual gold. Physically travel and study 120 game minutes. Completion unlocks tagged-ingredient recipes such as grilled_fish in autonomous projects; acceptance alone unlocks nothing.",
+    start_leisure: "Choose visit or rest with a real partner_id using free time. Travel and spend 60 minutes; actual visits can improve relations. You may choose this instead of paid work. No instant reputation reward.",
+    manage_building: "Only manage a building you own. Use current service policy version. pricing sets actual fee for each existing recipe; maintain pays original maintenance cost. Never change another owner's building.",
+    propose_joint_project: "Propose your original executable project DAG with exact partner_gold and partner_materials within the plan's total budget/materials, and partner_profit_percent 1..99. Partner must independently accept. You operate and own any constructed building. Capital return and surplus share use only actual remaining project receipts; costs can cause loss. No profits paid before realized income.",
+    accept_joint_project: "As the proposed partner only, accept venture_id at current version. Your exact contribution is transferred into original project escrow atomically with the operator's contribution. Check risk, ownership and return terms before accepting.",
+    exit_joint_project: "As a participant, request exit from venture_id at its current version. Uncommitted work cancels; begun production must settle first. Actual remaining funds/materials return according to accepted contribution and split terms.",
     propose_trade: "Create a proposal for target_actor_id. give is what YOU supply from your own inventory; receive is what the OTHER actor supplies to you upon acceptance. You only need to own give, not receive. A player recipient must explicitly confirm in the game UI. A proposal reserves assets but is not a completed trade.",
     counter_trade: "Replace a received offer with your counterproposal. give is your contribution; receive is what you request from the other actor. The previous offer becomes invalid; the recipient must accept the new proposal.",
     propose_delivery: "If you voluntarily accept a player's delivery request, propose exact cargo, recipient, reward, deadline and schedule from living_world.interruptions. Ask for missing terms first. Empty task_id and version 0 means new; existing ID and exact version renegotiates before pickup. A player confirmation card authorizes escrow. Do not claim accepted or delivered before confirmation/execution. Choose now, after_step or queue to respect existing obligations; decline conflicting requests.",
@@ -500,7 +596,7 @@ export function validProject(v: Record<string, unknown>): boolean {
       case "move": valid = keys("x", "z") && typeof a.x === "number" && Number.isFinite(a.x) && a.x >= -176 && a.x <= 80 && typeof a.z === "number" && Number.isFinite(a.z) && a.z >= -80 && a.z <= 144; break;
       case "rent": valid = validToolArguments("rent_production", a); break;
       case "wait_production": valid = keys("order_step") && id("order_step"); break;
-      case "reserve_plot": valid = keys("gx", "gz") && n("gx", -1024, 1024) && n("gz", -1024, 1024); break;
+      case "reserve_plot": valid = (keys("gx", "gz") || (keys("gx", "gz", "building_type") && isOneOf(a.building_type, ["windmill", "food_workshop"]))) && n("gx", -1024, 1024) && n("gz", -1024, 1024); break;
       case "build": valid = keys("lease_step") && id("lease_step"); break;
       case "wait_construction": valid = keys("build_step") && id("build_step"); break;
       case "set_policy": valid = keys("build_step", "open", "fee") && id("build_step") && typeof a.open === "boolean" && n("fee", 0, 1000000); break;

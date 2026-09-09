@@ -99,6 +99,7 @@ func start_round() -> bool:
 		return false
 	get_parent().cancel_selection()
 	round_state.start()
+	round_state.gameplay_id = session.living_world.social.begin_gameplay("golf")
 	ball.place(round_state.ball)
 	phase = Phase.WALK
 	_feedback_message("已借球杆，走到 1 号发球台，球旁按 E 准备")
@@ -113,6 +114,7 @@ func restart_round() -> bool:
 	get_parent().cancel_selection()
 	release_control()
 	round_state.start()
+	round_state.gameplay_id = session.living_world.social.begin_gameplay("golf")
 	ball.place(round_state.ball)
 	phase = Phase.WALK
 	shot.clear()
@@ -386,6 +388,7 @@ func _settle() -> void:
 	visual.clear_trail()
 	if holed:
 		round_state.complete_hole()
+		if not round_state.active: session.living_world.social.finish_gameplay(round_state.gameplay_id, "golf", {"scores": round_state.scores.duplicate()})
 		phase = Phase.HOLED if round_state.active else Phase.FINISHED
 		_feedback_message("进洞！本洞 %d 杆 · %s" % [round_state.strokes,"前往下一发球台" if round_state.active else "七洞完成"])
 	else:

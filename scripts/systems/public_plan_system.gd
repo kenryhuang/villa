@@ -58,6 +58,8 @@ func budget() -> Dictionary:
 	var committed := 0
 	var spent := 0
 	var today := 0
+	if world.environment != null: today += world.environment.public_cost_today()
+	if world.social != null: today += world.social.public_cost_today()
 	for p in plans.values():
 		var c: Dictionary = world.board.commissions.get(p.commission_id, {})
 		committed += int(c.get("escrow", 0))
@@ -74,7 +76,8 @@ func public_plans() -> Array:
 
 static func valid_command(tool: String, a: Dictionary) -> bool:
 	if not Project._count(a.get("expected_version"), 1, 1000000000) or not Project._id(a.get("reason")): return false
-	if tool == "public_wait": return a.size() == 2
+	if tool == "public_activity_plan": return a.size() == 3 and preload("res://scripts/systems/social_activity_system.gd").valid_terms(a.get("terms"))
+	if tool in ["public_wait", "public_repair_plan"]: return a.size() == 2
 	return tool == "public_food_plan" and a.size() == 5 and Project._count(a.get("quantity"), 1, 12) and Project._count(a.get("unit_reward"), 1, 200) and Project._count(a.get("deadline_minutes"), 60, 1080)
 
 func command(actor: String, tool: String, a: Dictionary, key: String) -> Dictionary:
@@ -91,6 +94,20 @@ func command(actor: String, tool: String, a: Dictionary, key: String) -> Diction
 		receipts[key] = {"intent": intent, "minute": world.minute()}
 		revision += 1
 		return {"ok": true, "message": "公共协调者选择等待，未支出。"}
+	if tool == "public_repair_plan":
+		if world.minute() - last_plan < 180: return _error("public_cooldown")
+		var result: Dictionary = world.environment.fund_repair(actor, key)
+		if result.ok:
+			receipts[key] = {"intent": intent, "minute": world.minute()}
+			last_plan = world.minute(); last_review = world.minute(); revision += 1
+		return result
+	if tool == "public_activity_plan":
+		if world.minute() - last_plan < 180: return _error("public_cooldown")
+		var result: Dictionary = world.social.propose(actor, "public-event-" + key.sha256_text().substr(0, 20), a.terms)
+		if result.ok:
+			receipts[key] = {"intent": intent, "minute": world.minute()}
+			last_plan = world.minute(); last_review = world.minute(); revision += 1
+		return result
 	var info := indicators()
 	if int(info.cooldown_remaining) > 0: return _error("public_cooldown")
 	if int(info.urgent_food_gap) <= int(info.funded_claimed_incoming) + int(info.public_bread_stock): return _error("supply_already_arranged")

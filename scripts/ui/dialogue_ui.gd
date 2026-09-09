@@ -35,7 +35,7 @@ var _is_open := false
 # Shared binding used by the 3D farm; the original dialogue/history UI is retained.
 func configure_agent_runtime(runtime: Node) -> void:
 	agent_message_submitted.connect(func(id: String, message: String):
-		if not runtime.trigger_dialogue(id, message): fail_agent_submission(id))
+		if not runtime.trigger_dialogue(id, message): fail_agent_submission(id, runtime.dialogue_unavailable_reason()))
 	runtime.dialogue_stream_started.connect(func(id: String, request_id: String):
 		if _is_open and id == _current_villager_id: begin_agent_dialogue(id, request_id))
 	runtime.dialogue_stream_delta.connect(func(_id: String, request_id: String, delta: String): append_agent_dialogue(request_id, delta))

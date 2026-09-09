@@ -13,6 +13,7 @@ const IMPORT_DAY_THRESHOLD := 3
 const IMPORT_QUANTITY_CAP := 5
 const IMPORT_COST_MULTIPLIER := 1.25
 const EMERGENCY_CARAVAN_ID := "lao_li_emergency_import"
+var import_dispatcher: Callable
 const FACTOR_MIN := 0.0
 const FACTOR_MAX := 3.0
 const SYSTEM_FIELDS := [
@@ -698,6 +699,7 @@ func _import_essential(item_id: String, total_day: int) -> bool:
 	var import_cost := ceili(local_quote * IMPORT_COST_MULTIPLIER)
 	if local_quote <= 0 or importer.gold < import_cost:
 		return false
+	if import_dispatcher.is_valid(): return import_dispatcher.call(importer.npc_id, item_id, quantity, import_cost, total_day)
 	var npc_before := to_dict()
 	var market_before: Dictionary = _market_system.call("to_dict")
 	var transaction: Variant = _market_system.call("begin_atomic_transaction")

@@ -145,7 +145,7 @@ test("rejects Provider tool arguments outside the authoritative contract", () =>
     ["build", {building_type: "castle", building_id: "home-1"}],
     ["travel", {region_id: "moon", duration_minutes: 60}],
     ["survey", {direction: "surroundings", purpose: "探索"}],
-    ["collect_sample", {discovery_id: "invented_discovery"}],
+    ["collect_sample", {discovery_id: ""}],
     ["wait", {minutes: 30}],
   ];
   for (const [toolName, args] of invalidCases) {

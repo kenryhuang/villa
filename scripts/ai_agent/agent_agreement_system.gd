@@ -5,6 +5,8 @@ const DEFAULT_TEMPLATES_PATH := "res://data/agents/cooperation_templates.json"
 const VERSION := 1
 const MAX_QUANTITY := 1000000
 
+var work_system: RefCounted
+
 var _economy: Variant
 var _interactions: Variant
 var _store: Variant
@@ -35,6 +37,8 @@ func configure(economy: Variant, interactions: Variant, store: Variant, projecto
 
 
 func execute(command: Dictionary, game_minute: int) -> Dictionary:
+	if work_system != null and str(command.get("tool_name", "")) in work_system.TOOLS:
+		return work_system.command(str(command.get("agent_id", "")), str(command.tool_name), command.get("arguments", {}), str(command.get("idempotency_key", "")))
 	var key := str(command.get("idempotency_key", "")).strip_edges()
 	if key.is_empty() or game_minute < 0:
 		return _failure("invalid_command")
@@ -387,6 +391,7 @@ func _sorted_scalar_records(source: Dictionary, key_field: String, value_field: 
 
 
 func _propose(actor_id: String, arguments: Dictionary, command: Dictionary, game_minute: int) -> Dictionary:
+	if work_system != null: return _failure("use_funded_work_or_joint_project")
 	var terms: Variant = _normalize_proposal(actor_id, arguments, game_minute)
 	if terms == null:
 		return _failure("invalid_cooperation_terms")

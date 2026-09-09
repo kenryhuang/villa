@@ -24,6 +24,8 @@ var _farming_event_queue: Array[Array] = []
 var _is_dispatching_farming_events := false
 var _farming_event_dispatch_suspended := false
 var _last_growth_game_minute := -1
+var _planted_candidates := {}
+var _plant_index_ready := false
 
 const GAME_MINUTES_PER_DAY := 18 * 60
 
@@ -48,6 +50,11 @@ func configure(gs, ss, gs_state) -> bool:
 		var callback := Callable(self, "_on_time_changed")
 		if not _event_bus.is_connected("time_changed", callback):
 			_event_bus.connect("time_changed", callback)
+	_plant_index_ready = false
+	if _event_bus != null and _event_bus.has_signal("cell_state_changed") and not _event_bus.cell_state_changed.is_connected(_index_cell):
+		_event_bus.cell_state_changed.connect(_index_cell)
+	if gs.has_signal("navigation_changed") and not gs.navigation_changed.is_connected(_invalidate_plant_index):
+		gs.navigation_changed.connect(_invalidate_plant_index)
 	sync_growth_clock()
 	return true
 
@@ -182,6 +189,7 @@ func _commit_plant_data(cell: GridCell, crop_data: CropData) -> CropInstance:
 	var instance: CropInstance = grid_system.apply_crop_plant(cell.gx, cell.gz, crop_data)
 	if instance == null:
 		return null
+	_planted_candidates[GridSystemScript.cell_key(cell.gx, cell.gz)] = cell
 	_create_visual(cell, instance)
 	_queue_farming_event_batch([
 		{"signal": &"cell_state_changed", "args": [cell.gx, cell.gz, int(cell.state)]},
@@ -678,14 +686,24 @@ func water(grid_cell) -> bool:
 	return grid_system.water_cell(grid_cell.gx, grid_cell.gz)
 
 
+func _invalidate_plant_index(_revision: int = 0) -> void:
+	_plant_index_ready = false
+
+func _index_cell(gx: int, gz: int, _state: int) -> void:
+	if grid_system == null: return
+	var cell: GridCell = grid_system.get_cell(gx, gz)
+	if cell != null and cell.state == GridCell.State.PLANTED and cell.crop_instance != null:
+		_planted_candidates[GridSystemScript.cell_key(gx, gz)] = cell
+
 func get_all_planted_cells() -> Array:
-	if grid_system == null:
-		return []
-	var result := []
-	for cell in grid_system._cells.values():
-		if cell.state == GridCell.State.PLANTED and cell.crop_instance:
-			result.append(cell)
-	return result
+	if grid_system == null: return []
+	if not _plant_index_ready:
+		_planted_candidates.clear()
+		for cell in grid_system._cells.values():
+			if cell.state == GridCell.State.PLANTED and cell.crop_instance != null:
+				_planted_candidates[GridSystemScript.cell_key(cell.gx, cell.gz)] = cell
+		_plant_index_ready = true
+	return _planted_candidates.values().filter(func(cell): return cell.state == GridCell.State.PLANTED and cell.crop_instance != null)
 
 
 func advance_growth_minutes(minutes: int) -> void:
@@ -1106,6 +1124,7 @@ func clear_visuals() -> void:
 
 
 func rebuild_visuals() -> void:
+	_plant_index_ready = false
 	clear_visuals()
 	for cell in get_all_planted_cells():
 		_create_visual(cell, cell.crop_instance)

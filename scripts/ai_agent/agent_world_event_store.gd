@@ -59,10 +59,16 @@ func append_projected_batch(events: Array[Dictionary], idempotency_key: String, 
 	var store_sequence := get_last_sequence()
 	if int(projector.call("get_last_sequence")) != store_sequence:
 		return _failure("event_projection_out_of_sync")
-	var cached := get_idempotent_result(idempotency_key)
+	var normalized_key := idempotency_key.strip_edges()
+	var cached := get_idempotent_result(normalized_key)
 	if not cached.is_empty():
 		return cached
-	var store_before := to_dict()
+	# append_batch only appends events/new keys and replaces the version table.
+	# Keep a rollback cursor instead of copying the entire event history per trade.
+	var before_count := _events.size()
+	var before_versions := _aggregate_versions
+	var before_sequence := _next_global_sequence
+	var before_keys := _idempotency_results.size()
 	var projector_before: Dictionary = projector.call("to_dict") if projector.has_method("to_dict") else {}
 	var committed := append_batch(events, idempotency_key)
 	if not bool(committed.get("ok", false)):
@@ -71,7 +77,10 @@ func append_projected_batch(events: Array[Dictionary], idempotency_key: String, 
 	committed_events.assign(committed.events)
 	if bool(projector.call("apply_batch", committed_events)):
 		return committed
-	from_dict(store_before)
+	_events.resize(before_count)
+	_aggregate_versions = before_versions
+	_next_global_sequence = before_sequence
+	for key in _idempotency_results.keys().slice(before_keys): _idempotency_results.erase(key)
 	if not projector_before.is_empty() and projector.has_method("from_dict"):
 		projector.call("from_dict", projector_before)
 	return _failure("event_projection_failed")

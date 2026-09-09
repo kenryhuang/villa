@@ -111,15 +111,27 @@ func spawn_farm3d_actors() -> void:
 		actor.process_mode = Node.PROCESS_MODE_DISABLED
 		actor.queue_free()
 	farm3d_actors.clear()
-	for agent_id in registry.get_agent_ids():
+	sync_focus_actors()
+
+func sync_focus_actors() -> void:
+	var society: RefCounted = farm3d_session.living_world.society if farm3d_session.living_world != null else null
+	var focus: Array = society.focus if society != null else (preload("res://scripts/systems/resident_society_system.gd").configuration().focus_actors if preload("res://scripts/systems/resident_society_system.gd").expanded() else ["farmer_ahe", "lao_li", "xuezhe_lin"])
+	for id in farm3d_actors.keys():
+		if id in focus: continue
+		farm3d_actors[id].process_mode = Node.PROCESS_MODE_DISABLED
+		farm3d_actors[id].queue_free(); farm3d_actors.erase(id)
+	for agent_id in focus:
+		if farm3d_actors.has(agent_id): continue
 		var actor := preload("res://scenes/actors/npc.tscn").instantiate()
 		actor.villager_id = agent_id
-		var spawn: Vector2 = FARM3D_SPAWNS[agent_id]
+		var spawn: Vector2 = FARM3D_SPAWNS.get(agent_id, Vector2(-8.5, 20.5))
+		if society != null and society.residents.has(agent_id) and agent_id not in FARM3D_SPAWNS: spawn = Vector2(society.residents[agent_id].position.x, society.residents[agent_id].position.z)
 		actor.position = Vector3(spawn.x, Farm3DTerrainProfile.surface_height(spawn.x, spawn.y), spawn.y)
 		add_child(actor)
 		actor.configure_agent(farm3d_session.player, agent_id, get_agent_display_name(agent_id))
 		actor.configure_farm3d(farm3d_session.grid)
-		var atlas := load("res://assets/characters/npcs/%s/%s_directions.png" % [agent_id, agent_id]) as Texture2D
+		var atlas_id := str(agent_id) if ResourceLoader.exists("res://assets/characters/npcs/%s/%s_directions.png" % [agent_id, agent_id]) else "lao_li"
+		var atlas := load("res://assets/characters/npcs/%s/%s_directions.png" % [atlas_id, atlas_id]) as Texture2D
 		actor.configure_agent_visual(atlas)
 		farm3d_actors[agent_id] = actor
 		if agent_id == "farmer_ahe":
@@ -264,7 +276,7 @@ func configure(
 	client_config_path: String = AgentClientConfigScript.DEFAULT_PATH,
 	remote_enabled: bool = true
 ) -> bool:
-	if npc_economy == null or market == null or season == null or not registry.load_defaults():
+	if npc_economy == null or market == null or season == null or not registry.load_defaults(farm3d_session != null and preload("res://scripts/systems/resident_society_system.gd").expanded()):
 		return false
 	_npc_economy = npc_economy
 	_market = market
@@ -430,6 +442,14 @@ func respond_to_player_interaction(agent_id: String, interaction_id: String, res
 
 func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 	return service_enabled and scheduler.trigger_dialogue(agent_id, text, _absolute_game_minute())
+
+func dialogue_unavailable_reason() -> String:
+	if not service_enabled: return "Agent 服务暂时不可用，请稍后再试。"
+	if scheduler.max_daily_requests > 0 and scheduler.budget_day >= _absolute_game_minute() / 1080 and scheduler.budget_calls >= scheduler.max_daily_requests:
+		return "今日的 AI 对话与规划额度已用完，下一游戏日恢复；已接受的工作会继续。"
+	if scheduler.max_concurrent_requests > 0 and scheduler._in_flight.size() >= scheduler.max_concurrent_requests:
+		return "其他角色正在思考，请稍后再发送。"
+	return "角色暂时无法回应，请稍后重试；若刚刚跨日，请先关闭窗口让日结完成。"
 
 
 func get_in_flight_request_id(agent_id: String) -> String:
@@ -706,7 +726,7 @@ func _validate_event_sourced_state(value: Dictionary) -> bool:
 	if not restored_inbox.validate_dict(value.perception_inbox, last_sequence):
 		return false
 	var validation_registry = AgentRegistryScript.new()
-	if not validation_registry.load_defaults():
+	if not validation_registry.load_defaults(registry.get_agent_ids().size() > 3):
 		return false
 	var restored_roles = AgentRoleSystemScript.new()
 	var events: Array[Dictionary] = restored_store.get_events_after(0)
@@ -908,6 +928,25 @@ func _actor_profiles() -> Array[Dictionary]:
 	})
 	return actor_profiles
 
+func expand_saved_population(value: Dictionary) -> void:
+	if int(value.get("version", 0)) < VERSION: return
+	var store = AgentWorldEventStoreScript.new()
+	if not store.from_dict(value.event_store): return
+	var inbox = AgentPerceptionInboxScript.new()
+	var projector = AgentWorldProjectorScript.new()
+	if not projector.configure(registry.get_agent_ids(), _actor_profiles(), inbox) or not projector.replay(store.get_events_after(0)): return
+	value.checkpoint_sequence = projector.get_last_sequence()
+	value.projection_checkpoint = projector.to_dict()
+	var known := {}
+	for c in value.perception_inbox.consumption_cursors: known[c.agent_id] = true
+	for id in registry.get_agent_ids():
+		if known.has(id): continue
+		value.perception_inbox.consumption_cursors.append({"agent_id": id, "consumed_sequence": projector.get_last_sequence()})
+		var role: String = registry.get_agent(id).role_id
+		value.roles.roles.append({"agent_id": id, "active_role_id": role, "last_changed_minute": -1, "history": [role]})
+	value.perception_inbox.consumption_cursors.sort_custom(func(a, b): return a.agent_id < b.agent_id)
+	value.roles.roles.sort_custom(func(a, b): return a.agent_id < b.agent_id)
+
 
 func _connect_events() -> void:
 	_event_bus = get_node_or_null("/root/EventBus")
@@ -1054,10 +1093,12 @@ func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: i
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
+	if farm3d_session != null and farm3d_session.living_world != null and (agent_id not in farm3d_session.living_world.society.focus or not farm3d_session.living_world.society.caught_up(game_minute)): return {}
 	if trigger != "dialogue" and farm3d_session != null and farm3d_session.living_world != null:
-		if not farm3d_session.living_world.interruptions.running(agent_id).is_empty(): return {}
+		var negotiating: bool = farm3d_session.living_world.work.pending_negotiation(agent_id)
+		if not negotiating and (not farm3d_session.living_world.interruptions.running(agent_id).is_empty() or farm3d_session.living_world.work.owns_schedule(agent_id)): return {}
 		var project: Dictionary = farm3d_session.living_world.projects.active(agent_id)
-		if not project.is_empty() and not project.steps.values().any(func(step): return step.status == "blocked"): return {}
+		if not negotiating and not project.is_empty() and not project.steps.values().any(func(step): return step.status == "blocked"): return {}
 	if (
 		trigger != "dialogue"
 		and farm_registry.has_method("has_pending_work")
@@ -1122,7 +1163,11 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	}
 	if is_instance_valid(farm3d_session):
 		var environment := get_farm3d_environment()
+		projected.actor_context.exploration = knowledge_registry.cards(agent_id, trigger != "dialogue")
 		projected.actor_context.living_world = farm3d_session.living_world.context(agent_id)
+		projected.actor_context.environment = farm3d_session.living_world.environment.context()
+		projected.actor_context.social = farm3d_session.living_world.social.context()
+		projected.actor_context.planning_limits = {"concise": preload("res://scripts/systems/resident_society_system.gd").expanded(), "daily_private_requests": scheduler.max_daily_requests, "used": scheduler.budget_calls}
 		projected.actor_context.world_map = environment.map
 		projected.actor_context.player_buildings = environment.buildings
 		projected.actor_context.characters = environment.characters
@@ -1130,8 +1175,9 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.goals = (capabilities.get("goals", []) as Array).duplicate()
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
+	if is_instance_valid(farm3d_session): projected.allowed_command_tools.erase("propose_cooperation")
 	if not is_instance_valid(farm3d_session):
-		for name in ["rent_production", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
+		for name in ["rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
 	projected.market_summary = market_summary.build(
 		str(capabilities.get("role_id", "")),
 		game_minute,
@@ -1209,7 +1255,7 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	if farm3d_session != null and get_tree().paused and validator.validate(response, registry, executor.world_revision, role_system).ok:
 		var safe_dialogue := trigger == "dialogue"
 		for action in response.get("actions", []):
-			if str(action.get("tool_name", "")) not in ["propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
+			if str(action.get("tool_name", "")) not in ["propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
 				safe_dialogue = false
 		if not safe_dialogue:
 			if not _deferred_responses.any(func(entry: Dictionary): return str(entry.response.get("request_id", "")) == request_id):
@@ -1302,6 +1348,10 @@ func _record_world_action_outcome(outcome: Dictionary) -> bool:
 	var agent_id := str(outcome.get("agent_id", ""))
 	var action_id := str(outcome.get("action_id", outcome.get("idempotency_key", "action")))
 	var arguments := (outcome.get("arguments", {}) as Dictionary).duplicate(true)
+	# Movement is observable; the activity's private survey target, evidence and
+	# discovered report are not part of a global status event.
+	if arguments.get("physical", false) and tool_name in ["travel", "survey"]:
+		arguments = {"region_id": str(arguments.get("region_id", "village"))}
 	var base_payload := {
 		"tool_name": tool_name,
 		"status": status,
@@ -1317,6 +1367,8 @@ func _record_world_action_outcome(outcome: Dictionary) -> bool:
 		events.append(_world_action_event("PublicStatusChanged", "actor", agent_id, agent_id, action_id, base_payload.merged({"status": activity_status, "region_id": region_id}, true), "public"))
 	elif status == "completed":
 		match tool_name:
+			"speak", "send_message":
+				if farm3d_session != null: knowledge_registry.record_statement(agent_id, str(arguments.get("target_actor_id", "")), action_id, str(arguments.get("text", "")))
 			"till": events.append(_world_action_event("FieldTilled", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "region"))
 			"plant": events.append(_world_action_event("CropPlanted", "farm", agent_id, agent_id, action_id, base_payload.merged({"region_id": region_id}, true), "region"))
 			"harvest":

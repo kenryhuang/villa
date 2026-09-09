@@ -167,6 +167,10 @@ func run() -> void:
 	legacy.living_world.version = 1
 	legacy.living_world.erase("interruptions")
 	legacy.living_world.erase("public_plans")
+	legacy.living_world.erase("work")
+	legacy.living_world.erase("environment")
+	legacy.living_world.erase("social")
+	legacy.living_world.erase("planning")
 	check(s._valid_save(legacy), "Old v7 worlds without new tasks remain readable")
 	var corrupt: Dictionary = w.to_dict()
 	corrupt.interruptions.tasks[id].gold = 100

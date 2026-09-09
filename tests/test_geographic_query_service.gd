@@ -66,6 +66,8 @@ func _test_mature_flower_radius(assertions: TestAssert) -> void:
 		2,
 		"flower query applies a stable positive cap"
 	)
+	assertions.equal(geography.mature_flowers_near(Vector2(10,10), 1000000000).size(),4,"Large radius visits only actual world cells")
+	assertions.equal(geography.mature_flowers_near(Vector2(NAN,0),4),[],"Non-finite centers cannot enter the bounded grid query")
 	grid.free()
 
 

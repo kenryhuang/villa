@@ -4,6 +4,7 @@ const VERSION := 1
 
 var _events_by_agent: Dictionary = {}
 var _world_events_by_agent: Dictionary = {}
+var _world_event_ids_by_agent: Dictionary = {}
 var _consumed_sequence_by_agent: Dictionary = {}
 var _frozen_by_agent: Dictionary = {}
 
@@ -74,6 +75,7 @@ func configure_agents(agent_ids: Array) -> bool:
 		var agent_id := str(agent_id_value)
 		if not _world_events_by_agent.has(agent_id):
 			_world_events_by_agent[agent_id] = []
+			_world_event_ids_by_agent[agent_id] = {}
 		if not _consumed_sequence_by_agent.has(agent_id):
 			_consumed_sequence_by_agent[agent_id] = 0
 		if not _frozen_by_agent.has(agent_id):
@@ -89,15 +91,15 @@ func push_world_event(agent_id: String, event: Dictionary) -> bool:
 		or not _is_positive_integer(event.get("global_sequence"))
 	):
 		return false
+	if int(event.global_sequence) <= int(_consumed_sequence_by_agent.get(agent_id, 0)): return true
 	var events: Array = _world_events_by_agent[agent_id]
-	for existing_value in events:
-		var existing := existing_value as Dictionary
-		if str(existing.get("event_id", "")) == str(event.event_id):
-			return true
+	var ids: Dictionary = _world_event_ids_by_agent[agent_id]
+	if ids.has(event.event_id): return true
+	ids[event.event_id] = true
+	var ordered := events.is_empty() or int(events[-1].global_sequence) < int(event.global_sequence)
 	events.append(event.duplicate(true))
-	events.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
-		return int(left.global_sequence) < int(right.global_sequence)
-	)
+	if not ordered:
+		events.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return int(left.global_sequence) < int(right.global_sequence))
 	return true
 
 
@@ -134,6 +136,8 @@ func acknowledge_delta(agent_id: String, request_id: String) -> bool:
 		if int((event_value as Dictionary).global_sequence) > consumed:
 			retained.append((event_value as Dictionary).duplicate(true))
 	_world_events_by_agent[agent_id] = retained
+	_world_event_ids_by_agent[agent_id] = {}
+	for event in retained: _world_event_ids_by_agent[agent_id][event.event_id] = true
 	return true
 
 
@@ -181,6 +185,8 @@ func from_dict(value: Dictionary, maximum_sequence: int = 9223372036854775807) -
 			if int((event_value as Dictionary).global_sequence) > consumed:
 				retained.append((event_value as Dictionary).duplicate(true))
 		_world_events_by_agent[agent_id] = retained
+		_world_event_ids_by_agent[agent_id] = {}
+		for event in retained: _world_event_ids_by_agent[agent_id][event.event_id] = true
 	return true
 
 

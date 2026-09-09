@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
 import test from "node:test";
+import {mkdtempSync, readFileSync, writeFileSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {AgentRegistry} from "../src/agents.ts";
 import {OpenAICompatibleProvider} from "../src/provider.ts";
 import {executeReadTool, toolDescription, validToolArguments, toolArgumentErrors} from "../src/tool_contracts.ts";
@@ -34,10 +37,23 @@ async function scenario(rounds: Array<readonly Call[] | "timeout">, verify: (pro
       if (calls === "timeout") return;
       const tool_calls = calls.map(([name, args], index) => ({index, id: `r${bodies.length}-${index}`, type: "function", function: {name, arguments: typeof args === "string" ? args : JSON.stringify(args)}}));
       response.setHeader("content-type", "text/event-stream");
-      response.end(`data: ${JSON.stringify({id: `round-${bodies.length}`, choices: [{delta: {tool_calls}, finish_reason: finishReasons[bodies.length - 1] ?? "tool_calls"}]})}\n\ndata: [DONE]\n\n`);
+      response.end(`data: ${JSON.stringify({id: `round-${bodies.length}`, choices: [{delta: {...(bodies.at(-1).enable_thinking === true ? {reasoning_content: "检查当前事件。"} : {}), tool_calls}, finish_reason: finishReasons[bodies.length - 1] ?? "tool_calls"}]})}\n\ndata: [DONE]\n\n`);
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  // Windows can allocate port 6667 (or another Fetch-forbidden service port)
+  // for listen(0). Bind in a high range so transport tests reach the mock.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const failed = (error: Error) => { server.off("listening", ready); reject(error); };
+        const ready = () => { server.off("error", failed); resolve(); };
+        server.once("error", failed).once("listening", ready).listen(20000 + Math.floor(Math.random() * 30000), "127.0.0.1");
+      });
+      break;
+    } catch (error) {
+      if (attempt >= 9 || (error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    }
+  }
   const address = server.address(); assert.ok(address && typeof address === "object");
   try {
     await verify(new OpenAICompatibleProvider({baseUrl: `http://127.0.0.1:${address.port}`, apiKey: "test", model: "test", timeoutMs: 200, maxConcurrency: 2, maxOutputTokens: 1200, temperature: 0}), bodies);
@@ -47,6 +63,29 @@ async function scenario(rounds: Array<readonly Call[] | "timeout">, verify: (pro
   }
 }
 const context = () => AgentRegistry.loadDefault().buildContext(request.agent_id, request, []);
+
+test("daily reservations persist across restarts, share actors, and cannot reset by rewinding", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "villa-provider-budget-"));
+  const path = join(directory, "usage.json");
+  const config = {baseUrl: "http://127.0.0.1:29999", apiKey: "test", model: "test", timeoutMs: 50, maxConcurrency: 2, maxOutputTokens: 1200, temperature: 0};
+  try {
+    writeFileSync(path, JSON.stringify({isolated: {day: 2, reserved: 7_999_999}}));
+    for (const minute of [2160, 0, 2159]) {
+      const provider = new OpenAICompatibleProvider(config, path);
+      await assert.rejects(provider.decide({...request, game_minute: minute}, context()), /provider_daily_budget_exhausted/);
+      assert.equal(JSON.parse(readFileSync(path, "utf8")).isolated.reserved, 7_999_999);
+    }
+    const anotherActor = {...request, agent_id: "lao_li", game_minute: 2160};
+    await assert.rejects(new OpenAICompatibleProvider(config, path).decide(anotherActor, AgentRegistry.loadDefault().buildContext("lao_li", anotherActor, [])), /provider_daily_budget_exhausted/);
+    // Next day gets a new reservation even if transport subsequently fails.
+    await assert.rejects(new OpenAICompatibleProvider(config, path).decide({...request, game_minute: 3240}, context()));
+    const usage = JSON.parse(readFileSync(path, "utf8")).isolated;
+    assert.equal(usage.day, 3);
+    assert.ok(usage.reserved > 0 && usage.reserved < 8_000_000);
+    writeFileSync(path, JSON.stringify({isolated: {day: 3, reserved: -1}}));
+    assert.throws(() => new OpenAICompatibleProvider(config, path), /provider_budget_store_invalid/);
+  } finally { rmSync(directory, {recursive: true, force: true}); }
+});
 
 test("behavior text schema matches the service and Godot 500-character limit", () => {
   const schema = toolDescription("suggest_behavior") as any;
@@ -166,6 +205,36 @@ test("3D region and market depth read the supplied authoritative data", () => {
   const legacy = context();
   legacy.public_world_state.regions = [{region_id: "old", description: "Legacy region"}];
   assert.equal(executeReadTool(legacy, "inspect_region", {region_id: "old"}).found, true);
+});
+
+test("autonomous triggers retain thinking across reads even with concise population planning", async () => {
+  for (const trigger of ["event", "schedule", "catch_up"] as const) {
+    const ctx = context();
+    ctx.actor_context.planning_limits = {concise: true, daily_private_requests: 16, used: 1};
+    await scenario([[read], [speak]], async (provider, bodies) => {
+      const reasoning: string[] = [];
+      const result = await provider.streamDecision({...request, trigger}, ctx, event => {
+        if (event.type === "reasoning") reasoning.push(event.delta);
+      });
+      assert.equal(result.actions.length, 1);
+      assert.deepEqual(bodies.map(body => body.enable_thinking), [true, true], trigger);
+      assert.deepEqual(reasoning, ["检查当前事件。", "检查当前事件。"], trigger);
+    });
+  }
+});
+
+test("private negotiation stays voluntary, bounded and explicit about cargo ownership", async () => {
+  const ctx = context();
+  ctx.actor_context.living_world = {work: {contracts: [{status: "proposed", employer: "lao_li", accepted_by: ["lao_li"], terms: {worker_id: request.agent_id, kind: "delivery"}}]}};
+  await scenario([[speak, speak], [speak]], async (provider, bodies) => {
+    const intent = await provider.decide(request, ctx);
+    assert.equal(intent.actions.length, 1);
+    assert.equal(bodies[0].enable_thinking, true);
+    assert.equal(bodies[1].enable_thinking, false);
+    assert.match(bodies[0].messages[0].content, /EMPLOYER supplies cargo/);
+    assert.match(bodies[0].messages[0].content, /not required to accept/);
+    assert.deepEqual(bodies[0].tools.filter((tool: any) => tool.function.name === "speak").length, 1);
+  });
 });
 
 test("mixed batches inspect safely and only return a reissued command", async () => {

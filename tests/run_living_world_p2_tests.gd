@@ -54,6 +54,7 @@ func run() -> void:
 	poor.gold = 0
 	poor.inventory = {}
 	society._feed_day(8)
+	society.advance_to(society.last_minute)
 	check(society.residents.resident_mei.food_reason == "unaffordable", "Hunger from purchasing power distinguished")
 	var damaged: Dictionary = w.to_dict()
 	damaged.society.ledger[0].items = []

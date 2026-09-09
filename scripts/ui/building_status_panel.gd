@@ -225,10 +225,13 @@ func _view_data_for(building: BuildingInstance) -> ViewData:
 	match building.building_id:
 		"beehive":
 			result.kind = "hive"
-			var flowers := _production.count_nearby_mature_flowers(building)
+			var hive := _production.get_beehive_snapshot(building)
+			var flowers := int(hive.flower_count)
 			var cap := maxi(1, int(config.get("flower_cap", 4)))
 			result.fields = {
-				"next_output": _next_even_day(),
+				"next_output": hive.next_day,
+				"cycle_progress": {"current": hive.elapsed_minutes, "maximum": hive.duration_minutes},
+				"cycle_remaining": hive.remaining_minutes,
 				"mature_flowers": flowers,
 				"bonus": float(mini(flowers, cap)) / float(cap),
 				"storage": result.storage.duplicate(true),

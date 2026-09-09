@@ -7,7 +7,7 @@ var _agents: Dictionary = {}
 var _roles: Dictionary = {}
 
 
-func load_defaults() -> bool:
+func load_defaults(expanded := false) -> bool:
 	var roles_value: Variant = JSON.parse_string(FileAccess.get_file_as_string(ROLES_PATH))
 	var profiles_value: Variant = JSON.parse_string(FileAccess.get_file_as_string(PROFILES_PATH))
 	if not roles_value is Array or not profiles_value is Array:
@@ -26,6 +26,7 @@ func load_defaults() -> bool:
 		if not profile_value is Dictionary:
 			return false
 		var profile := profile_value as Dictionary
+		if profile.get("background", false) and not expanded: continue
 		var agent_id := str(profile.get("agent_id", ""))
 		var role_id := str(profile.get("role_id", ""))
 		if agent_id.is_empty() or candidates.has(agent_id) or not roles.has(role_id):

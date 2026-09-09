@@ -1,28 +1,239 @@
 {
   "version": 1,
   "residents": [
-    {"id": "farmer_ahe", "name": "阿禾", "occupation": "自营农户"},
-    {"id": "lao_li", "name": "老李", "occupation": "自营商人"},
-    {"id": "xuezhe_lin", "name": "学者林", "occupation": "研究员"},
-    {"id": "xiao_hua", "name": "小花", "occupation": "花艺师"},
-    {"id": "tiejiang_zhang", "name": "铁匠张", "occupation": "工匠"},
-    {"id": "afu_shui", "name": "阿水", "occupation": "渔民"},
-    {"id": "resident_mei", "name": "阿梅", "occupation": "旅店杂务"},
-    {"id": "resident_zhou", "name": "小周", "occupation": "搬运工"},
-    {"id": "resident_chen", "name": "老陈", "occupation": "木工"},
-    {"id": "resident_yun", "name": "云姐", "occupation": "厨工"},
-    {"id": "resident_shan", "name": "阿山", "occupation": "园丁"},
-    {"id": "resident_xiu", "name": "阿秀", "occupation": "裁缝"}
+    {
+      "id": "farmer_ahe",
+      "name": "阿禾",
+      "occupation": "自营农户"
+    },
+    {
+      "id": "lao_li",
+      "name": "老李",
+      "occupation": "自营商人"
+    },
+    {
+      "id": "xuezhe_lin",
+      "name": "学者林",
+      "occupation": "研究员"
+    },
+    {
+      "id": "xiao_hua",
+      "name": "小花",
+      "occupation": "花艺师"
+    },
+    {
+      "id": "tiejiang_zhang",
+      "name": "铁匠张",
+      "occupation": "工匠"
+    },
+    {
+      "id": "afu_shui",
+      "name": "阿水",
+      "occupation": "渔民"
+    },
+    {
+      "id": "resident_mei",
+      "name": "阿梅",
+      "occupation": "旅店杂务"
+    },
+    {
+      "id": "resident_zhou",
+      "name": "小周",
+      "occupation": "搬运工"
+    },
+    {
+      "id": "resident_chen",
+      "name": "老陈",
+      "occupation": "木工"
+    },
+    {
+      "id": "resident_yun",
+      "name": "云姐",
+      "occupation": "厨工"
+    },
+    {
+      "id": "resident_shan",
+      "name": "阿山",
+      "occupation": "园丁"
+    },
+    {
+      "id": "resident_xiu",
+      "name": "阿秀",
+      "occupation": "裁缝"
+    }
   ],
   "organizations": [
-    {"id": "village_inn", "name": "溪畔旅店", "gold": 30000},
-    {"id": "village_public", "name": "村庄公共储备", "gold": 5000}
+    {
+      "id": "village_inn",
+      "name": "溪畔旅店",
+      "gold": 30000
+    },
+    {
+      "id": "village_public",
+      "name": "村庄公共储备",
+      "gold": 5000
+    }
   ],
   "new_resident_gold": 180,
-  "new_resident_inventory": {"bread": 1},
+  "new_resident_inventory": {
+    "bread": 1
+  },
   "shift_wage": 90,
   "shift_minutes": 180,
   "shift_slots": 3,
-  "food_preferences": ["bread", "grilled_fish", "carrot", "potato"],
-  "food_reserve_days": 2
+  "food_preferences": [
+    "bread",
+    "grilled_fish",
+    "carrot",
+    "potato"
+  ],
+  "food_reserve_days": 2,
+  "population_target": 36,
+  "focus_actors": [
+    "farmer_ahe",
+    "lao_li",
+    "xuezhe_lin",
+    "resident_yun",
+    "tiejiang_zhang",
+    "afu_shui"
+  ],
+  "expanded_shift_slots": 24,
+  "additional_organizations": [
+    {
+      "id": "village_coop",
+      "name": "乡村农作合作社",
+      "gold": 20000,
+      "inventory": {
+        "carrot_seed": 400,
+        "potato_seed": 200
+      }
+    },
+    {
+      "id": "artisan_guild",
+      "name": "手艺人协会",
+      "gold": 10000
+    }
+  ],
+  "additional_residents": [
+    {
+      "id": "resident_13",
+      "name": "小桐",
+      "occupation": "农场帮工"
+    },
+    {
+      "id": "resident_14",
+      "name": "阿松",
+      "occupation": "烘焙学徒"
+    },
+    {
+      "id": "resident_15",
+      "name": "小荷",
+      "occupation": "运输工"
+    },
+    {
+      "id": "resident_16",
+      "name": "阿枫",
+      "occupation": "木工"
+    },
+    {
+      "id": "resident_17",
+      "name": "小岚",
+      "occupation": "园艺工"
+    },
+    {
+      "id": "resident_18",
+      "name": "阿朴",
+      "occupation": "旅店杂务"
+    },
+    {
+      "id": "resident_19",
+      "name": "青竹",
+      "occupation": "农场帮工"
+    },
+    {
+      "id": "resident_20",
+      "name": "小溪",
+      "occupation": "烘焙学徒"
+    },
+    {
+      "id": "resident_21",
+      "name": "阿梨",
+      "occupation": "运输工"
+    },
+    {
+      "id": "resident_22",
+      "name": "小杏",
+      "occupation": "木工"
+    },
+    {
+      "id": "resident_23",
+      "name": "小穗",
+      "occupation": "园艺工"
+    },
+    {
+      "id": "resident_24",
+      "name": "阿良",
+      "occupation": "旅店杂务"
+    },
+    {
+      "id": "resident_25",
+      "name": "阿陶",
+      "occupation": "农场帮工"
+    },
+    {
+      "id": "resident_26",
+      "name": "小禾",
+      "occupation": "烘焙学徒"
+    },
+    {
+      "id": "resident_27",
+      "name": "阿岩",
+      "occupation": "运输工"
+    },
+    {
+      "id": "resident_28",
+      "name": "小榆",
+      "occupation": "木工"
+    },
+    {
+      "id": "resident_29",
+      "name": "阿宁",
+      "occupation": "园艺工"
+    },
+    {
+      "id": "resident_30",
+      "name": "小晨",
+      "occupation": "旅店杂务"
+    },
+    {
+      "id": "resident_31",
+      "name": "阿舟",
+      "occupation": "农场帮工"
+    },
+    {
+      "id": "resident_32",
+      "name": "小满",
+      "occupation": "烘焙学徒"
+    },
+    {
+      "id": "resident_33",
+      "name": "阿棠",
+      "occupation": "运输工"
+    },
+    {
+      "id": "resident_34",
+      "name": "小秋",
+      "occupation": "木工"
+    },
+    {
+      "id": "resident_35",
+      "name": "阿青",
+      "occupation": "园艺工"
+    },
+    {
+      "id": "resident_36",
+      "name": "小麦",
+      "occupation": "旅店杂务"
+    }
+  ]
 }

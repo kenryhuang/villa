@@ -27,6 +27,7 @@ export interface ProviderRawOutput {
   finish_reason: string | null;
   usage?: Record<string, unknown>;
   validation_errors?: string[];
+  metrics?: {queue_wait_ms: number; game_day: number; reserved_tokens_day: number};
 }
 
 export interface ProviderStreamResult {

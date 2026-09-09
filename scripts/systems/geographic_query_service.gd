@@ -63,22 +63,20 @@ func mature_flowers_near(
 	cap: int = 0
 ) -> Array[GridCell]:
 	var result: Array[GridCell] = []
-	if _grid == null or not is_finite(radius) or radius < 0.0 or cap < 0:
+	if _grid == null or not center.is_finite() or not is_finite(radius) or radius < 0.0 or cap < 0:
 		return result
-	for value in _grid._cells.values():
-		var cell := value as GridCell
-		if (
-			cell == null
-			or cell.state != GridCell.State.PLANTED
-			or cell.crop_instance == null
-		):
-			continue
-		if Vector2(cell.gx, cell.gz).distance_to(center) > radius + 0.0001:
-			continue
-		if (
-			cell.crop_instance.is_mature()
-			and _crop_is_flower(cell.crop_instance.crop_data)
-		):
+	var candidates: Array = []
+	if radius > 32 or absf(center.x) > 1000000 or absf(center.y) > 1000000:
+		candidates = _grid._cells.values()
+	else:
+		for gx in range(floori(center.x - radius), ceili(center.x + radius) + 1):
+			for gz in range(floori(center.y - radius), ceili(center.y + radius) + 1):
+				var cell := _grid.get_cell(gx, gz)
+				if cell != null: candidates.append(cell)
+	for cell: GridCell in candidates:
+		if cell.state != GridCell.State.PLANTED or cell.crop_instance == null: continue
+		if Vector2(cell.gx, cell.gz).distance_to(center) > radius + 0.0001: continue
+		if cell.crop_instance.is_mature() and _crop_is_flower(cell.crop_instance.crop_data):
 			result.append(cell)
 	result.sort_custom(func(left: GridCell, right: GridCell) -> bool:
 		var left_distance := Vector2(left.gx, left.gz).distance_squared_to(center)

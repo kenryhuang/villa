@@ -8,6 +8,8 @@ const FARM_WIDTH := 5
 const FARM_HEIGHT := 4
 const PLOT_COUNT := FARM_WIDTH * FARM_HEIGHT
 const SEARCH_RADIUS := 12
+var farm_width := FARM_WIDTH
+var farm_height := FARM_HEIGHT
 
 var _grid: GridSystem
 var _farming: FarmingSystem
@@ -303,13 +305,13 @@ func validate_dict(value: Dictionary) -> bool:
 		or not value.get("anchor", null) is Array
 		or (value.anchor as Array).size() != 2
 		or not value.get("plots", null) is Array
-		or (value.plots as Array).size() != PLOT_COUNT
+		or (value.plots as Array).size() != farm_width * farm_height
 		or not value.get("work_queue", null) is Array
 		or not value.get("finished", null) is Dictionary
 	):
 		return false
 	var seen: Dictionary = {}
-	for index in range(PLOT_COUNT):
+	for index in range(farm_width * farm_height):
 		var plot_value: Variant = value.plots[index]
 		if not plot_value is Dictionary:
 			return false
@@ -512,8 +514,8 @@ func _select_anchor(spawn_grid: Vector2i) -> Vector2i:
 
 
 func _valid_anchor(anchor: Vector2i) -> bool:
-	for row in range(FARM_HEIGHT):
-		for column in range(FARM_WIDTH):
+	for row in range(farm_height):
+		for column in range(farm_width):
 			var coordinate := anchor + Vector2i(column, row)
 			var cell := _grid.get_cell(coordinate.x, coordinate.y)
 			if (
@@ -539,8 +541,8 @@ func _apply_anchor(anchor: Vector2i) -> bool:
 
 func _coordinates_for_anchor(anchor: Vector2i) -> Array[Vector2i]:
 	var coordinates: Array[Vector2i] = []
-	for row in range(FARM_HEIGHT):
-		for column in range(FARM_WIDTH):
+	for row in range(farm_height):
+		for column in range(farm_width):
 			coordinates.append(anchor + Vector2i(column, row))
 	return coordinates
 
@@ -553,7 +555,7 @@ func _plots_for_coordinates(coordinates: Array[Vector2i]) -> Array[Dictionary]:
 
 
 func _coordinates_clear(coordinates: Array[Vector2i]) -> bool:
-	if coordinates.size() != PLOT_COUNT:
+	if coordinates.size() != farm_width * farm_height:
 		return false
 	for coordinate in coordinates:
 		if (

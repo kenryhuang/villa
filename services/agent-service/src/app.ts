@@ -14,7 +14,7 @@ interface ProviderPort {
     emit: (event: ProviderTraceEvent) => void,
     signal?: AbortSignal,
   ): Promise<ActionIntent>;
-  compactMemory?(agent: NonNullable<ReturnType<AgentRegistry["get"]>>, events: ReturnType<MemoryRepository["recent"]>): Promise<{summary: string; importance: number}>;
+  compactMemory?(agent: NonNullable<ReturnType<AgentRegistry["get"]>>, events: ReturnType<MemoryRepository["recent"]>, sessionId?: string): Promise<{summary: string; importance: number}>;
 }
 interface AppDependencies { memory: MemoryRepository; registry: AgentRegistry; provider: ProviderPort; checkpointRoot: string; }
 
@@ -31,7 +31,7 @@ async function compactMemoryIfDue(dependencies: AppDependencies, sessionId: stri
   const events = dependencies.memory.compactionCandidates(sessionId, agentId, 20);
   if (!agent || events.length < 20) return;
   try {
-    const compacted = await dependencies.provider.compactMemory(agent, events);
+    const compacted = await dependencies.provider.compactMemory(agent, events, sessionId);
     dependencies.memory.storeLongTermMemory(
       sessionId, agentId, `memory:${sessionId}:${agentId}:${events[0].event_id}:${events.at(-1)?.event_id}`,
       compacted.summary, compacted.importance, events.map((event) => event.event_id),

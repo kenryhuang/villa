@@ -46,7 +46,7 @@ static func valid_step(cap: String, a: Dictionary) -> bool:
 		"move": return a.size() == 2 and _number(a.get("x"), -176, 80) and _number(a.get("z"), -80, 144)
 		"rent": return a.size() == 4 and _id(a.get("building_id")) and _id(a.get("recipe_id")) and _count(a.get("batches"), 1, 100) and _count(a.get("max_fee"), 0, 1000000)
 		"wait_production": return a.size() == 1 and _id(a.get("order_step"))
-		"reserve_plot": return a.size() == 2 and _count(a.get("gx"), -1024, 1024) and _count(a.get("gz"), -1024, 1024)
+		"reserve_plot": return (a.size() == 2 or (a.size() == 3 and a.get("building_type") in ["windmill", "food_workshop"])) and _count(a.get("gx"), -1024, 1024) and _count(a.get("gz"), -1024, 1024)
 		"build": return a.size() == 1 and _id(a.get("lease_step"))
 		"wait_construction": return a.size() == 1 and _id(a.get("build_step"))
 		"set_policy": return a.size() == 3 and _id(a.get("build_step")) and a.get("open") is bool and _count(a.get("fee"), 0, 1000000)
@@ -57,7 +57,7 @@ static func valid_step(cap: String, a: Dictionary) -> bool:
 func submit(actor: String, id: String, plan: Dictionary) -> Dictionary:
 	if not valid_plan(plan) or not world.assets.exists(actor) or actor == "player": return _error("invalid_project")
 	if projects.has(id): return {"ok": projects[id].actor_id == actor and projects[id].plan == plan, "project_id": id}
-	if not active(actor).is_empty() or projects.values().any(func(p): return p.actor_id == actor and p.status == "suspended") or not world.interruptions.running(actor).is_empty(): return _error("primary_project_exists")
+	if not active(actor).is_empty() or projects.values().any(func(p): return p.actor_id == actor and p.status == "suspended") or not world.interruptions.running(actor).is_empty() or (world.work != null and world.work.owns_schedule(actor)): return _error("primary_project_exists")
 	var commission_check := _check_commissions(actor, plan)
 	if not commission_check.ok: return commission_check
 	for item in plan.materials:
@@ -115,7 +115,7 @@ func advance() -> void:
 	for actor in suggestions.keys():
 		if world.minute() >= int(suggestions[actor].expires): suggestions.erase(actor)
 	for p in projects.values():
-		if p.status != "active" or not world.interruptions.running(p.actor_id).is_empty(): continue
+		if p.status != "active" or not world.interruptions.running(p.actor_id).is_empty() or world.work.owns_schedule(p.actor_id): continue
 		var waiting := false
 		for state in p.steps.values(): waiting = waiting or (state.result.has("order_id") and not state.result.get("delivered", false) and not state.result.get("cancelled", false))
 		var commission_check := _check_commissions(p.actor_id, p.plan, p.steps)
@@ -210,9 +210,15 @@ func _execute(p: Dictionary, step: Dictionary, state: Dictionary) -> Dictionary:
 			if building == null: return _error("building_missing")
 			var recipe := Recipes.get_recipe(a.recipe_id)
 			if recipe.is_empty(): return _error("unknown_recipe")
-			if not recipe.get("input_selectors", []).is_empty(): return _error("project_requires_explicit_ingredients")
+			if not recipe.get("input_selectors", []).is_empty() and not world.work.has_skill(p.actor_id, "ingredient_selection"): return _error("project_requires_explicit_ingredients")
 			var inputs := {}
 			for item in recipe.inputs: inputs[item] = int(recipe.inputs[item]) * int(a.batches)
+			if not recipe.get("input_selectors", []).is_empty():
+				var inventory: InventorySystem = world.session.production.rental_inventory(p.items)
+				var quote: Dictionary = world.session.production.preflight_recipe(building, a.recipe_id, int(a.batches), inventory)
+				inventory.free()
+				if not quote.ok: return _error(str(quote.reason))
+				inputs = quote.inputs
 			if not _release(p, inputs, int(a.max_fee)): return _error("project_materials_or_fee")
 			var result: Dictionary = world.session.production.start_rented_recipe(building, p.actor_id, a.recipe_id, int(a.batches), int(a.max_fee), key, str(p.id))
 			if not result.ok:
@@ -272,7 +278,9 @@ func _hold(p: Dictionary, items: Dictionary, gold: int) -> bool:
 	return true
 
 func _finish(p: Dictionary, status: String) -> bool:
-	if not _release(p, p.items.duplicate(), int(p.gold)): return false
+	if world.work != null and world.work.ventures.has(p.id):
+		if not world.work.settle_project(p, status): return false
+	elif not _release(p, p.items.duplicate(), int(p.gold)): return false
 	if status != "completed":
 		for step in p.plan.steps:
 			if step.capability == "claim" and p.steps[step.id].result.has("claim_id"):

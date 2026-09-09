@@ -33,7 +33,11 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 	match tool_name:
-		"public_food_plan", "public_wait": return preload("res://scripts/systems/public_plan_system.gd").valid_command(tool_name, arguments)
+		"propose_activity", "enroll_activity", "leave_activity", "cancel_activity": return preload("res://scripts/systems/social_activity_system.gd").valid_command(tool_name, arguments)
+		"contribute_route_repair": return preload("res://scripts/systems/world_environment_system.gd").valid_command(tool_name, arguments)
+		"offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation": return preload("res://scripts/systems/explorer_knowledge_registry.gd").valid_command(tool_name, arguments)
+		"propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building": return preload("res://scripts/systems/npc_work_system.gd").valid_command(tool_name, arguments)
+		"public_activity_plan", "public_repair_plan", "public_food_plan", "public_wait": return preload("res://scripts/systems/public_plan_system.gd").valid_command(tool_name, arguments)
 		"propose_delivery": return preload("res://scripts/systems/npc_interruption_system.gd").valid_terms(arguments)
 		"cancel_delivery": return _exact_keys(arguments, ["task_id", "version"]) and _bounded_id(arguments.task_id) and _integer_in_range(arguments.version, 1, 1000000)
 		"revise_project": return _exact_keys(arguments, ["project_id", "version", "plan", "source"]) and _bounded_id(arguments.project_id) and _integer_in_range(arguments.version, 1, 1000000) and arguments.source in ["dialogue", "self_review"] and preload("res://scripts/systems/npc_project_system.gd").valid_plan(arguments.plan)
@@ -92,9 +96,9 @@ func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 		"survey":
 			return _keys_with_optional_agreement(arguments, ["region_id"]) and str(arguments.region_id) in REGION_IDS
 		"collect_sample":
-			return _keys_with_optional_agreement(arguments, ["discovery_id"]) and str(arguments.discovery_id) in DISCOVERY_IDS
+			return _keys_with_optional_agreement(arguments, ["discovery_id"]) and _bounded_id(arguments.discovery_id)
 		"register_discovery":
-			return _exact_keys(arguments, ["discovery_id"]) and str(arguments.discovery_id) in DISCOVERY_IDS
+			return _exact_keys(arguments, ["discovery_id"]) and _bounded_id(arguments.discovery_id)
 		"propose_role_change":
 			return _exact_keys(arguments, ["target_role_id", "motivation"]) and str(arguments.target_role_id) in ["farmer", "merchant", "explorer"] and _text(arguments.motivation, 300)
 		"speak":

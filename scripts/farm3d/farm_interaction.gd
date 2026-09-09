@@ -114,7 +114,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			if hud.food_workshop_view.visible:
+			if hud.beehive_view.visible:
+				hud.beehive_view.handle_escape()
+			elif hud.food_workshop_view.visible:
 				hud.food_workshop_view.handle_escape()
 			elif hud.windmill_view.visible:
 				hud.windmill_view.handle_escape()
@@ -294,7 +296,7 @@ func windmill_at_pointer(pointer: Vector2) -> Dictionary:
 	var item_id := str(node.get_meta("production_output",node.get_meta("windmill_output", "")))
 	while node != null:
 		if node is BuildingInstance:
-			return {"building": node, "item_id": item_id} if node.building_id in ["windmill","food_workshop"] else {}
+			return {"building": node, "item_id": item_id} if node.building_id in ["windmill","food_workshop","beehive"] else {}
 		node = node.get_parent()
 	return {}
 
@@ -305,7 +307,7 @@ func open_windmill(building: BuildingInstance) -> bool:
 		hud.notify_message("%s尚未建造完成" % building.data.display_name, false)
 		return false
 	if not building.can_operate(player):
-		hud.notify_message("请走到%s南面的操作台前，再点击建筑" % building.data.display_name, false)
+		hud.notify_message("请走近蜂箱后再点击" if building.building_id == "beehive" else "请走到%s南面的操作台前，再点击建筑" % building.data.display_name, false)
 		return false
 	cancel_selection()
 	return hud.open_windmill(building)

@@ -619,10 +619,15 @@ func _end_routed_event_transaction(owns_transaction: bool) -> void:
 
 
 func advance_minutes(minutes: int) -> void:
-	if minutes <= 0:
+	if minutes <= 0 or dialogue_paused:
 		return
+	var flowers := _beehive_flower_assignments()
 	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
+			refresh_indicator(building)
+			continue
+		if building.building_id == "beehive":
+			_advance_beehive(building, minutes, flowers.get(building_key(building), []))
 			refresh_indicator(building)
 			continue
 		if _has_effect(building, "resource_output"):
@@ -687,6 +692,8 @@ func collect_outputs(
 		if state != null:
 			if _has_effect(building, "resource_output"):
 				_set_passive_output_blocked(building, "cycle:%s" % building.building_id, false)
+			if building.building_id == "beehive":
+				_set_passive_output_blocked(building, "passive:beehive", false)
 			_prepare_running_job(building, state)
 		refresh_indicator(building)
 	return result
@@ -707,15 +714,10 @@ func finish_daily_outputs(total_day: int) -> void:
 	if total_day <= _last_finished_outputs_day:
 		return
 	_last_finished_outputs_day = total_day
-	var beehive_flowers := _beehive_flower_assignments()
 	for building in _valid_registered_buildings():
 		if not _building_is_active(building):
 			continue
-		_finish_passive_building(
-			building,
-			total_day,
-			beehive_flowers.get(building_key(building), [])
-		)
+		_finish_passive_building(building, total_day)
 		refresh_indicator(building)
 
 
@@ -773,6 +775,8 @@ func register_building(building: BuildingInstance) -> bool:
 		return false
 	if not _registered_buildings.has(building):
 		_registered_buildings.append(building)
+	if building.has_method("configure_beehive"):
+		building.configure_beehive(self)
 	var key := building_key(building)
 	if _has_effect(building, "resource_output"):
 		if not resource_cycle_progress.has(key):
@@ -1328,7 +1332,12 @@ func _beehive_flower_assignments() -> Dictionary:
 	hives.sort_custom(func(left: BuildingInstance, right: BuildingInstance) -> bool:
 		return building_key(left) < building_key(right)
 	)
-	for flower in _geographic_query_service.mature_flowers():
+	# Only visit the small neighborhoods around hives, not the entire world.
+	var nearby := {}
+	for hive in hives:
+		for flower in _geographic_query_service.mature_flowers_near(_building_center(hive), float(_effect_config(hive).get("flower_radius", 4))):
+			nearby[Vector2i(flower.gx, flower.gz)] = flower
+	for flower: GridCell in nearby.values():
 		var flower_position := Vector2(flower.gx, flower.gz)
 		var candidates: Array[Dictionary] = []
 		for hive in hives:
@@ -1711,29 +1720,17 @@ func _on_building_completed(building: BuildingInstance) -> void:
 
 func _finish_passive_building(
 	building: BuildingInstance,
-	total_day: int,
-	assigned_flowers: Array = []
+	total_day: int
 ) -> void:
 	if is_maintenance_paused(building):
 		return
 	var id := building.building_id
-	if id not in ["beehive", "chicken_coop"]:
-		return
+	# Honey is advanced by elapsed minutes, never by a daily settlement callback.
+	if id != "chicken_coop": return
 	var state := _get_state(building)
-	if state == null:
-		return
-	var output := {}
-	if id == "beehive":
-		var species := {}
-		for flower_value in assigned_flowers:
-			var flower := flower_value as GridCell
-			if flower != null and flower.crop_instance != null:
-				species[str(flower.crop_instance.crop_data.crop_id)] = true
-		output = passive_output_for(id, total_day, assigned_flowers.size(), species.size())
-	elif id == "chicken_coop":
-		output = passive_output_for(id, total_day, 0)
-	if output.is_empty():
-		return
+	if state == null: return
+	var output := passive_output_for(id,total_day,0)
+	if output.is_empty(): return
 	var passive_id := "passive:%s" % id
 	if not _can_store_passive_outputs(building, state, output):
 		_set_passive_output_blocked(building, passive_id, true)
@@ -1760,6 +1757,129 @@ func _finish_passive_building(
 	for item_id in output:
 		_emit_event("production_output_changed", [building, str(item_id), state.get_output_count(str(item_id))])
 	_emit_event("production_job_completed", [building, passive_id, output.duplicate(true)])
+
+
+func _beehive_batch(building: BuildingInstance, flowers: Array) -> Dictionary:
+	var owners := {}
+	var species := {}
+	var source: Array = []
+	var targets: Array[Vector3] = []
+	var distance := 0.0
+	for flower: GridCell in flowers:
+		var owner := _flower_owner(flower)
+		var crop := str(flower.crop_instance.crop_data.crop_id)
+		owners[owner] = int(owners.get(owner, 0)) + 1
+		species[crop] = true
+		source.append([flower.gx, flower.gz, crop, owner])
+		targets.append(flower.world_position_3d() + Vector3.UP * .48)
+		distance += Vector2(flower.gx,flower.gz).distance_to(_building_center(building))
+	var average := distance / flowers.size() if not flowers.is_empty() else 0.0
+	var config := _effect_config(building)
+	var duration := clampi(ceili(float(config.get("honey_base_minutes",1080)) + average * float(config.get("honey_minutes_per_cell",270))),1,1000000)
+	return {"signature": JSON.stringify(source).sha256_text() if not source.is_empty() else "",
+		"duration_minutes": duration, "average_distance": average, "owners": owners, "targets": targets,
+		"output": passive_output_for("beehive",2,flowers.size(),species.size())}
+
+
+func get_beehive_snapshot(building: BuildingInstance) -> Dictionary:
+	if building == null or building.building_id != "beehive": return {}
+	var flowers: Array = _beehive_flower_assignments().get(building_key(building), [])
+	var batch := _beehive_batch(building, flowers)
+	var state := _get_state(building)
+	var cycle: Dictionary = state.beehive_cycle if state != null else {}
+	var elapsed := int(cycle.get("elapsed_minutes",0)) if str(cycle.get("flower_signature","")) == batch.signature else 0
+	var remaining := maxi(0,int(batch.duration_minutes)-elapsed)
+	var status := "working"
+	if not building.is_construction_complete(): status = "construction"
+	elif is_maintenance_paused(building): status = "maintenance"
+	elif flowers.is_empty(): status = "no_flowers"
+	elif state == null or not _can_store_passive_outputs(building, state, batch.output): status = "full"
+	return {"status": status, "flower_count": flowers.size(), "owners": batch.owners, "targets": batch.targets,
+		"radius": float(_effect_config(building).get("flower_radius",24)), "average_distance": batch.average_distance,
+		"duration_minutes": batch.duration_minutes, "elapsed_minutes": elapsed, "remaining_minutes": remaining,
+		"next_day": _current_day + (maxi(0,_last_clock_minutes-DAY_START_MINUTES) + remaining) / 1080,
+		"next_output": batch.output, "next_owners": _beehive_output_owners(flowers,batch.output,(int(cycle.get("completed_cycles",0))+1)*2),
+		"pending": state.customer_outputs.duplicate(true) if state != null else {}}
+
+
+func _advance_beehive(building: BuildingInstance, minutes: int, flowers: Array) -> void:
+	var state := _get_state(building)
+	if state == null: return
+	_deliver_beehive_outputs(building)
+	if is_maintenance_paused(building): return
+	var batch := _beehive_batch(building,flowers)
+	var cycle := state.beehive_cycle
+	if cycle.flower_signature != batch.signature:
+		# A new source starts a new batch: no carrying nearly finished NPC nectar
+		# into a newly planted player flower, or shortening a far trip at settlement.
+		cycle.flower_signature = batch.signature
+		cycle.elapsed_minutes = 0
+	if flowers.is_empty(): return
+	var remaining := minutes
+	while remaining > 0:
+		if not _can_store_passive_outputs(building,state,batch.output):
+			_set_passive_output_blocked(building,"passive:beehive",true)
+			return
+		var consumed := mini(remaining,maxi(0,int(batch.duration_minutes)-int(cycle.elapsed_minutes)))
+		cycle.elapsed_minutes += consumed
+		remaining -= consumed
+		if int(cycle.elapsed_minutes) < int(batch.duration_minutes): break
+		if not _finish_beehive_outputs(building,batch.output,flowers,(int(cycle.completed_cycles)+1)*2): return
+
+
+func _flower_owner(flower: GridCell) -> String:
+	var owner := _grid_system.get_cell_owner(flower.gx, flower.gz) if _grid_system != null else ""
+	return "player" if owner.is_empty() else owner
+
+
+func _beehive_output_owners(flowers: Array, output: Dictionary, day: int) -> Dictionary:
+	var result := {}
+	if flowers.is_empty(): return result
+	# Rotate indivisible items through flowers across harvest cycles. This preserves
+	# exact quantities and proportional ownership without a permanent rounding bias.
+	for item in output:
+		var quantity := int(output[item])
+		var offset := maxi(0, day / 2 - 1) * quantity
+		for index in quantity:
+			var owner := _flower_owner(flowers[(offset + index) % flowers.size()])
+			if not result.has(owner): result[owner] = {}
+			result[owner][item] = int(result[owner].get(item, 0)) + 1
+	return result
+
+
+func _finish_beehive_outputs(building: BuildingInstance, output: Dictionary, flowers: Array, day: int) -> bool:
+	var state := _get_state(building)
+	_deliver_beehive_outputs(building)
+	if not _can_store_passive_outputs(building, state, output):
+		_set_passive_output_blocked(building, "passive:beehive", true)
+		return false
+	var owners := _beehive_output_owners(flowers, output, day)
+	for owner in owners:
+		if owner != "player" and (actor_assets == null or not actor_assets.exists(str(owner))):
+			# Do not create goods for an identity the save system cannot restore.
+			_set_passive_output_blocked(building, "passive:beehive", true)
+			return false
+	for owner in owners:
+		if owner == "player" and building.owner_id == "player":
+			_merge_counts(state.outputs, owners[owner])
+		else:
+			if not state.customer_outputs.has(owner): state.customer_outputs[owner] = {}
+			_merge_counts(state.customer_outputs[owner], owners[owner])
+	state.beehive_cycle.elapsed_minutes = 0
+	state.beehive_cycle.completed_cycles += 1
+	_set_passive_output_blocked(building, "passive:beehive", false)
+	_deliver_beehive_outputs(building)
+	for item in output:
+		_emit_event("production_output_changed", [building, str(item), state.get_output_count(str(item))])
+	_emit_event("production_job_completed", [building, "passive:beehive", output.duplicate(true)])
+
+	return true
+
+func _deliver_beehive_outputs(building: BuildingInstance) -> void:
+	if building_service == null or actor_assets == null or building.producer_state == null: return
+	for owner in building.producer_state.customer_outputs.keys():
+		if str(owner) != "player" and actor_assets.exists(str(owner)):
+			building_service.collect(building, str(owner))
 
 
 func _set_feed_shortage(
@@ -1809,6 +1929,14 @@ func _can_store_passive_outputs(
 	var stored_quantity := 0
 	for quantity in state.outputs.values():
 		stored_quantity += int(quantity)
+	if building.building_id == "beehive":
+		var kinds := state.outputs.duplicate()
+		for goods: Dictionary in state.customer_outputs.values():
+			for item in goods:
+				stored_quantity += int(goods[item])
+				kinds[item] = true
+		for item in output: kinds[item] = true
+		if kinds.size() > state.output_capacity: return false
 	var produced_quantity := 0
 	for quantity in output.values():
 		produced_quantity += int(quantity)
@@ -1826,6 +1954,9 @@ func _is_output_full(building: BuildingInstance, state: ProducerState) -> bool:
 		var stored_quantity := 0
 		for quantity in state.outputs.values():
 			stored_quantity += int(quantity)
+		if building.building_id == "beehive":
+			for goods: Dictionary in state.customer_outputs.values():
+				for quantity in goods.values(): stored_quantity += int(quantity)
 		if stored_quantity >= quantity_capacity:
 			return true
 	return state.output_capacity > 0 and state.outputs.size() >= state.output_capacity

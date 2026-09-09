@@ -66,7 +66,8 @@ test("crop inspection preserves authoritative planting restrictions and named ca
 
 test("loads three private roles and an isolated public coordinator", () => {
   const registry = AgentRegistry.loadDefault();
-  assert.deepEqual(registry.ids(), ["farmer_ahe", "lao_li", "village_public", "xuezhe_lin"]);
+  assert.equal(registry.ids().length, 37);
+  for (const id of ["farmer_ahe", "lao_li", "xuezhe_lin", "resident_yun", "tiejiang_zhang", "afu_shui", "village_public"]) assert.ok(registry.get(id));
   assert.equal(registry.get("farmer_ahe")?.tools.includes("plant"), true);
   assert.equal(registry.get("lao_li")?.tools.includes("plant"), false);
   assert.equal(registry.get("xuezhe_lin")?.tools.includes("survey"), true);

@@ -32,6 +32,7 @@ var market_view: Control
 var commission_view: Control
 var windmill_view: Control
 var food_workshop_view: Control
+var beehive_view: Control
 var secondary: PanelContainer
 var secondary_grid: GridContainer
 var secondary_title: Label
@@ -116,6 +117,10 @@ func configure(session: Node) -> void:
 	_ui.add_child(food_workshop_view)
 	food_workshop_view.configure(session,"food_workshop")
 	food_workshop_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
+	beehive_view = preload("res://scripts/farm3d/beehive_view.gd").new()
+	_ui.add_child(beehive_view)
+	beehive_view.configure(session)
+	beehive_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
 	if is_instance_valid(session.agent_runtime):
 		dialogue_ui = preload("res://scenes/ui/dialogue_ui.tscn").instantiate()
 		dialogue_ui.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -156,6 +161,7 @@ func _on_dialogue_closed(_agent_id: String, _request_id: String) -> void:
 	_session.player.ui_blocked = is_modal_open()
 	if not _session.living_world.interruptions.drafts.is_empty(): commission_view.offer_delivery_draft.call_deferred(_agent_id)
 	elif not _session.living_world.pending_player_terms.is_empty(): commission_view.offer_draft.call_deferred()
+	elif _session.living_world.work.pending_negotiation("player"): commission_view.offer_work_terms.call_deferred()
 
 func _release_dialogue_pause() -> void:
 	if not _dialogue_pause_active:
@@ -341,6 +347,8 @@ func _refresh_status() -> void:
 	row.get_node("ExpBar").value = ps.get_exp_progress() * 100
 	row.get_node("SeasonLabel").text = "%s %d/%d" % [["春", "夏", "秋", "冬"][_session.season.current_season], _session.season.current_day, SeasonSystem.DAYS_PER_SEASON]
 	row.get_node("TimeLabel").text = "%02d:%02d" % [_session.season.hour, _session.season.minute]
+	if _session.living_world != null and _session.living_world.environment != null:
+		row.get_node("TimeLabel").text += " · 雨" if _session.living_world.environment.raining() else " · 晴"
 
 func notify_message(text: String, success: bool = true) -> void:
 	bus.publish("农庄", "success" if success else "warning", text, {"game_time": "%02d:%02d" % [_session.season.hour, _session.season.minute]})
@@ -350,6 +358,7 @@ func toggle_minimap() -> void:
 
 func toggle_inventory() -> void:
 	fishing_cancel_requested.emit()
+	if beehive_view != null: beehive_view.close_panel()
 	food_workshop_view.close_panel()
 	windmill_view.close_panel()
 	market_view.close_market()
@@ -358,6 +367,7 @@ func toggle_inventory() -> void:
 	_session.player.ui_blocked = is_modal_open()
 
 func is_modal_open() -> bool:
+	if beehive_view != null and beehive_view.visible: return true
 	if commission_view != null and commission_view.visible: return true
 	if (debug_panel != null and debug_panel.visible) or (dialogue_ui != null and dialogue_ui.visible):
 		return true
@@ -366,6 +376,7 @@ func is_modal_open() -> bool:
 func open_windmill(building: BuildingInstance) -> bool:
 	close_panels()
 	var view: Control = food_workshop_view if building.building_id == "food_workshop" else windmill_view
+	if building.building_id == "beehive": view = beehive_view
 	var opened: bool = view.open_for(building)
 	_session.player.ui_blocked = opened
 	return opened
@@ -381,6 +392,7 @@ func close_panels() -> void:
 		debug_panel.close()
 	if dialogue_ui != null:
 		dialogue_ui.close()
+	if beehive_view != null: beehive_view.close_panel()
 	if food_workshop_view != null:
 		food_workshop_view.close_panel()
 	if windmill_view != null:
@@ -408,6 +420,7 @@ func _make_history() -> void:
 
 func _toggle_history() -> void:
 	fishing_cancel_requested.emit()
+	if beehive_view != null: beehive_view.close_panel()
 	food_workshop_view.close_panel()
 	windmill_view.close_panel()
 	market_view.close_market()

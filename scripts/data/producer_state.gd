@@ -14,6 +14,7 @@ var outputs: Dictionary = {}
 var inputs: Dictionary = {}
 var customer_outputs: Dictionary = {}
 var service_records: Dictionary = {}
+var beehive_cycle: Dictionary = {"elapsed_minutes": 0, "completed_cycles": 0, "flower_signature": ""}
 
 
 func _init(initial_station_id: String = "") -> void:
@@ -21,7 +22,7 @@ func _init(initial_station_id: String = "") -> void:
 
 
 func to_dict() -> Dictionary:
-	return {
+	var result := {
 		"station_id": station_id,
 		"max_queue_slots": max_queue_slots,
 		"output_capacity": output_capacity,
@@ -31,6 +32,9 @@ func to_dict() -> Dictionary:
 		"customer_outputs": customer_outputs.duplicate(true),
 		"service_records": service_records.duplicate(true),
 	}
+
+	if station_id == "beehive": result["beehive_cycle"] = beehive_cycle.duplicate(true)
+	return result
 
 
 func from_dict(data: Dictionary) -> bool:
@@ -64,6 +68,16 @@ func from_dict(data: Dictionary) -> bool:
 	if not saved_jobs is Array or not saved_outputs is Dictionary or not saved_inputs is Dictionary:
 		return false
 	var next_station := data.get("station_id") as String
+	var cycle: Variant = data.get("beehive_cycle", {"elapsed_minutes": 0, "completed_cycles": 0, "flower_signature": ""})
+	if data.has("beehive_cycle") and next_station != "beehive": return false
+	if not cycle is Dictionary or cycle.size() != 3: return false
+	var elapsed: Variant = _integer_number(cycle.get("elapsed_minutes"))
+	var completed: Variant = _integer_number(cycle.get("completed_cycles"))
+	var signature: Variant = cycle.get("flower_signature")
+	if elapsed == null or int(elapsed) < 0 or int(elapsed) > 1000000: return false
+	if completed == null or int(completed) < 0 or int(completed) > 1000000000: return false
+	if not signature is String or (not signature.is_empty() and (signature.length() != 64 or not signature.is_valid_hex_number(false))): return false
+	if signature.is_empty() and int(elapsed) != 0: return false
 	var next_max_slots := int(parsed_max_slots)
 	var next_output_capacity := int(parsed_output_capacity)
 	if (saved_jobs as Array).size() > next_max_slots:
@@ -107,6 +121,7 @@ func from_dict(data: Dictionary) -> bool:
 	for actor in customers:
 		if customers[actor].size() > next_output_capacity: return false
 
+	beehive_cycle = {"elapsed_minutes": int(elapsed), "completed_cycles": int(completed), "flower_signature": str(signature)}
 	station_id = next_station
 	max_queue_slots = next_max_slots
 	output_capacity = next_output_capacity

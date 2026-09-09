@@ -4,17 +4,20 @@ extends RefCounted
 var production: Node
 var assets: RefCounted
 var busy := false
+var output_receiver: Callable
+var equipment_contribution: Callable
 
 func configure(system: Node, access: RefCounted) -> void:
 	production = system
 	assets = access
 
-func quote(building: BuildingInstance, actor: String, recipe: String, batches: int) -> Dictionary:
+func quote(building: BuildingInstance, actor: String, recipe: String, batches: int, request_id := "") -> Dictionary:
 	if building == null or not production._registered_buildings.has(building) or not assets.exists(actor) or not assets.exists(building.owner_id) or batches < 1 or batches > 100:
 		return _error("invalid_request")
 	var own := actor == building.owner_id
+	var contributed: bool = equipment_contribution.is_valid() and equipment_contribution.call(building, actor, request_id)
 	var policy := building.service_policy
-	if not own and (not bool(policy.open) or (not policy.allowed_recipes.is_empty() and recipe not in policy.allowed_recipes)):
+	if not own and not contributed and (not bool(policy.open) or (not policy.allowed_recipes.is_empty() and recipe not in policy.allowed_recipes)):
 		return _error("service_closed")
 	var state := building.producer_state
 	if state == null: return _error("invalid_building")
@@ -22,7 +25,7 @@ func quote(building: BuildingInstance, actor: String, recipe: String, batches: i
 		return _error("reserved_capacity")
 	var fee := -1
 	for row in production.get_rental_fee_table(building):
-		if row.recipe_id == recipe: fee = 0 if own else int(row.fee_per_batch) * batches
+		if row.recipe_id == recipe: fee = 0 if own or contributed else int(row.fee_per_batch) * batches
 	if fee < 0: return _error("unknown_recipe")
 	if not assets.can_apply(actor, {}, -fee): return _error("insufficient_rental_gold")
 	var inventory: InventorySystem = production.rental_inventory(assets.available_items(actor))
@@ -42,7 +45,7 @@ func start(building: BuildingInstance, actor: String, recipe: String, batches: i
 			return _error("idempotency_conflict")
 		return {"ok": true, "mutated": false, "order_id": order_id, "stage": state.service_records[order_id].stage}
 	if state.service_records.size() >= 2048: return _error("order_history_full")
-	var result := quote(building, actor, recipe, batches)
+	var result := quote(building, actor, recipe, batches, request_id)
 	if not result.ok: return result
 	if max_fee < int(result.fee): return _error("rental_price_changed")
 	if order_id.is_empty(): order_id = "order-" + Crypto.new().generate_random_bytes(16).hex_encode()
@@ -90,6 +93,12 @@ func activate(building: BuildingInstance, job: Dictionary) -> bool:
 func complete(building: BuildingInstance, job: Dictionary, outputs: Dictionary) -> bool:
 	var actor := str(job.tenant_id)
 	var state := building.producer_state
+	if output_receiver.is_valid():
+		var receipt: Dictionary = output_receiver.call(building, job, outputs)
+		if receipt.get("handled", false):
+			if not receipt.get("ok", false): return false
+			_record(building, job, "delivered", false)
+			return true
 	if actor == "player" and building.owner_id == "player":
 		if not state.add_outputs(outputs): return false
 	elif actor == "player":
