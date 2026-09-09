@@ -14,6 +14,7 @@ config/agent-client.local.json
 # Local 3D save, recovery backup, Agent checkpoint manifest and atomic-write files.
 # Keep data/agents/*.json tracked: those are authored NPC definitions.
 /data/farm_3d_save.json*
+/data/cache/
 
 # Temp files
 tmp/

@@ -83,6 +83,8 @@ var farm3d_actors: Dictionary = {}
 var _farm3d_memory_export_pending := false
 var _deferred_responses: Array[Dictionary] = []
 var _scheduled_tick_pending := false
+var _restore_preparation_active := false
+var _prepared_restore: Dictionary = {}
 var _cancelled_requests: Dictionary = {}
 const FARM3D_SPAWNS := {"farmer_ahe": Vector2(-12, -12), "lao_li": Vector2(-2, -10), "xuezhe_lin": Vector2(7, -12)}
 
@@ -628,7 +630,25 @@ func to_dict() -> Dictionary:
 	}
 
 
+func begin_restore_preparation() -> void:
+	_prepared_restore.clear()
+	_restore_preparation_active = true
+
+
+func end_restore_preparation() -> void:
+	_restore_preparation_active = false
+	_prepared_restore.clear()
+
+
+func _can_reuse_restore(value: Dictionary) -> bool:
+	return _restore_preparation_active and not _prepared_restore.is_empty() and _prepared_restore.value == value and _prepared_restore.profiles == _actor_profiles() and _prepared_restore.agent_ids == registry.get_agent_ids()
+
+
 func validate_dict(value: Dictionary) -> bool:
+	# Only the synchronous full-save transaction can reuse this candidate. A
+	# changed input or actor context always goes through all checks again.
+	if _can_reuse_restore(value): return true
+	_prepared_restore.clear()
 	var version := int(value.get("version", 0))
 	if version not in [2, 3, VERSION] or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
 		return false
@@ -740,19 +760,26 @@ func _validate_event_sourced_state(value: Dictionary) -> bool:
 	if not restored_agreements.configure(_npc_economy, restored_interactions, restored_store, restored_projector) or not restored_agreements.validate_against_events(value.agreements, events):
 		return false
 	var expected_reservations: Variant = restored_agreements.expected_reservations(value.agreements)
-	return expected_reservations != null and restored_interactions.validate_external_reservations(value.interactions, expected_reservations)
+	if expected_reservations == null or not restored_interactions.validate_external_reservations(value.interactions, expected_reservations): return false
+	if _restore_preparation_active:
+		_prepared_restore = {"value": value.duplicate(true), "profiles": _actor_profiles(), "agent_ids": registry.get_agent_ids(), "store": restored_store, "inbox": restored_inbox, "projector": restored_projector}
+	return true
 
 
 func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := true) -> bool:
 	var restored_store = AgentWorldEventStoreScript.new()
-	if not restored_store.from_dict(value.event_store):
-		return false
 	var restored_inbox = AgentPerceptionInboxScript.new()
 	var restored_projector = AgentWorldProjectorScript.new()
-	if not restored_projector.configure(registry.get_agent_ids(), _actor_profiles(), restored_inbox):
-		return false
-	var all_events: Array[Dictionary] = restored_store.get_events_after(0)
-	if not restored_projector.replay(all_events) or not restored_inbox.from_dict(value.perception_inbox, restored_projector.get_last_sequence()):
+	if _can_reuse_restore(value):
+		restored_store = _prepared_restore.store
+		restored_inbox = _prepared_restore.inbox
+		restored_projector = _prepared_restore.projector
+		_prepared_restore.clear()
+	else:
+		if not restored_store.from_dict(value.event_store): return false
+		if not restored_projector.configure(registry.get_agent_ids(), _actor_profiles(), restored_inbox): return false
+		if not restored_projector.replay(restored_store.get_events_after(0)): return false
+	if not restored_inbox.from_dict(value.perception_inbox, restored_projector.get_last_sequence()):
 		return false
 	var restored_context = AgentContextProjectionScript.new()
 	var restored_bridge = AgentWorldFactBridgeScript.new()

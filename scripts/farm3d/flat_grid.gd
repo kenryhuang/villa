@@ -3,6 +3,7 @@ extends GridSystem
 
 const ROAD_HALF_WIDTH := 1.55 # path width plus the half-cell safety padding used by GridSystem
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
+const StaticCache = preload("res://scripts/farm3d/terrain_cache.gd")
 const MIN_GX := int(Profile.WORLD_MIN.x - WORLD_ORIGIN_X)
 const MAX_GX := int(Profile.WORLD_MAX.x - WORLD_ORIGIN_X)
 const MIN_GZ := int(Profile.WORLD_MIN.y - WORLD_ORIGIN_Z)
@@ -21,18 +22,48 @@ func configure_flat(next_visual_system: Node = null) -> bool:
 	_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	_cells.clear()
 	_base_states.clear()
+	var cached := StaticCache.read("grid")
+	var count := (MAX_GX - MIN_GX) * (MAX_GZ - MIN_GZ)
+	var cache_valid := _valid_static_cache(cached, count)
+	var heights := PackedFloat64Array()
+	var slopes := PackedFloat64Array()
+	var states := PackedByteArray()
+	if cache_valid:
+		heights = cached.heights; slopes = cached.slopes; states = cached.states
+	else:
+		heights.resize(count); slopes.resize(count); states.resize(count)
+	var index := 0
 	for gz in range(MIN_GZ,MAX_GZ):
 		for gx in range(MIN_GX,MAX_GX):
 			var cell := GridCell.new()
 			cell.gx = gx
 			cell.gz = gz
 			var point := cell.world_position()
-			cell.terrain_height = Profile.surface_height(point.x,point.y)
-			cell.slope = Profile.slope_at(point.x,point.y)
-			cell.state = _base_state(cell)
+			if cache_valid:
+				cell.terrain_height = heights[index]
+				cell.slope = slopes[index]
+				cell.state = states[index] as GridCell.State
+			else:
+				cell.terrain_height = Profile.surface_height(point.x,point.y)
+				cell.slope = Profile.slope_at(point.x,point.y)
+				cell.state = _base_state(cell)
+				heights[index] = cell.terrain_height
+				slopes[index] = cell.slope
+				states[index] = cell.state
 			var key := cell_key(gx, gz)
 			_cells[key] = cell
 			_base_states[key] = cell.state
+			index += 1
+	if not cache_valid: StaticCache.write("grid", {"heights": heights, "slopes": slopes, "states": states})
+	return true
+
+
+func _valid_static_cache(value: Dictionary, count: int) -> bool:
+	if not value.get("heights") is PackedFloat64Array or not value.get("slopes") is PackedFloat64Array or not value.get("states") is PackedByteArray: return false
+	if value.heights.size() != count or value.slopes.size() != count or value.states.size() != count: return false
+	for index in count:
+		if not is_finite(value.heights[index]) or not is_finite(value.slopes[index]) or value.slopes[index] < 0: return false
+		if value.states[index] not in [GridCell.State.WASTELAND, GridCell.State.ROAD, GridCell.State.DECORATION, GridCell.State.WATER]: return false
 	return true
 
 

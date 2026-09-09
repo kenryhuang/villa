@@ -4,6 +4,8 @@ signal location_selected(point: Vector2)
 
 ## Fixed north-up map: world -Z is north and +X is east.
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
+const StaticCache = preload("res://scripts/farm3d/terrain_cache.gd")
+static var _shared_terrain: ImageTexture
 const PANEL_SIZE := Vector2(248, 302)
 const MAP_SCALE := 196.0 / maxf(Profile.WORLD_SIZE.x, Profile.WORLD_SIZE.y)
 const MAP_SIZE := Profile.WORLD_SIZE * MAP_SCALE
@@ -146,8 +148,12 @@ func _map_label(value: String, point: Vector3) -> void:
 	_centered(value, world_to_map(point), 12, INK)
 
 func _make_terrain() -> ImageTexture:
-	# Cache a lightweight topographic map from the same surface as the 3D world.
+	if _shared_terrain != null: return _shared_terrain
 	var resolution := Vector2i(Profile.WORLD_SIZE)
+	var cached := StaticCache.read("minimap")
+	if cached.get("pixels") is PackedByteArray and cached.pixels.size() == resolution.x * resolution.y * 3:
+		_shared_terrain = ImageTexture.create_from_image(Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGB8, cached.pixels))
+		return _shared_terrain
 	var image := Image.create(resolution.x, resolution.y, false, Image.FORMAT_RGB8)
 	for row in resolution.y:
 		for column in resolution.x:
@@ -164,4 +170,6 @@ func _make_terrain() -> ImageTexture:
 				var shade := clampf((Profile.height_at(x - 1, z - 1) - height) * 0.10, -0.22, 0.18)
 				color = color.lightened(shade) if shade > 0 else color.darkened(-shade)
 			image.set_pixel(column, row, color)
-	return ImageTexture.create_from_image(image)
+	StaticCache.write("minimap", {"pixels": image.get_data()})
+	_shared_terrain = ImageTexture.create_from_image(image)
+	return _shared_terrain

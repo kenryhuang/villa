@@ -291,6 +291,14 @@ func save_game() -> bool:
 
 
 func load_game() -> bool:
+	if is_instance_valid(agent_runtime): agent_runtime.begin_restore_preparation()
+	var loaded := _load_game_state()
+	# Clear staged state on both success and failure; unrelated loads must validate.
+	if is_instance_valid(agent_runtime): agent_runtime.end_restore_preparation()
+	return loaded
+
+
+func _load_game_state() -> bool:
 	if not FileAccess.file_exists(save_path):
 		return false
 	var file := FileAccess.open(save_path, FileAccess.READ)

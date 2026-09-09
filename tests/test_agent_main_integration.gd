@@ -260,7 +260,17 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(runtime.role_system.validate_against_events(json_saved.roles, runtime.event_store.get_events_after(0)), "JSON role state agrees with event history")
 	assertions.truthy(runtime.interaction_system.validate_against_events(json_saved.interactions, runtime.event_store.get_events_after(0)), "JSON interaction state agrees with event history")
 	assertions.truthy(runtime.agreement_system.validate_against_events(json_saved.agreements, runtime.event_store.get_events_after(0)), "JSON agreement state agrees with event history")
+	restored.begin_restore_preparation()
+	assertions.truthy(restored.validate_dict(json_saved), "Full-save transaction prepares a validated Agent state")
+	var prepared_projector = restored._prepared_restore.get("projector")
+	assertions.truthy(prepared_projector != null, "Validation retains its replayed projector for this transaction")
+	assertions.truthy(not restored.validate_dict(trade_tamper) and restored._prepared_restore.is_empty(), "Changed trade input is revalidated and discards the previous candidate")
+	assertions.truthy(restored.validate_dict(json_saved), "Valid input can prepare again after rejected tampering")
+	prepared_projector = restored._prepared_restore.get("projector")
 	assertions.truthy(restored.from_dict(json_saved), "Agent world state restores after JSON round trip")
+	assertions.truthy(restored.world_projector == prepared_projector, "Restore commits the already verified projector without replaying again")
+	restored.end_restore_preparation()
+	assertions.truthy(restored._prepared_restore.is_empty() and not restored._restore_preparation_active, "End of transaction releases all staged restore data")
 	assertions.equal(
 		runtime.call("_canonical_json_value", restored.to_dict()),
 		runtime.call("_canonical_json_value", saved),

@@ -604,7 +604,8 @@ static func _integer_number(value: Variant) -> Variant:
 
 
 static func _is_grid_coordinate(value: Variant) -> bool:
-	return value != null and int(value) >= 0 and int(value) <= MAX_GRID_COORDINATE
+	# Map-specific bounds are checked by BuildingSystem against the active grid.
+	return value != null and int(value) >= -MAX_GRID_COORDINATE and int(value) <= MAX_GRID_COORDINATE
 
 
 func _process(delta: float) -> void:
