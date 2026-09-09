@@ -82,6 +82,7 @@ var farm3d_session: Node
 var farm3d_actors: Dictionary = {}
 var _farm3d_memory_export_pending := false
 var _deferred_responses: Array[Dictionary] = []
+var _scheduled_tick_pending := false
 var _cancelled_requests: Dictionary = {}
 const FARM3D_SPAWNS := {"farmer_ahe": Vector2(-12, -12), "lao_li": Vector2(-2, -10), "xuezhe_lin": Vector2(7, -12)}
 
@@ -989,8 +990,24 @@ func _on_time_changed(hour: int, minute: int) -> void:
 		_publish_committed_outcome(str(outcome.get("agent_id", "")), outcome)
 		if service_enabled:
 			gateway.report_outcome(str(outcome.get("agent_id", "")), session_id, outcome)
-	if service_enabled:
-		scheduler.advance_to(game_minute)
+	_scheduled_tick_pending = service_enabled
+	_advance_scheduled_decisions()
+
+
+func _advance_scheduled_decisions() -> void:
+	if not service_enabled:
+		_scheduled_tick_pending = false
+		return
+	if not _scheduled_tick_pending or get_tree().paused:
+		return
+	var game_minute := _absolute_game_minute()
+	# The runtime receives time_changed before LivingWorld. Population settlement
+	# can also span several frames, so retain the tick until its data is current.
+	if farm3d_session != null and farm3d_session.living_world != null:
+		if not farm3d_session.living_world.society.caught_up(game_minute):
+			return
+	_scheduled_tick_pending = false
+	scheduler.advance_to(game_minute)
 
 
 func _on_market_price_changed(item_id: String, price: int) -> void:
@@ -1239,10 +1256,12 @@ func _handle_stream_failure(agent_id: String, request_id: String, error: String)
 
 
 func _process(_delta: float) -> void:
-	if get_tree().paused or _deferred_responses.is_empty():
+	if get_tree().paused:
 		return
-	var pending: Dictionary = _deferred_responses.pop_front()
-	_handle_response(str(pending.agent_id), pending.response)
+	if not _deferred_responses.is_empty():
+		var pending: Dictionary = _deferred_responses.pop_front()
+		_handle_response(str(pending.agent_id), pending.response)
+	_advance_scheduled_decisions()
 
 
 func _handle_response(agent_id: String, response: Dictionary) -> void:

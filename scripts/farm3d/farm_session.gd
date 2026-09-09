@@ -629,7 +629,8 @@ func apply_target(cell: GridCell, category: String, target_id: String) -> Dictio
 		return _failure("invalid_cell")
 	if not grid.can_actor_use_cell(cell.gx, cell.gz, "player"):
 		return {"ok": false, "reason": "npc_land", "message": "这是 NPC 的专属农田"}
-	if not _in_range(cell):
+	# Buildings validate reach against their entire footprint in BuildingSystem.
+	if category != "building" and not _in_range(cell):
 		return _failure("out_of_range")
 	# Existing crops decide the farming action even if a seed/soil option remains selected.
 	if category != "building" and cell.crop_instance != null:

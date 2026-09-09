@@ -1,5 +1,7 @@
 extends BuildingSystem
 
+const PLACEMENT_RANGE := 2.6
+
 var farmer: Node3D
 var actor_lookup: Callable
 
@@ -40,13 +42,20 @@ func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player
 		return result
 	var cell := grid_system_ref.get_cell(gx, gz)
 	var point := Vector2(actor.global_position.x, actor.global_position.z)
-	if actor.global_position.distance_to(cell.world_position_3d()) > 2.6:
+	var footprint := Rect2(cell.world_position() - Vector2.ONE * GridSystem.CELL_SIZE * .5, Vector2(data.footprint) * GridSystem.CELL_SIZE)
+	# Reach the nearest edge of the whole building, regardless of which side
+	# the actor approaches. Keep height in the check to prevent cliff placement.
+	var nearest := Vector3(
+		clampf(point.x, footprint.position.x, footprint.end.x),
+		clampf(actor.global_position.y, low, high),
+		clampf(point.y, footprint.position.y, footprint.end.y)
+	)
+	if actor.global_position.distance_to(nearest) > PLACEMENT_RANGE:
 		result.allowed = false
 		result.code = "out_of_range"
-		result.message = "离建筑位置太远，请走近后再放置"
+		result.message = "离建筑边缘太远，请靠近到 %.1f 米内再放置" % PLACEMENT_RANGE
 		return result
-	var footprint := Rect2(cell.world_position() - Vector2(0.5, 0.5), Vector2(data.footprint)).grow(0.32)
-	if footprint.has_point(point):
+	if footprint.grow(0.32).has_point(point):
 		result.allowed = false
 		result.code = "player_in_footprint"
 		result.message = "请站到建筑占地之外再放置"
