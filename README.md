@@ -2,7 +2,7 @@
 
 当前持续开发分支：`feature/3d-farm-preview`。使用同一个 Godot 项目，第三人称 3D 农庄是默认入口。
 
-NPC 自主社会：[设计 v2](docs/design/2026-09-07-npc-agent-living-world-design.md) · [分阶段实施与验收计划](docs/plans/2026-09-07-npc-agent-living-world-implementation-plan.md)。P0～P7 已实现，包含对话交易、建筑产权、居民经济、自主项目、委托、临时配送与公共食品采购；[P0 验收](docs/validation/living-world/P0.md) · [P1 验收](docs/validation/living-world/P1.md) · [P6 操作与验收](docs/validation/living-world/P6.md) · [P7 操作与验收](docs/validation/living-world/P7.md)。
+NPC 自主社会：[设计 v2](docs/design/2026-09-07-npc-agent-living-world-design.md) · [实施与验收计划](docs/plans/2026-09-07-npc-agent-living-world-implementation-plan.md)。P0～P12 主线实现包含对话交易、收费加工、自主项目、雇佣分工、实地情报、天气运输、公共活动和36人社会；[最新操作、规模与验证说明](docs/validation/living-world/P12.md)。多地图 R1～R4 仍待实现。
 
 技术债与待设计事项：[tech-debt](docs/tech-debt.md)。
 
@@ -117,7 +117,7 @@ docs/validation/              操作说明、验证结果和截图
 - 正式 3D 场景和控制脚本放入 `scenes/farm3d/`、`scripts/farm3d/`。`preview` 仅用于模型观察等独立预览，不承载正式游戏入口。
 - 种植、季节、背包、经济等共用规则继续维护在原系统目录；需要 3D 特有行为时，在 `farm3d` 中适配。
 - 在 Blender 编辑 `art/blender/` 下的源文件，导出模型到 `assets/models/`。生成脚本已使用新路径；运行生成脚本会覆盖对应生成资产，具体见[模型说明](assets/models/farm3d/README.md)。
-- 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v5 增加 NPC Agent 决策状态、真实农田任务与租用订单归属，兼容 v1/v2/v3/v4，保留市场行情、NPC 经济状态、市集位置和高尔夫成绩。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
+- 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v13 保存36人社会、合同、调查、天气、活动、规划额度与分批日结进度；兼容 v1～v12，旧人口和新增组织只初始化一次，保留市场行情、NPC 经济状态、市集位置和高尔夫成绩。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
 ### 本地文件与版本管理
@@ -143,7 +143,7 @@ docs/validation/              操作说明、验证结果和截图
 
 完整操作和已迁入功能见 [3D 农庄集成说明](docs/validation/3d-farming-integration.md)。
 
-**NPC Agents**：复用原 `scripts/ai_agent/`、NPC 场景、农田执行器、对话和调试界面。阿禾、老李、学者林出现在农庄，小地图蓝点标记位置；走近点击可对话与回应交易／合作。阿禾使用独立的真实农田。Agent 可查询地图、市场行情、角色、玩家建筑、队列和租费，提交自备原料的租用加工订单。风车每批 4 金币，食品工坊每批 6 金币；其他配方站按基础费加加工时间计算。租金进入玩家账户，NPC 与玩家共用队列，租客成品完成后自动进入自己的背包，维护会暂停订单，有租用订单的建筑不能拆除。
+**NPC Agents**：复用原 `scripts/ai_agent/`、NPC 场景、农田执行器、对话和调试界面。默认阿禾、老李、学者林、阿芸、铁匠张、阿水为重点角色，小地图蓝点标记位置；走近点击可对话与回应交易／合作。阿禾使用独立的真实农田。Agent 可查询地图、市场行情、角色、玩家建筑、队列和租费，提交自备原料的租用加工订单。风车每批 4 金币，食品工坊每批 6 金币；其他配方站按基础费加加工时间计算。租金进入玩家账户，NPC 与玩家共用队列，租客成品完成后自动进入自己的背包，维护会暂停订单，有租用订单的建筑不能拆除。
 
 开发构建底部 **调试** → **NPC Agents / 决策间隔 / 环境与租费**，可查看状态、手动触发决策、调整间隔、打开原有 Input/Reasoning/Output 请求追踪；不暂停游戏时间。原服务仍负责远程模型与独立角色记忆，未配置服务时角色和调试界面可用，自动决策关闭。
 
