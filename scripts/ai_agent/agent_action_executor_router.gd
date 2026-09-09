@@ -278,8 +278,9 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 
 
 func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String, request_id := "") -> Dictionary:
+	if is_instance_valid(farm3d_session) and not farm3d_session.living_world.interruptions.running(agent_id).is_empty() and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "gather_sample", "deliver_commission"]: return _error("delivery_in_progress")
 	match tool_name:
-		"submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior":
+		"propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior":
 			if not is_instance_valid(farm3d_session): return {"ok": false, "error": "farm3d_only"}
 			return farm3d_session.living_world.command(agent_id, tool_name, arguments, key)
 		"rent_production":

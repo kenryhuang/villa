@@ -7,13 +7,14 @@ import {
   AgentStreamAssembler,
   decodeProviderSse,
   type ProviderTraceEvent,
+  type ProviderRawOutput,
 } from "./provider_stream.ts";
-import {executeReadTool, readToolDescription, toolDescription} from "./tool_contracts.ts";
+import {executeReadTool, readToolDescription, toolDescription, toolArgumentErrors} from "./tool_contracts.ts";
 
 const DIALOGUE_COMMANDS = new Set([
   "send_message", "propose_trade", "counter_trade", "accept_trade", "reject_trade",
   "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation",
-  "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
+  "public_food_plan", "public_wait", "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "rent_production", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
 ]);
 
 function record(value: unknown): Record<string, unknown> {
@@ -58,7 +59,7 @@ export function buildDialogueContext(context: AgentContext): Omit<AgentContext, 
       }, {})},
       player_buildings: buildings.map((building) => ({...pick(building, ["building_id", "instance_id", "name", "owner_id", "position", "construction_complete", "rental_fees"]),
         production: pick(record(building).production, ["maintenance_state", "maintenance_paused", "maintenance_days_remaining", "max_queue_slots"])})),
-      living_world: {...pick(living, ["capabilities", "commissions", "own_claims", "suggestion", "society"]),
+      living_world: {...pick(living, ["capabilities", "commissions", "own_claims", "suggestion", "society", "interruptions"]),
         project: living.project ?? {}, recent_projects: recent.slice(0, 2).map(projectBrief)},
       detail_policy: "This is a compact conversation view. Inspect tools read the original complete snapshot, including plots, building recipes and active terms. Do not treat omitted detail as absence.",
     },
@@ -139,7 +140,41 @@ export class OpenAICompatibleProvider {
     let readRounds = 0;
     let corrections = 0;
     let timeoutRetried = false;
+    const correctCommands = (error: unknown, output: ProviderRawOutput): void => {
+      externalSignal?.throwIfAborted();
+      const code = error instanceof Error ? error.message : "";
+      if (!["provider_invalid_intent:invalid_arguments", "provider_invalid_intent:wait_must_be_exclusive",
+        "provider_invalid_tool_arguments", "provider_incomplete_tool_call", "provider_output_truncated",
+        "provider_too_many_tool_calls"].includes(code)) throw error;
+      const errors = output.message.tool_calls.flatMap(call => {
+        try { return toolArgumentErrors(call.function.name, JSON.parse(call.function.arguments)); }
+        catch { return [`${call.function.name || "tool"}: incomplete or invalid JSON; submit a complete JSON object`]; }
+      });
+      if (code.endsWith("wait_must_be_exclusive")) errors.push("wait must be the only command; omit wait when recording an intention or sending a message");
+      if (code === "provider_too_many_tool_calls") errors.push(`maximum commands is ${isDialogue ? 1 : 3}`);
+      if (code === "provider_output_truncated") errors.push("output was truncated; keep text and analysis short and regenerate the entire batch");
+      emit({type: "output", output: {...output, validation_errors: [code, ...errors].slice(0, 9)}});
+      if (corrections >= 1) throw error;
+      corrections += 1;
+      // Never execute the valid subset of a rejected batch or add more read rounds.
+      readRounds = 2;
+      const feedback = {ok: false, error: code, details: errors.slice(0, 8),
+        message: "The entire command batch was rejected. No commands were executed. Correct all arguments and reissue the complete intended batch once, or return no action. Do not change permissions or assume any proposal succeeded. Use short goal/text fields; respect every schema limit, including public unit_reward <= 200."};
+      const calls = output.message.tool_calls;
+      const ids = calls.map(call => call.id);
+      const usableHistory = ids.every(id => id.trim()) && new Set(ids).size === ids.length && calls.every(call => {
+        try { JSON.parse(call.function.arguments); return true; } catch { return false; }
+      });
+      if (usableHistory && calls.length > 0) {
+        messages.push({role: "assistant", content: output.message.content || null, tool_calls: calls});
+        messages.push(...calls.map(call => ({role: "tool", tool_call_id: call.id, name: call.function.name, content: JSON.stringify(feedback)})));
+      } else {
+        // Do not put malformed tool calls back into the provider message history.
+        messages.push({role: "system", content: JSON.stringify(feedback)});
+      }
+    };
     while (true) {
+      externalSignal?.throwIfAborted();
       const availableReads = readRounds < 2 ? [...context.allowed_read_tools] : [];
       // Keep the embedded capability list in agreement with this round's tool menu.
       const roundContext = {...promptContext, allowed_read_tools: availableReads};
@@ -202,7 +237,20 @@ export class OpenAICompatibleProvider {
       }
       const {assembler, rawOutput} = round;
       emit({type: "output", output: rawOutput});
-      const calls = assembler.toolCalls();
+      externalSignal?.throwIfAborted();
+      // Check names even when another call has broken JSON or a truncated body.
+      if (rawOutput.message.tool_calls.some(call => call.function.name &&
+        !context.allowed_read_tools.includes(call.function.name) && !allowedCommands.includes(call.function.name))) {
+        throw new Error("provider_invalid_intent:unauthorized_tool");
+      }
+      let calls: ReturnType<AgentStreamAssembler["toolCalls"]>;
+      try {
+        if (rawOutput.finish_reason === "length") throw new Error("provider_output_truncated");
+        calls = assembler.toolCalls();
+      } catch (error) {
+        correctCommands(error, rawOutput);
+        continue;
+      }
       const reads = calls.filter((call) => context.allowed_read_tools.includes(call.name));
       if (reads.length > 0) {
         // Unknown tools still fail closed. A mixed batch never executes commands.
@@ -237,7 +285,11 @@ export class OpenAICompatibleProvider {
         messages.push(...results);
         continue;
       }
-      return assembler.finish(request, allowedCommands, isDialogue ? 1 : 3).intent;
+      try {
+        return assembler.finish(request, allowedCommands, isDialogue ? 1 : 3).intent;
+      } catch (error) {
+        correctCommands(error, rawOutput);
+      }
     }
   }
 

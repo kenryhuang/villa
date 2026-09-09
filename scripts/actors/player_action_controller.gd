@@ -1203,7 +1203,7 @@ func _is_mature(cell: GridCell) -> bool:
 	return (
 		cell.state == GridCell.State.PLANTED
 		and cell.crop_instance != null
-		and cell.crop_instance.is_mature()
+		and cell.crop_instance.is_harvestable()
 	)
 
 

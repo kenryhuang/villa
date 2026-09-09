@@ -178,6 +178,15 @@ func is_mature() -> bool:
 	return lifecycle_state == LifecycleState.MATURE
 
 
+func is_harvestable() -> bool:
+	# Dormancy stops growth, but does not remove fruit that already ripened.
+	return is_mature() or (
+		lifecycle_state == LifecycleState.DORMANT
+		and crop_data != null
+		and growth_progress >= float(crop_data.growth_days)
+	)
+
+
 func _is_number(value: Variant) -> bool:
 	return typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT
 

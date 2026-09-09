@@ -154,7 +154,8 @@ func _on_dialogue_opened(_agent_id: String) -> void:
 func _on_dialogue_closed(_agent_id: String, _request_id: String) -> void:
 	_release_dialogue_pause()
 	_session.player.ui_blocked = is_modal_open()
-	if not _session.living_world.pending_player_terms.is_empty(): commission_view.offer_draft.call_deferred()
+	if not _session.living_world.interruptions.drafts.is_empty(): commission_view.offer_delivery_draft.call_deferred(_agent_id)
+	elif not _session.living_world.pending_player_terms.is_empty(): commission_view.offer_draft.call_deferred()
 
 func _release_dialogue_pause() -> void:
 	if not _dialogue_pause_active:

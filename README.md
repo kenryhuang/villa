@@ -2,7 +2,9 @@
 
 当前持续开发分支：`feature/3d-farm-preview`。使用同一个 Godot 项目，第三人称 3D 农庄是默认入口。
 
-NPC 自主社会：[设计 v2](docs/design/2026-09-07-npc-agent-living-world-design.md) · [分阶段实施与验收计划](docs/plans/2026-09-07-npc-agent-living-world-implementation-plan.md)。P0 对话交易、P1 建筑产权与双向加工已实现；[P0 验收](docs/validation/living-world/P0.md) · [P1 验收](docs/validation/living-world/P1.md)。
+NPC 自主社会：[设计 v2](docs/design/2026-09-07-npc-agent-living-world-design.md) · [分阶段实施与验收计划](docs/plans/2026-09-07-npc-agent-living-world-implementation-plan.md)。P0～P7 已实现，包含对话交易、建筑产权、居民经济、自主项目、委托、临时配送与公共食品采购；[P0 验收](docs/validation/living-world/P0.md) · [P1 验收](docs/validation/living-world/P1.md) · [P6 操作与验收](docs/validation/living-world/P6.md) · [P7 操作与验收](docs/validation/living-world/P7.md)。
+
+技术债与待设计事项：[tech-debt](docs/tech-debt.md)。
 
 ## 启动
 

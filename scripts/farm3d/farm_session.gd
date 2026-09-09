@@ -11,7 +11,7 @@ const ToolSystemScript = preload("res://scripts/systems/tool_system.gd")
 const ActionControllerScript = preload("res://scripts/actors/player_action_controller.gd")
 
 const ACTION_RANGE := 2.6
-const SAVE_VERSION := 7
+const SAVE_VERSION := 9
 const LivingWorld = preload("res://scripts/farm3d/living_world_system.gd")
 var living_world: Node
 const GolfRound = preload("res://scripts/farm3d/golf_round.gd")
@@ -189,7 +189,7 @@ func act(cell: GridCell, mode: String, seed_id: String = "grain_seed") -> Dictio
 		return {"ok": false, "reason": "npc_land", "message": "这是 NPC 的专属农田"}
 	if not _in_range(cell):
 		return _failure("out_of_range")
-	if mode in ["hoe", "seed", "water"] and cell.crop_instance != null and cell.crop_instance.is_mature():
+	if mode in ["hoe", "seed", "water"] and cell.crop_instance != null and cell.crop_instance.is_harvestable():
 		return _failure("crop_mature")
 	var result: Dictionary
 	match mode:
@@ -477,6 +477,7 @@ func _message_for(reason: String) -> String:
 		"plot_unavailable": "地块暂时不能种植",
 		"not_mature": "作物尚未成熟",
 		"crop_mature": "作物已成熟，请先收获",
+		"crop_dormant": "作物正在休眠，暂不需要浇水",
 		"inventory_full": "背包空间不足",
 		"cleared_withered": "已清理枯萎作物",
 		"action_failed": "操作未能完成",
@@ -491,9 +492,9 @@ func _valid_save(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var data: Dictionary = value
-	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, 5, 6, SAVE_VERSION]:
+	if not _is_integer(data.get("version")) or int(data.version) not in [1, 2, 3, 4, 5, 6, 7, 8, SAVE_VERSION]:
 		return false
-	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18, 6: 18, 7: 19}[int(data.version)]:
+	if data.size() != {1: 9, 2: 13, 3: 16, 4: 17, 5: 18, 6: 18, 7: 19, 8: 19, 9: 19}[int(data.version)]:
 		return false
 	if int(data.version) >= 7 and not living_world.validate_save(data): return false
 	if int(data.version) >= 5:
@@ -607,12 +608,17 @@ func item_name(item_id: String) -> String:
 
 
 func apply_target(cell: GridCell, category: String, target_id: String) -> Dictionary:
+	if category.is_empty() and (cell == null or cell.state not in [GridCell.State.FARMLAND, GridCell.State.PLANTED]):
+		return _failure("no_target")
 	if cell == null:
 		return _failure("invalid_cell")
 	if not grid.can_actor_use_cell(cell.gx, cell.gz, "player"):
 		return {"ok": false, "reason": "npc_land", "message": "这是 NPC 的专属农田"}
 	if not _in_range(cell):
 		return _failure("out_of_range")
+	# Existing crops decide the farming action even if a seed/soil option remains selected.
+	if category != "building" and cell.crop_instance != null:
+		category = ""
 	var result: Dictionary
 	match category:
 		"farmland":
@@ -648,8 +654,10 @@ func apply_target(cell: GridCell, category: String, target_id: String) -> Dictio
 				_sync_paddy()
 			result = {"ok": placement.placed, "reason": placement.diagnostic.code, "message": "开始建造%s" % DataScript.get_building(target_id).name if placement.placed else placement.diagnostic.message}
 		"":
-			if cell.crop_instance != null and (cell.crop_instance.is_mature() or cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.WITHERED):
+			if cell.crop_instance != null and (cell.crop_instance.is_harvestable() or cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.WITHERED):
 				result = _harvest_or_clear(cell)
+			elif cell.crop_instance != null and cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.DORMANT:
+				return _failure("crop_dormant")
 			elif cell.state in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
 				if cell.watered:
 					return _failure("already_watered")

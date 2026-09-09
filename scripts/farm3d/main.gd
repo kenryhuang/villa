@@ -104,7 +104,7 @@ func _initialize_gameplay() -> bool:
 	interaction.configure(farm_session, player)
 	farm_session.agent_runtime.spawn_farm3d_actors()
 	farm_session.living_world.bind_scene()
-	if not scenario.is_empty() and not preload("res://scripts/farm3d/living_world_scenarios.gd").setup(self, scenario):
+	if not scenario.is_empty() and not preload("res://scripts/farm3d/living_world_scenarios.gd").setup(self, scenario, not OS.get_cmdline_args().has("--script")):
 		push_error("Living world scenario could not initialize: " + scenario)
 		get_tree().quit(1)
 		return false

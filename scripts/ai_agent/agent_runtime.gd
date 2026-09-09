@@ -1055,6 +1055,7 @@ func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: i
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
 	if trigger != "dialogue" and farm3d_session != null and farm3d_session.living_world != null:
+		if not farm3d_session.living_world.interruptions.running(agent_id).is_empty(): return {}
 		var project: Dictionary = farm3d_session.living_world.projects.active(agent_id)
 		if not project.is_empty() and not project.steps.values().any(func(step): return step.status == "blocked"): return {}
 	if (
@@ -1130,7 +1131,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.allowed_read_tools = (capabilities.get("read_tools", []) as Array).duplicate()
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
 	if not is_instance_valid(farm3d_session):
-		for name in ["rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
+		for name in ["rent_production", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
 	projected.market_summary = market_summary.build(
 		str(capabilities.get("role_id", "")),
 		game_minute,
@@ -1208,7 +1209,7 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	if farm3d_session != null and get_tree().paused and validator.validate(response, registry, executor.world_revision, role_system).ok:
 		var safe_dialogue := trigger == "dialogue"
 		for action in response.get("actions", []):
-			if str(action.get("tool_name", "")) not in ["propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
+			if str(action.get("tool_name", "")) not in ["propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
 				safe_dialogue = false
 		if not safe_dialogue:
 			if not _deferred_responses.any(func(entry: Dictionary): return str(entry.response.get("request_id", "")) == request_id):

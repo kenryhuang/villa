@@ -207,7 +207,7 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 		return {}
 	var instance: CropInstance = cell.crop_instance
 	var data: CropData = instance.crop_data
-	if cell.state != GridCell.State.PLANTED or data == null or not instance.is_mature():
+	if cell.state != GridCell.State.PLANTED or data == null or not instance.is_harvestable():
 		return {}
 	if instance.harvest_count >= EconomyLimitsScript.MAX_SAFE_INTEGER:
 		return {}

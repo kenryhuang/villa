@@ -125,6 +125,12 @@ func configure_farm3d(runtime: Node) -> void:
 	agent_debug_button.text = "Agent 请求追踪"
 	agent_debug_requested.connect(func(): agent_trace_window.open())
 	refresh_requested.connect(_refresh_farm3d)
+	var public_mode := CheckButton.new()
+	public_mode.text = "GameEnvAgent：仅观察，暂停新增公共措施"
+	public_mode.button_pressed = runtime.farm3d_session.living_world.public_plans.mode == "observe"
+	public_mode.toggled.connect(func(observe: bool): runtime.farm3d_session.living_world.public_plans.set_mode("observe" if observe else "execute"); _refresh_farm3d())
+	toolbar.add_child(public_mode)
+	runtime.farm3d_session.state_loaded.connect(func(): public_mode.set_pressed_no_signal(runtime.farm3d_session.living_world.public_plans.mode == "observe"))
 	_refresh_farm3d()
 
 

@@ -105,6 +105,57 @@ func _run() -> void:
 		texts.append(label.text)
 	_check("胡萝卜" in texts and "x%d" % carrot_total in texts, "Visible crop slot shows the updated harvest total")
 	_press(KEY_ESCAPE)
+	# Reproduce ripe strawberries saved after an out-of-season transition.
+	session.season.current_season = SeasonSystem.Season.SPRING
+	_check(session.apply_target(cell, "seed", "strawberry_seed").ok, "Plant strawberry regression fixture")
+	cell.crop_instance.set_growth_state(4.0, CropInstance.LifecycleState.DORMANT)
+	session.season.current_season = SeasonSystem.Season.AUTUMN
+	var strawberry_before: int = session.inventory.get_item_count("strawberry")
+	interaction.select_target("seed", "carrot_seed")
+	interaction._cooldown = 0
+	_check(interaction.perform(cell).ok, "Ripe dormant strawberry harvest overrides seed selection")
+	_check(session.inventory.get_item_count("strawberry") > strawberry_before, "Ripe dormant fruit enters inventory instead of watering")
+	interaction.cancel_selection()
+	# Incomplete dormant growth must not be promoted into a harvest.
+	session.season.current_season = SeasonSystem.Season.SPRING
+	session.apply_target(cell, "seed", "strawberry_seed")
+	cell.crop_instance.set_growth_state(2.0, CropInstance.LifecycleState.DORMANT)
+	strawberry_before = session.inventory.get_item_count("strawberry")
+	_check(session.farming.preview_harvest(cell).is_empty(), "Immature dormant fruit remains unharvestable")
+	interaction._cooldown = 0
+	_check(interaction.perform(cell).reason == "crop_dormant", "Immature dormant plants are not watered")
+	_check(session.inventory.get_item_count("strawberry") == strawberry_before, "Dormant unripe plant creates no fruit")
+	interaction.cancel_selection()
+	cell.crop_instance.set_growth_state(4.0, CropInstance.LifecycleState.DORMANT)
+	session.visuals.sync_cell(cell)
+	await _frames(3)
+	click.position = camera.unproject_position(cell.world_position_3d())
+	_check(interaction.cell_at_pointer(click.position) == cell, "Mouse ray picks the ripe strawberry plot")
+	root.push_input(click, true)
+	await _frames(24)
+	_check(session.inventory.get_item_count("strawberry") > strawberry_before and cell.crop_instance == null, "Real mouse click harvests dormant ripe strawberries")
+	interaction.cancel_selection()
+	var notices: int = hud.bus.get_recent().size()
+	var stamina: int = root.get_node("GameState").player_state.stamina
+	_check(interaction.perform(null).reason == "no_target", "Click outside grid is ignored")
+	var distant_ground: GridCell
+	for candidate in session.grid._cells.values():
+		if candidate.state == GridCell.State.WASTELAND and not session._in_range(candidate):
+			distant_ground = candidate
+			break
+	_check(distant_ground != null and interaction.perform(distant_ground).reason == "no_target", "Distant ordinary ground is ignored before range validation")
+	_check(hud.bus.get_recent().size() == notices, "Non-plot clicks publish no notifications")
+	_check(player._farm_action_seconds == 0 and root.get_node("GameState").player_state.stamina == stamina, "Non-plot clicks trigger no animation or stamina cost")
+	var bare_ground: GridCell = session.grid.get_cell(20, 16)
+	_check(bare_ground.state == GridCell.State.WASTELAND, "Bare-ground mouse fixture has no plot")
+	click.position = camera.unproject_position(bare_ground.world_position_3d())
+	_check(interaction.cell_at_pointer(click.position) == bare_ground, "Mouse ray picks ordinary ground")
+	root.push_input(click, true)
+	await _frames(3)
+	_check(hud.bus.get_recent().size() == notices and player._farm_action_seconds == 0, "Real bare-ground click stays silent and idle")
+	player.global_position += Vector3(10, 0, 0)
+	_check(interaction.perform(cell).reason == "out_of_range", "Actual distant crop still requires walking closer")
+	player.global_position -= Vector3(10, 0, 0)
 	hud.category_buttons.building.pressed.emit()
 	_check(hud.buttons.size() == 17, "All original buildings are listed")
 	var fence_button: Button

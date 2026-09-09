@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('P0', 'P1', 'P2', 'P3', 'P4', 'P5')][string]$Stage = 'P0',
+    [ValidateSet('P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7')][string]$Stage = 'P0',
     [switch]$IncludeDependencies,
     [switch]$LiveAgents,
     [string]$Godot = 'godot_console.exe'
@@ -24,6 +24,10 @@ try {
     if ($LiveAgents) {
         if ($stageNumber -le 1) {
             & $Godot --headless --path . --script tests/run_living_world_live_tests.gd -- --living-world-scenario=P0 --living-world-live-agents
+        } elseif ($stageNumber -eq 6) {
+            & $Godot --headless --path . --script tests/run_living_world_p6_live_tests.gd -- --living-world-scenario=P6 --living-world-live-agents
+        } elseif ($stageNumber -eq 7) {
+            & $Godot --headless --path . --script tests/run_living_world_p7_live_tests.gd -- --living-world-scenario=P7 --living-world-live-agents
         } elseif ($stageNumber -ge 3) {
             & $Godot --headless --path . --script tests/run_living_world_autonomy_live_tests.gd -- "--living-world-scenario=$Stage" --living-world-live-agents
         }

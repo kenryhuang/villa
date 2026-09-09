@@ -26,6 +26,7 @@ export interface ProviderRawOutput {
   message: ProviderRawMessage;
   finish_reason: string | null;
   usage?: Record<string, unknown>;
+  validation_errors?: string[];
 }
 
 export interface ProviderStreamResult {
@@ -197,10 +198,12 @@ export class AgentStreamAssembler {
     return {
       content: this.#content,
       reasoning_content: this.#reasoning,
-      tool_calls: this.toolCalls().map((tool) => ({
+      // Preserve the actual payload, including incomplete JSON, for diagnostics.
+      // Parsing/authorization happens separately before any intent is returned.
+      tool_calls: [...this.#tools.entries()].sort(([a], [b]) => a - b).map(([, tool]) => ({
         id: tool.id,
         type: "function" as const,
-        function: {name: tool.name, arguments: JSON.stringify(tool.arguments)},
+        function: {name: tool.name, arguments: tool.arguments},
       })),
     };
   }
@@ -215,6 +218,7 @@ export class AgentStreamAssembler {
   }
 
   finish(request: DecisionRequest, allowedTools: readonly string[], maximumActions = 3): ProviderStreamResult {
+    if (this.#finishReason === "length") throw new Error("provider_output_truncated");
     if (this.#tools.size > maximumActions) throw new Error("provider_too_many_tool_calls");
     const parsedTools = this.toolCalls(maximumActions);
     const actions = parsedTools.map((tool) => {

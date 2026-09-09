@@ -49,7 +49,7 @@ export interface AgentContext {
 }
 
 const GENERAL_COMMAND_TOOLS = [
-	"rent_production", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
+	"rent_production", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
   "send_message", "propose_trade", "counter_trade", "accept_trade",
   "reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
   "propose_cooperation", "counter_cooperation", "accept_cooperation",
@@ -78,9 +78,10 @@ export class AgentRegistry {
 
   static loadDefault(): AgentRegistry {
     const root = resolve(process.cwd(), "../../data/agents");
+    const coordinator = JSON.parse(readFileSync(resolve(root, "public_coordinator.json"), "utf8"));
     return new AgentRegistry(
-      JSON.parse(readFileSync(resolve(root, "roles.json"), "utf8")),
-      JSON.parse(readFileSync(resolve(root, "profiles.json"), "utf8")),
+      [...JSON.parse(readFileSync(resolve(root, "roles.json"), "utf8")), coordinator.role],
+      [...JSON.parse(readFileSync(resolve(root, "profiles.json"), "utf8")), coordinator.profile],
     );
   }
 
@@ -101,9 +102,11 @@ export class AgentRegistry {
     if (request.agent_id !== agentId) throw new Error(`Agent mismatch: ${agentId}`);
     const role = this.#roles.get(request.active_role);
     if (!role) throw new Error(`Unknown role: ${request.active_role}`);
+    const isPublic = agent.role_id === "public_coordinator";
+    if (isPublic !== (role.role_id === "public_coordinator")) throw new Error("Public authority cannot change to/from a private role");
     const goals = request.goals.filter((goal) => role.goals.includes(goal));
-    const allowedReadTools = request.allowed_read_tools.filter((tool) => [...(role.read_tools ?? []), "inspect_map", "inspect_buildings", "inspect_building", "inspect_characters"].includes(tool));
-    const localCommands = new Set([...role.tools, ...GENERAL_COMMAND_TOOLS]);
+    const allowedReadTools = request.allowed_read_tools.filter((tool) => [...(role.read_tools ?? []), ...(isPublic ? [] : ["inspect_map", "inspect_buildings", "inspect_building", "inspect_characters"])].includes(tool));
+    const localCommands = new Set([...role.tools, ...(isPublic ? [] : GENERAL_COMMAND_TOOLS)]);
     const allowedCommandTools = request.allowed_command_tools.filter((tool) => localCommands.has(tool));
     return {
       agent: {agent_id: agent.agent_id, display_name: agent.display_name, soul: structuredClone(agent.soul), active_role: role.role_id, goals},

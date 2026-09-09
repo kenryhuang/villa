@@ -7,6 +7,8 @@ var society: RefCounted
 var projects: RefCounted
 var construction: RefCounted
 var board: RefCounted
+var interruptions: RefCounted
+var public_plans: RefCounted
 var _tick := 0.0
 var saved_positions: Dictionary = {}
 var pending_player_terms: Dictionary = {}
@@ -24,6 +26,10 @@ func configure(farm: Farm3DSession) -> void:
 	construction.configure(self)
 	board = preload("res://scripts/systems/commission_system.gd").new()
 	board.configure(self)
+	interruptions = preload("res://scripts/systems/npc_interruption_system.gd").new()
+	interruptions.configure(self)
+	public_plans = preload("res://scripts/systems/public_plan_system.gd").new()
+	public_plans.configure(self)
 	get_node("/root/EventBus").time_changed.connect(func(_hour: int, _minute: int): advance())
 	session.state_loaded.connect(_after_load)
 
@@ -34,7 +40,9 @@ func advance() -> void:
 	society.advance_to(minute())
 	board.advance()
 	construction.advance()
+	interruptions.advance()
 	projects.advance()
+	public_plans.advance()
 
 func _process(_delta: float) -> void:
 	if not _bound or get_tree().paused: return
@@ -42,7 +50,14 @@ func _process(_delta: float) -> void:
 	if _tick >= .25:
 		_tick = 0
 		construction.advance()
+		interruptions.advance()
 		projects.advance()
+		public_plans.advance()
+	for actor_id in ["farmer_ahe", "lao_li", "xuezhe_lin"]:
+		var body: Node3D = actor(actor_id)
+		if body == null or body.nameplate == null: continue
+		var task: Dictionary = interruptions.running(actor_id)
+		body.nameplate.text = actor_name(actor_id) if task.is_empty() else actor_name(actor_id) + " · " + str({"pickup": "前来取货", "delivering": "配送中", "returning": "返回退货", "refund_pending": "等待退还"}.get(task.status, "配送中"))
 	for id in resident_visuals:
 		var record: Dictionary = society.residents[id]
 		var pos := Vector2(record.position.x, record.position.z)
@@ -85,10 +100,21 @@ func to_dict() -> Dictionary:
 	for id in ["farmer_ahe", "lao_li", "xuezhe_lin"]:
 		var body: Node3D = actor(id)
 		if body != null: saved_positions[id] = {"x": body.position.x, "z": body.position.z}
-	return {"version": 1, "society": society.to_dict(), "projects": projects.to_dict(), "construction": construction.to_dict(), "board": board.to_dict(), "positions": saved_positions.duplicate(true)}
+	return {"version": 3, "public_plans": public_plans.to_dict(), "interruptions": interruptions.to_dict(), "society": society.to_dict(), "projects": projects.to_dict(), "construction": construction.to_dict(), "board": board.to_dict(), "positions": saved_positions.duplicate(true)}
 
 func validate(value: Variant) -> bool:
-	if not value is Dictionary or value.size() != 6 or value.get("version") != 1 or not society.validate(value.get("society")) or not projects.validate(value.get("projects")) or not construction.validate(value.get("construction")) or not board.validate(value.get("board")) or not value.get("positions") is Dictionary: return false
+	if not value is Dictionary or not integer(value.get("version")) or int(value.version) not in [1, 2, 3] or value.size() != (5 + int(value.version)) or not society.validate(value.get("society")) or not projects.validate(value.get("projects")) or not construction.validate(value.get("construction")) or not board.validate(value.get("board")) or not value.get("positions") is Dictionary: return false
+	if value.version >= 2 and not interruptions.validate(value.get("interruptions"), value.projects.projects): return false
+	if value.version == 1 and value.projects.projects.values().any(func(p): return p.status == "suspended"): return false
+	if value.version >= 2:
+		var counts := {}
+		for t in value.interruptions.tasks.values():
+			if t.status in interruptions.LIVE: counts[t.actor_id] = int(counts.get(t.actor_id, 0)) + 1
+		for actor_id in counts:
+			for claim in value.board.claims.values():
+				if claim.actor_id == actor_id and claim.status == "active": counts[actor_id] = int(counts[actor_id]) + 1
+			if int(counts[actor_id]) > interruptions.LIMIT: return false
+	if value.version >= 3 and not public_plans.validate(value.get("public_plans"), value.board): return false
 	for id in value.positions:
 		if id not in ["farmer_ahe", "lao_li", "xuezhe_lin"] or not position_valid(value.positions[id]): return false
 	return true
@@ -100,10 +126,12 @@ func restore(value: Dictionary) -> void:
 	projects.restore(value.projects)
 	construction.restore(value.construction)
 	board.restore(value.board)
+	interruptions.restore(value.get("interruptions", {}))
+	public_plans.restore(value.get("public_plans", {}))
 	saved_positions = value.positions.duplicate(true)
 
 func debug_text() -> String:
-	var lines: Array[String] = [society.summary(), ""]
+	var lines: Array[String] = [society.summary(), "", public_plans.summary(), ""]
 	for record in society.residents.values():
 		var state: NpcEconomyState = session.npc_economy.get_npc_state(record.id)
 		lines.append("%s · %s · %d 金币 · %s" % [record.name, record.occupation, state.gold, record.state])
@@ -169,13 +197,18 @@ func execute_project_step(p: Dictionary, step: Dictionary, _state: Dictionary, k
 	return {"ok": false, "error": "unsupported_capability"}
 
 func context(actor_id: String) -> Dictionary:
-	return {"society": society.summary(), "recent_projects": projects.projects.values().filter(func(p): return p.actor_id == actor_id and p.status != "active").slice(-3), "own_claims": board.claims.values().filter(func(c): return c.actor_id == actor_id and c.status == "active"), "project": projects.active(actor_id).duplicate(true), "suggestion": projects.suggestions.get(actor_id, {}), "legal_windmill_sites": construction.sites(actor_id), "commissions": board.commissions.values().filter(func(c): return c.status == "open"), "capabilities": projects.CAPABILITIES,
+	return {"interruptions": interruptions.context(actor_id), "society": society.summary(), "recent_projects": projects.projects.values().filter(func(p): return p.actor_id == actor_id and p.status != "active").slice(-3), "own_claims": board.claims.values().filter(func(c): return c.actor_id == actor_id and c.status == "active"), "project": _current_project(actor_id), "suggestion": projects.suggestions.get(actor_id, {}), "legal_windmill_sites": construction.sites(actor_id), "commissions": board.commissions.values().filter(func(c): return c.status == "open"), "capabilities": projects.CAPABILITIES,
 		"rules": "For a blocked project, inspect step.result including current_total_quote. You can cancel_project to release unused escrow, then submit_project with a revised plan using returned materials; never resubmit already completed production. Sell limits are TOTAL proceeds including market depth/slippage, not unit price multiplied by quantity. move to a building coordinate approaches its reachable edge. Choose your own goal and a topologically ordered project DAG, or decline if unprofitable. submit_project escrows budget and materials; one primary project. Each step: id, capability, depends_on, arguments. buy/sell arguments item_id,quantity,limit (TOTAL max cost/min proceeds); move x,z; rent building_id,recipe_id,batches,max_fee; wait_production order_step; reserve_plot gx,gz; build lease_step; wait_construction build_step; set_policy build_step,open,fee; claim commission_id,quantity; deliver claim_step,quantity,order_step (empty for procurement). IDs referring to steps must be earlier dependencies. Inputs/outputs stay in project escrow until completion. Project rental recipes currently require explicit ingredients (such as flour or bread), not tagged input_selectors. rent.building_id can be @buildStepId to refer to a prior build step in its ancestors; the engine resolves the new instance ID, so do not invent one. Building construction takes 9 real simulation seconds (paused with game). A project may stop after build/wait_construction/set_policy then decide production separately. Empty allowed_recipes means ALL station recipes, not none. Build only after moving to the legal site's approach; no player materials or positions. Leases expire; build is a real windmill costing plank12,stone_brick8,rope2. Processing commissions require a new rental order after claiming. Suggestions are optional, never authorization to spend player funds. Rejected/blocked steps require retry_project or cancel_project and a new plan; no fabricated completion."}
 
 
 func command(actor_id: String, tool: String, a: Dictionary, key: String) -> Dictionary:
 	var result := {"ok": false, "error": "unknown_command"}
 	match tool:
+		"propose_delivery": result = interruptions.propose(actor_id, key, a)
+		"cancel_delivery": result = interruptions.cancel(actor_id, a.task_id, int(a.version))
+		"revise_project":
+			result = projects.revise(actor_id, a.project_id, int(a.version), a.plan, a.source)
+			if result.ok: projects.projects[a.project_id].changes[-1].action_key = key
 		"submit_project": result = projects.submit(actor_id, "project-" + key.sha256_text().substr(0, 24), a)
 		"retry_project": result = projects.retry(actor_id, a.project_id)
 		"cancel_project": result = projects.cancel(actor_id, a.project_id)
@@ -194,6 +227,8 @@ func command(actor_id: String, tool: String, a: Dictionary, key: String) -> Dict
 
 func reset_for_legacy() -> void:
 	projects.restore({"projects": {}, "suggestions": {}})
+	interruptions.restore({})
+	public_plans.restore({})
 	construction.restore({"leases": {}, "builds": {}})
 	board.restore({"demands": {}, "commissions": {}, "claims": {}, "receipts": {}, "proofs": {}, "sequence": 0})
 	saved_positions.clear()
@@ -252,3 +287,9 @@ func actor_name(id: String) -> String:
 	for org in society.config.organizations:
 		if org.id == id: return str(org.name)
 	return id
+
+
+func _current_project(actor_id: String) -> Dictionary:
+	for p in projects.projects.values():
+		if p.actor_id == actor_id and p.status in ["active", "suspended"]: return p.duplicate(true)
+	return {}

@@ -79,3 +79,15 @@ func is_agent_managed(agent_id: String) -> bool:
 
 func is_tool_allowed(agent_id: String, tool_name: String) -> bool:
 	return _agents.has(agent_id) and ((_agents[agent_id] as Dictionary).tools as Array).has(tool_name)
+
+
+func load_public_coordinator() -> bool:
+	var config: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/agents/public_coordinator.json"))
+	if not config is Dictionary: return false
+	_roles = {config.role.role_id: config.role.duplicate(true)}
+	var profile: Dictionary = config.profile.duplicate(true)
+	profile.tools = config.role.tools.duplicate()
+	profile.goals = config.role.goals.duplicate()
+	profile.decision_interval_hours = config.role.decision_interval_hours.duplicate()
+	_agents = {profile.agent_id: profile}
+	return true

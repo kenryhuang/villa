@@ -46,7 +46,7 @@ func configure(farm: Node) -> void:
 	tabs = TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(tabs)
-	for title_text in ["可接委托", "我的接单", "我发布的"]:
+	for title_text in ["可接委托", "我的接单", "我发布的", "配送与计划", "公共事务"]:
 		var scroll := ScrollContainer.new()
 		scroll.name = title_text
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -85,6 +85,7 @@ func configure(farm: Node) -> void:
 	confirm.cancel_button_text = "返回修改"
 	add_child(confirm)
 	confirm.confirmed.connect(func():
+		confirm.hide()
 		if pending.is_valid(): pending.call()
 		pending = Callable()
 		refresh())
@@ -146,10 +147,15 @@ func refresh() -> void:
 				_confirm("交付 %s ×%d，领取 %d 金币。" % [session.item_name(c.terms.item_id), n, n * int(c.terms.unit_reward)], func(): _show_result(board.deliver("player", _id(), task.id, n, version, order))))
 			_button(row, "放弃剩余接单", func(): _show_result(board.abandon("player", task.id)))
 
+	_delivery_cards()
+	var public_text := Label.new()
+	public_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	public_text.text = session.living_world.public_plans.summary()
+	lists[4].add_child(public_text)
 	for index in lists.size():
 		if lists[index].get_child_count() == 0:
 			var empty := Label.new()
-			empty.text = ["目前没有可接的委托。", "还没有接单，先去看看村民需要什么。", "还没有发布委托，可以在右侧填写需求。"][index]
+			empty.text = ["目前没有可接的委托。", "还没有接单，先去看看村民需要什么。", "还没有发布委托，可以在右侧填写需求。", "可与 NPC 对话协商配送，或询问其当前计划。", "暂无公共计划。"][index]
 			lists[index].add_child(empty)
 
 func _available_card(c: Dictionary) -> void:
@@ -230,7 +236,7 @@ func _status(value: String) -> String:
 	return str({"open": "招募中", "active": "进行中", "completed": "已完成", "expired": "已到期", "cancelled": "已取消", "abandoned": "已放弃"}.get(value, value))
 
 func _error_text(code: String) -> String:
-	return str({"escrow_unaffordable": "金币不足，未发布委托。", "active_claims": "已经有人接单，请等约定期限结束后再取消。", "claim_slots_full": "接单名额已满。", "claim_quota": "可接数量已变化，请重新选择。", "demand_share_unavailable": "这部分需求已有安排，请重新核对数量。", "terms_changed_reconfirm": "进度已变化，请重新核对交货条款。", "deadline_passed": "委托已到期，未扣除你的货物。", "delivery_over_quota": "交货数量超过剩余接单数量。", "new_production_proof_required": "请选择接单后完成的新加工订单；已有库存不能单独作为加工凭证。", "delivery_assets_or_capacity": "货物不足或收货方仓储不足，本次未交付。", "commission_unavailable": "委托已不可接取，请刷新查看。", "not_publisher": "只有发布者可以取消委托。"}.get(code, "操作未完成，请检查货物、金币和委托状态后重试。"))
+	return str({"task_changed": "配送条款或进度已变化，请重新协商确认。", "task_capacity": "这位 NPC 已达到承接容量，请等已有任务结束。", "draft_expired": "条款草稿已过期，请重新与 NPC 协商。", "delivery_deadline_unreachable": "当前距离无法在期限内送达，请协商更长的期限。", "not_task_party": "只有配送双方可以取消这项约定。", "escrow_unaffordable": "金币不足，未发布委托。", "active_claims": "已经有人接单，请等约定期限结束后再取消。", "claim_slots_full": "接单名额已满。", "claim_quota": "可接数量已变化，请重新选择。", "demand_share_unavailable": "这部分需求已有安排，请重新核对数量。", "terms_changed_reconfirm": "进度已变化，请重新核对交货条款。", "deadline_passed": "委托已到期，未扣除你的货物。", "delivery_over_quota": "交货数量超过剩余接单数量。", "new_production_proof_required": "请选择接单后完成的新加工订单；已有库存不能单独作为加工凭证。", "delivery_assets_or_capacity": "货物不足或收货方仓储不足，本次未交付。", "commission_unavailable": "委托已不可接取，请刷新查看。", "not_publisher": "只有发布者可以取消委托。"}.get(code, "操作未完成，请检查货物、金币和委托状态后重试。"))
 
 
 func offer_draft() -> void:
@@ -245,3 +251,37 @@ func offer_draft() -> void:
 	_confirm(detail, func():
 		if board.demand(terms.demand_id, "player", terms.item_id, int(terms.quantity)):
 			_show_result(board.publish("player", terms.demand_id, terms)))
+
+
+func offer_delivery_draft(actor_id: String) -> void:
+	for draft in session.living_world.interruptions.drafts.values():
+		if draft.actor_id != actor_id: continue
+		open_panel()
+		tabs.current_tab = 3
+		var a: Dictionary = draft.terms
+		var detail := "%s 愿意配送：%s ×%d → %s（市场收货处）\n报酬 %d 金币，期限 %d 游戏分钟，%s。\n确认后托管你的货物与报酬，实际送达才支付。取消取货后的配送需等 NPC 返回退货。" % [session.living_world.actor_name(actor_id), session.item_name(a.item_id), int(a.quantity), session.living_world.actor_name(a.recipient_id), int(a.reward), int(a.deadline_minutes), {"now": "安全时立即出发", "after_step": "当前步骤后出发", "queue": "原项目完成后出发"}[a.schedule]]
+		var id := str(draft.id)
+		_confirm(detail, func(): _show_result(session.living_world.interruptions.accept(id)))
+		return
+
+func _delivery_cards() -> void:
+	for t in session.living_world.interruptions.tasks.values():
+		var box := VBoxContainer.new()
+		lists[3].add_child(box)
+		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.text = "%s：%s ×%d → %s · %s\n剩余 %d 分钟 · 报酬 %d 金币 · %s" % [session.living_world.actor_name(t.actor_id), session.item_name(t.terms.item_id), int(t.terms.quantity), session.living_world.actor_name(t.terms.recipient_id), {"queued": "等待约定出发时机", "pickup": "前来取货", "delivering": "送货途中", "returning": "返回退货", "refund_pending": "等待退还托管", "completed": "已送达并支付", "cancelled": "已取消并退款", "expired": "已到期并退款"}.get(t.status, t.status), maxi(0, int(t.deadline) - session.living_world.minute()), int(t.terms.reward), {"no_route": "通路受阻", "refund_capacity": "背包空间不足，请腾出位置", "recipient_capacity": "收货方容量不足", "walking": "正在行走"}.get(t.reason, "")]
+		box.add_child(label)
+		if t.status in ["queued", "pickup", "delivering"]:
+			var id := str(t.id)
+			var version := int(t.version)
+			_button(box, "取消这项配送", func(): _confirm("取消配送并退还未付报酬；已取货时需先返回退货。原生产项目继续有效。", func(): _show_result(session.living_world.interruptions.cancel("player", id, version))))
+			_button(box, "与 NPC 协商改约", func():
+				close_panel()
+				session.get_parent().get_node("FarmInteraction").hud.dialogue_ui.open_agent_dialogue(t.actor_id, session.living_world.actor_name(t.actor_id)))
+	for p in session.living_world.projects.projects.values():
+		if p.status not in ["active", "suspended"]: continue
+		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.text = "%s · %s · %s\n可通过对话询问进度、建议调整未来计划；NPC 自主决定是否接受。" % [session.living_world.actor_name(p.actor_id), p.plan.goal, "临时挂起，配送后恢复" if p.status == "suspended" else "正在执行"]
+		lists[3].add_child(label)

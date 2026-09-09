@@ -111,7 +111,7 @@ export function createApp(dependencies: AppDependencies) {
     try {
       const url = new URL(request.url || "/", "http://localhost");
       if (request.method === "GET" && url.pathname === "/health") {
-        send(response, 200, {status: "ok", protocol_version: PROTOCOL_VERSION, provider: "configured", capabilities: ["farm3d_environment", "rent_production", "living_world_projects"]}); return;
+        send(response, 200, {status: "ok", protocol_version: PROTOCOL_VERSION, provider: "configured", capabilities: ["farm3d_environment", "rent_production", "living_world_projects", "living_world_interruptions", "public_coordination"]}); return;
       }
       if (request.method !== "POST") { send(response, 404, {error: {code: "NOT_FOUND"}}); return; }
       const body = await readBody(request);

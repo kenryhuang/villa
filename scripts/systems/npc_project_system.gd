@@ -57,7 +57,7 @@ static func valid_step(cap: String, a: Dictionary) -> bool:
 func submit(actor: String, id: String, plan: Dictionary) -> Dictionary:
 	if not valid_plan(plan) or not world.assets.exists(actor) or actor == "player": return _error("invalid_project")
 	if projects.has(id): return {"ok": projects[id].actor_id == actor and projects[id].plan == plan, "project_id": id}
-	if not active(actor).is_empty(): return _error("primary_project_exists")
+	if not active(actor).is_empty() or projects.values().any(func(p): return p.actor_id == actor and p.status == "suspended") or not world.interruptions.running(actor).is_empty(): return _error("primary_project_exists")
 	var commission_check := _check_commissions(actor, plan)
 	if not commission_check.ok: return commission_check
 	for item in plan.materials:
@@ -67,7 +67,7 @@ func submit(actor: String, id: String, plan: Dictionary) -> Dictionary:
 	if not world.assets.apply(actor, debit, -int(plan.budget)): return _error("project_resources_unavailable")
 	var steps := {}
 	for step in plan.steps: steps[step.id] = {"status": "pending", "result": {}, "error": "", "attempts": 0}
-	projects[id] = {"id": id, "actor_id": actor, "plan": plan.duplicate(true), "status": "active", "deadline": world.minute() + int(plan.deadline_minutes), "gold": int(plan.budget), "items": plan.materials.duplicate(true), "steps": steps, "reason": "", "created": world.minute()}
+	projects[id] = {"id": id, "actor_id": actor, "plan": plan.duplicate(true), "status": "active", "deadline": world.minute() + int(plan.deadline_minutes), "gold": int(plan.budget), "items": plan.materials.duplicate(true), "steps": steps, "reason": "", "created": world.minute(), "version": 1, "changes": []}
 	return {"ok": true, "project_id": id, "message": "自主项目已接受并托管预算，按依赖执行；尚未完成。"}
 
 func active(actor: String) -> Dictionary:
@@ -104,7 +104,7 @@ func suggest(actor: String, text: String, ttl: int) -> Dictionary:
 func cancel(actor: String, id: String) -> Dictionary:
 	if not projects.has(id) or projects[id].actor_id != actor: return _error("not_project_owner")
 	var p: Dictionary = projects[id]
-	if p.status != "active": return {"ok": true}
+	if p.status not in ["active", "suspended"]: return {"ok": true}
 	for step in p.steps.values():
 		if step.result.has("order_id") and not step.result.get("delivered", false) and not step.result.get("cancelled", false): return _error("wait_for_committed_work")
 	return {"ok": _finish(p, "cancelled")}
@@ -115,7 +115,7 @@ func advance() -> void:
 	for actor in suggestions.keys():
 		if world.minute() >= int(suggestions[actor].expires): suggestions.erase(actor)
 	for p in projects.values():
-		if p.status != "active": continue
+		if p.status != "active" or not world.interruptions.running(p.actor_id).is_empty(): continue
 		var waiting := false
 		for state in p.steps.values(): waiting = waiting or (state.result.has("order_id") and not state.result.get("delivered", false) and not state.result.get("cancelled", false))
 		var commission_check := _check_commissions(p.actor_id, p.plan, p.steps)
@@ -125,8 +125,8 @@ func advance() -> void:
 			# No new purchases or rentals may run against an invalid goal.
 			if not waiting: _finish(p, "cancelled")
 			continue
-		if world.minute() >= int(p.deadline) and not waiting:
-			_finish(p, "expired")
+		if world.minute() >= int(p.deadline):
+			if not waiting: _finish(p, "expired")
 			continue
 		var complete := true
 		for step in p.plan.steps:
@@ -232,7 +232,7 @@ func _production_event(building: BuildingInstance, record: Dictionary) -> void:
 	if record.stage in ["delivered", "cancelled"]: _capacity_changed(building, "", {})
 	if record.stage not in ["delivered", "cancelled"]: return
 	for p in projects.values():
-		if p.status != "active" or p.actor_id != record.job.tenant_id: continue
+		if p.status not in ["active", "suspended"] or p.actor_id != record.job.tenant_id: continue
 		for state in p.steps.values():
 			if state.result.get("order_id", "") != record.job.order_id or state.result.get("delivered", false) or state.result.get("cancelled", false): continue
 			if record.stage == "cancelled":
@@ -246,7 +246,7 @@ func _production_event(building: BuildingInstance, record: Dictionary) -> void:
 
 func _capacity_changed(building: BuildingInstance, _item: String, _amount: Variant) -> void:
 	for p in projects.values():
-		if p.status != "active": continue
+		if p.status not in ["active", "suspended"]: continue
 		for step in p.plan.steps:
 			var state: Dictionary = p.steps[step.id]
 			if step.capability != "rent" or state.status != "blocked" or state.error not in ["queue_full", "reserved_capacity", "output_full", "output_capacity"]: continue
@@ -278,8 +278,12 @@ func _finish(p: Dictionary, status: String) -> bool:
 			if step.capability == "claim" and p.steps[step.id].result.has("claim_id"):
 				world.board.abandon(p.actor_id, str(p.steps[step.id].result.claim_id))
 	var body: Node = world.actor(p.actor_id)
-	if body != null: body.stop_agent_work()
+	if body != null and p.status != "suspended": body.stop_agent_work()
 	p.status = status
+	p.version = int(p.get("version", 1)) + 1
+	# Cancelling a suspended original goal does not cancel its independent delivery.
+	for task in world.interruptions.tasks.values():
+		if task.get("resume_project") == p.id: task.resume_project = ""
 	return true
 
 func to_dict() -> Dictionary:
@@ -291,9 +295,9 @@ func validate(v: Variant) -> bool:
 	for id in v.projects:
 		var p: Variant = v.projects[id]
 		if not p is Dictionary or p.get("id") != id or not world.assets.exists(str(p.get("actor_id", ""))) or not valid_plan(p.get("plan")): return false
-		if p.get("status") not in ["active", "completed", "cancelled", "expired"] or not _count(p.get("gold"), 0, 1000000000) or not _items(p.get("items"), true) or not _count(p.get("deadline"), 0, 9007199254740991) or not _count(p.get("created"), 0, 9007199254740991): return false
+		if p.get("status") not in ["active", "suspended", "completed", "cancelled", "expired"] or not _count(p.get("gold"), 0, 1000000000) or not _items(p.get("items"), true) or not _count(p.get("deadline"), 0, 9007199254740991) or not _count(p.get("created"), 0, 9007199254740991): return false
 		if not p.get("steps") is Dictionary or p.steps.size() != p.plan.steps.size(): return false
-		if p.status == "active":
+		if p.status in ["active", "suspended"]:
 			if actors.has(p.actor_id): return false
 			actors[p.actor_id] = true
 		elif int(p.gold) != 0 or p.items.values().any(func(n): return int(n) != 0): return false
@@ -307,6 +311,7 @@ func validate(v: Variant) -> bool:
 			if state.status == "done" and state.result.get("ok") != true: return false
 			if state.status == "waiting" and step.capability not in ["move", "wait_production", "wait_construction", "set_policy"]: return false
 		if int(p.deadline) != int(p.created) + int(p.plan.deadline_minutes): return false
+		if not _count(p.get("version", 1), 1, 1000000) or not p.get("changes", []) is Array: return false
 	for actor in v.suggestions:
 		var entry: Variant = v.suggestions[actor]
 		if not world.assets.exists(actor) or not entry is Dictionary or not entry.get("text") is String or entry.text.length() > 500 or not _count(entry.get("expires"), 0, 9007199254740991): return false
@@ -328,3 +333,30 @@ static func _items(v: Variant, zero := false) -> bool:
 		if not _id(id) or not _count(v[id], 0 if zero else 1, 1000000): return false
 	return true
 static func _error(code: String) -> Dictionary: return {"ok": false, "error": code}
+
+
+func revise(actor: String, id: String, version: int, plan: Dictionary, source: String) -> Dictionary:
+	var p: Dictionary = projects.get(id, {})
+	if p.get("actor_id") != actor or p.get("status") not in ["active", "suspended"] or int(p.get("version", 1)) != version: return _error("project_changed")
+	if not valid_plan(plan) or source not in ["dialogue", "self_review"]: return _error("invalid_project")
+	if plan.budget != p.plan.budget or plan.materials != p.plan.materials: return _error("escrow_change_requires_new_project")
+	if int(p.created) + int(plan.deadline_minutes) <= world.minute(): return _error("deadline_passed")
+	var next := {}
+	for step in plan.steps: next[step.id] = step
+	for step in p.plan.steps:
+		var state: Dictionary = p.steps[step.id]
+		if state.status in ["done", "waiting"] or step.capability in ["claim", "deliver"]:
+			if next.get(step.id) != step: return _error("committed_step_immutable")
+	var states := {}
+	for step in plan.steps:
+		var same: bool = p.plan.steps.any(func(old): return old == step)
+		states[step.id] = p.steps[step.id].duplicate(true) if same else {"status": "pending", "result": {}, "error": "", "attempts": 0}
+	var checked := _check_commissions(actor, plan, states)
+	if not checked.ok: return checked
+	if not p.has("changes"): p.changes = []
+	p.changes.append({"version": int(p.get("version", 1)), "source": source, "minute": world.minute(), "previous_plan": p.plan.duplicate(true)})
+	p.version = int(p.get("version", 1)) + 1
+	p.plan = plan.duplicate(true)
+	p.steps = states
+	p.deadline = int(p.created) + int(plan.deadline_minutes)
+	return {"ok": true, "project_id": id, "version": p.version, "message": "后续计划已修改，已承诺的订单与合同保持有效。"}

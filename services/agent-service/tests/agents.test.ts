@@ -64,9 +64,9 @@ test("crop inspection preserves authoritative planting restrictions and named ca
   assert.equal((context.actor_context.crop_options as typeof cropOptions)[0].season_valid, false);
 });
 
-test("loads three isolated role profiles and tool collections", () => {
+test("loads three private roles and an isolated public coordinator", () => {
   const registry = AgentRegistry.loadDefault();
-  assert.deepEqual(registry.ids(), ["farmer_ahe", "lao_li", "xuezhe_lin"]);
+  assert.deepEqual(registry.ids(), ["farmer_ahe", "lao_li", "village_public", "xuezhe_lin"]);
   assert.equal(registry.get("farmer_ahe")?.tools.includes("plant"), true);
   assert.equal(registry.get("lao_li")?.tools.includes("plant"), false);
   assert.equal(registry.get("xuezhe_lin")?.tools.includes("survey"), true);
@@ -135,4 +135,17 @@ test("rejects a dynamic role not present in the local role directory", () => {
     market_view: {}, interaction_view: {}, agreement_view: {},
   };
   assert.throws(() => registry.buildContext("farmer_ahe", request, []), /Unknown role/);
+});
+
+
+test("public coordinator never inherits private tools or changes into a private role", () => {
+  const registry = AgentRegistry.loadDefault();
+  const request = {protocol_version: 2 as const, request_id: "public-context", session_id: "public-test", session_epoch: 1, agent_id: "village_public", trigger: "event" as const, game_minute: 60, world_revision: 1, projection_schema_version: 1 as const, active_role: "public_coordinator", goals: ["protect_basic_food_access"], allowed_read_tools: ["inspect_self_resources", "inspect_known_discoveries"], allowed_command_tools: ["public_food_plan", "public_wait", "buy", "propose_trade", "submit_project", "propose_role_change"], actor_context: {public_coordination: {budget: {available: 5000}}}, public_world_state: {}, global_public_events: [], known_actors: [], own_event_delta: [], market_summary: summary("public_coordinator", 60), market_view: {}, interaction_view: {}, agreement_view: {}};
+  const context = registry.buildContext("village_public", request, []);
+  assert.deepEqual(context.allowed_command_tools, ["public_food_plan", "public_wait"]);
+  assert.deepEqual(context.allowed_read_tools, []);
+  assert.throws(() => registry.buildContext("village_public", {...request, active_role: "merchant"}, []), /Public authority/);
+  assert.throws(() => registry.buildContext("lao_li", {...request, agent_id: "lao_li"}, []), /Public authority/);
+  const privateContext = registry.buildContext("lao_li", {...request, agent_id: "lao_li", active_role: "merchant"}, []);
+  assert.equal(privateContext.allowed_command_tools.includes("public_food_plan"), false);
 });

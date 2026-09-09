@@ -33,6 +33,10 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 	match tool_name:
+		"public_food_plan", "public_wait": return preload("res://scripts/systems/public_plan_system.gd").valid_command(tool_name, arguments)
+		"propose_delivery": return preload("res://scripts/systems/npc_interruption_system.gd").valid_terms(arguments)
+		"cancel_delivery": return _exact_keys(arguments, ["task_id", "version"]) and _bounded_id(arguments.task_id) and _integer_in_range(arguments.version, 1, 1000000)
+		"revise_project": return _exact_keys(arguments, ["project_id", "version", "plan", "source"]) and _bounded_id(arguments.project_id) and _integer_in_range(arguments.version, 1, 1000000) and arguments.source in ["dialogue", "self_review"] and preload("res://scripts/systems/npc_project_system.gd").valid_plan(arguments.plan)
 		"submit_project": return preload("res://scripts/systems/npc_project_system.gd").valid_plan(arguments)
 		"retry_project", "cancel_project": return _exact_keys(arguments, ["project_id"]) and _bounded_id(arguments.project_id)
 		"suggest_behavior": return _exact_keys(arguments, ["text", "ttl"]) and _text(arguments.text, 500) and _integer_in_range(arguments.ttl, 1, 1080)

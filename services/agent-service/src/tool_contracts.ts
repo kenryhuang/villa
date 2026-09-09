@@ -48,9 +48,14 @@ function objectSchema(properties: Record<string, unknown>, required: string[]): 
 
 const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   submit_project: objectSchema({goal: {type: "string", minLength: 1, maxLength: 500}, budget: {type: "integer", minimum: 0, maximum: 1000000}, deadline_minutes: {type: "integer", minimum: 60, maximum: 10080}, materials: ITEM_QUANTITIES_SCHEMA, steps: {type: "array", minItems: 1, maxItems: 12, items: objectSchema({id: ITEM_ID_SCHEMA, capability: {type: "string", enum: ["buy", "sell", "move", "rent", "wait_production", "reserve_plot", "build", "wait_construction", "set_policy", "claim", "deliver"]}, depends_on: {type: "array", items: ITEM_ID_SCHEMA}, arguments: {type: "object"}}, ["id", "capability", "depends_on", "arguments"])}}, ["goal", "budget", "deadline_minutes", "materials", "steps"]),
+  propose_delivery: objectSchema({task_id: {type: "string", maxLength: 100}, version: {type: "integer", minimum: 0, maximum: 1000000}, recipient_id: ITEM_ID_SCHEMA, item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, reward: {type: "integer", minimum: 0, maximum: 1000000}, deadline_minutes: {type: "integer", minimum: 1, maximum: 1080}, schedule: {type: "string", enum: ["now", "after_step", "queue"]}, note: NOTE_SCHEMA}, ["task_id", "version", "recipient_id", "item_id", "quantity", "reward", "deadline_minutes", "schedule", "note"]),
+  cancel_delivery: objectSchema({task_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["task_id", "version"]),
+  revise_project: objectSchema({project_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}, plan: {type: "object"}, source: {type: "string", enum: ["dialogue", "self_review"]}}, ["project_id", "version", "plan", "source"]),
+  public_food_plan: objectSchema({expected_version: {type: "integer", minimum: 1, maximum: 1000000000}, reason: {type: "string", minLength: 1, maxLength: 100}, quantity: {type: "integer", minimum: 1, maximum: 12}, unit_reward: {type: "integer", minimum: 1, maximum: 200}, deadline_minutes: {type: "integer", minimum: 60, maximum: 1080}}, ["expected_version", "reason", "quantity", "unit_reward", "deadline_minutes"]),
+  public_wait: objectSchema({expected_version: {type: "integer", minimum: 1, maximum: 1000000000}, reason: {type: "string", minLength: 1, maxLength: 100}}, ["expected_version", "reason"]),
   retry_project: objectSchema({project_id: ITEM_ID_SCHEMA}, ["project_id"]),
   cancel_project: objectSchema({project_id: ITEM_ID_SCHEMA}, ["project_id"]),
-  suggest_behavior: objectSchema({text: TEXT_SCHEMA, ttl: {type: "integer", minimum: 1, maximum: 1080}}, ["text", "ttl"]),
+  suggest_behavior: objectSchema({text: {type: "string", minLength: 1, maxLength: 500}, ttl: {type: "integer", minimum: 1, maximum: 1080}}, ["text", "ttl"]),
   publish_commission: objectSchema({demand_id: ITEM_ID_SCHEMA, item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, unit_reward: {type: "integer", minimum: 1, maximum: 1000000}, kind: {type: "string", enum: ["purchase", "processing"]}, max_claims: {type: "integer", minimum: 1, maximum: 10}, deadline_minutes: {type: "integer", minimum: 1, maximum: 10080}}, ["demand_id", "item_id", "quantity", "unit_reward", "kind", "max_claims", "deadline_minutes"]),
   propose_player_commission: objectSchema({demand_id: ITEM_ID_SCHEMA, item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, unit_reward: {type: "integer", minimum: 1, maximum: 1000000}, kind: {type: "string", enum: ["purchase", "processing"]}, max_claims: {type: "integer", minimum: 1, maximum: 10}, deadline_minutes: {type: "integer", minimum: 1, maximum: 10080}}, ["demand_id", "item_id", "quantity", "unit_reward", "kind", "max_claims", "deadline_minutes"]),
   claim_commission: objectSchema({commission_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["commission_id", "quantity"]),
@@ -208,6 +213,11 @@ function validCooperationTerms(value: unknown): boolean {
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   switch (name) {
+    case "propose_delivery": return hasExactKeys(value, ["task_id", "version", "recipient_id", "item_id", "quantity", "reward", "deadline_minutes", "schedule", "note"]) && isText(value.task_id, 100, true) && isIntegerInRange(value.version, 0, 1000000) && isBoundedId(value.recipient_id) && isBoundedId(value.item_id) && isIntegerInRange(value.quantity, 1, 100) && isIntegerInRange(value.reward, 0, 1000000) && isIntegerInRange(value.deadline_minutes, 1, 1080) && isOneOf(value.schedule, ["now", "after_step", "queue"]) && isText(value.note, 500, true);
+    case "cancel_delivery": return hasExactKeys(value, ["task_id", "version"]) && isBoundedId(value.task_id) && isIntegerInRange(value.version, 1, 1000000);
+    case "revise_project": return hasExactKeys(value, ["project_id", "version", "plan", "source"]) && isBoundedId(value.project_id) && isIntegerInRange(value.version, 1, 1000000) && validProject(value.plan) && isOneOf(value.source, ["dialogue", "self_review"]);
+    case "public_wait": return hasExactKeys(value, ["expected_version", "reason"]) && isIntegerInRange(value.expected_version, 1, 1000000000) && isText(value.reason, 100);
+    case "public_food_plan": return hasExactKeys(value, ["expected_version", "reason", "quantity", "unit_reward", "deadline_minutes"]) && isIntegerInRange(value.expected_version, 1, 1000000000) && isText(value.reason, 100) && isIntegerInRange(value.quantity, 1, 12) && isIntegerInRange(value.unit_reward, 1, 200) && isIntegerInRange(value.deadline_minutes, 60, 1080);
     case "submit_project": return validProject(value);
     case "retry_project": case "cancel_project": return hasExactKeys(value, ["project_id"]) && isBoundedId(value.project_id);
     case "suggest_behavior": return hasExactKeys(value, ["text", "ttl"]) && isText(value.text, 500) && isIntegerInRange(value.ttl, 1, 1080);
@@ -307,10 +317,16 @@ export function toolDescription(name: string): Record<string, unknown> {
   const farmingDescriptions: Record<string, string> = {
     propose_trade: "Create a proposal for target_actor_id. give is what YOU supply from your own inventory; receive is what the OTHER actor supplies to you upon acceptance. You only need to own give, not receive. A player recipient must explicitly confirm in the game UI. A proposal reserves assets but is not a completed trade.",
     counter_trade: "Replace a received offer with your counterproposal. give is your contribution; receive is what you request from the other actor. The previous offer becomes invalid; the recipient must accept the new proposal.",
-    submit_project: "Choose an autonomous goal based on actual opportunities, submit a budgeted DAG using actor_context.living_world.rules. No need for a player request or commission. Materials and budget are escrowed from YOUR account. Plan acceptance is not completion. Decline if economics or resources are unsuitable. Inspect market prices, building fees and legal sites first.",
+    propose_delivery: "If you voluntarily accept a player's delivery request, propose exact cargo, recipient, reward, deadline and schedule from living_world.interruptions. Ask for missing terms first. Empty task_id and version 0 means new; existing ID and exact version renegotiates before pickup. A player confirmation card authorizes escrow. Do not claim accepted or delivered before confirmation/execution. Choose now, after_step or queue to respect existing obligations; decline conflicting requests.",
+    cancel_delivery: "Cancel only your own delivery with its current version. Unpaid reward and cargo return to player; picked-up cargo requires an actual return trip. Does not cancel the main project.",
+    revise_project: "Accept an optional suggestion by revising only uncommitted future project steps. Supply current project version, full revised plan and source dialogue/self_review. Escrow budget/materials and all begun steps or commission commitments must stay unchanged. This changes actual future actions; it never reverses committed production.",
+    public_food_plan: "Public coordinator only: use authorized public_coordination indicators and budget to propose limited bread procurement for an actual unmet food gap. Uses existing public funds and real commission escrow. Existing incoming supply, public stock, cooldown and daily limit must be respected. No private control or new money. Provide current expected_version and a short factual reason (at most 100 characters). unit_reward must be <= 200 even if competing offers pay more; choose a lawful offer or public_wait.",
+    public_wait: "Public coordinator only: explicitly choose no new intervention based on existing supply, budget, cooldown or evidence. Provide the current version and factual reason. Existing accepted public contracts continue.",
+    submit_project: "Choose an autonomous goal based on actual opportunities, submit a budgeted DAG using actor_context.living_world.rules. No need for a player request or commission. Materials and budget are escrowed from YOUR account. Plan acceptance is not completion. Decline if economics or resources are unsuitable. Inspect market prices, building fees and legal sites first. goal is a short objective (at most 500 characters, preferably under 200), not a full economic analysis.",
     retry_project: "Revalidate blocked steps of your existing project after a relevant change. Do not retry blindly.",
     cancel_project: "Cancel your project and return unused escrow; committed work must finish first.",
-    suggest_behavior: "Record a bounded optional behavioral intention for your next decisions, not a guaranteed promise.",
+    suggest_behavior: "Record a concise optional behavioral intention for your next decisions, not a guaranteed promise. text must be at most 500 characters; aim for under 300. Do not include a wait command in the same response.",
+    wait: "Choose no action. This must be the only command in the response. If recording an intention or sending a message, omit wait.",
     propose_player_commission: "Only when the player asks you to draft their commission: propose exact goods, quantity, unit reward, type, deadline and claim slots. This opens a player confirmation card after dialogue closes. No money is moved and nothing is published until the player confirms. Ask for missing essential terms first.",
     publish_commission: "Publish a purchase or new-processing demand using ONLY your own funds, prepaid into escrow. Never spend player money. Player terms require their UI confirmation.",
     claim_commission: "Claim an available quantity of a funded public commission, up to its remaining quota and claim slots.",
@@ -327,6 +343,48 @@ export function toolDescription(name: string): Record<string, unknown> {
       parameters: structuredClone(parameters),
     },
   };
+}
+
+// Diagnostic only: validToolArguments remains the authoritative semantic check.
+// Never echo argument values (which can contain dialogue) into error messages.
+export function toolArgumentErrors(name: string, value: unknown): string[] {
+  const schema = TOOL_PARAMETERS[name] ?? READ_TOOL_PARAMETERS[name as ReadToolName];
+  if (!schema) return ["unauthorized_tool"];
+  const errors: string[] = [];
+  function inspect(s: JsonSchema, v: unknown, path: string): void {
+    if (errors.length >= 8) return;
+    const fail = (message: string) => { errors.push(`${path}: ${message}`); };
+    if (s.type === "object") {
+      if (!isRecord(v)) { fail("must be an object"); return; }
+      const props = (s.properties ?? {}) as Record<string, JsonSchema>;
+      for (const key of (s.required ?? []) as string[]) if (!Object.hasOwn(v, key)) fail(`missing required field ${key}`);
+      for (const [key, entry] of Object.entries(v)) {
+        if (props[key]) inspect(props[key], entry, `${path}.${key}`);
+        else if (s.additionalProperties === false) fail(`unexpected field ${key}`);
+        else if (isRecord(s.additionalProperties)) inspect(s.additionalProperties, entry, `${path}.*`);
+      }
+    } else if (s.type === "string") {
+      if (typeof v !== "string") { fail("must be a string"); return; }
+      if (typeof s.maxLength === "number" && v.length > s.maxLength) fail(`length ${v.length} exceeds maximum ${s.maxLength}`);
+      if (typeof s.minLength === "number" && v.trim().length < s.minLength) fail(`minimum length is ${s.minLength}`);
+    } else if (s.type === "integer") {
+      if (!Number.isSafeInteger(v)) { fail("must be an integer"); return; }
+      if (typeof s.minimum === "number" && Number(v) < s.minimum) fail(`minimum is ${s.minimum}`);
+      if (typeof s.maximum === "number" && Number(v) > s.maximum) fail(`maximum is ${s.maximum}`);
+    } else if (s.type === "array") {
+      if (!Array.isArray(v)) { fail("must be an array"); return; }
+      if (typeof s.minItems === "number" && v.length < s.minItems) fail(`minimum items is ${s.minItems}`);
+      if (typeof s.maxItems === "number" && v.length > s.maxItems) fail(`maximum items is ${s.maxItems}`);
+      if (s.uniqueItems && new Set(v.map(entry => JSON.stringify(entry))).size !== v.length) fail("items must be unique");
+      if (isRecord(s.items)) v.forEach((entry, index) => inspect(s.items as JsonSchema, entry, `${path}[${index}]`));
+    }
+    if (Array.isArray(s.enum) && !s.enum.includes(v)) fail(`must be one of ${s.enum.join(", ")}`);
+  }
+  inspect(schema, value, name);
+  if (errors.length === 0 && !validToolArguments(name, value) && Object.hasOwn(TOOL_PARAMETERS, name)) {
+    errors.push(`${name}: arguments violate the tool contract; use exact fields and valid project dependencies from the supplied rules`);
+  }
+  return errors.slice(0, 8);
 }
 
 export function validReadToolArguments(name: string, value: unknown): boolean {

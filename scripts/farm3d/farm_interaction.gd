@@ -364,8 +364,10 @@ func perform(cell: GridCell) -> Dictionary:
 		return fishing.act()
 	if _cooldown > 0:
 		return {"ok": false, "reason": "busy"}
+	if cell == null or (category.is_empty() and cell.state not in [GridCell.State.FARMLAND, GridCell.State.PLANTED]):
+		return {"ok": false, "reason": "no_target"}
 	# A category alone isn't a placement target; keep the world unchanged until a leaf is chosen.
-	if not category.is_empty() and target_id.is_empty():
+	if not category.is_empty() and target_id.is_empty() and (category == "building" or cell.crop_instance == null):
 		hud.notify_message("请继续选择具体目标", false)
 		return {"ok": false, "reason": "choose_target"}
 	var result: Dictionary = session.apply_target(cell, category, target_id)
@@ -376,6 +378,8 @@ func perform(cell: GridCell) -> Dictionary:
 	return result
 
 func _target_allowed(cell: GridCell) -> bool:
+	if category != "building" and cell.crop_instance != null:
+		return cell.crop_instance.is_harvestable() or cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.WITHERED or (cell.crop_instance.lifecycle_state == CropInstance.LifecycleState.GROWING and not cell.watered)
 	if category == "farmland":
 		return cell.crop_instance == null and cell.state in [GridCell.State.WASTELAND, GridCell.State.FARMLAND]
 	if category == "seed":

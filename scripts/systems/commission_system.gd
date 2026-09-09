@@ -61,6 +61,7 @@ func claim(actor: String, id: String, commission_id: String, quantity: int) -> D
 func check_claim(actor: String, commission_id: String, quantity: int, reserved_quantity := 0, reserved_slots := 0) -> Dictionary:
 	var c: Dictionary = commissions.get(commission_id, {})
 	if c.is_empty() or c.actor_id == actor or not world.assets.exists(actor) or c.status != "open" or world.minute() >= int(c.deadline): return _error("commission_unavailable")
+	if world.interruptions != null and world.interruptions.load_count(actor) + reserved_slots >= world.interruptions.LIMIT: return _error("task_capacity")
 	if quantity < 1 or quantity > int(c.terms.quantity) - int(c.delivered) - int(c.claimed) - reserved_quantity: return _error("claim_quota")
 	var active := 0
 	for old in claims.values():

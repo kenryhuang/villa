@@ -11,7 +11,7 @@ param(
 
 function Test-AgentServiceHealth($Health) {
     return ($null -ne $Health -and $Health.status -eq 'ok' -and $Health.protocol_version -eq 2 -and
-        'farm3d_environment' -in $Health.capabilities -and 'rent_production' -in $Health.capabilities)
+        'farm3d_environment' -in $Health.capabilities -and 'rent_production' -in $Health.capabilities -and 'living_world_interruptions' -in $Health.capabilities -and 'public_coordination' -in $Health.capabilities)
 }
 
 function Test-VillaAgentProcess($ProcessInfo, $Health, [string[]]$ProjectRoots) {
