@@ -31,6 +31,7 @@ const FARM3D_CHARACTER_MODELS := {
 	"farmer_ahe": "res://assets/models/characters/farmer_ahe.glb",
 	"lao_li": "res://assets/models/characters/lao_li.glb",
 	"xuezhe_lin": "res://assets/models/characters/xuezhe_lin.glb",
+	"resident_yun": "res://assets/models/characters/resident_yun.glb",
 }
 
 
@@ -55,23 +56,23 @@ func _configure_character_model() -> void:
 	character_model = packed.instantiate() as Node3D
 	character_model.name = "CharacterModel"
 	add_child(character_model)
-	var stature := 0.94 if villager_id == "farmer_ahe" else 1.035 if villager_id == "xuezhe_lin" else 1.0
+	var stature := 0.94 if villager_id == "farmer_ahe" else 1.035 if villager_id == "xuezhe_lin" else 1.10 if villager_id == "resident_yun" else 1.0
 	character_model.scale = Vector3.ONE * stature
 	for child in character_model.find_children("*", "AnimationPlayer", true, false):
 		character_animation = child as AnimationPlayer
 		break
 	if character_animation != null:
 		for clip in character_animation.get_animation_list():
-			if String(clip).get_file().to_lower() in ["idle", "walk", "work"]:
+			if String(clip).get_file().to_lower() in ["idle", "walk", "run", "work"]:
 				character_animation.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	if npc_visual != null:
 		npc_visual.hide()
 	if placeholder_mesh != null:
 		placeholder_mesh.hide()
 	if nameplate != null:
-		nameplate.position.y = 2.16 * stature
+		nameplate.position.y = (1.88 if villager_id == "resident_yun" else 2.16) * stature
 	if dialogue_prompt != null:
-		dialogue_prompt.position.y = 2.55 * stature
+		dialogue_prompt.position.y = (2.16 if villager_id == "resident_yun" else 2.55) * stature
 	_sync_visual_motion()
 
 const INTERACTION_DISTANCE := 3.0
@@ -264,7 +265,10 @@ func _sync_visual_motion() -> void:
 			var moving := Vector2(velocity.x, velocity.z).length_squared() > 0.01
 			var working := farm_action_visual != null and bool(farm_action_visual.call("is_playing"))
 			var preferred := "walk" if moving else "work" if working else "idle"
-			character_animation.speed_scale = clampf(Vector2(velocity.x, velocity.z).length() / 2.0, 0.5, 2.5) if moving else 1.0
+			var speed := Vector2(velocity.x, velocity.z).length()
+			if moving and speed >= 3.5 and Array(character_animation.get_animation_list()).any(func(clip): return String(clip).get_file().to_lower() == "run"):
+				preferred = "run"
+			character_animation.speed_scale = clampf(speed / (3.8 if preferred == "run" else 2.0), 0.5, 2.5) if moving else 1.0
 			for clip in character_animation.get_animation_list():
 				if String(clip).get_file().to_lower() == preferred:
 					if character_animation.current_animation != clip:

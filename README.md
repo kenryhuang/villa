@@ -200,6 +200,8 @@ godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.g
 
 玩家、阿禾、老李、学者林已使用带贴图的 Blender 骨骼模型。2026-09-10 对照原 2D 设定重塑连续脸部、发束、手掌和服装轮廓，NPC 面部保留原画五官，四人共用含独立面部区域的手绘贴图。源文件在 `art/blender/characters/`，包含可编辑部件、骨骼和待机／行走／农作动画；玩家继续兼容钓鱼和左右手高尔夫动作。正式场景直接使用新模型，无需重开存档。[效果、资源与验证说明](docs/validation/2026-09-09-characters-3d.md)。
 
+女性重点 NPC **云姐**（`resident_yun`，厨工）已改用 Sintel Lite 衍生的精细模型：栗色短发、绿色织物上衣、亚麻围裙，包含 Idle／Walk／Run／Work 动作。沿用她已有的 Agent、经济账户与存档身份；新模型在正式 3D 场景自动加载。[实机效果与验证](docs/validation/2026-09-10-sintel-yun.md) · [原作者与 CC BY 3.0 署名](assets/models/characters/SINTEL_LICENSE.md)。
+
 ```powershell
 & 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe' --background --python scripts/tools/build_village_characters.py
 godot_console.exe --headless --path . --editor --quit

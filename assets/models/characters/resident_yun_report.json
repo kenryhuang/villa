@@ -1,0 +1,15 @@
+{
+  "source": "art\\blender\\characters\\Sintel Lite 2.57b\\bendansie_sintel_lite_257b.blend",
+  "actor": "resident_yun",
+  "bones": 55,
+  "meshes": 14,
+  "triangles": 76296,
+  "materials": 11,
+  "clips": [
+    "Idle",
+    "Walk",
+    "Run",
+    "Work"
+  ],
+  "bytes": 7947152
+}
