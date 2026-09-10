@@ -6,6 +6,8 @@ NPC 自主社会：[设计 v2](docs/design/2026-09-07-npc-agent-living-world-des
 
 技术债与待设计事项：[tech-debt](docs/tech-debt.md)。
 
+Agent 并发试用配置（2026-09-10）：后台 NPC 最多3个决策、玩家对话独立1个、公共协调者1个；本地服务 `provider.max_concurrency=5`。自主规划仍共用16次/游戏日，玩家对话单独计数且暂不限游戏日次数。调试 → 居民社会可查看次数与并发占用；对话仍受服务端总预算约束。
+
 ## 启动
 
 - 在 Godot 中打开根目录 `project.godot`，按 **F5** 运行正式 3D 游戏。
@@ -92,6 +94,7 @@ scripts/
   tools/                       Blender 模型生成脚本
 assets/
   models/farm3d/               角色、静态环境、田块、谷物 GLB
+  models/characters/          阿禾、老李、学者林的骨骼 GLB 与四人共用的手绘质感贴图
   models/vegetation/           手绘橡树 GLB 与贴图
   models/buildings/barn/       立体谷仓 GLB、木纹／石材／瓦片贴图
   models/buildings/windmill/   立体风车 GLB、木纹／石材／瓦片贴图
@@ -145,6 +148,8 @@ docs/validation/              操作说明、验证结果和截图
 
 **NPC Agents**：复用原 `scripts/ai_agent/`、NPC 场景、农田执行器、对话和调试界面。默认阿禾、老李、学者林、阿芸、铁匠张、阿水为重点角色，小地图蓝点标记位置；走近点击可对话与回应交易／合作。阿禾使用独立的真实农田。Agent 可查询地图、市场行情、角色、玩家建筑、队列和租费，提交自备原料的租用加工订单。风车每批 4 金币，食品工坊每批 6 金币；其他配方站按基础费加加工时间计算。租金进入玩家账户，NPC 与玩家共用队列，租客成品完成后自动进入自己的背包，维护会暂停订单，有租用订单的建筑不能拆除。
 
+NPC 可使用 `move(x,z)` 自主前往地图位置；`buy`、`sell`、`prepare_supplies` 自动走到市场，`rent_production` 自动走到建筑再下单，农作仍会先走到地块。一次调用包含行走与操作，途中不扣采购款或加工原料；项目中的买卖、租用步骤同样自动移动。连续动作会等待前一步完成，包含加工完成后的出售，途中存读档可恢复。[移动行为与验证](docs/validation/2026-09-10-npc-physical-actions.md)。
+
 开发构建底部 **调试** → **NPC Agents / 决策间隔 / 环境与租费**，可查看状态、手动触发决策、调整间隔、打开原有 Input/Reasoning/Output 请求追踪；不暂停游戏时间。原服务仍负责远程模型与独立角色记忆，未配置服务时角色和调试界面可用，自动决策关闭。
 
 **调试 → 地图传送**：左键点击小地图立即传送玩家，地图上北下南、左西右东。传送按实际地面、桥面或建筑碰撞顶部确定高度；水域落在河床或湖底。传送会结束钓鱼、挥杆控制并清除移动惯性，面板保持打开，关闭后恢复走动。右下角普通小地图仍只用于定位。
@@ -190,6 +195,16 @@ godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.g
 ```
 
 `--farm-test` 禁用玩家存档读写；截图也应带上该参数。
+
+## 3D 人物资源
+
+玩家、阿禾、老李、学者林已使用带贴图的 Blender 骨骼模型。2026-09-10 对照原 2D 设定重塑连续脸部、发束、手掌和服装轮廓，NPC 面部保留原画五官，四人共用含独立面部区域的手绘贴图。源文件在 `art/blender/characters/`，包含可编辑部件、骨骼和待机／行走／农作动画；玩家继续兼容钓鱼和左右手高尔夫动作。正式场景直接使用新模型，无需重开存档。[效果、资源与验证说明](docs/validation/2026-09-09-characters-3d.md)。
+
+```powershell
+& 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe' --background --python scripts/tools/build_village_characters.py
+godot_console.exe --headless --path . --editor --quit
+godot_console.exe --headless --path . --script tests/run_3d_character_tests.gd -- --farm-test
+```
 
 
 ## NPC 自主社会 P2～P5

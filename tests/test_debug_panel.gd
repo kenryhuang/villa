@@ -15,7 +15,7 @@ const REQUIRED_NODES: Array[String] = [
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/MaxSlots",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/DebugControls/BuyAllSeedsButton",
 	"Overlay/Center/Panel/Layout/Tabs/Inventory/ItemScroll/ItemRows",
-	"Overlay/Center/Panel/Layout/Tabs/Agent/IntervalRows",
+	"Overlay/Center/Panel/Layout/Tabs/Agent/IntervalScroll/IntervalRows",
 	"Overlay/Center/Panel/Layout/Tabs/Agent/AgentStatus",
 	"Overlay/Center/Panel/Layout/Tabs/Agent/ApplyAgentSettingsButton",
 	"Overlay/Center/Panel/Layout/Footer/Status",
@@ -234,7 +234,7 @@ func _item_editor(panel: Node, item_id: String) -> SpinBox:
 
 
 func _agent_interval_editor(panel: Node, agent_id: String) -> SpinBox:
-	var rows := panel.get_node("Overlay/Center/Panel/Layout/Tabs/Agent/IntervalRows")
+	var rows := panel.get_node("Overlay/Center/Panel/Layout/Tabs/Agent/IntervalScroll/IntervalRows")
 	for row in rows.get_children():
 		if str(row.get_meta("agent_id", "")) == agent_id:
 			return row.get_node_or_null("Interval") as SpinBox

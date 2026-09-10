@@ -13,7 +13,7 @@ function deferred<T = void>() {
   return {promise, resolve};
 }
 
-for (const limit of [1, 2]) {
+for (const limit of [1, 2, 5]) {
   test(`dialogue preempts a running background round at concurrency ${limit} and resumes it safely`, {timeout: 3000}, async () => {
     const gate = new ProviderConcurrencyGate(limit);
     const stop = new AbortController();

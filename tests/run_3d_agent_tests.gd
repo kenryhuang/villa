@@ -100,6 +100,16 @@ func _run() -> void:
 	check(not rejected.ok and npc.gold == 1000 and building.producer_state.jobs.is_empty(), "Price cap rejection does not consume assets or queue")
 	var outcome: Dictionary = runtime.executor.execute(intent, runtime._absolute_game_minute())
 	check(outcome.status == "in_progress", "Accepted rental stays in progress until goods are delivered")
+	check(npc.gold == 1000 and building.producer_state.jobs.is_empty(), "Rental waits for physical arrival before charging")
+	# Exercise the trip with the real actor; processing accounting starts on arrival.
+	for frame in 2400:
+		await physics_frame
+		runtime.executor.complete_due(runtime._absolute_game_minute() + 1)
+		if not building.producer_state.jobs.is_empty(): break
+	if building.producer_state.jobs.is_empty():
+		check(false, "NPC reaches the building before the integration timeout")
+		quit(1)
+		return
 	check(npc.gold == 992 and wallet.gold == player_gold + 8, "Rent transfers exactly from NPC to player")
 	check(npc.inventory.grain == 16 and session.inventory.slots == player_inventory, "Only NPC supplies recipe ingredients")
 	check(building.producer_state.jobs.size() == 1 and building.producer_state.jobs[0].tenant_id == "farmer_ahe", "Shared production queue retains owner")
@@ -132,6 +142,8 @@ func _run() -> void:
 	var actor: Node = runtime.farm3d_actors.farmer_ahe
 	check(actor.begin_agent_work(plot.world_position_3d()), "Original actor can pathfind to 3D farm plot")
 	actor.stop_agent_work()
+	# Keep the dialogue ray test in its original unobstructed fixture location.
+	actor.position = Vector3(-12, 0, -12)
 	var interaction: Node = scene.get_node("FarmInteraction")
 	session.player.global_position = actor.global_position + Vector3(0, 0, 2)
 	var camera := Camera3D.new()

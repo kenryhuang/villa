@@ -25,15 +25,24 @@ var _interactions: Variant
 var _agreements: Variant
 var _publish_hud: Callable
 var _outcomes: Dictionary = {}
+var _continuations: Dictionary = {}
+const PHYSICAL_ACTIONS := ["move", "buy", "sell", "prepare_supplies", "rent_production"]
 
 
 func to_dict() -> Dictionary:
-	return {"world_revision": world_revision, "outcomes": _outcomes.duplicate(true)}
+	return {"world_revision": world_revision, "outcomes": _outcomes.duplicate(true), "continuations": _continuations.duplicate(true)}
 
 
 func validate_dict(value: Dictionary) -> bool:
 	if int(value.get("world_revision", -1)) < 0 or not value.get("outcomes") is Dictionary:
 		return false
+	if not value.get("continuations", {}) is Dictionary: return false
+	for key in value.get("continuations", {}):
+		var batch: Variant = value.continuations[key]
+		if not value.outcomes.has(key) or not batch is Dictionary or not batch.get("agent_id") is String or not batch.get("actions") is Array: return false
+		for action in batch.actions:
+			if not action is Dictionary or not action.get("arguments") is Dictionary or not action.get("tool_name") is String or not action.get("idempotency_key") is String: return false
+			if not preload("res://scripts/ai_agent/agent_action_validator.gd").new()._valid_arguments(action.tool_name, action.arguments): return false
 	for key in (value.outcomes as Dictionary):
 		var outcome_value: Variant = value.outcomes[key]
 		if (
@@ -60,6 +69,7 @@ func from_dict(value: Dictionary) -> bool:
 		return false
 	world_revision = int(value.world_revision)
 	_outcomes = (value.outcomes as Dictionary).duplicate(true)
+	_continuations = value.get("continuations", {}).duplicate(true)
 	return true
 
 
@@ -105,6 +115,9 @@ func execute_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
 			outcomes.append_array(queued)
 			if not queued.is_empty() and str(queued[-1].get("status", "")) in ["rejected", "failed"]:
 				break
+			if not queued.is_empty() and str(queued[-1].get("status", "")) == "in_progress":
+				_remember_continuation(intent, index, str(queued[-1].idempotency_key))
+				break
 			continue
 		var action_value = actions[index]
 		index += 1
@@ -115,9 +128,34 @@ func execute_batch(intent: Dictionary, game_minute: int) -> Array[Dictionary]:
 		action.expected_revision = int(intent.get("expected_revision", 0))
 		var outcome := execute(action, game_minute)
 		outcomes.append(outcome)
+		if str(outcome.get("status", "")) == "in_progress":
+			_remember_continuation(intent, index, str(outcome.idempotency_key))
 		if str(outcome.get("status", "")) in ["rejected", "failed", "in_progress"]:
 			break
 	return outcomes
+
+
+func _remember_continuation(batch: Dictionary, index: int, key: String) -> void:
+	if index >= batch.actions.size() or _continuations.has(key): return
+	var remaining := batch.duplicate(true)
+	remaining.actions = batch.actions.slice(index).duplicate(true)
+	_continuations[key] = remaining
+
+func resume_batch_after(outcome: Dictionary, game_minute: int) -> Array[Dictionary]:
+	if outcome.get("status") in ["failed", "rejected"]:
+		for pending in _continuations.keys():
+			if _continuations[pending].get("decision_id") == outcome.get("decision_id"):
+				_continuations.erase(pending)
+		return []
+	var key := str(outcome.get("idempotency_key", ""))
+	if not _continuations.has(key) or outcome.get("status") == "in_progress": return []
+	var batch: Dictionary = _continuations[key]
+	_continuations.erase(key)
+	if outcome.get("status") != "completed": return []
+	return execute_batch(batch, game_minute)
+
+func has_pending_continuation(agent_id: String) -> bool:
+	return _continuations.values().any(func(batch): return batch.get("agent_id") == agent_id)
 
 
 func finalize_queued_action(intent: Dictionary, result: Dictionary, game_minute: int) -> Dictionary:
@@ -178,6 +216,9 @@ func _queue_visible_farm(
 			pending_actions.append(action)
 	if pending_actions.is_empty():
 		return outcomes
+	if is_instance_valid(farm3d_session) and farm3d_session.living_world.work.owns_schedule(str(intent.agent_id)):
+		outcomes.append(_failure(pending_actions[0], game_minute, "actor_schedule_busy"))
+		return outcomes
 	var queued_intent := intent.duplicate(true)
 	queued_intent.actions = pending_actions
 	var results: Array = _farm.call("queue_batch", queued_intent, game_minute)
@@ -218,7 +259,7 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 	if not tool_allowed:
 		return _failure(intent, game_minute, "unauthorized_tool")
 	var arguments: Dictionary = intent.get("arguments", {})
-	var result := _execute_tool(
+	var result := _begin_physical_action(intent, game_minute) if is_instance_valid(farm3d_session) and tool_name in PHYSICAL_ACTIONS else _execute_tool(
 		agent_id,
 		tool_name,
 		arguments,
@@ -228,8 +269,19 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 		str(intent.get("action_id", "")),
 		str(intent.get("request_id", intent.get("decision_id", "")))
 	)
+	return _record_result(intent, result, game_minute)
+
+func _record_result(intent: Dictionary, result: Dictionary, game_minute: int) -> Dictionary:
+	var idempotency_key := str(intent.get("idempotency_key", ""))
+	var agent_id := str(intent.get("agent_id", ""))
+	var tool_name := str(intent.get("tool_name", ""))
+	var arguments: Dictionary = intent.get("arguments", {})
 	if not result.ok:
-		return _failure(intent, game_minute, str(result.error))
+		var failed := _failure(intent, game_minute, str(result.error))
+		if _outcomes.get(idempotency_key, {}).get("status") == "in_progress": failed.status = "failed"
+		failed.merge({"agent_id": agent_id, "tool_name": tool_name, "arguments": arguments.duplicate(true)})
+		_outcomes[idempotency_key] = failed.duplicate(true)
+		return failed
 	if bool(result.get("mutated", false)):
 		world_revision += 1
 	var status := str(result.get("status", "completed"))
@@ -255,10 +307,42 @@ func execute(intent: Dictionary, game_minute: int) -> Dictionary:
 	return outcome
 
 
+func _begin_physical_action(intent: Dictionary, game_minute: int) -> Dictionary:
+	var world: Node = farm3d_session.living_world
+	var agent_id := str(intent.agent_id)
+	if world.work.occupied(agent_id): return _error("actor_schedule_busy")
+	var movement := {}
+	var approach: Dictionary = world.work.approach_action(agent_id, str(intent.tool_name), intent.arguments, movement)
+	if not approach.get("ok", false) and not approach.get("waiting", false): return approach
+	var payload := {"physical_action": true, "intent": intent.duplicate(true), "movement": movement, "deadline": game_minute + 720}
+	if not _activities.start(agent_id, str(intent.tool_name), str(intent.idempotency_key), game_minute, game_minute + 1, payload):
+		world.actor(agent_id).stop_agent_work()
+		return _error("actor_schedule_busy")
+	return {"ok": true, "status": "in_progress", "mutated": false, "message": "%s正前往目标，抵达后执行操作。" % _display_name(agent_id), "changed_entities": [], "resource_delta": {}}
+
+func complete_physical_action(record: Dictionary, game_minute: int) -> Dictionary:
+	var p: Dictionary = record.payload
+	var intent: Dictionary = p.intent
+	var actor: Node3D = farm3d_session.living_world.actor(record.agent_id)
+	var result := _error("action_deadline")
+	if game_minute < int(p.deadline):
+		result = farm3d_session.living_world.work.approach_action(record.agent_id, record.kind, intent.arguments, p.movement)
+		if result.get("waiting", false): return {"ready": false}
+		if result.get("ok", false):
+			result = _execute_tool(record.agent_id, record.kind, intent.arguments, game_minute, record.activity_id, str(intent.get("decision_id", "")), str(intent.get("action_id", "")), str(intent.get("request_id", "")), true)
+	if actor != null: actor.stop_agent_work()
+	return {"ready": true, "ok": result.get("ok", false), "error": result.get("error", ""), "execution_result": result}
+
+
 func complete_due(game_minute: int) -> Array[Dictionary]:
 	var outcomes: Array[Dictionary] = []
 	for activity in _activities.call("complete_due", game_minute):
 		var record := activity as Dictionary
+		if record.payload.get("physical_action", false):
+			var outcome := _record_result(record.payload.intent, record.execution_result, game_minute)
+			outcomes.append(outcome)
+			outcomes.append_array(resume_batch_after(outcome, game_minute))
+			continue
 		var message := "%s完成了%s" % [str(record.agent_id), str(record.kind)]
 		var changed: Array[String] = ["npc_activity:" + str(record.activity_id)]
 		if record.kind == "build":
@@ -276,15 +360,18 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 			outcome.hud_message = "%s的%s未完成：%s" % [_display_name(record.agent_id), record.kind, outcome.error_code]
 		_outcomes[str(record.activity_id)] = outcome.duplicate(true)
 		outcomes.append(outcome)
+		outcomes.append_array(resume_batch_after(outcome, game_minute))
 		if _publish_hud.is_valid():
 			_publish_hud.call(outcome.hud_message)
 	return outcomes
 
 
-func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String, request_id := "") -> Dictionary:
-	if is_instance_valid(farm3d_session) and not farm3d_session.living_world.interruptions.running(agent_id).is_empty() and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "gather_sample", "deliver_commission"]: return _error("delivery_in_progress")
-	if is_instance_valid(farm3d_session) and farm3d_session.living_world.work.owns_schedule(agent_id) and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "collect_sample", "rent_production"]: return _error("work_schedule_conflict")
+func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String, request_id := "", at_destination := false) -> Dictionary:
+	if not at_destination and is_instance_valid(farm3d_session) and not farm3d_session.living_world.interruptions.running(agent_id).is_empty() and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "gather_sample", "deliver_commission"]: return _error("delivery_in_progress")
+	if not at_destination and is_instance_valid(farm3d_session) and farm3d_session.living_world.work.owns_schedule(agent_id) and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "collect_sample", "rent_production"]: return _error("work_schedule_conflict")
 	match tool_name:
+		"move":
+			return _success("%s已到达目的地。" % _display_name(agent_id), ["actor:" + agent_id]) if at_destination else _error("requires_3d_world")
 		"propose_activity", "enroll_activity", "leave_activity", "cancel_activity":
 			return farm3d_session.living_world.social.command(agent_id, tool_name, arguments, key) if is_instance_valid(farm3d_session) else _error("requires_3d_world")
 		"contribute_route_repair":

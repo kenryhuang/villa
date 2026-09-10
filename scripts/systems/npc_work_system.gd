@@ -123,6 +123,7 @@ func accept(actor: String, id: String, version: int) -> Dictionary:
 	return {"ok": true, "contract_id": id, "message": "合同已接受，报酬和原料已托管，按实际交付结算。"}
 
 func occupied(actor: String, except_id := "") -> bool:
+	if world.session.agent_runtime.executor.has_pending_continuation(actor): return true
 	if world.social != null and world.social.busy(actor): return true
 	if world.environment != null and world.environment.busy(actor): return true
 	if world.knowledge != null and world.knowledge.busy_assignment(actor, except_id): return true
@@ -137,6 +138,7 @@ func occupied(actor: String, except_id := "") -> bool:
 	return world.session.agent_runtime != null and world.session.agent_runtime.farm_registry.has_pending_work(actor)
 
 func owns_schedule(actor: String) -> bool:
+	if world.session.agent_runtime.executor.has_pending_continuation(actor): return true
 	if world.social != null and world.social.busy(actor): return true
 	if world.environment != null and world.environment.busy(actor): return true
 	if world.knowledge != null and world.knowledge.busy_assignment(actor): return true
@@ -162,11 +164,51 @@ func location(actor: String, traveler := "") -> Vector3:
 		return body.position
 	return world.session.MarketSite.reachable_counter(world.session.grid, start.position if start != null else world.session.player.position, world.session.market_site)
 
-func walk(record: Dictionary, actor: String, target: Vector3) -> bool:
+func approach_action(actor: String, tool: String, arguments: Dictionary, state: Dictionary) -> Dictionary:
+	var body: Node3D = world.actor(actor)
+	if body == null: return _error("actor_unavailable")
+	var building: BuildingInstance
+	if tool == "rent_production":
+		building = world.building(str(arguments.get("building_id", "")))
+		if building == null: return _error("building_not_found")
+	var target := Vector3.INF
+	if state.has("target"):
+		target = Vector3(state.target.x, 0, state.target.z)
+	elif tool in ["buy", "sell", "prepare_supplies"]:
+		target = world.session.MarketSite.reachable_counter(world.session.grid, body.position, world.session.market_site)
+	elif building != null:
+		var route := paths.find_path_to_interaction(body.position, building, 2.6)
+		if not route.is_empty(): target = route.back()
+	elif tool == "move":
+		target = Vector3(float(arguments.x), 0, float(arguments.z))
+		if world.session.MarketSite.contains(world.session.market_site, Vector2(target.x, target.z)):
+			target = world.session.MarketSite.reachable_counter(world.session.grid, body.position, world.session.market_site)
+		else:
+			for site in world.session.buildings.get_all_buildings():
+				var cell: GridCell = world.session.grid.get_cell(site.grid_x, site.grid_z)
+				if Rect2(cell.world_position() - Vector2(.5, .5), Vector2(site.data.footprint)).grow(.2).has_point(Vector2(target.x, target.z)):
+					var route := paths.find_path_to_interaction(body.position, site, 2.6)
+					target = route.back() if not route.is_empty() else Vector3.INF
+					break
+	if not target.is_finite(): return _error("no_route")
+	state.target = {"x": target.x, "z": target.z}
+	if walk(state, actor, target, .65): return {"ok": true}
+	if state.reason != "walking": return _error(state.reason)
+	var current := Vector2(body.position.x, body.position.z)
+	var previous: Dictionary = state.get("last_position", {})
+	if previous.is_empty() or current.distance_to(Vector2(previous.x, previous.z)) > .05:
+		state.last_position = {"x": current.x, "z": current.y}
+		state.progress_minute = world.minute()
+	elif world.minute() - int(state.get("progress_minute", world.minute())) >= 30:
+		body.stop_agent_work()
+		return _error("path_blocked")
+	return {"ok": false, "waiting": true, "error": "walking"}
+
+func walk(record: Dictionary, actor: String, target: Vector3, arrival_distance := 1.5) -> bool:
 	var body: Node3D = world.actor(actor)
 	if body == null: record.reason = "actor_unavailable"; return false
 	if not target.is_finite(): record.reason = "no_route"; return false
-	if Vector2(body.position.x, body.position.z).distance_to(Vector2(target.x, target.z)) <= 1.5:
+	if Vector2(body.position.x, body.position.z).distance_to(Vector2(target.x, target.z)) <= arrival_distance:
 		body.stop_agent_work()
 		return true
 	var prior: Dictionary = record.get("movement", {})
@@ -362,7 +404,8 @@ func activity_label(actor: String) -> String:
 	if world.social != null and world.social.busy(actor): return "参加公共活动"
 	if world.environment != null and world.environment.busy(actor): return "修复商道"
 	for a in world.session.agent_runtime.activity_system._activities.values():
-		if a.agent_id == actor and a.status == "in_progress": return "实地调查中" if a.kind == "survey" else "前往调查地点"
+		if a.agent_id == actor and a.status == "in_progress":
+			return {"move": "前往目的地", "buy": "前往市场采购", "sell": "前往市场出售", "prepare_supplies": "前往市场准备物资", "rent_production": "前往加工建筑", "survey": "实地调查中"}.get(a.kind, "前往调查地点")
 	for c in contracts.values():
 		if c.terms.worker_id == actor and c.status in ACTIVE:
 			return str({"queued": "等待开工", "pickup": "前往取货", "working": "加工中", "delivery": "运送货物", "between": "等待下次供货", "refund_pending": "退还余料"}[c.status])

@@ -45,7 +45,10 @@ func configure(farm: Farm3DSession) -> void:
 	social.configure(self)
 	if Society.expanded():
 		session.agent_runtime.scheduler.max_daily_requests = 16
-		session.agent_runtime.scheduler.max_concurrent_requests = 2
+		session.agent_runtime.scheduler.max_concurrent_requests = 3
+		session.agent_runtime.scheduler.max_concurrent_dialogue_requests = 1
+		# Player conversations have their own count and no per-game-day cap.
+		session.agent_runtime.scheduler.max_daily_dialogue_requests = 0
 		public_plans.scheduler.max_daily_requests = 4
 		public_plans.scheduler.max_concurrent_requests = 1
 	get_node("/root/EventBus").time_changed.connect(func(_hour: int, _minute: int): advance())
@@ -174,7 +177,8 @@ func validate(value: Variant) -> bool:
 		if not value.get("planning") is Dictionary or value.planning.size() != 2: return false
 		for key in ["private", "public"]:
 			var budget: Variant = value.planning.get(key)
-			if not budget is Dictionary or budget.size() != 2 or not integer(budget.get("day")) or int(budget.day) < -1 or not integer(budget.get("calls")) or int(budget.calls) < 0: return false
+			if not budget is Dictionary or budget.size() not in [2, 3] or not integer(budget.get("day")) or int(budget.day) < -1 or not integer(budget.get("calls")) or int(budget.calls) < 0: return false
+			if budget.size() == 3 and (not integer(budget.get("dialogue_calls")) or int(budget.dialogue_calls) < 0): return false
 	if value.version >= 6 and not social.validate(value.get("social"), value.board): return false
 	if value.version >= 5 and not environment.validate(value.get("environment")): return false
 	if value.version >= 2 and not interruptions.validate(value.get("interruptions"), value.projects.projects): return false
@@ -210,7 +214,7 @@ func restore(value: Dictionary) -> void:
 	saved_positions = value.positions.duplicate(true)
 
 func debug_text() -> String:
-	var lines: Array[String] = [society.summary(), "重点角色 %d / 8 · 私人请求 %d / %d · 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", public_plans.summary(), ""]
+	var lines: Array[String] = [society.summary(), "重点角色 %d / 8 · 自主规划 %d / %d · 对话 %d（单独计数）· 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, session.agent_runtime.scheduler.dialogue_budget_calls, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", "思考中：后台 %d / 3 · 对话 %d / 1 · 公共 %d / 1" % [session.agent_runtime.scheduler.background_in_flight_count(), session.agent_runtime.scheduler.dialogue_in_flight_count(), public_plans.scheduler.background_in_flight_count()], "", public_plans.summary(), ""]
 	for record in society.residents.values():
 		var state: NpcEconomyState = session.npc_economy.get_npc_state(record.id)
 		lines.append("%s · %s · %d 金币 · %s" % [record.name, record.occupation, state.gold, record.state])
@@ -331,7 +335,7 @@ func validate_save(data: Dictionary) -> bool:
 	if value.version >= 7:
 		for key in ["private", "public"]:
 			var budget: Dictionary = value.planning[key]
-			if int(budget.day) > clock / 1080 or (int(budget.day) == -1 and int(budget.calls) != 0): return false
+			if int(budget.day) > clock / 1080 or (int(budget.day) == -1 and (int(budget.calls) != 0 or int(budget.get("dialogue_calls", 0)) != 0)): return false
 			if Society.expanded() and int(budget.calls) > (16 if key == "private" else 4): return false
 	if value.version >= 5 and int(value.environment.last_minute) != clock: return false
 	if value.version >= 5:

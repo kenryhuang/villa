@@ -48,6 +48,7 @@ func run() -> void:
 	var mill: BuildingInstance = s.buildings.get_all_buildings()[0]
 	var plan := {"goal": "加工一份面粉后出售", "budget": 4, "materials": {"grain": 2}, "deadline_minutes": 500, "steps": [step("mill", "rent", [], {"building_id": mill.instance_id, "recipe_id": "flour", "batches": 1, "max_fee": 4}), step("ready", "wait_production", ["mill"], {"order_step": "mill"}), step("sale", "sell", ["ready"], {"item_id": "flour", "quantity": 1, "limit": 1})]}
 	check(p.submit("lao_li", "original", plan).ok, "Original production accepted")
+	check(await preload("res://tests/physical_project_step.gd").complete(self, p, "original", "mill"), "Original rental walks to its processing building")
 	p.advance()
 	p.advance()
 	check(p.projects.original.steps.ready.status == "waiting", "Actual order is waiting")
@@ -72,7 +73,7 @@ func run() -> void:
 	ui.close_panel()
 	check(not paused and not s.player._dialogue_input_blocked, "Closing task UI restores input and time")
 	jobs.advance()
-	check(p.projects.original.status == "suspended" and jobs.tasks[id].status == "delivering", "Physical pickup suspends main project without cancelling order")
+	check(await until(id, "delivering") and p.projects.original.status == "suspended", "Physical pickup suspends main project without cancelling order")
 	var receiver_before: int = s.npc_economy.get_npc_state("village_inn").inventory.get("grain", 0)
 	jobs.advance()
 	check(jobs.tasks[id].status == "delivering", "A timer/tick cannot deliver from far away")
@@ -83,6 +84,7 @@ func run() -> void:
 	check(p.projects.original.steps.mill.result.delivered and int(p.projects.original.items.flour) == 1, "Suspended project still receives its own machine output")
 	check(await until(id, "completed"), "Courier physically walks to real receiving counter")
 	check(s.npc_economy.get_npc_state("village_inn").inventory.get("grain", 0) == receiver_before + 2, "Receiver obtains exactly the authorized cargo")
+	check(await preload("res://tests/physical_project_step.gd").complete(self, p, "original", "sale"), "Resumed sale walks to the real market")
 	for n in 4: p.advance()
 	check(p.projects.original.status == "completed" and mill.producer_state.jobs.is_empty(), "Original project resumes and sells without repeating production")
 	check(s.save_game() and s.load_game(), "Completed delivery and main project receipts recover")

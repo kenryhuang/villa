@@ -8,7 +8,7 @@
     "api_key": "replace-with-your-key",
     "model": "replace-with-your-model",
     "timeout_ms": 180000,
-    "max_concurrency": 2,
+    "max_concurrency": 5,
     "max_output_tokens": 1200,
     "temperature": 0.4
   },

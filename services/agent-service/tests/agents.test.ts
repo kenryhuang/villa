@@ -3,6 +3,25 @@ import test from "node:test";
 import { AgentRegistry } from "../src/agents.ts";
 import {executeReadTool, toolDescription, validToolArguments} from "../src/tool_contracts.ts";
 
+test("move is available to all focus roles and uses bounded world coordinates", () => {
+  const registry = AgentRegistry.loadDefault();
+  for (const id of ["farmer_ahe", "lao_li", "xuezhe_lin"]) {
+    const context = registry.buildContext(id, {
+      protocol_version: 2, request_id: "movement", session_id: "farm3d", session_epoch: 1,
+      agent_id: id, trigger: "schedule", game_minute: 0, world_revision: 1,
+      active_role: ({farmer_ahe: "farmer", lao_li: "merchant", xuezhe_lin: "explorer"} as Record<string, string>)[id],
+      projection_schema_version: 1, allowed_read_tools: [], allowed_command_tools: ["move"], goals: [],
+      actor_context: {}, public_world_state: {}, global_public_events: [], known_actors: [], own_event_delta: [],
+    }, []);
+    assert.ok(context.allowed_command_tools.includes("move"));
+  }
+  assert.equal(validToolArguments("move", {x: -12.5, z: 16}), true);
+  for (const args of [{x: Infinity, z: 0}, {x: 0, z: NaN}, {x: -177, z: 0}, {x: 0, z: 145}, {x: "5", z: 0}, {x: 0, z: 0, teleport: true}]) {
+    assert.equal(validToolArguments("move", args), false);
+  }
+  for (const tool of ["move", "buy", "sell", "rent_production"]) assert.match(String(toolDescription(tool).function && (toolDescription(tool).function as Record<string, unknown>).description), /walk/i);
+});
+
 test("3D environment tools expose current instance prices without mutating the snapshot", () => {
   const building = {building_id: "windmill:32:31", owner_id: "lao_li", instance_id: "stable-windmill-1", rental_fees: [{recipe_id: "flour", fee_per_batch: 4}]};
   const context = AgentRegistry.loadDefault().buildContext("farmer_ahe", {

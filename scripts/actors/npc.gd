@@ -24,6 +24,14 @@ var _agent_work_arrived := false
 var _farm3d_grid: GridSystem
 var _farm3d_pathfinder: GridPathfinder
 var _farm3d_path: Array[Vector3] = []
+var character_model: Node3D
+var character_animation: AnimationPlayer
+
+const FARM3D_CHARACTER_MODELS := {
+	"farmer_ahe": "res://assets/models/characters/farmer_ahe.glb",
+	"lao_li": "res://assets/models/characters/lao_li.glb",
+	"xuezhe_lin": "res://assets/models/characters/xuezhe_lin.glb",
+}
 
 
 func configure_farm3d(grid: GridSystem) -> void:
@@ -35,6 +43,36 @@ func configure_farm3d(grid: GridSystem) -> void:
 	if placeholder_mesh != null:
 		placeholder_mesh.position.y = 0.65
 	collision_mask = 1 | 16
+	_configure_character_model()
+
+
+func _configure_character_model() -> void:
+	if character_model != null or not FARM3D_CHARACTER_MODELS.has(villager_id):
+		return
+	var packed := load(FARM3D_CHARACTER_MODELS[villager_id]) as PackedScene
+	if packed == null:
+		return
+	character_model = packed.instantiate() as Node3D
+	character_model.name = "CharacterModel"
+	add_child(character_model)
+	var stature := 0.94 if villager_id == "farmer_ahe" else 1.035 if villager_id == "xuezhe_lin" else 1.0
+	character_model.scale = Vector3.ONE * stature
+	for child in character_model.find_children("*", "AnimationPlayer", true, false):
+		character_animation = child as AnimationPlayer
+		break
+	if character_animation != null:
+		for clip in character_animation.get_animation_list():
+			if String(clip).get_file().to_lower() in ["idle", "walk", "work"]:
+				character_animation.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+	if npc_visual != null:
+		npc_visual.hide()
+	if placeholder_mesh != null:
+		placeholder_mesh.hide()
+	if nameplate != null:
+		nameplate.position.y = 2.16 * stature
+	if dialogue_prompt != null:
+		dialogue_prompt.position.y = 2.55 * stature
+	_sync_visual_motion()
 
 const INTERACTION_DISTANCE := 3.0
 const PROMPT_INTERACTION_LAYER := 64
@@ -84,6 +122,8 @@ func configure_agent_visual_priority(visual_priority: int) -> void:
 
 
 func configure_agent_visual(atlas: Texture2D) -> bool:
+	if character_model != null:
+		return true
 	var configured := (
 		npc_visual != null
 		and npc_visual.has_method("configure")
@@ -219,6 +259,18 @@ func _physics_process(delta: float) -> void:
 
 
 func _sync_visual_motion() -> void:
+	if character_model != null:
+		if character_animation != null:
+			var moving := Vector2(velocity.x, velocity.z).length_squared() > 0.01
+			var working := farm_action_visual != null and bool(farm_action_visual.call("is_playing"))
+			var preferred := "walk" if moving else "work" if working else "idle"
+			character_animation.speed_scale = clampf(Vector2(velocity.x, velocity.z).length() / 2.0, 0.5, 2.5) if moving else 1.0
+			for clip in character_animation.get_animation_list():
+				if String(clip).get_file().to_lower() == preferred:
+					if character_animation.current_animation != clip:
+						character_animation.play(clip, 0.16)
+					break
+		return
 	if npc_visual == null:
 		return
 	var camera := get_viewport().get_camera_3d()
@@ -250,7 +302,7 @@ func _move_toward_target(delta: float) -> void:
 
 	if dist < 0.5:
 		velocity = Vector3.ZERO
-		if _current_state == "AGENT_WORK":
+		if _current_state == "AGENT_WORK" and _farm3d_path.is_empty():
 			_agent_work_arrived = true
 		elif _current_state == "MOVING_TO_HOME":
 			_current_state = "SLEEPING"
@@ -282,6 +334,9 @@ func begin_agent_work(target: Vector3) -> bool:
 			return false
 		for coordinate in cells:
 			_farm3d_path.append(_farm3d_grid.get_cell(coordinate.x, coordinate.y).world_position_3d())
+		# A grid route ends at the cell centre; retain the requested final point.
+		if _farm3d_path.back().distance_to(target) > 0.01:
+			_farm3d_path.append(target)
 	_target_position = target
 	_target_position.y = global_position.y
 	_agent_work_arrived = false
@@ -301,6 +356,7 @@ func stop_agent_work() -> void:
 	if _current_state == "AGENT_WORK":
 		_current_state = "IDLE"
 	velocity = Vector3.ZERO
+	_farm3d_path.clear()
 	_agent_work_arrived = false
 
 

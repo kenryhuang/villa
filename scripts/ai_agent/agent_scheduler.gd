@@ -7,14 +7,18 @@ var _handle_response: Callable
 var _handle_stream_event: Callable
 var _handle_failure: Callable
 var _in_flight: Dictionary = {}
+var _dialogue_in_flight: Dictionary = {}
 var _pending: Dictionary = {}
 var _last_dispatched: Dictionary = {}
 var _decision_interval_overrides: Dictionary = {}
 var _current_minute := 0
 var max_daily_requests := 0
 var max_concurrent_requests := 0
+var max_concurrent_dialogue_requests := 1
+var max_daily_dialogue_requests := 0
 var budget_day := -1
 var budget_calls := 0
+var dialogue_budget_calls := 0
 var _rotation := 0
 
 const MAX_DEBUG_INTERVAL_HOURS := 168
@@ -41,6 +45,7 @@ func configure(
 
 
 func advance_to(game_minute: int) -> int:
+	_reset_daily_budget(game_minute)
 	if game_minute < _current_minute:
 		_last_dispatched.clear()
 	_current_minute = game_minute
@@ -89,6 +94,35 @@ func get_in_flight_request_id(agent_id: String) -> String:
 	return str(_in_flight.get(agent_id, ""))
 
 
+func background_in_flight_count() -> int:
+	return _in_flight.size() - _dialogue_in_flight.size()
+
+
+func dialogue_in_flight_count() -> int:
+	return _dialogue_in_flight.size()
+
+
+func _has_capacity(trigger: String, replacing_agent: String = "") -> bool:
+	if trigger == "dialogue":
+		var count := dialogue_in_flight_count() - (1 if _dialogue_in_flight.has(replacing_agent) else 0)
+		return max_concurrent_dialogue_requests <= 0 or count < max_concurrent_dialogue_requests
+	return max_concurrent_requests <= 0 or background_in_flight_count() < max_concurrent_requests
+
+
+func _reset_daily_budget(game_minute: int) -> void:
+	var day := game_minute / 1080
+	if day > budget_day:
+		budget_day = day
+		budget_calls = 0
+		dialogue_budget_calls = 0
+
+
+func _has_budget(trigger: String) -> bool:
+	if trigger == "dialogue":
+		return max_daily_dialogue_requests <= 0 or dialogue_budget_calls < max_daily_dialogue_requests
+	return max_daily_requests <= 0 or budget_calls < max_daily_requests
+
+
 func set_decision_interval_hours(agent_id: String, hours: int) -> bool:
 	if not _registry.call("is_agent_managed", agent_id) or hours < 0 or hours > MAX_DEBUG_INTERVAL_HOURS:
 		return false
@@ -109,9 +143,15 @@ func get_decision_interval_hours(agent_id: String) -> int:
 func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String, priority: int) -> bool:
 	if is_in_flight(agent_id):
 		if trigger == "dialogue" and _gateway.has_method("cancel_agent"):
+			_reset_daily_budget(game_minute)
+			if not _has_budget(trigger) or not _has_capacity(trigger, agent_id):
+				return false
 			var replaced_request_id := str(_in_flight.get(agent_id, ""))
 			_in_flight.erase(agent_id)
-			_pending.erase(agent_id)
+			_dialogue_in_flight.erase(agent_id)
+			# Keep a coalesced world event while replacing the conversation.
+			if _pending.get(agent_id, {}).get("trigger", "") == "dialogue":
+				_pending.erase(agent_id)
 			_gateway.call("cancel_agent", agent_id, "dialogue_replaced")
 			if _handle_failure.is_valid():
 				_handle_failure.call(agent_id, replaced_request_id, "dialogue_replaced")
@@ -131,10 +171,8 @@ func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dia
 func _dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> bool:
 	if is_in_flight(agent_id):
 		return false
-	var day := game_minute / 1080
-	if day > budget_day: budget_day = day; budget_calls = 0
-	if max_daily_requests > 0 and budget_calls >= max_daily_requests: return false
-	if max_concurrent_requests > 0 and _in_flight.size() >= max_concurrent_requests: return false
+	_reset_daily_budget(game_minute)
+	if not _has_budget(trigger) or not _has_capacity(trigger): return false
 	var request: Dictionary = _build_request.call(agent_id, trigger, game_minute, dialogue)
 	if request.is_empty():
 		return false
@@ -146,13 +184,19 @@ func _dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: St
 	if not bool(_gateway.call("request_decision", agent_id, request, callback, event_callback)):
 		return false
 	_in_flight[agent_id] = request_id
-	budget_calls += 1
-	_last_dispatched[agent_id] = game_minute
+	if trigger == "dialogue":
+		_dialogue_in_flight[agent_id] = request_id
+		dialogue_budget_calls += 1
+	else:
+		budget_calls += 1
+		_last_dispatched[agent_id] = game_minute
 	return true
 
-func budget_state() -> Dictionary: return {"day": budget_day, "calls": budget_calls}
+func budget_state() -> Dictionary: return {"day": budget_day, "calls": budget_calls, "dialogue_calls": dialogue_budget_calls}
 func restore_budget(value: Dictionary) -> void:
 	budget_day = int(value.get("day", -1)); budget_calls = int(value.get("calls", 0))
+	# Old saves counted dialogue inside calls. Keep that conservative count.
+	dialogue_budget_calls = int(value.get("dialogue_calls", 0))
 
 
 func _on_gateway_event(event: Dictionary, agent_id: String, request_id: String) -> void:
@@ -172,7 +216,10 @@ func _on_gateway_response(
 	if str(_in_flight.get(agent_id, "")) != request_id:
 		return
 	_in_flight.erase(agent_id)
-	_last_dispatched[agent_id] = _current_minute
+	var was_dialogue := _dialogue_in_flight.has(agent_id)
+	_dialogue_in_flight.erase(agent_id)
+	if not was_dialogue:
+		_last_dispatched[agent_id] = _current_minute
 	if ok:
 		_handle_response.call(agent_id, response)
 	elif _handle_failure.is_valid():

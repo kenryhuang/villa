@@ -4,7 +4,7 @@ var checks := 0
 var failures := 0
 
 func _initialize() -> void:
-	create_timer(90).timeout.connect(func(): quit(1))
+	create_timer(90, true, false, true).timeout.connect(func(): quit(1))
 	run.call_deferred()
 
 func check(ok: bool, label: String) -> void:
@@ -14,6 +14,7 @@ func check(ok: bool, label: String) -> void:
 		push_error(label)
 
 func run() -> void:
+	Engine.time_scale = 3.0
 	var scene: Node = load("res://scenes/farm3d/main.tscn").instantiate()
 	root.add_child(scene)
 	scene.set_process(false)
@@ -39,13 +40,13 @@ func run() -> void:
 	corrupt = plan.duplicate(true)
 	corrupt.steps[0].capability = "create_money"
 	check(not projects.valid_plan(corrupt), "Unsupported capabilities rejected")
-	projects.advance()
+	await reach_step(projects, "profit", "buy")
 	check(projects.projects.profit.steps.buy.status == "done" and int(projects.projects.profit.items.grain) == 2, "Purchase uses market and project materials escrow")
 	var after_buy: Dictionary = s.market.to_dict()
 	check(s.save_game() and s.load_game(), "Project cursor and escrow persist")
 	npc = s.npc_economy.get_npc_state("lao_li")
 	mill = s.buildings.get_all_buildings()[0]
-	projects.advance()
+	await reach_step(projects, "profit", "mill")
 	check(s.market.to_dict() == after_buy and mill.producer_state.jobs.size() == 1, "Reload does not duplicate purchase; queues actual production")
 	projects.advance()
 	check(projects.projects.profit.steps.ready.status == "waiting", "Waits for actual production")
@@ -53,6 +54,7 @@ func run() -> void:
 	mill = s.buildings.get_all_buildings()[0]
 	s.production.advance_minutes(60)
 	check(projects.projects.profit.steps.mill.result.delivered and int(projects.projects.profit.items.get("flour", 0)) == 1, "Production event captures only owned project output")
+	await reach_step(projects, "profit", "sell")
 	for n in 4: projects.advance()
 	check(projects.projects.profit.status == "completed" and int(projects.projects.profit.gold) == 0, "Accepted project completes independently of model")
 	var receipt: Dictionary = projects.projects.profit
@@ -80,7 +82,7 @@ func run() -> void:
 	check(s.production.start_rented_recipe(mill, "farmer_ahe", "flour", 1, 4, "busy-1").ok and s.production.start_rented_recipe(mill, "farmer_ahe", "flour", 1, 4, "busy-2").ok, "Other customer occupies shared queue")
 	var queued := {"goal": "容量释放后再加工", "budget": 4, "deadline_minutes": 120, "materials": {"grain": 2}, "steps": [step("rent", "rent", [], {"building_id": mill.instance_id, "recipe_id": "flour", "batches": 1, "max_fee": 4}), step("ready", "wait_production", ["rent"], {"order_step": "rent"})]}
 	check(projects.submit("lao_li", "capacity", queued).ok, "Capacity-bound project escrows its own materials")
-	projects.advance()
+	await reach_step(projects, "capacity", "rent")
 	check(projects.projects.capacity.steps.rent.status == "blocked", "Full queue waits without repeated mutations")
 	s.production.advance_minutes(30)
 	check(projects.projects.capacity.steps.rent.status == "pending", "Other customer's completion event wakes the correct queue dependency")
@@ -96,3 +98,10 @@ func run() -> void:
 
 func step(id: String, cap: String, deps: Array, args: Dictionary) -> Dictionary:
 	return {"id": id, "capability": cap, "depends_on": deps, "arguments": args}
+
+func reach_step(projects: RefCounted, id: String, step_id: String) -> void:
+	for frame in 3600:
+		projects.advance()
+		if projects.projects[id].steps[step_id].status in ["done", "blocked"]: return
+		await physics_frame
+	check(false, "Physical project step timed out: " + step_id)

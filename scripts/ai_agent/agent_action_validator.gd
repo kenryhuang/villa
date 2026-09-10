@@ -49,6 +49,8 @@ func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 		"deliver_commission": return _exact_keys(arguments, ["claim_id", "quantity", "version", "order_id"]) and _bounded_id(arguments.claim_id) and _integer_in_range(arguments.quantity, 1, 100) and _integer_in_range(arguments.version, 1, 1000000) and _text(arguments.order_id, 100, true)
 		"rent_production":
 			return _exact_keys(arguments, ["building_id", "recipe_id", "batches", "max_fee"]) and _bounded_id(arguments.building_id) and _bounded_id(arguments.recipe_id) and _integer_in_range(arguments.batches, 1, 100) and _integer_in_range(arguments.max_fee, 0, 1000000)
+		"move":
+			return preload("res://scripts/systems/npc_project_system.gd").valid_step("move", arguments)
 		"till":
 			return _exact_keys(arguments, ["plot"]) and _integer_in_range(arguments.plot, 0, 255)
 		"harvest":

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "player",
+    "vertices": 70348,
+    "triangles": 139636,
+    "bones": 12,
+    "bytes": 5459188
+  },
+  {
+    "id": "farmer_ahe",
+    "vertices": 68813,
+    "triangles": 136288,
+    "bones": 12,
+    "bytes": 5274956
+  },
+  {
+    "id": "lao_li",
+    "vertices": 69010,
+    "triangles": 136534,
+    "bones": 12,
+    "bytes": 5307444
+  },
+  {
+    "id": "xuezhe_lin",
+    "vertices": 65053,
+    "triangles": 128744,
+    "bones": 12,
+    "bytes": 5039712
+  }
+]

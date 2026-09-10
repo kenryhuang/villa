@@ -84,6 +84,9 @@ func begin_farm_action(point: Vector3) -> void:
 		look_at(target, Vector3.UP, true)
 	velocity.x = 0.0
 	velocity.z = 0.0
+	play_motion_animation(false)
+	if _animation_player != null and not fishing_locked and not golf_locked and String(_animation_player.current_animation).get_file().to_lower() == "work":
+		_animation_player.seek(0.0, true)
 
 func cancel_farm_action() -> void:
 	_farm_action_seconds = 0.0
@@ -93,9 +96,10 @@ func cancel_farm_action() -> void:
 func play_motion_animation(is_walking: bool) -> void:
 	if _animation_player == null or fishing_locked or golf_locked:
 		return
-	# The imported farmer has Idle and Walk; match the stride cadence to running.
-	_animation_player.speed_scale = SPRINT_MULTIPLIER if is_walking and Input.is_action_pressed("sprint") else 1.0
-	var preferred := "Walk" if is_walking else "Idle"
+	# The half-second farm action uses one complete work swing.
+	var working := _farm_action_seconds > 0.0 and not is_walking
+	_animation_player.speed_scale = 2.0 if working else SPRINT_MULTIPLIER if is_walking and Input.is_action_pressed("sprint") else 1.0
+	var preferred := "Work" if working else "Walk" if is_walking else "Idle"
 	for animation_name in _animation_player.get_animation_list():
 		if String(animation_name).get_file().to_lower() == preferred.to_lower():
 			if _animation_player.current_animation != animation_name:

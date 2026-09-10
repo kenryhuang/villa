@@ -100,6 +100,7 @@ func configure_farm3d(session: Node, hud_bus: Node, remote_enabled: bool, client
 	if not configure(session.npc_economy, session.market, session.season, hud_bus, client_config_path, remote_enabled):
 		return false
 	executor.farm3d_session = session
+	activity_system.action_completion_guard = executor.complete_physical_action
 	configure_player_assets(session.inventory, get_node("/root/GameState"))
 	session.production.actor_assets.resolve_port = func(): return interaction_system
 	session.production.rental_completed.connect(_on_rental_completed)
@@ -165,11 +166,12 @@ func get_farm3d_environment() -> Dictionary:
 			if resident.id not in registry.get_agent_ids(): characters.append({"actor_id": resident.id, "name": resident.name, "role": resident.occupation, "state": resident.state, "position": resident.position.duplicate(true)})
 	return {"buildings": buildings, "characters": characters, "map": {
 		"coordinate_system": "east=+x, west=-x, south=+z, north=-z; world metres",
+		"action_movement": "move(x,z) 可独立走动；buy/sell 自动前往市场，rent_production 自动前往建筑，农作自动前往地块。一次调用包含行走与到达后的操作，in_progress 不是已完成。",
 		"bounds": {"min_x": Farm3DTerrainProfile.WORLD_MIN.x, "min_z": Farm3DTerrainProfile.WORLD_MIN.y, "max_x": Farm3DTerrainProfile.WORLD_MAX.x, "max_z": Farm3DTerrainProfile.WORLD_MAX.y},
 		"market": {"x": s.market_site.x, "z": s.market_site.y},
 		"lake": {"x": Farm3DTerrainProfile.LAKE_CENTER.x, "z": Farm3DTerrainProfile.LAKE_CENTER.y},
 		"regions": [{"id": "farm", "description": "中央农场；玩家建筑与阿禾的专属农田"}, {"id": "creek", "description": "东侧河流，可钓鱼；南部有桥"}, {"id": "forest", "description": "西北林地"}, {"id": "hills", "description": "外围丘陵"}, {"id": "lake", "description": "南部沙地湖泊，可钓鱼"}, {"id": "golf", "description": "湖泊西侧高尔夫球场"}],
-		"rental_rules": "使用 inspect_building 查询实际 building_id、配方与每批租费，再用 rent_production；自备原料，加工费按该建筑费目表收取，排队托管，开工付给 owner_id；使用自有建筑免费。共用队列，完成后成品交付客户。max_fee 是总租金上限。"}}
+		"rental_rules": "使用 inspect_building 查询实际 building_id、配方与每批租费，再用 rent_production；系统会自动走到建筑后再下单，无需先调用 move；自备原料，加工费按该建筑费目表收取，排队托管，开工付给 owner_id；使用自有建筑免费。共用队列，完成后成品交付客户。max_fee 是总租金上限。"}}
 
 
 func _on_service_order_changed(building: BuildingInstance, record: Dictionary) -> void:
@@ -189,6 +191,7 @@ func _on_service_order_changed(building: BuildingInstance, record: Dictionary) -
 	agreement_system.record_action_outcome(outcome, _absolute_game_minute())
 	_publish_committed_outcome(str(outcome.agent_id), outcome)
 	if service_enabled: gateway.report_outcome(str(outcome.agent_id), session_id, outcome)
+	_report_continued_actions(outcome)
 
 
 func _on_rental_completed(agent_id: String, building: BuildingInstance, recipe_id: String, outputs: Dictionary) -> void:
@@ -448,10 +451,10 @@ func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 
 func dialogue_unavailable_reason() -> String:
 	if not service_enabled: return "Agent 服务暂时不可用，请稍后再试。"
-	if scheduler.max_daily_requests > 0 and scheduler.budget_day >= _absolute_game_minute() / 1080 and scheduler.budget_calls >= scheduler.max_daily_requests:
-		return "今日的 AI 对话与规划额度已用完，下一游戏日恢复；已接受的工作会继续。"
-	if scheduler.max_concurrent_requests > 0 and scheduler._in_flight.size() >= scheduler.max_concurrent_requests:
-		return "其他角色正在思考，请稍后再发送。"
+	if scheduler.max_daily_dialogue_requests > 0 and scheduler.budget_day >= _absolute_game_minute() / 1080 and scheduler.dialogue_budget_calls >= scheduler.max_daily_dialogue_requests:
+		return "今日的 AI 对话额度已用完，下一游戏日恢复；自主规划和已接受的工作会继续。"
+	if scheduler.max_concurrent_dialogue_requests > 0 and scheduler.dialogue_in_flight_count() >= scheduler.max_concurrent_dialogue_requests:
+		return "另一段对话正在回应，请稍后再发送。"
 	return "角色暂时无法回应，请稍后重试；若刚刚跨日，请先关闭窗口让日结完成。"
 
 
@@ -815,6 +818,8 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	agreement_system = restored_agreements
 	restored_executor.farm3d_session = farm3d_session
 	executor = restored_executor
+	if is_instance_valid(farm3d_session):
+		activity_system.action_completion_guard = executor.complete_physical_action
 	_pending_market_pressure_facts = _normalize_pending_market_pressure_facts(value.pending_market_pressure_facts)
 	return true
 
@@ -1221,7 +1226,7 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	projected.allowed_command_tools = (capabilities.get("tools", []) as Array).duplicate()
 	if is_instance_valid(farm3d_session): projected.allowed_command_tools.erase("propose_cooperation")
 	if not is_instance_valid(farm3d_session):
-		for name in ["rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
+		for name in ["move", "rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior"]: projected.allowed_command_tools.erase(name)
 	projected.market_summary = market_summary.build(
 		str(capabilities.get("role_id", "")),
 		game_minute,
@@ -1473,6 +1478,15 @@ func _on_farm_work_finished(intent: Dictionary, result: Dictionary) -> void:
 		_publish_committed_outcome(agent_id, outcome)
 	if service_enabled:
 		gateway.report_outcome(agent_id, session_id, outcome)
+	_report_continued_actions(outcome)
+
+
+func _report_continued_actions(completed: Dictionary) -> void:
+	for outcome in executor.resume_batch_after(completed, _absolute_game_minute()):
+		_record_world_action_outcome(outcome)
+		agreement_system.record_action_outcome(outcome, _absolute_game_minute())
+		_publish_committed_outcome(str(outcome.get("agent_id", completed.get("agent_id", ""))), outcome)
+		if service_enabled: gateway.report_outcome(str(outcome.get("agent_id", completed.get("agent_id", ""))), session_id, outcome)
 
 
 func _publish(severity: String, text: String, metadata: Dictionary) -> void:

@@ -156,6 +156,15 @@ func retry(actor: String, id: String) -> Dictionary:
 func _execute(p: Dictionary, step: Dictionary, state: Dictionary) -> Dictionary:
 	var a: Dictionary = step.arguments
 	var key := str(p.id) + ":" + str(step.id)
+	if step.capability in ["buy", "sell", "rent", "move"]:
+		var arguments := a.duplicate(true)
+		if step.capability == "rent" and str(arguments.building_id).begins_with("@"):
+			arguments.building_id = str(p.steps[str(arguments.building_id).trim_prefix("@")].result.get("building_id", ""))
+		var movement: Dictionary = state.result.get("movement", {})
+		var approach: Dictionary = world.work.approach_action(p.actor_id, "rent_production" if step.capability == "rent" else step.capability, arguments, movement)
+		if not approach.ok:
+			approach.movement = movement
+			return approach
 	match step.capability:
 		"buy":
 			var price: int = world.session.npc_economy.quote_agent_buy(a.item_id, int(a.quantity))
@@ -182,27 +191,7 @@ func _execute(p: Dictionary, step: Dictionary, state: Dictionary) -> Dictionary:
 			p.gold = int(p.gold) + price
 			return {"ok": true, "income": price}
 		"move":
-			var actor: Node = world.actor(p.actor_id)
-			if actor == null: return _error("actor_unavailable")
-			var target := Vector3(float(a.x), Farm3DTerrainProfile.surface_height(float(a.x), float(a.z)), float(a.z))
-			if state.result.has("target"):
-				target = Vector3(state.result.target.x, state.result.target.y, state.result.target.z)
-			elif world.session.MarketSite.contains(world.session.market_site, Vector2(a.x, a.z)):
-				target = world.session.MarketSite.reachable_counter(world.session.grid, actor.position, world.session.market_site)
-				if not target.is_finite(): return _error("no_route")
-			else:
-				for b in world.session.buildings.get_all_buildings():
-					var cell: GridCell = world.session.grid.get_cell(b.grid_x, b.grid_z)
-					if Rect2(cell.world_position() - Vector2(.5, .5), Vector2(b.data.footprint)).grow(.2).has_point(Vector2(a.x, a.z)):
-						var finder := GridPathfinder.new()
-						finder.configure(world.session.grid)
-						var route := finder.find_path_to_interaction(actor.position, b, 2.6)
-						if route.is_empty(): return _error("no_route")
-						target = route.back()
-						break
-			if Vector2(actor.position.x, actor.position.z).distance_to(Vector2(target.x, target.z)) < .65: return {"ok": true}
-			if (state.status != "waiting" or not actor.has_agent_work_target()) and not actor.begin_agent_work(target): return _error("no_route")
-			return {"waiting": true, "error": "walking", "target": {"x": target.x, "y": target.y, "z": target.z}}
+			return {"ok": true}
 		"rent":
 			var building_id := str(a.building_id)
 			if building_id.begins_with("@"): building_id = str(p.steps[building_id.trim_prefix("@")].result.get("building_id", ""))
@@ -317,7 +306,7 @@ func validate(v: Variant) -> bool:
 				for dep in step.depends_on:
 					if p.steps.get(dep, {}).get("status") != "done": return false
 			if state.status == "done" and state.result.get("ok") != true: return false
-			if state.status == "waiting" and step.capability not in ["move", "wait_production", "wait_construction", "set_policy"]: return false
+			if state.status == "waiting" and step.capability not in ["buy", "sell", "rent", "move", "wait_production", "wait_construction", "set_policy"]: return false
 		if int(p.deadline) != int(p.created) + int(p.plan.deadline_minutes): return false
 		if not _count(p.get("version", 1), 1, 1000000) or not p.get("changes", []) is Array: return false
 	for actor in v.suggestions:

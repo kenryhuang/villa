@@ -115,7 +115,7 @@ func _run() -> void:
 			world.assets.apply("xuezhe_lin", {"creek_crucian": 2, "salt": 1}, 100)
 			var learned_plan := {"goal": "Use learned ingredient selection to cook actual fish", "budget": 50, "deadline_minutes": 360, "materials": {"creek_crucian": 2, "salt": 1}, "steps": [{"id": "cook", "capability": "rent", "depends_on": [], "arguments": {"building_id": building.instance_id, "recipe_id": "grilled_fish", "batches": 1, "max_fee": 50}}, {"id": "ready", "capability": "wait_production", "depends_on": ["cook"], "arguments": {"order_step": "cook"}}]}
 			check(world.projects.submit("xuezhe_lin", "p8-trained-cook", learned_plan).ok, "Trained NPC starts actual tagged-ingredient project")
-			world.projects.advance()
+			check(await preload("res://tests/physical_project_step.gd").complete(self, world.projects, "p8-trained-cook", "cook"), "Trained cook reaches the workshop")
 			if building.producer_state.jobs.is_empty(): print("COOK DIAG ", world.projects.projects.get("p8-trained-cook"))
 			check(not building.producer_state.jobs.is_empty(), "Learned ability resolves real fish inputs into production queue")
 			session.production.advance_minutes(180)
@@ -133,6 +133,7 @@ func _run() -> void:
 	var owner_before: int = world.assets.current().available_gold("lao_li")
 	check(work.accept_venture("farmer_ahe", "p8-joint", 1).ok, "Partner contribution enters original project escrow")
 	check(world.assets.current().available_gold("farmer_ahe") == partner_before, "Expected sale does not pay advance profit")
+	check(await preload("res://tests/physical_project_step.gd").complete(self, world.projects, "p8-joint", "sell"), "Joint operator reaches the market")
 	world.projects.advance()
 	world.projects.advance()
 	var v: Dictionary = work.ventures["p8-joint"]
@@ -146,7 +147,7 @@ func _run() -> void:
 		check(world.assets.current().available_gold("lao_li") + world.assets.current().available_gold("farmer_ahe") - owner_before - partner_before == pair_income, "Joint proceeds are distributed only once")
 	check(work.validate(work.to_dict()), "Work and investment save validates after settlement")
 	await _processing(work)
-	_equipment(work)
+	await _equipment(work)
 	var save: Dictionary = world.to_dict()
 	check(world.validate(save), "Extended living world validates with prior P0-P7 state")
 	print("P8: %d checks, %d failures" % [checks, failures.size()])
@@ -204,10 +205,11 @@ func _equipment(work: RefCounted) -> void:
 	check(work.accept_venture("player", "p8-equipment", 1).ok, "Actual equipment owner consents to defined project use")
 	check(not work.contributes_equipment(mill, "lao_li", "unrelated"), "Equipment contribution cannot waive fees on unrelated jobs")
 	var before: int = world.assets.current().available_gold("player")
-	world.projects.advance()
+	check(await preload("res://tests/physical_project_step.gd").complete(self, world.projects, "p8-equipment", "mill"), "Equipment operator reaches the mill")
 	check(not mill.producer_state.jobs.is_empty() and int(mill.producer_state.jobs[0].rental_fee) == 0, "Equipment replaces rental fee only in accepted project")
 	check(world.assets.current().available_gold("player") == before, "No expected sales paid to equipment contributor")
 	session.production.advance_minutes(120)
+	check(await preload("res://tests/physical_project_step.gd").complete(self, world.projects, "p8-equipment", "sale"), "Equipment operator reaches the market before settlement")
 	for tick in 4: world.projects.advance()
 	var v: Dictionary = work.ventures["p8-equipment"]
 	check(v.status == "completed" and world.assets.current().available_gold("player") - before == int(v.settlement.get("partner_gold", -1)), "Equipment contributor receives share after actual market receipts")

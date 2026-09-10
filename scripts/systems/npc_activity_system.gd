@@ -3,6 +3,7 @@ extends RefCounted
 const VERSION := 1
 var _activities: Dictionary = {}
 var completion_guard: Callable
+var action_completion_guard: Callable
 
 
 func start(agent_id: String, kind: String, activity_id: String, started_minute: int, complete_at_minute: int, payload: Dictionary) -> bool:
@@ -29,7 +30,12 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 		if record.status != "in_progress" or int(record.complete_at_minute) > game_minute:
 			continue
 		var result := {"ready": true, "ok": true}
-		if record.payload.get("physical", false):
+		if record.payload.get("physical_action", false):
+			if not action_completion_guard.is_valid(): continue
+			result = action_completion_guard.call(record, game_minute)
+			if not result.get("ready", false): continue
+			record.execution_result = result.get("execution_result", {"ok": false, "error": "action_failed"}).duplicate(true)
+		elif record.payload.get("physical", false):
 			if not completion_guard.is_valid(): continue
 			result = completion_guard.call(record, game_minute)
 			if not result.get("ready", false): continue
@@ -61,6 +67,15 @@ func from_dict(value: Dictionary) -> bool:
 			if occupied.has(record.agent_id): return false
 			occupied[record.agent_id] = true
 		if not record.get("payload") is Dictionary: return false
+		if record.payload.get("physical_action", false):
+			var p: Dictionary = record.payload
+			var rules = preload("res://scripts/systems/npc_project_system.gd")
+			if record.get("kind") not in ["move", "buy", "sell", "prepare_supplies", "rent_production"] or not p.get("intent") is Dictionary or not p.get("movement") is Dictionary: return false
+			if p.intent.get("agent_id") != record.agent_id or p.intent.get("tool_name") != record.kind or p.intent.get("idempotency_key") != activity_id: return false
+			if not p.intent.get("arguments") is Dictionary or not preload("res://scripts/ai_agent/agent_action_validator.gd").new()._valid_arguments(record.kind, p.intent.arguments): return false
+			if not rules._count(record.get("started_minute"), 0, 9007199254740991) or not rules._count(record.get("complete_at_minute"), int(record.started_minute), 9007199254740991) or not rules._count(p.get("deadline"), int(record.complete_at_minute), 9007199254740991): return false
+			if p.movement.has("target") and (not p.movement.target is Dictionary or not rules.valid_step("move", p.movement.target)): return false
+			if record.status != "in_progress" and not record.get("execution_result") is Dictionary: return false
 		if record.payload.get("physical", false):
 			var rules = preload("res://scripts/systems/npc_project_system.gd")
 			var p: Dictionary = record.payload

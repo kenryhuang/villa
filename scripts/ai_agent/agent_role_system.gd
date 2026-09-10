@@ -4,6 +4,7 @@ extends RefCounted
 const DEFAULT_RULES_PATH := "res://data/agents/role_transitions.json"
 const VERSION := 1
 const GENERAL_TOOLS := [
+	"move",
 	"send_message", "propose_trade", "counter_trade", "accept_trade",
 	"reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation",
 	"accept_cooperation", "reject_cooperation", "commit_contribution",
