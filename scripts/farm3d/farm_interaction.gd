@@ -114,7 +114,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			if hud.beehive_view.visible:
+			if hud.chicken_coop_view.visible:
+				hud.chicken_coop_view.handle_escape()
+			elif hud.beehive_view.visible:
 				hud.beehive_view.handle_escape()
 			elif hud.food_workshop_view.visible:
 				hud.food_workshop_view.handle_escape()
@@ -296,7 +298,7 @@ func windmill_at_pointer(pointer: Vector2) -> Dictionary:
 	var item_id := str(node.get_meta("production_output",node.get_meta("windmill_output", "")))
 	while node != null:
 		if node is BuildingInstance:
-			return {"building": node, "item_id": item_id} if node.building_id in ["windmill","food_workshop","beehive"] else {}
+			return {"building": node, "item_id": item_id} if node.building_id in ["windmill","food_workshop","beehive","chicken_coop"] else {}
 		node = node.get_parent()
 	return {}
 

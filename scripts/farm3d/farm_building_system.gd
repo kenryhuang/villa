@@ -7,7 +7,7 @@ var actor_lookup: Callable
 
 func _resolve_data(building: Variant) -> BuildingData:
 	var resolved := super._resolve_data(building)
-	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop", "beehive"]:
+	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop", "beehive", "chicken_coop"]:
 		# Copy so the shared catalogue and original game keep their own visuals.
 		resolved = resolved.duplicate() as BuildingData
 		resolved.scene_path = "res://scenes/farm3d/buildings/%s.tscn" % resolved.building_id
@@ -16,6 +16,8 @@ func _resolve_data(building: Variant) -> BuildingData:
 			resolved.visual_size = Vector2(3.8,3.6)
 		if resolved.building_id == "beehive":
 			resolved.visual_size = Vector2(1.55, 1.85)
+		if resolved.building_id == "chicken_coop":
+			resolved.visual_size = Vector2(2.95, 2.4)
 	return resolved
 
 func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player", check_distance := true) -> Dictionary:

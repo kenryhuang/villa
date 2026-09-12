@@ -1781,6 +1781,23 @@ func _beehive_batch(building: BuildingInstance, flowers: Array) -> Dictionary:
 		"output": passive_output_for("beehive",2,flowers.size(),species.size())}
 
 
+func get_chicken_coop_snapshot(building: BuildingInstance) -> Dictionary:
+	if building == null or building.building_id != "chicken_coop": return {}
+	var config := _effect_config(building)
+	var state := _get_state(building)
+	var item := str(config.get("feed_item","animal_feed"))
+	var per_day := int(config.get("feed_per_day",1))
+	var feed := state.get_input_count(item) if state != null else 0
+	var eggs := state.get_output_count("egg") if state != null else 0
+	var next_output := passive_output_for("chicken_coop",_current_day+1,0)
+	var status := "working"
+	if not building.is_construction_complete(): status = "construction"
+	elif is_maintenance_paused(building): status = "maintenance"
+	elif state == null or not _can_store_passive_outputs(building,state,next_output): status = "full"
+	elif feed < per_day: status = "no_feed"
+	return {"status":status,"feed_item":item,"feed":feed,"feed_per_day":per_day,
+		"eggs":eggs,"eggs_per_day":int(next_output.get("egg",0)),"capacity":_storage_quantity_capacity(building)}
+
 func get_beehive_snapshot(building: BuildingInstance) -> Dictionary:
 	if building == null or building.building_id != "beehive": return {}
 	var flowers: Array = _beehive_flower_assignments().get(building_key(building), [])

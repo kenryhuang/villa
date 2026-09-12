@@ -33,6 +33,7 @@ var commission_view: Control
 var windmill_view: Control
 var food_workshop_view: Control
 var beehive_view: Control
+var chicken_coop_view: Control
 var secondary: PanelContainer
 var secondary_grid: GridContainer
 var secondary_title: Label
@@ -121,6 +122,10 @@ func configure(session: Node) -> void:
 	_ui.add_child(beehive_view)
 	beehive_view.configure(session)
 	beehive_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
+	chicken_coop_view = preload("res://scripts/farm3d/chicken_coop_view.gd").new()
+	_ui.add_child(chicken_coop_view)
+	chicken_coop_view.configure(session)
+	chicken_coop_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
 	if is_instance_valid(session.agent_runtime):
 		dialogue_ui = preload("res://scenes/ui/dialogue_ui.tscn").instantiate()
 		dialogue_ui.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -358,6 +363,7 @@ func toggle_minimap() -> void:
 
 func toggle_inventory() -> void:
 	fishing_cancel_requested.emit()
+	if chicken_coop_view != null: chicken_coop_view.close_panel()
 	if beehive_view != null: beehive_view.close_panel()
 	food_workshop_view.close_panel()
 	windmill_view.close_panel()
@@ -367,6 +373,7 @@ func toggle_inventory() -> void:
 	_session.player.ui_blocked = is_modal_open()
 
 func is_modal_open() -> bool:
+	if chicken_coop_view != null and chicken_coop_view.visible: return true
 	if beehive_view != null and beehive_view.visible: return true
 	if commission_view != null and commission_view.visible: return true
 	if (debug_panel != null and debug_panel.visible) or (dialogue_ui != null and dialogue_ui.visible):
@@ -377,6 +384,7 @@ func open_windmill(building: BuildingInstance) -> bool:
 	close_panels()
 	var view: Control = food_workshop_view if building.building_id == "food_workshop" else windmill_view
 	if building.building_id == "beehive": view = beehive_view
+	if building.building_id == "chicken_coop": view = chicken_coop_view
 	var opened: bool = view.open_for(building)
 	_session.player.ui_blocked = opened
 	return opened
@@ -387,6 +395,7 @@ func open_market() -> void:
 	_session.player.ui_blocked = true
 
 func close_panels() -> void:
+	if chicken_coop_view != null: chicken_coop_view.close_panel()
 	if commission_view != null: commission_view.close_panel()
 	if debug_panel != null:
 		debug_panel.close()
@@ -420,6 +429,7 @@ func _make_history() -> void:
 
 func _toggle_history() -> void:
 	fishing_cancel_requested.emit()
+	if chicken_coop_view != null: chicken_coop_view.close_panel()
 	if beehive_view != null: beehive_view.close_panel()
 	food_workshop_view.close_panel()
 	windmill_view.close_panel()

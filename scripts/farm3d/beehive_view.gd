@@ -11,6 +11,10 @@ var _body_scroll: ScrollContainer
 var _owns_pause := false
 var _previous_pause := false
 var _previous_input_blocked := false
+var building_kind := "beehive"
+var panel_title := "蜂箱 · 花蜜工坊"
+var collect_text := "收取我的蜂蜜"
+var pause_text := "时间已暂停。关闭后蜜蜂继续采蜜。"
 
 func configure(farm_session: Farm3DSession) -> void:
 	session = farm_session
@@ -42,7 +46,7 @@ func configure(farm_session: Farm3DSession) -> void:
 	box.add_theme_constant_override("separation",16)
 	panel.add_child(box)
 	var title := Label.new()
-	title.text = "蜂箱 · 花蜜工坊"
+	title.text = panel_title
 	title.add_theme_font_size_override("font_size",28)
 	box.add_child(title)
 	_body_scroll = ScrollContainer.new()
@@ -58,7 +62,7 @@ func configure(farm_session: Farm3DSession) -> void:
 	feedback = Label.new()
 	feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(feedback)
-	collect_button = _button(box,"收取我的蜂蜜",_collect)
+	collect_button = _button(box,collect_text,_collect)
 	maintenance_button = _button(box,"维护蜂箱",_maintain)
 	_button(box,"关闭 · Esc",close_panel)
 	session.state_loaded.connect(close_panel)
@@ -78,7 +82,7 @@ func _button(parent: Node, text: String, action: Callable) -> Button:
 	return button
 
 func open_for(target: BuildingInstance) -> bool:
-	if target == null or target.building_id != "beehive" or not target.is_construction_complete(): return false
+	if target == null or target.building_id != building_kind or not target.is_construction_complete(): return false
 	close_panel()
 	building = target
 	building.tree_exiting.connect(close_panel, CONNECT_ONE_SHOT)
@@ -87,7 +91,7 @@ func open_for(target: BuildingInstance) -> bool:
 	session.player.set_dialogue_input_blocked(true)
 	_owns_pause = true
 	get_tree().paused = true
-	feedback.text = "时间已暂停。关闭后蜜蜂继续采蜜。"
+	feedback.text = pause_text
 	refresh()
 	show()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -151,7 +155,7 @@ func _counts(goods: Dictionary) -> String:
 
 func _collect() -> void:
 	var result := session.production.collect_outputs(building,session.inventory)
-	feedback.text = "已收取：%s" % _counts(result.get("requested",{})) if result.get("ok",false) else "背包空间不足或没有可收取产物，蜂蜜仍保存在蜂箱。"
+	feedback.text = "已收取：%s" % _counts(result.get("requested",{})) if result.get("ok",false) else "背包空间不足或没有可收取产物，产物仍保存在建筑中。"
 	_save_action(result.get("ok",false))
 	refresh()
 
