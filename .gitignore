@@ -16,6 +16,36 @@ config/agent-client.local.json
 /data/farm_3d_save.json*
 /data/cache/
 
+# Local validation notes, screenshots and art previews.
+/docs/validation/
+
 # Temp files
 tmp/
+temp/
 output/
+*.tmp
+*.temp
+*.log
+
+# Blender backup copies (keep editable .blend sources).
+*.blend[0-9]*
+
+# Python tool caches.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local environment secrets (keep shareable examples).
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Operating system metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
