@@ -123,6 +123,13 @@ func update_lod(camera_distance: float) -> void:
 		add_child(model)
 		lod_nodes[level] = model
 		for mesh in model.find_children("*", "MeshInstance3D", true, false):
+			# Preserve authored trunk textures when replacing the static material with wind.
+			if str(mesh.name).begins_with("Trunk"):
+				var source := mesh.get_active_material(0) as BaseMaterial3D
+				if source != null and source.albedo_texture != null and source.normal_texture != null:
+					wind_materials[0].set_shader_parameter("textured_bark", true)
+					wind_materials[0].set_shader_parameter("bark_albedo", source.albedo_texture)
+					wind_materials[0].set_shader_parameter("bark_normal", source.normal_texture)
 			mesh.material_override = wind_materials[1 if str(mesh.name).begins_with("Leaves") else 0]
 			if terrain_roots and str(mesh.name).begins_with("Trunk"): _fit_roots(mesh)
 	current_lod = level

@@ -4,6 +4,9 @@ render_mode cull_disabled, diffuse_lambert_wrap;
 uniform float wind_strength = 0.04;
 uniform float tree_height = 6.0;
 uniform bool foliage = false;
+uniform bool textured_bark = false;
+uniform sampler2D bark_albedo : source_color, filter_linear_mipmap_anisotropic;
+uniform sampler2D bark_normal : hint_normal, filter_linear_mipmap_anisotropic;
 
 void vertex() {
 	vec3 world_base = MODEL_MATRIX[3].xyz;
@@ -22,4 +25,11 @@ void fragment() {
 	ALBEDO = COLOR.rgb;
 	ROUGHNESS = 0.9;
 	if (!FRONT_FACING) { NORMAL = -NORMAL; }
+	if (textured_bark && !foliage) {
+		ALBEDO = texture(bark_albedo, UV).rgb;
+		NORMAL_MAP = texture(bark_normal, UV).rgb;
+		NORMAL_MAP_DEPTH = 0.7;
+		ROUGHNESS = 0.94;
+		SPECULAR = 0.15;
+	}
 }

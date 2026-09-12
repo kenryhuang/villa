@@ -2,7 +2,7 @@
 
 2026-09-11 新增五种以原2D图为参考、突出树干的模型，见 [illustrated_trees/README.md](illustrated_trees/README.md)；Blender源文件为 `art/blender/illustrated_trees.blend`。
 
-正式地图当前使用 Trees & Bushes pack 的三种加粗枝干树木，并在丘陵、山坡和球场边缘加入两种灌木，见 [tree_pack/README.md](tree_pack/README.md)。上面的五种原创树保留作独立美术预览。
+正式地图当前使用 [diverse_trees 的六种原创树木](diverse_trees/README.md)，树皮已添加各树种独立的颜色与法线贴图。丘陵、山坡和球场边缘的两种灌木来自 [tree_pack](tree_pack/README.md)。Tree pack 的三种树和上面的五种原创树保留作独立美术预览。
 
 `painted_oak.glb` 是独立的完整 3D 橡树，参考项目原有 `assets/vegetation/tree-oak-large.png` 的轮廓、根干结构和绘制颜色。
 

@@ -1,7 +1,7 @@
 """Original sculpted grove. Run with Blender --background --python this_file -- --render.
 
 Deterministic branch paths remain editable in the blend; only diverse_trees outputs
-are regenerated. Six silhouettes, vertex-painted bark/leaves, three explicit LODs.
+are regenerated. Six silhouettes, baked bark/vertex-painted leaves, three explicit LODs.
 """
 from pathlib import Path
 import bpy
@@ -13,7 +13,12 @@ import sys
 from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tree_bark_materials import bake_bark, share_bark_images
 OUT = ROOT / 'assets/models/vegetation/diverse_trees'
+EXPORT_TMP = ROOT / 'tmp/diverse-tree-export'
+EXPORT_TMP.mkdir(parents=True, exist_ok=True)
+(EXPORT_TMP/'.gdignore').touch()
 PREVIEW = ROOT / 'docs/validation/diverse-trees'
 OUT.mkdir(parents=True, exist_ok=True)
 PREVIEW.mkdir(parents=True, exist_ok=True)
@@ -196,6 +201,7 @@ for species_index,cfg in enumerate(CONFIGS):
         c.color=(*color,1)
     trunk.data.materials.append(paint_material(sid+' / textured bark colors'))
     for p in trunk.data.polygons:p.use_smooth=True
+    bake_bark(trunk, cfg, OUT)
     leaves=[]
     for center,radii,count in clusters:
         for k in range(count):
@@ -243,7 +249,9 @@ for species_index,cfg in enumerate(CONFIGS):
         bpy.ops.object.select_all(action='DESELECT')
         for o in (parent,wood,foliage):o.select_set(True)
         bpy.context.view_layer.objects.active=wood
-        bpy.ops.export_scene.gltf(filepath=str(OUT/(sid+'_lod%d.glb'%lod)),export_format='GLB',use_selection=True,export_yup=True,export_animations=False,export_vertex_color='ACTIVE')
+        export_name = sid+'_lod%d.glb'%lod
+        bpy.ops.export_scene.gltf(filepath=str(EXPORT_TMP/export_name),export_format='GLB',use_selection=True,export_yup=True,export_animations=False,export_vertex_color='ACTIVE')
+        share_bark_images(EXPORT_TMP/export_name, OUT/export_name)
         lods.append(dict(level=lod,triangles=sum(len(p.vertices)-2 for o in (wood,foliage) for p in o.data.polygons),leaves=int(len(leaves)*fraction)))
         for o in (wood,foliage):o.hide_render=lod>0; o.hide_set(lod>0)
     reports.append(dict(**cfg,branch_paths=len(paths),lods=lods))
