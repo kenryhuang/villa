@@ -325,7 +325,7 @@ for i in range(28):
     for face in obj.data.polygons:
         face.material_index = max(0, min(5, int(2.8 + face.normal.z * 1.5 + random.uniform(-.8, .8))))
 join_objects(list(oak.objects), "Oak • branches and canopy")
-export(oak, "tree_oak")
+# Keep the prototype oak editable in the Blend, without an unused game export.
 
 # A reusable 2.8 m square plot with actual raised earth and alternating grooves.
 ACTIVE = collection("03 • Tilled earth")

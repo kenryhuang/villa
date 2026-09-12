@@ -1,0 +1,194 @@
+[
+  {
+    "id": "warm_oak",
+    "height": 6.2,
+    "radius": 0.48,
+    "bark": [
+      "57301c",
+      "a57542"
+    ],
+    "leaf": [
+      "315d24",
+      "9eb64a"
+    ],
+    "form": "oak",
+    "branch_paths": 31,
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 22280,
+        "leaves": 2630
+      },
+      {
+        "level": 1,
+        "triangles": 11451,
+        "leaves": 1367
+      },
+      {
+        "level": 2,
+        "triangles": 5053,
+        "leaves": 604
+      }
+    ]
+  },
+  {
+    "id": "forked_birch",
+    "height": 7.5,
+    "radius": 0.3,
+    "bark": [
+      "a07d49",
+      "eddbad"
+    ],
+    "leaf": [
+      "4c7c28",
+      "c4cf62"
+    ],
+    "form": "birch",
+    "branch_paths": 29,
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 22280,
+        "leaves": 2630
+      },
+      {
+        "level": 1,
+        "triangles": 11452,
+        "leaves": 1367
+      },
+      {
+        "level": 2,
+        "triangles": 5053,
+        "leaves": 604
+      }
+    ]
+  },
+  {
+    "id": "copper_maple",
+    "height": 5.4,
+    "radius": 0.39,
+    "bark": [
+      "633124",
+      "b16d42"
+    ],
+    "leaf": [
+      "922f26",
+      "ee9b3e"
+    ],
+    "form": "maple",
+    "branch_paths": 31,
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 27540,
+        "leaves": 2630
+      },
+      {
+        "level": 1,
+        "triangles": 14186,
+        "leaves": 1367
+      },
+      {
+        "level": 2,
+        "triangles": 6262,
+        "leaves": 604
+      }
+    ]
+  },
+  {
+    "id": "golden_poplar",
+    "height": 8.4,
+    "radius": 0.31,
+    "bark": [
+      "67522a",
+      "ba9660"
+    ],
+    "leaf": [
+      "a28b24",
+      "ead260"
+    ],
+    "form": "poplar",
+    "branch_paths": 44,
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 32780,
+        "leaves": 4380
+      },
+      {
+        "level": 1,
+        "triangles": 16912,
+        "leaves": 2277
+      },
+      {
+        "level": 2,
+        "triangles": 7471,
+        "leaves": 1007
+      }
+    ]
+  },
+  {
+    "id": "blue_pine",
+    "height": 8.0,
+    "radius": 0.36,
+    "bark": [
+      "612f20",
+      "b77346"
+    ],
+    "leaf": [
+      "235849",
+      "73a18b"
+    ],
+    "form": "pine",
+    "branch_paths": 43,
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 44900,
+        "leaves": 6400
+      },
+      {
+        "level": 1,
+        "triangles": 23218,
+        "leaves": 3328
+      },
+      {
+        "level": 2,
+        "triangles": 10262,
+        "leaves": 1472
+      }
+    ]
+  },
+  {
+    "id": "weeping_willow",
+    "height": 5.9,
+    "radius": 0.45,
+    "bark": [
+      "554b26",
+      "9d8b4b"
+    ],
+    "leaf": [
+      "577b32",
+      "bdc85e"
+    ],
+    "form": "willow",
+    "branch_paths": 50,
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 43100,
+        "leaves": 6100
+      },
+      {
+        "level": 1,
+        "triangles": 22282,
+        "leaves": 3172
+      },
+      {
+        "level": 2,
+        "triangles": 9848,
+        "leaves": 1403
+      }
+    ]
+  }
+]

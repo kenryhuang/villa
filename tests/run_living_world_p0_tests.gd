@@ -81,13 +81,19 @@ func run() -> void:
 	check(not facts.back().contains("面粉已经做好"), "Premature model success is not displayed")
 	paused = false
 	runtime._process(0)
+	check(building.producer_state.jobs.is_empty() and npc.gold == npc_gold, "Resuming begins walking without charging before arrival")
+	check(not facts.back().contains("面粉已经做好") and facts.back().contains("前往目标"), "Dialogue reports the actual trip rather than invented finished goods")
+	# Movement is tested separately. Put this transaction fixture at its real
+	# destination, then advance the clock to execute the accepted physical action.
+	arrive_for_action(s, runtime, "p0-deferred-order")
 	check(building.producer_state.jobs.size() == 1 and npc.gold == npc_gold - 4, "Resume revalidates and enqueues actual order")
-	check(not facts.back().contains("面粉已经做好") and facts.back().contains("加工订单已接受"), "Dialogue reports acceptance rather than invented finished goods")
 	check(runtime.executor._outcomes["p0-deferred-order"].status == "in_progress", "Action remains in progress until actual delivery")
 	s.production.advance_minutes(10)
 	var saved := s.save_game()
 	var loaded := saved and s.load_game()
-	if not loaded: print("P0 persistence failure saved=", saved, " error=", s.save_error)
+	if not loaded:
+		var failed_save: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(s.save_path))
+		print("P0 persistence failure saved=", saved, " error=", s.save_error, " agents=", runtime.validate_dict(failed_save.agents), " world=", s.living_world.validate_save(failed_save), " market=", s._valid_market_save(failed_save))
 	check(saved and loaded, "Processing order saves and reloads with runtime outcome")
 	building = s.buildings.get_all_buildings()[0]
 	npc = s.npc_economy.get_npc_state("farmer_ahe")
@@ -102,7 +108,8 @@ func run() -> void:
 	var failed := response("p0-failed", building, runtime.executor.world_revision)
 	runtime._request_triggers[failed.request_id] = "dialogue"
 	runtime._handle_response("farmer_ahe", failed)
-	check(building.producer_state.jobs.is_empty() and facts.back().contains("未全部完成"), "Missing ingredients shows actual failure without enqueue")
+	arrive_for_action(s, runtime, "p0-failed-order")
+	check(building.producer_state.jobs.is_empty() and runtime.executor._outcomes["p0-failed-order"].status == "failed", "Missing ingredients fails at destination without enqueue")
 	for mode in ["silent", "spoken", "whitespace"]:
 		var reply := {"protocol_version": 2, "agent_id": "farmer_ahe", "request_id": "p0-reply-"+mode, "decision_id": "p0-reply-"+mode,
 			"expected_revision": runtime.executor.world_revision, "decision_summary": "Selected speak from current context", "actions": []}
@@ -115,3 +122,14 @@ func run() -> void:
 		check(facts.back().contains("暂时没有回应") if mode == "silent" else facts.back().contains("今天可以去湖边钓鱼"), "Missing content resolves to actual speak text or an honest empty response: "+mode)
 	print("P0: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func arrive_for_action(s: Farm3DSession, runtime: Node, key: String) -> void:
+	var activity: Dictionary = runtime.activity_system.to_dict().activities[key]
+	var target: Dictionary = activity.payload.movement.target
+	var body: Node3D = runtime.farm3d_actors[activity.agent_id]
+	body.stop_agent_work()
+	body.position.x = target.x
+	body.position.z = target.z
+	s.season.minute += 1
+	s.living_world.environment.advance_to(runtime._absolute_game_minute())
+	runtime._on_time_changed(s.season.hour, s.season.minute)

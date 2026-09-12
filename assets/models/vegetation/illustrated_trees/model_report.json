@@ -1,0 +1,127 @@
+[
+  {
+    "id": "elder_oak",
+    "reference": "assets/vegetation/tree-oak-large.png",
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 24654,
+        "leaves": 1010,
+        "wood_triangles": 8494
+      },
+      {
+        "level": 1,
+        "triangles": 13942,
+        "leaves": 606,
+        "wood_triangles": 4246
+      },
+      {
+        "level": 2,
+        "triangles": 6886,
+        "leaves": 303,
+        "wood_triangles": 2038
+      }
+    ],
+    "foliage_patches": 3934
+  },
+  {
+    "id": "open_canopy",
+    "reference": "assets/vegetation/tree-canopy-medium.png",
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 22768,
+        "leaves": 892,
+        "wood_triangles": 8496
+      },
+      {
+        "level": 1,
+        "triangles": 12808,
+        "leaves": 535,
+        "wood_triangles": 4248
+      },
+      {
+        "level": 2,
+        "triangles": 6311,
+        "leaves": 267,
+        "wood_triangles": 2039
+      }
+    ],
+    "foliage_patches": 4055
+  },
+  {
+    "id": "golden_leaning",
+    "reference": "assets/vegetation/tree-yellow.png",
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 20046,
+        "leaves": 722,
+        "wood_triangles": 8494
+      },
+      {
+        "level": 1,
+        "triangles": 11174,
+        "leaves": 433,
+        "wood_triangles": 4246
+      },
+      {
+        "level": 2,
+        "triangles": 5494,
+        "leaves": 216,
+        "wood_triangles": 2038
+      }
+    ],
+    "foliage_patches": 4326
+  },
+  {
+    "id": "open_pine",
+    "reference": "assets/vegetation/tree-pine-large.png",
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 28299,
+        "leaves": 1239,
+        "wood_triangles": 8475
+      },
+      {
+        "level": 1,
+        "triangles": 16124,
+        "leaves": 743,
+        "wood_triangles": 4236
+      },
+      {
+        "level": 2,
+        "triangles": 7969,
+        "leaves": 371,
+        "wood_triangles": 2033
+      }
+    ],
+    "foliage_patches": 409
+  },
+  {
+    "id": "tall_pine",
+    "reference": "assets/vegetation/tree-pine-tall.png",
+    "lods": [
+      {
+        "level": 0,
+        "triangles": 34038,
+        "leaves": 1599,
+        "wood_triangles": 8454
+      },
+      {
+        "level": 1,
+        "triangles": 19566,
+        "leaves": 959,
+        "wood_triangles": 4222
+      },
+      {
+        "level": 2,
+        "triangles": 9687,
+        "leaves": 479,
+        "wood_triangles": 2023
+      }
+    ],
+    "foliage_patches": 1241
+  }
+]

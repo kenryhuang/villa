@@ -29,6 +29,7 @@ const AgentAgreementSystemScript = preload("res://scripts/ai_agent/agent_agreeme
 const AgentMarketSummaryScript = preload("res://scripts/ai_agent/agent_market_summary.gd")
 
 const VERSION := 5
+const CURRENT_STATE_VERSION := 6
 const EVENT_SCHEMA_VERSION := 1
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
@@ -101,6 +102,8 @@ func configure_farm3d(session: Node, hud_bus: Node, remote_enabled: bool, client
 		return false
 	executor.farm3d_session = session
 	activity_system.action_completion_guard = executor.complete_physical_action
+	event_store.transient_history_limit = 128
+	perception_inbox.transient_event_limit = 64
 	configure_player_assets(session.inventory, get_node("/root/GameState"))
 	session.production.actor_assets.resolve_port = func(): return interaction_system
 	session.production.rental_completed.connect(_on_rental_completed)
@@ -205,6 +208,8 @@ func _on_rental_completed(agent_id: String, building: BuildingInstance, recipe_i
 
 
 func save_farm3d_memory(save_path: String) -> void:
+	# 3D saves contain current state only. Long-term NPC memory is deferred.
+	if farm3d_session != null: return
 	if not service_enabled or _farm3d_memory_export_pending:
 		return
 	var world_hash := FileAccess.get_sha256(save_path)
@@ -235,6 +240,9 @@ func save_farm3d_memory(save_path: String) -> void:
 func load_farm3d_memory(save_path: String) -> void:
 	if not service_enabled:
 		return
+	if farm3d_session != null:
+		gateway.sync_session(session_id, true)
+		return
 	var path := save_path + ".agent-memory.json"
 	var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	if not manifest is Dictionary or manifest.get("world_sha256", "") != FileAccess.get_sha256(save_path) or not manifest.get("checkpoint") is Dictionary:
@@ -257,6 +265,7 @@ func load_farm3d_memory(save_path: String) -> void:
 
 
 func flush_farm3d_memory(save_path: String) -> void:
+	if farm3d_session != null: return
 	if not service_enabled:
 		return
 	var deadline := Time.get_ticks_msec() + 2500
@@ -613,6 +622,8 @@ func _valid_checkpoint_record(value: Dictionary) -> bool:
 
 
 func to_dict() -> Dictionary:
+	if farm3d_session != null:
+		return _current_state()
 	return {
 		"version": VERSION,
 		"event_schema_version": EVENT_SCHEMA_VERSION,
@@ -633,6 +644,96 @@ func to_dict() -> Dictionary:
 	}
 
 
+func _current_state() -> Dictionary:
+	return _compact_current_state({
+		"version": CURRENT_STATE_VERSION,
+		"session_id": session_id,
+		"executor": executor.current_state(),
+		"farm": farm_registry.to_dict(),
+		"buildings": building_registry.to_dict(),
+		"activities": activity_system.to_dict(),
+		"knowledge": knowledge_registry.to_dict(),
+		"projection_checkpoint": world_projector.current_state(),
+		"checkpoint_sequence": world_projector.get_last_sequence(),
+		"roles": role_system.to_dict(),
+		"interactions": interaction_system.to_dict(),
+		"agreements": agreement_system.to_dict(),
+		"pending_market_pressure_facts": _pending_market_pressure_records(),
+	})
+
+
+func _compact_current_state(value: Dictionary) -> Dictionary:
+	var result := {}
+	for field in ["session_id", "executor", "farm", "buildings", "activities", "knowledge", "projection_checkpoint", "checkpoint_sequence", "roles", "interactions", "agreements", "pending_market_pressure_facts"]:
+		if not value.has(field): return {}
+		result[field] = value[field]
+	result = result.duplicate(true)
+	result.version = CURRENT_STATE_VERSION
+	if not result.projection_checkpoint is Dictionary or not result.roles is Dictionary or not result.farm is Dictionary: return {}
+	if not result.projection_checkpoint.get("actor_public_events") is Array or not result.roles.get("roles") is Array: return {}
+	# Only present facts belong in a save, not previously observed events.
+	result.projection_checkpoint.global_public_events = []
+	for record in result.projection_checkpoint.get("actor_public_events", []):
+		if not record is Dictionary: return {}
+		record.events = []
+	for role in result.roles.get("roles", []):
+		if not role is Dictionary: return {}
+		role.history = [role.get("active_role_id", "")]
+	for field in ["interactions", "agreements"]:
+		if not result[field] is Dictionary: return {}
+		if not result[field].get("idempotency_results", []) is Array: return {}
+		for receipt in result[field].get("idempotency_results", []):
+			if not receipt is Dictionary or not receipt.get("result") is Dictionary: return {}
+			if receipt.result.has("events"): receipt.result.events = []
+	# Executed farm work is already covered by the executor's settlement receipt.
+	if result.farm.has("finished"): result.farm.finished = {}
+	return result
+
+
+func _migrate_current_state(value: Dictionary) -> Dictionary:
+	if int(value.get("version", 0)) != VERSION: return {}
+	if not value.get("event_store") is Dictionary or not value.get("projection_checkpoint") is Dictionary or not value.get("executor") is Dictionary: return {}
+	# Existing farm saves already contain a complete present-state checkpoint.
+	# No replay of the historical journal is needed to read that checkpoint.
+	var sequence: Variant = value.get("checkpoint_sequence")
+	if not _is_nonnegative_integer(sequence) or value.projection_checkpoint.get("checkpoint_sequence") != sequence or value.event_store.get("next_global_sequence") != int(sequence) + 1: return {}
+	var result := _compact_current_state(value)
+	if not result.is_empty(): result.executor = AgentExecutorScript.compact_state(value.executor)
+	return result
+
+
+func _validate_current_state(value: Dictionary) -> bool:
+	if value.size() != 13 or value.get("version") != CURRENT_STATE_VERSION: return false
+	for field in ["projection_checkpoint", "roles", "interactions", "agreements"]:
+		if not value.get(field) is Dictionary: return false
+	if not _is_nonnegative_integer(value.get("checkpoint_sequence")) or value.projection_checkpoint.get("checkpoint_sequence") != value.checkpoint_sequence: return false
+	if _normalize_pending_market_pressure_facts(value.get("pending_market_pressure_facts")) == null: return false
+	var store = AgentWorldEventStoreScript.new()
+	store.start_from_snapshot(int(value.checkpoint_sequence))
+	var inbox = AgentPerceptionInboxScript.new()
+	var projector = AgentWorldProjectorScript.new()
+	if not projector.configure(registry.get_agent_ids(), _actor_profiles(), inbox) or not projector.from_dict(value.projection_checkpoint): return false
+	if not value.projection_checkpoint.global_public_events.is_empty(): return false
+	for record in value.projection_checkpoint.actor_public_events:
+		if not record.events.is_empty(): return false
+	inbox.start_from_snapshot(int(value.checkpoint_sequence))
+	# Validate current contracts/reservations directly, without deriving them
+	# from a historical event journal. Never mutate the live registry here.
+	var candidate_registry = AgentRegistryScript.new()
+	if not candidate_registry.load_defaults(registry.get_agent_ids().size() > 3): return false
+	var roles = AgentRoleSystemScript.new()
+	if not roles.configure(candidate_registry, _npc_economy, store, projector, building_registry, knowledge_registry) or not roles.from_dict(value.roles): return false
+	var interactions = AgentInteractionSystemScript.new()
+	if not interactions.configure(_npc_economy, store, projector, Callable(), _market) or not interactions.validate_dict(value.interactions): return false
+	var agreements = AgentAgreementSystemScript.new()
+	if not agreements.configure(_npc_economy, interactions, store, projector) or not agreements.from_dict(value.agreements): return false
+	var reservations: Variant = agreements.expected_reservations(value.agreements)
+	if reservations == null or not interactions.validate_external_reservations(value.interactions, reservations): return false
+	if _restore_preparation_active:
+		_prepared_restore = {"value": value.duplicate(true), "profiles": _actor_profiles(), "agent_ids": registry.get_agent_ids(), "store": store, "inbox": inbox, "projector": projector}
+	return true
+
+
 func begin_restore_preparation() -> void:
 	_prepared_restore.clear()
 	_restore_preparation_active = true
@@ -648,12 +749,15 @@ func _can_reuse_restore(value: Dictionary) -> bool:
 
 
 func validate_dict(value: Dictionary) -> bool:
+	if farm3d_session != null and int(value.get("version", 0)) == VERSION:
+		var migrated := _migrate_current_state(value)
+		return not migrated.is_empty() and validate_dict(migrated)
 	# Only the synchronous full-save transaction can reuse this candidate. A
 	# changed input or actor context always goes through all checks again.
 	if _can_reuse_restore(value): return true
 	_prepared_restore.clear()
 	var version := int(value.get("version", 0))
-	if version not in [2, 3, VERSION] or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
+	if version not in [2, 3, VERSION, CURRENT_STATE_VERSION] or typeof(value.get("session_id")) != TYPE_STRING or not value.get("executor") is Dictionary:
 		return false
 	var farm = FarmScript.new() if _farm_port == null or version == 2 else farm_registry
 	var buildings = BuildingScript.new()
@@ -669,10 +773,13 @@ func validate_dict(value: Dictionary) -> bool:
 	var legacy_valid := executor.validate_dict(value.executor) and farm_valid and value.get("buildings") is Dictionary and buildings.from_dict(value.buildings) and value.get("activities") is Dictionary and activities.from_dict(value.activities) and value.get("knowledge") is Dictionary and knowledge.from_dict(value.knowledge)
 	if not legacy_valid or version < VERSION:
 		return legacy_valid
+	if version == CURRENT_STATE_VERSION: return _validate_current_state(value)
 	return _validate_event_sourced_state(value)
 
 
 func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
+	if farm3d_session != null and int(value.get("version", 0)) == VERSION:
+		value = _migrate_current_state(value)
 	if not validate_dict(value):
 		return false
 	var apply_pressure_now: bool = apply_market_pressure and not (
@@ -695,7 +802,7 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 		activity_system.from_dict(before.activities)
 		knowledge_registry.from_dict(before.knowledge)
 		return false
-	if int(value.version) == VERSION:
+	if int(value.version) in [VERSION, CURRENT_STATE_VERSION]:
 		if not _restore_event_sourced_state(value, apply_pressure_now):
 			_restore_legacy_components(before)
 			role_system.from_dict(before.roles)
@@ -773,16 +880,21 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	var restored_store = AgentWorldEventStoreScript.new()
 	var restored_inbox = AgentPerceptionInboxScript.new()
 	var restored_projector = AgentWorldProjectorScript.new()
+	var snapshot := int(value.get("version", 0)) == CURRENT_STATE_VERSION
 	if _can_reuse_restore(value):
 		restored_store = _prepared_restore.store
 		restored_inbox = _prepared_restore.inbox
 		restored_projector = _prepared_restore.projector
 		_prepared_restore.clear()
+	elif snapshot:
+		restored_store.start_from_snapshot(int(value.checkpoint_sequence))
+		if not restored_projector.configure(registry.get_agent_ids(), _actor_profiles(), restored_inbox) or not restored_projector.from_dict(value.projection_checkpoint): return false
+		restored_inbox.start_from_snapshot(int(value.checkpoint_sequence))
 	else:
 		if not restored_store.from_dict(value.event_store): return false
 		if not restored_projector.configure(registry.get_agent_ids(), _actor_profiles(), restored_inbox): return false
 		if not restored_projector.replay(restored_store.get_events_after(0)): return false
-	if not restored_inbox.from_dict(value.perception_inbox, restored_projector.get_last_sequence()):
+	if not snapshot and not restored_inbox.from_dict(value.perception_inbox, restored_projector.get_last_sequence()):
 		return false
 	var restored_context = AgentContextProjectionScript.new()
 	var restored_bridge = AgentWorldFactBridgeScript.new()
@@ -810,6 +922,9 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 		return false
 	event_store = restored_store
 	perception_inbox = restored_inbox
+	if farm3d_session != null:
+		event_store.transient_history_limit = 128
+		perception_inbox.transient_event_limit = 64
 	world_projector = restored_projector
 	context_projection = restored_context
 	world_fact_bridge = restored_bridge
@@ -962,6 +1077,23 @@ func _actor_profiles() -> Array[Dictionary]:
 	return actor_profiles
 
 func expand_saved_population(value: Dictionary) -> void:
+	if int(value.get("version", 0)) == CURRENT_STATE_VERSION:
+		var inbox = AgentPerceptionInboxScript.new()
+		var projector = AgentWorldProjectorScript.new()
+		if not projector.configure(registry.get_agent_ids(), _actor_profiles(), inbox): return
+		var defaults: Dictionary = projector.current_state()
+		var known := {}
+		for actor in value.projection_checkpoint.actors: known[actor.actor_id] = true
+		for actor in defaults.actors:
+			if known.has(actor.actor_id): continue
+			value.projection_checkpoint.actors.append(actor)
+			value.projection_checkpoint.actor_public_events.append({"actor_id": actor.actor_id, "events": []})
+			if actor.actor_id != "player":
+				value.roles.roles.append({"agent_id": actor.actor_id, "active_role_id": actor.public_role, "last_changed_minute": -1, "history": [actor.public_role]})
+		value.projection_checkpoint.actors.sort_custom(func(a, b): return a.actor_id < b.actor_id)
+		value.projection_checkpoint.actor_public_events.sort_custom(func(a, b): return a.actor_id < b.actor_id)
+		value.roles.roles.sort_custom(func(a, b): return a.agent_id < b.agent_id)
+		return
 	if int(value.get("version", 0)) < VERSION: return
 	var store = AgentWorldEventStoreScript.new()
 	if not store.from_dict(value.event_store): return

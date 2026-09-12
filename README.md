@@ -13,6 +13,10 @@ Agent 并发试用配置（2026-09-10）：后台 NPC 最多3个决策、玩家�
 - 在 Godot 中打开根目录 `project.godot`，按 **F5** 运行正式 3D 游戏。
 - 命令行：`./tools/run_farm3d.ps1`，或 `godot_console.exe --path .`。
 - 单独查看橡树：`./tools/preview_tree.ps1`；这是美术预览，不加载农庄玩法。
+- 查看导入树木的两种样板：`./tools/preview_tree_pack.ps1`；金叶阔冠、绿叶高冠，[模型与验证说明](docs/validation/2026-09-11-tree-pack-samples.md)。
+- 查看参考原2D画风的五种树：`./tools/preview_illustrated_trees.ps1`；1–5切树、B隐藏叶子查看树干、L切换细节，[Blender模型与预览](docs/validation/2026-09-11-illustrated-trees.md)。
+- 正式农庄、外围地形与高尔夫球场的34棵树已换用 Trees & Bushes pack 的三种加粗枝干模型，丘陵、山坡与球场边缘加入132丛灌木；带LOD、合批、碰撞与NPC避让。[实景和验证](docs/validation/2026-09-11-tree-pack-samples.md)。五种原创树仍可独立预览。
+- 农庄原有的3块地面岩石与55块路边、树根小石已换成四种扫描石头，保留位置，带低面数小石与大石碰撞；[实景与资产说明](docs/validation/2026-09-11-stone-pack-review.md)。
 - 原游戏保留在 `scenes/main.tscn`，在编辑器打开该场景后按 **F6** 可单独运行。
 
 ## NPC 社会 P0 / P1 试玩
@@ -41,8 +45,8 @@ scenes/
     buildings/                  原生 3D 建筑：Blender 谷仓、风车、食品工坊
     inventory.tscn               3D 背包界面，继承原背包场景
     status_bar.tscn              从原 HUD 迁入的状态条组件
-  preview/                      独立美术预览，目前仅橡树观察场景
-  vegetation/                   可复用的橡树场景和配套碰撞
+  preview/                      独立美术预览：橡树、导入树木样板
+  vegetation/                   可复用树木场景和配套碰撞
   buildings/                    共用的建筑场景
   ui/                           原游戏 UI；背包和消息面板继续共用
   main.tscn                     原游戏入口
@@ -121,6 +125,7 @@ docs/validation/              操作说明、验证结果和截图
 - 种植、季节、背包、经济等共用规则继续维护在原系统目录；需要 3D 特有行为时，在 `farm3d` 中适配。
 - 在 Blender 编辑 `art/blender/` 下的源文件，导出模型到 `assets/models/`。生成脚本已使用新路径；运行生成脚本会覆盖对应生成资产，具体见[模型说明](assets/models/farm3d/README.md)。
 - 3D 存档写入项目目录 `data/farm_3d_save.json`；当前 v13 保存36人社会、合同、调查、天气、活动、规划额度与分批日结进度；兼容 v1～v12，旧人口和新增组织只初始化一次，保留市场行情、NPC 经济状态、市集位置和高尔夫成绩。找不到存档或存档损坏时直接按初始状态启动，下一次保存会写入新的格式化存档。每次启动后首次覆盖保存会留下同路径 `.bak`，本次运行后续自动保存不轮换该备份。
+- NPC 子存档使用当前状态快照（`agents.version=6`）：沿用15秒自动保存，保留资产、身份、职业、位置与进行中的业务，不再持久化完整事件历史或感知收件箱。旧格式自动提取当前检查点迁移，长期记忆机制留待后续设计。[保存规则与验证](docs/validation/2026-09-11-npc-current-state-snapshots.md)。
 - `docs/superpowers/` 是历史设计记录，保留当时的文件名；当前目录以本页为准。
 
 ### 本地文件与版本管理
@@ -131,7 +136,7 @@ docs/validation/              操作说明、验证结果和截图
 | --- | --- |
 | `data/farm_3d_save.json` | 3D 游戏主存档，包括农场、建筑、背包、经济和 NPC 状态 |
 | `data/farm_3d_save.json.bak` | 本次启动首次覆盖保存前的恢复备份 |
-| `data/farm_3d_save.json.agent-memory.json` | 主存档对应的 Agent 记忆检查点清单与校验信息 |
+| `data/farm_3d_save.json.agent-memory.json` | 旧版 Agent 记忆检查点清单；当前3D入口不再读写 |
 | `data/farm_3d_save.json*.tmp` | 保存过程中原子写入产生的临时文件 |
 | `services/agent-service/data/` | Agent SQLite 记忆数据库、`-wal` / `-shm` 文件和 `checkpoints/` 记忆快照 |
 | `config/agent-client.local.json`、`services/agent-service/config/agent-service.local.json` | 本机服务连接、模型和密钥配置，手工创建，不属于存档 |
@@ -150,7 +155,7 @@ docs/validation/              操作说明、验证结果和截图
 
 NPC 可使用 `move(x,z)` 自主前往地图位置；`buy`、`sell`、`prepare_supplies` 自动走到市场，`rent_production` 自动走到建筑再下单，农作仍会先走到地块。一次调用包含行走与操作，途中不扣采购款或加工原料；项目中的买卖、租用步骤同样自动移动。连续动作会等待前一步完成，包含加工完成后的出售，途中存读档可恢复。[移动行为与验证](docs/validation/2026-09-10-npc-physical-actions.md)。
 
-开发构建底部 **调试** → **NPC Agents / 决策间隔 / 环境与租费**，可查看状态、手动触发决策、调整间隔、打开原有 Input/Reasoning/Output 请求追踪；不暂停游戏时间。原服务仍负责远程模型与独立角色记忆，未配置服务时角色和调试界面可用，自动决策关闭。
+开发构建底部 **调试** → **NPC Agents / 决策间隔 / 环境与租费**，可查看状态、手动触发决策、调整间隔、打开原有 Input/Reasoning/Output 请求追踪；不暂停游戏时间。原服务仍负责远程模型调用，未配置服务时角色和调试界面可用，自动决策关闭。长期NPC记忆机制后续单独设计。
 
 **调试 → 地图传送**：左键点击小地图立即传送玩家，地图上北下南、左西右东。传送按实际地面、桥面或建筑碰撞顶部确定高度；水域落在河床或湖底。传送会结束钓鱼、挥杆控制并清除移动惯性，面板保持打开，关闭后恢复走动。右下角普通小地图仍只用于定位。
 
@@ -158,7 +163,7 @@ NPC 可使用 `move(x,z)` 自主前往地图位置；`buy`、`sell`、`prepare_s
 
 **NPC 对话输入**：打开对话框时暂停游戏时间与角色运动，保留文字编辑、发送和关闭操作，Agent 网络通信继续运行。输入 I/G/WASD 等字符不会触发背包、小地图或移动；Enter 发送，Shift+Enter 换行，Esc 或关闭按钮退出。关闭后恢复原来的暂停状态，清除残留移动输入，需要重新按下移动键才会行走。
 
-用 `./tools/run_farm3d.ps1 -Agents` 同时启动当前分支的服务和 3D 游戏。脚本优先使用当前项目配置，再查找 Git worktree 中已有的本地配置，直接读取原文件；也可传 `-AgentClientConfig <路径> -AgentServiceConfig <路径>`。本机旧服务经健康响应和进程启动参数确认后会自动替换，其他程序占用端口时保留该进程并报错。脚本在退出或启动失败时关闭自己启动的服务。`-CheckAgents` 仅验证服务启动和能力，不启动游戏，检查完成后清理本次启动的服务。单独启动 Godot 可传 `-- --agent-client-config=<现有客户端配置路径>`。远程记忆沿用原服务的 SQLite 数据库，以存档中的独立 session ID 隔离。保存后异步导出记忆检查点，并在农场存档旁写入 `.agent-memory.json` 清单；读档时验证世界文件 SHA-256，缺失、不匹配或服务不可用时提示并从农场当前状态继续。
+用 `./tools/run_farm3d.ps1 -Agents` 同时启动当前分支的服务和 3D 游戏。脚本优先使用当前项目配置，再查找 Git worktree 中已有的本地配置，直接读取原文件；也可传 `-AgentClientConfig <路径> -AgentServiceConfig <路径>`。本机旧服务经健康响应和进程启动参数确认后会自动替换，其他程序占用端口时保留该进程并报错。脚本在退出或启动失败时关闭自己启动的服务。`-CheckAgents` 仅验证服务启动和能力，不启动游戏，检查完成后清理本次启动的服务。单独启动 Godot 可传 `-- --agent-client-config=<现有客户端配置路径>`。当前3D入口只保存世界与NPC当前状态，不再导入、导出 `.agent-memory.json`，退出不等待记忆检查点。读档时重置服务会话上下文，下一次决策使用当前世界信息；服务现有运行期上下文和 `tmp/` 调试追踪不属于主存档，长期记忆机制后续单独设计。
 
 **风车**：从“建筑”菜单放置，完工后走到南面院门前点击建筑。选择面粉、动物饲料或葵花油，设置批量并投入背包原料。关闭面板后加工，完成后点击院落成品或在面板收进背包。面板支持两格队列、实时行情参考与原系统维护；打开时暂停游戏时间，Esc 关闭恢复。模型与验证见[3D 风车说明](docs/validation/windmill-3d.md)。
 

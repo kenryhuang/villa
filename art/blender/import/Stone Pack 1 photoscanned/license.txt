@@ -1,0 +1,6 @@
+released under CC0
+
+assets and textures are created by me (photoscanned from own photos)
+
+the included HDRI is CC0 too and taken from blender cloud
+https://cloud.blender.org/p/hdri/57bef8140fcf2915583be76b

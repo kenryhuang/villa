@@ -217,21 +217,15 @@ func _run() -> void:
 	runtime.gateway = memory
 	runtime.service_enabled = true
 	runtime.save_farm3d_memory(session.save_path)
-	var record := {"session_id": runtime.session_id, "path": "test-checkpoint.sqlite", "sha256": "a".repeat(64)}
-	memory.exported.call(true, record, "")
-	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(session.save_path + ".agent-memory.json"))
-	check(manifest.world_sha256 == FileAccess.get_sha256(session.save_path), "Memory manifest is bound to exact world save")
+	check(not memory.exported.is_valid(), "Current-state saves do not export deferred NPC memory")
 	runtime.load_farm3d_memory(session.save_path)
-	check(memory.imported == record and memory.resets == 0, "Matching world restores original service checkpoint")
-	runtime.save_farm3d_memory(session.save_path)
-	var file := FileAccess.open(session.save_path, FileAccess.READ_WRITE)
-	file.seek_end()
-	file.store_string("\n")
-	file.close()
-	memory.exported.call(true, record, "")
-	check(FileAccess.get_file_as_string(session.save_path + ".agent-memory.json").contains(str(manifest.world_sha256)), "Stale async checkpoint cannot overwrite newer world manifest")
-	runtime.load_farm3d_memory(session.save_path)
-	check(memory.resets == 1, "Mismatched memory falls back without rejecting world save")
+	check(memory.imported.is_empty() and memory.resets == 1, "Restore starts service context from current world instead of an old memory checkpoint")
+	runtime._farm3d_memory_export_pending = true
+	var close_started := Time.get_ticks_msec()
+	await runtime.flush_farm3d_memory(session.save_path)
+	check(Time.get_ticks_msec() - close_started < 100, "Closing does not wait for deferred NPC memory")
+	check(not memory.exported.is_valid(), "Closing never starts a second memory export")
+	runtime._farm3d_memory_export_pending = false
 	runtime.service_enabled = false
 	runtime.gateway = original_gateway
 	scene.queue_free()

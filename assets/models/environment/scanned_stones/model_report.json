@@ -1,0 +1,37 @@
+{
+  "models": [
+    {
+      "id": "stone_01",
+      "triangles": 1904,
+      "pebble_triangles": 140,
+      "closed": true,
+      "bytes": 2064588
+    },
+    {
+      "id": "stone_02",
+      "triangles": 3000,
+      "pebble_triangles": 140,
+      "closed": true,
+      "bytes": 2168664
+    },
+    {
+      "id": "stone_03",
+      "triangles": 3000,
+      "pebble_triangles": 140,
+      "closed": true,
+      "bytes": 1945620
+    },
+    {
+      "id": "stone_04",
+      "triangles": 3000,
+      "pebble_triangles": 140,
+      "closed": true,
+      "bytes": 1120472
+    }
+  ],
+  "placements": 58,
+  "source_hashes": {
+    "D:\\UnityProject\\villa\\art\\blender\\import\\Stone Pack 1 photoscanned\\stone_pack_01.blend": "6c9a6c0580d1e79d9807dbbd12456ba8691d8d34da9d64e4368803bd00534a43",
+    "D:\\UnityProject\\villa\\assets\\models\\farm3d\\farm_environment.glb": "243b8f435d3f23f624f8972f229dc451eb77a27b6e5a83631cbebc6aaf2267fb"
+  }
+}

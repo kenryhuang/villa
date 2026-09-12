@@ -5,7 +5,7 @@
 [ext_resource type="PackedScene" path="res://assets/models/farm3d/farm_environment.glb" id="3_environment"]
 [ext_resource type="PackedScene" path="res://assets/models/farm3d/player_farmer.glb" id="4_farmer"]
 
-[ext_resource type="PackedScene" path="res://scenes/vegetation/painted_oak.tscn" id="5_oak"]
+[ext_resource type="PackedScene" path="res://scenes/vegetation/tree_pack_world.tscn" id="5_oak"]
 
 [sub_resource type="Environment" id="Environment_warm"]
 background_mode = 1

@@ -132,6 +132,13 @@ func to_dict() -> Dictionary:
 	}
 
 
+func current_state() -> Dictionary:
+	var value := to_dict()
+	value.global_public_events = []
+	for record in value.actor_public_events: record.events = []
+	return value
+
+
 func validate_dict(value: Dictionary) -> bool:
 	return _normalize_checkpoint(value) != null
 

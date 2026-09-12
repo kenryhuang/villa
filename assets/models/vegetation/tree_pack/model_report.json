@@ -1,0 +1,242 @@
+[
+  {
+    "id": "golden_broadleaf",
+    "source_object": "tree.005",
+    "height": 6.0,
+    "original_triangles": 62096,
+    "original_leaves": 7718,
+    "lods": [
+      {
+        "level": 0,
+        "leaves": 7718,
+        "leaf_scale": 1.3,
+        "triangles": 35188,
+        "base_width": 0.8390824496746063,
+        "crown_size": [
+          5.257774829864502,
+          5.027401447296143,
+          2.823774814605713
+        ],
+        "bytes": 2057788
+      },
+      {
+        "level": 1,
+        "leaves": 4800,
+        "leaf_scale": 1.35,
+        "triangles": 21615,
+        "base_width": 0.8390824496746063,
+        "crown_size": [
+          5.261104583740234,
+          5.027929782867432,
+          2.7923030853271484
+        ],
+        "bytes": 1267960
+      },
+      {
+        "level": 2,
+        "leaves": 2200,
+        "leaf_scale": 1.75,
+        "triangles": 10365,
+        "base_width": 0.8390824496746063,
+        "crown_size": [
+          5.240238189697266,
+          5.034194469451904,
+          2.782728672027588
+        ],
+        "bytes": 589852
+      }
+    ]
+  },
+  {
+    "id": "green_columnar",
+    "source_object": "tree.007",
+    "height": 6.4,
+    "original_triangles": 156500,
+    "original_leaves": 30105,
+    "lods": [
+      {
+        "level": 0,
+        "leaves": 16000,
+        "leaf_scale": 1.3,
+        "triangles": 69416,
+        "base_width": 1.0546591877937317,
+        "crown_size": [
+          5.33314061164856,
+          6.580126762390137,
+          3.0797247886657715
+        ],
+        "bytes": 4568136
+      },
+      {
+        "level": 1,
+        "leaves": 8500,
+        "leaf_scale": 1.35,
+        "triangles": 36616,
+        "base_width": 1.0546591877937317,
+        "crown_size": [
+          5.33587908744812,
+          6.582859516143799,
+          3.0740137100219727
+        ],
+        "bytes": 2211704
+      },
+      {
+        "level": 2,
+        "leaves": 3500,
+        "leaf_scale": 1.75,
+        "triangles": 15615,
+        "base_width": 1.0546591877937317,
+        "crown_size": [
+          5.357786417007446,
+          6.581982374191284,
+          3.067286252975464
+        ],
+        "bytes": 920008
+      }
+    ]
+  },
+  {
+    "id": "open_green",
+    "source_object": "tree.008",
+    "height": 6.2,
+    "original_triangles": 128764,
+    "original_leaves": 16411,
+    "lods": [
+      {
+        "level": 0,
+        "leaves": 12500,
+        "leaf_scale": 1.3,
+        "triangles": 54916,
+        "base_width": 1.1141510009765625,
+        "crown_size": [
+          4.776025056838989,
+          5.785782814025879,
+          3.5914599895477295
+        ],
+        "bytes": 3591736
+      },
+      {
+        "level": 1,
+        "leaves": 7200,
+        "leaf_scale": 1.35,
+        "triangles": 31215,
+        "base_width": 1.1141510009765625,
+        "crown_size": [
+          4.778888702392578,
+          5.78856897354126,
+          3.586958169937134
+        ],
+        "bytes": 1878044
+      },
+      {
+        "level": 2,
+        "leaves": 3200,
+        "leaf_scale": 1.75,
+        "triangles": 14366,
+        "base_width": 1.1141510009765625,
+        "crown_size": [
+          4.684159278869629,
+          5.8108580112457275,
+          3.6012027263641357
+        ],
+        "bytes": 842988
+      }
+    ]
+  },
+  {
+    "id": "meadow_shrub",
+    "source_object": "tree",
+    "height": 1.25,
+    "original_triangles": 65672,
+    "original_leaves": 8316,
+    "lods": [
+      {
+        "level": 0,
+        "leaves": 550,
+        "leaf_scale": 3.2,
+        "triangles": 2549,
+        "base_width": 0.39463452622294426,
+        "crown_size": [
+          1.19760400056839,
+          1.1706900000572205,
+          1.2465405631810427
+        ],
+        "bytes": 146548
+      },
+      {
+        "level": 1,
+        "leaves": 230,
+        "leaf_scale": 5.6,
+        "triangles": 1069,
+        "base_width": 0.26167310029268265,
+        "crown_size": [
+          1.2290815711021423,
+          1.1588692665100098,
+          1.2229259759187698
+        ],
+        "bytes": 62780
+      },
+      {
+        "level": 2,
+        "leaves": 85,
+        "leaf_scale": 8.0,
+        "triangles": 404,
+        "base_width": 0.26167310029268265,
+        "crown_size": [
+          1.1505685448646545,
+          1.146697759628296,
+          1.1652086079120636
+        ],
+        "bytes": 24900
+      }
+    ]
+  },
+  {
+    "id": "sage_shrub",
+    "source_object": "leaves",
+    "height": 1.05,
+    "original_triangles": 52776,
+    "original_leaves": 6634,
+    "lods": [
+      {
+        "level": 0,
+        "leaves": 500,
+        "leaf_scale": 3.2,
+        "triangles": 2318,
+        "base_width": 0.051979545038193464,
+        "crown_size": [
+          1.1471979022026062,
+          1.2197653651237488,
+          0.974999263882637
+        ],
+        "bytes": 134900
+      },
+      {
+        "level": 1,
+        "leaves": 200,
+        "leaf_scale": 5.6,
+        "triangles": 939,
+        "base_width": 0.06757932528853416,
+        "crown_size": [
+          1.1726649403572083,
+          1.2342771291732788,
+          1.0028396733105183
+        ],
+        "bytes": 55588
+      },
+      {
+        "level": 2,
+        "leaves": 80,
+        "leaf_scale": 8.0,
+        "triangles": 379,
+        "base_width": 0,
+        "crown_size": [
+          1.1539450287818909,
+          1.1757760047912598,
+          1.0167816132307053
+        ],
+        "bytes": 23532
+      }
+    ]
+  }
+]

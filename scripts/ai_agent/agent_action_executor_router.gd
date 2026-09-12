@@ -33,6 +33,28 @@ func to_dict() -> Dictionary:
 	return {"world_revision": world_revision, "outcomes": _outcomes.duplicate(true), "continuations": _continuations.duplicate(true)}
 
 
+func current_state() -> Dictionary:
+	return compact_state({"world_revision": world_revision, "outcomes": _outcomes, "continuations": _continuations})
+
+
+static func compact_state(value: Dictionary) -> Dictionary:
+	# Pending commands need their full arguments to resume. Finished commands
+	# retain settlement receipts for idempotency, not their narration/intent.
+	if not value.get("outcomes") is Dictionary or not value.get("continuations", {}) is Dictionary: return {}
+	var outcomes := {}
+	for key in value.get("outcomes", {}):
+		var outcome: Variant = value.outcomes[key]
+		if not outcome is Dictionary: return {}
+		if outcome.get("status") in ["accepted", "in_progress"] or value.get("continuations", {}).has(key):
+			outcomes[key] = outcome.duplicate(true)
+		else:
+			var receipt := {}
+			for field in ["protocol_version", "agent_id", "decision_id", "action_id", "idempotency_key", "tool_name", "status", "committed_revision", "resource_delta", "changed_entities", "failure_code", "game_minute", "agreement_id"]:
+				if outcome.has(field): receipt[field] = outcome[field]
+			outcomes[key] = receipt.duplicate(true)
+	return {"world_revision": value.get("world_revision", -1), "outcomes": outcomes, "continuations": value.get("continuations", {}).duplicate(true)}
+
+
 func validate_dict(value: Dictionary) -> bool:
 	if int(value.get("world_revision", -1)) < 0 or not value.get("outcomes") is Dictionary:
 		return false

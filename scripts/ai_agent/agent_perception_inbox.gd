@@ -7,6 +7,17 @@ var _world_events_by_agent: Dictionary = {}
 var _world_event_ids_by_agent: Dictionary = {}
 var _consumed_sequence_by_agent: Dictionary = {}
 var _frozen_by_agent: Dictionary = {}
+var transient_event_limit := 0
+
+
+func start_from_snapshot(sequence: int, event_limit := 64) -> void:
+	transient_event_limit = event_limit
+	_events_by_agent.clear()
+	for agent_id in _world_events_by_agent:
+		_world_events_by_agent[agent_id] = []
+		_world_event_ids_by_agent[agent_id] = {}
+		_frozen_by_agent[agent_id] = {}
+		_consumed_sequence_by_agent[agent_id] = sequence
 
 
 func push_event(
@@ -100,6 +111,10 @@ func push_world_event(agent_id: String, event: Dictionary) -> bool:
 	events.append(event.duplicate(true))
 	if not ordered:
 		events.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return int(left.global_sequence) < int(right.global_sequence))
+	if transient_event_limit > 0:
+		while events.size() > transient_event_limit:
+			var removed: Dictionary = events.pop_front()
+			ids.erase(removed.event_id)
 	return true
 
 

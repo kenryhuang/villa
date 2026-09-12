@@ -3,6 +3,7 @@ extends GridSystem
 
 const ROAD_HALF_WIDTH := 1.55 # path width plus the half-cell safety padding used by GridSystem
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
+const CORE_TREES := [Vector2(-8, -5), Vector2(-10, 2), Vector2(12, -9), Vector2(10, 5), Vector2(-5, -12), Vector2(5, -14)]
 const StaticCache = preload("res://scripts/farm3d/terrain_cache.gd")
 const MIN_GX := int(Profile.WORLD_MIN.x - WORLD_ORIGIN_X)
 const MAX_GX := int(Profile.WORLD_MAX.x - WORLD_ORIGIN_X)
@@ -87,10 +88,7 @@ func _base_state(cell: GridCell) -> GridCell.State:
 	var road_x := -2.8 + sin(point.y * 0.14) * 1.3
 	if absf(point.x - road_x) <= ROAD_HALF_WIDTH:
 		return GridCell.State.ROAD
-	for obstacle in [
-		Vector2(-8, -5), Vector2(-10, 2), Vector2(12, -9),
-		Vector2(10, 5), Vector2(-5, -12), Vector2(5, -14),
-	]:
+	for obstacle in CORE_TREES:
 		if point.distance_to(obstacle) < 1.15:
 			return GridCell.State.DECORATION
 	for boulder in [
@@ -114,11 +112,16 @@ func is_navigation_cell_walkable(cell: Vector2i) -> bool:
 		return false
 	var data := get_cell(cell.x,cell.y)
 	if data == null or is_navigation_cell_blocked(cell): return false
+	var point := data.world_position()
+	# Trunks remain solid even where cached terrain classifies the cell as road.
+	# Keep this independent of tile/save state so existing farms need no migration.
+	if Profile.is_original_core(point.x, point.y):
+		for tree in CORE_TREES:
+			if point.distance_squared_to(tree) < 1.15 * 1.15: return false
 	if _state_is_navigation_walkable(data.state): return true
 	# Decoration also marks land that cannot be farmed/built on. Gentle hills,
 	# bridges and golf turf are still physically walkable; trunks/water are not.
 	if data.state != GridCell.State.DECORATION: return false
-	var point := data.world_position()
 	if Profile.is_original_core(point.x, point.y): return false
 	if Profile.is_bridge(point.x, point.y): return true
 	if Profile.is_water(point.x, point.y) or data.slope > 1.0: return false

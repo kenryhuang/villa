@@ -8,6 +8,25 @@ var _events: Array[Dictionary] = []
 var _aggregate_versions: Dictionary = {}
 var _idempotency_results: Dictionary = {}
 var _next_global_sequence := 1
+var transient_history_limit := 0
+
+
+func start_from_snapshot(sequence: int, history_limit := 128) -> void:
+	_events.clear()
+	_aggregate_versions.clear()
+	_idempotency_results.clear()
+	_next_global_sequence = sequence + 1
+	transient_history_limit = history_limit
+
+
+func _trim_transient_history() -> void:
+	if transient_history_limit <= 0: return
+	if _events.size() > transient_history_limit:
+		_events = _events.slice(_events.size() - transient_history_limit)
+	# Business-level settlement receipts remain in the executor/trade systems.
+	# This cache only deduplicates recent event publications within this session.
+	while _idempotency_results.size() > transient_history_limit:
+		_idempotency_results.erase(_idempotency_results.keys()[0])
 
 
 func append_batch(events: Array[Dictionary], idempotency_key: String) -> Dictionary:
@@ -76,6 +95,7 @@ func append_projected_batch(events: Array[Dictionary], idempotency_key: String, 
 	var committed_events: Array[Dictionary] = []
 	committed_events.assign(committed.events)
 	if bool(projector.call("apply_batch", committed_events)):
+		_trim_transient_history()
 		return committed
 	_events.resize(before_count)
 	_aggregate_versions = before_versions

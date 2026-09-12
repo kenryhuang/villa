@@ -5,13 +5,12 @@
 | 文件 | 内容 |
 | --- | --- |
 | `player_farmer.glb` | 草帽、米色衬衣、蓝背带裤、皮靴农庄主；12 骨骼；Idle / Walk 动画 |
-| `tree_oak.glb` | 早期几何橡树，保留作对照，当前场景不再使用 |
 | `farmland_tile.glb` | 2.8 × 2.8 米的土块、七条垄沟和泥土颗粒 |
 | `grain_young.glb` | 六株有弯曲叶片的谷物幼苗 |
 | `grain_mature.glb` | 六株带独立籽粒、芒刺与叶片的成熟谷物 |
 | `farm_environment.glb` | 静态地面、小路、石头、围栏；树木、田地和作物由 Godot 独立实例管理 |
 
-源文件：`art/blender/farm3d.blend`。双击用 Blender 打开，已设置整体场景与相机。原始独立资产位于 01–05 集合，02–05 默认隐藏以免与组合场景重叠；在 Outliner 中启用对应集合即可单独编辑。06 是可编辑环境，07 是合并静态网格后的导出副本，默认隐藏。09 是从 `art/blender/painted_oak.blend` 载入的新橡树组合。
+源文件：`art/blender/farm3d.blend`。双击用 Blender 打开，已设置整体场景与相机。原始独立资产位于 01–05 集合，02–05 默认隐藏以免与组合场景重叠；在 Outliner 中启用对应集合即可单独编辑。早期几何橡树仅保留在源文件中，不再导出无人引用的 `tree_oak.glb`。06 是可编辑环境，07 是合并静态网格后的导出副本，默认隐藏。09 是从 `art/blender/painted_oak.blend` 载入的新橡树组合。
 
 Godot 场景的 `Trees` 节点包含六个 `scenes/vegetation/painted_oak.tscn` 实例，保持原来的树木位置，并按新模型调整尺寸。模型、树干碰撞和相机避让碰撞随实例一起缩放；以后更新橡树资产即可同步所有树。
 

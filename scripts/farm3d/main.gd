@@ -5,6 +5,7 @@ const FarmSessionScript = preload("res://scripts/farm3d/farm_session.gd")
 const MeadowScript = preload("res://scripts/farm3d/painted_meadow.gd")
 const InteractionScript = preload("res://scripts/farm3d/farm_interaction.gd")
 const LandscapeScript = preload("res://scripts/farm3d/landscape.gd")
+const GroundStonesScript = preload("res://scripts/farm3d/ground_stones.gd")
 
 @onready var player: Farm3DPlayer = $Player
 @onready var camera_rig: Node3D = $CameraRig
@@ -31,6 +32,10 @@ func _ready() -> void:
 	_initialize_landscape()
 	if not _initialize_gameplay():
 		return
+	var shrubs := preload("res://scripts/farm3d/landscape_shrubs.gd").new()
+	shrubs.name = "LandscapeShrubs"
+	add_child(shrubs)
+	shrubs.configure(farm_session.grid)
 	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--capture-overview"):
 		set_overview(true)
 	if not _capture_path.is_empty():
@@ -49,7 +54,7 @@ func _process(delta: float) -> void:
 			farm_session.save_game()
 
 func _initialize_landscape() -> void:
-	# Keep the farm's authored path, fence and rocks, replacing only its square base.
+	# Keep the authored path and fence, replace the base terrain and ground rocks.
 	for mesh_node in $EnvironmentModel.find_children("*", "MeshInstance3D", true, false):
 		var mesh_name: String = str(mesh_node.name).to_lower()
 		if "meadow" in mesh_name or "earth" in mesh_name:
@@ -57,6 +62,10 @@ func _initialize_landscape() -> void:
 	var landscape := LandscapeScript.new()
 	landscape.name = "Landscape"
 	add_child(landscape)
+	var stones := GroundStonesScript.new()
+	stones.name = "GroundStones"
+	add_child(stones)
+	stones.replace_environment_rocks($EnvironmentModel)
 	var map_center := (Farm3DTerrainProfile.WORLD_MIN+Farm3DTerrainProfile.WORLD_MAX)*.5
 	overview_camera.position = Vector3(map_center.x+190,205,map_center.y+250)
 	overview_camera.fov = 50.0

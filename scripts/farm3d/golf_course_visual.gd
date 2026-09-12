@@ -84,22 +84,12 @@ func configure(session: Farm3DSession) -> void:
 	obstacles.name = "CourseObstacles"
 	add_child(obstacles)
 	for definition in Course.TREES:
-		var tree := preload("res://scenes/vegetation/painted_oak.tscn").instantiate() as Node3D
+		var tree := preload("res://scenes/vegetation/tree_pack_world.tscn").instantiate() as Node3D
 		tree.position = ground(Vector2(definition.x,definition.y))
 		tree.scale = Vector3.ONE*definition.z
 		obstacles.add_child(tree)
 		for body in tree.find_children("*","StaticBody3D",true,false):
 			body.set_meta("golf_obstacle",true)
-		var mulch := SurfaceTool.new()
-		mulch.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var center := Vector2(definition.x,definition.y)
-		for segment in 24:
-			var a := Vector2.from_angle(segment*TAU/24)
-			var b := Vector2.from_angle((segment+1)*TAU/24)
-			for point in [center+a*.6,center+b*1.5,center+b*.6,center+a*.6,center+a*1.5,center+b*1.5]:
-				mulch.set_normal(Vector3.UP)
-				mulch.add_vertex(ground(point)+Vector3.UP*.02)
-		mesh(obstacles,mulch.commit(),Vector3.ZERO,Color("796344"))
 	# Direction stakes guide walking between the winding fairways.
 	for i in Course.HOLES.size()-1:
 		var a: Vector2 = Course.HOLES[i].cup

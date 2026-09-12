@@ -2,7 +2,7 @@ class_name Farm3DLandscape
 extends Node3D
 
 const Profile = preload("res://scripts/farm3d/terrain_profile.gd")
-const Oak = preload("res://scenes/vegetation/painted_oak.tscn")
+const WorldTree = preload("res://scenes/vegetation/tree_pack_world.tscn")
 const CHUNK_SIZE := 16
 const HEIGHT_COLUMNS := int(Profile.WORLD_SIZE.x) + 1
 const HEIGHT_ROWS := int(Profile.WORLD_SIZE.y) + 1
@@ -293,15 +293,15 @@ func _build_skirt() -> void:
 
 func _build_trees() -> void:
 	var trees := Node3D.new()
-	trees.name = "RegionalOaks"
+	trees.name = "RegionalTrees"
 	add_child(trees)
 	for i in Profile.TREES.size():
 		var p: Vector2 = Profile.TREES[i]
-		var oak := Oak.instantiate() as Node3D
-		oak.position = Vector3(p.x,Profile.height_at(p.x,p.y)-.04,p.y)
-		oak.scale = Vector3.ONE*(.68+.08*(i%4))
-		oak.rotation.y = i*2.399
-		trees.add_child(oak)
+		var tree := WorldTree.instantiate() as Node3D
+		tree.position = Vector3(p.x,Profile.surface_height(p.x,p.y),p.y)
+		tree.scale = Vector3.ONE*(.68+.08*(i%4))
+		tree.rotation.y = i*2.399
+		trees.add_child(tree)
 
 func _build_boundaries() -> void:
 	var body := StaticBody3D.new()
