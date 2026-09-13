@@ -36,6 +36,10 @@ func _ready() -> void:
 	shrubs.name = "LandscapeShrubs"
 	add_child(shrubs)
 	shrubs.configure(farm_session.grid)
+	var hillside_stones := preload("res://scripts/farm3d/hillside_stones.gd").new()
+	hillside_stones.name = "HillsideStones"
+	add_child(hillside_stones)
+	hillside_stones.configure(farm_session.grid, shrubs)
 	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--capture-overview"):
 		set_overview(true)
 	if not _capture_path.is_empty():

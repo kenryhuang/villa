@@ -1,0 +1,46 @@
+{
+  "source": "Photorealistic Grass by xablend1122 / Blend Swap 69868",
+  "license": "CC BY 3.0",
+  "parent_hairs": 15000,
+  "children_per_parent": 60,
+  "usable_parent_shapes": 1470,
+  "adaptation": "Source hair curves converted to tapered mesh blades; 16-29 cm height, olive root/tip colours, three variants and two LODs.",
+  "models": [
+    {
+      "variant": 0,
+      "lod": 0,
+      "blades": 52,
+      "triangles": 468
+    },
+    {
+      "variant": 0,
+      "lod": 1,
+      "blades": 18,
+      "triangles": 54
+    },
+    {
+      "variant": 1,
+      "lod": 0,
+      "blades": 52,
+      "triangles": 468
+    },
+    {
+      "variant": 1,
+      "lod": 1,
+      "blades": 18,
+      "triangles": 54
+    },
+    {
+      "variant": 2,
+      "lod": 0,
+      "blades": 52,
+      "triangles": 468
+    },
+    {
+      "variant": 2,
+      "lod": 1,
+      "blades": 18,
+      "triangles": 54
+    }
+  ]
+}
