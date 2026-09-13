@@ -1,0 +1,55 @@
+{
+  "source": {
+    "name": "A tree",
+    "id": "8b4d3452-acae-4828-9281-0831c264547f",
+    "assetBaseId": "b7c9b16a-4be0-429f-8716-072153107219",
+    "license": "royalty_free",
+    "author": {
+      "id": "588525",
+      "firstName": "Toby",
+      "lastName": "Noby",
+      "fullName": "Toby Noby"
+    }
+  },
+  "source_height_m": 5.557079315185547,
+  "preview_height_m": 6,
+  "parts": [
+    {
+      "name": "T1_Trunk",
+      "triangles": 43678,
+      "vertices": 28865
+    },
+    {
+      "name": "T1_Leaves",
+      "triangles": 121064,
+      "vertices": 242128
+    }
+  ],
+  "pruning": {
+    "branches_before": 2351,
+    "branches_after": 1277,
+    "primary_branches_before": 35,
+    "primary_branches_removed": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      14
+    ],
+    "lowest_remaining_primary_height_m": 2.245673269033432,
+    "needles_before": 212780,
+    "needles_removed_with_branches": 109809,
+    "needles_after": 60532,
+    "max_parent_attachment_error_m": 0.06647193431854248,
+    "trunk_decimate_ratio": 0.38,
+    "needle_width_multiplier": 1.18
+  },
+  "total_triangles": 164742,
+  "adaptation": "Pruned lower branch families and reduced geometry; original available with --full-detail. UV scaling baked; source PBR bark maps; deterministic per-needle vertex colour. Translucent shader and procedural displacement are not exported."
+}

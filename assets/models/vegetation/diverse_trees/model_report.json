@@ -16,19 +16,35 @@
     "lods": [
       {
         "level": 0,
-        "triangles": 22280,
-        "leaves": 2630
+        "leaves": 4084,
+        "shoots": 468,
+        "triangles": 105028
       },
       {
         "level": 1,
-        "triangles": 11451,
-        "leaves": 1367
+        "leaves": 2544,
+        "shoots": 468,
+        "triangles": 62553
       },
       {
         "level": 2,
-        "triangles": 5053,
-        "leaves": 604
+        "leaves": 1319,
+        "shoots": 468,
+        "triangles": 17597
       }
+    ],
+    "foliage": "Attached branching shoots; individually folded oak leaves with local leaf lighting.",
+    "foliage_palette_linear": [
+      [
+        0.056,
+        0.139,
+        0.018
+      ],
+      [
+        0.11,
+        0.23,
+        0.028
+      ]
     ]
   },
   {
@@ -48,19 +64,35 @@
     "lods": [
       {
         "level": 0,
-        "triangles": 22280,
-        "leaves": 2630
+        "leaves": 4147,
+        "shoots": 468,
+        "triangles": 73112
       },
       {
         "level": 1,
-        "triangles": 11452,
-        "leaves": 1367
+        "leaves": 2562,
+        "shoots": 468,
+        "triangles": 42418
       },
       {
         "level": 2,
-        "triangles": 5053,
-        "leaves": 604
+        "leaves": 1317,
+        "shoots": 468,
+        "triangles": 17581
       }
+    ],
+    "foliage": "Attached branching shoots; individually folded birch leaves with local leaf lighting.",
+    "foliage_palette_linear": [
+      [
+        0.085,
+        0.205,
+        0.025
+      ],
+      [
+        0.16,
+        0.29,
+        0.045
+      ]
     ]
   },
   {
@@ -80,19 +112,35 @@
     "lods": [
       {
         "level": 0,
-        "triangles": 27540,
-        "leaves": 2630
+        "leaves": 4152,
+        "shoots": 468,
+        "triangles": 89780
       },
       {
         "level": 1,
-        "triangles": 14186,
-        "leaves": 1367
+        "leaves": 2648,
+        "shoots": 468,
+        "triangles": 54042
       },
       {
         "level": 2,
-        "triangles": 6262,
-        "leaves": 604
+        "leaves": 1383,
+        "shoots": 468,
+        "triangles": 29174
       }
+    ],
+    "foliage": "Attached branching shoots; individually folded maple leaves with local leaf lighting.",
+    "foliage_palette_linear": [
+      [
+        0.34,
+        0.06,
+        0.017
+      ],
+      [
+        0.6,
+        0.2,
+        0.025
+      ]
     ]
   },
   {
@@ -112,19 +160,35 @@
     "lods": [
       {
         "level": 0,
-        "triangles": 32780,
-        "leaves": 4380
+        "leaves": 5197,
+        "shoots": 630,
+        "triangles": 81150
       },
       {
         "level": 1,
-        "triangles": 16912,
-        "leaves": 2277
+        "leaves": 3175,
+        "shoots": 630,
+        "triangles": 46340
       },
       {
         "level": 2,
-        "triangles": 7471,
-        "leaves": 1007
+        "leaves": 1630,
+        "shoots": 630,
+        "triangles": 25289
       }
+    ],
+    "foliage": "Attached branching shoots; individually folded poplar leaves with local leaf lighting.",
+    "foliage_palette_linear": [
+      [
+        0.37,
+        0.255,
+        0.019
+      ],
+      [
+        0.64,
+        0.45,
+        0.052
+      ]
     ]
   },
   {
@@ -144,19 +208,35 @@
     "lods": [
       {
         "level": 0,
-        "triangles": 44900,
-        "leaves": 6400
+        "leaves": 34728,
+        "shoots": 967,
+        "triangles": 110768
       },
       {
         "level": 1,
-        "triangles": 23218,
-        "leaves": 3328
+        "leaves": 21560,
+        "shoots": 967,
+        "triangles": 63776
       },
       {
         "level": 2,
-        "triangles": 10262,
-        "leaves": 1472
+        "leaves": 11092,
+        "shoots": 967,
+        "triangles": 35218
       }
+    ],
+    "foliage": "Attached branching shoots; individually folded pine leaves with local leaf lighting.",
+    "foliage_palette_linear": [
+      [
+        0.022,
+        0.095,
+        0.063
+      ],
+      [
+        0.05,
+        0.15,
+        0.105
+      ]
     ]
   },
   {
@@ -176,19 +256,23 @@
     "lods": [
       {
         "level": 0,
-        "triangles": 43100,
-        "leaves": 6100
+        "leaves": 6414,
+        "shoots": 308,
+        "triangles": 63464
       },
       {
         "level": 1,
-        "triangles": 22282,
-        "leaves": 3172
+        "leaves": 4439,
+        "shoots": 308,
+        "triangles": 39124
       },
       {
         "level": 2,
-        "triangles": 9848,
-        "leaves": 1403
+        "leaves": 2465,
+        "shoots": 308,
+        "triangles": 25460
       }
-    ]
+    ],
+    "foliage": "Attached pendant shoots with small folded lanceolate leaves; mawais-inspired green and local leaf lighting."
   }
 ]

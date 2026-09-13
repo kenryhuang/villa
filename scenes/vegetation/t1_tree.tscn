@@ -1,0 +1,39 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/models/vegetation/t1_tree/tree.glb" id="1_model"]
+
+[sub_resource type="CylinderShape3D" id="TrunkShape"]
+radius = 0.5
+height = 3.0
+
+[sub_resource type="SphereShape3D" id="LowerCrownShape"]
+radius = 1.6
+
+[sub_resource type="SphereShape3D" id="UpperCrownShape"]
+radius = 1.0
+
+[node name="T1Tree" type="Node3D" groups=["farm_world_trees", "t1_trial_trees"]]
+
+[node name="Model" parent="." instance=ExtResource("1_model")]
+
+[node name="TrunkCollision" type="StaticBody3D" parent="."]
+collision_layer = 1
+collision_mask = 0
+metadata/golf_obstacle = true
+
+[node name="Shape" type="CollisionShape3D" parent="TrunkCollision"]
+position = Vector3(0, 1.5, 0)
+shape = SubResource("TrunkShape")
+
+[node name="CanopyCollision" type="StaticBody3D" parent="."]
+collision_layer = 4
+collision_mask = 0
+metadata/golf_obstacle = true
+
+[node name="LowerCrown" type="CollisionShape3D" parent="CanopyCollision"]
+position = Vector3(0, 3.6, 0)
+shape = SubResource("LowerCrownShape")
+
+[node name="UpperCrown" type="CollisionShape3D" parent="CanopyCollision"]
+position = Vector3(0, 5.0, 0)
+shape = SubResource("UpperCrownShape")

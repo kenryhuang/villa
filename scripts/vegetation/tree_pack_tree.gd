@@ -34,6 +34,9 @@ func _tree_height() -> float:
 func _model_path(level: int) -> String:
 	return ASSET_ROOT + species + "_lod%d.glb" % level
 
+func _foliage_shader() -> Shader:
+	return WIND
+
 func _ready() -> void:
 	if species == "auto": species = _species_catalog()[_choose_species(global_position)]
 	species_index = _species_catalog().find(species)
@@ -50,7 +53,7 @@ func _ready() -> void:
 		_root_plane = Vector3(local_gradient.x,(profile.surface_height(p.x,p.z)-p.y)/global_basis.get_scale().y-.09,local_gradient.z)
 	for part in ["Trunk", "Leaves"]:
 		var material := ShaderMaterial.new()
-		material.shader = WIND
+		material.shader = _foliage_shader() if part == "Leaves" else WIND
 		material.set_shader_parameter("tree_height", height)
 		material.set_shader_parameter("foliage", part == "Leaves")
 		wind_materials.append(material)

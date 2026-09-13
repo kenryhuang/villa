@@ -16,6 +16,8 @@ Agent 并发试用配置（2026-09-10）：后台 NPC 最多3个决策、玩家�
 - 查看导入树木的两种样板：`./tools/preview_tree_pack.ps1`；金叶阔冠、绿叶高冠，[模型与验证说明](docs/validation/2026-09-11-tree-pack-samples.md)。
 - 查看参考原2D画风的五种树：`./tools/preview_illustrated_trees.ps1`；1–5切树、B隐藏叶子查看树干、L切换细节，[Blender模型与预览](docs/validation/2026-09-11-illustrated-trees.md)。
 - 正式农庄、外围地形与高尔夫球场的34棵树已换用 Trees & Bushes pack 的三种加粗枝干模型，丘陵、山坡与球场边缘加入132丛灌木；带LOD、合批、碰撞与NPC避让。[实景和验证](docs/validation/2026-09-11-tree-pack-samples.md)。五种原创树仍可独立预览。
+- Tree 新模型已在农庄西侧、东侧和北侧的3个原有树位试放，保留其他树木，带风动、碰撞与NPC避让。[模型与试放位置](assets/models/vegetation/mawais_tree/README.md)。
+- T1 简化松树已在西侧、东北侧和北侧的另外3个原有树位试放，带树干碰撞与NPC避让；全地图仍为34棵树。[模型与试放位置](assets/models/vegetation/t1_tree/README.md)。
 - 农庄原有的3块地面岩石与55块路边、树根小石已换成四种扫描石头，保留位置，带低面数小石与大石碰撞；[实景与资产说明](docs/validation/2026-09-11-stone-pack-review.md)。
 - 原游戏保留在 `scenes/main.tscn`，在编辑器打开该场景后按 **F6** 可单独运行。
 

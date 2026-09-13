@@ -1,11 +1,12 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/farm3d/main.gd" id="1_root"]
 [ext_resource type="Script" path="res://scripts/farm3d/player.gd" id="2_player"]
 [ext_resource type="PackedScene" path="res://assets/models/farm3d/farm_environment.glb" id="3_environment"]
 [ext_resource type="PackedScene" path="res://assets/models/farm3d/player_farmer.glb" id="4_farmer"]
 
-[ext_resource type="PackedScene" path="res://scenes/vegetation/tree_pack_world.tscn" id="5_oak"]
+[ext_resource type="PackedScene" path="res://scenes/vegetation/t1_tree.tscn" id="5_oak"]
+[ext_resource type="PackedScene" path="res://scenes/vegetation/mawais_tree.tscn" id="6_trial_tree"]
 
 [sub_resource type="Environment" id="Environment_warm"]
 background_mode = 1
@@ -48,7 +49,7 @@ shape = SubResource("Ground_shape")
 
 [node name="Trees" type="Node3D" parent="."]
 
-[node name="OakA" parent="Trees" instance=ExtResource("5_oak")]
+[node name="OakA" parent="Trees" instance=ExtResource("6_trial_tree")]
 position = Vector3(-8, 0, -5)
 rotation = Vector3(0, 0.0, 0)
 scale = Vector3(0.92, 0.92, 0.92)
@@ -56,14 +57,14 @@ scale = Vector3(0.92, 0.92, 0.92)
 [node name="OakB" parent="Trees" instance=ExtResource("5_oak")]
 position = Vector3(-10, 0, 2)
 rotation = Vector3(0, 1.9, 0)
-scale = Vector3(0.74, 0.74, 0.74)
+scale = Vector3(0.90, 0.90, 0.90)
 
 [node name="OakC" parent="Trees" instance=ExtResource("5_oak")]
 position = Vector3(12, 0, -9)
 rotation = Vector3(0, 3.8, 0)
-scale = Vector3(1.05, 1.05, 1.05)
+scale = Vector3(1.0, 1.0, 1.0)
 
-[node name="OakD" parent="Trees" instance=ExtResource("5_oak")]
+[node name="OakD" parent="Trees" instance=ExtResource("6_trial_tree")]
 position = Vector3(10, 0, 5)
 rotation = Vector3(0, 5.7, 0)
 scale = Vector3(0.86, 0.86, 0.86)
@@ -71,9 +72,9 @@ scale = Vector3(0.86, 0.86, 0.86)
 [node name="OakE" parent="Trees" instance=ExtResource("5_oak")]
 position = Vector3(-5, 0, -12)
 rotation = Vector3(0, 7.6, 0)
-scale = Vector3(0.76, 0.76, 0.76)
+scale = Vector3(0.95, 0.95, 0.95)
 
-[node name="OakF" parent="Trees" instance=ExtResource("5_oak")]
+[node name="OakF" parent="Trees" instance=ExtResource("6_trial_tree")]
 position = Vector3(5, 0, -14)
 rotation = Vector3(0, 9.5, 0)
 scale = Vector3(0.94, 0.94, 0.94)

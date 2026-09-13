@@ -21,8 +21,70 @@ func run() -> void:
 	session.living_world.set_process(false)
 	session.player.set_physics_process(false)
 	check(not session.auto_save and not session.agent_runtime.service_enabled, "Isolated scene does not save player data or contact providers")
-	var trees := get_nodes_in_group("farm_world_trees")
-	check(trees.size() == 34, "Six core, sixteen regional, and twelve golf trees replaced")
+	var all_trees := get_nodes_in_group("farm_world_trees")
+	var trial_trees := get_nodes_in_group("mawais_trial_trees")
+	var pines := get_nodes_in_group("t1_trial_trees")
+	var trees := all_trees.filter(func(tree): return not tree.is_in_group("mawais_trial_trees") and not tree.is_in_group("t1_trial_trees"))
+	check(all_trees.size() == 34 and trees.size() == 28 and trial_trees.size() == 3 and pines.size() == 3, "Two sets of three trial trees replace existing core sites; total stays 34")
+	var trial_positions := [Vector2(-8,-5),Vector2(10,5),Vector2(5,-14)]
+	var trial_mesh: Mesh = null
+	await physics_frame; await physics_frame
+	for tree: Node3D in trial_trees:
+		var point := Vector2(tree.global_position.x,tree.global_position.z)
+		check(point in trial_positions, "Imported tree occupies an existing reserved core site")
+		check(absf(tree.global_position.y-Farm3DTerrainProfile.surface_height(point.x,point.y))<.01, "Trial tree base meets terrain")
+		var cell := session.grid.world_to_grid(point.x,point.y) as Vector2i
+		check(not session.grid.is_navigation_cell_walkable(cell), "NPC navigation avoids imported trunk")
+		check(session.grid.get_cell(cell.x,cell.y).state == GridCell.State.DECORATION, "Tree site remains reserved against planting/building")
+		check(tree.get_node("TrunkCollision").collision_layer == 1, "Imported trunk blocks player")
+		check(tree.get_node("CanopyCollision").collision_layer == 4, "Imported crown uses camera/golf collision layer")
+		var meshes := tree.get_node("Model").find_children("*","MeshInstance3D",true,false)
+		check(meshes.size()==1 and meshes[0].mesh.get_surface_count()==2, "Trial uses one mesh with bark and foliage surfaces")
+		if trial_mesh != null: check(meshes[0].mesh==trial_mesh, "Trial instances share the imported mesh")
+		trial_mesh=meshes[0].mesh
+		var bark_found := false
+		for surface in 2:
+			var material := meshes[0].get_active_material(surface) as ShaderMaterial
+			check(material != null, "Imported tree uses its material-preserving wind shader")
+			if material != null and material.get_shader_parameter("textured"):
+				bark_found=material.get_shader_parameter("albedo_map") is Texture2D
+		check(bark_found, "Wind keeps the original bark texture")
+		var query := PhysicsRayQueryParameters3D.create(tree.global_position+Vector3(-2,1,0),tree.global_position+Vector3(2,1,0),1)
+		var hit := tree.get_world_3d().direct_space_state.intersect_ray(query)
+		check(not hit.is_empty() and hit.collider==tree.get_node("TrunkCollision"), "Physics ray hits imported trunk")
+	var pine_positions := [Vector2(-10,2),Vector2(12,-9),Vector2(-5,-12)]
+	var pine_meshes := {}
+	for tree: Node3D in pines:
+		var point := Vector2(tree.global_position.x,tree.global_position.z)
+		check(point in pine_positions, "Pine occupies an existing core tree site")
+		check(absf(tree.global_position.y-Farm3DTerrainProfile.surface_height(point.x,point.y))<.01, "Pine base meets terrain")
+		var cell := session.grid.world_to_grid(point.x,point.y) as Vector2i
+		check(not session.grid.is_navigation_cell_walkable(cell), "NPC navigation avoids pine trunk")
+		check(session.grid.get_cell(cell.x,cell.y).state in [GridCell.State.DECORATION, GridCell.State.ROAD], "Existing pine site stays on non-farmable terrain")
+		check(tree.get_node("TrunkCollision").collision_layer == 1, "Pine trunk blocks player")
+		check(tree.get_node("CanopyCollision").collision_layer == 4, "Pine crown uses camera/golf layer")
+		var meshes := tree.get_node("Model").find_children("*","MeshInstance3D",true,false)
+		check(meshes.size() == 2, "Pine has bark and needle meshes")
+		var needles_found := false
+		var bark_found := false
+		for mesh: MeshInstance3D in meshes:
+			if pine_meshes.has(mesh.name): check(mesh.mesh == pine_meshes[mesh.name], "Pine instances share imported geometry")
+			pine_meshes[mesh.name] = mesh.mesh
+			var material := mesh.get_active_material(0)
+			if material is ShaderMaterial:
+				needles_found = material.shader.code.contains("COLOR.rgb") and mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR].size() > 0
+			elif material is BaseMaterial3D:
+				bark_found = material.albedo_texture != null and material.normal_texture != null and material.roughness_texture != null
+		check(needles_found, "Pine retains needle colours and imported shader")
+		check(bark_found, "Pine retains three bark PBR maps")
+		var query := PhysicsRayQueryParameters3D.create(tree.global_position+Vector3(-2,1,0),tree.global_position+Vector3(2,1,0),1)
+		var hit := tree.get_world_3d().direct_space_state.intersect_ray(query)
+		check(not hit.is_empty() and hit.collider == tree.get_node("TrunkCollision"), "Physics ray hits pine trunk")
+	print("Trial tree checks: %d checks, %d failures" % [checks,failures])
+	if "--trial-trees-only" in OS.get_cmdline_user_args():
+		farm.queue_free(); await process_frame; await process_frame
+		quit(0 if failures == 0 else 1)
+		return
 	var distribution := {}
 	var positions := {}
 	for tree: Node3D in trees:
@@ -48,7 +110,10 @@ func run() -> void:
 			var tip := trunk_mesh.to_global(vertex)
 			check(tip.y <= Farm3DTerrainProfile.surface_height(tip.x,tip.z)+.04, "Root tip follows slope instead of floating")
 	check(distribution.size() == 6, "All six original Blender tree species occur in the current map")
-	check(positions.size() == 34, "Replacement introduces no duplicate placements")
+	check(positions.size() == 28, "Retained trees have unique placements")
+	for tree: Node3D in trial_trees + pines:
+		positions[Vector2(tree.global_position.x,tree.global_position.z)]=true
+	check(positions.size() == 34, "Trial replacements introduce no duplicate placements")
 	var course_obstacles := farm.find_children("CourseObstacles","Node3D",true,false)
 	check(course_obstacles.size() == 1 and course_obstacles[0].get_child_count() == Farm3DTerrainProfile.Golf.TREES.size(), "Golf trees have no leftover mulch ring meshes")
 	var sample: Node3D = trees[0]

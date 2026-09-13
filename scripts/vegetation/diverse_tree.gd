@@ -19,6 +19,11 @@ func _tree_height() -> float:
 func _model_path(level: int) -> String:
 	return "res://assets/models/vegetation/diverse_trees/%s_lod%d.glb" % [species, level]
 
+func _foliage_shader() -> Shader:
+	if species == "weeping_willow":
+		return preload("res://assets/models/vegetation/diverse_trees/willow_leaves.gdshader")
+	return preload("res://assets/models/vegetation/diverse_trees/modeled_leaves.gdshader")
+
 func _build_collisions() -> void:
 	var trunk := CylinderShape3D.new()
 	trunk.radius = .5

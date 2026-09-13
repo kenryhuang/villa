@@ -1,0 +1,10 @@
+{
+  "source": "Tree by mawais / Blend Swap 72376",
+  "license": "CC BY 3.0",
+  "triangles": 134140,
+  "vertices": 97521,
+  "height_m": 6,
+  "materials": 2,
+  "texture": "bark.jpg",
+  "note": "Full-detail standalone preview; generated box UVs replace legacy texture mapping. No wind, collision or manual LODs yet."
+}
