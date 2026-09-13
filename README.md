@@ -98,7 +98,7 @@ scripts/
   tools/                       Blender 模型生成脚本
 assets/
   models/farm3d/               角色、静态环境、田块、谷物 GLB
-  models/characters/          阿禾、老李、学者林的骨骼 GLB 与四人共用的手绘质感贴图
+  models/characters/          重点 NPC 骨骼 GLB、与玩家共用的皮肤及织物贴图
   models/vegetation/           手绘橡树 GLB 与贴图
   models/buildings/barn/       立体谷仓 GLB、木纹／石材／瓦片贴图
   models/buildings/windmill/   立体风车 GLB、木纹／石材／瓦片贴图
@@ -179,7 +179,7 @@ NPC 可使用 `move(x,z)` 自主前往地图位置；`buy`、`sell`、`prepare_s
 
 右下角小地图默认显示，按 **G** 关闭／打开，固定上北、下南、左西、右东；浅色箭头显示人物位置和朝向，标出农庄、山地、丘陵、河流、木桥、沙地及南湖。底部显示所在区域与相对原农庄中心（世界原点）的东西／南北距离（米），旋转相机不会改变地图方向。
 
-按住 **Shift** 奔跑，移动速度为普通行走的 **2.5 倍**（当前行走 4.2 米/秒、奔跑 10.5 米/秒），松开即恢复行走；奔跑时步行动画同步加快。
+按住 **Shift** 奔跑，移动速度为普通行走的 **2 倍**（当前行走 3 米/秒、奔跑 6 米/秒），松开即恢复行走；步行和奔跑分别使用对应动作，节奏与实际速度同步。
 
 **钓鱼**：走到平缓干燥的河岸或湖岸，工具栏的“鱼竿”亮起后选择。按 **E／左键** 甩竿，等待浮漂下沉和“咬钩”提示，再按 **E／左键** 拉竿；上鱼动画结束后渔获自动入包，按 **I** 查看。每竿有概率咬钩，空竿或错过后可重试；**Esc** 收竿离开。详见[3D 钓鱼说明与实景](docs/validation/fishing-3d.md)。
 
@@ -205,7 +205,9 @@ godot_console.exe --headless --path . --script tests/run_3d_golf_terrain_tests.g
 
 ## 3D 人物资源
 
-玩家、阿禾、老李、学者林已使用带贴图的 Blender 骨骼模型。2026-09-10 对照原 2D 设定重塑连续脸部、发束、手掌和服装轮廓，NPC 面部保留原画五官，四人共用含独立面部区域的手绘贴图。源文件在 `art/blender/characters/`，包含可编辑部件、骨骼和待机／行走／农作动画；玩家继续兼容钓鱼和左右手高尔夫动作。正式场景直接使用新模型，无需重开存档。[效果、资源与验证说明](docs/validation/2026-09-09-characters-3d.md)。
+玩家已参考确认的[角色设定图](art/concepts/player/player-farmer-design.png)接入正式场景：卷袖米色衬衫、蓝色卷边背带裤、短靴、草帽和种子挎包。腰腹、肩臂和连续胯臀曲面沿用已调整版本。普通移动固定3米/秒，Shift快跑固定6米/秒；最新步态采用 Quaternius 通用动画库并适配现有骨架，普通移动表现为轻快小跑，调整足底接触、摆臂与腰背联动，将骨盆每周期上下变化控制在约2.7厘米。脸部使用独立肤色贴图，保留下颌、眉眼、微笑与短发修订。Blender 源文件 `art/blender/characters/player.blend` 内嵌设定图；生成脚本为 `scripts/tools/build_player_concept.py`，步态烘焙为 `scripts/tools/player_locomotion.py`。[动画来源、许可与重建说明](art/animations/player/README.md)。F5 即可游玩。专项检查449项、角色与农具检查271项通过，另验证面部雕形在拓扑编辑后仍被保留。[同速前后对比](art/concepts/player/player-locomotion-compare.gif) · [普通移动动图](art/concepts/player/player-walk.gif) · [快跑动图](art/concepts/player/player-run.gif) · [脸部近景](art/concepts/player/player-face.png)。面部沿用现有拓扑，与原画精细度仍有差异。
+
+玩家、阿禾、老李、学者林已按云姐的连续人体与面部拓扑重建（2026-09-12），分别保留草帽背带裤、头巾围裙、商人马甲胡须、学者眼镜背包等原 2D 角色特征。四人具有各自的体态与脸型，使用 55 根变形骨骼、手指、六个面部表情和待机／行走／奔跑／农作动画，共用云姐的皮肤与皮革贴图以及新的织物贴图。玩家握杆根据实际臂长求解，兼容钓鱼和左右手高尔夫。正式场景直接使用新模型，无需重开存档。[资源、重建与验证说明](assets/models/characters/README.md)。
 
 女性重点 NPC **云姐**（`resident_yun`，厨工）已改用 Sintel Lite 衍生的精细模型：栗色短发、绿色织物上衣、亚麻围裙，包含 Idle／Walk／Run／Work 动作。沿用她已有的 Agent、经济账户与存档身份；新模型在正式 3D 场景自动加载。[实机效果与验证](docs/validation/2026-09-10-sintel-yun.md) · [原作者与 CC BY 3.0 署名](assets/models/characters/SINTEL_LICENSE.md)。
 

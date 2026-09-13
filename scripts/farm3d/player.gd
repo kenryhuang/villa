@@ -1,15 +1,19 @@
 class_name Farm3DPlayer
 extends CharacterBody3D
 
-const SPRINT_MULTIPLIER := 2.5
+const SPRINT_MULTIPLIER := 2.0
+# Contact travel measured on the retargeted clips; gameplay remains 3 / 6 m/s.
+const WALK_REFERENCE_SPEED := 1.73
+const RUN_REFERENCE_SPEED := 4.34
 
-@export var walk_speed := 4.2
+@export var walk_speed := 3.0
 @export var jump_velocity := 6.0
 @export var start_position := Vector3(-2.0, 0.0, 4.0)
 
 var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity"))
 var camera_yaw := 0.0
 var _animation_player: AnimationPlayer
+var _has_run_animation := false
 var _farm_action_seconds := 0.0
 var ui_blocked := false
 var fishing_locked := false
@@ -46,7 +50,9 @@ func _ready() -> void:
 	_animation_player = _find_animation_player(self)
 	if _animation_player != null:
 		for animation_name in _animation_player.get_animation_list():
-			if String(animation_name).get_file().to_lower() in ["idle", "walk"]:
+			if String(animation_name).get_file().to_lower() == "run":
+				_has_run_animation = true
+			if String(animation_name).get_file().to_lower() in ["idle", "walk", "run"]:
 				_animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
 	play_motion_animation(false)
 
@@ -98,8 +104,13 @@ func play_motion_animation(is_walking: bool) -> void:
 		return
 	# The half-second farm action uses one complete work swing.
 	var working := _farm_action_seconds > 0.0 and not is_walking
-	_animation_player.speed_scale = 2.0 if working else SPRINT_MULTIPLIER if is_walking and Input.is_action_pressed("sprint") else 1.0
-	var preferred := "Work" if working else "Walk" if is_walking else "Idle"
+	var sprinting := is_walking and Input.is_action_pressed("sprint")
+	var travel_speed := walk_speed * (SPRINT_MULTIPLIER if sprinting else 1.0)
+	if Farm3DTerrainProfile.is_water(global_position.x,global_position.z) and global_position.y < Farm3DTerrainProfile.WATER_HEIGHT:
+		travel_speed *= 0.6
+	var stride_speed := RUN_REFERENCE_SPEED if sprinting and _has_run_animation else WALK_REFERENCE_SPEED
+	_animation_player.speed_scale = 2.0 if working else travel_speed / stride_speed if is_walking else 1.0
+	var preferred := "Work" if working else "Run" if sprinting and _has_run_animation else "Walk" if is_walking else "Idle"
 	for animation_name in _animation_player.get_animation_list():
 		if String(animation_name).get_file().to_lower() == preferred.to_lower():
 			if _animation_player.current_animation != animation_name:

@@ -1,5 +1,7 @@
 extends Node3D
 
+const ToolPose = preload("res://scripts/farm3d/character_tool_pose.gd")
+
 ## Native, editable mesh geometry: segmented bamboo rod, reel, guides, line,
 ## float and fish. The existing farmer skeleton receives two-arm fishing poses.
 const FISH_COLORS := {"creek_crucian": Color("b5c1b0"), "river_perch": Color("87a276"), "carp": Color("cb914a"), "rainbow_trout": Color("bba3ba"), "night_catfish": Color("77899b")}
@@ -63,7 +65,7 @@ func update_pose(state: String, elapsed: float, duration: float, water: Vector3,
 	var t := clampf(elapsed/maxf(duration,.001),0,1)
 	var angle := .46
 	var bend := .04
-	var grip := Vector3(.24,1.15,.40)
+	var grip := Vector3(-.10,1.25,.26)
 	var lean := 0.0
 	match state:
 		"CASTING":
@@ -129,38 +131,17 @@ func update_pose(state: String, elapsed: float, duration: float, water: Vector3,
 func _pose_arms(grip: Vector3, lean: float, state: String, elapsed: float, t: float) -> void:
 	if _skeleton == null:
 		return
-	var spine := _skeleton.find_bone("spine")
-	_skeleton.set_bone_pose_rotation(spine,Quaternion(Vector3.RIGHT,lean))
-	var left := Vector3(-.14,1.08,.40)
+	ToolPose.lean(_skeleton, Quaternion(Vector3.RIGHT,lean), _rest_global)
+	var left := grip + Vector3(.085,-.04,-.015)
 	if state == "REELING":
 		left += Vector3(.02*sin(elapsed*15),.035*cos(elapsed*15),0)
 	if state == "LANDING":
-		left = left.lerp(Vector3(-.24,1.1,.38),t)
+		left = left.lerp(Vector3(.24,1.28,.30),t)
 	_aim_arm("R",grip)
 	_aim_arm("L",left)
 
-func _aim_arm(suffix: String, hand_in_player: Vector3) -> void:
-	var upper := _skeleton.find_bone("upper_arm."+suffix)
-	var fore := _skeleton.find_bone("forearm."+suffix)
-	var shoulder := _skeleton.get_bone_global_pose(upper).origin
-	var hand := _skeleton.to_local(_player.to_global(hand_in_player))
-	var upper_length := _skeleton.get_bone_rest(fore).origin.length()
-	var lower_length := .235
-	var reach := hand-shoulder
-	var distance := clampf(reach.length(),.08,upper_length+lower_length-.005)
-	var direction := reach.normalized()
-	var along := (upper_length*upper_length-lower_length*lower_length+distance*distance)/(2*distance)
-	var outside := Vector3(1 if suffix == "R" else -1,-.5,0)
-	var elbow_direction := (outside-direction*outside.dot(direction)).normalized()
-	var elbow := shoulder+direction*along+elbow_direction*sqrt(maxf(0,upper_length*upper_length-along*along))
-	_aim_bone(upper,elbow-shoulder)
-	_aim_bone(fore,hand-elbow)
-
-func _aim_bone(index: int, direction: Vector3) -> void:
-	var rest: Transform3D = _rest_global[index]
-	var global_basis := Basis(Quaternion(rest.basis.y.normalized(),direction.normalized()))*rest.basis
-	var parent_basis := _skeleton.get_bone_global_pose(_skeleton.get_bone_parent(index)).basis
-	_skeleton.set_bone_pose_rotation(index,(parent_basis.inverse()*global_basis).get_rotation_quaternion())
+func _aim_arm(suffix: String, hand_local: Vector3) -> void:
+	ToolPose.aim_arm(_skeleton, suffix, _player.to_global(hand_local), _rest_global)
 
 func _rod_point(t: float, bend: float) -> Vector3:
 	return Vector3(0,t*2.35,bend*t*t)

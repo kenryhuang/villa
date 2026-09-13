@@ -58,7 +58,7 @@ func _run() -> void:
 	Input.action_press("move_forward")
 	await _frames(30)
 	Input.action_release("move_forward")
-	_check(player.global_position.distance_to(start) > 0.7, "Movement input moves the farmer in the real scene")
+	_check(player.global_position.distance_to(start) > player.walk_speed * .4, "Movement input moves the farmer in the real scene")
 	# Exercise physical Shift mapping, held sprint, release, and idle animation.
 	player.position = Vector3(0,0,5)
 	player.velocity = Vector3.ZERO
@@ -73,7 +73,7 @@ func _run() -> void:
 	await _frames(5)
 	_check(Input.is_action_pressed("sprint"), "Physical Shift is bound to sprint")
 	_check(is_equal_approx(Vector2(player.velocity.x,player.velocity.z).length(), walking_speed*2.5), "Holding Shift moves at exactly 2.5 times walking speed")
-	_check(is_equal_approx(player._animation_player.speed_scale,2.5), "Running speeds up the farmer stride animation")
+	_check(is_equal_approx(player._animation_player.speed_scale,player.walk_speed * player.SPRINT_MULTIPLIER / player.RUN_REFERENCE_SPEED), "Running cadence matches travel speed")
 	Input.action_press("move_right")
 	await _frames(3)
 	_check(is_equal_approx(Vector2(player.velocity.x,player.velocity.z).length(),walking_speed*2.5), "Diagonal sprint does not multiply the speed again")
@@ -84,7 +84,7 @@ func _run() -> void:
 	Input.parse_input_event(shift)
 	await _frames(3)
 	_check(is_equal_approx(Vector2(player.velocity.x,player.velocity.z).length(),walking_speed), "Releasing Shift restores walking speed")
-	_check(is_equal_approx(player._animation_player.speed_scale,1.0), "Releasing Shift restores walking cadence")
+	_check(is_equal_approx(player._animation_player.speed_scale,player.walk_speed / player.WALK_REFERENCE_SPEED), "Releasing Shift restores walking cadence")
 	Input.action_release("move_back")
 	Input.action_press("sprint")
 	await _frames(3)

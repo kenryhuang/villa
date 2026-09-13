@@ -56,7 +56,8 @@ func _configure_character_model() -> void:
 	character_model = packed.instantiate() as Node3D
 	character_model.name = "CharacterModel"
 	add_child(character_model)
-	var stature := 0.94 if villager_id == "farmer_ahe" else 1.035 if villager_id == "xuezhe_lin" else 1.10 if villager_id == "resident_yun" else 1.0
+	# The rebuilt cast has individually authored proportions in the GLB.
+	var stature := 1.10 if villager_id == "resident_yun" else 1.0
 	character_model.scale = Vector3.ONE * stature
 	for child in character_model.find_children("*", "AnimationPlayer", true, false):
 		character_animation = child as AnimationPlayer
@@ -70,9 +71,9 @@ func _configure_character_model() -> void:
 	if placeholder_mesh != null:
 		placeholder_mesh.hide()
 	if nameplate != null:
-		nameplate.position.y = (1.88 if villager_id == "resident_yun" else 2.16) * stature
+		nameplate.position.y = (1.88 if villager_id == "resident_yun" else 2.05) * stature
 	if dialogue_prompt != null:
-		dialogue_prompt.position.y = (2.16 if villager_id == "resident_yun" else 2.55) * stature
+		dialogue_prompt.position.y = (2.16 if villager_id == "resident_yun" else 2.34) * stature
 	_sync_visual_motion()
 
 const INTERACTION_DISTANCE := 3.0

@@ -1,5 +1,7 @@
 extends Node3D
 
+const ToolPose = preload("res://scripts/farm3d/character_tool_pose.gd")
+
 const Art = preload("res://scripts/farm3d/golf_course_visual.gd")
 var ball_mesh: MeshInstance3D
 var club: Node3D
@@ -106,7 +108,7 @@ func pose(angle: float, club_index: int) -> void:
 		return
 	var side := -1.0 if left_handed else 1.0
 	var swing_angle := angle*side
-	var grip := Vector3(.12*side,1.04,.35)
+	var grip := Vector3(.09*side,1.20,.28)
 	grip.y += absf(angle)*.08
 	# Mirror the grip, club path and leading hand with the stance.
 	var endpoint := grip + (_contact_local-grip).rotated(Vector3.BACK,swing_angle)
@@ -122,8 +124,7 @@ func pose(angle: float, club_index: int) -> void:
 		(head.material_override as StandardMaterial3D).albedo_color = Color("805638") if club_index == 0 else Color("a7b6ae")
 	_head_point = club.to_global(endpoint)
 	if _skeleton != null:
-		var spine := _skeleton.find_bone("spine")
-		_skeleton.set_bone_pose_rotation(spine,Quaternion(Vector3.UP,swing_angle*.18)*Quaternion(Vector3.RIGHT,.1))
+		ToolPose.lean(_skeleton, Quaternion(Vector3.UP,swing_angle*.18)*Quaternion(Vector3.RIGHT,.1), _rests)
 		_aim_arm("L" if left_handed else "R",grip)
 		_aim_arm("R" if left_handed else "L",grip+(grip-head_center).normalized()*.065)
 
@@ -157,25 +158,7 @@ func show_aim(origin: Vector3, direction: Vector3, club_index: int, power: float
 		aim_dots[i].show()
 
 func _aim_arm(suffix: String, hand_local: Vector3) -> void:
-	var upper := _skeleton.find_bone("upper_arm."+suffix)
-	var fore := _skeleton.find_bone("forearm."+suffix)
-	var shoulder := _skeleton.get_bone_global_pose(upper).origin
-	var hand := _skeleton.to_local(_player.to_global(hand_local))
-	var a := _skeleton.get_bone_rest(fore).origin.length()
-	var b := .235
-	var direction := (hand-shoulder).normalized()
-	var distance := clampf(hand.distance_to(shoulder),.08,a+b-.005)
-	var along := (a*a-b*b+distance*distance)/(2*distance)
-	var outside := Vector3(1 if suffix == "R" else -1,-.5,0)
-	var elbow := shoulder+direction*along+(outside-direction*outside.dot(direction)).normalized()*sqrt(maxf(0,a*a-along*along))
-	_aim_bone(upper,elbow-shoulder)
-	_aim_bone(fore,hand-elbow)
-
-func _aim_bone(index: int, direction: Vector3) -> void:
-	var rest: Transform3D = _rests[index]
-	var basis := Basis(Quaternion(rest.basis.y.normalized(),direction.normalized()))*rest.basis
-	var parent := _skeleton.get_bone_global_pose(_skeleton.get_bone_parent(index)).basis
-	_skeleton.set_bone_pose_rotation(index,(parent.inverse()*basis).get_rotation_quaternion())
+	ToolPose.aim_arm(_skeleton, suffix, _player.to_global(hand_local), _rests)
 
 func _segment(mesh: MeshInstance3D, a: Vector3, b: Vector3) -> void:
 	mesh.position = (a+b)*.5
