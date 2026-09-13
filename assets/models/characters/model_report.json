@@ -70,7 +70,7 @@
     "triangles": 119702,
     "bones": 55,
     "meshes": 2,
-    "bytes": 6097728,
+    "bytes": 6169160,
     "textures": [
       "../characters/player_face_skin.png",
       "../characters/resident_yun_Yun body_mouth albedo.png",

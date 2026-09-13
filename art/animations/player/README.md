@@ -26,6 +26,18 @@ The authored clips remain Walk = 1.2 s and Run = 0.8 s. Their measured contact s
 references are 1.73 and 4.34 m/s, giving default playback rates of 1.73 and 1.38.
 These are animation calibration values, not changes to gameplay movement speed.
 
+The player now bakes and imports at 120 Hz (Walk 144 intervals, Run 96), with
+a short periodic 24 ms pose filter to soften IK/clamp velocity changes and the
+loop seam. Rotation samples use consistent quaternion signs and are normalized.
+Idle and Work keep their original 3 s / 1 s durations. The added continuity
+regression checks sample the imported model, including velocity across the seam;
+the full gait suite now has 477 checks. The previous library-based version is
+backed up in `tmp/player-smooth-baseline/`.
+
+The [smoothing comparison](../../concepts/player/player-smoothing-compare.gif)
+uses the same cadence on both sides and an exact number of complete cycles,
+avoiding the extra loop hitch caused by the earlier fixed two-second GIF cut.
+
 The pre-change 3/6 m/s source, model, scripts and gait tests are backed up locally
 in `tmp/player-speed36-baseline/`. Capture previews with
 `tests/capture_player_revision.gd -- --motion`, then encode them with

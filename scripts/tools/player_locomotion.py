@@ -16,6 +16,7 @@ WALK_REFERENCE_SPEED=1.73
 RUN_REFERENCE_SPEED=4.34
 WALK_STANCE=.40
 RUN_STANCE=.28
+BAKE_FPS=120
 MAP={'pelvis':'pelvis','spine':'spine_01','chest':'spine_03','neck':'neck_01','head':'Head'}
 for side,suffix in [('L','l'),('R','r')]:
     for target,source in [('shoulder','clavicle'),('upper_arm','upperarm'),('forearm','lowerarm'),('hand','hand')]:
@@ -32,6 +33,42 @@ def sample(data, clip, phase):
     return {n:{'p':Vector(a['p']).lerp(Vector(frames[i+1][n]['p']),t),
                'q':Quaternion(a['q']).slerp(Quaternion(frames[i+1][n]['q']),t)}
             for n,a in frames[i].items()}
+
+
+def smooth_action(action, frames):
+    """Periodic, symmetric pose filtering removes IK/clamp velocity spikes.
+
+    Use a short 24 ms window in authored time, with wrapped neighbours so the
+    seam receives the same treatment as the interior. Quaternion signs must
+    agree before filtering; normalize each result to preserve valid rotations.
+    """
+    sigma=BAKE_FPS*.024
+    radius=math.ceil(sigma*3)
+    weights=[math.exp(-.5*(i/sigma)**2) for i in range(-radius,radius+1)]
+    total=sum(weights)
+    for layer in action.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                groups={}
+                for curve in bag.fcurves:
+                    groups.setdefault(curve.data_path,[]).append(curve)
+                for path,curves in groups.items():
+                    curves.sort(key=lambda c:c.array_index)
+                    values=[Vector([c.keyframe_points[i].co.y for c in curves]) for i in range(frames)]
+                    rotation=path.endswith('rotation_quaternion')
+                    filtered=[]
+                    for i,center in enumerate(values):
+                        value=Vector((0.0,)*len(curves))
+                        for offset,weight in zip(range(-radius,radius+1),weights):
+                            neighbour=values[(i+offset)%frames]
+                            if rotation and center.dot(neighbour)<0:neighbour=-neighbour
+                            value+=neighbour*weight
+                        value/=total
+                        if rotation:value.normalize()
+                        filtered.append(value)
+                    for i,value in enumerate(filtered+[filtered[0]]):
+                        for component,curve in enumerate(curves):
+                            curve.keyframe_points[i].co.y=value[component]
 
 
 def foot_phase(phase, running):
@@ -120,7 +157,19 @@ def body_pose(rig, data, pose, walking_pose, running, phase):
 def build_animations(rig, original_animate):
     data=json.loads(DATA.read_text(encoding='utf-8'))
     original_animate(rig)
-    for clip,source,frames in [('Walk','Jog_Fwd_Loop',36),('Run','Sprint_Loop',24)]:
+    # Keep Idle/Work durations unchanged when exporting the player at 120 Hz.
+    factor=BAKE_FPS/bpy.context.scene.render.fps
+    for action in bpy.data.actions:
+        for layer in action.layers:
+            for strip in layer.strips:
+                for bag in strip.channelbags:
+                    for curve in bag.fcurves:
+                        for key in curve.keyframe_points:
+                            key.co.x*=factor
+                            key.handle_left.x*=factor
+                            key.handle_right.x*=factor
+    bpy.context.scene.render.fps=BAKE_FPS
+    for clip,source,frames in [('Walk','Jog_Fwd_Loop',144),('Run','Sprint_Loop',96)]:
         old=bpy.data.actions.get(clip)
         if rig.animation_data.action==old:rig.animation_data.action=None
         if old:bpy.data.actions.remove(old)
@@ -153,6 +202,7 @@ def build_animations(rig, original_animate):
             for bone in rig.pose.bones:
                 bone.keyframe_insert('rotation_quaternion',frame=frame,group=bone.name)
                 if bone.name=='root':bone.keyframe_insert('location',frame=frame,group=bone.name)
+        smooth_action(action,frames)
         for layer in action.layers:
             for strip in layer.strips:
                 for bag in strip.channelbags:

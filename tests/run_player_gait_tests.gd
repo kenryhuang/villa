@@ -130,6 +130,7 @@ func run() -> void:
 				check(min_chest_advance>.010,"Walking carries the chest forward over the pelvis instead of keeping a vertical rigid torso")
 				check(hip_yaw_span>.008,"The advancing hip moves with the stride instead of remaining fixed")
 				print("Body coupling: minimum chest advance %.3f m; hip forward separation %.3f m"%[min_chest_advance,hip_yaw_span])
+	validate_motion_continuity(skeleton, animator)
 	model.queue_free()
 	await process_frame
 	await validate_locomotion()
@@ -139,6 +140,37 @@ func run() -> void:
 func physics_steps(count: int) -> void:
 	for frame in count: await physics_frame
 	await process_frame
+
+func validate_motion_continuity(skeleton: Skeleton3D, animator: AnimationPlayer) -> void:
+	# Position continuity alone misses the visible hitch when velocity changes
+	# abruptly at an IK clamp, a sparse keyframe or the loop boundary.
+	var limits := {"pelvis": .4, "hand.L": .65, "hand.R": .65,
+		"shin.L": 1.5, "shin.R": 1.5, "foot.L": 1.5, "foot.R": 1.5}
+	for clip in animator.get_animation_list():
+		var name := String(clip).get_file().to_lower()
+		if name not in ["walk", "run"]: continue
+		var duration := animator.get_animation(clip).length
+		var playback := 3.0/Farm3DPlayer.WALK_REFERENCE_SPEED if name=="walk" else 6.0/Farm3DPlayer.RUN_REFERENCE_SPEED
+		var dt := duration / (480.0*playback)
+		var positions := {}
+		for bone in limits: positions[bone]=[]
+		animator.play(clip)
+		for frame in 480:
+			animator.seek(duration*frame/480.0,true)
+			skeleton.force_update_all_bone_transforms()
+			for bone in limits: positions[bone].append(bone_point(skeleton,bone))
+		for bone in limits:
+			var points: Array=positions[bone]
+			var peak := 0.0
+			var seam := 0.0
+			for frame in 480:
+				var incoming: Vector3=(points[frame]-points[(frame+479)%480])/dt
+				var outgoing: Vector3=(points[(frame+1)%480]-points[frame])/dt
+				var change := incoming.distance_to(outgoing)
+				peak=maxf(peak,change)
+				if frame==0: seam=change
+			check(peak<float(limits[bone]), "%s %s avoids abrupt within-cycle velocity changes"%[name,bone])
+			check(seam<.65, "%s %s crosses the loop without a velocity hitch"%[name,bone])
 
 func validate_locomotion() -> void:
 	# Isolated physical floor: no farm session, save files or NPC simulation.

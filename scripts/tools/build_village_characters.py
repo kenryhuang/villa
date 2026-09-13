@@ -523,7 +523,7 @@ def build(kind):
  for text in list(bpy.data.texts):bpy.data.texts.remove(text)
  credits=bpy.data.texts.new('CREDITS.txt');credits.write('Sintel Lite by BenDansie / Blender Foundation. CC BY 3.0.\nDerived from the Yun game conversion; new body/face proportions, clothing, hair, accessories and animations for '+kind+'.\nSee assets/models/characters/SINTEL_LICENSE.md.\n')
  bpy.data.orphans_purge(do_recursive=True)
- scene=bpy.context.scene;scene.render.engine='CYCLES';scene.cycles.samples=24;scene.cycles.use_denoising=True;scene.render.fps=30
+ scene=bpy.context.scene;scene.render.engine='CYCLES';scene.cycles.samples=24;scene.cycles.use_denoising=True;scene.render.fps=120 if kind=='player' else 30
  scene.render.resolution_x=850;scene.render.resolution_y=1000;scene.render.resolution_percentage=100;scene.view_settings.view_transform='AgX'
  scene.world.use_nodes=True;scene.world.node_tree.nodes['Background'].inputs[0].default_value=(.44,.49,.46,1);scene.world.node_tree.nodes['Background'].inputs[1].default_value=.65
  for loc,power,size in [((-3,-4,5),430,4),((3,-1,3),230,3),((0,3,4),450,3)]:

@@ -95,13 +95,17 @@ bib and strap vertices blend between pelvis and spine, keeping the two halves
 connected. The foot solver runs after the body pose and limits vertical lift
 only where a planted leg would otherwise exceed its reach.
 
-Current validation: 449 player proportion/gait/sole-weight/physical-movement
+Current validation: 477 player proportion/gait/sole-weight/physical-movement
 checks and 271 character/tool checks pass. Support-knee flexion at loaded midstance
 is about 21.3 degrees for the light jog, and pelvis vertical travel is 27 mm per cycle.
 The tests
 check actual deformed sole vertices for heel/sole/toe contact, not constant ankle
 height. They also verify alternating support-hip elevation, pelvis rotation,
 forward chest movement and continuous pelvis/torso animation loops.
+The player exports and imports at 120 Hz. A short periodic pose filter smooths
+the IK transitions and loop seam; continuity checks now measure velocity changes
+as well as matching endpoint positions. Clip durations and gameplay speeds stay
+unchanged. See the [smoothing comparison](../../../art/concepts/player/player-smoothing-compare.gif).
 `tests/check_player_blender_source.py` verifies the neutral facial sculpt
 survives a topology round trip, with six expressions and raised mouth corners.
 Visual captures show
