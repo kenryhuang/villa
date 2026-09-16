@@ -192,10 +192,25 @@ func _response(actor: String, response: Dictionary) -> void:
 	for a in checked.value.actions:
 		var result := command(actor, a.tool_name, a.arguments, a.idempotency_key)
 		observations.append(result)
-		world.session.agent_runtime.gateway.report_outcome(Actor, world.session.agent_runtime.session_id, {"protocol_version": 2, "decision_id": response.decision_id, "action_id": a.action_id, "idempotency_key": a.idempotency_key, "status": "completed" if result.ok else "failed", "failure_code": result.get("error", ""), "committed_revision": revision, "changed_entities": ["public_plans"] if result.ok and mode == "execute" else [], "resource_delta": {}, "hud_message": result.get("message", ""), "game_minute": world.minute()})
+		var outcome := {"protocol_version": 2, "decision_id": response.decision_id, "action_id": a.action_id, "idempotency_key": a.idempotency_key, "status": "completed" if result.ok else "failed", "failure_code": result.get("error", ""), "committed_revision": revision, "changed_entities": ["public_plans"] if result.ok and mode == "execute" else [], "resource_delta": {}, "hud_message": result.get("message", ""), "game_minute": world.minute()}
+		var runtime: Node = world.session.agent_runtime
+		runtime.loop_state.record(Actor, {"event_id": "action:%s:%s:%d" % [a.idempotency_key, outcome.status, revision], "kind": "Action" + str(outcome.status).capitalize(), "game_minute": world.minute(), "payload": outcome.duplicate(true)})
+		runtime.gateway.report_outcome(Actor, runtime.session_id, outcome)
 
 func _stream(_actor: String, event: Dictionary) -> void:
-	world.session.agent_runtime.session_trace.accept_event(event)
+	var runtime: Node = world.session.agent_runtime
+	var payload: Dictionary = event.get("data", {}).get("payload", {})
+	if event.get("event") == "read.request":
+		if not requests.has(str(payload.get("request_id", ""))) or payload.get("session_id") != runtime.session_id or int(payload.get("session_epoch", -1)) != runtime.gateway.session_epoch: return
+		runtime.gateway.submit_read_result(payload.merged({"result": runtime.world_queries.read(runtime, Actor, str(payload.name), payload.arguments)}, true))
+		return
+	if event.get("event") == "context.ack":
+		runtime.loop_state.acknowledge(Actor, payload.get("event_ids", []))
+		return
+	if event.get("event") == "loop.trace":
+		runtime.session_trace.accept_event(event)
+		return
+	runtime.session_trace.accept_event(event)
 
 func _failed(_actor: String, id: String, error: String) -> void:
 	requests.erase(id)

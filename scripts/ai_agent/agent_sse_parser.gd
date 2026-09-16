@@ -1,6 +1,7 @@
 extends RefCounted
 
 const EVENT_NAMES := [
+	"read.request", "context.ack", "loop.trace",
 	"stream.started",
 	"provider.input",
 	"reasoning.delta",

@@ -151,11 +151,20 @@ func _test_ndjson_and_retention(assertions: TestAssert) -> void:
 	assertions.equal((((cancelled.get("response", {}) as Dictionary).get("cancellation", {}) as Dictionary).get("code")), "dialogue_closed", "local cancellation retains its reason")
 	assertions.truthy(trace.finish_cancelled("farmer_ahe", "request-cancelled", "dialogue_closed", "dialogue", 3001), "duplicate local cancellation remains accepted")
 	assertions.equal(_read_nonempty_lines(log_path).size(), 3, "duplicate local cancellation does not write twice")
+	var receipt := {"action_id": "buy-1", "status": "rejected", "failure_code": "insufficient_gold", "failure_details": {"gold": 58, "buy_total": 186}}
+	assertions.truthy(trace.record_action_event("request-completed", "action.rejected", receipt), "Post-stream action receipt accepted")
+	lines = _read_nonempty_lines(log_path)
+	assertions.equal(lines.size(), 4, "Post-stream action receipt is flushed to disk")
+	var late: Dictionary = JSON.parse_string(lines[3]) if lines.size() == 4 else {}
+	assertions.equal(late.get("record_type"), "action_event", "Late action has a distinct journal record type")
+	assertions.equal(late.get("request_id"), "request-completed", "Late action links to original request")
+	assertions.equal(late.get("action_event", {}).get("metadata"), JSON.parse_string(JSON.stringify(receipt)), "Exact failure and resources survive disk persistence")
+	assertions.truthy(not late.has("input"), "Late action does not duplicate Provider context")
 
 	assertions.truthy(trace.accept_event(_event_value_for("request-unfinished", "stream.started", 1, {"trigger": "schedule"})), "unfinished trace accepts start")
 	assertions.truthy(not log_path.get_file().contains(":"), "trace filename sanitizes session ID")
 	trace.close()
-	assertions.equal(_read_nonempty_lines(log_path).size(), 3, "closing trace does not persist unfinished request")
+	assertions.equal(_read_nonempty_lines(log_path).size(), 4, "closing trace does not persist unfinished request")
 	trace.free()
 	var files := Array(DirAccess.get_files_at(directory)).filter(func(path): return str(path).ends_with(".ndjson"))
 	assertions.truthy(files.size() <= 20, "Agent trace retains at most twenty session files")

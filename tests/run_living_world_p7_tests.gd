@@ -33,8 +33,8 @@ func run() -> void:
 	check(not env.command("lao_li", "public_food_plan", args, "private").ok, "Private NPC cannot authorize public spending")
 	check(not env.command("village_public", "set_price", args, "price").ok, "Public agent cannot set prices or invent assets")
 	var request: Dictionary = preload("res://scripts/ai_agent/game_env_context.gd").build(env, "projection", "event")
-	check(request.allowed_command_tools == ["public_food_plan", "public_wait", "public_repair_plan", "public_activity_plan"] and request.allowed_read_tools.is_empty(), "Public capability set is separate from private tools")
-	check(not request.actor_context.has("self") and request.known_actors.is_empty() and request.agreement_view.is_empty() and not JSON.stringify(request).contains("xuezhe_lin"), "Public projection omits private inventories, memories, projects and knowledge")
+	check(request.allowed_command_tools == ["public_food_plan", "public_wait", "public_repair_plan", "public_activity_plan"] and not request.has("allowed_read_tools"), "Public capability set is separate from private tools; reads are discovered lazily")
+	check(request.protocol_version == 3 and not request.has("actor_context") and not request.has("known_actors") and not request.has("agreement_view") and not JSON.stringify(request).contains("xuezhe_lin"), "Public initial projection omits private inventories, memories, projects and knowledge")
 	env.set_mode("observe")
 	args.expected_version = env.revision
 	var observed: Dictionary = w.to_dict()

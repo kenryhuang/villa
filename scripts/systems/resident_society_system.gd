@@ -96,6 +96,16 @@ static func economy_profiles(small := false) -> Array[Dictionary]:
 		result.append({"id": entry.id, "display_name": entry.name, "gold": int(entry.get("gold", cfg.new_resident_gold)),
 			"inventory": entry.get("inventory", {}).duplicate(true) if entry.has("gold") else cfg.new_resident_inventory.duplicate(true), "essential_targets": {},
 			"reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "investment_gold_threshold": 0, "import_buffer": false})
+	# Only initial 3D resident profiles; restoring a save replaces these balances.
+	# Organizations and the legacy 2D economy keep their own funding rules.
+	var starters: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/living_world/npc_startup_resources.json"))
+	var resident_ids: Array = cfg.residents.map(func(entry): return str(entry.id))
+	for profile in result:
+		if str(profile.id) not in resident_ids: continue
+		for package in [starters.default, starters.actors.get(profile.id, {})]:
+			profile.gold = maxi(int(profile.gold), int(package.get("gold", 0)))
+			for item in package.get("inventory", {}):
+				profile.inventory[item] = maxi(int(profile.inventory.get(item, 0)), int(package.inventory[item]))
 	return result
 
 static func external_population() -> Array[Dictionary]:
@@ -317,7 +327,7 @@ func wage_escrow() -> int:
 func _market_trade(actor: String, items: Dictionary, total: int, buying: bool) -> void:
 	var flow := -total if buying else total
 	external_gold_net += flow
-	_record("market_purchase" if buying else "market_sale", actor, flow, items, "外部市场做市商")
+	_record("market_purchase" if buying else "market_sale", actor, flow, items, "村庄商行" if not world.session.market.merchant.is_empty() else "外部市场做市商")
 
 func _record(kind: String, actor: String, gold: int, items: Dictionary, source: String) -> void:
 	ledger.append({"minute": last_minute, "kind": kind, "actor_id": actor, "gold": gold, "items": items.duplicate(true), "source": source})
@@ -325,6 +335,9 @@ func _record(kind: String, actor: String, gold: int, items: Dictionary, source: 
 
 func summary() -> String:
 	var last: Dictionary = day_reports.get(str(last_minute / DAY_MINUTES), {})
+	if not world.session.market.merchant.is_empty():
+		var merchant: Dictionary = world.session.market.merchant
+		return "%d 名居民 · 昨日用餐 %d / %d · 商行现金 %d · 商行跨境净收支 %+d 金币" % [residents.size(), int(last.get("fed", 0)), residents.size(), int(merchant.cash), int(merchant.external_net)]
 	return "%d 名居民 · %d 个组织 · 昨日用餐 %d / %d，缺粮 %d · 市场净流入 %d 金币" % [residents.size(), config.organizations.size(), int(last.get("fed", 0)), residents.size(), int(last.get("hungry", 0)), external_gold_net]
 
 func to_dict() -> Dictionary:

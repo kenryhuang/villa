@@ -1375,7 +1375,7 @@ func _beehive_flower_assignments() -> Dictionary:
 				return left.gz < right.gz
 			return left.gx < right.gx
 		)
-		var cap := maxi(0, int(_effect_config(hive).get("flower_cap", 4)))
+		var cap := clampi(int(_effect_config(hive).get("flower_cap", 4)), 0, 4)
 		if assigned.size() > cap:
 			assigned.resize(cap)
 	return result
@@ -1815,7 +1815,8 @@ func get_beehive_snapshot(building: BuildingInstance) -> Dictionary:
 		"radius": float(_effect_config(building).get("flower_radius",24)), "average_distance": batch.average_distance,
 		"duration_minutes": batch.duration_minutes, "elapsed_minutes": elapsed, "remaining_minutes": remaining,
 		"next_day": _current_day + (maxi(0,_last_clock_minutes-DAY_START_MINUTES) + remaining) / 1080,
-		"next_output": batch.output, "next_owners": _beehive_output_owners(flowers,batch.output,(int(cycle.get("completed_cycles",0))+1)*2),
+		"hive_owner": building.owner_id, "honey_share": {"hive_owner_percent": 60, "flower_owners_percent": 40, "flower_basis": "assigned_flower_count", "rounding": "persistent_integer_credits"},
+		"next_output": batch.output, "next_owners": _beehive_output_owners(building,flowers,batch.output,(int(cycle.get("completed_cycles",0))+1)*2,cycle.get("honey_credits",{}).duplicate(true)),
 		"pending": state.customer_outputs.duplicate(true) if state != null else {}}
 
 
@@ -1849,18 +1850,33 @@ func _flower_owner(flower: GridCell) -> String:
 	return "player" if owner.is_empty() else owner
 
 
-func _beehive_output_owners(flowers: Array, output: Dictionary, day: int) -> Dictionary:
+func _beehive_output_owners(building: BuildingInstance, flowers: Array, output: Dictionary, day: int, credits: Dictionary) -> Dictionary:
 	var result := {}
 	if flowers.is_empty(): return result
-	# Rotate indivisible items through flowers across harvest cycles. This preserves
-	# exact quantities and proportional ownership without a permanent rounding bias.
+	# One honey = 60 credit units: 36 to the hive and 24 divided among at most
+	# four assigned flowers (1/2/3/4 all divide 24 exactly). Carry signed rounding
+	# balances across batches/owners/saves; preview passes a copy, settlement commits.
 	for item in output:
 		var quantity := int(output[item])
 		var offset := maxi(0, day / 2 - 1) * quantity
 		for index in quantity:
 			var owner := _flower_owner(flowers[(offset + index) % flowers.size()])
+			if item == "honey":
+				var hive_owner := building.owner_id if not building.owner_id.is_empty() else "player"
+				credits[hive_owner] = int(credits.get(hive_owner,0)) + 36
+				for flower: GridCell in flowers:
+					var flower_owner := _flower_owner(flower)
+					credits[flower_owner] = int(credits.get(flower_owner,0)) + 24 / flowers.size()
+				var candidates := credits.keys()
+				candidates.sort()
+				owner = str(candidates[0])
+				for candidate in candidates:
+					if int(credits[candidate]) > int(credits[owner]): owner = str(candidate)
+				credits[owner] = int(credits[owner]) - 60
 			if not result.has(owner): result[owner] = {}
 			result[owner][item] = int(result[owner].get(item, 0)) + 1
+	for owner in credits.keys():
+		if int(credits[owner]) == 0: credits.erase(owner)
 	return result
 
 
@@ -1870,7 +1886,8 @@ func _finish_beehive_outputs(building: BuildingInstance, output: Dictionary, flo
 	if not _can_store_passive_outputs(building, state, output):
 		_set_passive_output_blocked(building, "passive:beehive", true)
 		return false
-	var owners := _beehive_output_owners(flowers, output, day)
+	var credits: Dictionary = state.beehive_cycle.get("honey_credits", {}).duplicate(true)
+	var owners := _beehive_output_owners(building, flowers, output, day, credits)
 	for owner in owners:
 		if owner != "player" and (actor_assets == null or not actor_assets.exists(str(owner))):
 			# Do not create goods for an identity the save system cannot restore.
@@ -1884,6 +1901,7 @@ func _finish_beehive_outputs(building: BuildingInstance, output: Dictionary, flo
 			_merge_counts(state.customer_outputs[owner], owners[owner])
 	state.beehive_cycle.elapsed_minutes = 0
 	state.beehive_cycle.completed_cycles += 1
+	state.beehive_cycle.honey_credits = credits
 	_set_passive_output_blocked(building, "passive:beehive", false)
 	_deliver_beehive_outputs(building)
 	for item in output:

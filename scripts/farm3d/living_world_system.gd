@@ -1,6 +1,7 @@
 extends Node
 
 const Society = preload("res://scripts/systems/resident_society_system.gd")
+const Merchant = preload("res://scripts/systems/merchant_system.gd")
 var session: Farm3DSession
 var assets: RefCounted
 var society: RefCounted
@@ -13,6 +14,7 @@ var work: RefCounted
 var knowledge: RefCounted
 var environment: RefCounted
 var social: RefCounted
+var merchant: RefCounted
 var _tick := 0.0
 var saved_positions: Dictionary = {}
 var pending_player_terms: Dictionary = {}
@@ -43,6 +45,9 @@ func configure(farm: Farm3DSession) -> void:
 	environment.configure(self)
 	social = preload("res://scripts/systems/social_activity_system.gd").new()
 	social.configure(self)
+	merchant = Merchant.new()
+	merchant.configure(self)
+	session.market.merchant_service = merchant
 	if Society.expanded():
 		session.agent_runtime.scheduler.max_daily_requests = 16
 		session.agent_runtime.scheduler.max_concurrent_requests = 3
@@ -78,6 +83,7 @@ func advance() -> void:
 	if society.caught_up(boundary): session._commit_market_day(boundary / 1080 + 1)
 	if not society.caught_up(minute()): return
 	board.advance()
+	merchant.advance()
 	construction.advance()
 	work.advance()
 	interruptions.advance()
@@ -95,6 +101,7 @@ func _process(_delta: float) -> void:
 		if environment != null: environment.advance_to(minute())
 		if knowledge != null: knowledge.advance()
 		construction.advance()
+		merchant.advance()
 		work.advance()
 		interruptions.advance()
 		projects.advance()
@@ -331,6 +338,16 @@ func validate_save(data: Dictionary) -> bool:
 	for field in ["total_days", "hour", "minute"]:
 		if not integer(data.season.get(field)): return false
 	var clock := maxi(0, int(data.season.total_days) - 1) * 1080 + maxi(0, int(data.season.hour) - 6) * 60 + int(data.season.minute)
+	var merchant_save: Variant = data.get("market", {}).get("merchant", {})
+	if not merchant_save is Dictionary: return false
+	if not merchant_save.is_empty():
+		if not Merchant.integer(merchant_save.get("minute"), 0, clock): return false
+		if not merchant_save.get("procurements") is Dictionary: return false
+		for item in merchant_save.procurements:
+			var procurement: Variant = merchant_save.procurements[item]
+			if not procurement is Dictionary: return false
+			var order: Dictionary = value.board.commissions.get(procurement.get("id", ""), {})
+			if order.get("actor_id") != Merchant.ACTOR or order.get("terms", {}).get("item_id") != item: return false
 	if int(value.society.last_minute) > clock: return false
 	if value.version >= 7:
 		for key in ["private", "public"]:

@@ -30,7 +30,7 @@ func run() -> void:
 	var shore: Vector3 = k.site("creek")
 	check(shore.is_finite(), "Current-map river site uses actual walkable terrain")
 	body.position = shore + Vector3(-5, 0, 0); body.move_speed = 8
-	check(not k.begin_fieldwork("xuezhe_lin", "survey", "creek", "remote-survey", {}).ok, "Remote survey cannot discover anything")
+	check(k.reports.is_empty(), "No report exists before physical fieldwork")
 	check(k.begin_fieldwork("xuezhe_lin", "travel", "creek", "p9-travel", {}).ok, "Original activity system starts physical travel")
 	for frame in 240:
 		k.advance()

@@ -56,6 +56,9 @@ const WORK_TERMS = objectSchema({
 }, ["worker_id", "recipient_id", "kind", "item_id", "quantity", "wage", "building_id", "recipe_id", "max_fee", "deadline_minutes", "cycles", "interval_minutes", "parent_contract", "note"]);
 
 const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
+  adopt_short_term_goal: objectSchema({success_condition: objectSchema({kind:{type:"string",enum:["inventory_at_least","project_completed","discovery_known"]},id:ITEM_ID_SCHEMA,quantity:{type:"integer",minimum:1,maximum:10000}},["kind","id","quantity"]),description: {type:"string",minLength:1,maxLength:500},source_event_ids:{type:"array",items:ITEM_ID_SCHEMA,maxItems:8},ttl_minutes:{type:"integer",minimum:1,maximum:10080},review_in_minutes:{type:"integer",minimum:1,maximum:1080}},["description","source_event_ids","ttl_minutes","review_in_minutes"]),
+  revise_short_term_goal: objectSchema({goal_id:ITEM_ID_SCHEMA,version:{type:"integer",minimum:1},description:{type:"string",minLength:1,maxLength:500},status:{type:"string",enum:["active","blocked"]},review_in_minutes:{type:"integer",minimum:1,maximum:1080}},["goal_id","version","description","status","review_in_minutes"]),
+  abandon_short_term_goal: objectSchema({goal_id:ITEM_ID_SCHEMA,version:{type:"integer",minimum:1},reason:{type:"string",minLength:1,maxLength:500}},["goal_id","version","reason"]),
   propose_investigation: objectSchema({worker_id: ITEM_ID_SCHEMA, funder_id: ITEM_ID_SCHEMA, region_id: {type: "string", enum: [...REGION_IDS]}, reward: {type: "integer", minimum: 0, maximum: 100000}, deadline_minutes: {type: "integer", minimum: 60, maximum: 10080}, allow_old_report: {type: "boolean"}, require_sample: {type: "boolean"}}, ["worker_id", "funder_id", "region_id", "reward", "deadline_minutes", "allow_old_report", "require_sample"]),
   accept_investigation: objectSchema({assignment_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["assignment_id", "version"]),
   cancel_investigation: objectSchema({assignment_id: ITEM_ID_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}}, ["assignment_id", "version"]),
@@ -93,6 +96,7 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   claim_commission: objectSchema({commission_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["commission_id", "quantity"]),
   deliver_commission: objectSchema({claim_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA, version: {type: "integer", minimum: 1, maximum: 1000000}, order_id: {type: "string", maxLength: 100}}, ["claim_id", "quantity", "version", "order_id"]),
   move: objectSchema({x: {type: "number", minimum: -176, maximum: 80}, z: {type: "number", minimum: -80, maximum: 144}}, ["x", "z"]),
+  request_supply: objectSchema({item_id: ITEM_ID_SCHEMA, quantity: QUANTITY_SCHEMA}, ["item_id", "quantity"]),
   rent_production: objectSchema({building_id: ITEM_ID_SCHEMA, recipe_id: ITEM_ID_SCHEMA, batches: QUANTITY_SCHEMA, max_fee: {type: "integer", minimum: 0, maximum: 1000000}}, ["building_id", "recipe_id", "batches", "max_fee"]),
   till: objectSchema({plot: PLOT_SCHEMA}, ["plot"]),
   harvest: objectSchema({plot: PLOT_SCHEMA, agreement_id: AGREEMENT_ID_SCHEMA}, ["plot"]),
@@ -125,10 +129,12 @@ const TOOL_PARAMETERS: Readonly<Record<string, JsonSchema>> = {
   commit_contribution: objectSchema({agreement_id: ITEM_ID_SCHEMA, contribution_id: ITEM_ID_SCHEMA}, ["agreement_id", "contribution_id"]),
   cancel_cooperation: objectSchema({agreement_id: ITEM_ID_SCHEMA, reason_code: ITEM_ID_SCHEMA}, ["agreement_id", "reason_code"]),
   build: objectSchema({
-    building_type: {type: "string", enum: [...BUILDING_TYPES]},
+    building_type: {type: "string", enum: [...BUILDING_TYPES, "windmill", "food_workshop"]},
+    gx: {type:"integer",minimum:-1024,maximum:1024},
+    gz: {type:"integer",minimum:-1024,maximum:1024},
     building_id: ITEM_ID_SCHEMA,
 	agreement_id: AGREEMENT_ID_SCHEMA,
-  }, ["building_type", "building_id"]),
+  }, ["building_type"]),
   travel: objectSchema({
     region_id: {type: "string", enum: [...REGION_IDS]},
     duration_minutes: {type: "integer", minimum: 10, maximum: 240},
@@ -254,6 +260,9 @@ function validWorkTerms(v: unknown): boolean {
 
 export function validToolArguments(name: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
+  if(name==="adopt_short_term_goal") return (value.success_condition===undefined || isRecord(value.success_condition) && hasExactKeys(value.success_condition,["kind","id","quantity"]) && ["inventory_at_least","project_completed","discovery_known"].includes(String(value.success_condition.kind)) && isBoundedId(value.success_condition.id) && isIntegerInRange(value.success_condition.quantity,1,10000)) && hasExactKeys(value,["description","source_event_ids","ttl_minutes","review_in_minutes",...(value.success_condition===undefined?[]:["success_condition"])]) && isText(value.description,500) && Array.isArray(value.source_event_ids) && value.source_event_ids.length<=8 && value.source_event_ids.every(isBoundedId) && isIntegerInRange(value.ttl_minutes,1,10080) && isIntegerInRange(value.review_in_minutes,1,1080);
+  if(name==="revise_short_term_goal") return hasExactKeys(value,["goal_id","version","description","status","review_in_minutes"]) && isBoundedId(value.goal_id) && isIntegerInRange(value.version,1,1000000) && isText(value.description,500) && ["active","blocked"].includes(String(value.status)) && isIntegerInRange(value.review_in_minutes,1,1080);
+  if(name==="abandon_short_term_goal") return hasExactKeys(value,["goal_id","version","reason"]) && isBoundedId(value.goal_id) && isIntegerInRange(value.version,1,1000000) && isText(value.reason,500);
   switch (name) {
     case "propose_investigation": return hasExactKeys(value, ["worker_id", "funder_id", "region_id", "reward", "deadline_minutes", "allow_old_report", "require_sample"]) && isBoundedId(value.worker_id) && isBoundedId(value.funder_id) && value.worker_id !== value.funder_id && isOneOf(value.region_id, REGION_IDS) && isIntegerInRange(value.reward, 0, 100000) && isIntegerInRange(value.deadline_minutes, 60, 10080) && typeof value.allow_old_report === "boolean" && typeof value.require_sample === "boolean";
     case "accept_investigation": case "cancel_investigation": return hasExactKeys(value, ["assignment_id", "version"]) && isBoundedId(value.assignment_id) && isIntegerInRange(value.version, 1, 1000000);
@@ -285,6 +294,7 @@ export function validToolArguments(name: string, value: unknown): boolean {
     case "claim_commission": return hasExactKeys(value, ["commission_id", "quantity"]) && isBoundedId(value.commission_id) && isIntegerInRange(value.quantity, 1, 100);
     case "deliver_commission": return hasExactKeys(value, ["claim_id", "quantity", "version", "order_id"]) && isBoundedId(value.claim_id) && isIntegerInRange(value.quantity, 1, 100) && isIntegerInRange(value.version, 1, 1000000) && isText(value.order_id, 100, true);
     case "move": return hasExactKeys(value, ["x", "z"]) && typeof value.x === "number" && Number.isFinite(value.x) && value.x >= -176 && value.x <= 80 && typeof value.z === "number" && Number.isFinite(value.z) && value.z >= -80 && value.z <= 144;
+    case "request_supply": return hasExactKeys(value, ["item_id", "quantity"]) && isBoundedId(value.item_id) && isIntegerInRange(value.quantity, 1, 100);
     case "rent_production":
       return hasExactKeys(value, ["building_id", "recipe_id", "batches", "max_fee"])
         && isBoundedId(value.building_id) && isBoundedId(value.recipe_id)
@@ -340,6 +350,7 @@ export function validToolArguments(name: string, value: unknown): boolean {
       return hasExactKeys(value, ["agreement_id", "contribution_id"])
         && isBoundedId(value.agreement_id) && isBoundedId(value.contribution_id);
     case "build":
+      if ("gx" in value || "gz" in value) return hasExactKeys(value,["building_type","gx","gz"]) && isOneOf(value.building_type,["windmill","food_workshop"]) && Number.isInteger(value.gx) && Number(value.gx)>=-1024 && Number(value.gx)<=1024 && Number.isInteger(value.gz) && Number(value.gz)>=-1024 && Number(value.gz)<=1024;
 	  return hasExactKeysWithOptionalAgreement(value, ["building_type", "building_id"])
         && isOneOf(value.building_type, BUILDING_TYPES)
         && isBoundedId(value.building_id);
@@ -383,16 +394,20 @@ function validVenture(value: Record<string, unknown>): boolean {
   return !Object.hasOwn(value, "equipment_id") || (isBoundedId(value.equipment_id) && plan.steps.some(step => step.capability === "rent" && step.arguments.building_id === value.equipment_id));
 }
 
-export function toolDescription(name: string): Record<string, unknown> {
-  const parameters = TOOL_PARAMETERS[name];
+export function toolDescription(name: string, physical3d = false): Record<string, unknown> {
+  const parameters = physical3d && name === "build" ? objectSchema({
+    building_type: {type:"string",enum:["windmill","food_workshop"]},
+    gx: {type:"integer",minimum:-1024,maximum:1024}, gz: {type:"integer",minimum:-1024,maximum:1024},
+  },["building_type","gx","gz"]) : TOOL_PARAMETERS[name];
   if (!parameters) throw new Error(`unknown_tool_contract:${name}`);
   const farmingDescriptions: Record<string, string> = {
+    build: "In farm3d first query buildings/sites. Call build with building_type (windmill or food_workshop), gx and gz from a legal site. Do not invent building_id. This escrows your own construction materials and starts a physical project: reserve land, walk to approach, place and finish construction. in_progress is not completion. Query tasks/projects for progress or blockers; retry/cancel through project tools. Production stays private until its owner changes the service policy. Other building types are legacy 2D only.",
     move: "Walk to world coordinates x,z on the current farm3d map (east=+x, south=+z). Use inspect_map/inspect_characters for a destination. Building and market targets resolve to reachable interaction points. Physical travel occupies your schedule and may fail if blocked. No teleport. Use this for repositioning or visiting; buy/sell/rent_production and farming already include walking, so do not add a redundant move.",
     buy: "In farm3d, walk to the market then buy the specified item and quantity using your account. One call includes the entire trip and purchase; no preceding move required. No money or goods change until arrival; current price, stock and funds are checked there. in_progress means traveling, not purchased.",
     sell: "In farm3d, walk to the market then sell the specified item and quantity from your inventory. One call includes travel and the sale, with current price and stock checked on arrival. in_progress is not a completed sale.",
     prepare_supplies: "In farm3d, walk to the market and buy supplies using your own account. One call includes walking and buying; no preceding move required. Price, stock and funds are checked on arrival. in_progress means traveling, not purchased.",
-    travel: "In farm3d travel walks to the named real region. Arrival and minimum game time are required; no teleport. Wait for completed outcome before survey. Actor schedule is occupied. Regions creek, forest and hills are current-map field sites, not new map unlocks.",
-    survey: "Investigate only after actual arrival at the named field site, consuming ONE bread and 20 game minutes at the site. Returns a durable observation ID only on completion, never a guaranteed resource. Seeded daily sites can have no sample; inspect exploration reports afterwards.",
+    travel: "In farm3d travel walks to the named real region. Arrival and minimum game time are required; no teleport. Use travel only to relocate; survey already includes walking and needs no preceding travel. Actor schedule is occupied. Regions creek, forest and hills are current-map field sites, not new map unlocks.",
+    survey: "In farm3d, survey(region_id) includes walking to creek, forest or hills, then investigating. No preceding travel/move or arrived=true query is required. At actual arrival, recheck daily evidence and consume ONE bread, then work 20 game minutes at the site; travel time does not count. Missing supplies or blocked travel can fail. in_progress is not a report. Only completed returns a durable observation ID, never a guaranteed resource. Query knowledge/reports afterwards before collect_sample; never invent discovery_id.",
     collect_sample: "Collect one finite sample from a known, fresh, physically reached report discovery_id. One sample per daily site, even across actors; cannot repeatedly mint samples. No-find reports cannot supply samples.",
     propose_activity: "Propose and prepay a voluntary fishing/golf activity. Supply procurement and reward must be covered by actual sponsor cash, not projected tickets. Capacity/site conflict and all costs are verified. NPCs attend only as spectators. Minimum enrollment and food shortfall cancels with refunds.",
     enroll_activity: "Independently accept a current activity, pay own ticket and reserve own schedule. Walk to its site to attend. NPCs are spectators; no fabricated scores. Reject by issuing no enrollment.",
@@ -433,7 +448,8 @@ export function toolDescription(name: string): Record<string, unknown> {
     publish_commission: "Publish a purchase or new-processing demand using ONLY your own funds, prepaid into escrow. Never spend player money. Player terms require their UI confirmation.",
     claim_commission: "Claim an available quantity of a funded public commission, up to its remaining quota and claim slots.",
     deliver_commission: "Deliver real inventory for a claimed commission at its current version; processing requires order_id of new production started after claim. Reward transfers only after validation.",
-    rent_production: "Walk to a real building, then place a paid processing order owned by any actor. One call includes walking and ordering; do not call move first. Nothing is debited before arrival. Inspect buildings for the exact instance building_id, recipe, fee per batch, shared queue and maintenance state. Supply your own ingredients; the per-building policy defines permitted recipes and reserved owner capacity; total fee must not exceed max_fee, is escrowed while queued and paid to owner_id on actual start. Self-use has zero fee. Output is delivered automatically to your inventory after game-time processing. Consider input cost, rental fee and market sale value before ordering; in_progress may mean walking to the building or awaiting production; only completion means goods were delivered.",
+    request_supply: "Register a bounded, non-binding seed/goods supply request with the village merchant. Updates your existing request for this item; no money or goods change hands and arrival is not guaranteed. Check query_world market/supply for procurement, funding and shipments. Never claim this bought goods.",
+    rent_production: "Walk to a real building, then place a paid processing order owned by any actor. One call includes walking and ordering; do not call move first. Nothing is debited before arrival. Use query_world(domain=buildings, section=quote, id=building_id, recipe_id, batches) for authoritative total fee, inputs, availability and action arguments. max_fee is the TOTAL fee, never default missing fees to zero. Query detail for recipes and maintenance. Supply your own ingredients; the per-building policy defines permitted recipes and reserved owner capacity; total fee must not exceed max_fee, is escrowed while queued and paid to owner_id on actual start. Self-use has zero fee. Output is delivered automatically to your inventory after game-time processing. Consider input cost, rental fee and market sale value before ordering; in_progress may mean walking to the building or awaiting production; only completion means goods were delivered.",
     harvest: "Harvest a mature crop for produce, or clear a withered crop to leave tilled soil with no items or inventory rewards. Rejects growing and dormant crops. Use the plot state and available_actions from the current farm context.",
     plant: "Plant one seed on a tilled plot. Check crop_options (or inspect_crop_options) for plantable_plots, unavailable_reason, and seed_quantity. Season names in public_world_state are authoritative; do not infer planting validity from an empty plot or numeric season alone.",
   };

@@ -228,6 +228,9 @@ func quote_trade_failure(item_id: String, quantity: int, is_buy: bool) -> Dictio
 		return _trade_failure("invalid_request", item_id)
 	if GameDataScript.get_item(item_id) == null:
 		return _trade_failure("unknown_item", item_id)
+	if not is_buy and _market_ref.has_method("merchant_trade_error"):
+		var merchant_error: String = _market_ref.call("merchant_trade_error", item_id, quantity)
+		if not merchant_error.is_empty(): return _trade_failure(merchant_error, item_id)
 	if _router_required:
 		var ledger_result := _market_ledger_preflight(item_id, quantity, is_buy)
 		if not bool(ledger_result.get("ok", false)):
@@ -490,6 +493,9 @@ func _legacy_container_preflight(item_id: String, quantity: int, is_buy: bool) -
 
 
 func _market_ledger_preflight(item_id: String, quantity: int, is_buy: bool) -> Dictionary:
+	if not is_buy and _market_ref.has_method("merchant_trade_error"):
+		var error: String = _market_ref.call("merchant_trade_error", item_id, quantity)
+		if not error.is_empty(): return _trade_failure(error, item_id)
 	if not _market_ref.has_method("get_item_state"):
 		return _trade_failure("transaction_failed", item_id)
 	var state: Dictionary = _market_ref.call("get_item_state", item_id)

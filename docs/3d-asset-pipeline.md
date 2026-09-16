@@ -79,9 +79,35 @@ Meshy 的图片模块支持参考图和迭代编辑，并能将确定后的图�
 
 先检查轮廓、侧背面和部件结构，再为合格形体生成最终贴图。Meshy 提供面向实时渲染的 Smart Topology 模式，可以与普通模式对比；按游戏实际观感和后续整理成本选择。[官方图片转 3D 说明](https://docs.meshy.ai/en/webapp/image-to-3d)
 
-如果某类模型效果持续不理想，可将相同参考图交给 Tripo 做对比。Tripo 当前免费计划标注非商业用途，商业发行应使用具备相应许可的资产。[Tripo 官方价格与许可说明](https://www.tripo3d.ai/pricing)
+如果某类模型效果持续不理想，可将相同参考图交给 Tripo 做对比，但不能将它当作保证可免费导出的替代方案。Smart Mesh 可试用生成，不代表生成结果可免费下载；应先确认该模型版本的导出权限，再投入纹理、绑定等步骤。Tripo 当前免费计划标注非商业用途，商业发行应使用具备相应许可的资产。[Tripo 官方价格与许可说明](https://www.tripo3d.ai/pricing)
 
-生成结果作为原始素材保留。不要只保存平台预览图或最终 GLB，应同时归档原始网格、贴图、输入图片和生成参数。
+生成结果作为原始素材保留。**Meshy 直接下载、未经修改的 GLB 可以作为原始模型归档**，不要求另有一种“源网格”文件。需要避免的是只留下平台预览截图，或只留下经过 Blender 减面、修改后供游戏使用的 GLB。输入图片和生成设置应另外保存。
+
+### 3.1 Meshy 生成结果怎样归档
+
+Meshy 官方说明，下载面板支持 GLB、FBX、OBJ 等格式；GLB 内嵌贴图，FBX／OBJ 则可下载为包含模型和贴图文件夹的 ZIP。如果当前页面只提供 GLB，先保留它即可，不必为归档额外转换为 OBJ。[Meshy 导出与贴图说明](https://help.meshy.ai/en/articles/15724161-how-to-export-meshy-models-with-colors-and-textures)
+
+每次确认一个生成版本后：
+
+1. **保留下载原件**：保存为 `raw/meshy_original.glb`，后续编辑不覆盖它。若下载的是 ZIP，也保留完整 ZIP。
+2. **保留输入原图**：将实际上传的图片、各视角图片和裁剪后的最终输入放入 `input/`。平台模型预览截图不能替代这些图片。
+3. **记录生成设置**：用 `generation.md` 或 JSON 保存提示词、可见的模型版本、生成模式、面数／拓扑设置、贴图设置、任务 ID 或页面链接、日期和许可信息。网页没有参数导出功能时，手动记录并附设置截图；未显示的参数标记“未提供”，不要猜测。参数记录方便追溯，不保证平台以后能逐字节重现模型。
+4. **另存编辑版本**：导入 Blender 后另存 `.blend`；游戏使用的最终 GLB 输出到 `assets/models/`，与下载原件分开。
+
+如需把 GLB 内嵌贴图单独归档，在 Blender 导入 GLB，先将 `.blend` 保存到一个新的资产目录，再选择 **File → External Data → Unpack Resources**，选择写入当前目录。检查生成的图片文件并再次保存 `.blend`。这是提取已有贴图，不会补出生成时没有提供的法线、粗糙度等贴图。[Blender 资源打包与解包说明](https://docs.blender.org/manual/sl/4.5/files/blend/packed_data.html)
+
+建议的单件资产归档结构（示例，尚非强制目录）：
+
+```text
+art/source/meshy/ahe/v001/
+├─ input/                  # 实际上传的图片
+├─ raw/meshy_original.glb   # 原封不动的下载结果，包含网格及已嵌入贴图
+├─ extracted/              # 可选：从下载结果提取的独立贴图
+├─ generation.md           # 设置、任务链接、日期与许可记录
+└─ settings.png            # 可选：设置界面截图
+```
+
+这里的“原始”指平台交付、尚未经项目修改的版本，并不等于平台内部的高精度网格或生成工程。如果需要重拓扑／减面前的版本，应在相应处理前另行保存。API 的标准 Image to 3D 模式提供 `save_pre_remeshed_model` 选项，可额外保留重拓扑前 GLB；Smart Topology 模式不适用，网页端也不能据此假定存在同名按钮。[Meshy API 说明](https://docs.meshy.ai/en/api/image-to-3d)
 
 ## 4. Blender 整理与游戏化处理
 
@@ -173,6 +199,10 @@ Mixamo 可以作为补充。Adobe 官方说明其角色与动画可免费用于�
 为控制开销，先准备参考图和资产清单，再集中制作。初期只订阅一家 3D 平台，手动完成网页端生成和筛选；流程稳定后再考虑 API 批量接入。
 
 ### 7.2 免费试用和下载限制
+
+**先验证导出权限，再制作完整资产。** 生成积分、功能试用、文件导出和商用许可是不同权限；支持 GLB／FBX 格式也不意味着免费账号可以下载。
+
+Tripo 帮助中心当前明确说明，导出需要符合条件的订阅，即使账户还有积分。其价格表同时仍列出免费计划 `15 (H2.5 only)` 的有限导出条目，两处说明存在口径差异，不能据此承诺 Smart Mesh 免费导出。若当前 Smart Mesh 任务的导出面板要求 Pro，应按该任务的订阅限制处理，切换 GLB／FBX／OBJ 不会改变这项权限。[Tripo 下载限制说明](https://www.tripo3d.ai/help/features/why-cant-i-download-my-model)、[价格表](https://www.tripo3d.ai/pricing)
 
 Meshy 免费计划可用于试流程，但当前只有 Meshy 6 Lite 模型提供有限免费下载，Meshy 6／7 模型下载需要付费。免费输出采用 CC BY 4.0，需要按许可署名。付费期间创建的私有许可资产在降级后仍可下载，具体以账号和当时条款为准。[Meshy 免费计划说明](https://help.meshy.ai/en/articles/15696428-what-is-included-on-the-free-plan)
 

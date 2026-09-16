@@ -32,7 +32,9 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
+	if tool_name in preload("res://scripts/ai_agent/agent_loop_state.gd").GOAL_TOOLS: return preload("res://scripts/ai_agent/agent_loop_state.gd").valid_goal(tool_name, arguments)
 	match tool_name:
+		"request_supply": return preload("res://scripts/systems/merchant_system.gd").valid_request(arguments)
 		"propose_activity", "enroll_activity", "leave_activity", "cancel_activity": return preload("res://scripts/systems/social_activity_system.gd").valid_command(tool_name, arguments)
 		"contribute_route_repair": return preload("res://scripts/systems/world_environment_system.gd").valid_command(tool_name, arguments)
 		"offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation": return preload("res://scripts/systems/explorer_knowledge_registry.gd").valid_command(tool_name, arguments)
@@ -92,6 +94,8 @@ func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
 		"commit_contribution":
 			return _exact_keys(arguments, ["agreement_id", "contribution_id"]) and _bounded_id(arguments.agreement_id) and _bounded_id(arguments.contribution_id)
 		"build":
+			if arguments.has("gx") or arguments.has("gz"):
+				return _exact_keys(arguments, ["building_type", "gx", "gz"]) and arguments.building_type in ["windmill", "food_workshop"] and _integer_in_range(arguments.gx, -1024, 1024) and _integer_in_range(arguments.gz, -1024, 1024)
 			return _keys_with_optional_agreement(arguments, ["building_type", "building_id"]) and str(arguments.building_type) in BUILDING_TYPES and _bounded_id(arguments.building_id)
 		"travel":
 			return _exact_keys(arguments, ["region_id", "duration_minutes"]) and str(arguments.region_id) in REGION_IDS and _integer_in_range(arguments.duration_minutes, 10, 240)

@@ -1,11 +1,15 @@
+import {validateLoopConfig, type LoopConfig} from "./agent_loop.ts";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export interface ProviderConfig {
+  loop?: LoopConfig;
   baseUrl: string;
   apiKey: string;
   model: string;
   timeoutMs: number;
+  streamIdleTimeoutMs?: number;
+  loopTimeoutMs?: number;
   maxConcurrency: number;
   maxOutputTokens: number;
   temperature: number;
@@ -78,12 +82,12 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
     throw new Error(`Invalid Agent service config JSON: ${detail}`);
   }
   if (!isRecord(parsed)) throw new Error("Agent service config must be an object");
-  rejectUnknown(parsed, ["service", "provider", "memory"], "top-level ");
+  rejectUnknown(parsed, ["service", "provider", "memory", "loop"], "top-level ");
   const service = objectSection(parsed, "service");
   const provider = objectSection(parsed, "provider");
   const memory = objectSection(parsed, "memory");
   rejectUnknown(service, ["host", "port"], "service ");
-  rejectUnknown(provider, ["base_url", "api_key", "model", "timeout_ms", "max_concurrency", "max_output_tokens", "temperature"], "provider ");
+  rejectUnknown(provider, ["base_url", "api_key", "model", "timeout_ms", "stream_idle_timeout_ms", "loop_timeout_ms", "max_concurrency", "max_output_tokens", "temperature"], "provider ");
   rejectUnknown(memory, ["database_path", "checkpoint_root"], "memory ");
 
   const baseUrl = requiredString(provider, "base_url", "provider.base_url").replace(/\/+$/, "");
@@ -98,10 +102,13 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
     databasePath: resolve(serviceRoot, requiredString(memory, "database_path", "memory.database_path")),
     checkpointRoot: resolve(serviceRoot, requiredString(memory, "checkpoint_root", "memory.checkpoint_root")),
     provider: {
+      loop: validateLoopConfig(parsed.loop ?? {}),
       baseUrl,
       apiKey: requiredString(provider, "api_key", "provider.api_key"),
       model: requiredString(provider, "model", "provider.model"),
       timeoutMs: integer(provider, "timeout_ms", "provider.timeout_ms", 180_000, 100, 600_000),
+      streamIdleTimeoutMs: integer(provider, "stream_idle_timeout_ms", "provider.stream_idle_timeout_ms", 45_000, 100, 600_000),
+      loopTimeoutMs: integer(provider, "loop_timeout_ms", "provider.loop_timeout_ms", 180_000, 100, 600_000),
       maxConcurrency: integer(provider, "max_concurrency", "provider.max_concurrency", 2, 1, 32),
       maxOutputTokens: integer(provider, "max_output_tokens", "provider.max_output_tokens", 1200, 64, 16_384),
       temperature: decimal(provider, "temperature", "provider.temperature", 0.4, 0, 2),

@@ -14,6 +14,7 @@ var strategy := "observer"
 var player_plots: Array[Vector2i] = []
 var player_actions := []
 var player_market_net := 0
+var duration_days := 28
 
 func _initialize() -> void:
 	create_timer(900).timeout.connect(func(): finish(false, "Economic simulation timeout"))
@@ -25,6 +26,7 @@ func run() -> void:
 		if arg.begins_with("--seed="): seed_value = int(arg.trim_prefix("--seed="))
 		if arg.begins_with("--group="): group = arg.trim_prefix("--group=")
 		if arg.begins_with("--strategy="): strategy = arg.trim_prefix("--strategy=")
+		if arg.begins_with("--days="): duration_days = clampi(int(arg.trim_prefix("--days=")), 1, 60)
 	if strategy not in ["observer", "farmer", "trader"]: finish(false, "Unknown player strategy"); return
 	if group not in ["rules", "private", "public"]: finish(false, "Unknown group"); return
 	if group != "rules":
@@ -43,7 +45,7 @@ func run() -> void:
 	w.society.batch_times_us.clear(); w.society.batch_max_us = 0
 	opening_gold = conserved_gold() - w.society.external_gold_net
 	for actor in w.society.focus: w.actor(actor).move_speed = 40
-	for day in 28:
+	for day in duration_days:
 		if strategy == "farmer": player_farm_day(day)
 		if strategy == "trader": player_trade(day, "potato", 4, day % 2 == 0)
 		if not replay.is_empty(): replay_day(day)
@@ -62,13 +64,14 @@ func run() -> void:
 		var report: Dictionary = w.society.day_reports.get(str(day + 1), {}).duplicate(true)
 		var difference: int = conserved_gold() - opening_gold - w.society.external_gold_net - player_market_net
 		if difference != 0: errors.append("gold boundary mismatch day %d: %d" % [day + 1, difference])
+		if not s.market.Merchant.valid(s.market.merchant, s.market._items): errors.append("merchant account/state mismatch day %d" % (day + 1))
 		if int(report.get("fed", 0)) + int(report.get("hungry", 0)) != 36: errors.append("missing daily resident settlement")
 		rows.append({"day": day + 1, "food": report, "gold_difference": difference, "balances": balances, "market": s.market.to_dict(), "route_open": w.environment.route_open(), "projects": w.projects.projects.size(), "public_plans": w.public_plans.plans.size()})
 		if day % 7 == 6:
 			print("P12 before weekly save day ", day + 1)
 			if not s.save_game() or not s.load_game(): errors.append("save/reload day %d" % (day + 1))
 			print("P12 economic %s seed %d day %d hungry=%d" % [group, seed_value, day + 1, int(report.get("hungry", 0))])
-	finish(errors.is_empty(), "28 days measured; starvation and irrational choices remain explicit metrics")
+	finish(errors.is_empty(), "%d days measured; starvation and irrational choices remain explicit metrics" % duration_days)
 
 func player_farm_day(day: int) -> void:
 	if player_plots.is_empty():

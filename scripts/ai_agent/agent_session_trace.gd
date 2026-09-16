@@ -73,6 +73,8 @@ func accept_event(event: Dictionary) -> bool:
 	match event_name:
 		"stream.started":
 			record.trigger = str(payload.get("trigger", ""))
+		"loop.trace":
+			record.loop_events.append(payload.duplicate(true))
 		"provider.input":
 			record.input = payload.duplicate(true)
 		"reasoning.delta":
@@ -83,7 +85,7 @@ func accept_event(event: Dictionary) -> bool:
 			(record.tool_deltas as Array).append(payload.duplicate(true))
 		"provider.output":
 			record.output = payload.duplicate(true)
-			record.provider_rounds.append({"usage": payload.get("usage", {}).duplicate(true), "metrics": payload.get("metrics", {}).duplicate(true)})
+			record.provider_rounds.append({"usage": payload.get("usage", {}).duplicate(true), "metrics": payload.get("metrics", {}).duplicate(true), "input": record.input.duplicate(true), "output": payload.duplicate(true)})
 		"decision.final":
 			record.final = payload.duplicate(true)
 		"stream.completed":
@@ -184,12 +186,22 @@ func record_action_event(request_id: String, event_name: String, metadata: Dicti
 	var record := _requests[index]
 	if not record.has("action_events"):
 		record.action_events = []
-	(record.action_events as Array).append({
+	var action_event := {
 		"event": event_name,
 		"timestamp_msec": int(Time.get_unix_time_from_system() * 1000.0),
 		"metadata": metadata.duplicate(true),
-	})
+	}
+	(record.action_events as Array).append(action_event)
 	_requests[index] = record
+	# Physical actions usually finish after the Provider stream has been persisted.
+	# Append a compact receipt, linked by request_id, without repeating the prompt.
+	if _terminal_requests.has(request_id) and _log_file != null:
+		_log_file.store_line(JSON.stringify({
+			"schema_version": RECORD_SCHEMA_VERSION, "record_type": "action_event",
+			"request_id": request_id, "agent_id": record.agent_id,
+			"action_event": action_event,
+		}))
+		_log_file.flush()
 	trace_updated.emit(request_id)
 	return true
 
@@ -236,6 +248,7 @@ func _append_record(
 		"tool_deltas": [],
 		"output": {},
 		"provider_rounds": [],
+		"loop_events": [],
 		"final": {},
 		"error": {},
 		"cancellation": {},
@@ -276,6 +289,7 @@ func _disk_record(record: Dictionary) -> Dictionary:
 			"tool_call_deltas": (materialized.tool_deltas as Array).duplicate(true),
 			"provider_output": (materialized.output as Dictionary).duplicate(true),
 			"provider_rounds": materialized.get("provider_rounds", []).duplicate(true),
+			"loop_events": materialized.get("loop_events", []).duplicate(true),
 			"decision": (materialized.final as Dictionary).duplicate(true),
 			"error": (materialized.error as Dictionary).duplicate(true),
 			"cancellation": (materialized.cancellation as Dictionary).duplicate(true),

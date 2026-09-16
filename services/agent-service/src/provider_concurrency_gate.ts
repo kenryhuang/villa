@@ -1,4 +1,4 @@
-type Priority = "background" | "dialogue";
+type Priority = "maintenance" | "background" | "dialogue";
 const PREEMPTED = new Error("provider_yield_to_dialogue");
 
 interface Lease {
@@ -28,8 +28,9 @@ export class ProviderConcurrencyGate {
     this.#limit = limit;
   }
 
-  async run<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>, priority: Priority = "background"): Promise<T> {
+  async run<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>, priority: Priority = "background", onWaiting?: () => void): Promise<T> {
     while (true) {
+      onWaiting?.();
       const lease = await this.#acquire(signal, priority);
       const combined = signal ? AbortSignal.any([signal, lease.controller.signal]) : lease.controller.signal;
       try {
@@ -66,8 +67,9 @@ export class ProviderConcurrencyGate {
       }
       this.#queue.push(waiter);
       this.#grantNext();
-      if (priority === "dialogue" && this.#queue.includes(waiter)) {
-        const background = [...this.#active].find((lease) => lease.priority === "background" && !lease.controller.signal.aborted);
+      if (priority !== "maintenance" && this.#queue.includes(waiter)) {
+        const background = [...this.#active].find((lease) => lease.priority === "maintenance" && !lease.controller.signal.aborted)
+          ?? (priority === "dialogue" ? [...this.#active].find((lease) => lease.priority === "background" && !lease.controller.signal.aborted) : undefined);
         background?.controller.abort(PREEMPTED);
       }
     });
@@ -75,8 +77,14 @@ export class ProviderConcurrencyGate {
 
   #grantNext(): void {
     while (this.#queue.length > 0 && this.#active.size < this.#limit) {
-      const urgent = this.#queue.findIndex((waiter) => waiter.priority === "dialogue");
-      const [waiter] = this.#queue.splice(urgent < 0 ? 0 : urgent, 1);
+      let next = this.#queue.findIndex((waiter) => waiter.priority === "dialogue");
+      if (next < 0) next = this.#queue.findIndex((waiter) => waiter.priority === "background");
+      if (next < 0) {
+        // At most one memory job; leave remaining capacity for decisions.
+        if ([...this.#active].some(lease => lease.priority === "maintenance")) return;
+        next = 0;
+      }
+      const [waiter] = this.#queue.splice(next, 1);
       if (waiter.abort) waiter.signal?.removeEventListener("abort", waiter.abort);
       if (waiter.signal?.aborted) {
         waiter.reject(cancellationReason(waiter.signal));

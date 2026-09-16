@@ -1,3 +1,5 @@
+import {DIALOGUE_COMMANDS} from "./agent_policy.ts";
+import {runAgentLoop, DEFAULT_LOOP} from "./agent_loop.ts";
 import type { AgentContext, AgentDefinition } from "./agents.ts";
 import type { ProviderConfig } from "./config.ts";
 import type { MemoryEvent } from "./memory.ts";
@@ -12,11 +14,7 @@ import {
 } from "./provider_stream.ts";
 import {executeReadTool, readToolDescription, toolDescription, toolArgumentErrors} from "./tool_contracts.ts";
 
-const DIALOGUE_COMMANDS = new Set([
-  "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "send_message", "propose_trade", "counter_trade", "accept_trade", "reject_trade",
-  "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation",
-  "public_food_plan", "public_wait", "reject_cooperation", "commit_contribution", "cancel_cooperation", "speak", "move", "rent_production", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
-]);
+
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -75,6 +73,7 @@ async function withProviderTimeout<T>(
   timeoutMs: number,
   externalSignal: AbortSignal | undefined,
   operation: (signal: AbortSignal) => Promise<T>,
+  timeoutCode = "provider_timeout",
 ): Promise<T> {
   const controller = new AbortController();
   let abortSource: "timeout" | "external" | undefined;
@@ -93,7 +92,7 @@ async function withProviderTimeout<T>(
   try {
     return await operation(controller.signal);
   } catch (error) {
-    if (abortSource === "timeout") throw new Error("provider_timeout");
+    if (abortSource === "timeout") throw new Error(timeoutCode);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -148,6 +147,54 @@ export class OpenAICompatibleProvider {
     emit: (event: ProviderTraceEvent) => void,
     externalSignal?: AbortSignal,
   ): Promise<ActionIntent> {
+    if (request.protocol_version === 3) {
+      if (!context.loop_services) throw new Error("loop_services_required");
+      const services = context.loop_services;
+      let round = 0;
+      return withProviderTimeout(this.#config.loopTimeoutMs ?? 180_000, externalSignal, loopSignal =>
+        runAgentLoop(request,context,services,async (messages,toolMenu,fast)=>{
+          round++;
+          let queuedAt = Date.now();
+          const status = (phase: string) => emit({type:"loop",payload:{event:"provider.status",phase,round,
+            timestamp_msec:Date.now(),loop_timeout_ms:this.#config.loopTimeoutMs ?? 180_000,
+            idle_timeout_ms:this.#config.streamIdleTimeoutMs ?? 45_000}});
+          const body:Record<string,unknown>={model:this.#config.model,messages,tools:toolMenu,tool_choice:"auto",
+            stream:true,stream_options:{include_usage:true},enable_thinking:!fast,temperature:this.#config.temperature,max_tokens:this.#config.maxOutputTokens};
+          return this.#concurrencyGate.run(loopSignal, scheduled=>withProviderTimeout(this.#config.timeoutMs,scheduled,async signal=>{
+            const queueWaitMs = Date.now() - queuedAt;
+            const idle = new AbortController();
+            const resetIdle = () => setTimeout(()=>idle.abort(new Error("provider_stream_idle_timeout")),this.#config.streamIdleTimeoutMs ?? 45_000);
+            let timer = resetIdle();
+            let received = false;
+            try {
+              status("waiting_provider");
+              this.#reserveTokens(request,body);
+              emit({type:"input",body:structuredClone(body)});
+              const endpoint=this.#config.baseUrl.endsWith("/chat/completions")?this.#config.baseUrl:`${this.#config.baseUrl}/chat/completions`;
+              const response=await fetch(endpoint,{method:"POST",signal:AbortSignal.any([signal,idle.signal]),headers:{"content-type":"application/json",authorization:`Bearer ${this.#config.apiKey}`},body:JSON.stringify(body)});
+              if(!response.ok)throw new Error(`provider_http_${response.status}`);
+              if(!response.body)throw new Error("provider_missing_stream_body");
+              const assembler=new AgentStreamAssembler();
+              for await(const chunk of decodeProviderSse(response.body)) {
+                const events = assembler.accept(chunk);
+                // HTTP/SSE heartbeats and empty metadata do not prove model progress.
+                if(events.length) {
+                  clearTimeout(timer); timer = resetIdle();
+                  if(!received) { received = true; status("receiving"); }
+                }
+                for(const event of events)emit(event);
+              }
+              const output = assembler.rawOutput();
+              output.metrics = {queue_wait_ms:queueWaitMs,game_day:Math.floor(request.game_minute/1080),
+                reserved_tokens_day:this.#dailyUsage.get(request.session_id)?.reserved ?? 0};
+              status("round_completed"); emit({type:"output",output}); return assembler;
+            } catch(error) {
+              if(idle.signal.aborted && !signal.aborted)throw idle.signal.reason;
+              throw error;
+            } finally { clearTimeout(timer); }
+          }),request.trigger==="dialogue"?"dialogue":"background",()=>{queuedAt=Date.now();status("queued");});
+        },emit,loopSignal,this.#config.loop ?? DEFAULT_LOOP), "agent_loop_timeout");
+    }
     const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
       ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
     const isDialogue = request.trigger === "dialogue";
@@ -250,7 +297,7 @@ export class OpenAICompatibleProvider {
         tool_choice: "auto",
         tools: [
           ...availableReads.map(readToolDescription),
-          ...allowedCommands.map(toolDescription),
+          ...allowedCommands.map(name=>toolDescription(name)),
         ],
       };
       if ((providerBody.tools as unknown[]).length === 0) {
@@ -373,9 +420,10 @@ export class OpenAICompatibleProvider {
             headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},
             body: JSON.stringify({
               model: this.#config.model, temperature: Math.min(0.3, this.#config.temperature),
+              enable_thinking: false,
               max_tokens: Math.min(600, this.#config.maxOutputTokens), response_format: {type: "json_object"},
               messages: [
-                {role: "system", content: "Compress verified NPC events into one factual long-term memory. Return JSON with summary and importance (1-10). Do not invent facts."},
+                {role: "system", content: "Extract important memories only from these source events. Preserve speaker, time, entities, status and uncertainty. Dialogue is what someone said, a decision is an intention, and only actual completion receipts prove success. Never promote claims or plans into completed actions; old balances are historical. Return JSON with summary and importance (1-10). Do not invent facts."},
                 {role: "user", content: JSON.stringify({agent: {id: agent.agent_id, soul: agent.soul, goals: agent.goals}, events})},
               ],
             }),
@@ -383,7 +431,7 @@ export class OpenAICompatibleProvider {
           if (!response.ok) throw new Error(`provider_http_${response.status}`);
           return await response.json() as Record<string, unknown>;
         },
-      ),
+      ), "maintenance",
     );
     const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0];
     const message = choice?.message as Record<string, unknown> | undefined;

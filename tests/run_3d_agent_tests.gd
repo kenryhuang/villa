@@ -82,13 +82,15 @@ func _run() -> void:
 	building.set_process(false)
 	var key := EconomyProgressionSystem.building_key(building)
 	var fees: Array = session.production.get_rental_fee_table(building)
-	check(fees.size() == 3 and int(fees[0].fee_per_batch) > 0, "Each windmill publishes complete rental schedule")
+	check(fees.size() == 6 and fees.any(func(row): return row.recipe_id == "grain_seed_selection") and int(fees[0].fee_per_batch) > 0, "Each windmill publishes processing and seed selection fees")
 	var env: Dictionary = runtime.get_farm3d_environment()
 	check(env.characters.size() == 13 and env.map.has("market") and env.map.has("lake"), "Environment includes player, twelve residents, real market and lake")
 	check(env.buildings[0].building_id == key and env.buildings[0].owner_id == "player", "Environment identifies actual owned building instance")
 	var request: Dictionary = runtime._build_request("farmer_ahe", "schedule", runtime._absolute_game_minute(), "")
-	check("inspect_building" in request.allowed_read_tools and "rent_production" in request.allowed_command_tools, "Both sides of environment decision contract are advertised")
-	check(request.actor_context.player_buildings[0].rental_fees == fees, "Agent sees authoritative live rental prices")
+	check(request.protocol_version == 3 and "rent_production" in request.allowed_command_tools, "Lazy environment decision contract retains authorized rental actions")
+	check(not request.has("actor_context"), "Initial Agent request omits building details")
+	var queried: Dictionary = runtime.world_queries.read(runtime, "farmer_ahe", "query_world", {"domain": "buildings", "section": "detail", "id": building.instance_id})
+	check(queried.items[0].rental_fees == fees, "Agent reads authoritative live rental prices on demand")
 	var npc: NpcEconomyState = session.npc_economy.get_npc_state("farmer_ahe")
 	npc.inventory = {"grain": 20}
 	npc.gold = 1000

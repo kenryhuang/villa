@@ -127,6 +127,13 @@ func site(region: String) -> Vector3:
 				return Vector3(point.x, Farm3DTerrainProfile.surface_height(point.x, point.y), point.y)
 	return Vector3.INF
 
+func field_status(actor: String, region: String) -> Dictionary:
+	var body: Node3D = world.actor(actor)
+	var target := site(region)
+	var reachable := body != null and target.is_finite()
+	var distance := Vector2(body.position.x, body.position.z).distance_to(Vector2(target.x, target.z)) if reachable else -1.0
+	return {"id": region, "position": {"x": target.x, "z": target.z} if target.is_finite() else {}, "distance": distance, "arrived": reachable and distance <= 2.5, "arrival_radius": 2.5, "required_items": {"bread": 1}, "duration_minutes": 20, "next_action": "survey", "arrival_rule": "survey includes walking. At arrival, check daily evidence and consume one bread, then work 20 minutes; travel time is excluded."}
+
 func begin_fieldwork(actor: String, kind: String, region: String, id: String, metadata: Dictionary, duration := 10) -> Dictionary:
 	if world == null or kind not in ["travel", "survey"] or not SITES.has(region) or world.work.occupied(actor, str(metadata.get("assignment_id", ""))): return _error("fieldwork_schedule_or_region")
 	var body: Node3D = world.actor(actor)
@@ -134,16 +141,28 @@ func begin_fieldwork(actor: String, kind: String, region: String, id: String, me
 	if body == null or not target.is_finite(): return _error("unreachable_site")
 	var path: Array = world.work.paths.find_path_cells(world.session.grid.world_to_grid(body.position.x, body.position.z), world.session.grid.world_to_grid(target.x, target.z))
 	if path.is_empty(): return _error("unreachable_site")
-	if kind == "survey" and Vector2(body.position.x, body.position.z).distance_to(Vector2(target.x, target.z)) > 2.5: return _error("survey_requires_arrival")
-	if kind == "survey" and known(actor, "survey-%s-%d" % [region, world.minute() / 1080]): return _error("already_surveyed_today")
-	if kind == "survey" and not world.assets.apply(actor, {"bread": -1}, 0): return _error("survey_supplies_missing")
 	var now: int = world.minute()
 	var payload := metadata.duplicate(true)
 	payload.merge({"physical": true, "region_id": region, "tool_name": kind, "target": {"x": target.x, "z": target.z}, "worked": 0, "last_minute": now, "deadline": now + 1080}, true)
-	if not world.session.agent_runtime.activity_system.start(actor, kind, id, now, now + (20 if kind == "survey" else maxi(10, duration)), payload):
-		if kind == "survey": world.assets.apply(actor, {"bread": 1}, 0)
+	if kind == "survey":
+		# -1 means traveling/unpaid. Missing in legacy saves means already paid.
+		payload.survey_started_minute = -1
+		if field_status(actor, region).arrived:
+			var admission := _start_survey(actor, payload, now)
+			if not admission.ok: return admission
+	var delay := (20 if int(payload.get("survey_started_minute", -1)) >= 0 else 1) if kind == "survey" else maxi(10, duration)
+	if not world.session.agent_runtime.activity_system.start(actor, kind, id, now, now + delay, payload):
+		if kind == "survey" and int(payload.survey_started_minute) >= 0: world.assets.apply(actor, {"bread": 1}, 0)
 		return _error("fieldwork_busy")
-	return {"ok": true, "status": "in_progress", "activity_id": id, "message": "已开始实地调查行程；必须实际到达、投入时间才会得到报告。"}
+	return {"ok": true, "status": "in_progress", "activity_id": id, "message": "已开始勘察行程；自动前往现场，到达后检查并消耗一份面包，作业20分钟后生成报告。" if kind == "survey" else "已开始前往实地地点；到达后结束移动，不自动勘察。"}
+
+func _start_survey(actor: String, payload: Dictionary, minute: int) -> Dictionary:
+	if known(actor, "survey-%s-%d" % [payload.region_id, minute / 1080]): return _error("already_surveyed_today")
+	if not world.assets.apply(actor, {"bread": -1}, 0): return _error("survey_supplies_missing")
+	payload.survey_started_minute = minute
+	payload.last_minute = minute
+	payload.worked = 0
+	return {"ok": true}
 
 func physical_completion(activity: Dictionary, minute: int) -> Dictionary:
 	var p: Dictionary = activity.payload
@@ -151,6 +170,10 @@ func physical_completion(activity: Dictionary, minute: int) -> Dictionary:
 	var target := Vector3(p.target.x, Farm3DTerrainProfile.surface_height(p.target.x, p.target.z), p.target.z)
 	if not world.work.walk(p, activity.agent_id, target): p.last_minute = minute; return {"ready": false}
 	if activity.kind == "survey":
+		if int(p.get("survey_started_minute", activity.started_minute)) < 0:
+			var admission := _start_survey(activity.agent_id, p, minute)
+			if not admission.ok: return {"ready": true, "ok": false, "error": admission.error}
+			return {"ready": false}
 		p.worked = int(p.worked) + maxi(0, minute - int(p.last_minute))
 		p.last_minute = minute
 		if int(p.worked) < 20: return {"ready": false}
@@ -170,13 +193,14 @@ func advance() -> void:
 			if body == null or Vector2(body.position.x, body.position.z).distance_to(Vector2(p.target.x, p.target.z)) > 2.5:
 				p.worked = 0
 				p.last_minute = world.minute()
+				world.work.walk(p, a.agent_id, Vector3(p.target.x, Farm3DTerrainProfile.surface_height(p.target.x, p.target.z), p.target.z))
 	for offer in offers.values():
 		if offer.status == "proposed" and world.minute() >= int(offer.expires): offer.status = "expired"
 	for assignment in assignments.values(): _advance_assignment(assignment)
 
 func _record_survey(activity: Dictionary) -> Dictionary:
 	var region := str(activity.payload.region_id)
-	var day := int(activity.started_minute) / 1080
+	var day := int(activity.payload.get("survey_started_minute", activity.started_minute)) / 1080
 	var id := "survey-%s-%d" % [region, day]
 	if known(activity.agent_id, id): return _error("already_surveyed_today")
 	var found := (absi(hash("%d:%s:%d" % [seed, region, day])) % 3) != 0
@@ -268,7 +292,7 @@ func cards(actor: String, full := false) -> Dictionary:
 	for offer in offers.values():
 		if actor not in [offer.seller, offer.buyer]: continue
 		proposals.append(offer.duplicate(true).merged({"summary": "现场调查报告与地点，结果以实地记录为准", "known": known(actor, offer.discovery_id)}))
-	return {"knowledge_records": typed_records(actor, full), "reports": known_reports, "offers": proposals, "assignments": assignments.values().filter(func(c): return actor in [c.terms.worker_id, c.terms.funder_id]).duplicate(true), "regions": SITES.keys(), "rules": "Reports are observation/evidence, never forecasts as facts. Survey requires arrival, one bread and 20 minutes. Samples are finite per seeded daily site; no-find reports are valid. Paid cards show only summary until purchase; never invent a result or promise new resources. Explicit share_intelligence grants free knowledge; already-known or public facts cannot be charged again."}
+	return {"knowledge_records": typed_records(actor, full), "reports": known_reports, "offers": proposals, "assignments": assignments.values().filter(func(c): return actor in [c.terms.worker_id, c.terms.funder_id]).duplicate(true), "regions": SITES.keys(), "rules": "Reports are observation/evidence, never forecasts as facts. Survey includes walking; at arrival it checks daily evidence, consumes one bread and then works for 20 minutes. Travel time does not count. Samples are finite per seeded daily site; no-find reports are valid. Paid cards show only summary until purchase; never invent a result or promise new resources. Explicit share_intelligence grants free knowledge; already-known or public facts cannot be charged again."}
 
 func pending_negotiation(actor: String) -> bool:
 	return assignments.values().any(func(c): return c.status == "proposed" and actor in [c.terms.worker_id, c.terms.funder_id] and actor not in c.accepted_by) or offers.values().any(func(o): return o.status == "proposed" and o.buyer == actor and not known(actor, o.discovery_id))
@@ -354,7 +378,7 @@ static func validate_proofs(agents: Dictionary) -> bool:
 		if a.get("status") != "completed" or a.get("kind") != "survey" or a.get("agent_id") != r.source or a.get("completed_minute") != r.minute or a.get("payload", {}).get("discovery_id") != id or not a.payload.get("physical", false): return false
 		# A field observation never becomes a forecast or an unqualified global fact on load.
 		if r.kind != "observation" or r.region_id != a.payload.region_id or int(a.payload.worked) < 20: return false
-		var day := int(a.started_minute) / 1080
+		var day := int(a.payload.get("survey_started_minute", a.started_minute)) / 1080
 		var found := absi(hash("%d:%s:%d" % [v.seed, r.region_id, day])) % 3 != 0
 		if r.id != "survey-%s-%d" % [r.region_id, day] or r.found != found or r.item_id != (SITES[r.region_id].item if found else ""): return false
 	for c in v.assignments.values():

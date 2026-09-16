@@ -4,12 +4,13 @@ extends RefCounted
 const DEFAULT_RULES_PATH := "res://data/agents/role_transitions.json"
 const VERSION := 1
 const GENERAL_TOOLS := [
+	"adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal",
 	"move",
 	"send_message", "propose_trade", "counter_trade", "accept_trade",
 	"reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation",
 	"accept_cooperation", "reject_cooperation", "commit_contribution",
 	"cancel_cooperation", "speak", "wait", "propose_role_change",
-	"rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
+	"request_supply", "rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
 ]
 const GENERAL_READ_TOOLS := [
 	"inspect_market_item", "compare_market_items", "inspect_known_actor",
@@ -79,6 +80,8 @@ func get_capabilities(agent_id: String) -> Dictionary:
 	for tool_name in GENERAL_TOOLS:
 		if not tool_name in tools:
 			tools.append(tool_name)
+	if role_id != "public_coordinator" and _knowledge != null and _knowledge.get("world") != null and "build" not in tools:
+		tools.append("build")
 	var read_tools: Array = (role.get("read_tools", []) as Array).duplicate()
 	for tool_name in GENERAL_READ_TOOLS:
 		if not tool_name in read_tools:

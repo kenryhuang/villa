@@ -64,8 +64,7 @@ func run() -> void:
 		step("deliver", "deliver", ["claim", "ready"], {"claim_step": "claim", "quantity": 1, "order_step": ""}),
 		step("buy", "buy", [], {"item_id": "grain", "quantity": 1, "limit": 90})]
 	check(projects.submit("lao_li", "in-flight-plan", plan).ok, "Production project accepted")
-	projects.advance()
-	projects.advance()
+	await reach_step(projects, "in-flight-plan", "mill")
 	check(projects.projects["in-flight-plan"].steps.mill.result.has("order_id"), "Real rental order committed before expiry")
 	board.commissions["in-flight"].deadline = w.minute()
 	board.advance()
@@ -84,7 +83,8 @@ func run() -> void:
 		step("deliver", "deliver", ["claim"], {"claim_step": "claim", "quantity": 1, "order_step": ""}),
 		step("sell", "sell", ["deliver"], {"item_id": "grain", "quantity": 1, "limit": 1})]}
 	check(projects.submit("lao_li", "valid-delivery-plan", fulfill).ok, "Valid claim and delivery plan accepted")
-	for n in 4: projects.advance()
+	await reach_step(projects, "valid-delivery-plan", "sell")
+	projects.advance()
 	check(projects.projects["valid-delivery-plan"].status == "completed" and board.claims["valid-delivery-plan:claim"].status == "completed", "Fulfilled claim does not invalidate later legitimate sale steps")
 	var abandon: Dictionary = fulfill.duplicate(true)
 	abandon.materials = {}
@@ -113,8 +113,8 @@ func run() -> void:
 		else: client.configure("http://127.0.0.1:1", "", 3)
 	check(cancellations == ["game_closed", "session_changed", "client_reconfigured"], "Actual stream client propagates distinct cancellation reasons")
 	client.free()
-	var request: Dictionary = runtime._build_request("lao_li", "schedule", runtime._absolute_game_minute(), "")
-	var quote: Dictionary = request.market_view.grain.depth.quotes[1]
+	var detail: Dictionary = runtime.world_queries.read(runtime, "lao_li", "query_world", {"domain": "market", "section": "detail", "id": "grain"})
+	var quote: Dictionary = detail.data.depth.quotes[1]
 	check(quote.quantity == 2 and quote.buy_total == s.market.quote_buy("grain", 2) and quote.sell_total == s.market.quote_sell("grain", 2), "Projected market depth uses actual total transaction quotes")
 	check(quote.buy_available == s.market.can_buy("grain", 2), "Depth reports real stock availability independently of indicative price")
 	var explorer: Node3D = w.actor("xuezhe_lin")
@@ -123,14 +123,22 @@ func run() -> void:
 	check(projects.submit("xuezhe_lin", "visit-market", visit).ok, "Explorer may plan a visit using published market coordinates")
 	projects.advance()
 	var move: Dictionary = projects.projects["visit-market"].steps.market
-	check(move.status == "waiting" and move.result.has("target"), "Market center resolves to a reachable approach instead of no_route")
-	if move.result.has("target"):
-		var target: Dictionary = move.result.target
+	var movement: Dictionary = move.result.get("movement", {})
+	check(move.status == "waiting" and movement.has("target"), "Market center resolves to a reachable approach instead of no_route")
+	if movement.has("target"):
+		var target: Dictionary = movement.target
 		check(target.z > s.market_site.y + 3 and target.z < s.market_site.y + 6 and absf(target.x - s.market_site.x) < 4, "Approach reaches the south trading counter outside the reserved footprint")
-		explorer.position = Vector3(target.x, target.y, target.z)
+		explorer.position = Vector3(target.x, 0, target.z)
 		projects.advance()
 		projects.advance()
 		check(projects.projects["visit-market"].status == "completed", "Market visit completes at its reachable counter")
 	print("TRACE RECOVERY: %d checks, %d failures" % [checks, failures])
 	scene.free()
 	quit(0 if failures == 0 else 1)
+
+func reach_step(projects: RefCounted, id: String, step_id: String) -> void:
+	for frame in 3600:
+		projects.advance()
+		if projects.projects[id].steps[step_id].status in ["done", "blocked"]: return
+		await physics_frame
+	check(false, "Physical project step timed out: " + step_id)

@@ -6,6 +6,9 @@ const FOOD_DURATION_MINUTES := 27
 const DURABLE_DURATION_MINUTES := 36
 
 static var _recipes: Dictionary = {
+	"grain_seed_selection": _recipe("grain_seed_selection", "谷物选种", "windmill", {"grain": 1}, {"grain_seed": 2}, MATERIAL_DURATION_MINUTES, 0),
+	"carrot_seed_selection": _recipe("carrot_seed_selection", "胡萝卜选种", "windmill", {"carrot": 1}, {"carrot_seed": 2}, MATERIAL_DURATION_MINUTES, 0),
+	"potato_seed_selection": _recipe("potato_seed_selection", "土豆种薯处理", "windmill", {"potato": 1}, {"potato_seed": 2}, MATERIAL_DURATION_MINUTES, 0),
 	"plank": _recipe("plank", "木板", "workbench", {"wood": 2}, {"plank": 1}, MATERIAL_DURATION_MINUTES, 0),
 	"rope": _recipe("rope", "绳索", "workbench", {"fiber": 3}, {"rope": 1}, MATERIAL_DURATION_MINUTES, 0),
 	"charcoal": _recipe("charcoal", "木炭", "stone_kiln", {"wood": 3}, {"charcoal": 1}, MATERIAL_DURATION_MINUTES, 0),

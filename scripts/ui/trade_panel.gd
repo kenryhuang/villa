@@ -594,6 +594,8 @@ func _localized_trade_failure(result: Dictionary) -> String:
 	if bool(result.get("ok", false)):
 		return ""
 	match str(result.get("reason", "")):
+		"merchant_insufficient_cash": return "商行收购资金不足，请减少数量或等待回款"
+		"merchant_stock_limit": return "商行该商品库存已足，请减少数量或稍后出售"
 		"market_stock":
 			return "市集库存仅剩 %d" % int(result.get("available_quantity", 0))
 		"insufficient_gold":

@@ -1,3 +1,4 @@
+import {WorldReadBroker} from "./world_read_broker.ts";
 import {createHash} from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -25,20 +26,33 @@ function decisionCacheKey(request: DecisionRequest): string {
   return `decision:${request.session_id}:${request.request_id}:${fingerprint}`;
 }
 
+const memoryJobs = new WeakMap<MemoryRepository,Set<string>>();
 async function compactMemoryIfDue(dependencies: AppDependencies, sessionId: string, agentId: string): Promise<void> {
-  if (!dependencies.provider.compactMemory || !dependencies.memory.shouldCompact(sessionId, agentId)) return;
-  const agent = dependencies.registry.get(agentId);
-  const events = dependencies.memory.compactionCandidates(sessionId, agentId, 20);
-  if (!agent || events.length < 20) return;
-  try {
-    const compacted = await dependencies.provider.compactMemory(agent, events, sessionId);
-    dependencies.memory.storeLongTermMemory(
-      sessionId, agentId, `memory:${sessionId}:${agentId}:${events[0].event_id}:${events.at(-1)?.event_id}`,
-      compacted.summary, compacted.importance, events.map((event) => event.event_id),
-    );
-  } catch {
-    // Raw events remain uncompacted and eligible for a later retry.
-  }
+  const memory=dependencies.memory;
+  if(memory.closed || !dependencies.provider.compactMemory)return;
+  const jobs=memoryJobs.get(memory) ?? new Set<string>();memoryJobs.set(memory,jobs);
+  const key=`${sessionId}:${agentId}`;if(jobs.has(key))return;
+  jobs.add(key);
+  try{
+    const agent=dependencies.registry.get(agentId);if(!agent)return;
+    const history=memory.historyCandidates(sessionId,agentId);
+    if(history.events.length){
+      const summary=await dependencies.provider.compactMemory(agent,[...(history.previous?[{event_id:"history-prefix",kind:"prior_history_summary",game_minute:history.events[0].game_minute,payload:{summary:history.previous}}]:[]),...history.events],sessionId);
+      if(memory.closed)return;
+      if(history.events.every(e=>JSON.stringify(memory.inspectEvent(sessionId,agentId,e.event_id).payload)===JSON.stringify(e.payload)))memory.storeHistory(sessionId,agentId,history.events.map(e=>e.event_id),summary.summary);
+    }
+    if(!memory.shouldCompact(sessionId,agentId))return;
+    const events=memory.compactionCandidates(sessionId,agentId,8);
+    if(!events.length)return;
+    const result=await dependencies.provider.compactMemory(agent,events,sessionId);
+    if(memory.closed)return;
+    // A restored checkpoint may have removed these future events while the model ran.
+    if(events.some(e=>JSON.stringify(memory.inspectEvent(sessionId,agentId,e.event_id).payload)!==JSON.stringify(e.payload)))return;
+    memory.storeLongTermMemory(sessionId,agentId,`memory:${sessionId}:${agentId}:${events[0].event_id}:${events.at(-1)!.event_id}`,
+      result.summary,result.importance,events.map(e=>e.event_id));
+  }catch{
+    // Durable raw candidates remain queryable and retry on the next event/sync.
+  }finally{jobs.delete(key);}
 }
 
 const send = (response: ServerResponse, status: number, body: unknown): void => {
@@ -48,6 +62,17 @@ const send = (response: ServerResponse, status: number, body: unknown): void => 
 };
 
 function decisionContext(dependencies: AppDependencies, request: DecisionRequest) {
+  if(request.protocol_version===3){
+    dependencies.memory.syncSession(request.session_id,request.session_epoch);
+    const resources=request.resources!;
+    dependencies.memory.syncResources(request.session_id,request.agent_id,request.session_epoch,Number(resources.resource_revision ?? request.world_revision),resources);
+    for(const event of request.experience_events ?? [])dependencies.memory.appendEvent(request.session_id,request.agent_id,{
+      event_id:String(event.event_id),kind:String(event.kind ?? event.event_type ?? "world"),game_minute:Number(event.game_minute),
+      payload:(event.payload ?? event) as Record<string,unknown>});
+    const memories=dependencies.memory.relevant(request.session_id,request.agent_id,
+      [request.dialogue_input ?? "",...request.goals,JSON.stringify(request.goal_refs ?? []),JSON.stringify((request.experience_events ?? []).slice(-3))].join(" "));
+    return dependencies.registry.buildContext(request.agent_id,request,memories);
+  }
   const memories = [
     ...dependencies.memory.longTermRecent(request.session_id, request.agent_id, 8),
     ...dependencies.memory.recent(request.session_id, request.agent_id, 8),
@@ -67,6 +92,7 @@ function storeDecision(
     kind: "decision",
     game_minute: request.game_minute,
     payload: {
+      actions: intent.actions,
       action_names: intent.actions.map((action) => action.tool_name),
       decision_summary: intent.decision_summary,
     },
@@ -78,10 +104,11 @@ function storeDecision(
       game_minute: request.game_minute,
       payload: {
         player_text: request.dialogue_input,
-        agent_speech: intent.speech ?? "",
+        agent_speech: intent.speech?.trim() || intent.actions.filter(a=>a.tool_name==="speak" && a.arguments.target_actor_id==="player").map(a=>String(a.arguments.text ?? "")).join("\n"),
       },
     });
   }
+  void compactMemoryIfDue(dependencies,request.session_id,request.agent_id);
 }
 
 function beginSse(response: ServerResponse): void {
@@ -107,14 +134,32 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
 }
 
 export function createApp(dependencies: AppDependencies) {
+  const reads=new WorldReadBroker();
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
       const url = new URL(request.url || "/", "http://localhost");
       if (request.method === "GET" && url.pathname === "/health") {
-        send(response, 200, {status: "ok", protocol_version: PROTOCOL_VERSION, provider: "configured", capabilities: ["farm3d_environment", "rent_production", "living_world_projects", "living_world_interruptions", "public_coordination"]}); return;
+        send(response, 200, {status: "ok", protocol_version: PROTOCOL_VERSION, provider: "configured", decision_protocol_version: 3, capabilities: ["agent_loop_v3", "lazy_world_reads", "farm3d_environment", "rent_production", "living_world_projects", "living_world_interruptions", "public_coordination"]}); return;
       }
       if (request.method !== "POST") { send(response, 404, {error: {code: "NOT_FOUND"}}); return; }
       const body = await readBody(request);
+      if(url.pathname==="/v1/experience/sync") {
+        const value=body as Record<string,unknown>;
+        if(typeof value.session_id!=="string"||!Number.isSafeInteger(value.session_epoch)||!Array.isArray(value.actors)||value.actors.length>64)throw new Error("invalid_experience_sync");
+        dependencies.memory.syncSession(value.session_id,Number(value.session_epoch));
+        const acknowledged=[];
+        for(const entry of value.actors as Record<string,unknown>[]){
+          if(!dependencies.registry.get(String(entry.agent_id))||!Array.isArray(entry.events)||!entry.resources||typeof entry.resources!=="object")throw new Error("invalid_experience_actor");
+          const resources=entry.resources as Record<string,unknown>;
+          dependencies.memory.syncResources(value.session_id,String(entry.agent_id),Number(value.session_epoch),Number(resources.resource_revision),resources);
+          for(const e of entry.events as Record<string,unknown>[])dependencies.memory.appendEvent(value.session_id,String(entry.agent_id),{
+            event_id:String(e.event_id),kind:String(e.kind ?? e.event_type ?? "world"),game_minute:Number(e.game_minute),payload:(e.payload ?? {}) as Record<string,unknown>});
+          void compactMemoryIfDue(dependencies,value.session_id,String(entry.agent_id));
+          acknowledged.push({agent_id:entry.agent_id,event_ids:(entry.events as Record<string,unknown>[]).map(e=>e.event_id)});
+        }
+        send(response,200,{acknowledged});return;
+      }
+      if(url.pathname==="/v1/reads/result") {send(response,200,{accepted:reads.accept(body as Record<string,unknown>)});return;}
       if (url.pathname === "/v1/sessions/sync") {
         const record = body as Record<string, unknown>;
         if (!record || typeof record.session_id !== "string" || !Number.isSafeInteger(record.session_epoch)) throw new Error("invalid_session");
@@ -167,6 +212,7 @@ export function createApp(dependencies: AppDependencies) {
           if (!dependencies.provider.streamDecision) throw new Error("provider_streaming_unavailable");
           const emit = (event: ProviderTraceEvent): void => {
             switch (event.type) {
+              case "loop": writeEvent("loop.trace",event.payload); break;
               case "input": writeEvent("provider.input", event.body); break;
               case "reasoning": writeEvent("reasoning.delta", {delta: event.delta}); break;
               case "content": writeEvent("content.delta", {delta: event.delta}); break;
@@ -179,9 +225,27 @@ export function createApp(dependencies: AppDependencies) {
               case "output": writeEvent("provider.output", event.output); break;
             }
           };
+          const context=decisionContext(dependencies,decisionRequest);
+          void compactMemoryIfDue(dependencies,decisionRequest.session_id,decisionRequest.agent_id);
+          if(decisionRequest.protocol_version===3){
+            writeEvent("context.ack",{session_id:decisionRequest.session_id,session_epoch:decisionRequest.session_epoch,
+              request_id:decisionRequest.request_id,event_ids:(decisionRequest.experience_events ?? []).map(e=>e.event_id)});
+            const experience=dependencies.memory.experience(decisionRequest.session_id,decisionRequest.agent_id);
+            const recentIds=new Set((experience.recent_events as Record<string,unknown>[]).map(e=>e.event_id));
+            context.loop_services={experience,memories:context.memories.filter(m=>!(m.source_event_ids as string[]|undefined)?.some(id=>recentIds.has(id))),
+              read:async(name,args,signal)=>{
+                if(name==="recall_memory")return {memories:dependencies.memory.relevant(decisionRequest.session_id,decisionRequest.agent_id,String(args.query))};
+                if(name==="inspect_event")return dependencies.memory.inspectEvent(decisionRequest.session_id,decisionRequest.agent_id,String(args.event_id));
+                if(name==="inspect_history_segment")return dependencies.memory.historySegment(decisionRequest.session_id,decisionRequest.agent_id,Number(args.cursor ?? 0));
+                const result=await reads.read(decisionRequest,name,args,p=>writeEvent("read.request",p),signal);
+                if(result.resources)dependencies.memory.syncResources(decisionRequest.session_id,decisionRequest.agent_id,decisionRequest.session_epoch,
+                  Number((result.resources as Record<string,unknown>).resource_revision),result.resources as Record<string,unknown>);
+                return result;
+              }};
+          }
           const intent = await dependencies.provider.streamDecision(
             decisionRequest,
-            decisionContext(dependencies, decisionRequest),
+            context,
             emit,
             controller.signal,
           );
@@ -216,6 +280,7 @@ export function createApp(dependencies: AppDependencies) {
         const decisionKey = decisionCacheKey(parsed.value);
         const cached = dependencies.memory.getIdempotent(decisionKey);
         if (cached) { send(response, 200, cached); return; }
+        if(parsed.value.protocol_version===3)throw new Error("streaming_required_for_agent_loop");
         const context = decisionContext(dependencies, parsed.value);
         const intent = await dependencies.provider.decide(parsed.value, context);
         storeDecision(dependencies, parsed.value, decisionKey, intent);
@@ -227,15 +292,15 @@ export function createApp(dependencies: AppDependencies) {
         if (!parsed.ok) throw new Error(parsed.error);
         const sessionId = String(request.headers["x-session-id"] || "");
         if (!sessionId) throw new Error("missing_session_id");
-        const key = `outcome:${sessionId}:${parsed.value.idempotency_key}`;
+        const key = `outcome:${sessionId}:${outcomeMatch[1]}:${parsed.value.idempotency_key}:${parsed.value.status}:${parsed.value.committed_revision}`;
         if (dependencies.memory.getIdempotent(key)) { send(response, 200, {status: "duplicate"}); return; }
         dependencies.memory.storeIdempotent(key, parsed.value);
         dependencies.memory.appendEvent(sessionId, outcomeMatch[1], {
-          event_id: key, kind: parsed.value.status === "completed" ? "action_completed" : "action_result",
+          event_id: `action:${parsed.value.idempotency_key}:${parsed.value.status}:${parsed.value.committed_revision}`, kind: "Action" + parsed.value.status[0].toUpperCase() + parsed.value.status.slice(1),
           game_minute: parsed.value.game_minute,
-          payload: {status: parsed.value.status, resource_delta: parsed.value.resource_delta, changed_entities: parsed.value.changed_entities},
+          payload: {...parsed.value},
         });
-        await compactMemoryIfDue(dependencies, sessionId, outcomeMatch[1]);
+        void compactMemoryIfDue(dependencies, sessionId, outcomeMatch[1]);
         send(response, 202, {status: "accepted"}); return;
       }
       if (url.pathname === "/v1/checkpoints/export") {

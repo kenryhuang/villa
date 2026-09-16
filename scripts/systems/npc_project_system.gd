@@ -115,7 +115,7 @@ func advance() -> void:
 	for actor in suggestions.keys():
 		if world.minute() >= int(suggestions[actor].expires): suggestions.erase(actor)
 	for p in projects.values():
-		if p.status != "active" or not world.interruptions.running(p.actor_id).is_empty() or world.work.owns_schedule(p.actor_id): continue
+		if p.status != "active" or not world.interruptions.running(p.actor_id).is_empty() or world.work.owns_schedule(p.actor_id, str(p.id)): continue
 		var waiting := false
 		for state in p.steps.values(): waiting = waiting or (state.result.has("order_id") and not state.result.get("delivered", false) and not state.result.get("cancelled", false))
 		var commission_check := _check_commissions(p.actor_id, p.plan, p.steps)

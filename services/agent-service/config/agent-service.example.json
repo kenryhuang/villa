@@ -8,9 +8,21 @@
     "api_key": "replace-with-your-key",
     "model": "replace-with-your-model",
     "timeout_ms": 180000,
+    "stream_idle_timeout_ms": 45000,
+    "loop_timeout_ms": 180000,
     "max_concurrency": 5,
     "max_output_tokens": 1200,
     "temperature": 0.4
+  },
+  "loop": {
+    "max_read_rounds": 6,
+    "max_read_calls": 12,
+    "max_actions": 3,
+    "max_dialogue_actions": 1,
+    "compact_at_tokens": 48000,
+    "compact_target_tokens": 32000,
+    "max_input_tokens": 64000,
+    "max_compactions": 6
   },
   "memory": {
     "database_path": "data/agent-memory.sqlite",

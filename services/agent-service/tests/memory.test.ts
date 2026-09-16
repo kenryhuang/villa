@@ -8,7 +8,7 @@ import * as MemoryModule from "../src/memory.ts";
 
 const {MemoryRepository, scoreImportance} = MemoryModule;
 
-test("clears every pre-v2 Agent table once and removes only checkpoint databases", () => {
+test("preserves pre-v2 Agent data during migration; explicit legacy cleanup only touches checkpoint databases", () => {
   const directory = mkdtempSync(join(tmpdir(), "villa-agent-v2-migration-"));
   const databasePath = join(directory, "memory.sqlite");
   const old = new MemoryRepository(databasePath);
@@ -23,9 +23,9 @@ test("clears every pre-v2 Agent table once and removes only checkpoint databases
 
   const upgraded = new MemoryRepository(databasePath);
   assert.equal(upgraded.upgradedFromPreV2, true);
-  assert.deepEqual(upgraded.recent("old-save", "farmer_ahe", 10), []);
-  assert.deepEqual(upgraded.longTermRecent("old-save", "farmer_ahe", 10), []);
-  assert.equal(upgraded.getIdempotent("old-key"), undefined);
+  assert.equal(upgraded.recent("old-save", "farmer_ahe", 10)[0].event_id, "old-event");
+  assert.equal(upgraded.longTermRecent("old-save", "farmer_ahe", 10)[0].summary, "旧记忆");
+  assert.deepEqual(upgraded.getIdempotent("old-key"), {protocol_version: 1});
   upgraded.syncSession("new-save", 2);
   upgraded.appendEvent("new-save", "farmer_ahe", {event_id: "new-event", kind: "decision", game_minute: 2, payload: {}});
   upgraded.close();

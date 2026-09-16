@@ -83,6 +83,11 @@ func from_dict(value: Dictionary) -> bool:
 			if not p.get("target") is Dictionary or p.target.size() != 2 or not rules._number(p.target.get("x"), -176, 80) or not rules._number(p.target.get("z"), -80, 144) or not p.get("region_id") is String: return false
 			for field in ["worked", "last_minute", "deadline"]:
 				if not rules._count(p.get(field), 0, 9007199254740991): return false
+			if p.has("survey_started_minute"):
+				if record.kind != "survey" or not rules._count(p.survey_started_minute, -1, int(p.last_minute)): return false
+				if int(p.survey_started_minute) == -1:
+					if int(p.worked) != 0 or record.status == "completed": return false
+				elif int(p.survey_started_minute) < int(record.started_minute) or int(p.worked) > int(p.last_minute) - int(p.survey_started_minute): return false
 			if record.status == "completed":
 				if not rules._count(record.get("completed_minute"), int(record.complete_at_minute), 9007199254740991): return false
 				if record.kind == "survey" and (int(p.worked) < 20 or not rules._id(p.get("discovery_id"))): return false

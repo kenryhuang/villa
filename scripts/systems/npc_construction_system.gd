@@ -80,7 +80,7 @@ func sites(actor: String, building_type := "windmill") -> Array:
 		for gz in range(26, 44, 4):
 			if legal(actor, gx, gz, "", building_type):
 				var cell: GridCell = world.session.grid.get_cell(gx, gz)
-				result.append({"gx": gx, "gz": gz, "approach": {"x": cell.world_position().x - 1.2, "z": cell.world_position().y}, "lease_fee": 0, "building_type": building_type, "cost": cost(building_type)})
+				result.append({"gx": gx, "gz": gz, "approach": {"x": cell.world_position().x - 1.2, "z": cell.world_position().y}, "lease_fee": 0, "building_type": building_type, "cost": cost(building_type), "build_action": {"tool_name": "build", "arguments": {"building_type": building_type, "gx": gx, "gz": gz}}})
 				if result.size() == 3: return result
 	return result
 

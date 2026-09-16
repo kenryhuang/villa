@@ -6,7 +6,10 @@ export type Trigger = "schedule" | "event" | "dialogue" | "catch_up";
 export type OutcomeStatus = "accepted" | "in_progress" | "completed" | "rejected" | "failed";
 
 export interface DecisionRequest {
-  protocol_version: 2;
+  protocol_version: 2 | 3;
+  resources?: Record<string, unknown>;
+  experience_events?: readonly Record<string, unknown>[];
+  goal_refs?: readonly Record<string, unknown>[];
   request_id: string;
   session_id: string;
   session_epoch: number;
@@ -125,6 +128,17 @@ function failure<T>(error: string): ParseResult<T> {
 }
 
 export function parseDecisionRequest(value: unknown): ParseResult<DecisionRequest> {
+  if (isRecord(value) && value.protocol_version === 3) {
+    for (const k of ["request_id","session_id","agent_id","active_role"]) if (!isId(value[k])) return failure(`invalid_${k}`);
+    for (const k of ["session_epoch","game_minute","world_revision"]) if (!isNonNegativeInteger(value[k])) return failure(`invalid_${k}`);
+    if (!TRIGGERS.has(value.trigger as Trigger) || !isRecord(value.resources) || !isRecordList(value.experience_events) || !isRecordList(value.goal_refs ?? [])) return failure("invalid_loop_context");
+    if (!isUniqueIdList(value.goals) || !isUniqueIdList(value.allowed_command_tools,128)) return failure("invalid_capabilities");
+    if (value.dialogue_input !== undefined && (typeof value.dialogue_input !== "string" || value.dialogue_input.length>1000)) return failure("invalid_dialogue_input");
+    if (["actor_context","market_view","known_actors","public_world_state"].some(k=>k in value)) return failure("eager_context_forbidden");
+    for (const event of value.experience_events) if (!isId(event.event_id) || !isNonNegativeInteger(event.game_minute)) return failure("invalid_experience_event");
+    return {ok:true,value:{...value, projection_schema_version:1,actor_context:{self:value.resources},allowed_read_tools:[],
+      public_world_state:{},global_public_events:[],known_actors:[],own_event_delta:[],market_summary:{},market_view:{},interaction_view:{},agreement_view:{}} as unknown as DecisionRequest};
+  }
   if (!isRecord(value) || value.protocol_version !== PROTOCOL_VERSION) return failure("invalid_protocol_version");
   if (Object.hasOwn(value, "snapshot") || Object.hasOwn(value, "event_delta")) return failure("legacy_request_fields");
   for (const field of ["request_id", "session_id", "agent_id"] as const) {

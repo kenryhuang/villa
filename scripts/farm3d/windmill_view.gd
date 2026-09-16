@@ -137,7 +137,7 @@ func _make_recipes() -> void:
 	var recipes := RecipeDatabase.get_recipes_for_station(station_id)
 	_label(box, "%d 种加工方式" % recipes.size(), 14, MUTED)
 	var recipe_box := box
-	if station_id == "food_workshop":
+	if recipes.size() > 4:
 		var scroll := ScrollContainer.new()
 		scroll.custom_minimum_size.y = 350
 		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -147,11 +147,11 @@ func _make_recipes() -> void:
 		recipe_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for recipe in recipes:
 		var id := str(recipe.id)
-		var subtitle := "%s → %d 份" % [_counts(recipe.inputs),int(recipe.outputs[id])] if station_id == "windmill" else "%d 分钟 · %d 份" % [recipe.duration_minutes,recipe.outputs[id]]
+		var subtitle := "%s → %s · %d 分钟" % [_counts(recipe.inputs), _counts(recipe.outputs), int(recipe.duration_minutes)]
 		var button := _button(recipe_box, "%s\n%s" % [recipe.display_name,subtitle], _select_recipe.bind(id))
 		button.custom_minimum_size.y = 82
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.icon = Icons.item_icon(id)
+		button.icon = Icons.item_icon(str(recipe.outputs.keys()[0]))
 		button.expand_icon = true
 		button.add_theme_constant_override("icon_max_width", 34)
 		recipe_buttons[id] = button
@@ -315,8 +315,9 @@ func _render() -> void:
 	var snapshot := controller.snapshot
 	var detail := controller.recipe_detail
 	var id := controller.selected_recipe_id
-	_recipe_name.text = session.item_name(id)
+	_recipe_name.text = str(RecipeDatabase.get_recipe(id).get("display_name", session.item_name(id)))
 	_recipe_use.text = {"flour": "可在食品工坊制作面包、蜂蜜蛋糕。", "animal_feed": "供鸡舍日常消耗，继续生产鸡蛋与羽毛。", "sunflower_oil": "装瓶后收取，可带到市集出售。"}.get(id, "")
+	if id.ends_with("_seed_selection"): _recipe_use.text = "每个作物选出2份种子；建议优先保留下一轮播种需要的种子。"
 	if station_id == "food_workshop":
 		_recipe_use.text = "使用普通鱼，可混合鱼种；稀有鱼不会被消耗。" if id in ["grilled_fish","pickled_fish"] else "面粉来自风车，鸡蛋来自鸡舍或市集。" if id in ["bread","honey_cake"] else "原料备齐后加工，成品可带到市集出售。"
 	_input.text = _counts(detail.inputs)
@@ -328,7 +329,7 @@ func _render() -> void:
 			owned.append("%s %d" % [session.item_name(item),session.inventory.get_item_count(item)])
 	_owned.text = "持有："+"、".join(owned)
 	_input_icon.texture = Icons.item_icon(input_id)
-	_output_icon.texture = Icons.item_icon(id)
+	_output_icon.texture = Icons.item_icon(str(detail.outputs.keys()[0]))
 	batches_spin.set_value_no_signal(controller.batches)
 	_duration.text = "%d 游戏分钟" % int(detail.duration_minutes)
 	for fee in session.production.get_rental_fee_table(building):

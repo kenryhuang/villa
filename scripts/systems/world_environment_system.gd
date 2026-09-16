@@ -10,6 +10,7 @@ var seed := 93
 var last_minute := 0
 var days := {}
 var warehouse := ORIGIN.duplicate(true)
+var merchant_withdrawals := {}
 var transports := {}
 var event := {}
 var repairs := {}
@@ -204,17 +205,22 @@ func context() -> Dictionary:
 	return {"weather": "rain" if raining() else "clear", "forecast": ensure_day(world.minute() / 1080 + 1).duplicate(true), "route": event.duplicate(true), "route_open": route_open(), "repair_site": {"x": SITE.x, "z": SITE.z}, "required_materials": REPAIR, "required_labor": 60, "transports": transports.values().map(func(t): return {"id": t.id, "item_id": t.item_id, "quantity": t.quantity, "arrival": t.arrival, "status": t.status}), "rules": "Forecast is a prediction with issue time, not an observed fact. The off-map caravan has finite stock and 24 units/day capacity. Blocked routes pause delivery; natural drainage restores after 1080 minutes. Local paths and signed local work remain valid. Repair needs actual materials plus 60 minutes at repair_site; subsidies require existing public funding and actual work, once per receipt. Market prices use actual arrivals, no extra weather multiplier."}
 
 func to_dict() -> Dictionary:
-	return {"version": 1, "seed": seed, "last_minute": last_minute, "days": days.duplicate(true), "warehouse": warehouse.duplicate(true), "transports": transports.duplicate(true), "event": event.duplicate(true), "repairs": repairs.duplicate(true), "receipts": receipts.duplicate(true), "public_funding": public_funding.duplicate(true), "watered": watered.duplicate(true)}
+	return {"version": 2, "seed": seed, "last_minute": last_minute, "days": days.duplicate(true), "warehouse": warehouse.duplicate(true), "merchant_withdrawals": merchant_withdrawals.duplicate(true), "transports": transports.duplicate(true), "event": event.duplicate(true), "repairs": repairs.duplicate(true), "receipts": receipts.duplicate(true), "public_funding": public_funding.duplicate(true), "watered": watered.duplicate(true)}
 
 func restore(v: Dictionary) -> void:
 	_rain_scan_minute = -1
+	merchant_withdrawals = v.get("merchant_withdrawals", {}).duplicate(true)
 	if v.is_empty():
 		seed = 93; last_minute = world.minute(); days = {}; warehouse = ORIGIN.duplicate(true); transports = {}; event = {}; repairs = {}; receipts = {}; public_funding = {}; watered = {}; return
 	seed = int(v.seed); last_minute = int(v.last_minute)
 	days = v.days.duplicate(true); warehouse = v.warehouse.duplicate(true); transports = v.transports.duplicate(true); event = v.event.duplicate(true); repairs = v.repairs.duplicate(true); receipts = v.receipts.duplicate(true); public_funding = v.public_funding.duplicate(true); watered = v.watered.duplicate(true)
 
 func validate(v: Variant) -> bool:
-	if not v is Dictionary or v.size() != 11 or v.get("version") != 1 or not Rules._count(v.get("seed"), 1, 2147483647) or not Rules._count(v.get("last_minute"), 0, 9007199254740991): return false
+	if not v is Dictionary or not Rules._count(v.get("version"), 1, 2) or v.size() != 10 + int(v.version) or not Rules._count(v.get("seed"), 1, 2147483647) or not Rules._count(v.get("last_minute"), 0, 9007199254740991): return false
+	var withdrawals: Variant = v.get("merchant_withdrawals", {})
+	if not withdrawals is Dictionary: return false
+	for item in withdrawals:
+		if not ORIGIN.has(item) or not Rules._count(withdrawals[item], 0, ORIGIN[item]): return false
 	for field in ["days", "warehouse", "transports", "event", "repairs", "receipts", "public_funding", "watered"]:
 		if not v.get(field) is Dictionary: return false
 	var used := {}
@@ -226,7 +232,7 @@ func validate(v: Variant) -> bool:
 		if t.status == "arrived" and (not Rules._count(t.get("received"), int(t.arrival), int(v.last_minute)) or not Rules._count(t.get("proceeds"), 0, 9007199254740991)): return false
 		used[t.item_id] = int(used.get(t.item_id, 0)) + int(t.quantity)
 	for item in ORIGIN:
-		if not Rules._count(v.warehouse.get(item), 0, ORIGIN[item]) or int(v.warehouse[item]) + int(used.get(item, 0)) != int(ORIGIN[item]): return false
+		if not Rules._count(v.warehouse.get(item), 0, ORIGIN[item]) or int(v.warehouse[item]) + int(used.get(item, 0)) + int(withdrawals.get(item, 0)) != int(ORIGIN[item]): return false
 	for d in v.days.values():
 		if not d is Dictionary or not Rules._count(d.get("day"), 0, 9007199254740991) or d.get("rain") != (absi(hash("weather:%d:%d" % [v.seed, d.day])) % 4 == 0) or d.get("start") != int(d.day) * 1080 + 180 or d.get("end") != int(d.day) * 1080 + 660 or d.get("kind") != "forecast": return false
 	if not v.event.is_empty():

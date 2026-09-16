@@ -730,8 +730,10 @@ func _assert_daily_invariants(
 			]
 		)
 		var previous := int(previous_prices[item_id])
-		var daily_lower := maxi(lower, ceili(float(previous * 85) / 100.0))
-		var daily_upper := mini(upper, floori(float(previous * 115) / 100.0))
+		# Mirror MarketMath.smooth_price: besides the ±15% band it always allows a
+		# ±1 integer step, so low-priced items (where 15% rounds to zero) can move.
+		var daily_lower := maxi(lower, mini(ceili(float(previous * 85) / 100.0), maxi(lower, previous - 1)))
+		var daily_upper := mini(upper, maxi(floori(float(previous * 115) / 100.0), mini(upper, previous + 1)))
 		assertions.truthy(
 			price >= daily_lower and price <= daily_upper,
 			"route=%s day=%d item=%s daily movement actual=%d expected=%d..%d previous=%d" % [

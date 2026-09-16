@@ -128,9 +128,10 @@ func refresh() -> void:
 	lines.append("\n花朵平均距离：%.1f 格 · 最多采集 4 株" % snapshot.average_distance)
 	lines.append("本批：%s · 剩余：%s（游戏时间）" % [_duration(snapshot.duration_minutes), _duration(snapshot.remaining_minutes)])
 	lines.append("距离越远，往返采蜜与酿蜜耗时越长。")
+	lines.append("蜂蜜分成：蜂箱主%s 60%%，花主合计 40%%。" % _owner_name(snapshot.hive_owner))
 	for owner in snapshot.next_owners:
 		lines.append("  预计归%s：%s" % [_owner_name(owner),_counts(snapshot.next_owners[owner])])
-	lines.append("混合花田按花朵轮流分配完整产物。NPC 的份额自动送入其库存。")
+	lines.append("花主按实际采集株数分配；蜂蜜零头跨批累计，整数入库。蜂箱与花同属一人时份额合并。NPC 份额自动入库。")
 	var available: Dictionary = building.producer_state.outputs if building.owner_id == "player" else building.producer_state.customer_outputs.get("player",{})
 	lines.append("\n我的待收取：%s" % _counts(available))
 	for owner in snapshot.pending:

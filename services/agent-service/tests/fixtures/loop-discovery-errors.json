@@ -1,0 +1,83 @@
+{
+  "source": "farm3d-65b651fef2618-106b300f19b-1789339745-3296412.ndjson",
+  "cases": [
+    {
+      "request_id": "public-65b651fef2618-106b300f19b-1",
+      "agent_id": "village_public",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"domains\": \n[\"public\", \"environment\"]\n\n, \"actions\": \n[\"查询公共指标与预算\", \"查询现有公共措施与合同\", \"查询天气与运输状况\", \"等待不新增干预\"]\n\n}",
+            "name": "discover_tools"
+          },
+          "id": "call_faffd3ceecc043c596ef1a04",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "request_id": "farmer_ahe-65b651fef2618-106b300f19b-2",
+      "agent_id": "farmer_ahe",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"domains\": \n[\"self\", \"farm\", \"market\"]\n\n, \"actions\": \n[\"inspect_self_resources\", \"check_plots\", \"query_price\"]\n\n}",
+            "name": "discover_tools"
+          },
+          "id": "call_d534fad839a24644a7410477",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "request_id": "lao_li-65b651fef2618-106b300f19b-3",
+      "agent_id": "lao_li",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"domains\": \n[\"market\", \"self\", \"tasks\"]\n\n, \"actions\": \n[\"查询价格\", \"查询库存\", \"买卖\", \"查看当前活动\", \"查询公开委托\"]\n\n}",
+            "name": "discover_tools"
+          },
+          "id": "call_aa7e69da563d43169b9a8fa8",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "request_id": "farmer_ahe-65b651fef2618-106b300f19b-4",
+      "agent_id": "farmer_ahe",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"domains\": \n[\"self\", \"farm\", \"market\"]\n\n, \"actions\": \n[\"inspect_self_resources\"]\n\n}",
+            "name": "discover_tools"
+          },
+          "id": "call_7f6bcddafa304812b0a0fdc3",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "request_id": "lao_li-65b651fef2618-106b300f19b-5",
+      "agent_id": "lao_li",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"domains\": \n[\"market\", \"tasks\", \"goals\"]\n\n, \"actions\": \n[\"查询 grain_seed 与 salt 的价格与库存\", \"查询公开委托\", \"采纳短期目标\"]\n\n}",
+            "name": "discover_tools"
+          },
+          "id": "call_2bf5433c0c6f47ffa3fc3315",
+          "type": "function"
+        },
+        {
+          "function": {
+            "arguments": "{}",
+            "name": "inspect_self_resources"
+          },
+          "id": "call_e06d2887aa2a41ff8fca92f9",
+          "type": "function"
+        }
+      ]
+    }
+  ]
+}

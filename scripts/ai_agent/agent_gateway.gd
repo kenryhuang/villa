@@ -113,3 +113,10 @@ func _request_json(path: String, body: Dictionary, callback: Callable) -> bool:
 		request.queue_free()
 		return false
 	return true
+
+
+func submit_read_result(value: Dictionary) -> bool:
+	return _request_json("/v1/reads/result", value, Callable())
+
+func sync_experience(value: Dictionary, callback: Callable) -> bool:
+	return _request_json("/v1/experience/sync", value, callback)

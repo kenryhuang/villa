@@ -7,6 +7,7 @@ export type ProviderDelta =
   | {type: "tool_call"; index: number; id?: string; name?: string; arguments?: string};
 
 export type ProviderTraceEvent =
+  | {type: "loop"; payload: Record<string, unknown>}
   | {type: "input"; body: Record<string, unknown>}
   | ProviderDelta
   | {type: "output"; output: ProviderRawOutput};
@@ -86,6 +87,7 @@ export async function* decodeProviderSse(
   const decoder = new TextDecoder();
   let buffer = "";
   let done = false;
+  try {
   while (!done) {
     const next = await reader.read();
     done = next.done;
@@ -102,6 +104,11 @@ export async function* decodeProviderSse(
   if (buffer.trim()) {
     const parsed = parseSseRecord(buffer);
     if (parsed && parsed !== "done") yield parsed;
+  }
+  } finally {
+    // DONE may arrive before the HTTP body closes; never leave a locked body alive.
+    try { await reader.cancel(); } catch {}
+    reader.releaseLock();
   }
 }
 

@@ -150,6 +150,7 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 		"action_intent": record.get("final", {}),
 		"error": record.get("error", {}),
 		"cancellation": record.get("cancellation", {}),
+		"loop_events": record.get("loop_events", []),
 	}, "\t")
 	call_deferred("_restore_scroll_state", scroll_state, generation)
 
@@ -175,7 +176,7 @@ func _restore_scroll_state(state: Dictionary, generation: int) -> void:
 		if bool(view_state.get("follow", true)):
 			view.scroll_vertical = view.get_v_scroll_bar().max_value
 		else:
-			view.scroll_vertical = float(view_state.get("position", 0.0))
+			view.scroll_vertical = clampf(float(view_state.get("position", 0.0)), 0.0, maxf(0.0, view.get_v_scroll_bar().max_value - view.get_v_scroll_bar().page))
 
 
 func _request_label(record: Dictionary) -> String:
@@ -196,6 +197,14 @@ func _status_text(record: Dictionary) -> String:
 		str(record.get("request_id", "")),
 		str(record.get("status", "streaming")),
 	]
+	if record.get("status", "streaming") == "streaming":
+		var events: Array = record.get("loop_events", [])
+		for index in range(events.size() - 1, -1, -1):
+			var event: Dictionary = events[index]
+			if event.get("event") != "provider.status": continue
+			var phase := str(event.get("phase", ""))
+			parts.append("第 %d 轮 · %s" % [int(event.get("round", 0)), {"queued": "等待模型调用名额", "waiting_provider": "等待模型首条输出", "receiving": "正在接收模型输出", "round_completed": "本轮结束，处理工具结果"}.get(phase, phase)])
+			break
 	var error_code := _error_code(record)
 	if not error_code.is_empty():
 		parts.append(error_code)

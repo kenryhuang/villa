@@ -51,6 +51,13 @@ var knowledge_registry = KnowledgeScript.new()
 var perception_inbox = AgentPerceptionInboxScript.new()
 var event_store = AgentWorldEventStoreScript.new()
 var world_projector = AgentWorldProjectorScript.new()
+const AgentLoopStateScript = preload("res://scripts/ai_agent/agent_loop_state.gd")
+const AgentWorldQueryRouterScript = preload("res://scripts/ai_agent/agent_world_query_router.gd")
+var loop_state = AgentLoopStateScript.new()
+var world_queries = AgentWorldQueryRouterScript.new()
+var _loop_sync_minute := -1
+var _loop_syncing := false
+
 var context_projection = AgentContextProjectionScript.new()
 var world_fact_bridge = AgentWorldFactBridgeScript.new()
 var role_system = AgentRoleSystemScript.new()
@@ -103,7 +110,7 @@ func configure_farm3d(session: Node, hud_bus: Node, remote_enabled: bool, client
 	executor.farm3d_session = session
 	activity_system.action_completion_guard = executor.complete_physical_action
 	event_store.transient_history_limit = 128
-	perception_inbox.transient_event_limit = 64
+	perception_inbox.transient_event_limit = 0
 	configure_player_assets(session.inventory, get_node("/root/GameState"))
 	session.production.actor_assets.resolve_port = func(): return interaction_system
 	session.production.rental_completed.connect(_on_rental_completed)
@@ -477,6 +484,7 @@ func cancel_dialogue(agent_id: String, request_id: String) -> bool:
 	_cancelled_requests[request_id] = true
 	var cancelled := gateway != null and bool(gateway.call("cancel_agent", agent_id, "dialogue_closed"))
 	if not cancelled:
+		if loop_state.loops.has(request_id): loop_state.loops[request_id].state = "cancelled"
 		context_projection.release(agent_id, request_id)
 		_request_triggers.erase(request_id)
 	return cancelled
@@ -645,7 +653,10 @@ func to_dict() -> Dictionary:
 
 
 func _current_state() -> Dictionary:
+	loop_state.capture(self)
+	loop_state.queued_triggers = scheduler._pending.duplicate(true)
 	return _compact_current_state({
+		"loop_state": loop_state.to_dict(),
 		"version": CURRENT_STATE_VERSION,
 		"session_id": session_id,
 		"executor": executor.current_state(),
@@ -663,7 +674,7 @@ func _current_state() -> Dictionary:
 
 
 func _compact_current_state(value: Dictionary) -> Dictionary:
-	var result := {}
+	var result := {"loop_state": value.get("loop_state", {})}
 	for field in ["session_id", "executor", "farm", "buildings", "activities", "knowledge", "projection_checkpoint", "checkpoint_sequence", "roles", "interactions", "agreements", "pending_market_pressure_facts"]:
 		if not value.has(field): return {}
 		result[field] = value[field]
@@ -703,7 +714,8 @@ func _migrate_current_state(value: Dictionary) -> Dictionary:
 
 
 func _validate_current_state(value: Dictionary) -> bool:
-	if value.size() != 13 or value.get("version") != CURRENT_STATE_VERSION: return false
+	if not AgentLoopStateScript.validate(AgentProtocolScript._normalize_json_numbers(value.get("loop_state", {}))): return false
+	if value.size() != (14 if value.has("loop_state") else 13) or value.get("version") != CURRENT_STATE_VERSION: return false
 	for field in ["projection_checkpoint", "roles", "interactions", "agreements"]:
 		if not value.get(field) is Dictionary: return false
 	if not _is_nonnegative_integer(value.get("checkpoint_sequence")) or value.projection_checkpoint.get("checkpoint_sequence") != value.checkpoint_sequence: return false
@@ -778,6 +790,7 @@ func validate_dict(value: Dictionary) -> bool:
 
 
 func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
+	if not AgentLoopStateScript.validate(AgentProtocolScript._normalize_json_numbers(value.get("loop_state", {}))): return false
 	if farm3d_session != null and int(value.get("version", 0)) == VERSION:
 		value = _migrate_current_state(value)
 	if not validate_dict(value):
@@ -814,6 +827,7 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 			role_system.from_dict(before.roles)
 			session_id = previous_session_id
 			return false
+	loop_state.restore(AgentProtocolScript._normalize_json_numbers(value.get("loop_state", {})))
 	session_id = str(value.session_id)
 	_deferred_responses.clear()
 	_request_triggers.clear()
@@ -822,6 +836,7 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 		gateway.bump_epoch()
 		if is_instance_valid(farm3d_session) and service_enabled:
 			gateway.sync_session(session_id, false)
+	scheduler._pending = loop_state.queued_triggers.duplicate(true)
 	return true
 
 
@@ -924,7 +939,7 @@ func _restore_event_sourced_state(value: Dictionary, apply_market_pressure := tr
 	perception_inbox = restored_inbox
 	if farm3d_session != null:
 		event_store.transient_history_limit = 128
-		perception_inbox.transient_event_limit = 64
+		perception_inbox.transient_event_limit = 0
 	world_projector = restored_projector
 	context_projection = restored_context
 	world_fact_bridge = restored_bridge
@@ -1274,6 +1289,7 @@ func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: i
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
+	if trigger != "dialogue" and loop_state.has_execution(agent_id): return {}
 	if farm3d_session != null and farm3d_session.living_world != null and (agent_id not in farm3d_session.living_world.society.focus or not farm3d_session.living_world.society.caught_up(game_minute)): return {}
 	if trigger != "dialogue" and farm3d_session != null and farm3d_session.living_world != null:
 		var negotiating: bool = farm3d_session.living_world.work.pending_negotiation(agent_id)
@@ -1291,6 +1307,8 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	var state = _npc_economy.call("get_npc_state", agent_id)
 	if state == null:
 		return {}
+	if is_instance_valid(farm3d_session):
+		return _build_loop_request(agent_id, request_id, trigger, game_minute, dialogue)
 	var projected: Dictionary = context_projection.build(agent_id, request_id)
 	var public_world := (projected.get("public_world_state", {}) as Dictionary).duplicate(true)
 	public_world.game_day = int(_season.total_days)
@@ -1375,6 +1393,55 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	return request
 
 
+func _build_loop_request(actor: String, request_id: String, trigger: String, minute: int, dialogue: String) -> Dictionary:
+	loop_state.capture(self)
+	var caps: Dictionary = role_system.get_capabilities(actor)
+	var commands: Array = caps.get("tools", []).duplicate()
+	commands.erase("propose_cooperation")
+	for tool in AgentLoopStateScript.GOAL_TOOLS:
+		if tool not in commands: commands.append(tool)
+	var request := {"protocol_version": 3, "request_id": request_id, "session_id": session_id, "session_epoch": gateway.session_epoch,
+		"agent_id": actor, "trigger": trigger, "game_minute": minute, "world_revision": executor.world_revision,
+		"active_role": caps.get("role_id", ""), "goals": caps.get("goals", []), "allowed_command_tools": commands,
+		"resources": loop_state.snapshot(self, actor), "experience_events": loop_state.events(actor), "goal_refs": loop_state.goal_refs(actor, minute)}
+	if not dialogue.is_empty(): request.dialogue_input = dialogue
+	_request_triggers[request_id] = trigger
+	loop_state.loops[request_id] = {"agent_id": actor, "state": "reasoning", "started": minute, "trigger": trigger, "action_ids": []}
+	return request
+
+
+func _loop_tick() -> void:
+	if not is_instance_valid(farm3d_session): return
+	loop_state.capture(self)
+	var minute := _absolute_game_minute()
+	loop_state.evaluate_goals(self, minute)
+	loop_state.finish_batches(self, minute)
+	for actor in registry.get_agent_ids():
+		for goal in loop_state.goal_refs(actor, minute):
+			if int(goal.review_at) <= minute and not get_tree().paused:
+				loop_state.goals[goal.goal_id].review_at = minute + 60
+				scheduler.notify_event(actor, 2, minute)
+		var feedback: Dictionary = loop_state.feedback.get(actor, {})
+		if feedback.get("pending", false) and minute >= int(feedback.get("ready_at", 0)) and not get_tree().paused and not scheduler.is_in_flight(actor):
+			loop_state.feedback[actor].pending = false
+			scheduler.notify_event(actor, 2, minute)
+	if not service_enabled or _loop_syncing or (_loop_sync_minute >= 0 and minute - _loop_sync_minute < 60): return
+	_loop_sync_minute = minute
+	_loop_syncing = true
+	var records: Array = []
+	var sync_actors: Array = registry.get_agent_ids()
+	if _npc_economy.get_npc_state("village_public") != null: sync_actors.append("village_public")
+	for actor in sync_actors:
+		records.append({"agent_id": actor, "resources": loop_state.snapshot(self, actor), "events": loop_state.events(actor)})
+	var epoch: int = gateway.session_epoch
+	var current_session := session_id
+	var callback := func(ok: bool, response: Dictionary, _error: String):
+		_loop_syncing = false
+		if not ok or current_session != session_id or epoch != gateway.session_epoch: return
+		for ack in response.get("acknowledged", []): loop_state.acknowledge(str(ack.agent_id), ack.event_ids)
+	if not gateway.sync_experience({"session_id": session_id, "session_epoch": epoch, "actors": records}, callback): _loop_syncing = false
+
+
 func _build_crop_options(agent_id: String) -> Array:
 	if not farm_registry.has_method("get_crop_options"):
 		return []
@@ -1385,6 +1452,21 @@ func _build_crop_options(agent_id: String) -> Array:
 
 
 func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
+	var incoming: Dictionary = event.get("data", {})
+	var payload: Dictionary = incoming.get("payload", {})
+	if event.get("event") == "read.request":
+		if payload.get("session_id") != session_id or int(payload.get("session_epoch", -1)) != gateway.session_epoch: return
+		if scheduler.get_in_flight_request_id(agent_id) != str(payload.get("request_id", "")): return
+		var result: Dictionary = world_queries.read(self, agent_id, str(payload.get("name", "")), payload.get("arguments", {}))
+		gateway.submit_read_result(payload.merged({"result": result}, true))
+		return
+	if event.get("event") == "context.ack":
+		if payload.get("session_id") == session_id and int(payload.get("session_epoch", -1)) == gateway.session_epoch:
+			loop_state.acknowledge(agent_id, payload.get("event_ids", []))
+		return
+	if event.get("event") == "loop.trace":
+		session_trace.accept_event(event)
+		return
 	if not session_trace.accept_event(event):
 		_publish("warning", "%s 的 Agent 流事件无法记录。" % agent_id, {"agent_id": agent_id})
 		return
@@ -1404,6 +1486,7 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 
 
 func _handle_stream_failure(agent_id: String, request_id: String, error: String) -> void:
+	if loop_state.loops.has(request_id): loop_state.loops[request_id].state = "failed"
 	var trigger := str(_request_triggers.get(request_id, ""))
 	context_projection.release(agent_id, request_id)
 	var expected_cancellation := EXPECTED_STREAM_CANCELLATIONS.has(error)
@@ -1420,6 +1503,7 @@ func _handle_stream_failure(agent_id: String, request_id: String, error: String)
 
 
 func _process(_delta: float) -> void:
+	_loop_tick()
 	if get_tree().paused:
 		return
 	if not _deferred_responses.is_empty():
@@ -1438,27 +1522,35 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	if farm3d_session != null and get_tree().paused and validator.validate(response, registry, executor.world_revision, role_system).ok:
 		var safe_dialogue := trigger == "dialogue"
 		for action in response.get("actions", []):
-			if str(action.get("tool_name", "")) not in ["propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
+			if str(action.get("tool_name", "")) not in ["request_supply", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
 				safe_dialogue = false
 		if not safe_dialogue:
 			if not _deferred_responses.any(func(entry: Dictionary): return str(entry.response.get("request_id", "")) == request_id):
 				_deferred_responses.append({"agent_id": agent_id, "response": response.duplicate(true)})
 			if trigger == "dialogue":
-				dialogue_ready.emit(agent_id, request_id, "行动请求已排队，恢复游戏后将重新核验并执行；尚未扣费或完成。")
+				var reply := _dialogue_reply(response)
+				dialogue_ready.emit(agent_id, request_id, reply + "\n（行动将在关闭对话、恢复游戏后开始，届时会重新核验条件。）")
 			return
 	_request_triggers.erase(request_id)
 	var checked := validator.validate(response, registry, executor.world_revision, role_system)
 	if not checked.ok:
+		if loop_state.loops.has(request_id): loop_state.loops[request_id].state = "failed"
+		loop_state.record(agent_id, {"event_id": "decision-rejected:" + request_id, "kind": "DecisionRejected", "game_minute": _absolute_game_minute(), "payload": {"reason": checked.error}})
 		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 动作被拒绝：%s" % [agent_id, str(checked.error)], {"agent_id": agent_id})
 		if trigger == "dialogue": dialogue_ready.emit(agent_id, request_id, "请求未执行：动作或当前状态不符合要求（%s）。" % str(checked.error))
 		return
 	if not _event_pipeline_synchronized():
+		if loop_state.loops.has(request_id): loop_state.loops[request_id].state = "failed"
 		context_projection.release(agent_id, request_id)
 		_publish("warning", "%s 的 Agent 事件投影暂不同步，动作已推迟。" % agent_id, {"agent_id": agent_id})
 		if trigger == "dialogue": dialogue_ready.emit(agent_id, request_id, "当前状态尚未同步，请稍后重试；本次操作未执行。")
 		return
 	context_projection.acknowledge(agent_id, request_id)
+	if loop_state.loops.has(request_id):
+		loop_state.loops[request_id].state = "executing"
+		loop_state.loops[request_id].action_ids = checked.value.actions.map(func(a): return a.action_id)
+		loop_state.record(agent_id, {"event_id": "decision:" + str(checked.value.decision_id), "kind": "decision", "game_minute": _absolute_game_minute(), "payload": {"actions": checked.value.actions, "action_names": checked.value.actions.map(func(a): return a.tool_name), "decision_summary": checked.value.decision_summary}})
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
 	for outcome in outcomes:
 		_record_world_action_outcome(outcome)
@@ -1479,16 +1571,7 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		var failed := outcomes.filter(func(outcome: Dictionary): return str(outcome.get("status", "")) in ["rejected", "failed"])
 		# Decision summaries are diagnostics, never NPC dialogue. Some providers
 		# return the actual reply only in a speak tool call instead of content.
-		var speech := str(response.get("speech", "")).strip_edges()
-		if speech.is_empty():
-			var spoken: Array[String] = []
-			for outcome in outcomes:
-				var arguments: Dictionary = outcome.get("arguments", {})
-				if outcome.get("status") == "completed" and outcome.get("tool_name") == "speak" and arguments.get("target_actor_id") == "player":
-					var text := str(arguments.get("text", "")).strip_edges()
-					if not text.is_empty(): spoken.append(text)
-			speech = "\n".join(spoken)
-		if speech.is_empty(): speech = "（对方暂时没有回应。）"
+		var speech := _dialogue_reply(response)
 		var facts: Array[String] = []
 		for outcome in outcomes:
 			if str(outcome.get("tool_name", "")) not in ["speak", "wait"]:
@@ -1497,12 +1580,21 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 					fact = str({"propose_trade": "交易报价已生成，等待对方确认。", "counter_trade": "新报价已生成，原报价已失效，等待对方确认。", "accept_trade": "交易已成交，物品与金币已按确认条款结算。", "reject_trade": "交易已拒绝。", "cancel_trade": "报价已取消。"}.get(str(outcome.get("tool_name", "")), "操作结果已记录，请查看当前协议状态。"))
 				facts.append(fact)
 		if not facts.is_empty():
-			speech = "\n".join(facts)
-		elif farm3d_session != null:
-			speech += "\n（本次仅交谈，没有提交交易或生产操作。）"
+			speech += "\n（" + "；".join(facts) + "）"
 		if not failed.is_empty():
-			speech = "本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。请查看实际条款和订单状态。"
+			speech += "\n（本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。）"
 		dialogue_ready.emit(agent_id, request_id, speech)
+
+
+func _dialogue_reply(response: Dictionary) -> String:
+	var speech := str(response.get("speech", "")).strip_edges()
+	if not speech.is_empty(): return speech
+	var spoken: Array[String] = []
+	for action in response.get("actions", []):
+		if action.get("tool_name") == "speak" and action.get("arguments", {}).get("target_actor_id") == "player":
+			var text := str(action.arguments.get("text", "")).strip_edges()
+			if not text.is_empty(): spoken.append(text)
+	return "\n".join(spoken) if not spoken.is_empty() else "（对方暂时没有回应。）"
 
 
 func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:
@@ -1517,6 +1609,19 @@ func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:
 
 
 func _record_world_action_outcome(outcome: Dictionary) -> bool:
+	if is_instance_valid(farm3d_session):
+		var actor := str(outcome.get("agent_id", ""))
+		var state := str(outcome.get("status", ""))
+		for loop_id in loop_state.loops:
+			var loop: Dictionary = loop_state.loops[loop_id]
+			if str(outcome.get("action_id", "")) in loop.action_ids:
+				if not loop.has("receipts"): loop.receipts = {}
+				if loop.receipts.get(str(outcome.action_id), {}) != outcome:
+					session_trace.record_action_event(str(loop_id), "action." + state, outcome)
+				loop.receipts[str(outcome.action_id)] = outcome.duplicate(true)
+				if actor.is_empty(): actor = str(loop.agent_id)
+		loop_state.record(actor, {"event_id": "action:%s:%s:%s" % [outcome.get("idempotency_key", ""), state, outcome.get("committed_revision", 0)], "kind": "Action" + state.capitalize(), "game_minute": _absolute_game_minute(), "payload": outcome.duplicate(true)})
+		loop_state.snapshot(self, actor)
 	var status := str(outcome.get("status", ""))
 	var tool_name := str(outcome.get("tool_name", ""))
 	if status not in ["in_progress", "completed"] or tool_name in [

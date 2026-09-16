@@ -49,7 +49,7 @@ static func compact_state(value: Dictionary) -> Dictionary:
 			outcomes[key] = outcome.duplicate(true)
 		else:
 			var receipt := {}
-			for field in ["protocol_version", "agent_id", "decision_id", "action_id", "idempotency_key", "tool_name", "status", "committed_revision", "resource_delta", "changed_entities", "failure_code", "game_minute", "agreement_id"]:
+			for field in ["protocol_version", "agent_id", "decision_id", "action_id", "idempotency_key", "tool_name", "status", "committed_revision", "resource_delta", "changed_entities", "failure_code", "failure_details", "game_minute", "agreement_id"]:
 				if outcome.has(field): receipt[field] = outcome[field]
 			outcomes[key] = receipt.duplicate(true)
 	return {"world_revision": value.get("world_revision", -1), "outcomes": outcomes, "continuations": value.get("continuations", {}).duplicate(true)}
@@ -176,8 +176,15 @@ func resume_batch_after(outcome: Dictionary, game_minute: int) -> Array[Dictiona
 	if outcome.get("status") != "completed": return []
 	return execute_batch(batch, game_minute)
 
-func has_pending_continuation(agent_id: String) -> bool:
-	return _continuations.values().any(func(batch): return batch.get("agent_id") == agent_id)
+func has_pending_continuation(agent_id: String, except_build_project := "") -> bool:
+	for key in _continuations:
+		if _continuations[key].get("agent_id") != agent_id: continue
+		var prior: Dictionary = _outcomes.get(key, {})
+		# The construction project must run before its own ordered continuation.
+		# Other pending batches still own the actor's schedule.
+		if not except_build_project.is_empty() and _build_project_id(key) == except_build_project and prior.get("tool_name") == "build" and prior.get("status") == "in_progress" and prior.get("arguments", {}).has("gx"): continue
+		return true
+	return false
 
 
 func finalize_queued_action(intent: Dictionary, result: Dictionary, game_minute: int) -> Dictionary:
@@ -302,6 +309,8 @@ func _record_result(intent: Dictionary, result: Dictionary, game_minute: int) ->
 		var failed := _failure(intent, game_minute, str(result.error))
 		if _outcomes.get(idempotency_key, {}).get("status") == "in_progress": failed.status = "failed"
 		failed.merge({"agent_id": agent_id, "tool_name": tool_name, "arguments": arguments.duplicate(true)})
+		failed.hud_message = str(result.get("message", ""))
+		if result.has("details"): failed.failure_details = result.details.duplicate(true)
 		_outcomes[idempotency_key] = failed.duplicate(true)
 		return failed
 	if bool(result.get("mutated", false)):
@@ -329,10 +338,42 @@ func _record_result(intent: Dictionary, result: Dictionary, game_minute: int) ->
 	return outcome
 
 
+func _build_project_id(key: String) -> String:
+	return "build-action-" + key.sha256_text().substr(0, 32)
+
+func _begin_build_project(actor: String, arguments: Dictionary, key: String) -> Dictionary:
+	var world: Node = farm3d_session.living_world
+	if not arguments.has_all(["building_type", "gx", "gz"]) or arguments.building_type not in world.construction.WORK_BUILDINGS:
+		return _error("physical_build_requires_site")
+	if world.work.occupied(actor): return _error("actor_schedule_busy")
+	var gx := int(arguments.gx)
+	var gz := int(arguments.gz)
+	if not world.construction.legal(actor, gx, gz, "", arguments.building_type): return _error("land_unavailable")
+	var cell: GridCell = farm3d_session.grid.get_cell(gx, gz)
+	var approach: Vector2 = cell.world_position() + Vector2(-1.2, 0)
+	var materials: Dictionary = world.construction.cost(arguments.building_type)
+	var project_id := _build_project_id(key)
+	var plan := {"goal": "建造" + str(arguments.building_type), "budget": 0, "materials": materials, "deadline_minutes": 1080,
+		"steps": [
+			{"id": "land", "capability": "reserve_plot", "depends_on": [], "arguments": {"gx": gx, "gz": gz, "building_type": arguments.building_type}},
+			{"id": "approach", "capability": "move", "depends_on": ["land"], "arguments": {"x": approach.x, "z": approach.y}},
+			{"id": "construct", "capability": "build", "depends_on": ["approach"], "arguments": {"lease_step": "land"}},
+			{"id": "finish", "capability": "wait_construction", "depends_on": ["construct"], "arguments": {"build_step": "construct"}}]}
+	var result: Dictionary = world.projects.submit(actor, project_id, plan)
+	if result.ok:
+		result.status = "in_progress"
+		result.mutated = true
+		result.changed_entities = ["project:" + project_id]
+		result.message = "已启动实体建造项目 " + project_id + "；材料已托管，需走到现场并完成施工。"
+	return result
+
 func _begin_physical_action(intent: Dictionary, game_minute: int) -> Dictionary:
 	var world: Node = farm3d_session.living_world
 	var agent_id := str(intent.agent_id)
 	if world.work.occupied(agent_id): return _error("actor_schedule_busy")
+	if intent.tool_name in ["buy", "sell", "prepare_supplies"]:
+		var checked := _check_trade(agent_id, "sell" if intent.tool_name == "sell" else "buy", intent.arguments)
+		if not checked.ok: return checked
 	var movement := {}
 	var approach: Dictionary = world.work.approach_action(agent_id, str(intent.tool_name), intent.arguments, movement)
 	if not approach.get("ok", false) and not approach.get("waiting", false): return approach
@@ -358,6 +399,23 @@ func complete_physical_action(record: Dictionary, game_minute: int) -> Dictionar
 
 func complete_due(game_minute: int) -> Array[Dictionary]:
 	var outcomes: Array[Dictionary] = []
+	if is_instance_valid(farm3d_session):
+		for prior in _outcomes.values():
+			if prior.get("tool_name") != "build" or prior.get("status") != "in_progress" or not prior.get("arguments", {}).has("gx"): continue
+			var project_id := _build_project_id(str(prior.idempotency_key))
+			var project: Dictionary = farm3d_session.living_world.projects.projects.get(project_id, {})
+			if project.is_empty(): continue
+			var blocked: bool = project.steps.values().any(func(step): return step.status == "blocked")
+			if project.status in ["active", "suspended"] and not blocked: continue
+			var result: Dictionary = _error("construction_" + str(project.status))
+			if blocked: result = _error("construction_blocked")
+			if project.status == "completed":
+				result = {"ok": true, "mutated": true, "message": "实体建造已完成：" + str(project.steps.construct.result.get("building_id", "")), "changed_entities": ["project:" + project_id, "npc_building:" + str(project.steps.construct.result.get("building_id", ""))]}
+			else:
+				result.details = {"project_id": project_id, "reason": project.reason, "next_tools": ["retry_project", "cancel_project"]}
+			var outcome := _record_result(prior, result, game_minute)
+			outcomes.append(outcome)
+			outcomes.append_array(resume_batch_after(outcome, game_minute))
 	for activity in _activities.call("complete_due", game_minute):
 		var record := activity as Dictionary
 		if record.payload.get("physical_action", false):
@@ -391,6 +449,8 @@ func complete_due(game_minute: int) -> Array[Dictionary]:
 func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, game_minute: int, key: String, decision_id: String, action_id: String, request_id := "", at_destination := false) -> Dictionary:
 	if not at_destination and is_instance_valid(farm3d_session) and not farm3d_session.living_world.interruptions.running(agent_id).is_empty() and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "gather_sample", "deliver_commission"]: return _error("delivery_in_progress")
 	if not at_destination and is_instance_valid(farm3d_session) and farm3d_session.living_world.work.owns_schedule(agent_id) and tool_name in ["travel", "move", "till", "plant", "water", "harvest", "build", "survey", "collect_sample", "rent_production"]: return _error("work_schedule_conflict")
+	if tool_name in preload("res://scripts/ai_agent/agent_loop_state.gd").GOAL_TOOLS:
+		return farm3d_session.agent_runtime.loop_state.command(agent_id, tool_name, arguments, key, game_minute) if is_instance_valid(farm3d_session) else _error("farm3d_only")
 	match tool_name:
 		"move":
 			return _success("%s已到达目的地。" % _display_name(agent_id), ["actor:" + agent_id]) if at_destination else _error("requires_3d_world")
@@ -411,6 +471,9 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 				if str(arguments.get("building_id", "")) in [EconomyProgressionSystem.building_key(building), building.instance_id]:
 					return farm3d_session.production.start_rented_recipe(building, agent_id, str(arguments.get("recipe_id", "")), int(arguments.get("batches", 0)), int(arguments.get("max_fee", 0)), key, request_id)
 			return _error("building_not_found")
+		"request_supply":
+			if not is_instance_valid(farm3d_session): return _error("farm3d_only")
+			return farm3d_session.living_world.merchant.request_supply(agent_id, arguments, key)
 		"till":
 			var plot := int(arguments.get("plot", -1))
 			if not _farm.call("till", agent_id, plot):
@@ -430,7 +493,8 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 				return _error("travel_unavailable")
 			return {"ok": true, "mutated": true, "status": "in_progress", "message": "%s出发前往%s。" % [_display_name(agent_id), region_id], "changed_entities": ["npc_activity:" + key], "resource_delta": {}}
 		"build":
-			if is_instance_valid(farm3d_session): return {"ok": false, "error": "use_project_physical_construction"}
+			if is_instance_valid(farm3d_session): return _begin_build_project(agent_id, arguments, key)
+			if arguments.has("gx"): return _error("physical_construction_requires_3d")
 			var building_type := str(arguments.get("building_type", ""))
 			var building_id := str(arguments.get("building_id", key))
 			if building_type.is_empty() or not _activities.call("start", agent_id, "build", key, game_minute, game_minute + 120, {"building_type": building_type, "building_id": building_id, "decision_id": decision_id, "action_id": action_id, "tool_name": "build", "agreement_id": str(arguments.get("agreement_id", ""))}):
@@ -531,18 +595,53 @@ func _harvest(agent_id: String, arguments: Dictionary, game_minute: int) -> Dict
 func _trade(agent_id: String, tool_name: String, arguments: Dictionary) -> Dictionary:
 	var item_id := str(arguments.get("item_id", ""))
 	var quantity := int(arguments.get("quantity", 0))
-	if _interactions != null:
-		if tool_name == "sell" and int(_interactions.call("available_item", agent_id, item_id)) < quantity:
-			return _error("assets_reserved")
-		if tool_name == "buy":
-			var quoted := int(_economy.call("quote_agent_buy", item_id, quantity))
-			if quoted <= 0 or int(_interactions.call("available_gold", agent_id)) < quoted:
-				return _error("assets_reserved")
+	var checked := _check_trade(agent_id, tool_name, arguments)
+	if not checked.ok: return checked
 	var succeeded := bool(_economy.call("agent_buy" if tool_name == "buy" else "agent_sell", agent_id, item_id, quantity))
 	if not succeeded:
 		return _error("trade_rejected")
 	var delta := quantity if tool_name == "buy" else -quantity
 	return _success("%s%s了%s ×%d。" % [_display_name(agent_id), "购买" if tool_name == "buy" else "出售", item_id, quantity], ["npc_inventory:" + agent_id, "market:" + item_id], {item_id: delta})
+
+
+func _check_trade(agent_id: String, tool_name: String, arguments: Dictionary) -> Dictionary:
+	var item_id := str(arguments.get("item_id", ""))
+	var quantity := int(arguments.get("quantity", 0))
+	var state = _economy.call("get_npc_state", agent_id)
+	if state == null or quantity <= 0: return _error("invalid_trade")
+	var available_gold := int(_interactions.call("available_gold", agent_id)) if _interactions != null else int(state.gold)
+	var available_items := int(_interactions.call("available_item", agent_id, item_id)) if _interactions != null else int(state.inventory.get(item_id, 0))
+	var quoted := int(_economy.call("quote_agent_buy", item_id, quantity)) if tool_name == "buy" else 0
+	var details := {"item_id": item_id, "quantity": quantity, "gold": int(state.gold), "available_gold": available_gold, "available_items": available_items, "buy_total": quoted}
+	var code := ""
+	var message := ""
+	if tool_name == "buy":
+		if is_instance_valid(farm3d_session):
+			details.market_stock = farm3d_session.market.get_stock(item_id)
+			if not farm3d_session.market.can_buy(item_id, quantity):
+				code = "market_stock_unavailable"
+				message = "市场%s库存不足：需要%d，当前%d。" % [item_id, quantity, details.market_stock]
+		if code.is_empty() and quoted <= 0:
+			code = "invalid_quote"
+			message = "无法获得有效的购买报价。"
+		if code.is_empty() and int(state.gold) < quoted:
+			code = "insufficient_gold"
+			message = "购买%s需要%d金币，当前只有%d金币。" % [item_id, quoted, int(state.gold)]
+		if code.is_empty() and available_gold < quoted:
+			code = "assets_reserved"
+			message = "部分金币已预留：可用%d，购买需要%d金币。" % [available_gold, quoted]
+	elif int(state.inventory.get(item_id, 0)) < quantity:
+		code = "insufficient_inventory"
+		message = "%s库存不足，无法出售%d个。" % [item_id, quantity]
+	elif available_items < quantity:
+		code = "assets_reserved"
+		message = "%s已有预留，可出售%d个，申请出售%d个。" % [item_id, available_items, quantity]
+	if code.is_empty() and tool_name == "sell" and is_instance_valid(farm3d_session):
+		code = farm3d_session.market.merchant_trade_error(item_id, quantity)
+		if not code.is_empty():
+			message = "商行资金或收购额度不足，请减少数量或稍后出售。"
+			details.max_sell_quantity = farm3d_session.market.maximum_sale(item_id, quantity)
+	return {"ok": true} if code.is_empty() else {"ok": false, "error": code, "message": message, "details": details}
 
 
 func _display_name(agent_id: String) -> String:

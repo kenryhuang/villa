@@ -137,15 +137,20 @@ func _run() -> void:
 	root.push_input(escape,true)
 	_check(not view.visible and not paused and not player.ui_blocked,"Escape restores time and player control")
 	_check(not Input.is_action_pressed("move_right") and not player._dialogue_input_blocked,"Closing with a movement key held does not leave the player walking")
-	# A real registered NPC owns the second flower; both owners receive exactly one unit.
+	# Player owns the hive and half the flowers: combined share is 60% + 20%.
 	_check(session.grid.reserve_cells("farmer_ahe",[Vector2i(31,33)]),"Flower plot can belong to the real NPC economy")
 	var npc_before := int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))
-	_batch(hive)
-	_check(hive.producer_state.outputs == {"honey":1},"Player receives only the share from their own flower")
-	_check(int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))==npc_before+1,"NPC flower honey goes to the NPC inventory")
+	var player_shared := 0
+	for batch_index in 5:
+		_batch(hive)
+		player_shared += hive.producer_state.get_output_count("honey")
+		session.production.collect_outputs(hive,session.inventory)
+	_check(player_shared == 8,"Hive ownership plus half the flowers earns eight of ten honey")
+	_check(int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))==npc_before+2,"NPC half of flowers earns two of ten honey")
 	_check(hive.producer_state.customer_outputs.is_empty(),"Successful NPC delivery clears escrow")
 	# Hold original transaction service busy: output remains safely attributed and persisted.
 	session.production.building_service.busy = true
+	_batch(hive)
 	_batch(hive)
 	_check(hive.producer_state.customer_outputs.get("farmer_ahe",{}) == {"honey":1},"Unavailable NPC transaction keeps their honey in escrow")
 	var state := hive.producer_state.to_dict()
@@ -155,22 +160,24 @@ func _run() -> void:
 	_check(hive.producer_state.customer_outputs.get("farmer_ahe",{}) == {"honey":1},"Player collection cannot take NPC honey")
 	session.production.building_service.busy = false
 	session.production.advance_minutes(1)
-	_check(hive.producer_state.customer_outputs.is_empty() and int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))==npc_before+2,"Retry delivers pending honey exactly once")
+	_check(hive.producer_state.customer_outputs.is_empty() and int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))==npc_before+3,"Retry delivers pending honey exactly once")
 	session.production.advance_minutes(1)
-	_check(int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))==npc_before+2,"Retry cannot redeliver cleared escrow")
+	_check(int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("honey",0))==npc_before+3,"Retry cannot redeliver cleared escrow")
 	# Full capacity counts both personal and NPC storage, not just player jars.
 	hive.producer_state.outputs = {"honey":4}
 	hive.producer_state.customer_outputs = {"farmer_ahe":{"honey":2}}
 	session.production.building_service.busy = true
 	session.production.set_maintenance_due_day(hive,100)
+	var blocked_credits: Dictionary = hive.producer_state.beehive_cycle.honey_credits.duplicate(true)
 	_batch(hive)
 	_check(hive.producer_state.outputs == {"honey":4} and hive.producer_state.customer_outputs.farmer_ahe.honey==2,"Full mixed storage blocks the entire next harvest")
+	_check(hive.producer_state.beehive_cycle.honey_credits == blocked_credits,"Blocked output cannot advance fractional entitlements")
 	hive._process(1.1)
 	_check(not model.bees[0].visible,"Full storage stops bee activity")
 	session.production.building_service.busy = false
 	session.production.advance_minutes(1)
 	session.production.collect_outputs(hive,session.inventory)
-	# Reallocation is independent of hive ownership.
+	# Hive ownership participates in allocation; player flower shares remain protected.
 	hive.owner_id = "farmer_ahe"
 	_batch(hive)
 	_check(hive.producer_state.outputs.is_empty() and hive.producer_state.customer_outputs.get("player",{}) == {"honey":1},"Player flower yields stay theirs even at an NPC-owned hive")
@@ -181,10 +188,12 @@ func _run() -> void:
 	var fourth := _flower(33,30)
 	var flowers := [near,second,third,fourth]
 	var allocated := {"player":0,"farmer_ahe":0}
-	for day in [2,4]:
-		var shares: Dictionary = session.production._beehive_output_owners(flowers,{"honey":2},day)
+	var credits := {}
+	for day in [2,4,6,8,10]:
+		var shares: Dictionary = session.production._beehive_output_owners(hive,flowers,{"honey":2},day,credits)
 		for owner in shares: allocated[owner] += int(shares[owner].honey)
-	_check(allocated=={"player":3,"farmer_ahe":1},"Integer shares are proportional across successive cycles")
+	_check(allocated=={"player":9,"farmer_ahe":1},"Hive plus three of four flowers earns 90%, fourth flower owner 10%")
+	_test_honey_shares(hive, near, second, third, fourth)
 	_batch(hive)
 	var wax := hive.producer_state.get_output_count("beeswax") + int(session.npc_economy.get_npc_state("farmer_ahe").inventory.get("beeswax",0))
 	_check(wax>=1,"Four mature flowers of two species produce original bonus wax")
@@ -201,8 +210,10 @@ func _run() -> void:
 		cell.crop_instance = null
 		cell.state = GridCell.State.FARMLAND
 	session.production.building_service.busy = true
+	hive.producer_state.beehive_cycle.honey_credits = {}
 	_batch(hive)
-	_check(hive.producer_state.outputs.is_empty() and hive.producer_state.customer_outputs.get("farmer_ahe",{})=={"honey":1},"All-NPC flowers yield no honey for the player")
+	_batch(hive)
+	_check(hive.producer_state.outputs=={"honey":1} and hive.producer_state.customer_outputs.get("farmer_ahe",{})=={"honey":1},"Even all-NPC flowers retain the player's hive entitlement with carried remainder")
 	# Restore test-only reservation to the real registry before whole-world save/load.
 	session.grid._cell_reservations.erase(GridSystem.cell_key(31,33))
 	session.production.advance_minutes(37)
@@ -249,3 +260,46 @@ func _run() -> void:
 	await _frames()
 	print("3D BEEHIVE: %s (%d checks)" % ["PASS" if failures.is_empty() else "FAIL "+str(failures), checks])
 	quit(0 if failures.is_empty() else 1)
+
+func _test_honey_shares(hive: BuildingInstance, own: GridCell, npc: GridCell, third: GridCell, fourth: GridCell) -> void:
+	var production := session.production
+	var credits := {}
+	var paid := {"player":0,"farmer_ahe":0}
+	for index in 10:
+		var split: Dictionary = production._beehive_output_owners(hive,[npc],{"honey":1},index*2+2,credits)
+		for owner in split: paid[owner] += int(split[owner].honey)
+		if index == 0:
+			var state := ProducerState.new("beehive")
+			state.beehive_cycle.honey_credits = credits.duplicate(true)
+			var restored := ProducerState.new()
+			_check(restored.from_dict(JSON.parse_string(JSON.stringify(state.to_dict()))),"Fractional honey entitlement survives JSON save/load")
+			credits = restored.beehive_cycle.honey_credits
+	_check(paid == {"player":6,"farmer_ahe":4} and credits.is_empty(),"Ten single-honey batches pay exact 6:4 after reload")
+	var legacy := hive.producer_state.to_dict()
+	legacy.beehive_cycle.erase("honey_credits")
+	var restored := ProducerState.new()
+	_check(restored.from_dict(legacy) and restored.beehive_cycle.honey_credits.is_empty(),"Old saves begin with zero fractional debt and preserve existing goods")
+	var corrupt := hive.producer_state.to_dict()
+	corrupt.beehive_cycle.honey_credits = {"player":1}
+	_check(not restored.from_dict(corrupt),"Unbalanced fractional entitlements cannot load")
+	credits = {}
+	_check(production._beehive_output_owners(hive,[own],{"honey":10},2,credits)=={"player":{"honey":10}} and credits.is_empty(),"Same hive and flower owner receives all honey")
+	hive.owner_id = "farmer_ahe"
+	credits = {}
+	_check(production._beehive_output_owners(hive,[own],{"honey":10},2,credits)=={"player":{"honey":4},"farmer_ahe":{"honey":6}},"NPC hive and player flowers split 6:4")
+	hive.owner_id = "player"
+	_check(session.grid.reserve_cells("farmer_ahe",[Vector2i(third.gx,third.gz)]),"Second NPC flower reserved")
+	_check(session.grid.reserve_cells("farmer_ahe",[Vector2i(own.gx,own.gz)]),"Third NPC flower reserved")
+	_check(session.grid.reserve_cells("lao_li",[Vector2i(fourth.gx,fourth.gz)]),"Other flower owner reserved")
+	credits = {}
+	var multiple: Dictionary = production._beehive_output_owners(hive,[own,npc,third,fourth],{"honey":20},2,credits)
+	_check(multiple=={"player":{"honey":12},"farmer_ahe":{"honey":6},"lao_li":{"honey":2}},"Flower owners divide 40% in proportion to assigned flower counts")
+	session.grid._cell_reservations.erase(GridSystem.cell_key(third.gx,third.gz))
+	session.grid._cell_reservations.erase(GridSystem.cell_key(own.gx,own.gz))
+	session.grid._cell_reservations.erase(GridSystem.cell_key(fourth.gx,fourth.gz))
+	var before := hive.producer_state.to_dict()
+	var preview := production.get_beehive_snapshot(hive)
+	production.get_beehive_snapshot(hive)
+	_check(hive.producer_state.to_dict()==before and preview.honey_share.hive_owner_percent==60,"Repeated preview describes split without changing balances")
+	var query: Dictionary = session.agent_runtime.world_queries.read(session.agent_runtime,"farmer_ahe","query_world",{"domain":"buildings","section":"detail","id":hive.instance_id})
+	_check(query.ok and str(query).contains("flower_owners_percent"),"Agent building detail discovers actual honey sharing rule")

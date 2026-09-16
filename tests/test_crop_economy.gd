@@ -2319,21 +2319,21 @@ func _test_crop_data_validation(assertions: TestAssert) -> void:
 
 func _test_default_roster_and_item_catalog(assertions: TestAssert) -> void:
 	var expected := [
-		{"crop_id": "grain", "plant_item_id": "grain_seed", "days": 3, "yield": Vector2i(2, 4), "regrow": 0, "seasons": [0, 1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "carrot", "plant_item_id": "carrot_seed", "days": 3, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "grain", "plant_item_id": "grain_seed", "days": 3, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [0, 1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "carrot", "plant_item_id": "carrot_seed", "days": 3, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
 		{"crop_id": "potato", "plant_item_id": "potato_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [0, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "tomato", "plant_item_id": "tomato_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [0, 1], "lifecycle_type": "annual_regrow", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "strawberry", "plant_item_id": "strawberry_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [0], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "blueberry", "plant_item_id": "blueberry_seed", "days": 5, "yield": Vector2i(2, 3), "regrow": 2, "seasons": [1], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "watermelon", "plant_item_id": "watermelon_seed", "days": 5, "yield": Vector2i(1, 2), "regrow": 0, "seasons": [1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "sunflower", "plant_item_id": "sunflower_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "lavender", "plant_item_id": "lavender_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "pumpkin", "plant_item_id": "pumpkin_seed", "days": 5, "yield": Vector2i(1, 2), "regrow": 0, "seasons": [2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "rose", "plant_item_id": "rose_seed", "days": 4, "yield": Vector2i(2, 3), "regrow": 0, "seasons": [0, 1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "apple", "plant_item_id": "apple_sapling", "days": 5, "yield": Vector2i(2, 4), "regrow": 3, "seasons": [2], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "peach", "plant_item_id": "peach_sapling", "days": 5, "yield": Vector2i(2, 3), "regrow": 3, "seasons": [1], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "grape", "plant_item_id": "grape_seed", "days": 4, "yield": Vector2i(2, 4), "regrow": 2, "seasons": [1, 2], "lifecycle_type": "vine", "environment": "outdoor_or_greenhouse"},
-		{"crop_id": "lemon", "plant_item_id": "lemon_sapling", "days": 5, "yield": Vector2i(2, 3), "regrow": 3, "seasons": [], "lifecycle_type": "tree", "environment": "greenhouse_only"},
+		{"crop_id": "tomato", "plant_item_id": "tomato_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 2, "seasons": [0, 1], "lifecycle_type": "annual_regrow", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "strawberry", "plant_item_id": "strawberry_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 2, "seasons": [0], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "blueberry", "plant_item_id": "blueberry_seed", "days": 5, "yield": Vector2i(3, 5), "regrow": 2, "seasons": [1], "lifecycle_type": "bush", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "watermelon", "plant_item_id": "watermelon_seed", "days": 5, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "sunflower", "plant_item_id": "sunflower_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "lavender", "plant_item_id": "lavender_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [1, 2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "pumpkin", "plant_item_id": "pumpkin_seed", "days": 5, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [2], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "rose", "plant_item_id": "rose_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 0, "seasons": [0, 1], "lifecycle_type": "annual", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "apple", "plant_item_id": "apple_sapling", "days": 5, "yield": Vector2i(3, 5), "regrow": 3, "seasons": [2], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "peach", "plant_item_id": "peach_sapling", "days": 5, "yield": Vector2i(3, 5), "regrow": 3, "seasons": [1], "lifecycle_type": "tree", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "grape", "plant_item_id": "grape_seed", "days": 4, "yield": Vector2i(3, 5), "regrow": 2, "seasons": [1, 2], "lifecycle_type": "vine", "environment": "outdoor_or_greenhouse"},
+		{"crop_id": "lemon", "plant_item_id": "lemon_sapling", "days": 5, "yield": Vector2i(3, 5), "regrow": 3, "seasons": [], "lifecycle_type": "tree", "environment": "greenhouse_only"},
 	]
 	var main = MainScript.new()
 	assertions.truthy(main.has_method("default_crop_definitions"), "Main exposes deterministic default crop roster")

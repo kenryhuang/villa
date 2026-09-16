@@ -137,8 +137,8 @@ func occupied(actor: String, except_id := "") -> bool:
 		if shift.actor_id == actor and shift.status in ["traveling", "working"]: return true
 	return world.session.agent_runtime != null and world.session.agent_runtime.farm_registry.has_pending_work(actor)
 
-func owns_schedule(actor: String) -> bool:
-	if world.session.agent_runtime.executor.has_pending_continuation(actor): return true
+func owns_schedule(actor: String, except_build_project := "") -> bool:
+	if world.session.agent_runtime.executor.has_pending_continuation(actor, except_build_project): return true
 	if world.social != null and world.social.busy(actor): return true
 	if world.environment != null and world.environment.busy(actor): return true
 	if world.knowledge != null and world.knowledge.busy_assignment(actor): return true

@@ -1,0 +1,116 @@
+{
+  "self": {
+    "sections": [
+      "activity"
+    ],
+    "default_section": "activity",
+    "hint": "activity returns physical position, active work and field-site arrival checks; public region alone does not prove arrival."
+  },
+  "map": {
+    "sections": [
+      "regions"
+    ],
+    "default_section": "regions",
+    "hint": "Field sites include exact reachable position, distance and arrived. survey includes walking and on-site work; travel only relocates."
+  },
+  "farm": {
+    "sections": [
+      "plots",
+      "crops"
+    ],
+    "default_section": "plots",
+    "hint": "plots for own land; crops for planting requirements."
+  },
+  "market": {
+    "sections": [
+      "items",
+      "detail",
+      "supply"
+    ],
+    "default_section": "items",
+    "hint": "items searches names/IDs (space-separated terms match ANY); detail requires id or ids (up to 10) for exact current prices; supply requires one item id."
+  },
+  "buildings": {
+    "sections": [
+      "list",
+      "detail",
+      "quote",
+      "sites"
+    ],
+    "default_section": "list",
+    "hint": "detail requires building id. quote requires id, recipe_id, batches and returns actual total fee, inputs, availability and rent_production arguments. Quote is not an order. sites returns legal windmill/food_workshop plots, material cost and exact build action; build performs real movement and construction, not a virtual building."
+  },
+  "tasks": {
+    "sections": [
+      "projects",
+      "commissions",
+      "claims",
+      "contracts",
+      "ventures",
+      "deliveries",
+      "training",
+      "candidates",
+      "rules"
+    ],
+    "default_section": "commissions",
+    "hint": "commissions for public work; training/candidates/rules for learning and work; projects/contracts for own obligations."
+  },
+  "goals": {
+    "sections": [
+      "list"
+    ],
+    "default_section": "list",
+    "hint": "Own short-term goals and completion conditions."
+  },
+  "actors": {
+    "sections": [
+      "list",
+      "relationship",
+      "offers",
+      "agreements",
+      "roles"
+    ],
+    "default_section": "list",
+    "hint": "relationship needs the other actor id. Private offers and agreements are scoped to you."
+  },
+  "knowledge": {
+    "sections": [
+      "knowledge_records",
+      "reports",
+      "offers",
+      "assignments",
+      "regions",
+      "rules"
+    ],
+    "default_section": "reports",
+    "hint": "reports exposes your authorized evidence. survey(region_id) automatically walks, then checks supplies and performs on-site work; no preceding travel required."
+  },
+  "environment": {
+    "sections": [
+      "weather",
+      "route",
+      "transports",
+      "society"
+    ],
+    "default_section": "weather",
+    "hint": "route for repair requirements; weather for current conditions."
+  },
+  "social": {
+    "sections": [
+      "events",
+      "rules"
+    ],
+    "default_section": "events",
+    "hint": "events for participation opportunities, rules for organizing your own activity."
+  },
+  "public": {
+    "sections": [
+      "indicators",
+      "budget",
+      "plans",
+      "rules"
+    ],
+    "default_section": "indicators",
+    "hint": "Only public coordinator; inspect current budget and expected version before spending."
+  }
+}

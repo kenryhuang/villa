@@ -14,7 +14,7 @@ var outputs: Dictionary = {}
 var inputs: Dictionary = {}
 var customer_outputs: Dictionary = {}
 var service_records: Dictionary = {}
-var beehive_cycle: Dictionary = {"elapsed_minutes": 0, "completed_cycles": 0, "flower_signature": ""}
+var beehive_cycle: Dictionary = {"elapsed_minutes": 0, "completed_cycles": 0, "flower_signature": "", "honey_credits": {}}
 
 
 func _init(initial_station_id: String = "") -> void:
@@ -70,7 +70,18 @@ func from_dict(data: Dictionary) -> bool:
 	var next_station := data.get("station_id") as String
 	var cycle: Variant = data.get("beehive_cycle", {"elapsed_minutes": 0, "completed_cycles": 0, "flower_signature": ""})
 	if data.has("beehive_cycle") and next_station != "beehive": return false
-	if not cycle is Dictionary or cycle.size() != 3: return false
+	if not cycle is Dictionary or cycle.size() not in [3, 4]: return false
+	if cycle.size() == 4 and not cycle.has("honey_credits"): return false
+	var credits: Variant = cycle.get("honey_credits", {})
+	if not credits is Dictionary or credits.size() > 512: return false
+	credits = credits.duplicate(true)
+	var credit_total := 0
+	for actor in credits:
+		var credit: Variant = _integer_number(credits[actor])
+		if not _is_valid_string(actor) or credit == null or absi(int(credit)) > 1000000: return false
+		credits[actor] = int(credit)
+		credit_total += int(credit)
+	if credit_total != 0: return false
 	var elapsed: Variant = _integer_number(cycle.get("elapsed_minutes"))
 	var completed: Variant = _integer_number(cycle.get("completed_cycles"))
 	var signature: Variant = cycle.get("flower_signature")
@@ -121,7 +132,7 @@ func from_dict(data: Dictionary) -> bool:
 	for actor in customers:
 		if customers[actor].size() > next_output_capacity: return false
 
-	beehive_cycle = {"elapsed_minutes": int(elapsed), "completed_cycles": int(completed), "flower_signature": str(signature)}
+	beehive_cycle = {"elapsed_minutes": int(elapsed), "completed_cycles": int(completed), "flower_signature": str(signature), "honey_credits": credits.duplicate(true)}
 	station_id = next_station
 	max_queue_slots = next_max_slots
 	output_capacity = next_output_capacity

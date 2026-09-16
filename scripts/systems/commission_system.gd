@@ -104,6 +104,11 @@ func deliver(actor: String, receipt_id: String, claim_id: String, quantity: int,
 	if not proof.is_empty(): proof.used[c.terms.item_id] = int(proof.used.get(c.terms.item_id, 0)) + quantity
 	receipts[receipt_id] = intent
 	_busy = false
+	if c.actor_id == "village_market":
+		var market: Node = world.session.market
+		market.merchant.cost_basis[c.terms.item_id] = int(market.merchant.cost_basis.get(c.terms.item_id, 0)) + pay - quantity * int(market._items[c.terms.item_id].base_price)
+		market.Merchant.record(market.merchant, "local_seed_delivery", {"item_id": c.terms.item_id, "quantity": quantity, "cost": pay, "commission_id": c.id})
+		market._emit_stock_changed(c.terms.item_id, market.get_stock(c.terms.item_id))
 	return {"ok": true, "reward": pay, "message": "实物已交付，报酬 %d 金币到账。" % pay}
 
 func cancel(actor: String, id: String) -> Dictionary:
@@ -123,6 +128,20 @@ func abandon(actor: String, id: String) -> Dictionary:
 	c.version = int(c.version) + 1
 	task.status = "abandoned"
 	return {"ok": true}
+
+func release_unclaimed(actor: String, id: String) -> bool:
+	var c: Dictionary = commissions.get(id, {})
+	if c.get("actor_id") != actor or c.get("status") != "open": return false
+	var remaining := int(c.terms.quantity) - int(c.delivered) - int(c.claimed)
+	if remaining <= 0: return true
+	if int(c.claimed) == 0: return _close(c, "cancelled")
+	var refund := remaining * int(c.terms.unit_reward)
+	if not world.assets.apply(actor, {}, refund): return false
+	c.terms.quantity = int(c.terms.quantity) - remaining
+	c.escrow = int(c.escrow) - refund
+	demands[c.terms.demand_id].reserved = int(demands[c.terms.demand_id].reserved) - remaining
+	c.version = int(c.version) + 1
+	return true
 
 func _close(c: Dictionary, status: String) -> bool:
 	if not world.assets.apply(c.actor_id, {}, int(c.escrow)): return false

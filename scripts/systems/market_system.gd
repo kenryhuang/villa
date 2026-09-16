@@ -3,6 +3,28 @@ extends Node
 
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
 const MarketMath = preload("res://scripts/shared/market_math.gd")
+const Merchant = preload("res://scripts/systems/merchant_system.gd")
+var merchant: Dictionary = {}
+var merchant_service: RefCounted
+var merchant_enabled := false
+
+func enable_merchant(minute: int) -> void:
+	merchant_enabled = true
+	if merchant.is_empty(): merchant = Merchant.initial(_items, minute)
+
+func merchant_trade_error(item_id: String, quantity: int) -> String:
+	if merchant.is_empty(): return ""
+	if not _items.has(item_id) or quantity <= 0: return "unknown_item"
+	return Merchant.sale_limit(merchant, _items[item_id], quantity, quote_sell(item_id, quantity))
+
+func maximum_sale(item_id: String, limit := 100) -> int:
+	var low := 0
+	var high := limit
+	while low < high:
+		var mid := (low + high + 1) / 2
+		if merchant_trade_error(item_id, mid).is_empty(): low = mid
+		else: high = mid - 1
+	return low
 
 signal market_stock_changed(item_id: String, new_stock: int)
 signal market_price_changed(item_id: String, new_price: int)
@@ -117,6 +139,7 @@ func configure(item_definitions: Array) -> bool:
 		}
 	_items = configured_items
 	_catalog_defaults = configured_items.duplicate(true)
+	if merchant_enabled: merchant = Merchant.initial(_items, 0)
 	last_settled_day = 0
 	_agent_market_pressure = {"day": 0, "items": {}}
 	return true
@@ -143,6 +166,10 @@ func get_agent_item_view(item_id: String) -> Dictionary:
 	for quantity in [1, 2, 5, 10, 20]:
 		quotes.append({"quantity": quantity, "buy_total": quote_buy(item_id, quantity), "sell_total": quote_sell(item_id, quantity), "buy_available": can_buy(item_id, quantity)})
 	state.depth = {"stock": state.stock, "daily_liquidity": state.daily_liquidity, "quotes": quotes, "price_basis": "total gold including slippage; snapshot only, revalidated on execution"}
+	if not merchant.is_empty():
+		state.max_sell_quantity = maximum_sale(item_id)
+		state.merchant_rule = "商行有有限资金与收购额度。缺种可登记补货需求；风车可将谷物/胡萝卜/土豆选种，每个作物产2份种子。"
+		if merchant_service != null: state.procurement = merchant_service.supply_view(item_id)
 	return state
 
 
@@ -378,6 +405,10 @@ func _apply_buy(item_id: String, quantity: int) -> bool:
 	var state: Dictionary = _items[item_id]
 	if not _can_add_safely(int(state.get("demand", -1)), quantity):
 		return false
+	if not merchant.is_empty():
+		var total := quote_buy(item_id, quantity)
+		if int(merchant.cash) > EconomyLimitsScript.MAX_SAFE_INTEGER - total: return false
+		Merchant.local_trade(merchant, state, quantity, total, true)
 	state["stock"] = int(state.get("stock", 0)) - quantity
 	state["demand"] = int(state.get("demand", 0)) + quantity
 	_items[item_id] = state
@@ -411,6 +442,9 @@ func _apply_sell(item_id: String, quantity: int) -> bool:
 		or not _can_add_safely(int(state.get("supply", -1)), quantity)
 	):
 		return false
+	if not merchant.is_empty():
+		if not merchant_trade_error(item_id, quantity).is_empty(): return false
+		Merchant.local_trade(merchant, state, quantity, quote_sell(item_id, quantity), false)
 	state["stock"] = int(state.get("stock", 0)) + quantity
 	state["supply"] = int(state.get("supply", 0)) + quantity
 	_items[item_id] = state
@@ -520,10 +554,12 @@ func settle_day(
 
 func to_dict() -> Dictionary:
 	_recover_abandoned_state()
-	return {
+	var result := {
 		"last_settled_day": last_settled_day,
 		"items": _items.duplicate(true),
 	}
+	if not merchant.is_empty(): result.merchant = merchant.duplicate(true)
+	return result
 
 
 func from_dict(data: Dictionary) -> bool:
@@ -545,7 +581,10 @@ func from_dict(data: Dictionary) -> bool:
 		if normalized.is_empty():
 			return false
 		restored_items[str(item_key)] = normalized
+	if data.has("merchant") and not Merchant.valid(data.merchant, restored_items): return false
+	merchant = Merchant.Protocol._normalize_json_numbers(data.get("merchant", {}))
 	_items = restored_items
+	if merchant_enabled and merchant.is_empty(): enable_merchant(maxi(0, int(data.last_settled_day) - 1) * 1080)
 	last_settled_day = int(data["last_settled_day"])
 	return true
 
@@ -603,7 +642,10 @@ func restore_from_dict_with_current_catalog(data: Dictionary) -> bool:
 		catalog_state["history"] = history
 		migrated_items[item_id] = catalog_state
 
+	if data.has("merchant") and not Merchant.valid(data.merchant, migrated_items): return false
+	merchant = Merchant.Protocol._normalize_json_numbers(data.get("merchant", {}))
 	_items = migrated_items
+	if merchant_enabled and merchant.is_empty(): enable_merchant(maxi(0, int(data.last_settled_day) - 1) * 1080)
 	last_settled_day = int(data["last_settled_day"])
 	return true
 
@@ -725,6 +767,7 @@ func _restore_transaction_snapshot(snapshot: Dictionary) -> bool:
 	if snapshot.is_empty():
 		return false
 	_items = (snapshot.get("items", {}) as Dictionary).duplicate(true)
+	merchant = snapshot.get("merchant", {}).duplicate(true)
 	last_settled_day = int(snapshot.get("last_settled_day", 0))
 	return to_dict() == snapshot
 
