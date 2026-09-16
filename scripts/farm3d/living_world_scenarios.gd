@@ -23,6 +23,10 @@ static func setup(scene: Node, stage: String, walkthrough := false) -> bool:
 		building.set_process(false)
 		building.owner_id = "player" if index == 0 else "lao_li"
 		building.instance_id = "living-world-%s-%d" % [stage, index]
+		# Transaction/project fixtures use a negotiated tariff, independent of
+		# the live catalog's default pricing. P12 economic benchmarks use defaults.
+		if stage in ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"]:
+			building.service_policy.fees = {"flour":4,"animal_feed":4,"sunflower_oil":4}
 	session.player.position = session.grid.get_cell(32, 31).world_position_3d() + Vector3.LEFT * 1.2
 	var runtime: Node = session.agent_runtime
 	if stage in ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12"]:

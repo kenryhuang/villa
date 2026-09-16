@@ -7,7 +7,7 @@ var actor_lookup: Callable
 
 func _resolve_data(building: Variant) -> BuildingData:
 	var resolved := super._resolve_data(building)
-	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop", "beehive", "chicken_coop"]:
+	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop", "beehive", "chicken_coop", "greenhouse"]:
 		# Copy so the shared catalogue and original game keep their own visuals.
 		resolved = resolved.duplicate() as BuildingData
 		resolved.scene_path = "res://scenes/farm3d/buildings/%s.tscn" % resolved.building_id
@@ -18,6 +18,8 @@ func _resolve_data(building: Variant) -> BuildingData:
 			resolved.visual_size = Vector2(1.55, 1.85)
 		if resolved.building_id == "chicken_coop":
 			resolved.visual_size = Vector2(2.95, 2.4)
+		if resolved.building_id == "greenhouse":
+			resolved.visual_size = Vector2(4.95, 3.2)
 	return resolved
 
 func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player", check_distance := true) -> Dictionary:
@@ -25,9 +27,25 @@ func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player
 	if not result.allowed:
 		return result
 	var data := _resolve_data(building)
+	var footprint_cells := _footprint_cells(data,gx,gz)
+	var reserved_beds: Array[Vector2i] = []
+	for existing in get_all_buildings():
+		if existing.building_id == "greenhouse":
+			reserved_beds.append_array(ProductionSystem.greenhouse_cells_at(existing.grid_x,existing.grid_z,existing.data.footprint))
+	for coordinate in footprint_cells:
+		if coordinate in reserved_beds:
+			return _diagnostic(false,"greenhouse_bed_space","这里是温室的种植床，请保留农事空间")
+	if data.building_id == "greenhouse":
+		for coordinate in ProductionSystem.greenhouse_cells_at(gx,gz,data.footprint):
+			var bed := grid_system_ref.get_cell(coordinate.x,coordinate.y)
+			if bed == null or bed.state not in [GridCell.State.WASTELAND,GridCell.State.FARMLAND,GridCell.State.PLANTED] or coordinate in reserved_beds:
+				return _diagnostic(false,"greenhouse_bed_space","温室外围需要8个空地或农田种植位，请避开道路、水域和其他建筑")
+			if not grid_system_ref.can_actor_use_cell(coordinate.x,coordinate.y,actor_id) or (land_permission.is_valid() and not land_permission.call(actor_id,coordinate.x,coordinate.y)):
+				return _diagnostic(false,"greenhouse_bed_owner","温室种植床不能占用他人的土地")
+			footprint_cells.append(coordinate)
 	var low := INF
 	var high := -INF
-	for coordinate in _footprint_cells(data,gx,gz):
+	for coordinate in footprint_cells:
 		var height := grid_system_ref.get_terrain_height_at_cell(coordinate.x,coordinate.y)
 		low = minf(low,height)
 		high = maxf(high,height)

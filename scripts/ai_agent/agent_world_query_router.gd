@@ -178,6 +178,8 @@ func _production_summary(production: Node, building: BuildingInstance, actor: St
 	result.queue = snapshot.get("jobs", []).map(func(job): return {"recipe_id": job.get("recipe_id", ""), "status": job.get("status", ""), "remaining_minutes": job.get("remaining_minutes", 0)})
 	result.queued_count = result.queue.size()
 	result.own_customer_outputs = snapshot.get("customer_outputs", {}).get(actor, {}).duplicate(true)
+	if building.building_id == "greenhouse":
+		result.greenhouse = production.get_greenhouse_snapshot(building,actor)
 	if building.building_id == "beehive":
 		var honey: Dictionary = production.get_beehive_snapshot(building)
 		result.beehive = {}

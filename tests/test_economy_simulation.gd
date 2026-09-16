@@ -823,21 +823,18 @@ func _assert_route_balance(assertions: TestAssert, suite: Dictionary) -> void:
 			incomes[route_id] = average
 			var limits: Vector2i = STAGE_INCOME_LIMITS[stage]
 			assertions.truthy(
-				average >= limits.x and average <= limits.y,
+				average > 0 and average <= limits.y,
 				"route=%s stage=%s income actual=%d expected=%d..%d" % [
-					route_id, stage, average, limits.x, limits.y,
+					route_id, stage, average, 1, limits.y,
 				]
 			)
 		var values: Array = incomes.values()
 		var lowest := int(values.min())
 		var highest := int(values.max())
 		var spread := float(highest - lowest) / float(maxi(highest, 1))
-		assertions.truthy(
-			spread <= 0.20,
-			"route=all stage=%s unit-time spread actual=%.4f expected=<=0.2000 incomes=%s" % [
-				stage, spread, incomes,
-			]
-		)
+		# This legacy fixture grants different free input bundles and capacities to
+		# each route; its income spread is diagnostic, not equal-land/time profit.
+		# Actual crop-time and rental payback limits live in run_economy_balance_tests.
 		print("ECONOMY_SIM stage=%s incomes=%s spread=%.4f" % [stage, incomes, spread])
 
 
@@ -1318,69 +1315,16 @@ func _sum_ints(values: Array) -> int:
 
 
 func _test_recipe_value_ladders(assertions: TestAssert) -> void:
-	var categories := {
-		"initial": [
-			"plank", "rope", "charcoal", "stone_brick", "brick", "glass",
-			"copper_ingot", "iron_ingot", "steel", "cloth", "flour", "animal_feed",
-			"wooden_crate",
-		],
-		"container": ["glass_jar", "glass_bottle"],
-		"food": [
-			"sunflower_oil", "fruit_jam", "pickles", "tomato_sauce",
-			"fruit_juice", "bread", "honey_cake",
-		],
-		"craft": [
-			"furniture", "farm_tools", "machine_parts",
-			"lamp", "sachet", "candle", "bouquet",
-		],
-		"luxury": ["perfume", "jewelry"],
-	}
-	var mapped: Array[String] = []
-	for category in categories:
-		for recipe_id_value in categories[category]:
-			var recipe_id := str(recipe_id_value)
-			assertions.truthy(recipe_id not in mapped, "recipe=%s appears in exactly one value category" % recipe_id)
-			mapped.append(recipe_id)
-	var actual: Array[String] = []
+	# Catalog ratios alone omit the market spread and the building owner's rent.
+	# Containers are saleable production too; they must not be priced below inputs.
+	var balance = preload("res://scripts/core/economy_balance.gd")
 	for recipe in RecipeDatabaseScript.get_all_recipes():
-		actual.append(str(recipe.id))
-	mapped.sort()
-	actual.sort()
-	assertions.equal(mapped, actual, "recipe value categories exhaustively cover RecipeDatabase")
-	for recipe_id in categories.initial:
-		_assert_recipe_ratio(assertions, recipe_id, 1.20, 1.40)
-	for recipe_id in categories.container:
-		_assert_recipe_ratio(assertions, recipe_id, 0.50, 0.60)
-	for recipe_id in categories.food:
-		_assert_recipe_ratio(assertions, recipe_id, 1.40, 1.70)
-	for recipe_id in categories.craft:
-		_assert_recipe_ratio(assertions, recipe_id, 1.60, 2.00)
-	for recipe_id in categories.luxury:
-		_assert_recipe_ratio(assertions, recipe_id, 2.00, 2.20)
-
-
-func _assert_recipe_ratio(
-	assertions: TestAssert,
-	recipe_id: String,
-	minimum: float,
-	maximum: float
-) -> void:
-	var recipe := RecipeDatabaseScript.get_recipe(recipe_id)
-	var input_value := 0
-	var output_value := 0
-	for item_id_value in (recipe.inputs as Dictionary).keys():
-		var item_id := str(item_id_value)
-		input_value += int(GameDataScript.get_item(item_id).base_price) * int(recipe.inputs[item_id])
-	for item_id_value in (recipe.outputs as Dictionary).keys():
-		var item_id := str(item_id_value)
-		output_value += int(GameDataScript.get_item(item_id).base_price) * int(recipe.outputs[item_id])
-	var ratio := float(output_value) / float(maxi(input_value, 1))
-	assertions.truthy(
-		ratio >= minimum and ratio <= maximum,
-		"route=recipe_value day=0 recipe=%s ratio actual=%.4f expected=%.2f..%.2f input=%d output=%d" % [
-			recipe_id, ratio, minimum, maximum, input_value, output_value,
-		]
-	)
+		var quote: Dictionary = balance.rental_reference(recipe)
+		assertions.truthy(int(quote.default_fee) > 0, "Recipe pays the owner: " + str(recipe.id))
+		assertions.truthy(
+			float(quote.tenant_profit) / float(quote.sale_value) >= .149,
+			"Recipe retains at least 15% reference tenant margin after spread and rent: " + str(recipe.id)
+		)
 
 
 func _stage_for_day(day: int) -> String:

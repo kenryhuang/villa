@@ -1,0 +1,33 @@
+{
+  "asset": "greenhouse",
+  "engine": "4.7.1-stable (official)",
+  "exchange_mesh": "greenhouse.glb",
+  "generator": "scripts/farm3d/greenhouse_model.gd",
+  "generator_sha256": "3e0e18a79981b72145235dda9842c2dae4aa8a8a0d8f73e3f7fd41fed9151d54",
+  "input_images": [],
+  "materials": "Embedded PBR colors, roughness and glass alpha; no external texture or generated image dependency.",
+  "mesh_instances": 312,
+  "method": "native_procedural_geometry",
+  "parameters": {
+    "construction_groups": [
+      "Foundation",
+      "Frame",
+      "Walls",
+      "Roof",
+      "Details"
+    ],
+    "core_footprint": [
+      3,
+      3
+    ],
+    "growing_beds": 8,
+    "ridge_height": 3.15,
+    "total_width": 4.95,
+    "units": "metres",
+    "up": "Y"
+  },
+  "raw_mesh": "source/greenhouse_native.tscn",
+  "textures": [],
+  "triangles": 6266,
+  "version": 1
+}

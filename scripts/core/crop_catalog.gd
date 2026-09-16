@@ -8,21 +8,21 @@ static func grain_definition() -> CropData:
 
 static func default_crop_definitions() -> Array[CropData]:
 	var rows := [
-		{"id":"grain","plant_item_id":"grain_seed","name":"谷物","days":3,"yield":[3,5],"regrow":0,"seasons":[0,1,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":5},
-		{"id":"carrot","plant_item_id":"carrot_seed","name":"胡萝卜","days":3,"yield":[3,5],"regrow":0,"seasons":[0,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":4},
-		{"id":"potato","plant_item_id":"potato_seed","name":"土豆","days":4,"yield":[3,5],"regrow":0,"seasons":[0,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":6},
-		{"id":"tomato","plant_item_id":"tomato_seed","name":"番茄","days":4,"yield":[3,5],"regrow":2,"seasons":[0,1],"lifecycle_type":"annual_regrow","environment":"outdoor_or_greenhouse","exp":5},
-		{"id":"strawberry","plant_item_id":"strawberry_seed","name":"草莓","days":4,"yield":[3,5],"regrow":2,"seasons":[0],"lifecycle_type":"bush","environment":"outdoor_or_greenhouse","exp":5},
-		{"id":"blueberry","plant_item_id":"blueberry_seed","name":"蓝莓","days":5,"yield":[3,5],"regrow":2,"seasons":[1],"lifecycle_type":"bush","environment":"outdoor_or_greenhouse","exp":6},
-		{"id":"watermelon","plant_item_id":"watermelon_seed","name":"西瓜","days":5,"yield":[3,5],"regrow":0,"seasons":[1],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":7},
-		{"id":"sunflower","plant_item_id":"sunflower_seed","name":"向日葵","days":4,"yield":[3,5],"regrow":0,"seasons":[1,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","tags":["flower"],"category":"flower","exp":5},
-		{"id":"lavender","plant_item_id":"lavender_seed","name":"薰衣草","days":4,"yield":[3,5],"regrow":0,"seasons":[1,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","tags":["flower"],"category":"flower","exp":5},
-		{"id":"pumpkin","plant_item_id":"pumpkin_seed","name":"南瓜","days":5,"yield":[3,5],"regrow":0,"seasons":[2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":7},
-		{"id":"rose","plant_item_id":"rose_seed","name":"玫瑰","days":4,"yield":[3,5],"regrow":0,"seasons":[0,1],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","tags":["flower"],"category":"flower","exp":5},
-		{"id":"apple","plant_item_id":"apple_sapling","name":"苹果","days":5,"yield":[3,5],"regrow":3,"seasons":[2],"lifecycle_type":"tree","environment":"outdoor_or_greenhouse","tags":["fruit"],"category":"fruit","exp":8},
-		{"id":"peach","plant_item_id":"peach_sapling","name":"桃子","days":5,"yield":[3,5],"regrow":3,"seasons":[1],"lifecycle_type":"tree","environment":"outdoor_or_greenhouse","tags":["fruit"],"category":"fruit","exp":8},
-		{"id":"grape","plant_item_id":"grape_seed","name":"葡萄","days":4,"yield":[3,5],"regrow":2,"seasons":[1,2],"lifecycle_type":"vine","environment":"outdoor_or_greenhouse","tags":["fruit"],"category":"fruit","exp":7},
-		{"id":"lemon","plant_item_id":"lemon_sapling","name":"柠檬","days":5,"yield":[3,5],"regrow":3,"seasons":[],"lifecycle_type":"tree","environment":"greenhouse_only","tags":["fruit","greenhouse_only"],"category":"fruit","exp":8},
+		{"id":"grain","minutes":378,"plant_item_id":"grain_seed","name":"谷物","days":3,"yield":[3,5],"regrow":0,"seasons":[0,1,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":5},
+		{"id":"carrot","minutes":270,"plant_item_id":"carrot_seed","name":"胡萝卜","days":3,"yield":[3,5],"regrow":0,"seasons":[0,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":4},
+		{"id":"potato","minutes":162,"plant_item_id":"potato_seed","name":"土豆","days":4,"yield":[3,5],"regrow":0,"seasons":[0,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":6},
+		{"id":"tomato","minutes":216,"plant_item_id":"tomato_seed","name":"番茄","days":4,"yield":[3,5],"regrow":2,"seasons":[0,1],"lifecycle_type":"annual_regrow","environment":"outdoor_or_greenhouse","exp":5},
+		{"id":"strawberry","minutes":432,"plant_item_id":"strawberry_seed","name":"草莓","days":4,"yield":[3,5],"regrow":2,"seasons":[0],"lifecycle_type":"bush","environment":"outdoor_or_greenhouse","exp":5},
+		{"id":"blueberry","minutes":486,"plant_item_id":"blueberry_seed","name":"蓝莓","days":5,"yield":[3,5],"regrow":2,"seasons":[1],"lifecycle_type":"bush","environment":"outdoor_or_greenhouse","exp":6},
+		{"id":"watermelon","minutes":648,"plant_item_id":"watermelon_seed","name":"西瓜","days":5,"yield":[3,5],"regrow":0,"seasons":[1],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":7},
+		{"id":"sunflower","minutes":324,"plant_item_id":"sunflower_seed","name":"向日葵","days":4,"yield":[3,5],"regrow":0,"seasons":[1,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","tags":["flower"],"category":"flower","exp":5},
+		{"id":"lavender","minutes":378,"plant_item_id":"lavender_seed","name":"薰衣草","days":4,"yield":[3,5],"regrow":0,"seasons":[1,2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","tags":["flower"],"category":"flower","exp":5},
+		{"id":"pumpkin","minutes":540,"plant_item_id":"pumpkin_seed","name":"南瓜","days":5,"yield":[3,5],"regrow":0,"seasons":[2],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","exp":7},
+		{"id":"rose","minutes":432,"plant_item_id":"rose_seed","name":"玫瑰","days":4,"yield":[3,5],"regrow":0,"seasons":[0,1],"lifecycle_type":"annual","environment":"outdoor_or_greenhouse","tags":["flower"],"category":"flower","exp":5},
+		{"id":"apple","minutes":270,"plant_item_id":"apple_sapling","name":"苹果","days":5,"yield":[3,5],"regrow":3,"seasons":[2],"lifecycle_type":"tree","environment":"outdoor_or_greenhouse","tags":["fruit"],"category":"fruit","exp":8},
+		{"id":"peach","minutes":270,"plant_item_id":"peach_sapling","name":"桃子","days":5,"yield":[3,5],"regrow":3,"seasons":[1],"lifecycle_type":"tree","environment":"outdoor_or_greenhouse","tags":["fruit"],"category":"fruit","exp":8},
+		{"id":"grape","minutes":270,"plant_item_id":"grape_seed","name":"葡萄","days":4,"yield":[3,5],"regrow":2,"seasons":[1,2],"lifecycle_type":"vine","environment":"outdoor_or_greenhouse","tags":["fruit"],"category":"fruit","exp":7},
+		{"id":"lemon","minutes":324,"plant_item_id":"lemon_sapling","name":"柠檬","days":5,"yield":[3,5],"regrow":3,"seasons":[],"lifecycle_type":"tree","environment":"greenhouse_only","tags":["fruit","greenhouse_only"],"category":"fruit","exp":8},
 	]
 	var definitions: Array[CropData] = []
 	for row in rows:
@@ -35,8 +35,8 @@ static func default_crop_definitions() -> Array[CropData]:
 		crop.environment = str(row.environment)
 		crop.lifecycle_type = str(row.lifecycle_type)
 		crop.growth_days = int(row.days)
-		crop.growth_duration_minutes = 108
-		crop.regrow_duration_minutes = 108
+		crop.growth_duration_minutes = int(row.minutes)
+		crop.regrow_duration_minutes = int(row.minutes)
 		crop.yield_min = int(row.yield[0])
 		crop.yield_max = int(row.yield[1])
 		crop.regrow_days = int(row.get("regrow", 0))

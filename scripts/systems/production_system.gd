@@ -3,6 +3,7 @@ extends Node
 
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const RecipeDatabaseScript = preload("res://scripts/core/recipe_database.gd")
+const Balance = preload("res://scripts/core/economy_balance.gd")
 const ProducerStateScript = preload("res://scripts/data/producer_state.gd")
 const ProgressionScript = preload("res://scripts/systems/economy_progression_system.gd")
 const EconomyLimitsScript = preload("res://scripts/core/economy_limits.gd")
@@ -78,8 +79,8 @@ func get_rental_fee_table(building: BuildingInstance) -> Array[Dictionary]:
 	if state == null:
 		return table
 	for recipe in RecipeDatabaseScript.get_recipes_for_station(state.station_id):
-		var base_fee := 4 if state.station_id == "food_workshop" else 2
-		table.append({"recipe_id": str(recipe.id), "fee_per_batch": int(building.service_policy.fees.get(str(recipe.id), base_fee + ceili(float(recipe.duration_minutes) / 15.0))),
+		var reference := Balance.rental_reference(recipe)
+		table.append({"recipe_id": str(recipe.id), "fee_per_batch": int(building.service_policy.fees.get(str(recipe.id), reference.default_fee)), "reference_economics": reference,
 			"inputs": recipe.inputs.duplicate(true), "input_selectors": recipe.get("input_selectors", []).duplicate(true),
 			"outputs": recipe.outputs.duplicate(true), "duration_minutes": int(recipe.duration_minutes)})
 	return table
@@ -908,7 +909,7 @@ func is_maintenance_paused(building: BuildingInstance) -> bool:
 func get_maintenance_quote(building: BuildingInstance) -> Dictionary:
 	if building == null or not _registered_buildings.has(building):
 		return {}
-	return {"gold_cost": 25, "materials": {"wood": 1, "stone": 1}}
+	return Balance.maintenance(building.building_id)
 
 
 func maintain(
@@ -1419,12 +1420,12 @@ func get_waterwheel_covered_cells(waterwheel: BuildingInstance) -> Array[Vector2
 
 
 func get_greenhouse_cells(building: BuildingInstance) -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
 	if building == null or not _has_effect(building, "ignore_season"):
-		return result
-	var footprint := _footprint_for(building)
-	var gx := building.grid_x
-	var gz := building.grid_z
+		return []
+	return greenhouse_cells_at(building.grid_x, building.grid_z, _footprint_for(building))
+
+static func greenhouse_cells_at(gx: int, gz: int, footprint := Vector2i(3,3)) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
 	for x in range(gx, gx + footprint.x):
 		result.append(Vector2i(x, gz - 1))
 	result.append(Vector2i(gx - 1, gz + footprint.y / 2))
@@ -1432,6 +1433,44 @@ func get_greenhouse_cells(building: BuildingInstance) -> Array[Vector2i]:
 	for x in range(gx, gx + footprint.x):
 		result.append(Vector2i(x, gz + footprint.y))
 	return result
+
+
+func get_greenhouse_snapshot(building: BuildingInstance, actor_id := "player") -> Dictionary:
+	if building == null or building.building_id != "greenhouse" or _grid_system == null or _farming_system == null: return {}
+	var plots: Array = []
+	var planted := 0
+	var mature := 0
+	var usable := 0
+	for position in get_greenhouse_cells(building):
+		var cell := _grid_system.get_cell(position.x,position.y)
+		if cell == null: continue
+		var available := cell.state in [GridCell.State.WASTELAND,GridCell.State.FARMLAND,GridCell.State.PLANTED]
+		var allowed := _grid_system.can_actor_use_cell(position.x,position.y,actor_id)
+		if available and allowed: usable += 1
+		var auto_water := _farming_system.is_automatically_irrigated_cell(cell)
+		var row := {"gx":position.x,"gz":position.y,"usable":available and allowed,
+			"protected":_farming_system.is_greenhouse_cell(cell),"automatic_water":auto_water,
+			"crop_id":"","mature":false,"remaining_minutes":-1}
+		if cell.crop_instance != null:
+			planted += 1
+			var crop: CropInstance = cell.crop_instance
+			row.crop_id = str(crop.crop_data.crop_id)
+			row.mature = crop.is_harvestable()
+			if row.mature:
+				mature += 1
+				row.remaining_minutes = 0
+			elif crop.lifecycle_state == CropInstance.LifecycleState.GROWING and not _farming_system.is_paused_greenhouse_cell(cell):
+				var multiplier := 1.5 if cell.watered or crop.is_watered_today or auto_water else 1.0
+				row.remaining_minutes = ceili(maxf(0,1.0-crop.growth_progress/float(crop.crop_data.growth_days))*float(crop.crop_data.growth_duration_minutes)/multiplier)
+		plots.append(row)
+	var upkeep := get_maintenance_quote(building)
+	return {"status":"construction" if not building.is_construction_complete() else ("maintenance" if is_maintenance_paused(building) else "working"),
+		"owner_id":building.owner_id,"total":plots.size(),"usable":usable,"planted":planted,"mature":mature,"plots":plots,
+		"water_connected":is_greenhouse_water_connected(building),"maintenance":upkeep,
+		"maintenance_due_day":get_maintenance_due_day(building),"maintenance_interval_days":MAINTENANCE_INTERVAL_DAYS,
+		"capital_reference_cost":Balance.reference_value(GameDataScript.get_building("greenhouse").cost,true),
+		"maintenance_reference_cost":int(upkeep.get("gold_cost",0))+Balance.reference_value(upkeep.get("materials",{}),true),
+		"rental_available":false,"rules":"Eight external growing beds. No free crops or yield bonus. Sow, water and harvest real cells; existing land permissions apply. Maintenance pauses growth without deleting crops. Estimated minutes assume current watering conditions persist. Rent contracts are not available yet."}
 
 
 func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Dictionary]:

@@ -146,7 +146,8 @@ func run() -> void:
 	check(s.production.set_maintenance_due_day(rented, s.season.total_days), "Set due maintenance fixture")
 	check(not s.production.maintain(rented, wallet, s.inventory), "Player cannot maintain someone else's property")
 	owner_gold = owner.gold
-	check(service.maintain(rented, "lao_li").ok and owner.gold == owner_gold - 25, "NPC owner pays maintenance from own wallet and materials")
+	var maintenance_gold: int = s.production.get_maintenance_quote(rented).gold_cost
+	check(service.maintain(rented, "lao_li").ok and owner.gold == owner_gold - maintenance_gold, "NPC owner pays quoted maintenance from own wallet and materials")
 	s.production.advance_repair_time(4)
 	check(s.production.get_maintenance_state(rented) == "normal", "Original repair completion restores service")
 	var corrupt := rented.producer_state.to_dict()
