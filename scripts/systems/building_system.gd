@@ -280,7 +280,7 @@ func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player
 				"invalid_terrain",
 				"无法建造%s：目标地形无效" % resolved.display_name
 			)
-		if cell.state not in BUILDABLE_STATES:
+		if not _is_buildable_cell(resolved, cell, cell.state):
 			return _cell_state_diagnostic(resolved, gx, gz, cell_data, cell.state)
 	if resolved.effect_type == "irrigation" and not _footprint_borders_water(resolved, gx, gz):
 		return _blocked_diagnostic(
@@ -490,7 +490,7 @@ func validate_restore_buildings(records: Array, grid_data: Dictionary) -> bool:
 			if (
 				state < 0
 				or not is_finite(grid_system_ref.get_terrain_height_at_cell(location.x, location.y))
-				or (state != GridCell.State.BUILDING and state not in BUILDABLE_STATES)
+				or (state != GridCell.State.BUILDING and not _is_buildable_cell(resolved, grid_system_ref.get_cell(location.x,location.y), state))
 			):
 				return false
 		if resolved.effect_type == "irrigation" and not _saved_footprint_borders_water(
@@ -577,7 +577,7 @@ func restore_buildings(records: Array, emit_public_signals := true) -> int:
 			if (
 				cell == null
 				or not is_finite(height)
-				or (cell.state != GridCell.State.BUILDING and cell.state not in BUILDABLE_STATES)
+				or (cell.state != GridCell.State.BUILDING and not _is_buildable_cell(resolved, cell, cell.state))
 			):
 				valid = false
 				break
@@ -600,7 +600,7 @@ func restore_buildings(records: Array, emit_public_signals := true) -> int:
 			if cell.state == GridCell.State.BUILDING:
 				continue
 			var previous_state := cell.state
-			if cell.state not in BUILDABLE_STATES or not grid_system_ref.set_cell_state(
+			if not _is_buildable_cell(resolved, cell, cell.state) or not grid_system_ref.set_cell_state(
 				location.x,
 				location.y,
 				GridCell.State.BUILDING
@@ -955,3 +955,7 @@ func _spend_actor_resources(actor_id: String, cost: Dictionary) -> bool:
 	var delta := {}
 	for item in cost: delta[item] = -int(cost[item])
 	return actor_assets != null and actor_assets.apply(actor_id, delta, 0)
+
+
+func _is_buildable_cell(_data: BuildingData, _cell: GridCell, state: int) -> bool:
+	return state in BUILDABLE_STATES

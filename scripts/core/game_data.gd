@@ -244,7 +244,7 @@ const BUILDINGS := {
 		"category": "farming", "palette_order": 40,
 		"footprint_x": 2, "footprint_z": 2,
 		"cost": {"plank": 12, "stone_brick": 8, "iron_ingot": 3, "rope": 2},
-		"description": "邻接水域，为半径 4 格内农田自动灌溉",
+		"description": "建于天然水域岸边，为半径4格农田供水；接到温室任一床即可灌溉全8床，无需另建水渠",
 		"effect": "irrigation", "effect_value": 4,
 		"effect_config": {"radius": 4, "requires_water": true},
 	},

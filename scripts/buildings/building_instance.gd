@@ -487,10 +487,10 @@ func from_dict(source: Dictionary) -> bool:
 		var previous_state: Variant = _integer_number(cell.get("previous_state"))
 		if not _is_grid_coordinate(cell_gx) or not _is_grid_coordinate(cell_gz):
 			return false
-		if previous_state == null or int(previous_state) not in [
+		if previous_state == null or (int(previous_state) not in [
 			GridCell.State.WASTELAND,
 			GridCell.State.FARMLAND,
-		]:
+		] and not (building_id == "waterwheel" and int(previous_state) == GridCell.State.DECORATION)):
 			return false
 		var location := Vector2i(int(cell_gx), int(cell_gz))
 		if saved_cell_states.has(location):

@@ -142,3 +142,31 @@ func _sync_farmland_visual(cell: GridCell) -> void:
 func rebuild_farmland_visuals() -> void:
 	if visual_system != null and visual_system.has_method("rebuild"):
 		visual_system.call("rebuild", _cells.values())
+
+
+func can_support_waterwheel_bank(cell: GridCell) -> bool:
+	var point := cell.world_position()
+	if Profile.is_original_core(point.x,point.y) or Profile.Golf.BOUNDS.grow(2).has_point(point): return false
+	if Profile.is_water(point.x,point.y) or Profile.is_bridge(point.x,point.y) or Profile.is_fishing_shore(point.x,point.y) or cell.slope > .85: return false
+	for tree in Profile.TREES:
+		if point.distance_to(tree)<1.15: return false
+	return true
+
+func set_cell_state(gx: int, gz: int, next_state: int) -> bool:
+	var cell := get_cell(gx,gz)
+	if cell != null:
+		if cell.state==GridCell.State.DECORATION and next_state==GridCell.State.BUILDING and not can_support_waterwheel_bank(cell): return false
+		if cell.state==GridCell.State.BUILDING and next_state==GridCell.State.DECORATION and _base_states.get(cell_key(gx,gz))!=GridCell.State.DECORATION: return false
+	var bank_transition := cell != null and (cell.state==GridCell.State.DECORATION or next_state==GridCell.State.DECORATION)
+	var was_walkable := is_navigation_cell_walkable(Vector2i(gx,gz)) if bank_transition else false
+	var changed := super.set_cell_state(gx,gz,next_state)
+	# The base grid treats decoration as unwalkable, while gentle 3D banks are
+	# walkable. Invalidate cached routes when a pier blocks or frees that bank.
+	if changed and bank_transition and was_walkable!=is_navigation_cell_walkable(Vector2i(gx,gz)):notify_navigation_state_changed()
+	return changed
+
+func _transition_allowed(current: int, next: int) -> bool:
+	# BuildingSystem authorizes the specific structure; this permits its bank
+	# transaction and rollback without making decoration farmable.
+	if (current==GridCell.State.DECORATION and next==GridCell.State.BUILDING) or (current==GridCell.State.BUILDING and next==GridCell.State.DECORATION): return true
+	return super._transition_allowed(current,next)

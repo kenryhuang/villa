@@ -778,6 +778,8 @@ func register_building(building: BuildingInstance) -> bool:
 		_registered_buildings.append(building)
 	if building.has_method("configure_beehive"):
 		building.configure_beehive(self)
+	if building.has_method("configure_waterwheel"):
+		building.configure_waterwheel(self)
 	var key := building_key(building)
 	if _has_effect(building, "resource_output"):
 		if not resource_cycle_progress.has(key):
@@ -1397,7 +1399,7 @@ func is_water_connected(building: BuildingInstance) -> bool:
 
 func get_irrigated_cells(building: BuildingInstance) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
-	for position in get_waterwheel_covered_cells(building):
+	for position in get_waterwheel_supplied_cells(building):
 		var cell := _grid_system.get_cell(position.x, position.y)
 		if cell.state in [GridCell.State.FARMLAND, GridCell.State.PLANTED]:
 			result.append(position)
@@ -1466,7 +1468,7 @@ func get_greenhouse_snapshot(building: BuildingInstance, actor_id := "player") -
 	var upkeep := get_maintenance_quote(building)
 	return {"status":"construction" if not building.is_construction_complete() else ("maintenance" if is_maintenance_paused(building) else "working"),
 		"owner_id":building.owner_id,"total":plots.size(),"usable":usable,"planted":planted,"mature":mature,"plots":plots,
-		"water_connected":is_greenhouse_water_connected(building),"maintenance":upkeep,
+		"water_connected":is_greenhouse_water_connected(building),"water_sources":get_greenhouse_water_sources(building),"maintenance":upkeep,
 		"maintenance_due_day":get_maintenance_due_day(building),"maintenance_interval_days":MAINTENANCE_INTERVAL_DAYS,
 		"capital_reference_cost":Balance.reference_value(GameDataScript.get_building("greenhouse").cost,true),
 		"maintenance_reference_cost":int(upkeep.get("gold_cost",0))+Balance.reference_value(upkeep.get("materials",{}),true),
@@ -2281,7 +2283,7 @@ func _refresh_automatic_irrigation_cells() -> void:
 			or not is_water_connected(building)
 		):
 			continue
-		for position in get_waterwheel_covered_cells(building):
+		for position in get_waterwheel_supplied_cells(building):
 			if not seen.has(position):
 				seen[position] = true
 				cells.append(position)
@@ -2654,3 +2656,44 @@ func _emit_event(signal_name: StringName, arguments: Array) -> void:
 		_event_bus = get_node_or_null("/root/EventBus") if is_inside_tree() else null
 	if _event_bus != null and _event_bus.has_signal(signal_name):
 		_event_bus.callv("emit_signal", [signal_name] + arguments)
+
+
+func get_waterwheel_supplied_cells(waterwheel: BuildingInstance) -> Array[Vector2i]:
+	var result := get_waterwheel_covered_cells(waterwheel)
+	var connected := get_covered_greenhouses(waterwheel)
+	for greenhouse in _valid_registered_buildings():
+		if building_key(greenhouse) not in connected: continue
+		for position in get_greenhouse_cells(greenhouse):
+			if _grid_system.get_cell(position.x,position.y) != null and position not in result: result.append(position)
+	return result
+
+func get_greenhouse_water_sources(greenhouse: BuildingInstance) -> Array[String]:
+	var result: Array[String]=[]
+	for source in _valid_registered_buildings():
+		if building_key(greenhouse) in get_covered_greenhouses(source): result.append(building_key(source))
+	result.sort()
+	return result
+
+func get_waterwheel_snapshot(waterwheel: BuildingInstance) -> Dictionary:
+	if waterwheel == null or not _has_effect(waterwheel,"irrigation") or _grid_system == null: return {}
+	var connected := is_water_connected(waterwheel)
+	var active := _building_is_active(waterwheel) and not is_maintenance_paused(waterwheel) and connected
+	var covered := get_waterwheel_covered_cells(waterwheel)
+	var supplied := get_covered_greenhouses(waterwheel)
+	var links: Array=[]
+	for greenhouse in _valid_registered_buildings():
+		if not _has_effect(greenhouse,"ignore_season"):continue
+		var best := Vector2i.ZERO
+		var distance := INF
+		for bed in get_greenhouse_cells(greenhouse):
+			var d := Vector2(bed).distance_to(_building_center(waterwheel))
+			if bed in covered and d<distance:best=bed;distance=d
+		if is_finite(distance):links.append({"building_id":building_key(greenhouse),"gx":best.x,"gz":best.y,"active":building_key(greenhouse) in supplied,"beds":get_greenhouse_cells(greenhouse).size()})
+	var upkeep := get_maintenance_quote(waterwheel)
+	return {"status":"construction" if not waterwheel.is_construction_complete() else ("maintenance" if is_maintenance_paused(waterwheel) else ("working" if connected else "no_water")),
+		"water_connected":connected,"water_anchor":_geographic_query_service.water_anchor(Vector2i(waterwheel.grid_x,waterwheel.grid_z),_footprint_for(waterwheel)) if connected else Vector2i(-1,-1),
+		"radius":float(_effect_config(waterwheel).get("radius",4)),"irrigated_plots":get_irrigated_cells(waterwheel).size() if active else 0,
+		"greenhouses":supplied,"connections":links,"maintenance":upkeep,"maintenance_due_day":get_maintenance_due_day(waterwheel),"maintenance_interval_days":MAINTENANCE_INTERVAL_DAYS,
+		"capital_reference_cost":Balance.reference_value(GameDataScript.get_building("waterwheel").cost,true),
+		"maintenance_reference_cost":int(upkeep.get("gold_cost",0))+Balance.reference_value(upkeep.get("materials",{}),true),
+		"rules":"Build a 2x2 dry-land foundation directly beside natural water. Radius 4 irrigates farmland. One greenhouse bed in radius supplies all 8 beds through included pipes. No relay, water fee, free crops or stacking growth bonus. Construction, lost water or overdue maintenance stops supply. Existing land permissions remain."}

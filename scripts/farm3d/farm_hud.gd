@@ -35,6 +35,7 @@ var food_workshop_view: Control
 var beehive_view: Control
 var chicken_coop_view: Control
 var greenhouse_view: Control
+var waterwheel_view: Control
 var secondary: PanelContainer
 var secondary_grid: GridContainer
 var secondary_title: Label
@@ -127,6 +128,10 @@ func configure(session: Node) -> void:
 	_ui.add_child(chicken_coop_view)
 	chicken_coop_view.configure(session)
 	chicken_coop_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
+	waterwheel_view = preload("res://scripts/farm3d/waterwheel_view.gd").new()
+	_ui.add_child(waterwheel_view)
+	waterwheel_view.configure(session)
+	waterwheel_view.closed.connect(func(): _session.player.ui_blocked = is_modal_open())
 	greenhouse_view = preload("res://scripts/farm3d/greenhouse_view.gd").new()
 	_ui.add_child(greenhouse_view)
 	greenhouse_view.configure(session)
@@ -369,6 +374,7 @@ func toggle_minimap() -> void:
 func toggle_inventory() -> void:
 	fishing_cancel_requested.emit()
 	if greenhouse_view != null: greenhouse_view.close_panel()
+	if waterwheel_view != null: waterwheel_view.close_panel()
 	if chicken_coop_view != null: chicken_coop_view.close_panel()
 	if beehive_view != null: beehive_view.close_panel()
 	food_workshop_view.close_panel()
@@ -380,6 +386,7 @@ func toggle_inventory() -> void:
 
 func is_modal_open() -> bool:
 	if greenhouse_view != null and greenhouse_view.visible: return true
+	if waterwheel_view != null and waterwheel_view.visible: return true
 	if chicken_coop_view != null and chicken_coop_view.visible: return true
 	if beehive_view != null and beehive_view.visible: return true
 	if commission_view != null and commission_view.visible: return true
@@ -393,6 +400,7 @@ func open_windmill(building: BuildingInstance) -> bool:
 	if building.building_id == "beehive": view = beehive_view
 	if building.building_id == "chicken_coop": view = chicken_coop_view
 	if building.building_id == "greenhouse": view = greenhouse_view
+	if building.building_id == "waterwheel": view = waterwheel_view
 	var opened: bool = view.open_for(building)
 	_session.player.ui_blocked = opened
 	return opened
@@ -404,6 +412,7 @@ func open_market() -> void:
 
 func close_panels() -> void:
 	if greenhouse_view != null: greenhouse_view.close_panel()
+	if waterwheel_view != null: waterwheel_view.close_panel()
 	if chicken_coop_view != null: chicken_coop_view.close_panel()
 	if commission_view != null: commission_view.close_panel()
 	if debug_panel != null:
@@ -439,6 +448,7 @@ func _make_history() -> void:
 func _toggle_history() -> void:
 	fishing_cancel_requested.emit()
 	if greenhouse_view != null: greenhouse_view.close_panel()
+	if waterwheel_view != null: waterwheel_view.close_panel()
 	if chicken_coop_view != null: chicken_coop_view.close_panel()
 	if beehive_view != null: beehive_view.close_panel()
 	food_workshop_view.close_panel()

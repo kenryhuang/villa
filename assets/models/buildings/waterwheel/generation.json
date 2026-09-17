@@ -1,0 +1,35 @@
+{
+  "asset": "waterwheel",
+  "engine": "4.7.1-stable (official)",
+  "exchange_mesh": "waterwheel.glb",
+  "generator": "scripts/farm3d/waterwheel_model.gd",
+  "generator_sha256": "60864d2c5ef34546e7d33702eb2593b845d4c9c2934d9b757119f7b59efa5f5e",
+  "input_images": [],
+  "materials": "Embedded PBR colors, roughness; no external texture or generated image dependency.",
+  "mesh_instances": 218,
+  "method": "native_procedural_geometry",
+  "parameters": {
+    "axle": "X",
+    "construction_groups": [
+      "Foundation",
+      "Frame",
+      "Walls",
+      "Roof",
+      "Details",
+      "Rotor"
+    ],
+    "core_footprint": [
+      2,
+      2
+    ],
+    "irrigation_radius_cells": 4,
+    "units": "metres",
+    "up": "Y",
+    "water_facing": "+Z",
+    "wheel_radius": 1.14
+  },
+  "raw_mesh": "source/waterwheel_native.tscn",
+  "textures": [],
+  "triangles": 2616,
+  "version": 1
+}

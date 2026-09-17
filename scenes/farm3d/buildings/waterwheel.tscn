@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/farm3d/modeled_waterwheel.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/farm3d/buildings/waterwheel_model.tscn" id="2"]
+
+[node name="Waterwheel" type="Node3D"]
+script = ExtResource("1")
+authored_building_id = "waterwheel"
+model_scene = ExtResource("2")

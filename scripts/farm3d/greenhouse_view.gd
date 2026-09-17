@@ -13,7 +13,7 @@ func refresh() -> void:
 	var info := session.production.get_greenhouse_snapshot(building)
 	var state: String = {"working":"季节保护生效", "maintenance":"维护暂停：作物保留，暂不生长", "construction":"正在建造"}.get(info.status,"")
 	var lines: Array[String] = [state,"种植位 %d · 我可用 %d · 已种 %d · 成熟 %d" % [info.total,info.usable,info.planted,info.mature],
-		"供水："+("已连接水车" if info.water_connected else "未接水车，请浇水；已有水田仍保持灌溉"),
+		"供水："+("水车管道已接通，全部8床自动灌溉（%d个水源）" % info.water_sources.size() if info.water_connected else "未接水车，请浇水；已有水田仍保持灌溉"),
 		"保护反季节作物和温室专用作物，不额外增加产量。"]
 	for i in info.plots.size():
 		var plot: Dictionary = info.plots[i]
