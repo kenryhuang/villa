@@ -67,3 +67,65 @@ test("dialogue can discover market supply, inspect shortage, then register a non
   assert.equal(intent.actions.length,1);assert.equal(intent.actions[0].tool_name,"request_supply");
   assert.deepEqual(intent.actions[0].arguments,{item_id:"grain_seed",quantity:4});
 });
+
+const honeyTrade={target_actor_id:"player",give:{items:{},gold:60},receive:{items:{honey:5},gold:0},
+  expires_in_minutes:30,note:"按约定12金/个收5个蜂蜜，共60金。"};
+
+for (const [name,args] of [
+  ["propose_trade",honeyTrade],
+  ["counter_trade",{offer_id:"trade-1",give:honeyTrade.give,receive:honeyTrade.receive,expires_in_minutes:30,note:"新的报价"}],
+  ["accept_trade",{offer_id:"trade-1"}],
+  ["reject_trade",{offer_id:"trade-1",reason_code:"price_too_high"}],
+  ["cancel_trade",{offer_id:"trade-1"}],
+] as const) {
+  test(`tool-only dialogue ${name} preserves the action and supplies pending-state speech`,async()=>{
+    const {request}=fixture();request.allowed_command_tools.push(name);
+    request.dialogue_input="同意，交易吧";
+    const ctx=AgentRegistry.loadDefault().buildContext(request.agent_id,request,[]);
+    let rounds=0;const events:any[]=[];let output:AgentStreamAssembler;
+    const intent=await runAgentLoop(request,ctx,{experience:{},memories:[],read:async()=>{throw Error("unexpected world read");}},async()=>{
+      if(rounds++===0)return response("discover_tools",{domains:["actors"],actions:[name]});
+      output=response(name,args);return output;
+    },e=>events.push(e));
+    assert.equal(rounds,2,"No extra model correction for a legal trade");
+    assert.equal(intent.actions.length,1,"Reply does not consume a second action or submit speak");
+    assert.equal(intent.actions[0].tool_name,name);assert.deepEqual(intent.actions[0].arguments,args);
+    assert.equal(intent.actions[0].idempotency_key,"v2:greeting:0:call");
+    assert.match(intent.speech!,/准备/);assert.doesNotMatch(intent.speech!,/已成交|交易成功|已扣除/);
+    assert.equal(output!.rawOutput().message.content,"","Raw provider output remains unmodified");
+    assert.equal(events.filter(e=>e.payload?.event==="dialogue.reply_fallback").length,1);
+    assert.equal(events.filter(e=>e.payload?.event==="loop.validation_failed").length,0);
+  });
+}
+
+test("trade fallback cannot bypass invalid amounts or the one-action dialogue budget",async()=>{
+  for(const multiple of [false,true]){
+    const {request}=fixture();request.allowed_command_tools.push("propose_trade");
+    const ctx=AgentRegistry.loadDefault().buildContext(request.agent_id,request,[]);
+    let rounds=0;const events:any[]=[];
+    await assert.rejects(runAgentLoop(request,ctx,{experience:{},memories:[],read:async()=>({})},async()=>{
+      if(rounds++===0)return response("discover_tools",{domains:["actors"]});
+      if(!multiple)return response("propose_trade",{...honeyTrade,give:{items:{},gold:-60}});
+      const output=response("propose_trade",honeyTrade);
+      output.accept({choices:[{index:0,delta:{tool_calls:[{index:1,id:"second",function:{name:"propose_trade",arguments:JSON.stringify(honeyTrade)}}]},finish_reason:"tool_calls"}]});
+      return output;
+    },e=>events.push(e)),multiple?/provider_too_many_tool_calls/:/invalid_action_arguments/);
+    assert.equal(events.filter(e=>e.payload?.event==="dialogue.reply_fallback").length,0);
+  }
+});
+
+test("trade fallback preserves supplied speech and does not narrate background decisions",async()=>{
+  for(const dialogue of [true,false]){
+    const {request}=fixture();request.allowed_command_tools.push("propose_trade");
+    if(!dialogue)request.trigger="event";
+    const ctx=AgentRegistry.loadDefault().buildContext(request.agent_id,request,[]);
+    let rounds=0;const events:any[]=[];
+    const speech=dialogue?"我愿意出60金币买你的5个蜂蜜，请确认报价。":"";
+    const intent=await runAgentLoop(request,ctx,{experience:{},memories:[],read:async()=>({})},async()=>{
+      if(rounds++===0)return response("discover_tools",{domains:["actors"]});
+      return response("propose_trade",honeyTrade,speech);
+    },e=>events.push(e));
+    assert.equal(intent.speech??"",speech);
+    assert.equal(events.filter(e=>e.payload?.event==="dialogue.reply_fallback").length,0);
+  }
+});

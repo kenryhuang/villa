@@ -21,6 +21,10 @@ func run() -> void:
 	session.season.set_process(false)
 	var r: Node = session.agent_runtime
 	r.set_process(false)
+	check(r._dialogue_outcome_fact({"tool_name":"accept_trade","status":"rejected","failure_code":"insufficient_gold"}).is_empty(), "Failed trade must not claim money or goods settled")
+	check(r._dialogue_outcome_fact({"tool_name":"propose_trade","status":"failed"}).is_empty(), "Failed proposal must not claim an offer exists")
+	check("等待对方确认" in r._dialogue_outcome_fact({"tool_name":"propose_trade","status":"completed"}), "Completed proposal remains pending consent")
+	check("尚未完成" in r._dialogue_outcome_fact({"tool_name":"accept_trade","status":"in_progress"}), "Pending action cannot claim settlement")
 	check(preload("res://scripts/farm3d/living_world_scenarios.gd").setup(scene, "P1"), "Isolated 3D fixture")
 	var request: Dictionary = r._build_loop_request("farmer_ahe", "loop-test", "dialogue", r._absolute_game_minute(), "今天可以种点什么？")
 	check(request.protocol_version == 3, "Compact v3 request")

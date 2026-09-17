@@ -235,7 +235,7 @@ const BUILDINGS := {
 		"category": "farming", "palette_order": 30,
 		"footprint_x": 3, "footprint_z": 3,
 		"cost": {"plank": 15, "stone_brick": 10, "glass": 12, "iron_ingot": 3},
-		"description": "保护外围8个种植格，可反季节种植；仍需播种与浇水，连接水车可自动灌溉",
+		"description": "外围8床全年种植，产量为露天1.5～2倍；浇水后生长速度1.5倍，连接水车可自动灌溉",
 		"effect": "ignore_season", "effect_value": 0,
 		"effect_config": {"planting_cells": 8},
 	},

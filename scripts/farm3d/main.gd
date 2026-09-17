@@ -153,10 +153,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		if is_instance_valid(player): player.set_window_focused(false)
 		if has_node("FarmInteraction") and get_node("FarmInteraction").fishing != null:
 			get_node("FarmInteraction").fishing.cancel()
 		if farm_session != null and farm_session.golf != null:
 			farm_session.golf.release_control()
+	elif what == NOTIFICATION_WM_WINDOW_FOCUS_IN:
+		if is_instance_valid(player): player.set_window_focused(true)
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if _quitting:
 			return

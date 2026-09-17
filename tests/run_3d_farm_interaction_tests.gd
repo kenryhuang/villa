@@ -66,7 +66,7 @@ func _run() -> void:
 	_check(interaction.perform(cell).ok and cell.watered, "Empty-hand click waters growing crops")
 	interaction._cooldown = 0
 	var before: int = session.inventory.get_item_count("carrot")
-	session.season.advance_game_minutes(108)
+	session.season.advance_game_minutes(ceili(float(cell.crop_instance.crop_data.growth_duration_minutes)/session.farming.get_growth_multiplier(cell)))
 	_check(cell.crop_instance.is_mature(), "Original clock ripens the selected non-grain crop")
 	_check(interaction.perform(cell).ok, "Empty-hand click harvests mature crop")
 	_check(session.inventory.get_item_count("carrot") > before, "Harvested carrots are visible inventory items")
@@ -190,9 +190,12 @@ func _run() -> void:
 	_press(KEY_ESCAPE)
 	_check(not hud.history_panel.visible, "Esc closes history")
 	var position: Vector3 = player.global_position
-	Input.action_press("move_forward")
+	var walk_key := InputEventKey.new()
+	walk_key.keycode=KEY_W;walk_key.physical_keycode=KEY_W;walk_key.pressed=true
+	Input.parse_input_event(walk_key);Input.flush_buffered_events()
 	await _frames(12)
-	Input.action_release("move_forward")
+	walk_key=walk_key.duplicate();walk_key.pressed=false
+	Input.parse_input_event(walk_key);Input.flush_buffered_events()
 	_check(player.global_position.distance_to(position) > 0.2, "Walking remains available after cancelling targets")
 	preview.queue_free()
 	await process_frame

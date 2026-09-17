@@ -27,6 +27,19 @@ export function validateLoopConfig(value: unknown): LoopConfig {
 }
 const obj = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const BASIC_COMMANDS = ["speak","wait","public_wait"];
+// Tool-only responses are valid provider output. A trade must not be discarded
+// just because the provider omitted prose. Describe the pending request only;
+// Godot still validates/executes it and the recipient still has to accept it.
+function pendingTradeReply(name: string): string | undefined {
+  switch (name) {
+    case "propose_trade": return "我准备提出这笔交易，请核对交易面板里的物品和金额；双方确认并执行成功后才算成交。";
+    case "counter_trade": return "我准备提出一份新的交易报价，请核对交易面板里的条款；对方接受并执行成功后才算成交。";
+    case "accept_trade": return "我准备接受这份交易报价，是否成交以接下来的执行结果为准。";
+    case "reject_trade": return "我准备拒绝这份交易报价，处理结果以交易面板为准。";
+    case "cancel_trade": return "我准备撤回这份交易报价，处理结果以交易面板为准。";
+    default: return undefined;
+  }
+}
 export function commandDomain(name: string): string {
   if (name.startsWith("public_")) return "public";
   if (name.includes("short_term_goal")) return "goals";
@@ -164,9 +177,15 @@ export async function runAgentLoop(request:DecisionRequest,context:AgentContext,
       }
       const errors=calls.flatMap(c=>toolArgumentErrors(c.name,c.arguments));
       if(errors.length) throw new Error(`invalid_action_arguments:${errors.join("; ")}`);
-      if(dialogue&&!raw.message.content.trim()&&!calls.some(c=>c.name==="speak"&&c.arguments.target_actor_id==="player"&&String(c.arguments.text ?? "").trim()))
-        throw new Error("dialogue_reply_required: provide a brief in-character spoken reply to the player's current message, even when submitting an interaction request");
-      return assembler.finish(request,commands,actionLimit).intent;
+      const intent=assembler.finish(request,commands,actionLimit).intent;
+      if(dialogue&&!intent.speech?.trim()) {
+        const fallback=intent.actions.length===1?pendingTradeReply(intent.actions[0].tool_name):undefined;
+        if(!fallback)throw new Error("dialogue_reply_required: provide a brief in-character spoken reply to the player's current message, even when submitting an interaction request");
+        intent.speech=fallback;
+        emit({type:"loop",payload:{event:"dialogue.reply_fallback",loop_id:request.request_id,
+          tool_name:intent.actions[0].tool_name,source:"pending_trade_template",speech:fallback}});
+      }
+      return intent;
     }catch(error){
       if(signal?.aborted)throw error;
       const message=error instanceof Error?error.message:"loop_error";

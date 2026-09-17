@@ -1452,17 +1452,18 @@ func get_greenhouse_snapshot(building: BuildingInstance, actor_id := "player") -
 		var auto_water := _farming_system.is_automatically_irrigated_cell(cell)
 		var row := {"gx":position.x,"gz":position.y,"usable":available and allowed,
 			"protected":_farming_system.is_greenhouse_cell(cell),"automatic_water":auto_water,
-			"crop_id":"","mature":false,"remaining_minutes":-1}
+			"crop_id":"","mature":false,"remaining_minutes":-1,"growth_multiplier":_farming_system.get_growth_multiplier(cell),"outdoor_yield":0,"expected_yield":0}
 		if cell.crop_instance != null:
 			planted += 1
 			var crop: CropInstance = cell.crop_instance
+			row.merge(_farming_system.get_crop_yield_snapshot(cell),true)
 			row.crop_id = str(crop.crop_data.crop_id)
 			row.mature = crop.is_harvestable()
 			if row.mature:
 				mature += 1
 				row.remaining_minutes = 0
 			elif crop.lifecycle_state == CropInstance.LifecycleState.GROWING and not _farming_system.is_paused_greenhouse_cell(cell):
-				var multiplier := 1.5 if cell.watered or crop.is_watered_today or auto_water else 1.0
+				var multiplier: float = row.growth_multiplier
 				row.remaining_minutes = ceili(maxf(0,1.0-crop.growth_progress/float(crop.crop_data.growth_days))*float(crop.crop_data.growth_duration_minutes)/multiplier)
 		plots.append(row)
 	var upkeep := get_maintenance_quote(building)
@@ -1472,7 +1473,9 @@ func get_greenhouse_snapshot(building: BuildingInstance, actor_id := "player") -
 		"maintenance_due_day":get_maintenance_due_day(building),"maintenance_interval_days":MAINTENANCE_INTERVAL_DAYS,
 		"capital_reference_cost":Balance.reference_value(GameDataScript.get_building("greenhouse").cost,true),
 		"maintenance_reference_cost":int(upkeep.get("gold_cost",0))+Balance.reference_value(upkeep.get("materials",{}),true),
-		"rental_available":false,"rules":"Eight external growing beds. No free crops or yield bonus. Sow, water and harvest real cells; existing land permissions apply. Maintenance pauses growth without deleting crops. Estimated minutes assume current watering conditions persist. Rent contracts are not available yet."}
+		"yield_multiplier_min":FarmingSystem.GREENHOUSE_YIELD_MIN,"yield_multiplier_max":FarmingSystem.GREENHOUSE_YIELD_MAX,
+		"irrigated_growth_multiplier":FarmingSystem.IRRIGATED_GROWTH_MULTIPLIER,
+		"rental_available":false,"rules":"Eight external growing beds. Active greenhouse allows planting and growth in every season and yields 1.5 to 2 times the same crop outdoor baseline (integer quantity, stable per harvest). Watering or irrigation gives 1.5x growth speed, without stacking. No irrigation retains 1x growth. Yield bonus is checked at harvest and does not stack across greenhouses; unavailable during greenhouse maintenance. Sow, water and harvest real cells; existing land permissions apply. Maintenance pauses growth without deleting crops. Estimated minutes assume current watering conditions persist. Rent contracts are not available yet."}
 
 
 func get_greenhouse_crop_maturity(greenhouse: BuildingInstance) -> Array[Dictionary]:

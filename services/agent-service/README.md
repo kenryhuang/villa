@@ -99,3 +99,6 @@ With both local configuration files present, the opt-in connected streaming smok
 ```powershell
 godot --headless --path ../.. --script res://tests/agent_service_integration.gd
 ```
+
+
+Tool-only dialogue trade calls (`propose_trade`, `counter_trade`, `accept_trade`, `reject_trade`, `cancel_trade`) receive a short pending-request reply after all normal permission, schema and action-budget validation. Missing provider prose alone no longer aborts a valid trade or consumes a correction round. The synthesized reply lives in decision `speech`; raw provider output is preserved and `dialogue.reply_fallback` identifies the source in traces. It never asserts settlement or bypasses recipient confirmation. Godot appends actual execution facts only for successful/pending receipts, never a success caption for rejected trades.

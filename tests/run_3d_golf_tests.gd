@@ -214,11 +214,10 @@ func _run() -> void:
 	player.velocity = Vector3.ZERO
 	player.set_physics_process(true)
 	await _frames(20)
-	Input.action_press("move_left")
-	Input.action_press("sprint")
-	await _frames(110)
-	Input.action_release("move_left")
-	Input.action_release("sprint")
+	_held(KEY_A,true);_held(KEY_SHIFT,true);Input.flush_buffered_events()
+	# Current sprint speed is 6 m/s; allow enough real physics time to cross 14 m.
+	await _frames(160)
+	_held(KEY_A,false);_held(KEY_SHIFT,false);Input.flush_buffered_events()
 	_check(player.global_position.x < -88 and player.is_on_floor(),"Player can walk across the old west boundary to the golf course")
 	player.set_physics_process(false)
 	var space: PhysicsDirectSpaceState3D = farm.get_world_3d().direct_space_state

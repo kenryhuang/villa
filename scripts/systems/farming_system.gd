@@ -28,6 +28,9 @@ var _planted_candidates := {}
 var _plant_index_ready := false
 
 const GAME_MINUTES_PER_DAY := 18 * 60
+const IRRIGATED_GROWTH_MULTIPLIER := 1.5
+const GREENHOUSE_YIELD_MIN := 1.5
+const GREENHOUSE_YIELD_MAX := 2.0
 
 
 static func crop_visual_seed(cell: GridCell, crop_id: String) -> int:
@@ -226,7 +229,7 @@ func preview_harvest(cell: GridCell) -> Dictionary:
 		return {}
 	var harvest_seed := _harvest_seed()
 	return {
-		"items": {str(data.crop_id): instance.calculate_yield(cell.gx, cell.gz, harvest_seed)},
+		"items": {str(data.crop_id): get_crop_yield_snapshot(cell).expected_yield},
 		"exp": int(data.exp_reward),
 		"harvest_seed": harvest_seed,
 		"regrowing": false,
@@ -249,6 +252,35 @@ func _harvest_seed() -> int:
 				return int(value)
 			break
 	return GameStateScript.LEGACY_HARVEST_SEED
+
+
+func get_crop_yield_snapshot(cell: GridCell) -> Dictionary:
+	if cell == null or cell.crop_instance == null or cell.crop_instance.crop_data == null:
+		return {}
+	var crop: CropInstance = cell.crop_instance
+	var seed := _harvest_seed()
+	var base := crop.calculate_yield(cell.gx, cell.gz, seed)
+	var quantity := base
+	var enhanced := is_greenhouse_cell(cell)
+	if enhanced:
+		# Pick an integer inside [ceil(1.5 * baseline), 2 * baseline].
+		# Stable per plot/crop/harvest/seed: previews and reloads never reroll.
+		var minimum := ceili(base * GREENHOUSE_YIELD_MIN)
+		var maximum := floori(base * GREENHOUSE_YIELD_MAX)
+		var key := "greenhouse:%d:%d:%s:%d:%d" % [cell.gx, cell.gz, crop.crop_data.crop_id, crop.harvest_count, seed]
+		var roll: int = 2166136261
+		for byte in key.to_utf8_buffer():
+			roll = ((roll ^ int(byte)) * 16777619) & 0xffffffff
+		quantity = minimum + int(roll % (maximum - minimum + 1))
+	return {"outdoor_yield": base, "expected_yield": quantity, "greenhouse_bonus": enhanced}
+
+
+func get_growth_multiplier(cell: GridCell) -> float:
+	if cell == null or is_paused_greenhouse_cell(cell): return 0.0
+	return IRRIGATED_GROWTH_MULTIPLIER if (
+		cell.watered or (cell.crop_instance != null and cell.crop_instance.is_watered_today)
+		or is_automatically_irrigated_cell(cell)
+	) else 1.0
 
 
 func commit_harvest(cell: GridCell, preview: Dictionary) -> Dictionary:
@@ -721,11 +753,7 @@ func advance_growth_minutes(minutes: int) -> void:
 			continue
 		var old_stage := instance.get_current_stage()
 		var old_state := instance.lifecycle_state
-		var multiplier := 1.5 if (
-			cell.watered
-			or instance.is_watered_today
-			or is_automatically_irrigated_cell(cell)
-		) else 1.0
+		var multiplier := get_growth_multiplier(cell)
 		if not instance.advance_game_minutes(minutes, multiplier):
 			continue
 		var next_stage := instance.get_current_stage()

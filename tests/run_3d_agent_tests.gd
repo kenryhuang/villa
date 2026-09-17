@@ -95,6 +95,7 @@ func _run() -> void:
 	npc.inventory = {"grain": 20}
 	npc.gold = 1000
 	var wallet: Node = root.get_node("GameState")
+	var quoted_fee: int = int(fees.filter(func(row): return row.recipe_id == "flour")[0].fee_per_batch) * 2
 	var player_gold: int = wallet.gold
 	var player_inventory := session.inventory.slots.duplicate(true)
 	var intent := {"agent_id": "farmer_ahe", "decision_id": "rental-test", "action_id": "rental-action", "tool_name": "rent_production", "idempotency_key": "rental-test:1", "arguments": {"building_id": key, "recipe_id": "flour", "batches": 2, "max_fee": 100}}
@@ -112,12 +113,12 @@ func _run() -> void:
 		check(false, "NPC reaches the building before the integration timeout")
 		quit(1)
 		return
-	check(npc.gold == 992 and wallet.gold == player_gold + 8, "Rent transfers exactly from NPC to player")
+	check(npc.gold == 1000 - quoted_fee and wallet.gold == player_gold + quoted_fee, "Rent transfers exactly from NPC to player")
 	check(npc.inventory.grain == 16 and session.inventory.slots == player_inventory, "Only NPC supplies recipe ingredients")
 	check(building.producer_state.jobs.size() == 1 and building.producer_state.jobs[0].tenant_id == "farmer_ahe", "Shared production queue retains owner")
 	check(not session.buildings.remove_building(building), "Paid orders prevent demolition until delivered")
 	runtime.executor.execute(intent, runtime._absolute_game_minute())
-	check(npc.gold == 992 and wallet.gold == player_gold + 8 and building.producer_state.jobs.size() == 1, "Duplicate action never charges or queues twice")
+	check(npc.gold == 1000 - quoted_fee and wallet.gold == player_gold + quoted_fee and building.producer_state.jobs.size() == 1, "Duplicate action never charges or queues twice")
 	check(session.production.start_rented_recipe(building, "farmer_ahe", "animal_feed", 1, 100).ok, "Second shared queue slot accepts order")
 	var before := npc.to_dict()
 	check(not session.production.start_rented_recipe(building, "farmer_ahe", "flour", 1, 100).ok and npc.to_dict() == before, "Full queue failure is atomic")

@@ -1575,15 +1575,24 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		var facts: Array[String] = []
 		for outcome in outcomes:
 			if str(outcome.get("tool_name", "")) not in ["speak", "wait"]:
-				var fact := str(outcome.get("hud_message", ""))
-				if fact.is_empty():
-					fact = str({"propose_trade": "交易报价已生成，等待对方确认。", "counter_trade": "新报价已生成，原报价已失效，等待对方确认。", "accept_trade": "交易已成交，物品与金币已按确认条款结算。", "reject_trade": "交易已拒绝。", "cancel_trade": "报价已取消。"}.get(str(outcome.get("tool_name", "")), "操作结果已记录，请查看当前协议状态。"))
-				facts.append(fact)
+				var fact := _dialogue_outcome_fact(outcome)
+				if not fact.is_empty(): facts.append(fact)
 		if not facts.is_empty():
 			speech += "\n（" + "；".join(facts) + "）"
 		if not failed.is_empty():
 			speech += "\n（本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。）"
 		dialogue_ready.emit(agent_id, request_id, speech)
+
+
+func _dialogue_outcome_fact(outcome: Dictionary) -> String:
+	# Failed/rejected actions must never receive the generic success captions.
+	# Their authoritative failure code is shown by the caller below the reply.
+	var status := str(outcome.get("status", ""))
+	if status not in ["completed", "in_progress"]: return ""
+	var message := str(outcome.get("hud_message", ""))
+	if not message.is_empty(): return message
+	if status == "in_progress": return "行动正在执行，尚未完成。"
+	return str({"propose_trade": "交易报价已生成，等待对方确认。", "counter_trade": "新报价已生成，原报价已失效，等待对方确认。", "accept_trade": "交易已成交，物品与金币已按确认条款结算。", "reject_trade": "交易已拒绝。", "cancel_trade": "报价已取消。"}.get(str(outcome.get("tool_name", "")), "操作结果已记录，请查看当前协议状态。"))
 
 
 func _dialogue_reply(response: Dictionary) -> String:
