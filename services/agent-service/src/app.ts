@@ -70,7 +70,7 @@ function decisionContext(dependencies: AppDependencies, request: DecisionRequest
       event_id:String(event.event_id),kind:String(event.kind ?? event.event_type ?? "world"),game_minute:Number(event.game_minute),
       payload:(event.payload ?? event) as Record<string,unknown>});
     const memories=dependencies.memory.relevant(request.session_id,request.agent_id,
-      [request.dialogue_input ?? "",...request.goals,JSON.stringify(request.goal_refs ?? []),JSON.stringify((request.experience_events ?? []).slice(-3))].join(" "));
+      [request.dialogue_input ?? "",...request.goals,JSON.stringify(request.goal_refs ?? []),JSON.stringify(request.dialogue_followups ?? []),JSON.stringify((request.experience_events ?? []).slice(-3))].join(" "));
     return dependencies.registry.buildContext(request.agent_id,request,memories);
   }
   const memories = [
@@ -99,7 +99,7 @@ function storeDecision(
   });
   if (request.trigger === "dialogue" && request.dialogue_input?.trim()) {
     dependencies.memory.appendEvent(request.session_id, request.agent_id, {
-      event_id: `dialogue:${intent.decision_id}`,
+      event_id: `dialogue:${request.protocol_version===3?request.request_id:intent.decision_id}`,
       kind: "dialogue",
       game_minute: request.game_minute,
       payload: {

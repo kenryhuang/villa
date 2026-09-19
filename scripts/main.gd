@@ -1490,14 +1490,14 @@ func _on_agent_dialogue_stream_delta(_villager_id: String, request_id: String, d
 		dialogue_ui.call("append_agent_dialogue", request_id, delta)
 
 
-func _on_agent_dialogue_stream_failed(villager_id: String, request_id: String, _error: String) -> void:
+func _on_agent_dialogue_stream_failed(villager_id: String, request_id: String, error: String) -> void:
 	var active_request := str(_agent_dialogue_requests.get(villager_id, ""))
 	if not active_request.is_empty() and active_request != request_id:
 		return
 	if dialogue_ui and dialogue_ui.has_method("fail_agent_dialogue"):
-		dialogue_ui.call("fail_agent_dialogue", request_id)
+		dialogue_ui.call("fail_agent_dialogue", request_id, error)
 	_agent_dialogue_requests.erase(villager_id)
-	_publish_agent_service_unavailable(villager_id)
+	_publish_hud_message("agent", "warning", DialogueUI.agent_failure_message(error), {"agent_id": villager_id})
 
 
 func _on_agent_dialogue_ready(villager_id: String, request_id: String, speech: String) -> void:

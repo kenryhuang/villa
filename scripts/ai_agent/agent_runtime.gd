@@ -34,6 +34,7 @@ const EVENT_SCHEMA_VERSION := 1
 const GAME_MINUTES_PER_DAY := 1080
 const SAVE_DIRECTORY := "user://villa_saves/"
 const EXPECTED_STREAM_CANCELLATIONS := {
+	"debug_state_changed": true,
 	"cancelled": true,
 	"game_closed": true,
 	"session_changed": true,
@@ -100,11 +101,12 @@ const FARM3D_SPAWNS := {"farmer_ahe": Vector2(-12, -12), "lao_li": Vector2(-2, -
 func configure_farm3d(session: Node, hud_bus: Node, remote_enabled: bool, client_config_path: String = AgentClientConfigScript.DEFAULT_PATH) -> bool:
 	farm3d_session = session
 	session_id = "farm3d-" + _request_namespace
-	var farm := VisibleNpcFarmSystem.new()
+	var farm := preload("res://scripts/systems/npc_farm_group.gd").new()
 	add_child(farm)
 	if not farm.configure(session.grid, session.farming, session.npc_economy, get_node("/root/GameData"), "farmer_ahe", Vector3(-12, 0, -12)):
 		return false
 	set_farm_port(farm)
+	if not farm.ensure_farms(): return false
 	if not configure(session.npc_economy, session.market, session.season, hud_bus, client_config_path, remote_enabled):
 		return false
 	executor.farm3d_session = session
@@ -148,10 +150,11 @@ func sync_focus_actors() -> void:
 		var atlas := load("res://assets/characters/npcs/%s/%s_directions.png" % [atlas_id, atlas_id]) as Texture2D
 		actor.configure_agent_visual(atlas)
 		farm3d_actors[agent_id] = actor
-		if agent_id == "farmer_ahe":
+		var actor_farm = farm_registry.for_actor(agent_id) if farm_registry.has_method("for_actor") else farm_registry if agent_id == "farmer_ahe" else null
+		if actor_farm != null:
 			var controller := NpcFarmActionController.new()
 			actor.add_child(controller)
-			controller.configure(farm_registry, actor, actor.farm_action_visual)
+			controller.configure(actor_farm, actor, actor.farm_action_visual)
 
 
 func get_farm3d_environment() -> Dictionary:
@@ -180,7 +183,7 @@ func get_farm3d_environment() -> Dictionary:
 		"bounds": {"min_x": Farm3DTerrainProfile.WORLD_MIN.x, "min_z": Farm3DTerrainProfile.WORLD_MIN.y, "max_x": Farm3DTerrainProfile.WORLD_MAX.x, "max_z": Farm3DTerrainProfile.WORLD_MAX.y},
 		"market": {"x": s.market_site.x, "z": s.market_site.y},
 		"lake": {"x": Farm3DTerrainProfile.LAKE_CENTER.x, "z": Farm3DTerrainProfile.LAKE_CENTER.y},
-		"regions": [{"id": "farm", "description": "中央农场；玩家建筑与阿禾的专属农田"}, {"id": "creek", "description": "东侧河流，可钓鱼；南部有桥"}, {"id": "forest", "description": "西北林地"}, {"id": "hills", "description": "外围丘陵"}, {"id": "lake", "description": "南部沙地湖泊，可钓鱼"}, {"id": "golf", "description": "湖泊西侧高尔夫球场"}],
+		"regions": [{"id": "farm", "description": "中央农场；玩家建筑与各农户独立管理的农田"}, {"id": "creek", "description": "东侧河流，可钓鱼；南部有桥"}, {"id": "forest", "description": "西北林地"}, {"id": "hills", "description": "外围丘陵"}, {"id": "lake", "description": "南部沙地湖泊，可钓鱼"}, {"id": "golf", "description": "湖泊西侧高尔夫球场"}],
 		"rental_rules": "使用 inspect_building 查询实际 building_id、配方与每批租费，再用 rent_production；系统会自动走到建筑后再下单，无需先调用 move；自备原料，加工费按该建筑费目表收取，排队托管，开工付给 owner_id；使用自有建筑免费。共用队列，完成后成品交付客户。max_fee 是总租金上限。"}}
 
 
@@ -513,6 +516,7 @@ func is_agent_managed(agent_id: String) -> bool:
 
 
 func get_agent_display_name(agent_id: String) -> String:
+	if is_instance_valid(farm3d_session) and farm3d_session.living_world != null and farm3d_session.living_world.character_overrides.has(agent_id): return str(farm3d_session.living_world.character_overrides[agent_id].display_name)
 	var agent: Dictionary = registry.get_agent(agent_id)
 	return str(agent.get("display_name", agent_id))
 
@@ -698,6 +702,7 @@ func _compact_current_state(value: Dictionary) -> Dictionary:
 			if receipt.result.has("events"): receipt.result.events = []
 	# Executed farm work is already covered by the executor's settlement receipt.
 	if result.farm.has("finished"): result.farm.finished = {}
+	for farm in result.farm.get("additional_farms",{}).values(): farm.finished = {}
 	return result
 
 
@@ -1289,6 +1294,7 @@ func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: i
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
+	if trigger != "dialogue" and is_instance_valid(farm3d_session) and get_tree().paused: return {}
 	if trigger != "dialogue" and loop_state.has_execution(agent_id): return {}
 	if farm3d_session != null and farm3d_session.living_world != null and (agent_id not in farm3d_session.living_world.society.focus or not farm3d_session.living_world.society.caught_up(game_minute)): return {}
 	if trigger != "dialogue" and farm3d_session != null and farm3d_session.living_world != null:
@@ -1403,10 +1409,13 @@ func _build_loop_request(actor: String, request_id: String, trigger: String, min
 	var request := {"protocol_version": 3, "request_id": request_id, "session_id": session_id, "session_epoch": gateway.session_epoch,
 		"agent_id": actor, "trigger": trigger, "game_minute": minute, "world_revision": executor.world_revision,
 		"active_role": caps.get("role_id", ""), "goals": caps.get("goals", []), "allowed_command_tools": commands,
-		"resources": loop_state.snapshot(self, actor), "experience_events": loop_state.events(actor), "goal_refs": loop_state.goal_refs(actor, minute)}
+		"resources": loop_state.snapshot(self, actor), "experience_events": loop_state.events(actor), "goal_refs": loop_state.goal_refs(actor, minute),
+		"dialogue_followups": loop_state.dialogue_followups(actor)}
+	if farm3d_session.living_world.character_overrides.has(actor): request.identity_override = farm3d_session.living_world.character_profile(actor)
 	if not dialogue.is_empty(): request.dialogue_input = dialogue
 	_request_triggers[request_id] = trigger
-	loop_state.loops[request_id] = {"agent_id": actor, "state": "reasoning", "started": minute, "trigger": trigger, "action_ids": []}
+	loop_state.loops[request_id] = {"agent_id": actor, "state": "reasoning", "started": minute, "trigger": trigger, "action_ids": [],
+		"dialogue_input": dialogue, "dialogue_handoff_ids": request.dialogue_followups.slice(0, 4).map(func(e): return e.event_id)}
 	return request
 
 
@@ -1522,7 +1531,7 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 	if farm3d_session != null and get_tree().paused and validator.validate(response, registry, executor.world_revision, role_system).ok:
 		var safe_dialogue := trigger == "dialogue"
 		for action in response.get("actions", []):
-			if str(action.get("tool_name", "")) not in ["request_supply", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
+			if str(action.get("tool_name", "")) not in ["resolve_relationship_dialogue", "propose_relationship", "respond_relationship", "end_relationship", "express_support", "request_supply", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "cancel_project", "revise_project", "suggest_behavior", "propose_player_commission", "speak", "wait", "propose_trade", "counter_trade", "accept_trade", "reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation", "accept_cooperation", "reject_cooperation"]:
 				safe_dialogue = false
 		if not safe_dialogue:
 			if not _deferred_responses.any(func(entry: Dictionary): return str(entry.response.get("request_id", "")) == request_id):
@@ -1551,7 +1560,10 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		loop_state.loops[request_id].state = "executing"
 		loop_state.loops[request_id].action_ids = checked.value.actions.map(func(a): return a.action_id)
 		loop_state.record(agent_id, {"event_id": "decision:" + str(checked.value.decision_id), "kind": "decision", "game_minute": _absolute_game_minute(), "payload": {"actions": checked.value.actions, "action_names": checked.value.actions.map(func(a): return a.tool_name), "decision_summary": checked.value.decision_summary}})
+	if trigger == "dialogue" and is_instance_valid(farm3d_session):
+		farm3d_session.living_world.relationships.dialogue = {"actor": agent_id, "request_id": request_id, "text": str(loop_state.loops.get(request_id, {}).get("dialogue_input", ""))}
 	var outcomes: Array[Dictionary] = executor.execute_batch(checked.value, _absolute_game_minute())
+	if is_instance_valid(farm3d_session): farm3d_session.living_world.relationships.dialogue = {}
 	for outcome in outcomes:
 		_record_world_action_outcome(outcome)
 		agreement_system.record_action_outcome(outcome, _absolute_game_minute())
@@ -1581,6 +1593,8 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 			speech += "\n（" + "；".join(facts) + "）"
 		if not failed.is_empty():
 			speech += "\n（本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。）"
+		if loop_state.loops.has(request_id):
+			loop_state.record_dialogue(agent_id, request_id, _absolute_game_minute(), str(loop_state.loops[request_id].get("dialogue_input", "")), speech, checked.value.actions, outcomes)
 		dialogue_ready.emit(agent_id, request_id, speech)
 
 
@@ -1619,6 +1633,7 @@ func _publish_committed_outcome(agent_id: String, outcome: Dictionary) -> void:
 
 func _record_world_action_outcome(outcome: Dictionary) -> bool:
 	if is_instance_valid(farm3d_session):
+		if farm3d_session.living_world != null: farm3d_session.living_world.relationships.advance()
 		var actor := str(outcome.get("agent_id", ""))
 		var state := str(outcome.get("status", ""))
 		for loop_id in loop_state.loops:
@@ -1630,6 +1645,7 @@ func _record_world_action_outcome(outcome: Dictionary) -> bool:
 				loop.receipts[str(outcome.action_id)] = outcome.duplicate(true)
 				if actor.is_empty(): actor = str(loop.agent_id)
 		loop_state.record(actor, {"event_id": "action:%s:%s:%s" % [outcome.get("idempotency_key", ""), state, outcome.get("committed_revision", 0)], "kind": "Action" + state.capitalize(), "game_minute": _absolute_game_minute(), "payload": outcome.duplicate(true)})
+		loop_state.update_dialogue_outcome(actor, outcome)
 		loop_state.snapshot(self, actor)
 	var status := str(outcome.get("status", ""))
 	var tool_name := str(outcome.get("tool_name", ""))

@@ -5,6 +5,8 @@ export const DIALOGUE_COMMANDS = new Set([
 ]);
 
 export const LOOP_DIALOGUE_COMMANDS = new Set([
-  ...DIALOGUE_COMMANDS,
-  "request_supply", "wait", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal",
+  // Agree on a trip during dialogue; resolve fresh coordinates and move in
+  // the next background Loop after the paused conversation ends.
+  ...[...DIALOGUE_COMMANDS].filter(name=>name!=="move"),
+  "resolve_relationship_dialogue", "propose_relationship", "respond_relationship", "end_relationship", "express_support", "request_supply", "wait", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal",
 ]);

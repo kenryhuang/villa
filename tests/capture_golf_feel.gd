@@ -38,6 +38,22 @@ func _run() -> void:
 	root.size = Vector2i(900,720)
 	root.content_scale_size = Vector2i(900,720)
 	await capture("golf-feel-compact")
+	root.size = Vector2i(1440,960)
+	root.content_scale_size = Vector2i(1440,960)
+	golf.set_process(false)
+	golf.gesture.cancel()
+	golf.club = 0
+	golf.contact_height = -.6
+	for strength in [.15,.5,1.0]:
+		var profile := Farm3DGolfSwing.animation_profile(strength,false)
+		golf.gesture.begin(0)
+		golf.gesture.motion(Vector2(0,strength*Farm3DGolfSwing.FULL_PULL),.2)
+		golf._update_hud()
+		golf.visual.set_contact(golf.ball.position,golf.direction,golf.contact_height)
+		golf.visual.pose(float(profile.backswing_angle),0)
+		await capture("golf-power-%d-backswing" % roundi(strength*100))
+		golf.visual.pose(-float(profile.followthrough),0)
+		await capture("golf-power-%d-followthrough" % roundi(strength*100))
 	farm.free()
 	print("GOLF FEEL CAPTURE: PASS")
 	quit(0)

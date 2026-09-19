@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {AgentRegistry} from "../src/agents.ts";
 import {AgentStreamAssembler} from "../src/provider_stream.ts";
-import {runAgentLoop,DEFAULT_LOOP} from "../src/agent_loop.ts";
+import {runAgentLoop,DEFAULT_LOOP,validLoopRead} from "../src/agent_loop.ts";
 import type {DecisionRequest} from "../src/protocol.ts";
 
 const fixture=JSON.parse(readFileSync(new URL("./fixtures/loop-discovery-errors.json",import.meta.url),"utf8"));
@@ -12,7 +12,7 @@ function context(actor="farmer_ahe"){
   const profile=registry.get(actor)!;
   const request={protocol_version:3,request_id:"discovery-regression",session_id:"fixture",session_epoch:1,agent_id:actor,
     trigger:"schedule",game_minute:0,world_revision:1,active_role:profile.role_id,goals:profile.goals,
-    allowed_command_tools:[...profile.tools,"adopt_short_term_goal","revise_short_term_goal","abandon_short_term_goal","submit_project"],
+    allowed_command_tools:[...profile.tools,"adopt_short_term_goal","revise_short_term_goal","abandon_short_term_goal","submit_project","start_leisure"],
     allowed_read_tools:[],actor_context:{},public_world_state:{},global_public_events:[],known_actors:[],own_event_delta:[],market_summary:{},market_view:{},interaction_view:{},agreement_view:{},
     resources:{gold:30,inventory:{grain_seed:2},resource_revision:1},experience_events:[],goal_refs:[]} as unknown as DecisionRequest;
   return {request,ctx:registry.buildContext(actor,request,[])};
@@ -23,6 +23,41 @@ function output(calls:{id:string;function:{name:string;arguments:string}}[]=[]){
   return a;
 }
 const call=(name:string,args:Record<string,unknown>={})=>({id:`call-${name}`,function:{name,arguments:JSON.stringify(args)}});
+
+test("named map discovery resolves query_map through the live world broker then moves",async()=>{
+  const {request}=context();request.allowed_command_tools.push("move");
+  const ctx=registry.buildContext(request.agent_id,request,[]);let round=0;
+  const reads:unknown[]=[];
+  const intent=await runAgentLoop(request,ctx,{experience:{},memories:[],read:async(name,args)=>{
+    reads.push([name,args]);return {ok:true,items:[{name:"南湖",navigation_action:{tool_name:"move",arguments:{x:-5.5,z:84.5}}}]};
+  }},async(messages,tools)=>{
+    const names=tools.map(t=>(t.function as any).name);
+    if(round++===0){assert.ok(!names.includes("query_map"));return output([call("discover_tools",{domains:["map"]})]);}
+    assert.ok(names.includes("query_map"));
+    if(round===2)return output([call("query_map",{query:"南湖"})]);
+    const place=JSON.parse(String(messages.at(-1)!.content)).items[0];
+    return output([call(place.navigation_action.tool_name,place.navigation_action.arguments)]);
+  },()=>{});
+  assert.deepEqual(reads,[["query_world",{query:"南湖",domain:"map",section:"regions"}]]);
+  assert.equal(intent.actions[0].tool_name,"move");
+  assert.ok(!validLoopRead("query_map",{query:"南湖"},["self"]));
+  assert.ok(!validLoopRead("query_map",{query:"南湖",domain:"actors"},["map"]));
+});
+
+test("dialogue discovers relationship recording with the player's exact utterance",async()=>{
+  const {request}=context("xiao_hua");request.trigger="dialogue";
+  request.allowed_command_tools.push("resolve_relationship_dialogue");
+  const ctx=registry.buildContext(request.agent_id,request,[]);let round=0;
+  const intent=await runAgentLoop(request,ctx,{experience:{},memories:[],read:async()=>({ok:true,data:{actor_id:"player",status:"none"}})},async(_messages,tools)=>{
+    if(round++===0)return output([call("discover_tools",{domains:["actors"],actions:["resolve_relationship_dialogue"]})]);
+    if(round===2)return output([call("query_world",{domain:"actors",section:"relationship",id:"player"})]);
+    assert.ok(tools.some(t=>(t.function as any).name==="resolve_relationship_dialogue"));
+    const a=output([call("resolve_relationship_dialogue",{player_quote:"我们正式成为恋人吧。",decision:"confirm",note:"我也愿意。"})]);
+    a.accept({choices:[{index:0,delta:{content:"我也愿意认真和你交往。"}}]});
+    return a;
+  },()=>{});
+  assert.equal(intent.actions[0].tool_name,"resolve_relationship_dialogue");
+});
 
 for(const example of fixture.cases){
   test(`real trace ${example.request_id}: discovery returns selection feedback and continues`,async()=>{
@@ -93,7 +128,7 @@ test("authorized action omitted from menu is recoverable and requires explicit d
 });
 
 test("knowledge discovery alone supports a survey including travel",async()=>{
-  const {request,ctx}=context("afu_shui");let round=0;
+  const {request,ctx}=context("xuezhe_lin");let round=0;
   const intent=await runAgentLoop(request,ctx,{experience:{},memories:[],read:async()=>({})},async(_messages,tools)=>{
     if(round++===0)return output([call("discover_tools",{domains:["knowledge"],actions:["survey"]})]);
     const survey:any=tools.find(t=>(t.function as any).name==="survey");
@@ -104,6 +139,20 @@ test("knowledge discovery alone supports a survey including travel",async()=>{
   },()=>{});
   assert.deepEqual(intent.actions.map(a=>a.tool_name),["survey"]);
 });
+
+for(const activity of ["eat","drink","rest","sleep","visit"]){
+  test(`self discovery exposes real ${activity} action for non-farmers too`,async()=>{
+    const {request,ctx}=context("lao_li");let round=0;
+    const args={activity,partner_id:activity==="drink"?"village_inn":activity==="visit"?"farmer_ahe":"lao_li"};
+    const intent=await runAgentLoop(request,ctx,{experience:{},memories:[],read:async()=>({})},async(_messages,tools)=>{
+      if(round++===0)return output([call("discover_tools",{domains:["self"],actions:["start_leisure"]})]);
+      const leisure:any=tools.find(t=>(t.function as any).name==="start_leisure");
+      assert.ok(leisure.function.parameters.properties.activity.enum.includes(activity));
+      return output([call("start_leisure",args)]);
+    },()=>{});
+    assert.deepEqual(intent.actions[0].arguments,args);
+  });
+}
 
 test("public catalog lookup cannot authorize private actions",async()=>{
   const {request,ctx}=context("village_public");let round=0;

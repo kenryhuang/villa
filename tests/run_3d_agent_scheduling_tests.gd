@@ -22,6 +22,8 @@ class RecordingGateway extends Node:
 		for done in pending.values(): done.call(false, {}, "cancelled")
 	func report_outcome(_actor: String, _session: String, _outcome: Dictionary) -> bool:
 		return true
+	func sync_experience(_value: Dictionary, _callback: Callable) -> bool:
+		return false
 
 func _initialize() -> void:
 	create_timer(90).timeout.connect(func(): push_error("Agent scheduling timeout"); quit(1))

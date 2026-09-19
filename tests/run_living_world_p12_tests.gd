@@ -46,10 +46,11 @@ func run() -> void:
 	s = scene.farm_session; w = s.living_world
 	scene.set_process(false); w.set_process(false); s.season.set_process(false); s.player.set_physics_process(false)
 	check(w.society.residents.size() == 36 and w.society.config.organizations.size() == 4, "Expanded scene has 36 residents and four original-ledger organizations")
-	check(w.society.focus.size() == 6 and s.agent_runtime.farm3d_actors.size() == 6, "Six named actors are visible; population does not spawn 36 bodies")
+	check(w.society.focus.size() == 8 and s.agent_runtime.farm3d_actors.size() == 8, "Eight named actors are visible; population does not spawn 36 bodies")
 	check(s.agent_runtime.registry.get_agent_ids().size() == 36, "All residents have eligible authored profiles without concurrent model calls")
 	check(w.society.cooperative != null and w.society.cooperative.get_plot_count("village_coop") == 80, "Cooperative owns 80 actual map plots using original crop rules")
 	var id := "resident_mei"
+	check(w.society.set_focus("resident_shan", false).ok, "Free one slot in the eight-actor focus pool")
 	var before: Dictionary = w.assets.snapshot(id)
 	check(w.society.set_focus(id, true).ok and w.actor(id) != null, "Ordinary resident promotes using same actor identity")
 	check(w.assets.snapshot(id) == before and w.society.residents.has(id), "Promotion does not mint or reset assets")

@@ -264,6 +264,9 @@ func _queue_visible_farm(
 			"decision_id": str(action.decision_id),
 			"action_id": str(action.get("action_id", "")),
 			"idempotency_key": str(action.idempotency_key),
+			"agent_id": str(action.agent_id),
+			"tool_name": str(action.tool_name),
+			"arguments": (action.get("arguments", {}) as Dictionary).duplicate(true),
 			"status": "in_progress",
 			"committed_revision": world_revision,
 			"changed_entities": [],
@@ -400,6 +403,18 @@ func complete_physical_action(record: Dictionary, game_minute: int) -> Dictionar
 func complete_due(game_minute: int) -> Array[Dictionary]:
 	var outcomes: Array[Dictionary] = []
 	if is_instance_valid(farm3d_session):
+		# Work leisure has its own travel/work clock. Scheduling is not completion.
+		for prior in _outcomes.values():
+			if prior.get("tool_name") not in ["start_leisure", "start_learning"] or prior.get("status") != "in_progress": continue
+			var prefix := "learn-" if prior.tool_name == "start_learning" else "leisure-"
+			var id := prefix + str(prior.idempotency_key).sha256_text().substr(0, 24)
+			var activity: Dictionary = farm3d_session.living_world.work.activities.get(id, {})
+			if activity.get("status") in ["traveling", "working"]: continue
+			var reason := str(activity.get("reason", ""))
+			var result := {"ok": true, "mutated": true, "message": "学习／休闲活动已实际完成。", "changed_entities": ["work_activity:" + id]} if activity.get("status") == "completed" else _error(reason if not reason.is_empty() else "activity_missing_or_cancelled")
+			var outcome := _record_result(prior, result, game_minute)
+			outcomes.append(outcome)
+			outcomes.append_array(resume_batch_after(outcome, game_minute))
 		for prior in _outcomes.values():
 			if prior.get("tool_name") != "build" or prior.get("status") != "in_progress" or not prior.get("arguments", {}).has("gx"): continue
 			var project_id := _build_project_id(str(prior.idempotency_key))
@@ -452,6 +467,8 @@ func _execute_tool(agent_id: String, tool_name: String, arguments: Dictionary, g
 	if tool_name in preload("res://scripts/ai_agent/agent_loop_state.gd").GOAL_TOOLS:
 		return farm3d_session.agent_runtime.loop_state.command(agent_id, tool_name, arguments, key, game_minute) if is_instance_valid(farm3d_session) else _error("farm3d_only")
 	match tool_name:
+		"resolve_relationship_dialogue", "propose_relationship", "respond_relationship", "end_relationship", "express_support":
+			return farm3d_session.living_world.relationships.command(agent_id, tool_name, arguments, key) if is_instance_valid(farm3d_session) else _error("requires_3d_world")
 		"move":
 			return _success("%s已到达目的地。" % _display_name(agent_id), ["actor:" + agent_id]) if at_destination else _error("requires_3d_world")
 		"propose_activity", "enroll_activity", "leave_activity", "cancel_activity":
@@ -657,4 +674,4 @@ func _error(error: String) -> Dictionary:
 
 
 func _failure(intent: Dictionary, game_minute: int, error: String) -> Dictionary:
-	return {"protocol_version": 2, "decision_id": str(intent.get("decision_id", "")), "action_id": str(intent.get("action_id", "")), "idempotency_key": str(intent.get("idempotency_key", "")), "status": "rejected", "failure_code": error, "committed_revision": world_revision, "changed_entities": [], "resource_delta": {}, "hud_message": "", "game_minute": game_minute}
+	return {"protocol_version": 2, "decision_id": str(intent.get("decision_id", "")), "action_id": str(intent.get("action_id", "")), "idempotency_key": str(intent.get("idempotency_key", "")), "agent_id": str(intent.get("agent_id", "")), "tool_name": str(intent.get("tool_name", "")), "arguments": (intent.get("arguments", {}) as Dictionary).duplicate(true), "status": "rejected", "failure_code": error, "committed_revision": world_revision, "changed_entities": [], "resource_delta": {}, "hud_message": "", "game_minute": game_minute}

@@ -7,7 +7,7 @@ const FIELD_LABELS := {
 	"next_output": "下次产出", "mature_flowers": "成熟花朵", "bonus": "产量加成",
 	"animal_count": "鸡群数量", "feed_item": "饲料", "feed_stock": "饲料库存",
 	"feed_days": "可用天数", "daily_egg_output": "每日鸡蛋",
-	"water_connected": "连接水源", "irrigation_radius": "灌溉半径",
+	"water_connected": "连接水源", "irrigation_area": "灌溉范围",
 	"covered_farmland": "覆盖农田", "covered_greenhouses": "覆盖温室",
 	"growth_multiplier": "生长速度", "planting_cells": "种植格数",
 	"tilled_cells": "已开垦", "planted_cells": "已播种", "mature_cells": "已成熟",
@@ -256,7 +256,7 @@ func _view_data_for(building: BuildingInstance) -> ViewData:
 			var irrigated := _production.get_irrigated_cells(building)
 			result.fields = {
 				"water_connected": _production.is_water_connected(building),
-				"irrigation_radius": float(config.get("radius", 4)),
+				"irrigation_area": _production.get_waterwheel_coverage_bounds(building).size.x,
 				"covered_farmland": irrigated.size(),
 				"covered_greenhouses": _production.get_covered_greenhouses(building).size(),
 				"growth_multiplier": 1.5,
@@ -457,9 +457,8 @@ func _field_value(field_name: String, value: Variant) -> String:
 			return "是" if bool(value) else "否"
 		"season_protection":
 			return "全年有效" if bool(value) else "未启用"
-		"irrigation_radius":
-			var radius := float(value)
-			return "%d格" % roundi(radius) if is_equal_approx(radius, float(roundi(radius))) else "%.1f格" % radius
+		"irrigation_area":
+			return "%d×%d格" % [int(value), int(value)]
 		"growth_multiplier":
 			return "%.1f×" % float(value)
 		"cycle_status":

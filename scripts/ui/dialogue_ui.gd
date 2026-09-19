@@ -42,7 +42,7 @@ func configure_agent_runtime(runtime: Node) -> void:
 	runtime.dialogue_ready.connect(func(id: String, request_id: String, speech: String):
 		finish_agent_dialogue(request_id, speech)
 		set_agent_interactions(id, runtime.get_player_interactions(id)))
-	runtime.dialogue_stream_failed.connect(func(_id: String, request_id: String, _error: String): fail_agent_dialogue(request_id))
+	runtime.dialogue_stream_failed.connect(func(_id: String, request_id: String, error: String): fail_agent_dialogue(request_id, error))
 	agent_dialogue_cancelled.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
 	agent_dialogue_closed.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
 	interaction_response_requested.connect(func(id: String, interaction_id: String, response: String, terms: Dictionary):
@@ -164,10 +164,29 @@ func finish_agent_dialogue(request_id: String, speech: String) -> void:
 	_render_history()
 
 
-func fail_agent_dialogue(request_id: String) -> bool:
+static func agent_failure_message(error: String) -> String:
+	var code := error.get_slice(":", 0).strip_edges()
+	if code == "dialogue_reply_required":
+		return "这次没有生成完整的对话回复，请再说一次。"
+	if code == "relationship_state_required":
+		return "暂时无法核实当前关系，请稍后再试。"
+	if code == "context_capacity_exceeded":
+		return "这次对话的信息量过大，未能完成回复，请重试。"
+	if "timeout" in code:
+		return "这次回复等待超时，请重试。"
+	if code.begins_with("provider_http_401") or code.begins_with("provider_http_403"):
+		return "模型服务认证失败，请检查 Agent 服务配置。"
+	if code == "provider_http_429":
+		return "模型服务请求过多，请稍后再试。"
+	if code.begins_with("http_") or code in ["", "connection_failed", "connect_failed", "provider_streaming_unavailable"]:
+		return FAILURE_TEXT
+	return "这次回复未能完成，请重试；具体原因可在调试记录中查看。"
+
+
+func fail_agent_dialogue(request_id: String, error: String = "") -> bool:
 	if request_id != _agent_request_id or not _agent_stream_pending:
 		return false
-	_set_pending_failure(FAILURE_TEXT)
+	_set_pending_failure(agent_failure_message(error))
 	return true
 
 

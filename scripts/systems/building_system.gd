@@ -24,6 +24,7 @@ var land_permission: Callable
 var economy_ref: Variant
 var progression_ref: Variant
 var geographic_query_service: RefCounted
+var water_source_available: Callable
 var buildings_container: Node3D
 var _event_bus: Node
 var _in_build_mode := false
@@ -290,15 +291,14 @@ func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player
 			Vector2i(gx, gz),
 			-1,
 			"water_required",
-			"无法建造%s：水车必须紧邻水域" % resolved.display_name
+			"无法建造%s：水车需紧邻天然水域或已完工、维护正常的水井" % resolved.display_name
 		)
 	var availability := diagnose_availability(resolved, actor_id)
 	availability.building_id = resolved.building_id
 	availability.grid = Vector2i(gx, gz)
 	if resolved.effect_type == "irrigation" and bool(availability.allowed):
-		availability.water_anchor = geographic_query_service.water_anchor(
-			Vector2i(gx, gz), resolved.footprint
-		)
+		availability.water_source = get_water_source(Vector2i(gx,gz),resolved.footprint)
+		availability.water_anchor = availability.water_source.get("anchor",Vector2i(-1,-1))
 	return availability
 
 
@@ -493,13 +493,8 @@ func validate_restore_buildings(records: Array, grid_data: Dictionary) -> bool:
 				or (state != GridCell.State.BUILDING and not _is_buildable_cell(resolved, grid_system_ref.get_cell(location.x,location.y), state))
 			):
 				return false
-		if resolved.effect_type == "irrigation" and not _saved_footprint_borders_water(
-			resolved,
-			gx,
-			gz,
-			grid_data
-		):
-			return false
+		# Water is an operating/placement requirement, not a save invariant:
+		# an installed wheel survives demolition or maintenance of its source.
 		var packed := load(resolved.scene_path) as PackedScene
 		if packed == null:
 			return false
@@ -549,8 +544,6 @@ func restore_buildings(records: Array, emit_public_signals := true) -> int:
 				overlaps_claimed = true
 				break
 		if overlaps_claimed:
-			continue
-		if resolved.effect_type == "irrigation" and not _footprint_borders_water(resolved, gx, gz):
 			continue
 		var packed := load(resolved.scene_path) as PackedScene
 		if packed == null:
@@ -810,13 +803,25 @@ func _footprint_cells(data: BuildingData, gx: int, gz: int) -> Array[Vector2i]:
 
 
 func _footprint_borders_water(data: BuildingData, gx: int, gz: int) -> bool:
-	return (
-		data != null
-		and geographic_query_service != null
-		and geographic_query_service.footprint_borders_natural_water(
-			Vector2i(gx, gz), data.footprint
-		)
-	)
+	return data != null and not get_water_source(Vector2i(gx,gz),data.footprint).is_empty()
+
+
+func get_water_source(origin: Vector2i, size: Vector2i, require_available := true) -> Dictionary:
+	if geographic_query_service != null and geographic_query_service.footprint_borders_natural_water(origin,size):
+		return {"kind":"natural","building_id":"","anchor":geographic_query_service.water_anchor(origin,size)}
+	for source in get_all_buildings():
+		if source.data == null or source.data.effect_type != "water_source": continue
+		if require_available and not source.is_construction_complete(): continue
+		if require_available and water_source_available.is_valid() and not water_source_available.call(source): continue
+		if footprints_share_edge(origin,size,Vector2i(source.grid_x,source.grid_z),source.data.footprint):
+			return {"kind":"well","building_id":source.instance_id,"anchor":Vector2i(source.grid_x,source.grid_z)}
+	return {}
+
+
+static func footprints_share_edge(a: Vector2i, size_a: Vector2i, b: Vector2i, size_b: Vector2i) -> bool:
+	var x_overlap := a.x < b.x+size_b.x and b.x < a.x+size_a.x
+	var z_overlap := a.y < b.y+size_b.y and b.y < a.y+size_a.y
+	return (x_overlap and (a.y+size_a.y == b.y or b.y+size_b.y == a.y)) or (z_overlap and (a.x+size_a.x == b.x or b.x+size_b.x == a.x))
 
 
 func _saved_footprint_borders_water(

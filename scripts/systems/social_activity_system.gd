@@ -129,7 +129,11 @@ func _visit(e: Dictionary, p: Dictionary) -> void:
 	p.state = "attended"; p.arrived = world.minute()
 	if int(e.food) > 0:
 		e.food = int(e.food) - 1; e.served = int(e.served) + 1; p.consumed = true
-	if p.actor != "player": world.work._relationship({"id": "social:" + str(e.id) + ":" + str(p.actor)}, [p.actor, e.owner], 1)
+		world.society.relieve_needs(p.actor,{"hunger":65},"activity_meal")
+	world.society.relieve_needs(p.actor,{"social":30},"activity_attendance")
+	if p.actor != "player": world.work._relationship({"id": "social:" + str(e.id) + ":" + str(p.actor)}, [p.actor, e.owner], 1, "hosted_activity")
+	for other in e.participants.values():
+		if other.actor != p.actor and other.state == "attended": world.relationships.award(p.actor, other.actor, "shared_activity", "coattendance:" + str(e.id))
 
 func begin_gameplay(kind: String) -> String:
 	sequence += 1

@@ -11,6 +11,17 @@ var peak := 0.0
 var started := 0.0
 var peak_time := 0.0
 
+## Visual timing is deterministic and never changes the shot's physical power.
+static func animation_profile(strength: float, short_stroke: bool) -> Dictionary:
+	var amount := clampf(strength, 0, 1)
+	return {
+		"backswing_angle": lerpf(.12, .75 if short_stroke else 2.6, amount),
+		"followthrough": lerpf(.12, .65 if short_stroke else 2.1, amount),
+		"follow_seconds": lerpf(.18, .32 if short_stroke else .48, amount),
+		"hold_seconds": lerpf(.06, .14 if short_stroke else .3, amount),
+		"recover_seconds": lerpf(.18, .28 if short_stroke else .4, amount),
+	}
+
 func power(short_stroke := false) -> float:
 	var amount := clampf(peak/FULL_PULL,0,1)
 	return pow(amount,1.35) if short_stroke else amount

@@ -120,5 +120,19 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	dialogue.set_agent_interactions("farmer_ahe", [{"offer_id": "offer-expired", "status": "expired", "expires_game_minute": 1}])
 	var expired_card := cards.get_child(0)
 	assertions.truthy((expired_card.find_child("AcceptButton", true, false) as Button).disabled, "expired interaction cannot be accepted")
+	for sample in [
+		["dialogue_reply_required: internal model detail", "没有生成完整"],
+		["relationship_state_required: query_world", "无法核实当前关系"],
+		["stream_idle_timeout", "等待超时"],
+		["context_capacity_exceeded", "信息量过大"],
+		["provider_unauthorized_tool", "回复未能完成"],
+		["http_503", "服务暂时不可用"],
+	]:
+		dialogue.begin_agent_dialogue("farmer_ahe", "error-case")
+		assertions.truthy(not dialogue.fail_agent_dialogue("old-request", sample[0]), "Stale failure cannot end a newer dialogue")
+		assertions.truthy(dialogue.fail_agent_dialogue("error-case", sample[0]), "Current failure ends pending reply")
+		assertions.truthy(str(dialogue.get_agent_history("farmer_ahe")[-1].text).contains(sample[1]), "Failure shows its own useful reason: " + sample[0])
+		assertions.truthy(not str(dialogue.get_agent_history("farmer_ahe")[-1].text).contains("internal model detail"), "User history omits raw diagnostic payload")
+		assertions.truthy(input.editable and not send.disabled, "Failed dialogue allows retry")
 	dialogue.queue_free()
 	await tree.process_frame

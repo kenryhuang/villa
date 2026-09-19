@@ -86,7 +86,7 @@ func run() -> void:
 	check(map_view.items.size() == 1 and map_view.items[0].arrived and map_view.items[0].next_action == "survey", "Arrival uses the executor site and distance threshold")
 	body.position = original_position
 	var map_places: Dictionary = r.world_queries.read(r, "xuezhe_lin", "query_world", {"domain": "map", "section": "regions"})
-	check(map_places.items.any(func(row): return row.id == "golf") and map_places.next_cursor == -1, "Default map page includes golf without requiring another page")
+	check(map_places.items.any(func(row): return row.id == "golf"), "Default map page includes golf; additional named regions paginate")
 	var golf: Dictionary = r.world_queries.read(r, "xuezhe_lin", "query_world", {"domain": "map", "query": "高尔夫"})
 	check(golf.ok and golf.items.size() == 1 and golf.items[0].id == "golf", "Chinese golf search discovers the real course")
 	var by_id: Dictionary = r.world_queries.read(r, "xuezhe_lin", "query_world", {"domain": "map", "id": "golf"})

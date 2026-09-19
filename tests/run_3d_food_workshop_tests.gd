@@ -58,8 +58,12 @@ func _run() -> void:
 	for sprite in workshop.find_children("*","Sprite3D",true,false):
 		_check(not sprite.is_visible_in_tree(),"Legacy flat artwork does not overlap 3D workshop")
 	_check(model.find_children("*","MeshInstance3D",true,false).size() >= 5,"Workshop has real staged 3D geometry")
-	player.position = workshop.position+Vector3.FORWARD*3
-	_check(not interaction.open_windmill(workshop),"Cannot operate through rear wall")
+	for direction in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT, Vector3(1, 0, -1).normalized()]:
+		player.position = workshop.position + direction * 3.7
+		_check(interaction.open_windmill(workshop) and view.visible and paused, "Nearby workshop panel opens from every direction")
+		view.close_panel()
+		player.position = workshop.position + direction * 3.9
+		_check(not interaction.open_windmill(workshop) and not view.visible, "Workshop range applies in every direction")
 	player.position = workshop.position+Vector3.BACK*2.8
 	var camera := Camera3D.new()
 	farm.add_child(camera)

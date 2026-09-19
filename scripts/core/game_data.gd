@@ -244,9 +244,9 @@ const BUILDINGS := {
 		"category": "farming", "palette_order": 40,
 		"footprint_x": 2, "footprint_z": 2,
 		"cost": {"plank": 12, "stone_brick": 8, "iron_ingot": 3, "rope": 2},
-		"description": "建于天然水域岸边，为半径4格农田供水；接到温室任一床即可灌溉全8床，无需另建水渠",
-		"effect": "irrigation", "effect_value": 4,
-		"effect_config": {"radius": 4, "requires_water": true},
+		"description": "紧邻天然水域或已完工水井，自动灌溉周围15×15格农田；供水正常时作物不会枯萎，非适季休眠；接到温室任一床即可灌溉全8床",
+		"effect": "irrigation", "effect_value": 15,
+		"effect_config": {"coverage_width": 15, "requires_water": true},
 	},
 	"windmill": {
 		"id": "windmill", "name": "风车",
@@ -282,7 +282,7 @@ const BUILDINGS := {
 		"category": "basic", "palette_order": 40,
 		"footprint_x": 1, "footprint_z": 1,
 		"cost": {"wood": 10, "stone": 20},
-		"description": "提供灌溉水源",
+		"description": "内陆水源，占地1格；完工并保持维护后，可给紧邻水车供水，再自动灌溉温室。水井本身不自动浇水",
 		"effect": "water_source", "effect_value": 0,
 	},
 	"workbench": {

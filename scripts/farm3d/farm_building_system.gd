@@ -7,7 +7,7 @@ var actor_lookup: Callable
 
 func _resolve_data(building: Variant) -> BuildingData:
 	var resolved := super._resolve_data(building)
-	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop", "beehive", "chicken_coop", "greenhouse", "waterwheel"]:
+	if resolved != null and resolved.building_id in ["barn", "windmill", "food_workshop", "beehive", "chicken_coop", "greenhouse", "waterwheel", "well"]:
 		# Copy so the shared catalogue and original game keep their own visuals.
 		resolved = resolved.duplicate() as BuildingData
 		resolved.scene_path = "res://scenes/farm3d/buildings/%s.tscn" % resolved.building_id
@@ -20,6 +20,8 @@ func _resolve_data(building: Variant) -> BuildingData:
 			resolved.visual_size = Vector2(2.95, 2.4)
 		if resolved.building_id == "waterwheel":
 			resolved.visual_size = Vector2(2.1,2.4)
+		if resolved.building_id == "well":
+			resolved.visual_size = Vector2(1.0,1.9)
 		if resolved.building_id == "greenhouse":
 			resolved.visual_size = Vector2(4.95, 3.2)
 	return resolved
@@ -92,7 +94,7 @@ func update_preview_grid(gx: int, gz: int) -> bool:
 	var allowed := super.update_preview_grid(gx,gz)
 	if _in_build_mode and _current_data != null and _current_data.building_id=="waterwheel":
 		var origin := Vector2i(gx,gz)
-		if geographic_query_service.footprint_borders_natural_water(origin,_current_data.footprint):
-			for child in _visual_proxy.get_children():
-				if child.has_method("align_to_water"):child.align_to_water(geographic_query_service.water_anchor(origin,_current_data.footprint),gx,gz)
+		var source := get_water_source(origin,_current_data.footprint)
+		for child in _visual_proxy.get_children():
+			if child.has_method("align_to_source"): child.align_to_source(source,gx,gz)
 	return allowed

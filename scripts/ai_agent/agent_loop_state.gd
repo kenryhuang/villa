@@ -7,6 +7,46 @@ var resources: Dictionary = {}
 var loops: Dictionary = {}
 var feedback: Dictionary = {}
 var queued_triggers: Dictionary = {}
+var dialogue_handoffs: Dictionary = {}
+
+func record_dialogue(actor: String, request_id: String, minute: int, player_text: String, speech: String, actions: Array, outcomes: Array) -> void:
+	var id := "dialogue:" + request_id
+	if not dialogue_handoffs.has(actor): dialogue_handoffs[actor] = {}
+	if dialogue_handoffs[actor].has(id): return
+	var payload := {"player_text": player_text, "agent_speech": speech,
+		"submitted_actions": actions.map(func(a): return {"action_id": a.action_id, "tool_name": a.tool_name, "arguments": a.arguments.duplicate(true)}),
+		"outcomes": outcomes.map(_dialogue_receipt)}
+	var event := {"event_id": id, "kind": "dialogue", "game_minute": minute, "payload": payload}
+	dialogue_handoffs[actor][id] = event
+	for action in actions:
+		if action.tool_name != "adopt_short_term_goal": continue
+		var goal_id := "goal-" + str(action.get("idempotency_key", "")).sha256_text().substr(0, 24)
+		if goals.has(goal_id) and goals[goal_id].actor_id == actor and id in goals[goal_id].source_event_ids:
+			goals[goal_id].promise_to = "player"
+	record(actor, event)
+	# The paused dialogue must not execute travel. Wake a fresh Loop after resume.
+	feedback[actor] = {"ready_at": minute, "count": 0, "pending": true}
+
+func dialogue_followups(actor: String) -> Array:
+	var entries: Array = dialogue_handoffs.get(actor, {}).values()
+	var result := entries.slice(0, 4)
+	# Keep the newest correction/cancellation visible while draining a backlog.
+	if entries.size() > 4: result.append(entries.back())
+	return result.duplicate(true)
+
+func acknowledge_dialogues(actor: String, ids: Array) -> void:
+	for id in ids: dialogue_handoffs.get(actor, {}).erase(str(id))
+
+func update_dialogue_outcome(actor: String, outcome: Dictionary) -> void:
+	for entry in dialogue_handoffs.get(actor, {}).values():
+		var receipts: Array = entry.payload.outcomes
+		for i in receipts.size():
+			if receipts[i].get("action_id", "") == outcome.get("action_id", ""):
+				receipts[i] = _dialogue_receipt(outcome)
+
+func _dialogue_receipt(outcome: Dictionary) -> Dictionary:
+	return {"action_id": outcome.get("action_id", ""), "tool_name": outcome.get("tool_name", ""), "status": outcome.get("status", ""),
+		"failure_code": outcome.get("failure_code", ""), "game_minute": outcome.get("game_minute", 0), "hud_message": str(outcome.get("hud_message", "")).left(500)}
 
 func snapshot(runtime: Node, actor: String) -> Dictionary:
 	var state = runtime._npc_economy.get_npc_state(actor)
@@ -54,7 +94,7 @@ func goal_refs(actor: String, minute: int) -> Array:
 			goal.version += 1
 			record(actor, {"event_id": "%s:%d" % [goal.goal_id, goal.version], "kind": "GoalExpired", "game_minute": minute, "payload": goal.duplicate(true)})
 			continue
-		result.append({"goal_id": goal.goal_id, "description": goal.description, "status": goal.status, "review_at": goal.review_at})
+		result.append({"goal_id": goal.goal_id, "version": goal.version, "description": goal.description, "status": goal.status, "review_at": goal.review_at, "source_event_ids": goal.get("source_event_ids", []), "success_condition": goal.get("success_condition", {}), "expires_at": goal.expires_at})
 	return result.slice(0, 3)
 
 static func valid_goal(tool: String, a: Dictionary) -> bool:
@@ -87,6 +127,8 @@ func evaluate_goals(runtime: Node, minute: int) -> void:
 			"discovery_known": completed = runtime.knowledge_registry.get_private(goal.actor_id).has(condition.id) or runtime.knowledge_registry.is_public(condition.id)
 		if completed:
 			goal.status = "completed"
+			if goal.get("promise_to", "") == "player":
+				runtime.farm3d_session.living_world.relationships.award(goal.actor_id, "player", "promise_kept", "goal:" + str(goal.goal_id))
 			goal.version += 1
 			record(goal.actor_id, {"event_id": "%s:%d" % [goal.goal_id, goal.version], "kind": "GoalCompleted", "game_minute": minute, "payload": {"goal_id": goal.goal_id, "condition": condition, "status": "completed"}})
 
@@ -130,10 +172,20 @@ func finish_batches(runtime: Node, minute: int) -> void:
 		loop.state = "closed"
 		loop.finished = minute
 		var skipped: Array = loop.action_ids.filter(func(action_id): return not results.any(func(o): return o.action_id == action_id))
-		record(loop.agent_id, {"event_id": "batch:" + str(id), "kind": "BatchFinished", "game_minute": minute, "payload": {"loop_id": id, "results": results.map(func(o): return {"action_id": o.action_id, "status": o.status}), "skipped": skipped}})
+		record(loop.agent_id, {"event_id": "batch:" + str(id), "kind": "BatchFinished", "game_minute": minute, "payload": {"loop_id": id, "results": results.map(func(o): return {"action_id": o.action_id, "status": o.status}), "skipped": skipped, "dialogue_handoff_ids": loop.get("dialogue_handoff_ids", [])}})
 		var terminal_problem: bool = results.any(func(o): return o.status in ["failed", "rejected"])
-		var useful: bool = results.any(func(o): return o.tool_name not in ["wait", "speak", "send_message"] and o.tool_name not in GOAL_TOOLS)
-		if terminal_problem or (useful and not goal_refs(loop.agent_id, minute).is_empty()):
+		if loop.trigger != "dialogue" and not terminal_problem:
+			# Reviewing a conversation is not proof its promised action completed.
+			# Concrete actions finish above; longer plans live in persistent goals.
+			acknowledge_dialogues(loop.agent_id, loop.get("dialogue_handoff_ids", []))
+		# Old farm rejection/queue receipts omitted tool_name. They must still
+		# close safely; an unknown command is not evidence of useful completed work.
+		var useful: bool = results.any(func(o):
+			var tool := str(o.get("tool_name", ""))
+			return tool not in ["", "wait", "speak", "send_message"] and tool not in GOAL_TOOLS)
+		var has_handoff: bool = not dialogue_handoffs.get(loop.agent_id, {}).is_empty()
+		var adopted_goal: bool = loop.trigger == "dialogue" and results.any(func(o): return o.get("tool_name", "") == "adopt_short_term_goal" and o.status == "completed")
+		if terminal_problem or has_handoff or adopted_goal or (useful and not goal_refs(loop.agent_id, minute).is_empty()):
 			var previous: Dictionary = feedback.get(loop.agent_id, {})
 			var count := int(previous.get("count", 0)) + 1
 			feedback[loop.agent_id] = {"ready_at": minute + (60 if count >= 3 else 1), "count": 0 if count >= 3 else count, "pending": true}
@@ -145,7 +197,7 @@ func has_execution(actor: String) -> bool:
 	return loops.values().any(func(loop): return loop.agent_id == actor and loop.state == "executing" and not loop.action_ids.is_empty())
 
 func to_dict() -> Dictionary:
-	return {"version": 1, "goals": goals.duplicate(true), "pending": pending.duplicate(true), "resources": resources.duplicate(true), "loops": loops.duplicate(true), "feedback": feedback.duplicate(true), "queued_triggers": queued_triggers.duplicate(true)}
+	return {"version": 1, "goals": goals.duplicate(true), "pending": pending.duplicate(true), "resources": resources.duplicate(true), "loops": loops.duplicate(true), "feedback": feedback.duplicate(true), "queued_triggers": queued_triggers.duplicate(true), "dialogue_handoffs": dialogue_handoffs.duplicate(true)}
 
 func restore(value: Dictionary) -> void:
 	goals = value.get("goals", {}).duplicate(true)
@@ -154,6 +206,7 @@ func restore(value: Dictionary) -> void:
 	loops = value.get("loops", {}).duplicate(true)
 	feedback = value.get("feedback", {}).duplicate(true)
 	queued_triggers = value.get("queued_triggers", {}).duplicate(true)
+	dialogue_handoffs = value.get("dialogue_handoffs", {}).duplicate(true)
 	for loop in loops.values():
 		if loop.state == "reasoning":
 			loop.state = "cancelled"
@@ -166,6 +219,14 @@ static func validate(value: Variant) -> bool:
 	for key in ["goals", "pending", "resources", "loops", "feedback"]:
 		if not value.get(key) is Dictionary: return false
 	if not value.get("queued_triggers", {}) is Dictionary: return false
+	if not value.get("dialogue_handoffs", {}) is Dictionary: return false
+	for actor in value.get("dialogue_handoffs", {}):
+		if not actor is String or not value.dialogue_handoffs[actor] is Dictionary: return false
+		for id in value.dialogue_handoffs[actor]:
+			var event: Variant = value.dialogue_handoffs[actor][id]
+			if not event is Dictionary or event.get("event_id") != id or event.get("kind") != "dialogue" or not event.get("game_minute") is int or not event.get("payload") is Dictionary: return false
+			var payload: Dictionary = event.payload
+			if not payload.get("player_text") is String or not payload.get("agent_speech") is String or not payload.get("submitted_actions") is Array or not payload.get("outcomes") is Array: return false
 	for queued in value.get("queued_triggers", {}).values():
 		if not queued is Dictionary or queued.get("trigger") not in ["event", "schedule", "catch_up"] or not queued.get("game_minute") is int or not queued.get("dialogue") is String or not queued.get("priority") is int: return false
 	for snapshot_value in value.resources.values():
@@ -175,6 +236,7 @@ static func validate(value: Variant) -> bool:
 	for goal in value.goals.values():
 		if not goal is Dictionary or not goal.get("goal_id") is String or not goal.get("actor_id") is String or not goal.get("description") is String or goal.get("status") not in ["active", "blocked", "completed", "abandoned", "expired"]: return false
 		if not valid_condition(goal.get("success_condition", {})): return false
+		if goal.get("promise_to", "") not in ["", "player"]: return false
 		for key in ["version", "created_at", "expires_at", "review_at"]:
 			if not goal.get(key) is int or goal[key] < 0: return false
 	for actor in value.pending:
@@ -183,4 +245,5 @@ static func validate(value: Variant) -> bool:
 			if not event is Dictionary or not event.get("event_id") is String or not event.get("kind") is String or not event.get("game_minute") is int or not event.get("payload") is Dictionary: return false
 	for loop in value.loops.values():
 		if not loop is Dictionary or not loop.get("agent_id") is String or loop.get("state") not in ["reasoning", "executing", "closed", "failed", "cancelled"] or not loop.get("action_ids") is Array or not loop.get("trigger") is String: return false
+		if not loop.get("dialogue_handoff_ids", []) is Array or not loop.get("dialogue_input", "") is String: return false
 	return true

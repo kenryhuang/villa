@@ -901,16 +901,19 @@ func _apply_environment_transition(cell: GridCell) -> bool:
 	var instance: CropInstance = cell.crop_instance
 	var data: CropData = instance.crop_data
 	var next_state := instance.lifecycle_state
+	# Irrigation preserves living crops; it must not revive dead crops.
+	if next_state == CropInstance.LifecycleState.WITHERED:
+		return false
 	if is_greenhouse_cell(cell):
 		if instance.lifecycle_state == CropInstance.LifecycleState.DORMANT:
 			next_state = instance.derive_active_state()
 	elif data.environment == "greenhouse_only":
-		next_state = CropInstance.LifecycleState.WITHERED
+		next_state = CropInstance.LifecycleState.DORMANT if is_automatically_irrigated_cell(cell) else CropInstance.LifecycleState.WITHERED
 	elif _is_current_season_allowed(data):
 		if instance.lifecycle_state == CropInstance.LifecycleState.DORMANT:
 			next_state = instance.derive_active_state()
 	elif data.lifecycle_type in ["annual", "annual_regrow"]:
-		next_state = CropInstance.LifecycleState.WITHERED
+		next_state = CropInstance.LifecycleState.DORMANT if is_automatically_irrigated_cell(cell) else CropInstance.LifecycleState.WITHERED
 	elif data.lifecycle_type in ["bush", "tree", "vine"]:
 		next_state = CropInstance.LifecycleState.DORMANT
 	if next_state == instance.lifecycle_state:

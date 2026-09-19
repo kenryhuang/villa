@@ -4,7 +4,7 @@ extends RefCounted
 const DEFAULT_RULES_PATH := "res://data/agents/role_transitions.json"
 const VERSION := 1
 const GENERAL_TOOLS := [
-	"adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal",
+	"resolve_relationship_dialogue", "propose_relationship", "respond_relationship", "end_relationship", "express_support", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal",
 	"move",
 	"send_message", "propose_trade", "counter_trade", "accept_trade",
 	"reject_trade", "cancel_trade", "propose_cooperation", "counter_cooperation",
@@ -86,9 +86,10 @@ func get_capabilities(agent_id: String) -> Dictionary:
 	for tool_name in GENERAL_READ_TOOLS:
 		if not tool_name in read_tools:
 			read_tools.append(tool_name)
+	var goals: Array = (role.get("goals", []) as Array).duplicate()
 	return {
 		"role_id": role_id,
-		"goals": (role.get("goals", []) as Array).duplicate(),
+		"goals": goals,
 		"tools": tools,
 		"read_tools": read_tools,
 		"decision_interval_hours": (role.get("decision_interval_hours", [1, 1]) as Array).duplicate(),
@@ -328,6 +329,10 @@ func _normalize_state(value: Dictionary) -> Variant:
 				return null
 		var canonical := record.duplicate(true)
 		canonical.last_changed_minute = int(record.last_changed_minute)
+		# Upgrade only untouched defaults. Preserve deliberate career changes.
+		if canonical.last_changed_minute == -1 and agent_id in ["xiao_hua","afu_shui","resident_shan"] and role_id in ["merchant","explorer"] and history.size() == 1:
+			canonical.active_role_id = "farmer"
+			canonical.history = ["farmer"]
 		result[agent_id] = canonical
 	if result.size() != _states.size():
 		return null

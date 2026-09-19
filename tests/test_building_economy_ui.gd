@@ -353,7 +353,7 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	var required := {
 		"beehive": ["next_output", "mature_flowers", "bonus", "storage"],
 		"chicken_coop": ["animal_count", "feed_stock", "feed_days", "daily_egg_output"],
-		"waterwheel": ["water_connected", "irrigation_radius", "covered_farmland", "covered_greenhouses", "growth_multiplier"],
+		"waterwheel": ["water_connected", "irrigation_area", "covered_farmland", "covered_greenhouses", "growth_multiplier"],
 		"greenhouse": ["planting_cells", "tilled_cells", "planted_cells", "mature_cells", "water_connected", "season_protection", "crop_maturity_days", "waterwheel_connected", "planting_hint"],
 		"barn": ["nearby_buildings", "pending_outputs", "total_capacity", "grouped_outputs"],
 		"lumberyard": ["output_table", "cycle_status", "cycle_progress", "cycle_remaining", "maintenance", "stored_capacity"],
@@ -376,7 +376,7 @@ func _test_status_view_data_and_atomic_actions(assertions: TestAssert, tree: Sce
 	production.register_building(localized_wheel)
 	panel.show_building(localized_wheel)
 	assertions.equal(panel.summary_fields.get_node("WaterConnectedLabel").text, "连接水源：是", "waterwheel boolean uses a friendly Chinese value")
-	assertions.equal(panel.summary_fields.get_node("IrrigationRadiusLabel").text, "灌溉半径：4格", "waterwheel radius uses a friendly Chinese unit")
+	assertions.equal(panel.summary_fields.get_node("IrrigationAreaLabel").text, "灌溉范围：15×15格", "waterwheel area uses a friendly Chinese unit")
 	assertions.equal(panel.summary_fields.get_node("CoveredFarmlandLabel").text, "覆盖农田：4", "waterwheel farmland label is localized")
 	assertions.equal(panel.summary_fields.get_node("CoveredGreenhousesLabel").text, "覆盖温室：0", "waterwheel greenhouse label is localized")
 	assertions.equal(panel.summary_fields.get_node("GrowthMultiplierLabel").text, "生长速度：1.5×", "waterwheel growth benefit is explicit")

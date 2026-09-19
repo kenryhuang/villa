@@ -34,8 +34,8 @@ func run() -> void:
 	var wheel: BuildingInstance=placed.instance
 	check(s.production.get_waterwheel_snapshot(wheel).status=="construction","Incomplete wheel cannot run")
 	wheel.complete_construction()
-	s.player.position=s.grid.get_cell(37,-8).world_position_3d()+Vector3.LEFT*1.2
-	placed=s.buildings.try_place_building("greenhouse",37,-8)
+	s.player.position=s.grid.get_cell(33,-8).world_position_3d()+Vector3.LEFT*1.2
+	placed=s.buildings.try_place_building("greenhouse",33,-8)
 	check(placed.placed,"A real greenhouse can fit near bank wheel: "+str(placed))
 	if not placed.placed:quit(1);return
 	var greenhouse: BuildingInstance=placed.instance
@@ -46,7 +46,7 @@ func run() -> void:
 		var cell := s.grid.get_cell(bed.x,bed.y)
 		check(s.farming.is_automatically_irrigated_cell(cell),"Whole-house supply includes bed "+str(bed))
 		if bed not in s.production.get_waterwheel_covered_cells(wheel):outside+=1
-	check(outside>0,"Regression exercises beds outside direct radius")
+	check(outside>0,"Regression exercises beds outside direct square")
 	var info := s.production.get_waterwheel_snapshot(wheel)
 	check(info.greenhouses.size()==1 and info.connections[0].beds==8,"Snapshot links entire greenhouse")
 	wheel._process(.1)

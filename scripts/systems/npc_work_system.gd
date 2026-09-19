@@ -34,7 +34,7 @@ static func valid_command(tool: String, a: Dictionary) -> bool:
 		"counter_work": return a.size() == 3 and Rules._id(a.get("contract_id")) and Rules._count(a.get("version"), 1, 1000000) and valid_terms(a.get("terms"))
 		"accept_work", "cancel_work": return a.size() == 2 and Rules._id(a.get("contract_id")) and Rules._count(a.get("version"), 1, 1000000)
 		"start_learning": return a.size() == 1 and a.get("skill_id") == "ingredient_selection"
-		"start_leisure": return a.size() == 2 and a.get("activity") in ["visit", "rest"] and Rules._id(a.get("partner_id"))
+		"start_leisure": return a.size() == 2 and a.get("activity") in ["visit", "companionship", "date", "rest", "sleep", "eat", "drink"] and Rules._id(a.get("partner_id"))
 		"manage_building": return a.size() == 4 and Rules._id(a.get("building_id")) and a.get("operation") in ["maintain", "pricing", "open", "close"] and Rules._count(a.get("fee"), 0, 1000000) and Rules._count(a.get("version"), 1, 1000000)
 	return false
 
@@ -356,42 +356,71 @@ func transfer(deltas: Dictionary) -> bool:
 			return false
 	return true
 
+func activity_minutes(kind: String) -> int:
+	return int({"learning":120,"sleep":180,"eat":15,"drink":10}.get(kind,60))
+
 func start_activity(actor: String, id: String, kind: String, partner: String) -> Dictionary:
-	if not Rules._id(id) or activities.has(id) or kind not in ["learning", "visit", "rest"]: return _error("invalid_activity")
-	if occupied(actor) or world.actor(actor) == null: return _error("schedule_conflict")
+	if not Rules._id(id) or activities.has(id) or kind not in ["learning", "visit", "companionship", "date", "rest", "sleep", "eat", "drink"]: return _error("invalid_activity")
+	if occupied(actor) or world.actor(actor) == null: return {"ok": false, "error": "schedule_conflict", "details": schedule(actor)}
 	if kind == "learning" and has_skill(actor, "ingredient_selection"): return _error("already_learned")
 	if not world.assets.exists(partner): return _error("unknown_partner")
+	if kind in ["rest","sleep","eat"] and partner != actor: return _error("self_care_requires_own_id")
+	if kind == "drink" and partner != "village_inn": return _error("drinking_water_at_village_inn")
+	if kind in ["visit", "companionship", "date"] and (partner == actor or not world.relationships.person(partner) or world.actor(partner) == null or occupied(partner)): return _error("visit_partner_unavailable")
+	if kind == "date" and not world.relationships.date_blocker(actor, partner).is_empty(): return _error(world.relationships.date_blocker(actor, partner))
+	if kind == "eat" and not world.society.config.food_preferences.any(func(food): return int(world.assets.available_items(actor).get(food,0)) > 0): return _error("food_required")
 	var fee := 30 if kind == "learning" else 0
 	if not world.assets.apply(actor, {}, -fee): return _error("learning_fee_unavailable")
 	activities[id] = {"id": id, "actor_id": actor, "kind": kind, "partner": partner, "fee": fee, "status": "traveling", "worked": 0, "last_minute": world.minute(), "deadline": world.minute() + 540, "reason": ""}
-	return {"ok": true, "activity_id": id, "message": "已安排学习／休闲，需要实际到访并花费时间。"}
+	return {"ok": true, "status": "in_progress", "mutated": true, "activity_id": id, "message": "已安排学习／休闲，需要实际到访并花费时间；完成后才执行下一步。"}
 
 func _advance_activity(a: Dictionary) -> void:
 	if a.status not in ["traveling", "working"]: return
 	var elapsed := maxi(0, world.minute() - int(a.last_minute))
 	a.last_minute = world.minute()
 	if world.minute() >= int(a.deadline):
-		if world.assets.apply(a.actor_id, {}, int(a.fee)): a.fee = 0; a.status = "cancelled"
+		if world.assets.apply(a.actor_id, {}, int(a.fee)): a.fee = 0; a.status = "cancelled"; a.reason = "activity_deadline"
 		return
+	if a.kind in ["visit", "companionship", "date"] and (world.actor(a.partner) == null or occupied(a.partner)):
+		a.status = "cancelled"; a.reason = "visit_partner_unavailable"; return
+	if a.kind == "date" and not world.relationships.date_blocker(a.actor_id, a.partner).is_empty():
+		a.status = "cancelled"; a.reason = "relationship_ended"; return
 	if not walk(a, a.actor_id, location(a.partner, a.actor_id)): a.status = "traveling"; return
 	if a.status == "traveling": a.status = "working"; return
 	a.worked = int(a.worked) + elapsed
-	if int(a.worked) < (120 if a.kind == "learning" else 60): return
+	if int(a.worked) < activity_minutes(a.kind): return
 	if a.kind == "learning":
 		if not world.assets.apply(a.partner, {}, int(a.fee)): return
 		if not skills.has(a.actor_id): skills[a.actor_id] = {}
 		skills[a.actor_id].ingredient_selection = {"activity_id": a.id, "minute": world.minute()}
+	if a.kind == "eat":
+		var consumed := false
+		for food in world.society.config.food_preferences:
+			if world.assets.apply(a.actor_id,{food:-1},0):
+				world.society._record("food_consumed",a.actor_id,0,{food:-1},a.id)
+				consumed = true; break
+		if not consumed:
+			a.status = "cancelled"; a.reason = "food_no_longer_available"; return
 	a.fee = 0
 	a.status = "completed"
-	if a.kind == "visit" and a.partner != a.actor_id: _relationship(a, [a.actor_id, a.partner], 1)
+	var relief: Dictionary = {"rest":{"fatigue":35},"sleep":{"fatigue":85},"eat":{"hunger":65},"drink":{"thirst":80},"visit":{"social":45},"companionship":{"social":45,"companionship":40},"date":{"social":45,"companionship":60}}.get(a.kind,{})
+	if not relief.is_empty(): world.society.relieve_needs(a.actor_id,relief,a.kind)
+	if a.kind in ["visit", "companionship", "date"]:
+		world.society.relieve_needs(a.partner,{"social":25},"visited_by_friend")
+		if world.session.agent_runtime.agreement_system.get_relationship(a.actor_id,a.partner) >= 3:
+			world.society.relieve_needs(a.actor_id,{"companionship":30},"trusted_company")
+			world.society.relieve_needs(a.partner,{"companionship":30},"trusted_company")
+	if a.kind in ["visit", "companionship", "date"] and a.partner != a.actor_id: _relationship(a, [a.actor_id, a.partner], 1, a.kind)
 
-func _relationship(record: Dictionary, participants: Array, delta: int) -> void:
+func _relationship(record: Dictionary, participants: Array, delta: int, kind := "promise_kept") -> void:
 	if delta == 0 or record.get("relationship_recorded", false) or world.session.agent_runtime == null: return
 	var agreements: AgentAgreementSystem = world.session.agent_runtime.agreement_system
 	var key := str(record.id) + ":relationship"
 	var result := agreements._commit(agreements._relationship_events(participants, delta, world.minute(), key), key)
 	if result.ok:
 		agreements._adjust_all_relationships(participants, delta, world.minute())
+		for i in participants.size():
+			for j in range(i + 1, participants.size()): world.relationships.award(participants[i], participants[j], kind, key)
 		record.relationship_recorded = true
 
 func _wake(participants: Array, exclude: String) -> void:
@@ -411,8 +440,15 @@ func activity_label(actor: String) -> String:
 			return str({"queued": "等待开工", "pickup": "前往取货", "working": "加工中", "delivery": "运送货物", "between": "等待下次供货", "refund_pending": "退还余料"}[c.status])
 	for a in activities.values():
 		if a.actor_id == actor and a.status in ["traveling", "working"]:
-			return "前往学习／休闲" if a.status == "traveling" else str({"learning": "学习配料", "visit": "拜访朋友", "rest": "休息中"}[a.kind])
+			return "前往学习／休闲" if a.status == "traveling" else str({"learning": "学习配料", "visit": "拜访朋友", "companionship": "陪伴朋友", "date": "约会中", "rest": "休息中", "sleep": "睡眠中", "eat": "用餐中", "drink": "饮水中"}.get(a.kind, "未知活动（%s）" % a.kind))
 	return "休息"
+
+func schedule(actor: String) -> Dictionary:
+	var current: Array = []
+	for a in activities.values():
+		if a.actor_id == actor and a.status in ["traveling", "working"]:
+			current.append({"id": a.id, "kind": a.kind, "status": a.status, "partner_id": a.partner, "remaining_work_minutes": maxi(0, activity_minutes(a.kind) - int(a.worked)), "deadline": a.deadline})
+	return {"busy": occupied(actor), "label": activity_label(actor), "activities": current, "rule": "Activities finish after actual travel and work. Actions in one batch execute sequentially. While busy, wait for completion; do not resubmit the same activity."}
 
 func context(actor: String) -> Dictionary:
 	var result := _context(actor).duplicate(true)
@@ -496,13 +532,13 @@ func validate(v: Variant) -> bool:
 			if not Rules._id(item) or not Rules._count(c.items[item], 0, 1000000): return false
 	for id in v.activities:
 		var a: Variant = v.activities[id]
-		if not a is Dictionary or a.get("id") != id or not world.assets.exists(str(a.get("actor_id", ""))) or a.get("kind") not in ["learning", "visit", "rest"] or a.get("status") not in ["traveling", "working", "completed", "cancelled"]: return false
+		if not a is Dictionary or a.get("id") != id or not world.assets.exists(str(a.get("actor_id", ""))) or a.get("kind") not in ["learning", "visit", "companionship", "date", "rest", "sleep", "eat", "drink"] or a.get("status") not in ["traveling", "working", "completed", "cancelled"]: return false
 		for field in ["fee", "worked", "last_minute", "deadline"]:
 			if not Rules._count(a.get(field), 0, 9007199254740991): return false
 		if not world.assets.exists(str(a.get("partner", ""))) or not a.get("reason") is String: return false
 		if a.status in ["completed", "cancelled"] and int(a.fee) != 0: return false
 		if a.status in ["traveling", "working"] and int(a.fee) != (30 if a.kind == "learning" else 0): return false
-		if a.status == "completed" and int(a.worked) < (120 if a.kind == "learning" else 60): return false
+		if a.status == "completed" and int(a.worked) < activity_minutes(a.kind): return false
 		if a.status in ["traveling", "working"]:
 			if schedules.has(a.actor_id): return false
 			schedules[a.actor_id] = true

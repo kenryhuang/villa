@@ -14,6 +14,8 @@ var work: RefCounted
 var knowledge: RefCounted
 var environment: RefCounted
 var social: RefCounted
+var relationships: RefCounted
+var character_overrides := {}
 var merchant: RefCounted
 var _tick := 0.0
 var saved_positions: Dictionary = {}
@@ -45,6 +47,8 @@ func configure(farm: Farm3DSession) -> void:
 	environment.configure(self)
 	social = preload("res://scripts/systems/social_activity_system.gd").new()
 	social.configure(self)
+	relationships = preload("res://scripts/systems/npc_relationship_system.gd").new()
+	relationships.configure(self)
 	merchant = Merchant.new()
 	merchant.configure(self)
 	session.market.merchant_service = merchant
@@ -64,6 +68,7 @@ func minute() -> int:
 
 func advance() -> void:
 	if get_tree().paused: return
+	if relationships != null: relationships.advance()
 	if social != null: social.advance()
 	if environment != null: environment.advance_to(minute())
 	if knowledge != null: knowledge.advance()
@@ -96,6 +101,7 @@ func _process(_delta: float) -> void:
 	_tick += _delta
 	if _tick >= .25 and society.caught_up(minute()):
 		_tick = 0
+		if relationships != null: relationships.advance()
 		if Society.expanded(): _refresh_resident_pool()
 		if social != null: social.advance()
 		if environment != null: environment.advance_to(minute())
@@ -176,10 +182,15 @@ func to_dict() -> Dictionary:
 	for id in society.focus:
 		var body: Node3D = actor(id)
 		if body != null: saved_positions[id] = {"x": body.position.x, "z": body.position.z}
-	return {"version": 7, "planning": {"private": session.agent_runtime.scheduler.budget_state() if session.agent_runtime != null else {"day": -1, "calls": 0}, "public": public_plans.scheduler.budget_state()}, "social": social.to_dict(), "environment": environment.to_dict(), "work": work.to_dict(), "public_plans": public_plans.to_dict(), "interruptions": interruptions.to_dict(), "society": society.to_dict(), "projects": projects.to_dict(), "construction": construction.to_dict(), "board": board.to_dict(), "positions": saved_positions.duplicate(true)}
+	return {"version": 9, "character_overrides": character_overrides.duplicate(true), "relationships": relationships.to_dict(), "planning": {"private": session.agent_runtime.scheduler.budget_state() if session.agent_runtime != null else {"day": -1, "calls": 0}, "public": public_plans.scheduler.budget_state()}, "social": social.to_dict(), "environment": environment.to_dict(), "work": work.to_dict(), "public_plans": public_plans.to_dict(), "interruptions": interruptions.to_dict(), "society": society.to_dict(), "projects": projects.to_dict(), "construction": construction.to_dict(), "board": board.to_dict(), "positions": saved_positions.duplicate(true)}
 
 func validate(value: Variant) -> bool:
-	if not value is Dictionary or not integer(value.get("version")) or int(value.version) not in [1, 2, 3, 4, 5, 6, 7] or value.size() != (5 + int(value.version)) or not society.validate(value.get("society")) or not projects.validate(value.get("projects")) or not construction.validate(value.get("construction")) or not board.validate(value.get("board")) or not value.get("positions") is Dictionary: return false
+	if not value is Dictionary or not integer(value.get("version")) or int(value.version) not in [1, 2, 3, 4, 5, 6, 7, 8, 9] or value.size() != (5 + int(value.version)) or not society.validate(value.get("society")) or not projects.validate(value.get("projects")) or not construction.validate(value.get("construction")) or not board.validate(value.get("board")) or not value.get("positions") is Dictionary: return false
+	if value.version >= 9:
+		if not value.get("character_overrides") is Dictionary: return false
+		for id in value.character_overrides:
+			if not relationships.person(id) or not preload("res://scripts/systems/character_profile.gd").valid(value.character_overrides[id]): return false
+	if value.version >= 8 and not relationships.validate(value.get("relationships"),value.get("character_overrides",{})): return false
 	if value.version >= 7:
 		if not value.get("planning") is Dictionary or value.planning.size() != 2: return false
 		for key in ["private", "public"]:
@@ -206,6 +217,7 @@ func validate(value: Variant) -> bool:
 
 func restore(value: Dictionary) -> void:
 	pending_player_terms.clear()
+	character_overrides = value.get("character_overrides", {}).duplicate(true)
 	value = preload("res://scripts/ai_agent/agent_protocol.gd")._normalize_json_numbers(value)
 	society.restore(value.society)
 	projects.restore(value.projects)
@@ -216,9 +228,13 @@ func restore(value: Dictionary) -> void:
 	work.restore(value.get("work", {}))
 	environment.restore(value.get("environment", {}))
 	social.restore(value.get("social", {}))
+	relationships.restore(value.get("relationships", {}))
 	if session.agent_runtime != null: session.agent_runtime.scheduler.restore_budget(value.get("planning", {}).get("private", {}))
 	public_plans.scheduler.restore_budget(value.get("planning", {}).get("public", {}))
 	saved_positions = value.positions.duplicate(true)
+	for id in society.focus:
+		var body: Node3D = actor(id)
+		if body != null and body.nameplate != null: body.nameplate.text = actor_name(id)
 
 func debug_text() -> String:
 	var lines: Array[String] = [society.summary(), "重点角色 %d / 8 · 自主规划 %d / %d · 对话 %d（单独计数）· 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, session.agent_runtime.scheduler.dialogue_budget_calls, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", "思考中：后台 %d / 3 · 对话 %d / 1 · 公共 %d / 1" % [session.agent_runtime.scheduler.background_in_flight_count(), session.agent_runtime.scheduler.dialogue_in_flight_count(), public_plans.scheduler.background_in_flight_count()], "", public_plans.summary(), ""]
@@ -319,6 +335,8 @@ func command(actor_id: String, tool: String, a: Dictionary, key: String) -> Dict
 
 
 func reset_for_legacy() -> void:
+	character_overrides.clear()
+	relationships.restore({})
 	projects.restore({"projects": {}, "suggestions": {}})
 	interruptions.restore({})
 	public_plans.restore({})
@@ -431,6 +449,7 @@ func validate_save(data: Dictionary) -> bool:
 
 
 func actor_name(id: String) -> String:
+	if character_overrides.has(id): return str(character_overrides[id].display_name)
 	if id == "player": return "玩家"
 	if society.residents.has(id): return str(society.residents[id].name)
 	for org in society.config.organizations:
@@ -442,3 +461,10 @@ func _current_project(actor_id: String) -> Dictionary:
 	for p in projects.projects.values():
 		if p.actor_id == actor_id and p.status in ["active", "suspended"]: return p.duplicate(true)
 	return {}
+
+func character_profile(id: String) -> Dictionary:
+	if character_overrides.has(id): return character_overrides[id].duplicate(true)
+	var base: Dictionary = session.agent_runtime.registry.get_agent(id)
+	var soul: Dictionary = base.get("soul", {"traits":[],"values":[],"speech_style":"自然直接","risk_tolerance":0.5}).duplicate(true)
+	soul.social_profile = relationships.profiles.defaults.merged(relationships.profiles.actors.get(id,{}),true)
+	return {"display_name":base.get("display_name",actor_name(id)),"soul":soul}

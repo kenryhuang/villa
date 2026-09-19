@@ -3,6 +3,8 @@ extends RefCounted
 const Data = preload("res://scripts/core/game_data.gd")
 const CONFIG_PATH := "res://data/living_world/residents.json"
 const DAY_MINUTES := 1080
+const Needs = preload("res://scripts/systems/resident_needs.gd")
+const FORMER_OCCUPATIONS := {"xiao_hua": "花艺师", "afu_shui": "渔民", "resident_shan": "园丁"}
 var world: Node
 var config: Dictionary
 var residents: Dictionary = {}
@@ -148,7 +150,7 @@ func reset(minute: int) -> void:
 						pos = world.session.grid.grid_to_world(origin.x + offset.x, origin.y + offset.y); found = true; break
 				if found: break
 		residents[entry.id] = {"id": entry.id, "name": entry.name, "occupation": entry.occupation,
-			"position": {"x": pos.x, "z": pos.y}, "state": "休息", "last_meal_day": -1, "hungry_days": 0, "food_reason": "", "reserve_days": int(config.food_reserve_days)}
+			"position": {"x": pos.x, "z": pos.y}, "state": "休息", "last_meal_day": -1, "hungry_days": 0, "food_reason": "", "reserve_days": int(config.food_reserve_days), "needs": Needs.initial(entry.id,minute)}
 	_record("initial_endowment", "society", initial_gold, {}, "一次性初始／迁移余额基线")
 
 func advance_to(target: int, budget_us := 0) -> void:
@@ -182,6 +184,16 @@ func caught_up(target: int) -> bool:
 	return last_minute >= target and feeding.is_empty() and minute_batch.is_empty()
 
 func _finish_minute(day: int, clock: int) -> void:
+	if clock % 60 == 0:
+		for actor in residents:
+			refresh_needs(actor,last_minute)
+			# Background residents keep basic daily routines without model calls.
+			# Focus actors choose their own actions through the same leisure tools.
+			if actor not in focus and not world.work.occupied(actor):
+				if clock >= 900: Needs.relieve(residents[actor].needs,{"fatigue":20})
+				if float(residents[actor].needs.thirst) >= 55:
+					Needs.relieve(residents[actor].needs,{"thirst":70})
+					_record("drank_water",actor,0,{},"居民日常饮用水")
 	if clock == 840: _feed_day(day)
 	if clock == DAY_MINUTES - 1: _close_day(day)
 
@@ -295,6 +307,7 @@ func _feed_resident(resident: Dictionary, day: int, report: Dictionary) -> void:
 	var fed := false
 	for food in config.food_preferences:
 		if world.assets.apply(actor, {food: -1}, 0):
+			relieve_needs(actor,{"hunger":65},"meal",last_minute)
 			fed = true
 			report.consumed[food] = int(report.consumed.get(food, 0)) + 1
 			_record("food_consumed", actor, 0, {food: -1}, "day-%d" % day)
@@ -378,7 +391,8 @@ func validate(value: Variant) -> bool:
 		for key in ["last_meal_day", "hungry_days", "reserve_days"]:
 			if not world.integer(r.get(key)): return false
 		if int(r.hungry_days) < 0 or int(r.reserve_days) not in [1, 2, 3, 4, 5] or not r.get("state") is String or not r.get("food_reason") is String: return false
-		if r.size() != 9 or r.get("name") != entry.name or r.get("occupation") != entry.occupation or int(r.last_meal_day) > int(value.last_minute) / DAY_MINUTES + 1: return false
+		if r.size() != (10 if r.has("needs") else 9) or r.get("name") != entry.name or r.get("occupation") not in [entry.occupation, FORMER_OCCUPATIONS.get(entry.id,entry.occupation)] or int(r.last_meal_day) > int(value.last_minute) / DAY_MINUTES + 1: return false
+		if r.has("needs") and not Needs.valid(r.needs,maxi(int(value.last_minute),world.minute())): return false
 	var occupied := {}
 	for id in value.shifts:
 		var shift: Variant = value.shifts[id]
@@ -422,6 +436,42 @@ func restore(value: Dictionary) -> void:
 	last_minute = int(value.last_minute)
 	external_gold_net = int(value.external_gold_net)
 	initial_gold = int(value.initial_gold)
+	for entry in config.residents:
+		var resident: Dictionary = residents[entry.id]
+		var legacy := not resident.has("needs")
+		resident.occupation = entry.occupation
+		if legacy:
+			resident.needs = Needs.initial(entry.id,last_minute)
+			if FORMER_OCCUPATIONS.has(entry.id):
+				var items := {}
+				var stock: Dictionary = world.assets.available_items(entry.id)
+				for seed in ["carrot_seed","potato_seed","grain_seed"]: items[seed] = maxi(0,24-int(stock.get(seed,0)))
+				if world.assets.apply(entry.id,items,0): _record("farmer_migration_supplies",entry.id,0,items,"一次性转为农户的播种储备")
+			if expanded() and entry.id in ["xiao_hua","resident_shan"] and entry.id not in focus and focus.size() < 8: focus.append(entry.id)
+
+func refresh_needs(actor: String, minute: int) -> void:
+	if not residents.has(actor): return
+	var alerts := Needs.advance(residents[actor].needs,actor,minute)
+	if not alerts.is_empty():
+		_need_event(actor,"NeedsUrgent",{"needs":alerts},minute)
+		if actor in focus and world.session.agent_runtime != null: world.session.agent_runtime._wake_agent_for_interaction(actor,2,minute)
+
+func needs_view(actor: String) -> Dictionary:
+	if not residents.has(actor): return {}
+	refresh_needs(actor,world.minute())
+	return {"levels":residents[actor].needs.duplicate(true),"scale":"0=满足，100=迫切；不是健康伤害值", "rules":"经营之外照顾生活。start_leisure 支持 eat（自己背包的真实食物）、drink（旅店饮水）、rest/sleep、visit、companionship、date。完成才缓解需求，单纯发消息或报名不算陪伴；query_world actors/relationship 查询信任与好感。双方单身可以自愿约会，不必先确认恋人；正式关系通过双方对话确认，陪伴需求不等于恋爱同意。"}
+
+func relieve_needs(actor: String, changes: Dictionary, activity: String, minute := -1) -> void:
+	if not residents.has(actor): return
+	if minute < 0: minute = world.minute()
+	refresh_needs(actor,minute)
+	Needs.relieve(residents[actor].needs,changes)
+	_need_event(actor,"PersonalNeedSatisfied",{"activity":activity,"relieved":changes},minute)
+
+func _need_event(actor: String, kind: String, payload: Dictionary, minute: int) -> void:
+	var runtime: Node = world.session.agent_runtime
+	if runtime == null: return
+	runtime.loop_state.record(actor,{"event_id":"needs:%s:%s:%d:%s" % [actor,kind,minute,JSON.stringify(payload).sha256_text().substr(0,8)],"kind":kind,"game_minute":minute,"payload":payload})
 
 func set_focus(actor: String, enabled: bool) -> Dictionary:
 	if not residents.has(actor) or not world.session.agent_runtime.registry.is_agent_managed(actor): return {"ok": false, "error": "unknown_resident_profile"}

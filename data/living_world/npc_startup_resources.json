@@ -2,15 +2,100 @@
   "version": 1,
   "default": {
     "gold": 2000,
-    "inventory": {"bread": 12, "carrot": 20, "potato": 12}
+    "inventory": {
+      "bread": 12,
+      "carrot": 20,
+      "potato": 12
+    }
   },
   "actors": {
-    "farmer_ahe": {"gold": 5000, "inventory": {"grain_seed": 24, "carrot_seed": 24, "potato_seed": 24, "grain": 24, "wood": 30, "stone": 30}},
-    "lao_li": {"gold": 8000, "inventory": {"salt": 40, "grain_seed": 30, "carrot_seed": 20, "potato_seed": 20, "grain": 40, "bread": 24}},
-    "xuezhe_lin": {"gold": 6000, "inventory": {"bread": 32, "rope": 12, "wood": 12, "gold_ore": 4, "crystal": 4}},
-    "afu_shui": {"gold": 6000, "inventory": {"bread": 32, "rope": 12, "grain": 24, "flour": 12, "egg": 12, "salt": 12}},
-    "tiejiang_zhang": {"gold": 6000, "inventory": {"iron_ore": 24, "coal": 24, "iron_ingot": 12, "plank": 16, "wood": 40, "stone": 40, "stone_brick": 16}},
-    "resident_yun": {"gold": 5000, "inventory": {"flour": 24, "egg": 24, "salt": 16, "carrot": 40, "carp": 8}},
-    "xiao_hua": {"gold": 5000, "inventory": {"rose": 24, "honey": 8, "fiber": 16, "glass_jar": 8}}
+    "farmer_ahe": {
+      "gold": 5000,
+      "inventory": {
+        "grain_seed": 24,
+        "carrot_seed": 24,
+        "potato_seed": 24,
+        "grain": 24,
+        "wood": 30,
+        "stone": 30
+      }
+    },
+    "lao_li": {
+      "gold": 8000,
+      "inventory": {
+        "salt": 40,
+        "grain_seed": 30,
+        "carrot_seed": 20,
+        "potato_seed": 20,
+        "grain": 40,
+        "bread": 24
+      }
+    },
+    "xuezhe_lin": {
+      "gold": 6000,
+      "inventory": {
+        "bread": 32,
+        "rope": 12,
+        "wood": 12,
+        "gold_ore": 4,
+        "crystal": 4
+      }
+    },
+    "afu_shui": {
+      "gold": 6000,
+      "inventory": {
+        "bread": 32,
+        "rope": 12,
+        "grain": 24,
+        "flour": 12,
+        "egg": 12,
+        "salt": 12,
+        "carrot_seed": 24,
+        "potato_seed": 24,
+        "grain_seed": 24
+      }
+    },
+    "tiejiang_zhang": {
+      "gold": 6000,
+      "inventory": {
+        "iron_ore": 24,
+        "coal": 24,
+        "iron_ingot": 12,
+        "plank": 16,
+        "wood": 40,
+        "stone": 40,
+        "stone_brick": 16
+      }
+    },
+    "resident_yun": {
+      "gold": 5000,
+      "inventory": {
+        "flour": 24,
+        "egg": 24,
+        "salt": 16,
+        "carrot": 40,
+        "carp": 8
+      }
+    },
+    "xiao_hua": {
+      "gold": 5000,
+      "inventory": {
+        "rose": 24,
+        "honey": 8,
+        "fiber": 16,
+        "glass_jar": 8,
+        "carrot_seed": 24,
+        "potato_seed": 24,
+        "grain_seed": 24
+      }
+    },
+    "resident_shan": {
+      "gold": 5000,
+      "inventory": {
+        "carrot_seed": 24,
+        "potato_seed": 24,
+        "grain_seed": 24
+      }
+    }
   }
 }

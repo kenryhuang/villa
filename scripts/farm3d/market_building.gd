@@ -69,8 +69,8 @@ func sync_position() -> void:
 
 func can_trade(player: Node3D) -> bool:
 	var local := to_local(player.global_position)
-	# Reach the front counter; walls and the rear cannot be traded through.
-	return absf(local.x) <= 4.4 and local.z >= 2.0 and local.z <= 6.0 and absf(local.y) < 1.8
+	# Nearby players can open trading from any side of the hall.
+	return Vector2(local.x, local.z).length() <= 6.0 and absf(local.y) < 1.8
 
 func _material(hex: String) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

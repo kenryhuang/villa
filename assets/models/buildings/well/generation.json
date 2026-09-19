@@ -1,0 +1,34 @@
+{
+  "asset": "well",
+  "engine": "4.7.1-stable (official)",
+  "exchange_mesh": "well.glb",
+  "generator": "scripts/farm3d/well_model.gd",
+  "generator_sha256": "b628987422110582b64a4f2621ac4eec87049574f6621d6291d325ed3fe85224",
+  "input_images": [],
+  "materials": "Embedded PBR colors, roughness; no external texture or generated image dependency.",
+  "mesh_instances": 90,
+  "method": "native_procedural_geometry",
+  "parameters": {
+    "construction_groups": [
+      "Foundation",
+      "Frame",
+      "Walls",
+      "Roof",
+      "Details"
+    ],
+    "core_footprint": [
+      1,
+      1
+    ],
+    "direct_irrigation": false,
+    "height_metres": 1.87,
+    "source_connection": "shared footprint edge",
+    "units": "metres",
+    "up": "Y",
+    "well_radius_metres": 0.455
+  },
+  "raw_mesh": "source/well_native.tscn",
+  "textures": [],
+  "triangles": 3960,
+  "version": 1
+}

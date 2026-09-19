@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "defaults": {
+    "age": 28,
+    "gender": "unspecified",
+    "romance_interest": 40,
+    "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+    "accept_affinity_threshold": 65
+  },
+  "actors": {
+    "player": {
+      "age": 25,
+      "gender": "unspecified",
+      "romance_interest": 50
+    },
+    "farmer_ahe": {
+      "age": 26,
+      "gender": "male",
+      "romance_interest": 50,
+      "relationship_style": "慢热可靠，倾向一起劳作和长期陪伴，重视兑现承诺。"
+    },
+    "lao_li": {
+      "age": 48,
+      "gender": "male",
+      "romance_interest": 15
+    },
+    "xuezhe_lin": {
+      "age": 32,
+      "gender": "male",
+      "romance_interest": 35
+    },
+    "xiao_hua": {
+      "age": 23,
+      "gender": "female",
+      "romance_interest": 80,
+      "relationship_style": "开朗但有主见，期待恋爱；喜欢一起照料花田、散步和坦诚交流，重视行动而非礼物价格，不为追求放弃农场目标。",
+      "accept_affinity_threshold": 60
+    },
+    "tiejiang_zhang": {
+      "age": 35,
+      "gender": "male",
+      "romance_interest": 40
+    },
+    "afu_shui": {
+      "age": 25,
+      "gender": "male",
+      "romance_interest": 65,
+      "relationship_style": "乐于结伴劳作和钓鱼，表达感情直接，但会尊重对方的时间和拒绝。"
+    },
+    "resident_mei": {
+      "age": 25,
+      "gender": "female",
+      "romance_interest": 65,
+      "relationship_style": "温柔慢热、善于倾听，渴望稳定恋爱；更看重守信和低谷时的陪伴，需要较长的相处来建立安全感。",
+      "accept_affinity_threshold": 70
+    },
+    "resident_zhou": {
+      "age": 24,
+      "gender": "male",
+      "romance_interest": 50
+    },
+    "resident_chen": {
+      "age": 52,
+      "gender": "male",
+      "romance_interest": 15
+    },
+    "resident_yun": {
+      "age": 30,
+      "gender": "female",
+      "romance_interest": 40,
+      "relationship_style": "成熟独立，欣赏互相支持、能分担生活的人，享受感情但不会因独处而仓促交往。"
+    },
+    "resident_shan": {
+      "age": 27,
+      "gender": "male",
+      "romance_interest": 55
+    },
+    "resident_xiu": {
+      "age": 24,
+      "gender": "female",
+      "romance_interest": 75,
+      "relationship_style": "独立细腻，期待恋爱中的默契与共同兴趣；喜欢一起做手工、参加活动，反感强迫和替她决定人生。",
+      "accept_affinity_threshold": 65
+    },
+    "resident_13": {
+      "age": 22,
+      "gender": "female",
+      "romance_interest": 60,
+      "relationship_style": "活泼好奇，希望从共同探索和日常朋友发展恋爱，重视幽默与尊重。"
+    },
+    "resident_15": {
+      "age": 24,
+      "gender": "female",
+      "romance_interest": 55,
+      "relationship_style": "直爽务实，有恋爱期待，欣赏能合作做事、认真听她想法的人。"
+    },
+    "resident_17": {
+      "age": 26,
+      "gender": "female",
+      "romance_interest": 70,
+      "relationship_style": "安静细致，喜欢植物与散步，希望建立耐心、稳定且能互相安慰的关系。"
+    }
+  }
+}

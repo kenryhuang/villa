@@ -270,13 +270,23 @@ func _test_waterwheel_geometry_and_daily_order(assertions: TestAssert) -> void:
 	near.crop_instance = CropInstance.new()
 	near.crop_instance.crop_data = crop_data
 	near.state = GridCell.State.PLANTED
-	var distant := grid.get_cell(15, 10)
+	var distant := grid.get_cell(18, 10)
 	distant.state = GridCell.State.FARMLAND
 	production.register_building(wheel)
 	assertions.truthy(production.is_water_connected(wheel), "waterwheel detects an orthogonally bordering water cell")
 	var irrigated: Array = production.get_irrigated_cells(wheel)
-	assertions.truthy(irrigated.has(Vector2i(14, 10)), "Euclidean radius four includes near valid farm cell")
-	assertions.truthy(not irrigated.has(Vector2i(15, 10)), "Euclidean radius four excludes distant farm cell")
+	var coverage := production.get_waterwheel_covered_cells(wheel)
+	assertions.equal(coverage.size(), 225, "15x15 covers exactly 225 existing cells")
+	for corner in [Vector2i(3,3), Vector2i(3,17), Vector2i(17,3), Vector2i(17,17)]:
+		assertions.truthy(corner in coverage, "Square includes corner " + str(corner))
+	for outside in [Vector2i(2,10), Vector2i(18,10), Vector2i(10,2), Vector2i(10,18)]:
+		assertions.truthy(outside not in coverage, "Square excludes cell beyond boundary " + str(outside))
+	var snapshot := production.get_waterwheel_snapshot(wheel)
+	assertions.equal(snapshot.coverage_width, 15, "Discovery exposes actual coverage width")
+	assertions.equal(snapshot.coverage_min, Vector2i(3,3), "Discovery exposes inclusive lower boundary")
+	assertions.equal(snapshot.coverage_max, Vector2i(17,17), "Discovery exposes inclusive upper boundary")
+	assertions.truthy(irrigated.has(Vector2i(14, 10)), "15x15 square includes near valid farm cell")
+	assertions.truthy(not irrigated.has(Vector2i(18, 10)), "15x15 square excludes distant farm cell")
 	production.apply_daily_effects(2)
 	assertions.truthy(farming.is_automatically_irrigated_cell(near), "waterwheel supplies automatic irrigation before growth")
 	assertions.truthy(not distant.watered, "waterwheel leaves distant cells dry")
@@ -338,7 +348,7 @@ func _test_waterwheel_placement_rule(assertions: TestAssert, tree: SceneTree) ->
 		var saved := placed.to_dict()
 		building_system.remove_building(placed)
 		grid.get_cell(9, 10).state = GridCell.State.WASTELAND
-		assertions.equal(building_system.restore_buildings([saved]), 0, "waterwheel restore rejects a location that no longer borders water")
+		assertions.equal(building_system.restore_buildings([saved]), 1, "installed waterwheel survives source loss; connectivity is an operating requirement")
 	assertions.truthy(not building_system.can_place("waterwheel", 0, 0), "waterwheel footprint at map edge still needs a valid border")
 
 

@@ -112,9 +112,8 @@ func _poll_stream(agent_id: String) -> void:
 	if int(state.epoch) != session_epoch:
 		_finish(agent_id, false, {}, "stale_session_epoch")
 		return
-	if Time.get_ticks_msec() - int(state.last_activity_msec) > int(_timeout_seconds * 1000.0):
-		_finish(agent_id, false, {}, "stream_idle_timeout")
-		return
+	# Drain buffered events/data first: a long frame or debugger pause does not
+	# mean the server was silent, and a received final must not be discarded.
 	var event_budget := _dispatch_queued_events(agent_id, state, MAX_EVENTS_PER_STREAM_FRAME)
 	if not _streams.has(agent_id) or event_budget <= 0:
 		return
@@ -179,6 +178,7 @@ func _poll_stream(agent_id: String) -> void:
 			if not _streams.has(agent_id) or event_budget <= 0:
 				return
 		_streams[agent_id] = state
+		_check_idle_timeout(agent_id, state)
 		return
 	if (
 		bool(state.request_sent)
@@ -187,10 +187,18 @@ func _poll_stream(agent_id: String) -> void:
 		and status in [HTTPClient.STATUS_CONNECTED, HTTPClient.STATUS_DISCONNECTED]
 	):
 		_finish(agent_id, false, {}, "incomplete_stream")
+		return
+	_check_idle_timeout(agent_id, state)
+
+
+func _check_idle_timeout(agent_id: String, state: Dictionary) -> void:
+	if Time.get_ticks_msec() - int(state.last_activity_msec) > int(_timeout_seconds * 1000.0):
+		_finish(agent_id, false, {}, "stream_idle_timeout")
 
 
 func _dispatch_queued_events(agent_id: String, state: Dictionary, budget: int) -> int:
 	var events: Array = (state.event_queue as RefCounted).call("drain", budget)
+	if not events.is_empty(): state.last_activity_msec = Time.get_ticks_msec()
 	for event_value in events:
 		var event := event_value as Dictionary
 		var event_callback := state.event_callback as Callable

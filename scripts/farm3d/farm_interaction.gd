@@ -99,6 +99,11 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if session == null:
 		return
+	if hud.debug_panel != null and hud.debug_panel.visible:
+		# Let the debug controls receive typing, shortcuts and Escape through GUI
+		# dispatch; keep movement blocked without consuming the input event.
+		player.filter_dialogue_input(event)
+		return
 	if hud.commission_view.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			if hud.commission_view.confirm.visible: hud.commission_view.confirm.hide()
@@ -114,6 +119,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
+			if hud.well_view.visible:
+				hud.well_view.handle_escape()
+				return
 			if hud.waterwheel_view.visible:
 				hud.waterwheel_view.handle_escape()
 				return
@@ -303,7 +311,7 @@ func windmill_at_pointer(pointer: Vector2) -> Dictionary:
 	var item_id := str(node.get_meta("production_output",node.get_meta("windmill_output", "")))
 	while node != null:
 		if node is BuildingInstance:
-			return {"building": node, "item_id": item_id} if node.building_id in ["windmill","food_workshop","beehive","chicken_coop","greenhouse","waterwheel"] else {}
+			return {"building": node, "item_id": item_id} if node.building_id in ["windmill","food_workshop","beehive","chicken_coop","greenhouse","waterwheel","well"] else {}
 		node = node.get_parent()
 	return {}
 
@@ -314,14 +322,14 @@ func open_windmill(building: BuildingInstance) -> bool:
 		hud.notify_message("%s尚未建造完成" % building.data.display_name, false)
 		return false
 	if not building.can_operate(player):
-		hud.notify_message("请走近%s后再点击" % building.data.display_name if building.building_id in ["beehive","greenhouse","waterwheel"] else "请走到%s南面的操作台前，再点击建筑" % building.data.display_name, false)
+		hud.notify_message("请走近%s后再点击" % building.data.display_name, false)
 		return false
 	cancel_selection()
 	return hud.open_windmill(building)
 
 func collect_windmill(building: BuildingInstance, item_id: String) -> bool:
 	if hud.is_modal_open() or not building.can_operate(player):
-		hud.notify_message("请走到%s南面收取成品" % building.data.display_name, false)
+		hud.notify_message("请走近%s后再收取成品" % building.data.display_name, false)
 		return false
 	cancel_selection()
 	var result: Dictionary = session.production.collect_outputs(building, session.inventory, item_id)
@@ -346,7 +354,7 @@ func open_market() -> bool:
 	if hud.is_modal_open():
 		return false
 	if not market_building.can_trade(player):
-		hud.notify_message("请走到市集南面的柜台前，再点击摊位交易", false)
+		hud.notify_message("请走近市集后再点击交易", false)
 		return false
 	cancel_selection()
 	hud.open_market()

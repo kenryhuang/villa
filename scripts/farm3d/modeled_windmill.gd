@@ -49,4 +49,4 @@ func _process(delta: float) -> void:
 
 func can_operate(player: Node3D) -> bool:
 	var point := to_local(player.global_position)
-	return absf(point.x) <= 2.2 and point.z >= 1.5 and point.z <= 3.4 and absf(point.y) < 1.5
+	return Vector2(point.x, point.z).length() <= 3.4 and absf(point.y) < 1.5

@@ -108,10 +108,13 @@ func pose(angle: float, club_index: int) -> void:
 		return
 	var side := -1.0 if left_handed else 1.0
 	var swing_angle := angle*side
-	var grip := Vector3(.09*side,1.20,.28)
-	grip.y += absf(angle)*.08
+	# Move the hands around the shoulders, rather than spinning a club around
+	# stationary wrists. Full shots raise both arms; putts stay below the chest.
+	var shoulder_pivot := Vector3(0,1.46,.12)
+	var address_grip := Vector3(.09*side,1.12,.40)
+	var grip := shoulder_pivot + (address_grip-shoulder_pivot).rotated(Vector3.BACK,swing_angle*.72)
 	# Mirror the grip, club path and leading hand with the stance.
-	var endpoint := grip + (_contact_local-grip).rotated(Vector3.BACK,swing_angle)
+	var endpoint := grip + (_contact_local-address_grip).rotated(Vector3.BACK,swing_angle)
 	var head_center := endpoint+Vector3(.075*side,.025,0).rotated(Vector3.BACK,swing_angle)
 	club.global_transform = _player.global_transform
 	_segment(shaft,grip,head_center)
@@ -124,7 +127,13 @@ func pose(angle: float, club_index: int) -> void:
 		(head.material_override as StandardMaterial3D).albedo_color = Color("805638") if club_index == 0 else Color("a7b6ae")
 	_head_point = club.to_global(endpoint)
 	if _skeleton != null:
-		ToolPose.lean(_skeleton, Quaternion(Vector3.UP,swing_angle*.18)*Quaternion(Vector3.RIGHT,.1), _rests)
+		# Rebuild from rest each frame so cancelling or switching hands cannot
+		# accumulate rotations. The feet remain planted while the shoulders turn.
+		_skeleton.reset_bone_poses()
+		ToolPose.lean(_skeleton, Quaternion(Vector3.UP,swing_angle*.28)*Quaternion(Vector3.RIGHT,.14)*Quaternion(Vector3.BACK,-swing_angle*.045), _rests)
+		var chest := _skeleton.find_bone("chest")
+		var chest_rotation := _skeleton.get_bone_pose_rotation(chest)
+		_skeleton.set_bone_pose_rotation(chest,chest_rotation*Quaternion(Vector3.UP,swing_angle*.12))
 		_aim_arm("L" if left_handed else "R",grip)
 		_aim_arm("R" if left_handed else "L",grip+(grip-head_center).normalized()*.065)
 

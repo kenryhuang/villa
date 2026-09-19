@@ -65,6 +65,9 @@ var _farm3d_environment: TextEdit
 var _society_view: TextEdit
 var teleport_map: Control
 var _teleport_status: Label
+var character_state_panel: VBoxContainer
+var _editor_paused := false
+var _was_paused := false
 
 
 func configure_farm3d(runtime: Node) -> void:
@@ -121,6 +124,11 @@ func configure_farm3d(runtime: Node) -> void:
 	_society_view.editable = false
 	tabs.add_child(_society_view)
 	_build_teleport_tab(runtime.farm3d_session)
+	character_state_panel = preload("res://scripts/ui/character_state_panel.gd").new()
+	tabs.add_child(character_state_panel)
+	character_state_panel.configure(runtime.farm3d_session)
+	tabs.set_tab_title(character_state_panel.get_index(),"角色存档")
+	tabs.tab_changed.connect(_on_debug_tab_changed)
 	for text_view in [_farm3d_summary, _farm3d_environment]:
 		text_view.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 		text_view.add_theme_color_override("font_readonly_color", PANEL_TEXT_COLOR)
@@ -185,6 +193,7 @@ func _refresh_farm3d() -> void:
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_configure_season_options()
 	tabs.set_tab_title(0, "角色状态")
 	tabs.set_tab_title(1, "资源库存")
@@ -267,16 +276,33 @@ func open(snapshot_value: Dictionary = {}) -> void:
 	visible = true
 	if _farm3d_runtime != null:
 		_refresh_farm3d()
+		_on_debug_tab_changed(tabs.current_tab)
 		close_button.grab_focus()
 	else:
 		level_input.get_line_edit().grab_focus()
 
 
 func close() -> void:
+	_release_editor_pause()
 	visible = false
 	if agent_trace_window != null:
 		agent_trace_window.close()
 	closed.emit()
+
+func _on_debug_tab_changed(_index: int) -> void:
+	if character_state_panel == null: return
+	if visible and tabs.get_current_tab_control() == character_state_panel:
+		if not _editor_paused:
+			_was_paused = get_tree().paused
+			_editor_paused = true
+			get_tree().paused = true
+		character_state_panel.refresh_actor()
+	else: _release_editor_pause()
+
+func _release_editor_pause() -> void:
+	if _editor_paused:
+		get_tree().paused = _was_paused
+		_editor_paused = false
 
 
 func refresh_from_snapshot(snapshot_value: Dictionary) -> void:

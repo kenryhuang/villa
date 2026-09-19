@@ -111,8 +111,12 @@ func _run() -> void:
 	_check(hit.get("collider") == windmill.get_node("ModelCameraCollision"), "Camera collision covers the roof and rotor")
 	player.position = windmill.position + Vector3.BACK * 9
 	_check(not interaction.open_windmill(windmill), "Windmill cannot be operated remotely")
-	player.position = windmill.position + Vector3.FORWARD * 2.5
-	_check(not interaction.open_windmill(windmill), "Windmill cannot be operated through its rear wall")
+	for direction in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT, Vector3(1, 0, -1).normalized()]:
+		player.position = windmill.position + direction * 3.3
+		_check(interaction.open_windmill(windmill) and view.visible and paused, "Nearby windmill panel opens from every direction")
+		view.close_panel()
+		player.position = windmill.position + direction * 3.5
+		_check(not interaction.open_windmill(windmill) and not view.visible, "Windmill range applies in every direction")
 	player.position = windmill.position + Vector3.BACK * 2.6
 	var pointer := camera.unproject_position(windmill.position + Vector3(0, 2, .6))
 	_check(interaction.windmill_at_pointer(pointer).get("building") == windmill, "World ray identifies the native windmill")
@@ -124,7 +128,8 @@ func _run() -> void:
 	_check(view.visible and paused and player.ui_blocked, "Real mouse click opens panel, pauses clock and blocks movement")
 	_check(interaction.target_id.is_empty(), "Opening the panel cancels placement")
 	_check(view.controller is BuildingProductionPanel and view.controller._production == session.production, "Panel reuses original production controller and authority")
-	_check(view.recipe_buttons.size() == 3, "Windmill exposes the original three recipes")
+	var expected_recipes := ["flour", "animal_feed", "sunflower_oil", "grain_seed_selection", "carrot_seed_selection", "potato_seed_selection"]
+	_check(view.recipe_buttons.size() == expected_recipes.size() and expected_recipes.all(func(id): return view.recipe_buttons.has(id)), "Windmill exposes processing and seed-selection recipes")
 	for id in view.recipe_buttons:
 		_check(view.recipe_buttons[id].icon != null, "All processed goods have icons")
 	_click(view.recipe_buttons.flour.get_global_rect().get_center())
@@ -236,12 +241,17 @@ func _run() -> void:
 	wallet.gold = saved_gold
 	view._refresh_repair()
 	var gold: int = wallet.gold
-	var wood := session.inventory.get_item_count("wood")
+	var maintenance_quote: Dictionary = session.production.get_maintenance_quote(windmill)
+	var repair_materials_before := {}
+	for item_id in maintenance_quote.materials:
+		repair_materials_before[item_id] = session.inventory.get_item_count(item_id)
 	view.repair_confirm.pressed.emit()
-	_check(wallet.gold == gold - 25 and session.inventory.get_item_count("wood") == wood - 1, "Maintenance charges shared wallet and material inventory")
+	_check(wallet.gold == gold - int(maintenance_quote.gold_cost), "Maintenance charges the current quoted gold cost")
+	for item_id in maintenance_quote.materials:
+		_check(session.inventory.get_item_count(item_id) == repair_materials_before[item_id] - int(maintenance_quote.materials[item_id]), "Maintenance consumes quoted material: " + str(item_id))
 	_check(session.production.get_maintenance_state(windmill) == "repairing", "Maintenance begins a real repair timer")
 	view._repair()
-	_check(wallet.gold == gold - 25, "Repeated maintenance cannot double-charge")
+	_check(wallet.gold == gold - int(maintenance_quote.gold_cost), "Repeated maintenance cannot double-charge")
 	await create_timer(3.2).timeout
 	_check(paused and session.production.get_maintenance_state(windmill) == "normal", "Three-second maintenance completes while game clock remains paused")
 	_check(windmill.producer_state.jobs[0].remaining_minutes == remaining, "Maintenance preserves the exact queued production progress")

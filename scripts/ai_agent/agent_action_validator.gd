@@ -32,6 +32,7 @@ func validate(intent: Variant, registry: Variant, _current_revision: int, role_s
 
 
 func _valid_arguments(tool_name: String, arguments: Dictionary) -> bool:
+	if tool_name in preload("res://scripts/systems/npc_relationship_system.gd").TOOLS: return preload("res://scripts/systems/npc_relationship_system.gd").valid_command(tool_name, arguments)
 	if tool_name in preload("res://scripts/ai_agent/agent_loop_state.gd").GOAL_TOOLS: return preload("res://scripts/ai_agent/agent_loop_state.gd").valid_goal(tool_name, arguments)
 	match tool_name:
 		"request_supply": return preload("res://scripts/systems/merchant_system.gd").valid_request(arguments)

@@ -3,10 +3,10 @@
   "engine": "4.7.1-stable (official)",
   "exchange_mesh": "waterwheel.glb",
   "generator": "scripts/farm3d/waterwheel_model.gd",
-  "generator_sha256": "60864d2c5ef34546e7d33702eb2593b845d4c9c2934d9b757119f7b59efa5f5e",
+  "generator_sha256": "9e0297dec9255538aad076fc7c566935574d520b5dee2fb8b5315ca2fef1f53a",
   "input_images": [],
   "materials": "Embedded PBR colors, roughness; no external texture or generated image dependency.",
-  "mesh_instances": 218,
+  "mesh_instances": 280,
   "method": "native_procedural_geometry",
   "parameters": {
     "axle": "X",
@@ -16,20 +16,28 @@
       "Walls",
       "Roof",
       "Details",
-      "Rotor"
+      "Rotor",
+      "WellPump"
     ],
     "core_footprint": [
       2,
       2
     ],
-    "irrigation_radius_cells": 4,
+    "irrigation_anchor": "foundation origin +/-7 cells",
+    "irrigation_coverage_cells": [
+      15,
+      15
+    ],
+    "irrigation_shape": "square",
     "units": "metres",
     "up": "Y",
     "water_facing": "+Z",
+    "well_mode": "WellPump group replaces river geometry on inland installations",
+    "well_pump_radius": 0.65,
     "wheel_radius": 1.14
   },
   "raw_mesh": "source/waterwheel_native.tscn",
   "textures": [],
-  "triangles": 2616,
-  "version": 1
+  "triangles": 3360,
+  "version": 2
 }

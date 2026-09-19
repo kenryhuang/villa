@@ -13,10 +13,19 @@
       "values": [
         "土地可持续",
         "粮食储备",
-        "稳定收益"
+        "稳定收益",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "朴素、友善、简洁",
-      "risk_tolerance": 0.3
+      "risk_tolerance": 0.3,
+      "social_profile": {
+        "age": 26,
+        "gender": "male",
+        "romance_interest": 50,
+        "relationship_style": "慢热可靠，倾向一起劳作和长期陪伴，重视兑现承诺。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "gold": 500,
@@ -41,10 +50,19 @@
       "values": [
         "持续利润",
         "关键库存",
-        "人情关系"
+        "人情关系",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "常联系库存、价格与人情",
-      "risk_tolerance": 0.55
+      "risk_tolerance": 0.55,
+      "social_profile": {
+        "age": 48,
+        "gender": "male",
+        "romance_interest": 15,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -64,10 +82,19 @@
       "values": [
         "可靠证据",
         "新发现",
-        "知识共享"
+        "知识共享",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "先陈述证据，再表达判断",
-      "risk_tolerance": 0.4
+      "risk_tolerance": 0.4,
+      "social_profile": {
+        "age": 32,
+        "gender": "male",
+        "romance_interest": 35,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy",
@@ -81,20 +108,31 @@
     "agent_id": "xiao_hua",
     "npc_id": "xiao_hua",
     "display_name": "小花",
-    "role_id": "merchant",
+    "role_id": "farmer",
     "background": true,
     "soul": {
       "traits": [
         "务实",
-        "重视生活余暇"
+        "重视生活余暇",
+        "开朗有主见"
       ],
       "values": [
-        "保留伙食钱",
-        "按时履行工作",
-        "量力参与活动"
+        "花田种植",
+        "留种与粮食储备",
+        "照顾朋友",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴",
+        "期待从相互好感与真实相处发展恋爱，尊重双方的自主选择"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 23,
+        "gender": "female",
+        "romance_interest": 80,
+        "relationship_style": "开朗但有主见，期待恋爱；喜欢一起照料花田、散步和坦诚交流，重视行动而非礼物价格，不为追求放弃农场目标。",
+        "accept_affinity_threshold": 60
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -114,10 +152,19 @@
       "values": [
         "设施维护",
         "筹料自建工坊",
-        "合理加工费"
+        "合理加工费",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 35,
+        "gender": "male",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -127,7 +174,7 @@
     "agent_id": "afu_shui",
     "npc_id": "afu_shui",
     "display_name": "阿水",
-    "role_id": "explorer",
+    "role_id": "farmer",
     "background": true,
     "soul": {
       "traits": [
@@ -135,12 +182,21 @@
         "乐于合作"
       ],
       "values": [
-        "可靠水域观察",
-        "有限样本",
-        "组织钓鱼观赛"
+        "稳定种植收益",
+        "水源与灌溉",
+        "结伴劳作与钓鱼",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 25,
+        "gender": "male",
+        "romance_interest": 65,
+        "relationship_style": "乐于结伴劳作和钓鱼，表达感情直接，但会尊重对方的时间和拒绝。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -155,15 +211,27 @@
     "soul": {
       "traits": [
         "务实",
-        "重视生活余暇"
+        "重视生活余暇",
+        "温柔慢热",
+        "善于倾听"
       ],
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴",
+        "期待从相互好感与真实相处发展恋爱，尊重双方的自主选择"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 25,
+        "gender": "female",
+        "romance_interest": 65,
+        "relationship_style": "温柔慢热、善于倾听，渴望稳定恋爱；更看重守信和低谷时的陪伴，需要较长的相处来建立安全感。",
+        "accept_affinity_threshold": 70
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -183,10 +251,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 24,
+        "gender": "male",
+        "romance_interest": 50,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -206,10 +283,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 52,
+        "gender": "male",
+        "romance_interest": 15,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -229,10 +315,19 @@
       "values": [
         "食品品质",
         "加工利润",
-        "学习原料选配"
+        "学习原料选配",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 30,
+        "gender": "female",
+        "romance_interest": 40,
+        "relationship_style": "成熟独立，欣赏互相支持、能分担生活的人，享受感情但不会因独处而仓促交往。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -242,7 +337,7 @@
     "agent_id": "resident_shan",
     "npc_id": "resident_shan",
     "display_name": "阿山",
-    "role_id": "merchant",
+    "role_id": "farmer",
     "background": true,
     "soul": {
       "traits": [
@@ -250,12 +345,21 @@
         "重视生活余暇"
       ],
       "values": [
-        "保留伙食钱",
-        "按时履行工作",
-        "量力参与活动"
+        "轮作与土地养护",
+        "稳定粮食产出",
+        "邻里互助",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 27,
+        "gender": "male",
+        "romance_interest": 55,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -270,15 +374,26 @@
     "soul": {
       "traits": [
         "务实",
-        "重视生活余暇"
+        "重视生活余暇",
+        "独立细腻"
       ],
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴",
+        "期待从相互好感与真实相处发展恋爱，尊重双方的自主选择"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 24,
+        "gender": "female",
+        "romance_interest": 75,
+        "relationship_style": "独立细腻，期待恋爱中的默契与共同兴趣；喜欢一起做手工、参加活动，反感强迫和替她决定人生。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -293,15 +408,26 @@
     "soul": {
       "traits": [
         "务实",
-        "重视生活余暇"
+        "重视生活余暇",
+        "重视平等相处"
       ],
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴",
+        "期待从相互好感与真实相处发展恋爱，尊重双方的自主选择"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 22,
+        "gender": "female",
+        "romance_interest": 60,
+        "relationship_style": "活泼好奇，希望从共同探索和日常朋友发展恋爱，重视幽默与尊重。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -321,10 +447,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -339,15 +474,26 @@
     "soul": {
       "traits": [
         "务实",
-        "重视生活余暇"
+        "重视生活余暇",
+        "重视平等相处"
       ],
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴",
+        "期待从相互好感与真实相处发展恋爱，尊重双方的自主选择"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 24,
+        "gender": "female",
+        "romance_interest": 55,
+        "relationship_style": "直爽务实，有恋爱期待，欣赏能合作做事、认真听她想法的人。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -367,10 +513,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -385,15 +540,26 @@
     "soul": {
       "traits": [
         "务实",
-        "重视生活余暇"
+        "重视生活余暇",
+        "重视平等相处"
       ],
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴",
+        "期待从相互好感与真实相处发展恋爱，尊重双方的自主选择"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 26,
+        "gender": "female",
+        "romance_interest": 70,
+        "relationship_style": "安静细致，喜欢植物与散步，希望建立耐心、稳定且能互相安慰的关系。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -413,10 +579,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -436,10 +611,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -459,10 +643,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -482,10 +675,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -505,10 +707,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -528,10 +739,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -551,10 +771,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -574,10 +803,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -597,10 +835,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -620,10 +867,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -643,10 +899,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -666,10 +931,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -689,10 +963,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -712,10 +995,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -735,10 +1027,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -758,10 +1059,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -781,10 +1091,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -804,10 +1123,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"
@@ -827,10 +1155,19 @@
       "values": [
         "保留伙食钱",
         "按时履行工作",
-        "量力参与活动"
+        "量力参与活动",
+        "照顾饮食饮水与睡眠",
+        "维持朋友关系和有信任的亲密陪伴"
       ],
       "speech_style": "用简洁的话说明自己的目标、报价和约束",
-      "risk_tolerance": 0.35
+      "risk_tolerance": 0.35,
+      "social_profile": {
+        "age": 28,
+        "gender": "unspecified",
+        "romance_interest": 40,
+        "relationship_style": "先建立友谊，重视诚实、共同经历和各自的生活边界。",
+        "accept_affinity_threshold": 65
+      }
     },
     "initial_resources": {
       "resource_ledger": "npc_economy"

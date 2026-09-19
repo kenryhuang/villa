@@ -52,6 +52,36 @@ func _init() -> void:
 	for i in 5:box(details,Vector3(-.49+i*.245,1.48,-.5),Vector3(.22,.08,.85),light)
 	box(details,Vector3(.79,.48,-.63),Vector3(.1,.28,.25),iron)
 	var outlet := Marker3D.new();outlet.name="Outlet";outlet.position=Vector3(0,1.55,-1.03);details.add_child(outlet)
+	_build_well_pump(stone,wood,light,iron,water)
+
+func _build_well_pump(stone: Material, wood: Material, light: Material, iron: Material, water: Material) -> void:
+	# Inland installation uses a compact geared lift pump within its 2x2 foundation.
+	var pump := group("WellPump",self);pump.hide()
+	var base := group("Foundation",pump)
+	box(base,Vector3(0,.12,0),Vector3(1.8,.24,1.8),stone)
+	var frame := group("Frame",pump)
+	for x in [-.50,.50]:box(frame,Vector3(x,.8,.18),Vector3(.14,1.35,.17),wood)
+	beam(frame,Vector3(-.70,1.02,.18),Vector3(.70,1.02,.18),.10,iron)
+	var rotor := group("Rotor",pump);rotor.position=Vector3(0,1.02,.18)
+	for x in [-.22,.22]:
+		for i in 16:
+			var a := TAU*i/16.0;var b := TAU*(i+1)/16.0
+			beam(rotor,Vector3(x,cos(a)*.65,sin(a)*.65),Vector3(x,cos(b)*.65,sin(b)*.65),.065,wood)
+		for i in 8:
+			var a := TAU*i/8.0
+			beam(rotor,Vector3(x,0,0),Vector3(x,cos(a)*.65,sin(a)*.65),.055,light)
+	var walls := group("Walls",pump)
+	for x in [-.23,.23]:box(walls,Vector3(x,.58,-.66),Vector3(.06,.42,.40),light)
+	for z in [-.84,-.48]:box(walls,Vector3(0,.58,z),Vector3(.46,.42,.06),wood)
+	box(walls,Vector3(0,.39,-.66),Vector3(.46,.05,.4),wood)
+	var details := group("Details",pump)
+	box(details,Vector3(0,.68,-.66),Vector3(.38,.02,.28),water)
+	beam(details,Vector3(.70,.46,.78),Vector3(.70,.46,.18),.11,iron)
+	beam(details,Vector3(.70,.46,.18),Vector3(.70,1.02,.18),.13,iron)
+	beam(details,Vector3(.70,.85,.18),Vector3(.70,.85,-.66),.075,iron)
+	beam(details,Vector3(.70,.85,-.66),Vector3(0,.73,-.66),.075,iron)
+	for pair in [["Intake",Vector3(.70,.46,.78)],["Outlet",Vector3(0,.52,-.9)]]:
+		var marker := Marker3D.new();marker.name=pair[0];marker.position=pair[1];pump.add_child(marker)
 
 func group(label: String, parent: Node) -> Node3D:
 	var node := Node3D.new();node.name=label;parent.add_child(node);return node

@@ -9,6 +9,12 @@ var _timeout_seconds := 10.0
 var _stream_client: Node
 
 
+func _init() -> void:
+	# Network IO must keep receiving heartbeats and answering world reads while
+	# modal UI pauses simulation. AgentRuntime defers autonomous actions until resume.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
+
 func configure(base_url: String, token: String, epoch: int, timeout_seconds: float = 10.0) -> bool:
 	var normalized := base_url.strip_edges().trim_suffix("/")
 	if normalized.is_empty() or epoch < 0 or timeout_seconds <= 0.0:

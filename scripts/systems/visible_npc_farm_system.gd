@@ -461,7 +461,10 @@ func _commit_harvest(cell: GridCell, plot_index: int) -> Dictionary:
 
 
 func _commit_success(message: String, changed: Array, delta: Dictionary = {}) -> Dictionary:
-	return {"ok": true, "message": message, "changed_entities": changed, "resource_delta": delta}
+	var label := _agent_id
+	if _economy != null and _economy.get("_profiles") is Dictionary:
+		label = str(_economy._profiles.get(_agent_id,{}).get("display_name",_agent_id))
+	return {"ok": true, "message": message.replace("阿禾",label), "changed_entities": changed, "resource_delta": delta}
 
 
 func _queued_result(record: Dictionary) -> Dictionary:

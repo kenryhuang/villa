@@ -317,7 +317,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		if str(method_record.name) == "fail_agent_dialogue":
 			fail_argument_count = (method_record.args as Array).size()
 			break
-	assertions.equal(fail_argument_count, 1, "stream failure API accepts only request ID")
+	assertions.equal(fail_argument_count, 2, "stream failure API accepts request ID and optional error code")
 	var cleanup_intent := {"agent_id": "farmer_ahe", "tool_name": "harvest", "action_id": "cleanup-event", "idempotency_key": "cleanup-event", "arguments": {"plot": 3}}
 	var cleanup_result := {"ok": true, "cleared_withered": true, "resource_delta": {}, "changed_entities": ["npc_farm:farmer_ahe:3"]}
 	var cleanup_outcome: Dictionary = runtime.executor.finalize_queued_action(cleanup_intent, cleanup_result, 100)

@@ -12,6 +12,9 @@ func read(runtime: Node, actor: String, name: String, args: Dictionary) -> Dicti
 	var minute: int = runtime._absolute_game_minute()
 	if name == "inspect_self_resources":
 		return {"ok": true, "resources": runtime.loop_state.snapshot(runtime, actor), "observed_game_minute": minute}
+	if name == "query_map":
+		args = args.merged({"domain":"map", "section":"regions"}, true)
+		name = "query_world"
 	if name != "query_world": return {"ok": false, "error": "unknown_read_tool"}
 	var domain := str(args.get("domain", ""))
 	var section := str(args.get("section", ""))
@@ -49,7 +52,10 @@ func read(runtime: Node, actor: String, name: String, args: Dictionary) -> Dicti
 	if value is Array:
 		var id := str(args.get("id", ""))
 		var query := str(args.get("query", "")).to_lower()
-		if not id.is_empty(): value = value.filter(func(row): return row is Dictionary and [row.get("id"), row.get("actor_id"), row.get("goal_id"), row.get("building_id"), row.get("instance_id"), row.get("offer_id"), row.get("agreement_id"), row.get("discovery_id")].has(id))
+		if not id.is_empty(): value = value.filter(func(row): return row is Dictionary and [row.get("id"), row.get("actor_id"), row.get("goal_id"), row.get("building_id"), row.get("instance_id"), row.get("offer_id"), row.get("agreement_id"), row.get("discovery_id"), row.get("name")].has(id) or (domain == "map" and row is Dictionary and id in row.get("aliases", [])))
+		if domain == "map" and not query.is_empty():
+			var exact: Array = value.filter(func(row): return query in [str(row.get("id", "")).to_lower(), str(row.get("name", "")).to_lower()] or query in row.get("aliases", []))
+			if not exact.is_empty(): value = exact; query = ""
 		if not query.is_empty() and section not in ["detail", "quote"]:
 			var terms := query.replace(",", " ").replace("，", " ").split(" ", false)
 			value = value.filter(func(row): return Array(terms).any(func(term): return JSON.stringify(row).to_lower().contains(term)))
@@ -66,15 +72,24 @@ func _query(r: Node, actor: String, domain: String, section: String, a: Dictiona
 	var world: Node = r.farm3d_session.living_world
 	match domain:
 		"self":
+			if section == "needs": return world.society.needs_view(actor)
 			var activity: Dictionary = r.world_projector.get_actor(actor).get("current_public_state", {}).duplicate(true)
 			activity.reported_region_id = activity.get("region_id", "")
 			activity.erase("region_id")
 			activity.status = "busy" if world.work.occupied(actor) else "idle"
+			activity.schedule = world.work.schedule(actor)
 			var body: Node3D = world.actor(actor)
 			activity.position = {"x": body.position.x, "z": body.position.z} if body != null else {}
 			return {"activity": activity, "field_sites": _field_sites(world, actor), "arrival_rule": "Only field_sites.arrived proves physical arrival. reported_region_id is a public projection, not an arrival check.", "project": world.projects.active(actor), "work_busy": world.work.occupied(actor), "delivery": world.interruptions.running(actor)}
 		"goals": return r.loop_state.goals.values().filter(func(g): return g.actor_id == actor)
-		"map": return _field_sites(world, actor) + [{"id": "farm", "description": "中央农场"}, {"id": "lake", "description": "南部湖泊，无通用survey点，可查询社交活动"}, {"id": "market", "x": r.farm3d_session.market_site.x, "z": r.farm3d_session.market_site.y, "description": "市场，buy/sell自动前往"}, _golf_place(world, actor)]
+		"map":
+			var places: Array = preload("res://scripts/farm3d/named_places.gd").entries(world, actor)
+			for place in places:
+				if place.id == "golf":
+					var navigation: Dictionary = place.duplicate(true)
+					place.merge(_golf_place(world, actor), true)
+					place.merge(navigation, true)
+			return places
 		"farm":
 			if section == "crops": return r._build_crop_options(actor)
 			return r.farm_registry.get_snapshot(actor, r._absolute_game_minute())
@@ -132,9 +147,12 @@ func _query(r: Node, actor: String, domain: String, section: String, a: Dictiona
 			match section:
 				"offers": return r.interaction_system.list_offers(actor)
 				"agreements": return r.agreement_system.list_agreements(actor)
-				"relationship": return r.agreement_system.get_relationship(actor, str(a.get("id", "")))
+				"relationship": return world.relationships.view(actor, str(a.id)) if not str(a.get("id", "")).is_empty() else world.relationships.context(actor).relationships
+				"social_profile": return world.relationships.context(actor)
+				"relationships": return world.relationships.context(actor).relationships
+				"relationship_proposals": return world.relationships.offers(actor)
 				"roles": return r.registry.get_role_ids().map(func(id): return r.registry.get_role(id))
-				"list": return r.world_projector.known_actors(actor).map(func(row): return {"actor_id": row.actor_id, "display_name": row.display_name, "public_role": row.public_role, "region_id": row.region_id, "observable_status": row.observable_status})
+				"list": return r.world_projector.known_actors(actor).map(func(row): return {"actor_id": row.actor_id, "display_name": world.actor_name(str(row.actor_id)) if world.relationships.person(str(row.actor_id)) else row.display_name, "public_role": r.role_system.get_active_role(row.actor_id) if r.registry.is_agent_managed(row.actor_id) else row.public_role, "region_id": row.region_id, "observable_status": row.observable_status})
 		"knowledge": return r.knowledge_registry.cards(actor, true).get(section, [])
 		"social": return world.social.context().get(section, [])
 		"environment":
@@ -182,6 +200,8 @@ func _production_summary(production: Node, building: BuildingInstance, actor: St
 		result.greenhouse = production.get_greenhouse_snapshot(building,actor)
 	if building.building_id == "waterwheel":
 		result.waterwheel = production.get_waterwheel_snapshot(building)
+	if building.building_id == "well":
+		result.well = production.get_well_snapshot(building)
 	if building.building_id == "beehive":
 		var honey: Dictionary = production.get_beehive_snapshot(building)
 		result.beehive = {}

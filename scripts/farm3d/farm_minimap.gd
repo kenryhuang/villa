@@ -70,9 +70,10 @@ func _draw() -> void:
 	_centered("南", Vector2(124, 263), 17, INK)
 	_centered("西", Vector2(MAP_RECT.position.x-13, 152), 17, INK)
 	_centered("东", Vector2(MAP_RECT.end.x+13, 152), 17, INK)
-	_map_label("山地", Vector3(-15, 0, -56))
-	_map_label("丘陵", Vector3(-51, 0, 13))
-	_map_label("七洞球场", Vector3(-137,0,40))
+	for place in preload("res://scripts/farm3d/named_places.gd").PLACES:
+		if place.get("label", false):
+			var at: Vector2 = place.get("label_point", place.point)
+			_map_label(place.name, Vector3(at.x,0,at.y))
 	for hole_index in Profile.Golf.HOLES.size():
 		var cup: Vector2 = Profile.Golf.HOLES[hole_index].cup
 		var point := world_to_map(Vector3(cup.x,0,cup.y))
@@ -80,19 +81,15 @@ func _draw() -> void:
 		_centered(str(hole_index+1),point+Vector2(0,-4),10,INK)
 	var entrance := Profile.Golf.ENTRANCE
 	draw_circle(world_to_map(Vector3(entrance.x,0,entrance.y)),3,Color("e6c882"))
-	_map_label("河流", Vector3(58, 0, -9))
 	var farm := world_to_map(Vector3.ZERO)
-	_map_label("沙地", Vector3(-48, 0, 83))
-	_map_label("南湖", Vector3(Profile.LAKE_CENTER.x, 0, Profile.LAKE_CENTER.y))
 	var farm_half := Vector2.ONE * Profile.CORE_HALF_SIZE * MAP_SCALE
 	draw_rect(Rect2(farm - farm_half, farm_half * 2), Color("dfcf9470"), false, 1.0)
-	_map_label("农庄", Vector3(0, 0, -17))
 	if is_instance_valid(session):
 		if session.living_world != null:
 			var cooperative: VisibleNpcFarmSystem = session.living_world.society.cooperative
 			if cooperative != null:
 				var field: GridCell = cooperative.get_plot_cell("village_coop", 40)
-				_map_label("合作社", field.world_position_3d())
+				_map_label("村庄合作社", field.world_position_3d())
 			for e in session.living_world.social.context().events:
 				var site := Vector3(e.site.x, 0, e.site.z)
 				draw_circle(world_to_map(site), 5, Color("e9a5dc"), false, 2)
@@ -116,7 +113,7 @@ func _draw() -> void:
 			draw_colored_polygon(PackedVector2Array([flag-Vector2(0,7),flag+Vector2(5,-5),flag-Vector2(0,3)]),Color("ef9c70"))
 		var market := Vector3(session.market_site.x, 0, session.market_site.y)
 		draw_circle(world_to_map(market), 3.5, GOLD)
-		_map_label("市集", market + Vector3(-8, 0, 16))
+		_map_label("村庄市集", market + Vector3(-8, 0, 16))
 	var bridge_x := Profile.river_x(Profile.BRIDGE_Z)
 	draw_line(world_to_map(Vector3(bridge_x - 8, 0, Profile.BRIDGE_Z)), world_to_map(Vector3(bridge_x + 8, 0, Profile.BRIDGE_Z)), GOLD, 4.0, true)
 	_map_label("木桥", Vector3(bridge_x + 8, 0, Profile.BRIDGE_Z + 14))

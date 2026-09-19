@@ -325,7 +325,9 @@ func _work_cards() -> void:
 			_button(box, "取消后续工作", func(): _confirm("停止未完成周期，退还未花费资金和原料；已经完成的交付不追回。", func(): _show_result(work.cancel("player", id, version))))
 	for activity in work.activities.values():
 		var label := Label.new()
-		label.text = "%s · %s · 已投入 %d 分钟 · %s" % [session.living_world.actor_name(activity.actor_id), {"learning": "原料选配培训", "visit": "拜访朋友", "rest": "休息"}[activity.kind], int(activity.worked), {"traveling": "前往现场", "working": "进行中", "completed": "已完成", "cancelled": "已取消"}[activity.status]]
+		var activity_name: String = {"learning": "原料选配培训", "visit": "拜访朋友", "companionship": "陪伴朋友", "date": "约会", "rest": "休息", "sleep": "睡眠", "eat": "用餐", "drink": "饮水"}.get(activity.kind, "未知活动（%s）" % activity.kind)
+		var activity_status: String = {"traveling": "前往现场", "working": "进行中", "completed": "已完成", "cancelled": "已取消"}.get(activity.status, "未知状态（%s）" % activity.status)
+		label.text = "%s · %s · 已投入 %d 分钟 · %s" % [session.living_world.actor_name(activity.actor_id), activity_name, int(activity.worked), activity_status]
 		lists[3].add_child(label)
 	var form := VBoxContainer.new()
 	lists[3].add_child(form)

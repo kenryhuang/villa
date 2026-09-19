@@ -124,6 +124,7 @@ func configure(
 	_grid_system = grid_system
 	_farming_system = farming_system
 	_building_system = building_system
+	if _building_system != null: _building_system.water_source_available = func(source: BuildingInstance): return _building_is_active(source) and not is_maintenance_paused(source)
 	_inventory_system = inventory_system
 	if geography != null:
 		_geographic_query_service = geography
@@ -1392,6 +1393,8 @@ func is_water_connected(building: BuildingInstance) -> bool:
 	):
 		return false
 	var footprint := _footprint_for(building)
+	if _building_system != null:
+		return not _building_system.get_water_source(Vector2i(building.grid_x,building.grid_z),footprint).is_empty()
 	return _geographic_query_service.footprint_borders_natural_water(
 		Vector2i(building.grid_x, building.grid_z), footprint
 	)
@@ -1410,15 +1413,23 @@ func get_waterwheel_covered_cells(waterwheel: BuildingInstance) -> Array[Vector2
 	var result: Array[Vector2i] = []
 	if waterwheel == null or _grid_system == null or not _has_effect(waterwheel, "irrigation"):
 		return result
-	var radius := float(_effect_config(waterwheel).get("radius", 4))
-	var center := _building_center(waterwheel)
-	for gz in range(floori(center.y - radius), ceili(center.y + radius) + 1):
-		for gx in range(floori(center.x - radius), ceili(center.x + radius) + 1):
-			if Vector2(gx, gz).distance_to(center) > radius + 0.0001:
-				continue
+	var bounds := get_waterwheel_coverage_bounds(waterwheel)
+	for gz in range(bounds.position.y, bounds.end.y):
+		for gx in range(bounds.position.x, bounds.end.x):
 			if _grid_system.get_cell(gx, gz) != null:
 				result.append(Vector2i(gx, gz))
 	return result
+
+
+func get_waterwheel_coverage_bounds(waterwheel: BuildingInstance) -> Rect2i:
+	if waterwheel == null or not _has_effect(waterwheel, "irrigation"):
+		return Rect2i()
+	var width := maxi(1, int(_effect_config(waterwheel).get("coverage_width", 15)))
+	# A 2x2 foundation has a half-cell centre. Snap down on both axes so
+	# an odd-width area always contains exactly 15x15 cells, including corners.
+	var center := Vector2i(_building_center(waterwheel).floor())
+	var half_width := floori(width * 0.5)
+	return Rect2i(center - Vector2i(half_width, half_width), Vector2i(width, width))
 
 
 func get_greenhouse_cells(building: BuildingInstance) -> Array[Vector2i]:
@@ -2150,6 +2161,7 @@ func _is_effect_building(building: BuildingInstance) -> bool:
 			"honey",
 			"animal",
 			"irrigation",
+			"water_source",
 			"ignore_season",
 			"farm_storage",
 			"resource_output",
@@ -2693,10 +2705,31 @@ func get_waterwheel_snapshot(waterwheel: BuildingInstance) -> Dictionary:
 			if bed in covered and d<distance:best=bed;distance=d
 		if is_finite(distance):links.append({"building_id":building_key(greenhouse),"gx":best.x,"gz":best.y,"active":building_key(greenhouse) in supplied,"beds":get_greenhouse_cells(greenhouse).size()})
 	var upkeep := get_maintenance_quote(waterwheel)
+	var source := _building_system.get_water_source(Vector2i(waterwheel.grid_x,waterwheel.grid_z),_footprint_for(waterwheel)) if _building_system != null else {}
+	if connected and source.is_empty(): source={"kind":"natural","building_id":"","anchor":_geographic_query_service.water_anchor(Vector2i(waterwheel.grid_x,waterwheel.grid_z),_footprint_for(waterwheel))}
+	var installed_source := source if connected or _building_system==null else _building_system.get_water_source(Vector2i(waterwheel.grid_x,waterwheel.grid_z),_footprint_for(waterwheel),false)
 	return {"status":"construction" if not waterwheel.is_construction_complete() else ("maintenance" if is_maintenance_paused(waterwheel) else ("working" if connected else "no_water")),
-		"water_connected":connected,"water_anchor":_geographic_query_service.water_anchor(Vector2i(waterwheel.grid_x,waterwheel.grid_z),_footprint_for(waterwheel)) if connected else Vector2i(-1,-1),
-		"radius":float(_effect_config(waterwheel).get("radius",4)),"irrigated_plots":get_irrigated_cells(waterwheel).size() if active else 0,
+		"water_connected":connected,"water_source":source,"installed_source":installed_source,"water_anchor":source.get("anchor",Vector2i(-1,-1)),
+		"coverage_width":get_waterwheel_coverage_bounds(waterwheel).size.x,"coverage_shape":"square",
+		"coverage_min":get_waterwheel_coverage_bounds(waterwheel).position,"coverage_max":get_waterwheel_coverage_bounds(waterwheel).end-Vector2i.ONE,
+		"prevents_withering":active,"off_season_behavior":"dormant","irrigated_plots":get_irrigated_cells(waterwheel).size() if active else 0,
 		"greenhouses":supplied,"connections":links,"maintenance":upkeep,"maintenance_due_day":get_maintenance_due_day(waterwheel),"maintenance_interval_days":MAINTENANCE_INTERVAL_DAYS,
 		"capital_reference_cost":Balance.reference_value(GameDataScript.get_building("waterwheel").cost,true),
 		"maintenance_reference_cost":int(upkeep.get("gold_cost",0))+Balance.reference_value(upkeep.get("materials",{}),true),
-		"rules":"Build a 2x2 dry-land foundation directly beside natural water. Radius 4 irrigates farmland. One greenhouse bed in radius supplies all 8 beds through included pipes. No relay, water fee, free crops or stacking growth bonus. Construction, lost water or overdue maintenance stops supply. Existing land permissions remain."}
+		"rules":"Build a 2x2 dry-land foundation sharing an edge with natural water OR a completed, maintained well. A well enables inland pumping and does not irrigate by itself. A 15x15 square around the foundation origin irrigates farmland, including corners (origin +/-7 cells). Healthy supplied crops never wither: outdoor crops go dormant out of season and resume in season; greenhouses grow all year. Already withered crops do not revive. One greenhouse bed in coverage supplies all 8 beds through included pipes. No diagonal source connection, relay, water fee or stacking bonus. Construction, source demolition or overdue maintenance of either well or wheel stops supply and outdoor crop protection. Existing land permissions remain."}
+
+
+func get_well_snapshot(well: BuildingInstance) -> Dictionary:
+	if well == null or not _has_effect(well,"water_source"): return {}
+	var active := _building_is_active(well) and not is_maintenance_paused(well)
+	var wheels: Array = []
+	for building in _valid_registered_buildings():
+		if not _has_effect(building,"irrigation") or not BuildingSystem.footprints_share_edge(Vector2i(well.grid_x,well.grid_z),_footprint_for(well),Vector2i(building.grid_x,building.grid_z),_footprint_for(building)): continue
+		var info := get_waterwheel_snapshot(building)
+		wheels.append({"building_id":building.instance_id,"gx":building.grid_x,"gz":building.grid_z,"using_this_well":info.water_source.get("building_id","")==well.instance_id,"status":info.status,"greenhouses":info.greenhouses})
+	var upkeep := get_maintenance_quote(well)
+	return {"status":"construction" if not well.is_construction_complete() else ("maintenance" if not active else "available"),"water_available":active,
+		"waterwheels":wheels,"maintenance":upkeep,"maintenance_due_day":get_maintenance_due_day(well),"maintenance_interval_days":MAINTENANCE_INTERVAL_DAYS,
+		"capital_reference_cost":Balance.reference_value(GameDataScript.get_building("well").cost,true),
+		"maintenance_reference_cost":int(upkeep.get("gold_cost",0))+Balance.reference_value(upkeep.get("materials",{}),true),
+		"rules":"A completed maintained 1x1 well supplies directly edge-adjacent waterwheels, enabling inland greenhouse irrigation. No direct irrigation or relays. Automatic connection; no extra pipe cost or water fee. Owner pays maintenance. This simplified groundwater source does not model depletion or pumping energy."}

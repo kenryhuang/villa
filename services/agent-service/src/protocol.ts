@@ -7,9 +7,11 @@ export type OutcomeStatus = "accepted" | "in_progress" | "completed" | "rejected
 
 export interface DecisionRequest {
   protocol_version: 2 | 3;
+  identity_override?: {display_name:string;soul:import("./agents.ts").Soul};
   resources?: Record<string, unknown>;
   experience_events?: readonly Record<string, unknown>[];
   goal_refs?: readonly Record<string, unknown>[];
+  dialogue_followups?: readonly Record<string, unknown>[];
   request_id: string;
   session_id: string;
   session_epoch: number;
@@ -127,11 +129,31 @@ function failure<T>(error: string): ParseResult<T> {
   return { ok: false, error };
 }
 
+export function validIdentityOverride(value: unknown): value is {display_name:string;soul:import("./agents.ts").Soul} {
+  const text=(v:unknown,n:number):v is string=>typeof v==="string"&&v.trim().length>0&&v.length<=n;
+  if(!isRecord(value)||!hasExactKeys(value,["display_name","soul"])||!text(value.display_name,80)||!isRecord(value.soul))return false;
+  const soul=value.soul;
+  if(!hasExactKeys(soul,["traits","values","speech_style","risk_tolerance","social_profile"])||!text(soul.speech_style,500)||typeof soul.risk_tolerance!=="number"||!Number.isFinite(soul.risk_tolerance)||soul.risk_tolerance<0||soul.risk_tolerance>1)return false;
+  for(const k of ["traits","values"])if(!Array.isArray(soul[k])||soul[k].length>32||!soul[k].every((v:unknown)=>text(v,160)))return false;
+  const p=soul.social_profile;
+  return isRecord(p)&&hasExactKeys(p,["age","gender","romance_interest","accept_affinity_threshold","relationship_style"])
+    &&isNonNegativeInteger(p.age)&&p.age>=1&&p.age<=150&&["female","male","unspecified"].includes(String(p.gender))
+    &&isNonNegativeInteger(p.romance_interest)&&p.romance_interest<=100&&isNonNegativeInteger(p.accept_affinity_threshold)&&p.accept_affinity_threshold<=100&&text(p.relationship_style,1000);
+}
+
 export function parseDecisionRequest(value: unknown): ParseResult<DecisionRequest> {
   if (isRecord(value) && value.protocol_version === 3) {
+    if (value.identity_override !== undefined && !validIdentityOverride(value.identity_override)) return failure("invalid_identity_override");
     for (const k of ["request_id","session_id","agent_id","active_role"]) if (!isId(value[k])) return failure(`invalid_${k}`);
     for (const k of ["session_epoch","game_minute","world_revision"]) if (!isNonNegativeInteger(value[k])) return failure(`invalid_${k}`);
     if (!TRIGGERS.has(value.trigger as Trigger) || !isRecord(value.resources) || !isRecordList(value.experience_events) || !isRecordList(value.goal_refs ?? [])) return failure("invalid_loop_context");
+    if (!isRecordList(value.dialogue_followups ?? [],5)) return failure("invalid_dialogue_followups");
+    for (const entry of value.dialogue_followups ?? []) {
+      const p=entry.payload;
+      if (!isId(entry.event_id) || entry.kind!=="dialogue" || !isNonNegativeInteger(entry.game_minute) || !isRecord(p)
+        || typeof p.player_text!=="string" || p.player_text.length>1000 || typeof p.agent_speech!=="string" || p.agent_speech.length>2000
+        || !isRecordList(p.submitted_actions,3) || !isRecordList(p.outcomes,3)) return failure("invalid_dialogue_followups");
+    }
     if (!isUniqueIdList(value.goals) || !isUniqueIdList(value.allowed_command_tools,128)) return failure("invalid_capabilities");
     if (value.dialogue_input !== undefined && (typeof value.dialogue_input !== "string" || value.dialogue_input.length>1000)) return failure("invalid_dialogue_input");
     if (["actor_context","market_view","known_actors","public_world_state"].some(k=>k in value)) return failure("eager_context_forbidden");

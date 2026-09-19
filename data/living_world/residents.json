@@ -19,7 +19,7 @@
     {
       "id": "xiao_hua",
       "name": "小花",
-      "occupation": "花艺师"
+      "occupation": "自营农户"
     },
     {
       "id": "tiejiang_zhang",
@@ -29,7 +29,7 @@
     {
       "id": "afu_shui",
       "name": "阿水",
-      "occupation": "渔民"
+      "occupation": "自营农户"
     },
     {
       "id": "resident_mei",
@@ -54,7 +54,7 @@
     {
       "id": "resident_shan",
       "name": "阿山",
-      "occupation": "园丁"
+      "occupation": "自营农户"
     },
     {
       "id": "resident_xiu",
@@ -95,7 +95,9 @@
     "xuezhe_lin",
     "resident_yun",
     "tiejiang_zhang",
-    "afu_shui"
+    "afu_shui",
+    "xiao_hua",
+    "resident_shan"
   ],
   "expanded_shift_slots": 24,
   "additional_organizations": [

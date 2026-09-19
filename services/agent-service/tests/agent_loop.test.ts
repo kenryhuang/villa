@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {AgentRegistry} from "../src/agents.ts";
-import {parseDecisionRequest} from "../src/protocol.ts";
+import {parseDecisionRequest,validIdentityOverride} from "../src/protocol.ts";
 import {AgentStreamAssembler} from "../src/provider_stream.ts";
 import {runAgentLoop,DEFAULT_LOOP,compactWorkingMessages,inputEstimate} from "../src/agent_loop.ts";
 import {MemoryRepository} from "../src/memory.ts";
@@ -20,6 +20,26 @@ function request(){const parsed=parseDecisionRequest({protocol_version:3,request
 function response(name?:string,args:Record<string,unknown>={},speech=""){
   const a=new AgentStreamAssembler();a.accept({id:"reply",choices:[{index:0,delta:{content:speech,...(name?{tool_calls:[{index:0,id:"call",type:"function",function:{name,arguments:JSON.stringify(args)}}]}:{})},finish_reason:name?"tool_calls":"stop"}]});return a;
 }
+test("saved character edits replace identity in the next loop without granting capabilities",async()=>{
+  const r=request(), registry=AgentRegistry.loadDefault();
+  r.identity_override={display_name:"阿禾测试",soul:{traits:["耐心"],values:["信守承诺"],speech_style:"简短自然",risk_tolerance:.2,
+    social_profile:{age:26,gender:"male",romance_interest:90,accept_affinity_threshold:65,relationship_style:"慢慢了解"}}};
+  assert.ok(validIdentityOverride(r.identity_override));
+  const raw={protocol_version:3,request_id:r.request_id,session_id:r.session_id,session_epoch:1,agent_id:r.agent_id,trigger:"dialogue",game_minute:100,world_revision:5,
+    active_role:r.active_role,goals:r.goals,allowed_command_tools:r.allowed_command_tools,resources:r.resources,experience_events:[],identity_override:r.identity_override};
+  const parsed=parseDecisionRequest(raw);assert.ok(parsed.ok);
+  const ctx=registry.buildContext(r.agent_id,parsed.value,[]);
+  assert.deepEqual(ctx.allowed_command_tools,r.allowed_command_tools);
+  await runAgentLoop(parsed.value,ctx,{experience:{},memories:[],read:async()=>({})},async(messages)=>{
+    const header=JSON.parse(String(messages[1].content));
+    assert.equal(header.identity.display_name,"阿禾测试");assert.equal(header.identity.soul.social_profile.romance_interest,90);
+    return response(undefined,{},"你好。");
+  },()=>{});
+  const malformed=structuredClone(raw);malformed.identity_override.soul.social_profile!.romance_interest=101;
+  assert.equal(parseDecisionRequest(malformed).ok,false);
+  assert.equal(validIdentityOverride({...r.identity_override,tools:["public_food_plan"]}),false);
+  assert.notEqual(registry.get(r.agent_id)!.display_name,"阿禾测试","authored defaults are not modified");
+});
 test("compact request refuses eager data and has no world snapshot in first prompt",async()=>{
   const r=request();const ctx=AgentRegistry.loadDefault().buildContext(r.agent_id,r,[]);let rounds=0;
   const result=await runAgentLoop(r,ctx,{experience:{recent_events:[]},memories:[],read:async()=>{throw new Error("unexpected");}},async(messages,tools)=>{
@@ -128,7 +148,10 @@ test("compaction target accounts for the protected header and preserves a usable
     return sequence[step++]();
   },e=>traces.push(e),undefined,{...DEFAULT_LOOP,compact_at_tokens:9000,compact_target_tokens:6000,max_input_tokens:40000});
   const events=traces.filter(e=>e.payload?.event==="context.compacted");
-  assert.ok(events.length);assert.ok(events.every(e=>e.payload.target>e.payload.configured_target&&e.payload.target_met));
+  // A protected header can cross the soft threshold with almost no working
+  // history. Preserve the quote, but count only compactions that actually shrink.
+  assert.ok(events.every(e=>e.payload.after<e.payload.before&&e.payload.target>e.payload.configured_target&&e.payload.target_met));
+  assert.ok(traces.filter(e=>e.payload?.event==="loop.round").every(e=>e.payload.input_estimate<40000));
 });
 
 test("an oversized immutable header fails with capacity diagnostics rather than claiming compaction",async()=>{

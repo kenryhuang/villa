@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type {DecisionRequest} from "./protocol.ts";
 
 export interface Soul {
+  social_profile?: {age:number;gender:string;romance_interest:number;relationship_style:string;accept_affinity_threshold?:number};
   traits: string[];
   values: string[];
   speech_style: string;
@@ -51,7 +52,7 @@ export interface AgentContext {
 
 const GENERAL_COMMAND_TOOLS = [
   "build",
-	"adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal", "move", "request_supply", "rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
+	"resolve_relationship_dialogue", "propose_relationship", "respond_relationship", "end_relationship", "express_support", "adopt_short_term_goal", "revise_short_term_goal", "abandon_short_term_goal", "move", "request_supply", "rent_production", "propose_activity", "enroll_activity", "leave_activity", "cancel_activity", "contribute_route_repair", "offer_intelligence", "buy_intelligence", "share_intelligence", "propose_investigation", "accept_investigation", "cancel_investigation", "propose_joint_project", "accept_joint_project", "exit_joint_project", "propose_work", "counter_work", "accept_work", "cancel_work", "start_learning", "start_leisure", "manage_building", "propose_delivery", "cancel_delivery", "revise_project", "submit_project", "retry_project", "cancel_project", "publish_commission", "propose_player_commission", "claim_commission", "deliver_commission", "suggest_behavior",
   "send_message", "propose_trade", "counter_trade", "accept_trade",
   "reject_trade", "cancel_trade", "speak", "wait", "propose_role_change",
   "propose_cooperation", "counter_cooperation", "accept_cooperation",
@@ -111,7 +112,7 @@ export class AgentRegistry {
     const localCommands = new Set([...role.tools, ...(isPublic ? [] : GENERAL_COMMAND_TOOLS)]);
     const allowedCommandTools = request.allowed_command_tools.filter((tool) => localCommands.has(tool));
     return {
-      agent: {agent_id: agent.agent_id, display_name: agent.display_name, soul: structuredClone(agent.soul), active_role: role.role_id, goals},
+      agent: {agent_id: agent.agent_id, display_name: request.identity_override?.display_name ?? agent.display_name, soul: structuredClone(request.identity_override?.soul ?? agent.soul), active_role: role.role_id, goals},
       actor_context: structuredClone(request.actor_context),
       public_world_state: structuredClone(request.public_world_state),
       global_public_events: structuredClone(request.global_public_events),

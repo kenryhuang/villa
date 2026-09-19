@@ -1,17 +1,18 @@
 {
   "self": {
     "sections": [
-      "activity"
+      "activity",
+      "needs"
     ],
     "default_section": "activity",
-    "hint": "activity returns physical position, active work and field-site arrival checks; public region alone does not prove arrival."
+    "hint": "activity returns physical position, active work and field-site arrival checks; public region alone does not prove arrival. needs returns your live hunger, thirst, fatigue, social and companionship pressures and self-care rules; discover self exposes start_leisure. activity.schedule lists the current leisure and remaining work; start_leisure stays in_progress until actual completion, then ordered batch actions continue."
   },
   "map": {
     "sections": [
       "regions"
     ],
     "default_section": "regions",
-    "hint": "Field sites include exact reachable position, distance and arrived. survey includes walking and on-site work; travel only relocates."
+    "hint": "Every region has a name and aliases. query_map(query=Chinese place name) or query_world(domain=map,section=regions,query=name) returns live reachable coordinates and navigation_action(move). Exact id/name/alias matches take priority. 南湖 resolves to a shore, not lake water. Paginate next_cursor for all places. Only creek/forest/hills are survey sites."
   },
   "farm": {
     "sections": [
@@ -68,10 +69,13 @@
       "relationship",
       "offers",
       "agreements",
-      "roles"
+      "roles",
+      "social_profile",
+      "relationships",
+      "relationship_proposals"
     ],
     "default_section": "list",
-    "hint": "relationship needs the other actor id. Private offers and agreements are scoped to you."
+    "hint": "relationship needs the other actor id. Private offers and agreements are scoped to you. relationship(id) 返回双方好感、信任和关系阶段；relationships 和 relationship_proposals 仅返回涉及自己的记录；social_profile 仅返回自己的人格与恋爱需求。"
   },
   "knowledge": {
     "sections": [

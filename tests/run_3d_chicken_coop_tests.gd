@@ -77,8 +77,12 @@ func run() -> void:
 	session.production.finish_daily_outputs(1)
 	check(coop.producer_state.outputs.is_empty(),"No feed means no free eggs")
 	session.inventory.add_item("animal_feed",6)
-	session.player.position = coop.position+Vector3.FORWARD*2.8
-	check(not interaction.open_windmill(coop),"Rear wall cannot operate through the house")
+	for direction in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT, Vector3(1, 0, -1).normalized()]:
+		session.player.position = coop.position + direction * 3.6
+		check(interaction.open_windmill(coop) and view.visible and paused, "Nearby coop panel opens from every direction")
+		view.close_panel()
+		session.player.position = coop.position + direction * 3.8
+		check(not interaction.open_windmill(coop) and not view.visible, "Coop range applies in every direction")
 	session.player.position = coop.position+Vector3.BACK*2.7
 	var camera := Camera3D.new()
 	farm.add_child(camera)

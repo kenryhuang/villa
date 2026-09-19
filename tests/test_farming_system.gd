@@ -238,6 +238,7 @@ func run(assertions: TestAssert) -> void:
 	grid.free()
 
 	_test_automatic_irrigation_survives_day_change(assertions)
+	_test_automatic_irrigation_prevents_withering(assertions)
 	_test_stage_only_growth_change(assertions)
 	_test_environment_lifecycle_transitions(assertions)
 	_test_save_seed_controls_deterministic_yield(assertions)
@@ -269,6 +270,54 @@ func _test_automatic_irrigation_survives_day_change(assertions: TestAssert) -> v
 	assertions.truthy(not farming.is_automatically_irrigated_cell(cell), "removing waterwheel coverage updates authority")
 	farming.advance_growth_minutes(36)
 	assertions.near(cell.crop_instance.growth_progress, 4.0, 0.001, "removed automatic irrigation restores normal growth")
+	farming.free()
+	season.free()
+	grid.free()
+
+
+func _test_automatic_irrigation_prevents_withering(assertions: TestAssert) -> void:
+	var grid := GridSystemScript.new()
+	var farming := FarmingSystemScript.new()
+	var season := SeasonSystemScript.new()
+	season.current_season = SeasonSystemScript.Season.SPRING
+	farming.configure(grid, season, null)
+	var crop := _make_crop_data("spring_irrigated", 6)
+	crop.seasons.assign([SeasonSystemScript.Season.SPRING])
+	crop.growth_duration_minutes = 216
+	for x in range(6, 10):
+		grid.set_cell_state(x, 6, FARMLAND)
+		farming.plant(grid.get_cell(x, 6), crop)
+	var growing := grid.get_cell(6,6)
+	var mature := grid.get_cell(7,6)
+	var unprotected := grid.get_cell(8,6)
+	var dead := grid.get_cell(9,6)
+	growing.crop_instance.growth_progress = 2.0
+	mature.crop_instance.set_growth_state(6.0, CropInstance.LifecycleState.MATURE)
+	dead.crop_instance.set_lifecycle_state(CropInstance.LifecycleState.WITHERED)
+	farming.set_automatic_irrigation_cells([Vector2i(6,6), Vector2i(7,6), Vector2i(9,6)])
+	season.current_season = SeasonSystemScript.Season.WINTER
+	for day in range(2, 6):
+		farming.on_day_changed(day)
+		farming.advance_growth_minutes(36)
+	assertions.equal(growing.crop_instance.lifecycle_state, CropInstance.LifecycleState.DORMANT, "Supplied annual survives several off-season days dormant")
+	assertions.near(growing.crop_instance.growth_progress, 2.0, 0.001, "Outdoor irrigation preserves progress without off-season growth")
+	assertions.truthy(mature.crop_instance.is_harvestable(), "Mature irrigated crop remains harvestable across seasons")
+	assertions.equal(unprotected.crop_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "Unsupplied annual follows normal seasonal withering")
+	assertions.equal(dead.crop_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "Irrigation does not resurrect dead crops")
+	grid.set_cell_state(6,7,FARMLAND)
+	assertions.truthy(not farming.can_plant(grid.get_cell(6,7),crop), "Irrigation does not allow off-season outdoor planting")
+	season.current_season = SeasonSystemScript.Season.SPRING
+	farming.on_day_changed(6)
+	farming.advance_growth_minutes(36)
+	assertions.equal(growing.crop_instance.lifecycle_state, CropInstance.LifecycleState.GROWING, "Living dormant crop resumes in season")
+	assertions.near(growing.crop_instance.growth_progress, 3.5, 0.001, "Resumed crop receives automatic watered growth")
+	assertions.equal(mature.crop_instance.lifecycle_state, CropInstance.LifecycleState.MATURE, "Mature crop stays mature on seasonal return")
+	assertions.equal(dead.crop_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "Seasonal return does not revive dead crop")
+	season.current_season = SeasonSystemScript.Season.WINTER
+	farming.on_day_changed(7)
+	farming.set_automatic_irrigation_cells([])
+	farming.on_day_changed(8)
+	assertions.equal(growing.crop_instance.lifecycle_state, CropInstance.LifecycleState.WITHERED, "Source loss removes outdoor seasonal protection")
 	farming.free()
 	season.free()
 	grid.free()

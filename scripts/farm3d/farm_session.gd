@@ -238,19 +238,13 @@ func rest() -> Dictionary:
 	return {"ok": true, "reason": "", "message": "已休息至次日"}
 
 
-func save_game() -> bool:
-	if grid == null or inventory == null or season == null or tools == null:
-		return false
-	var temporary_path := save_path + ".tmp"
-	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
-	if file == null:
-		return false
+func snapshot_save_data() -> Dictionary:
 	var state := _game_state()
 	var stamina := int(state.player_state.stamina) if state != null and state.player_state != null else 100
 	var experience := int(state.player_state.exp) if state != null and state.player_state != null else 0
 	var level := int(state.player_state.level) if state != null and state.player_state != null else 1
 	var harvest_seed := int(state.harvest_seed) if state != null else 42
-	var data := {
+	return {
 		"version": SAVE_VERSION,
 		"living_world": living_world.to_dict(),
 		"grid": grid.to_dict(),
@@ -271,6 +265,16 @@ func save_game() -> bool:
 		"golf": golf_round.to_dict(),
 		"agents": agent_runtime.to_dict() if is_instance_valid(agent_runtime) else {},
 	}
+
+
+func save_game() -> bool:
+	if grid == null or inventory == null or season == null or tools == null:
+		return false
+	var temporary_path := save_path + ".tmp"
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		return false
+	var data := snapshot_save_data()
 	file.store_string(JSON.stringify(data, "  "))
 	file.flush()
 	var error := file.get_error()
@@ -310,6 +314,10 @@ func _load_game_state() -> bool:
 	var parsed = json.data
 	_migrate_residents(parsed)
 	_migrate_population(parsed)
+	return restore_save_data(parsed)
+
+
+func restore_save_data(parsed: Variant, restore_memory := true) -> bool:
 	if not _valid_save(parsed):
 		return false
 	var data: Dictionary = parsed
@@ -375,7 +383,7 @@ func _load_game_state() -> bool:
 				return false
 		if not agent_runtime.farm3d_actors.is_empty():
 			agent_runtime.spawn_farm3d_actors()
-		agent_runtime.load_farm3d_memory(save_path)
+		if restore_memory: agent_runtime.load_farm3d_memory(save_path)
 	if int(data.version) >= 7: living_world.restore(data.living_world)
 	else: living_world.reset_for_legacy()
 	save_error = ""
@@ -757,7 +765,9 @@ func _migrate_population(value: Variant) -> void:
 	if int(value.version) >= 7:
 		var society: Dictionary = value.living_world.society
 		for id in living_world.society.residents:
-			if not society.residents.has(id): society.residents[id] = living_world.society.residents[id].duplicate(true)
+			if not society.residents.has(id):
+				society.residents[id] = living_world.society.residents[id].duplicate(true)
+				society.residents[id].needs = LivingWorld.Society.Needs.initial(id,int(society.last_minute))
 		society.initial_gold = int(society.initial_gold) + added_gold
 		society.ledger.append({"minute": int(society.last_minute), "kind": "population_migration", "actor_id": "society", "gold": added_gold, "items": {}, "source": "P12一次性移入人口与组织初始资金"})
 		if society.ledger.size() > 4096: society.ledger.pop_front()

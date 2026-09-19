@@ -296,12 +296,13 @@ func begin_swing(value: Dictionary) -> bool:
 	shot = value.duplicate()
 	shot.power = clampf(shot.power,.01,1)
 	shot.deviation = clampf(shot.deviation,-.255,.255)
-	shot["angle"] = _backswing_angle()
+	var animation := Farm3DGolfSwing.animation_profile(shot.power, _short_stroke())
+	shot.merge(animation, true)
+	shot["angle"] = float(animation.backswing_angle)
 	# A real mouse stroke already moved the club down to the contact gate.
 	if shot.has("backswing"):
-		shot.angle *= .12
+		shot.angle = clampf(float(shot.backswing)/Farm3DGolfSwing.FULL_PULL,0,1)*(.75 if _short_stroke() else 2.6)*.12
 	shot["impact_delay"] = .07 if shot.has("backswing") else .18
-	shot["followthrough"] = .65 if _short_stroke() else 2.1
 	shot["contact_height"] = contact_height
 	shot["contact_side"] = contact_side
 	phase = Phase.SWING
@@ -355,13 +356,17 @@ func _process(delta: float) -> void:
 			_impact()
 	elif phase == Phase.FLIGHT:
 		swing_seconds += delta
-		visual.pose(-smoothstep(float(shot.impact_delay),float(shot.impact_delay)+.52,swing_seconds)*float(shot.followthrough),club)
-		if swing_seconds > .9:
-			visual.set_equipped(false)
+		var follow_end := float(shot.impact_delay)+float(shot.follow_seconds)
+		var hold_end := follow_end+float(shot.hold_seconds)
+		var recover_end := hold_end+float(shot.recover_seconds)
+		var swing_weight := smoothstep(float(shot.impact_delay),follow_end,swing_seconds)
+		if swing_seconds > hold_end:
+			swing_weight = 1.0-smoothstep(hold_end,recover_end,swing_seconds)
+		visual.pose(-swing_weight*float(shot.followthrough),club)
 		ball.advance(delta,Course.HOLES[round_state.hole].cup,get_world_3d().direct_space_state)
 		if watch_camera:
 			_update_camera(1-exp(-delta*8))
-		if not ball.moving:
+		if not ball.moving and swing_seconds >= recover_end:
 			_settle()
 	if round_state.active and phase != Phase.HOLED:
 		visual.update_ball(ball.position,phase == Phase.FLIGHT,phase == Phase.WALK)

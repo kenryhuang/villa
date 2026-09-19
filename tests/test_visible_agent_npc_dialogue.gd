@@ -86,8 +86,8 @@ class DialogueDouble:
 		failed_submissions.append([villager_id, message])
 		return true
 
-	func fail_agent_dialogue(request_id: String) -> bool:
-		failed_requests.append([request_id])
+	func fail_agent_dialogue(request_id: String, error: String = "") -> bool:
+		failed_requests.append([request_id, error])
 		return true
 
 	func begin_agent_dialogue(villager_id: String, request_id: String) -> void:
@@ -337,7 +337,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		dialogue.agent_message_submitted.emit("xuezhe_lin", "发现了什么？")
 		var explorer_request := runtime.get_in_flight_request_id("xuezhe_lin")
 		main.call("_on_agent_dialogue_stream_failed", "xuezhe_lin", explorer_request, "timeout")
-		assertions.equal(dialogue.failed_requests, [[explorer_request]], "stream failure becomes a visible history entry")
+		assertions.equal(dialogue.failed_requests, [[explorer_request, "timeout"]], "stream failure preserves the error for the visible history entry")
 		assertions.truthy(explorer.is_dialogue_busy(), "stream failure leaves conversation open")
 		assertions.equal(hud.records.size(), 2, "stream failure publishes one additional warning")
 		dialogue.agent_dialogue_closed.emit("xuezhe_lin", "")

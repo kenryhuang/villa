@@ -64,8 +64,12 @@ func _run() -> void:
 	_check(interaction.market_at_pointer(pointer), "Camera ray picks the actual market building")
 	player.position = Vector3.ZERO
 	_check(not interaction.open_market() and not view.visible, "Distant clicks cannot trade remotely")
-	player.position = building.position + Vector3(0, 0, -3)
-	_check(not interaction.open_market(), "Rear wall cannot be used to trade through the building")
+	for direction in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT, Vector3(1, 0, -1).normalized()]:
+		player.position = building.position + direction * 5.9
+		_check(interaction.open_market() and view.visible and player.ui_blocked, "Nearby market panel opens from every direction")
+		view.close_market()
+		player.position = building.position + direction * 6.1
+		_check(not interaction.open_market() and not view.visible, "Market range applies in every direction")
 	player.position = building.position + Vector3(0, 0, 4.5)
 	if "--capture-market" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw

@@ -5,6 +5,7 @@ var running := false
 var _refresh_in := 0.0
 var _pipes: Node3D
 var _link_signature := ""
+var _well_mode := false
 
 func configure_waterwheel(system: ProductionSystem) -> void:
 	production=system
@@ -30,14 +31,18 @@ func _process(delta: float) -> void:
 		_refresh_in=1.0
 		var info := production.get_waterwheel_snapshot(self)
 		running=info.get("status","")=="working"
-		if info.get("water_connected",false):
-			align_to_water(info.water_anchor,grid_x,grid_z)
+		if info.get("installed_source",{}).is_empty():
+			_well_mode=not production._geographic_query_service.footprint_borders_natural_water(Vector2i(grid_x,grid_z),data.footprint)
+		align_to_source(info.get("installed_source",{}),grid_x,grid_z)
 		_update_pipes(info)
 	if running:
-		get_node("VisualRoot/Model/Rotor").rotate_x(delta*.55)
+		get_node("VisualRoot/Model/WellPump/Rotor" if _well_mode else "VisualRoot/Model/Rotor").rotate_x(delta*.55)
 
 func _update_pipes(info: Dictionary) -> void:
-	var links: Array=info.get("connections",[])
+	var links: Array=info.get("connections",[]).duplicate(true)
+	var source: Dictionary=info.get("installed_source",{})
+	if _well_mode and not source.is_empty():
+		links.append({"gx":source.anchor.x,"gz":source.anchor.y,"building_id":source.building_id,"active":running,"intake":true})
 	var signature := str(links)+str(running)+str(is_construction_complete())+str(get_node("VisualRoot/Model").transform)
 	if signature==_link_signature:return
 	_link_signature=signature
@@ -45,13 +50,19 @@ func _update_pipes(info: Dictionary) -> void:
 	_pipes=Node3D.new();_pipes.name="SupplyPipes";add_child(_pipes)
 	if not is_construction_complete():return
 	var mat := StandardMaterial3D.new();mat.albedo_color=Color("508f94") if running else Color("74766c");mat.metallic=.45;mat.roughness=.6
-	var outlet: Node3D=get_node("VisualRoot/Model/Details/Outlet")
+	var outlet: Node3D=get_node("VisualRoot/Model/WellPump/Outlet" if _well_mode else "VisualRoot/Model/Details/Outlet")
 	for link in links:
 		var link_material := mat.duplicate() as StandardMaterial3D
 		if not link.active:link_material.albedo_color=Color("74766c")
 		var cell: GridCell=production._grid_system.get_cell(link.gx,link.gz)
-		var end := to_local(cell.world_position_3d()+Vector3.UP*.23)
-		var start := to_local(outlet.global_position)
+		var intake: bool=link.get("intake",false)
+		var end := to_local(cell.world_position_3d()+Vector3.UP*(.75 if intake else .23))
+		if intake:
+			for well in production._building_system.get_all_buildings():
+				if well.instance_id!=link.building_id:continue
+				var fitting := well.get_node_or_null("VisualRoot/Model/Details/Outlet") as Node3D
+				if fitting!=null:end=to_local(fitting.global_position)
+		var start := to_local(get_node("VisualRoot/Model/WellPump/Intake").global_position if intake else outlet.global_position)
 		# Ground-following segments are presentation only: no added costs or collision.
 		var previous := start
 		for i in range(1,17):
@@ -70,3 +81,27 @@ func align_to_water(anchor: Vector2i, gx: int, gz: int) -> void:
 	model.rotation.y=PI*.5*roundf(atan2(direction.x,direction.y)/(PI*.5))
 	# Lowest bucket dips into the water; stone piers extend back into the bank.
 	model.position.y=minf(0.0,preload("res://scripts/farm3d/terrain_profile.gd").WATER_HEIGHT-.19-global_position.y)
+
+func align_to_source(source: Dictionary, gx: int, gz: int) -> void:
+	if not source.is_empty(): _well_mode=source.get("kind","")=="well"
+	var model := get_node("VisualRoot/Model") as Node3D
+	for part in model.get_children():
+		if not part is Node3D: continue
+		if part.name=="WellPump":
+			part.visible=_well_mode
+			for piece in part.get_children():
+				var stage: int={"Foundation":0,"Frame":1,"Walls":2}.get(str(piece.name),3)
+				if piece is Node3D:piece.visible=_preview_mode or int(construction_stage)>=stage
+		else:
+			var stage: int={"Foundation":0,"Frame":1,"Walls":2}.get(str(part.name),3)
+			part.visible=not _well_mode and (_preview_mode or int(construction_stage)>=stage)
+	if _well_mode:
+		model.position.y=0
+		if not source.is_empty():
+			var direction := Vector2(source.anchor)-Vector2(gx+.5,gz+.5)
+			model.rotation.y=PI*.5*roundf(atan2(direction.x,direction.y)/(PI*.5))
+	elif not source.is_empty():align_to_water(source.anchor,gx,gz)
+
+func _apply_construction_stage(play_effect: bool) -> void:
+	super._apply_construction_stage(play_effect)
+	if data!=null:align_to_source({},grid_x,grid_z)
