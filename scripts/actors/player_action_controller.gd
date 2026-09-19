@@ -37,7 +37,7 @@ const PLANT_FAILURE_LABELS := {
 	"plot_unavailable": "地块不可播种",
 	"no_seed": "种子库存不足",
 	"invalid_seed_mapping": "种植资料无效",
-	"reserved_plot": "这是阿禾的专属农田",
+	"reserved_plot": "这是阿园的专属农田",
 }
 const BuildingCatalogScript = preload("res://scripts/core/building_catalog.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
@@ -432,7 +432,7 @@ func perform_cell_action(cell: GridCell) -> bool:
 	if not _player_can_use_cell(cell):
 		var failure := {"ok": false, "reason": "reserved_plot"}
 		_set_last_action_failure(failure, true)
-		action_failure_hint.emit("这是阿禾的专属农田")
+		action_failure_hint.emit("这是阿园的专属农田")
 		return false
 	if _is_mature(cell):
 		return _harvest(cell)

@@ -162,6 +162,22 @@ func run() -> void:
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png("res://tmp/character-state-editor.png")
 		panel.close()
+	var renamed_save: Dictionary = world.to_dict()
+	renamed_save.character_overrides.resident_yun = world.character_profile("resident_yun")
+	var old_yun: Dictionary = renamed_save.character_overrides.resident_yun
+	old_yun.display_name = "云姐"
+	old_yun.soul.traits = ["旧设定"]
+	old_yun.soul.values = ["保留的经营价值观"]
+	old_yun.soul.social_profile.romance_interest = 40
+	renamed_save.society.residents.resident_yun.name = "云姐"
+	world.restore(renamed_save)
+	check(world.actor_name("resident_yun") == "伊可" and world.society.residents.resident_yun.name == "伊可", "Authored rename migrates both saved override and resident name")
+	check(world.character_profile("resident_yun").soul.traits.has("热情奔放") and world.relationships.profile("resident_yun").romance_interest == 90, "Old named override adopts new personality and relationship preferences")
+	check(world.character_profile("resident_yun").soul.values == ["保留的经营价值观"] and world.relationships.to_dict() == renamed_save.relationships, "Rename preserves unrelated edits and relationship history")
+	var later_edit: Dictionary = world.to_dict()
+	later_edit.character_overrides.resident_yun.soul.speech_style = "之后的自定义说话风格"
+	world.restore(later_edit)
+	check(world.character_profile("resident_yun").soul.speech_style == "之后的自定义说话风格", "Renamed profile preserves future editor changes across reload")
 	scene.free()
 	print("CHARACTER EDITOR: %d checks, %d failures" % [checks,failures])
 	quit(0 if failures == 0 else 1)

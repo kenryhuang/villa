@@ -28,6 +28,7 @@ var character_model: Node3D
 var character_animation: AnimationPlayer
 
 const FARM3D_CHARACTER_MODELS := {
+	"zewei": "res://assets/models/characters/young_woman_cardigan.glb",
 	"farmer_ahe": "res://assets/models/characters/farmer_ahe.glb",
 	"lao_li": "res://assets/models/characters/lao_li.glb",
 	"xuezhe_lin": "res://assets/models/characters/xuezhe_lin.glb",

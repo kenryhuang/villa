@@ -45,12 +45,12 @@ func run() -> void:
 	scene = load("res://scenes/farm3d/main.tscn").instantiate(); root.add_child(scene)
 	s = scene.farm_session; w = s.living_world
 	scene.set_process(false); w.set_process(false); s.season.set_process(false); s.player.set_physics_process(false)
-	check(w.society.residents.size() == 36 and w.society.config.organizations.size() == 4, "Expanded scene has 36 residents and four original-ledger organizations")
-	check(w.society.focus.size() == 8 and s.agent_runtime.farm3d_actors.size() == 8, "Eight named actors are visible; population does not spawn 36 bodies")
-	check(s.agent_runtime.registry.get_agent_ids().size() == 36, "All residents have eligible authored profiles without concurrent model calls")
+	check(w.society.residents.size() == 37 and w.society.config.organizations.size() == 4, "Expanded scene has 37 residents and four original-ledger organizations")
+	check(w.society.focus.size() == 9 and s.agent_runtime.farm3d_actors.size() == 9, "Nine named actors are visible; background population stays lightweight")
+	check(s.agent_runtime.registry.get_agent_ids().size() == 37, "All residents have eligible authored profiles without concurrent model calls")
 	check(w.society.cooperative != null and w.society.cooperative.get_plot_count("village_coop") == 80, "Cooperative owns 80 actual map plots using original crop rules")
 	var id := "resident_mei"
-	check(w.society.set_focus("resident_shan", false).ok, "Free one slot in the eight-actor focus pool")
+	check(w.society.set_focus("resident_shan", false).ok, "Free one slot in the focus pool")
 	var before: Dictionary = w.assets.snapshot(id)
 	check(w.society.set_focus(id, true).ok and w.actor(id) != null, "Ordinary resident promotes using same actor identity")
 	check(w.assets.snapshot(id) == before and w.society.residents.has(id), "Promotion does not mint or reset assets")
@@ -65,7 +65,7 @@ func run() -> void:
 	s.season.advance_game_minutes(1080)
 	check(not w.society.caught_up(w.minute()) and reload_save(), "Cross-day work saves and reloads while a bounded settlement batch is still pending")
 	while not w.society.caught_up(w.minute()): w.advance(); await process_frame
-	check(w.society.day_reports.has("1") and int(w.society.day_reports["1"].fed) + int(w.society.day_reports["1"].hungry) == 36, "All expanded residents consume or report shortfall once per day")
+	check(w.society.day_reports.has("1") and int(w.society.day_reports["1"].fed) + int(w.society.day_reports["1"].hungry) == 37, "All expanded residents consume or report shortfall once per day")
 	check(reload_save(), "Expanded daily ledger persists")
 	var paid: Array = w.society.shifts.values().filter(func(shift): return shift.employer_id == "village_coop" and shift.status == "completed")
 	check(not paid.is_empty() and w.society.ledger.any(func(row): return row.kind == "seed_planted"), "Actual paid cooperative shifts consume seed and plant original crops")
@@ -87,7 +87,7 @@ func run() -> void:
 		check(corrupt.npc_economy.npc_states.size() == 14, "Corrupt old save is rejected before new endowments")
 		s._migrate_population(legacy)
 		if not s._valid_save(legacy): print("MIGRATION RESULT version=", legacy.version, " population=", legacy.living_world.society.residents.size(), " world=", w.validate_save(legacy), " agents=", s.agent_runtime.validate_dict(legacy.agents), " economy=", s.npc_economy.validate_dict(legacy.npc_economy))
-		check(int(legacy.version) == 13 and legacy.living_world.society.residents.size() == 36 and s._valid_save(legacy), "Valid old event history migrates to expanded population")
+		check(int(legacy.version) == 13 and legacy.living_world.society.residents.size() == 37 and s._valid_save(legacy), "Valid old event history migrates to expanded population")
 		check(legacy.buildings == before_buildings and int(legacy.gold) == original_gold, "Migration preserves original buildings and player assets")
 		var once := legacy.duplicate(true); s._migrate_population(legacy)
 		check(legacy == once, "Population endowments cannot repeat")
@@ -125,7 +125,7 @@ func check_versions(fixture: Dictionary) -> void:
 		s.save_path = "res://tmp/living-world/P12-migrate-v%d.json" % version
 		var f := FileAccess.open(s.save_path, FileAccess.WRITE); f.store_string(JSON.stringify(old, "  ")); f.close()
 		var loaded := s.load_game()
-		check(loaded and w.society.residents.size() == 36 and s.npc_economy._states.size() == 40, "Version %d migrates to one expanded population" % version)
+		check(loaded and w.society.residents.size() == 37 and s.npc_economy._states.size() == 41, "Version %d migrates to one expanded population" % version)
 		if loaded:
 			check(reload_save(), "Version %d migration saves and reloads once" % version)
 		await process_frame

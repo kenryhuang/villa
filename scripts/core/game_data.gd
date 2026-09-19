@@ -405,7 +405,7 @@ static func get_all_buildings() -> Array:
 
 const VILLAGERS := {
 	"farmer_ahe": {
-		"id": "farmer_ahe", "name": "阿禾", "role": "农民",
+		"id": "farmer_ahe", "name": "阿园", "role": "农民",
 		"schedule": {6: "home", 8: "farm", 12: "farm", 13: "farm", 17: "wander", 19: "home", 21: "home"},
 		"affinity_rewards": {"order": 10, "gift": 6, "chat": 2},
 	},
@@ -448,7 +448,7 @@ static func get_all_villagers() -> Array:
 
 const NPC_ECONOMY_PROFILES := [
 	{
-		"id": "farmer_ahe", "display_name": "阿禾", "gold": 500,
+		"id": "farmer_ahe", "display_name": "阿园", "gold": 500,
 		"inventory": {"grain_seed": 8, "carrot_seed": 6, "potato_seed": 6},
 		"essential_targets": {"grain": 3},
 		"reserve_targets": {"grain_seed": 4, "carrot_seed": 3, "potato_seed": 3},

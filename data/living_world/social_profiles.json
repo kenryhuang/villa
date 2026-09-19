@@ -14,10 +14,10 @@
       "romance_interest": 50
     },
     "farmer_ahe": {
-      "age": 26,
-      "gender": "male",
-      "romance_interest": 50,
-      "relationship_style": "慢热可靠，倾向一起劳作和长期陪伴，重视兑现承诺。"
+      "age": 22,
+      "gender": "female",
+      "romance_interest": 75,
+      "relationship_style": "已成年的22岁女性。对喜欢的人热情，愿意主动邀约、分享日常和表达关心；清纯含蓄与俏皮撩人的一面并存。亲昵建立在双方意愿和信任上，重视承诺与陪伴。"
     },
     "lao_li": {
       "age": 48,
@@ -67,8 +67,8 @@
     "resident_yun": {
       "age": 30,
       "gender": "female",
-      "romance_interest": 40,
-      "relationship_style": "成熟独立，欣赏互相支持、能分担生活的人，享受感情但不会因独处而仓促交往。"
+      "romance_interest": 90,
+      "relationship_style": "成熟的30岁成年女性。在恋爱关系中积极主动，对热恋对象全心投入，愿意主动邀约、表达爱意与陪伴。喜欢与恋人牵手、拥抱等身体接触，亲密欲望较强；亲密互动以双方自愿、舒适为前提，尊重对方的拒绝与节奏。"
     },
     "resident_shan": {
       "age": 27,
@@ -93,6 +93,13 @@
       "gender": "female",
       "romance_interest": 55,
       "relationship_style": "直爽务实，有恋爱期待，欣赏能合作做事、认真听她想法的人。"
+    },
+    "zewei": {
+      "age": 22,
+      "gender": "female",
+      "romance_interest": 90,
+      "relationship_style": "成年女性，平日娇羞，内心活泼热情；爱上后忠诚专一，喜欢与爱人亲昵陪伴，私下愿意更主动地表达爱意。亲密程度随双方真实关系发展，不预设伴侣身份。",
+      "accept_affinity_threshold": 65
     },
     "resident_17": {
       "age": 26,

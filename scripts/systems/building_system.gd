@@ -269,7 +269,7 @@ func diagnose_placement(building: Variant, gx: int, gz: int, actor_id := "player
 				cell_data,
 				cell.state,
 				"reserved_plot",
-				"无法建造%s：这是阿禾的专属农田" % resolved.display_name
+				"无法建造%s：这是阿园的专属农田" % resolved.display_name
 			)
 		if not is_finite(grid_system_ref.get_terrain_height_at_cell(cell_data.x, cell_data.y)):
 			return _blocked_diagnostic(

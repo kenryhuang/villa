@@ -22,6 +22,8 @@ const FAILURE_TEXT := "Agent 服务暂时不可用，请稍后再试。"
 @onready var send_button: Button = $DialoguePanel/Margin/VBox/Composer/SendButton
 @onready var close_button: Button = $DialoguePanel/Margin/VBox/Header/CloseButton
 
+var _group: RefCounted
+var _pending_speaker_id := ""
 var _histories: Dictionary = {}
 var _interaction_views: Dictionary = {}
 var _display_names: Dictionary = {}
@@ -34,15 +36,22 @@ var _is_open := false
 
 # Shared binding used by the 3D farm; the original dialogue/history UI is retained.
 func configure_agent_runtime(runtime: Node) -> void:
+	if runtime.has_method("trigger_chat"):
+		_group=preload("res://scripts/ui/group_chat.gd").new()
+		_group.configure(self,runtime)
 	agent_message_submitted.connect(func(id: String, message: String):
 		if not runtime.trigger_dialogue(id, message): fail_agent_submission(id, runtime.dialogue_unavailable_reason()))
 	runtime.dialogue_stream_started.connect(func(id: String, request_id: String):
+		if _group!=null and _group.started(id,request_id):return
 		if _is_open and id == _current_villager_id: begin_agent_dialogue(id, request_id))
 	runtime.dialogue_stream_delta.connect(func(_id: String, request_id: String, delta: String): append_agent_dialogue(request_id, delta))
 	runtime.dialogue_ready.connect(func(id: String, request_id: String, speech: String):
+		if _group!=null and _group.finished(id,request_id,speech):return
 		finish_agent_dialogue(request_id, speech)
 		set_agent_interactions(id, runtime.get_player_interactions(id)))
-	runtime.dialogue_stream_failed.connect(func(_id: String, request_id: String, error: String): fail_agent_dialogue(request_id, error))
+	runtime.dialogue_stream_failed.connect(func(id: String, request_id: String, error: String):
+		if _group!=null and _group.finished(id,request_id,"",error):return
+		fail_agent_dialogue(request_id,error))
 	agent_dialogue_cancelled.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
 	agent_dialogue_closed.connect(func(id: String, request_id: String): runtime.cancel_dialogue(id, request_id))
 	interaction_response_requested.connect(func(id: String, interaction_id: String, response: String, terms: Dictionary):
@@ -65,6 +74,7 @@ func open_agent_dialogue(villager_id: String, display_name: String) -> bool:
 	if _is_open and _current_villager_id != villager_id:
 		close()
 	_current_villager_id = villager_id
+	_pending_speaker_id = ""
 	_display_names[villager_id] = display_name if not display_name.strip_edges().is_empty() else villager_id
 	if not _histories.has(villager_id):
 		_histories[villager_id] = []
@@ -75,6 +85,7 @@ func open_agent_dialogue(villager_id: String, display_name: String) -> bool:
 	visible = true
 	panel.visible = true
 	name_label.text = str(_display_names[villager_id])
+	if _group!=null:_group.reset()
 	_set_composer_enabled(true)
 	status_label.text = "输入消息后按 Enter 发送，Shift+Enter 换行。"
 	_render_history()
@@ -142,7 +153,8 @@ func append_agent_dialogue(request_id: String, delta: String) -> void:
 	var entry := history[_pending_history_index] as Dictionary
 	entry.text = delta if str(entry.text) == THINKING_TEXT else str(entry.text) + delta
 	history[_pending_history_index] = entry
-	_histories[_current_villager_id] = history
+	_histories[_history_key(_current_villager_id)] = history
+	status_label.text = "正在回复……"
 	_render_history()
 
 
@@ -159,7 +171,7 @@ func finish_agent_dialogue(request_id: String, speech: String) -> void:
 			final_speech = "……"
 		entry.text = final_speech
 		history[_pending_history_index] = entry
-		_histories[_current_villager_id] = history
+		_histories[_history_key(_current_villager_id)] = history
 	_finish_pending()
 	_render_history()
 
@@ -200,6 +212,7 @@ func fail_agent_submission(villager_id: String, message: String = FAILURE_TEXT) 
 func close() -> void:
 	if not _is_open:
 		return
+	if _group!=null:_group.cancel()
 	var closed_villager := _current_villager_id
 	var closed_request := _agent_request_id
 	var should_cancel := _agent_stream_pending and not closed_request.is_empty()
@@ -218,7 +231,7 @@ func close() -> void:
 
 
 func _submit_message() -> void:
-	if not _is_open or _agent_stream_pending:
+	if not _is_open or _agent_stream_pending or (_group!=null and _group.active):
 		return
 	var message := message_input.text.strip_edges()
 	if message.is_empty():
@@ -226,6 +239,9 @@ func _submit_message() -> void:
 		return
 	if message.length() > MAX_MESSAGE_LENGTH:
 		status_label.text = "消息不能超过 %d 个字符。" % MAX_MESSAGE_LENGTH
+		return
+	if _group!=null and _group.members.size()>1:
+		_group.start(message)
 		return
 	_append_history(_current_villager_id, "player", message)
 	_pending_history_index = _append_history(_current_villager_id, "agent", THINKING_TEXT)
@@ -239,21 +255,27 @@ func _submit_message() -> void:
 
 
 func _append_history(villager_id: String, role: String, text: String) -> int:
-	var history := (_histories.get(villager_id, []) as Array).duplicate(true)
-	history.append({"role": role, "text": text})
-	_histories[villager_id] = history
+	var key := _history_key(villager_id)
+	var history := (_histories.get(key, []) as Array).duplicate(true)
+	history.append({"role": role, "text": text,"speaker_id":_pending_speaker_id if not _pending_speaker_id.is_empty() else villager_id})
+	_histories[key] = history
 	return history.size() - 1
 
 
+func _history_key(actor: String) -> String:
+	return str(_group.key()) if _group!=null and _group.members.size()>1 else actor
+
+
 func _current_history() -> Array:
-	return (_histories.get(_current_villager_id, []) as Array).duplicate(true)
+	return (_histories.get(_history_key(_current_villager_id), []) as Array).duplicate(true)
 
 
 func _set_pending_failure(message: String) -> void:
 	var history := _current_history()
 	if _pending_history_index >= 0 and _pending_history_index < history.size():
-		(history[_pending_history_index] as Dictionary).text = message
-		_histories[_current_villager_id] = history
+		var partial := str((history[_pending_history_index] as Dictionary).get("text", ""))
+		(history[_pending_history_index] as Dictionary).text = message if partial.is_empty() or partial == THINKING_TEXT else partial + "\n（" + message + "）"
+		_histories[_history_key(_current_villager_id)] = history
 	_finish_pending()
 	status_label.text = message
 	_render_history()
@@ -269,6 +291,7 @@ func _finish_pending() -> void:
 
 
 func _set_composer_enabled(enabled: bool) -> void:
+	if _group!=null:_group.refresh()
 	message_input.editable = enabled
 	send_button.disabled = not enabled
 
@@ -279,9 +302,11 @@ func _render_history() -> void:
 		return
 	var lines: PackedStringArray = []
 	var display_name := str(_display_names.get(_current_villager_id, _current_villager_id))
-	for entry_value in _histories.get(_current_villager_id, []):
+	for entry_value in _histories.get(_history_key(_current_villager_id), []):
 		var entry := entry_value as Dictionary
-		var speaker := "你" if str(entry.get("role", "")) == "player" else display_name
+		var entry_name := display_name
+		if _group!=null and _group.members.size()>1: entry_name=_group.runtime.get_agent_display_name(str(entry.get("speaker_id",_current_villager_id)))
+		var speaker := "你" if str(entry.get("role", "")) == "player" else entry_name
 		lines.append("%s：%s" % [speaker, str(entry.get("text", ""))])
 	history_view.text = "\n\n".join(lines)
 	call_deferred("_scroll_history_to_end")
@@ -296,7 +321,7 @@ func _render_interactions() -> void:
 		var a_open := str(a.get("status", "")) in ["open", "proposed", "negotiating"]
 		var b_open := str(b.get("status", "")) in ["open", "proposed", "negotiating"]
 		return a_open and not b_open if a_open != b_open else str(a.get("offer_id", a.get("agreement_id", ""))) > str(b.get("offer_id", b.get("agreement_id", ""))))
-	interaction_scroll.visible = not records.is_empty()
+	interaction_scroll.visible = not records.is_empty() and (_group == null or _group.members.size() < 2)
 	for record_value in records:
 		var record := record_value as Dictionary
 		var interaction_id := str(record.get("interaction_id", record.get("offer_id", record.get("agreement_id", ""))))

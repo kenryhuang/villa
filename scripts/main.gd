@@ -363,7 +363,7 @@ func _connect_systems() -> bool:
 		Vector3(-3.0, 0.0, -2.0)
 	)
 	if not visible_farm_ready:
-		_publish_hud_message("agent", "warning", "阿禾的专属农田无法创建，本轮仅保留对话功能。")
+		_publish_hud_message("agent", "warning", "阿园的专属农田无法创建，本轮仅保留对话功能。")
 	if not bool(agent_runtime.call("set_farm_port", visible_npc_farm_system)):
 		return false
 	if not bool(agent_runtime.call(
@@ -752,7 +752,7 @@ func _setup_npcs() -> void:
 			farmer_npc.get("farm_action_visual")
 		)
 	):
-		_publish_hud_message("agent", "warning", "阿禾的可见农务控制器无法启动。")
+		_publish_hud_message("agent", "warning", "阿园的可见农务控制器无法启动。")
 
 
 func get_agent_npc(agent_id: String) -> Node:

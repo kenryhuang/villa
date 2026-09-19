@@ -111,7 +111,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(not runtime.service_enabled, "disabled client configuration keeps remote decisions off")
 	var agent_settings: Array[Dictionary] = runtime.get_agent_debug_settings()
 	assertions.equal(agent_settings.size(), 3, "runtime exposes all Agent debug settings")
-	assertions.equal(agent_settings[0].display_name, "阿禾", "runtime settings use Agent display names")
+	assertions.equal(agent_settings[0].display_name, "阿园", "runtime settings use Agent display names")
 	assertions.truthy(runtime.apply_agent_debug_intervals({"farmer_ahe": 0, "lao_li": 4, "xuezhe_lin": 12}), "runtime applies complete Agent interval overrides")
 	assertions.equal(runtime.scheduler.get_decision_interval_hours("farmer_ahe"), 0, "runtime applies zero automatic interval")
 	assertions.equal(runtime.scheduler.get_decision_interval_hours("lao_li"), 4, "runtime applies merchant automatic interval")

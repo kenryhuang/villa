@@ -9,6 +9,23 @@ var feedback: Dictionary = {}
 var queued_triggers: Dictionary = {}
 var dialogue_handoffs: Dictionary = {}
 
+func record_chat_handoffs(actor: String, request_id: String, minute: int, handoffs: Array) -> void:
+	if handoffs.is_empty() or handoffs.size() > 3: return
+	var fields := ["kind", "status", "target_actor_id", "place_id", "item_id", "quantity", "gold", "delay_minutes", "trade_side", "building_type", "plot"]
+	for h in handoffs:
+		if not h is Dictionary or h.size() != fields.size(): return
+		for field in fields:
+			if not h.has(field): return
+		if h.kind not in ["visit", "date", "companionship", "trade", "plant", "harvest", "build", "rest"] or h.status not in ["agreed", "cancelled"]: return
+	var id := "dialogue:" + request_id
+	if not dialogue_handoffs.has(actor): dialogue_handoffs[actor] = {}
+	if dialogue_handoffs[actor].has(id): return
+	var payload := {"handoff_version":1,"player_text":"","agent_speech":JSON.stringify(handoffs),"submitted_actions":[],"outcomes":[],"handoffs":handoffs.duplicate(true)}
+	var event := {"event_id":id,"kind":"dialogue","game_minute":minute,"payload":payload}
+	dialogue_handoffs[actor][id] = event
+	record(actor,event)
+	feedback[actor] = {"ready_at":minute,"count":0,"pending":true}
+
 func record_dialogue(actor: String, request_id: String, minute: int, player_text: String, speech: String, actions: Array, outcomes: Array) -> void:
 	var id := "dialogue:" + request_id
 	if not dialogue_handoffs.has(actor): dialogue_handoffs[actor] = {}

@@ -3,7 +3,7 @@
   "residents": [
     {
       "id": "farmer_ahe",
-      "name": "阿禾",
+      "name": "阿园",
       "occupation": "自营农户"
     },
     {
@@ -48,7 +48,7 @@
     },
     {
       "id": "resident_yun",
-      "name": "云姐",
+      "name": "伊可",
       "occupation": "厨工"
     },
     {
@@ -88,7 +88,8 @@
     "potato"
   ],
   "food_reserve_days": 2,
-  "population_target": 36,
+  "population_target": 37,
+  "focus_limit": 9,
   "focus_actors": [
     "farmer_ahe",
     "lao_li",
@@ -97,7 +98,8 @@
     "tiejiang_zhang",
     "afu_shui",
     "xiao_hua",
-    "resident_shan"
+    "resident_shan",
+    "zewei"
   ],
   "expanded_shift_slots": 24,
   "additional_organizations": [
@@ -236,6 +238,12 @@
       "id": "resident_36",
       "name": "小麦",
       "occupation": "旅店杂务"
+    },
+    {
+      "id": "zewei",
+      "name": "zewei",
+      "occupation": "花艺师",
+      "spawn": {"x": -6, "z": -6}
     }
   ]
 }

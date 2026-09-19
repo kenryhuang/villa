@@ -318,6 +318,7 @@ func _load_game_state() -> bool:
 
 
 func restore_save_data(parsed: Variant, restore_memory := true) -> bool:
+	_migrate_zewei(parsed)
 	if not _valid_save(parsed):
 		return false
 	var data: Dictionary = parsed
@@ -773,3 +774,62 @@ func _migrate_population(value: Variant) -> void:
 		if society.ledger.size() > 4096: society.ledger.pop_front()
 		society.version = 2; society.focus = original_config.focus_actors.duplicate()
 		value.version = 13
+
+
+func _migrate_zewei(value: Variant) -> void:
+	# Add this authored resident once to the previous expanded roster. Never
+	# replenish existing accounts or relax validation of a damaged snapshot.
+	if not LivingWorld.Society.expanded() or not value is Dictionary or value.get("version") != 13: return
+	if not value.get("living_world", {}).get("society", {}).get("residents") is Dictionary: return
+	var saved_residents: Dictionary = value.living_world.society.residents
+	if saved_residents.has("zewei") or saved_residents.size() != 36: return
+	if not value.get("npc_economy", {}).get("npc_states") is Array: return
+	var original_config: Dictionary = living_world.society.config
+	var original_profiles: Dictionary = npc_economy._profiles
+	var original_states: Dictionary = npc_economy._states
+	var original_registry: RefCounted = agent_runtime.registry
+	var original_actors: Array = agent_runtime._base_actor_profiles.duplicate(true)
+	var old_registry = preload("res://scripts/ai_agent/agent_registry.gd").new()
+	if not old_registry.load_defaults(true): return
+	old_registry._agents.erase("zewei")
+	var old_config := original_config.duplicate(true)
+	old_config.residents = old_config.residents.filter(func(p): return p.id != "zewei")
+	old_config.focus_actors.erase("zewei"); old_config.focus_limit = 8
+	living_world.society.config = old_config
+	npc_economy._profiles = original_profiles.duplicate(); npc_economy._profiles.erase("zewei")
+	npc_economy._states = original_states.duplicate(); npc_economy._states.erase("zewei")
+	agent_runtime.registry = old_registry
+	agent_runtime._base_actor_profiles.assign(original_actors.filter(func(p): return p.actor_id != "zewei"))
+	var valid := _valid_save(value)
+	living_world.society.config = original_config
+	npc_economy._profiles = original_profiles
+	npc_economy._states = original_states
+	agent_runtime.registry = original_registry
+	agent_runtime._base_actor_profiles.assign(original_actors)
+	if not valid: return
+	var candidate: Dictionary = value.duplicate(true)
+	var profile: Dictionary = LivingWorld.Society.economy_profiles().filter(func(p): return p.id == "zewei")[0]
+	candidate.npc_economy.npc_states.append({"npc_id": "zewei", "gold": profile.gold, "inventory": profile.inventory.duplicate(true), "reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "last_simulated_day": candidate.npc_economy.last_simulated_day, "investment_planned": false})
+	if not candidate.agents.is_empty(): agent_runtime.expand_saved_population(candidate.agents)
+	var society: Dictionary = candidate.living_world.society
+	var resident: Dictionary = living_world.society.residents.zewei.duplicate(true)
+	# Construct initial state, not a copy of a potentially already-playing NPC.
+	var spawn: Dictionary = original_config.residents.filter(func(p): return p.id == "zewei")[0].spawn
+	var origin := grid.world_to_grid(spawn.x, spawn.z)
+	for radius in range(5):
+		var found := false
+		for offset in [Vector2i(radius, 0), Vector2i(-radius, 0), Vector2i(0, radius), Vector2i(0, -radius)]:
+			if grid.is_navigation_cell_walkable(origin + offset):
+				var point := grid.grid_to_world(origin.x + offset.x, origin.y + offset.y)
+				resident.position = {"x": point.x, "z": point.y}; found = true; break
+		if found: break
+	resident.state = "休息"; resident.last_meal_day = -1; resident.hungry_days = 0; resident.food_reason = ""
+	resident.needs = LivingWorld.Society.Needs.initial("zewei", int(society.last_minute))
+	society.residents.zewei = resident
+	if int(society.version) >= 2: society.focus.append("zewei")
+	if not society.get("feeding", {}).is_empty(): society.feeding.queue.append("zewei")
+	society.initial_gold = int(society.initial_gold) + int(profile.gold)
+	society.ledger.append({"minute": int(society.last_minute), "kind": "population_migration", "actor_id": "zewei", "gold": profile.gold, "items": profile.inventory.duplicate(true), "source": "zewei一次性移入初始资源"})
+	if society.ledger.size() > 4096: society.ledger.pop_front()
+	if not _valid_save(candidate): return
+	value.clear(); value.merge(candidate)

@@ -1,3 +1,4 @@
+import {LocalChatProvider} from "./chat_provider.ts";
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, resolve } from "node:path";
@@ -19,6 +20,7 @@ const app = createApp({
   registry: AgentRegistry.loadDefault(),
   provider: new OpenAICompatibleProvider(config.provider, databasePath + ".provider-budget.json"),
   checkpointRoot: config.checkpointRoot,
+  ...(config.chatProvider?{chatProvider:new LocalChatProvider(config.chatProvider)}:{}),
 });
 const server = createServer(app);
 server.listen(config.port, config.host, () => {

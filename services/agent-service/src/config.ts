@@ -21,6 +21,7 @@ export interface ServiceConfig {
   databasePath: string;
   checkpointRoot: string;
   provider: ProviderConfig;
+  chatProvider?: ProviderConfig;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -82,7 +83,7 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
     throw new Error(`Invalid Agent service config JSON: ${detail}`);
   }
   if (!isRecord(parsed)) throw new Error("Agent service config must be an object");
-  rejectUnknown(parsed, ["service", "provider", "memory", "loop"], "top-level ");
+  rejectUnknown(parsed, ["service", "provider", "chat_provider", "memory", "loop"], "top-level ");
   const service = objectSection(parsed, "service");
   const provider = objectSection(parsed, "provider");
   const memory = objectSection(parsed, "memory");
@@ -101,6 +102,7 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
     port: integer(service, "port", "service.port", 8787, 1, 65535),
     databasePath: resolve(serviceRoot, requiredString(memory, "database_path", "memory.database_path")),
     checkpointRoot: resolve(serviceRoot, requiredString(memory, "checkpoint_root", "memory.checkpoint_root")),
+    ...(parsed.chat_provider === undefined ? {} : {chatProvider: parseChatProvider(objectSection(parsed,"chat_provider"))}),
     provider: {
       loop: validateLoopConfig(parsed.loop ?? {}),
       baseUrl,
@@ -114,4 +116,15 @@ export function loadConfigFile(configPath: string, serviceRoot: string): Service
       temperature: decimal(provider, "temperature", "provider.temperature", 0.4, 0, 2),
     },
   };
+}
+
+function parseChatProvider(value: JsonRecord): ProviderConfig {
+  rejectUnknown(value,["base_url","api_key","model","timeout_ms","max_concurrency","max_output_tokens","temperature"],"chat_provider ");
+  const baseUrl=requiredString(value,"base_url","chat_provider.base_url").replace(/\/+$/,"");
+  if(!["http:","https:"].includes(new URL(baseUrl).protocol))throw new Error("chat_provider.base_url is invalid");
+  return {baseUrl,apiKey:requiredString(value,"api_key","chat_provider.api_key"),model:requiredString(value,"model","chat_provider.model"),
+    timeoutMs:integer(value,"timeout_ms","chat_provider.timeout_ms",180000,100,600000),
+    maxConcurrency:integer(value,"max_concurrency","chat_provider.max_concurrency",1,1,8),
+    maxOutputTokens:integer(value,"max_output_tokens","chat_provider.max_output_tokens",800,64,4096),
+    temperature:decimal(value,"temperature","chat_provider.temperature",0.7,0,2)};
 }

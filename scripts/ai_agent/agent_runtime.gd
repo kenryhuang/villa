@@ -465,6 +465,23 @@ func respond_to_player_interaction(agent_id: String, interaction_id: String, res
 	return agreement_system.execute({"agent_id": "player", "tool_name": cooperation_tool, "arguments": cooperation_arguments, "idempotency_key": key, "action_id": key, "decision_id": key}, minute)
 
 
+var _chat_request_context: Dictionary = {}
+
+func trigger_chat(agent_id: String, text: String, room: Dictionary) -> bool:
+	if not room.get("participants") is Array or room.participants.size() > 4 or agent_id not in room.participants: return false
+	for actor in room.participants:
+		if not registry.is_agent_managed(actor) or actor == "village_public": return false
+	_chat_request_context[agent_id] = room.duplicate(true)
+	var started := trigger_dialogue(agent_id, text)
+	if not started: _chat_request_context.erase(agent_id)
+	return started
+
+func cancel_chat_turn(agent_id: String) -> void:
+	_chat_request_context.erase(agent_id)
+	if scheduler._pending.get(agent_id, {}).get("trigger", "") == "dialogue": scheduler._pending.erase(agent_id)
+	var request_id := get_in_flight_request_id(agent_id)
+	if not request_id.is_empty(): cancel_dialogue(agent_id, request_id)
+
 func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 	return service_enabled and scheduler.trigger_dialogue(agent_id, text, _absolute_game_minute())
 
@@ -738,6 +755,10 @@ func _validate_current_state(value: Dictionary) -> bool:
 	# from a historical event journal. Never mutate the live registry here.
 	var candidate_registry = AgentRegistryScript.new()
 	if not candidate_registry.load_defaults(registry.get_agent_ids().size() > 3): return false
+	# Validate against the exact active roster, including historical-roster
+	# checks during an additive save migration, without sharing mutable roles.
+	for id in candidate_registry.get_agent_ids():
+		if not registry.is_agent_managed(id): candidate_registry._agents.erase(id)
 	var roles = AgentRoleSystemScript.new()
 	if not roles.configure(candidate_registry, _npc_economy, store, projector, building_registry, knowledge_registry) or not roles.from_dict(value.roles): return false
 	var interactions = AgentInteractionSystemScript.new()
@@ -1413,6 +1434,22 @@ func _build_loop_request(actor: String, request_id: String, trigger: String, min
 		"dialogue_followups": loop_state.dialogue_followups(actor)}
 	if farm3d_session.living_world.character_overrides.has(actor): request.identity_override = farm3d_session.living_world.character_profile(actor)
 	if not dialogue.is_empty(): request.dialogue_input = dialogue
+	if trigger == "dialogue" and _chat_request_context.has(actor):
+		request.chat_room = _chat_request_context[actor].duplicate(true)
+		_chat_request_context.erase(actor)
+	if trigger == "dialogue":
+		var world: Node = farm3d_session.living_world
+		var participants: Array = ["player"]
+		participants.append_array(request.get("chat_room", {}).get("participants", [actor]))
+		request.chat_participants = []
+		for participant in participants:
+			if participant == actor: continue
+			var profile: Dictionary = world.character_profile(participant)
+			var relationship: Dictionary = world.relationships.view(actor, participant)
+			var brief := {}
+			for field in ["status", "label", "affinity", "mutual_affinity", "version"]: brief[field] = relationship[field]
+			request.chat_participants.append({"actor_id":participant,"display_name":profile.display_name,"soul":profile.soul,
+				"role":"player" if participant == "player" else role_system.get_active_role(participant),"relationship":brief})
 	_request_triggers[request_id] = trigger
 	loop_state.loops[request_id] = {"agent_id": actor, "state": "reasoning", "started": minute, "trigger": trigger, "action_ids": [],
 		"dialogue_input": dialogue, "dialogue_handoff_ids": request.dialogue_followups.slice(0, 4).map(func(e): return e.event_id)}
@@ -1485,7 +1522,7 @@ func _handle_stream_event(agent_id: String, event: Dictionary) -> void:
 	var trigger := str(_request_triggers.get(request_id, ""))
 	if event_name == "stream.started" and trigger == "dialogue":
 		dialogue_stream_started.emit(agent_id, request_id)
-	elif event_name == "content.delta" and trigger == "dialogue" and farm3d_session == null:
+	elif event_name == "content.delta" and trigger == "dialogue":
 		dialogue_stream_delta.emit(agent_id, request_id, str((data.payload as Dictionary).get("delta", "")))
 	elif event_name == "stream.error":
 		context_projection.release(agent_id, request_id)
@@ -1584,6 +1621,8 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		# Decision summaries are diagnostics, never NPC dialogue. Some providers
 		# return the actual reply only in a speak tool call instead of content.
 		var speech := _dialogue_reply(response)
+		if response.get("chat_extraction_failed", false):
+			speech += "\n（聊天已回复，但未能可靠记录行动约定；请重新确认具体安排。）"
 		var facts: Array[String] = []
 		for outcome in outcomes:
 			if str(outcome.get("tool_name", "")) not in ["speak", "wait"]:
@@ -1594,7 +1633,10 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		if not failed.is_empty():
 			speech += "\n（本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。）"
 		if loop_state.loops.has(request_id):
-			loop_state.record_dialogue(agent_id, request_id, _absolute_game_minute(), str(loop_state.loops[request_id].get("dialogue_input", "")), speech, checked.value.actions, outcomes)
+			if response.get("chat_isolated", false):
+				loop_state.record_chat_handoffs(agent_id, request_id, _absolute_game_minute(), response.get("chat_handoffs", []))
+			else:
+				loop_state.record_dialogue(agent_id, request_id, _absolute_game_minute(), str(loop_state.loops[request_id].get("dialogue_input", "")), speech, checked.value.actions, outcomes)
 		dialogue_ready.emit(agent_id, request_id, speech)
 
 

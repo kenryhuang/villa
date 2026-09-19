@@ -218,6 +218,19 @@ func validate(value: Variant) -> bool:
 func restore(value: Dictionary) -> void:
 	pending_player_terms.clear()
 	character_overrides = value.get("character_overrides", {}).duplicate(true)
+	# The authored rename also updates the old named override once. Later edits
+	# to the renamed character remain owned by the save's character editor.
+	if character_overrides.get("resident_yun", {}).get("display_name", "") == "云姐":
+		var authored: Dictionary = session.agent_runtime.registry.get_agent("resident_yun")
+		if authored.is_empty():
+			var defaults = preload("res://scripts/ai_agent/agent_registry.gd").new()
+			if defaults.load_defaults(true): authored = defaults.get_agent("resident_yun")
+		var profile: Dictionary = character_overrides.resident_yun
+		profile.display_name = authored.display_name
+		profile.soul.traits = authored.soul.traits.duplicate()
+		profile.soul.speech_style = authored.soul.speech_style
+		for field in ["age", "gender", "romance_interest", "relationship_style"]:
+			profile.soul.social_profile[field] = authored.soul.social_profile[field]
 	value = preload("res://scripts/ai_agent/agent_protocol.gd")._normalize_json_numbers(value)
 	society.restore(value.society)
 	projects.restore(value.projects)
@@ -237,7 +250,7 @@ func restore(value: Dictionary) -> void:
 		if body != null and body.nameplate != null: body.nameplate.text = actor_name(id)
 
 func debug_text() -> String:
-	var lines: Array[String] = [society.summary(), "重点角色 %d / 8 · 自主规划 %d / %d · 对话 %d（单独计数）· 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, session.agent_runtime.scheduler.dialogue_budget_calls, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", "思考中：后台 %d / 3 · 对话 %d / 1 · 公共 %d / 1" % [session.agent_runtime.scheduler.background_in_flight_count(), session.agent_runtime.scheduler.dialogue_in_flight_count(), public_plans.scheduler.background_in_flight_count()], "", public_plans.summary(), ""]
+	var lines: Array[String] = [society.summary(), "重点角色 %d / %d · 自主规划 %d / %d · 对话 %d（单独计数）· 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), society.focus_limit(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, session.agent_runtime.scheduler.dialogue_budget_calls, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", "思考中：后台 %d / 3 · 对话 %d / 1 · 公共 %d / 1" % [session.agent_runtime.scheduler.background_in_flight_count(), session.agent_runtime.scheduler.dialogue_in_flight_count(), public_plans.scheduler.background_in_flight_count()], "", public_plans.summary(), ""]
 	for record in society.residents.values():
 		var state: NpcEconomyState = session.npc_economy.get_npc_state(record.id)
 		lines.append("%s · %s · %d 金币 · %s" % [record.name, record.occupation, state.gold, record.state])

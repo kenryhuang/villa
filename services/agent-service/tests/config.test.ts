@@ -26,6 +26,20 @@ const withTempConfig = (value: unknown, run: (path: string, root: string) => voi
   try { run(path, root); } finally { rmSync(root, {recursive: true, force: true}); }
 };
 
+test("chat provider has independent defaults and leaves the main provider unchanged",()=>{
+  const original=validConfig();
+  const chat={base_url:"http://127.0.0.1:11434/v1/",api_key:"local-ollama",model:"cydonia-24b:latest"};
+  withTempConfig({...original,chat_provider:chat},(path,root)=>{
+    const config=loadConfigFile(path,root);
+    assert.equal(config.provider.model,original.provider.model);
+    assert.equal(config.chatProvider?.model,chat.model);
+    assert.equal(config.chatProvider?.baseUrl,"http://127.0.0.1:11434/v1");
+    assert.equal(config.chatProvider?.maxConcurrency,1);
+  });
+  for(const chat_provider of [{...chat,api_key:""},{...chat,max_concurrency:0},{...chat,base_url:"file:///bad"},{...chat,unexpected:true}])
+    withTempConfig({...original,chat_provider},(path,root)=>assert.throws(()=>loadConfigFile(path,root)));
+});
+
 test("loads strict service Provider and memory settings from JSON", () => {
   withTempConfig(validConfig(), (path, root) => {
     const config = loadConfigFile(path, root);

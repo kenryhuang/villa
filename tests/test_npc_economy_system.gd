@@ -664,7 +664,7 @@ func _test_day_cursor_and_snapshot_are_atomic(assertions: TestAssert) -> void:
 func _test_registered_profiles_and_determinism(assertions: TestAssert) -> void:
 	var profiles := GameDataScript.get_npc_economy_profiles()
 	var expected := {
-		"farmer_ahe": "阿禾",
+		"farmer_ahe": "阿园",
 		"lao_li": "老李",
 		"xiao_hua": "小花",
 		"tiejiang_zhang": "铁匠张",

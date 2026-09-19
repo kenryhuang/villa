@@ -5,6 +5,11 @@ export const PROTOCOL_VERSION = 2 as const;
 export type Trigger = "schedule" | "event" | "dialogue" | "catch_up";
 export type OutcomeStatus = "accepted" | "in_progress" | "completed" | "rejected" | "failed";
 
+export interface ChatParticipant {
+  actor_id:string;display_name:string;role:string;soul:import("./agents.ts").Soul;
+  relationship:{status:"none"|"dating"|"former_partners";label:string;affinity:number;mutual_affinity:number;version:number};
+}
+
 export interface DecisionRequest {
   protocol_version: 2 | 3;
   identity_override?: {display_name:string;soul:import("./agents.ts").Soul};
@@ -34,6 +39,8 @@ export interface DecisionRequest {
   interaction_view: Record<string, unknown>;
   agreement_view: Record<string, unknown>;
   dialogue_input?: string;
+  chat_room?: {id: string; participants: string[]; turn_id: string};
+  chat_participants?: ChatParticipant[];
 }
 
 export interface ActionCommand {
@@ -53,6 +60,9 @@ export interface ActionIntent {
   actions: readonly ActionCommand[];
   speech?: string;
   decision_summary: string;
+  chat_handoffs?: Record<string, unknown>[];
+  chat_isolated?: boolean;
+  chat_extraction_failed?: boolean;
 }
 
 export interface ActionOutcome {
@@ -143,7 +153,24 @@ export function validIdentityOverride(value: unknown): value is {display_name:st
 
 export function parseDecisionRequest(value: unknown): ParseResult<DecisionRequest> {
   if (isRecord(value) && value.protocol_version === 3) {
+    if (value.chat_room !== undefined) {
+      const room=value.chat_room;
+      if(value.trigger!=="dialogue" || !isRecord(room) || !hasExactKeys(room,["id","participants","turn_id"]) || !isId(room.id) || !isId(room.turn_id)
+        || !isUniqueIdList(room.participants,4) || !room.participants.includes(value.agent_id))return failure("invalid_chat_room");
+    }
     if (value.identity_override !== undefined && !validIdentityOverride(value.identity_override)) return failure("invalid_identity_override");
+    if(value.chat_participants!==undefined){
+      const ids=["player",...(value.chat_room?.participants??[value.agent_id])].filter(id=>id!==value.agent_id);
+      if(value.trigger!=="dialogue" || !Array.isArray(value.chat_participants) || value.chat_participants.length!==ids.length
+        || new Set(value.chat_participants.map((p:any)=>p?.actor_id)).size!==ids.length)return failure("invalid_chat_participants");
+      for(const p of value.chat_participants){
+        if(!isRecord(p)||!hasExactKeys(p,["actor_id","display_name","role","soul","relationship"])||!ids.includes(p.actor_id)||!isId(p.role)
+          ||!validIdentityOverride({display_name:p.display_name,soul:p.soul}))return failure("invalid_chat_participants");
+        const rel=p.relationship;
+        if(!isRecord(rel)||!hasExactKeys(rel,["status","label","affinity","mutual_affinity","version"])||!["none","dating","former_partners"].includes(String(rel.status))
+          ||typeof rel.label!=="string"||rel.label.length>80||![rel.affinity,rel.mutual_affinity].every(x=>isNonNegativeInteger(x)&&x<=100)||!isNonNegativeInteger(rel.version))return failure("invalid_chat_participants");
+      }
+    }
     for (const k of ["request_id","session_id","agent_id","active_role"]) if (!isId(value[k])) return failure(`invalid_${k}`);
     for (const k of ["session_epoch","game_minute","world_revision"]) if (!isNonNegativeInteger(value[k])) return failure(`invalid_${k}`);
     if (!TRIGGERS.has(value.trigger as Trigger) || !isRecord(value.resources) || !isRecordList(value.experience_events) || !isRecordList(value.goal_refs ?? [])) return failure("invalid_loop_context");

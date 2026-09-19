@@ -147,6 +147,11 @@ func run() -> void:
 		check(rel.partner("afu_shui") == "resident_mei","NPC relationship is persistent")
 	check(rel.validate(JSON.parse_string(JSON.stringify(rel.to_dict()))),"JSON numeric decoding preserves valid relationship receipts")
 	check(s.save_game() and s.load_game(),"Full world save retains social data and pending map movement")
+	var old_society: Dictionary = w.society.to_dict()
+	old_society.residents.farmer_ahe.name = "阿禾"
+	w.society.restore(old_society)
+	check(w.actor_name("farmer_ahe") == "阿园", "Old resident display name adopts authored rename without replacing save")
+	check(w.relationships.profile("farmer_ahe").age == 22 and w.relationships.profile("farmer_ahe").gender == "female", "Relationship system uses updated adult character profile")
 	var old: Dictionary = w.to_dict(); old.version = 7; old.erase("relationships"); old.erase("character_overrides")
 	check(w.validate(old),"World save before relationship feature still validates")
 	scene.free()

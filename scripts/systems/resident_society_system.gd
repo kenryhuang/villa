@@ -141,6 +141,7 @@ func reset(minute: int) -> void:
 	for index in config.residents.size():
 		var entry: Dictionary = config.residents[index]
 		var pos: Vector2 = world.session.market_site + Vector2(-8 + index % 4 * 2, -8 - index / 4 * 2)
+		if entry.has("spawn"): pos = Vector2(entry.spawn.x, entry.spawn.z)
 		if expanded():
 			var origin: Vector2i = world.session.grid.world_to_grid(pos.x, pos.y)
 			for radius in range(0, 5):
@@ -356,11 +357,14 @@ func summary() -> String:
 func to_dict() -> Dictionary:
 	return {"version": 5, "minute_batch": minute_batch.duplicate(true), "cooperative": cooperative.to_dict() if cooperative != null else {}, "feeding": feeding.duplicate(true), "focus": focus.duplicate(), "residents": residents.duplicate(true), "shifts": shifts.duplicate(true), "ledger": ledger.duplicate(true), "day_reports": day_reports.duplicate(true), "last_minute": last_minute, "external_gold_net": external_gold_net, "initial_gold": initial_gold}
 
+func focus_limit() -> int:
+	return int(config.get("focus_limit", 8)) if expanded() else 8
+
 func validate(value: Variant) -> bool:
 	if not value is Dictionary or not world.integer(value.get("version")) or int(value.version) not in [1, 2, 3, 4, 5] or value.size() != (7 + int(value.version)): return false
 	if not value.get("residents") is Dictionary or value.residents.size() != config.residents.size() or not value.get("shifts") is Dictionary or not value.get("ledger") is Array or not value.get("day_reports") is Dictionary: return false
 	if value.version >= 2:
-		if not value.get("focus") is Array or value.focus.size() > 8: return false
+		if not value.get("focus") is Array or value.focus.size() > focus_limit(): return false
 		for actor in value.focus:
 			if not value.residents.has(actor) or value.focus.count(actor) != 1: return false
 	for key in ["last_minute", "external_gold_net", "initial_gold"]:
@@ -438,6 +442,8 @@ func restore(value: Dictionary) -> void:
 	initial_gold = int(value.initial_gold)
 	for entry in config.residents:
 		var resident: Dictionary = residents[entry.id]
+		if entry.id == "farmer_ahe" and resident.get("name", "") == "阿禾": resident.name = entry.name
+		if entry.id == "resident_yun" and resident.get("name", "") == "云姐": resident.name = entry.name
 		var legacy := not resident.has("needs")
 		resident.occupation = entry.occupation
 		if legacy:
@@ -447,7 +453,7 @@ func restore(value: Dictionary) -> void:
 				var stock: Dictionary = world.assets.available_items(entry.id)
 				for seed in ["carrot_seed","potato_seed","grain_seed"]: items[seed] = maxi(0,24-int(stock.get(seed,0)))
 				if world.assets.apply(entry.id,items,0): _record("farmer_migration_supplies",entry.id,0,items,"一次性转为农户的播种储备")
-			if expanded() and entry.id in ["xiao_hua","resident_shan"] and entry.id not in focus and focus.size() < 8: focus.append(entry.id)
+			if expanded() and entry.id in ["xiao_hua","resident_shan"] and entry.id not in focus and focus.size() < focus_limit(): focus.append(entry.id)
 
 func refresh_needs(actor: String, minute: int) -> void:
 	if not residents.has(actor): return
@@ -476,7 +482,7 @@ func _need_event(actor: String, kind: String, payload: Dictionary, minute: int) 
 func set_focus(actor: String, enabled: bool) -> Dictionary:
 	if not residents.has(actor) or not world.session.agent_runtime.registry.is_agent_managed(actor): return {"ok": false, "error": "unknown_resident_profile"}
 	if (actor in focus) == enabled: return {"ok": true}
-	if enabled and focus.size() >= 8: return {"ok": false, "error": "focus_pool_full"}
+	if enabled and focus.size() >= focus_limit(): return {"ok": false, "error": "focus_pool_full"}
 	if (world.work.occupied(actor) or world.session.agent_runtime.scheduler.is_in_flight(actor)): return {"ok": false, "error": "finish_existing_commitment_before_demotion"}
 	var body: Node3D = world.actor(actor)
 	if body != null: residents[actor].position = {"x": body.position.x, "z": body.position.z}

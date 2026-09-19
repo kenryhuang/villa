@@ -9,6 +9,7 @@ func run(assertions: TestAssert) -> void:
 	_test_terminal_validation(assertions)
 	_test_memory_trace(assertions)
 	_test_round_metrics(assertions)
+	_test_cancelled_content_timing(assertions)
 	_test_ndjson_and_retention(assertions)
 
 
@@ -87,6 +88,28 @@ func _test_round_metrics(assertions: TestAssert) -> void:
 	assertions.equal(record.provider_rounds[0].metrics.queue_wait_ms, 4, "Provider queue wait remains a separate measurement")
 	assertions.equal(trace._disk_record(record).response.provider_rounds, record.provider_rounds, "Per-round metrics persist in the trace")
 	trace.free()
+
+func _test_cancelled_content_timing(assertions: TestAssert) -> void:
+	var trace = AgentSessionTraceScript.new()
+	trace.configure(false, "timing")
+	trace.accept_event(_event_value("stream.started", 1, {"trigger": "dialogue"}))
+	var first := _event_value("content.delta", 2, {"delta": "你"})
+	first.data.timestamp_msec = 2001
+	trace.accept_event(first)
+	var second := _event_value("content.delta", 3, {"delta": "好"})
+	second.data.timestamp_msec = 8001
+	trace.accept_event(second)
+	trace.accept_event(_event_value("loop.trace", 4, {"event": "chat.slow_chunk", "gap_ms": 6000}))
+	trace.finish_cancelled("farmer_ahe", "request-1", "closed", "dialogue", 9001)
+	var record: Dictionary = trace.get_request("request-1")
+	assertions.equal(record.content_timing.first_delta_ms, 1000, "First output wait survives cancellation")
+	assertions.equal(record.content_timing.max_server_gap_ms, 6000, "Slow backend gap survives cancellation")
+	assertions.equal(record.content_timing.chunks, 2, "Actual content chunks are counted")
+	assertions.truthy(record.content_timing.max_received_gap_ms < 6000, "Buffered delivery is distinguished from backend generation")
+	assertions.equal(record.loop_events[0].timestamp_msec, 1004, "Loop events retain server timestamps")
+	assertions.equal(trace._disk_record(record).response.content_timing, record.content_timing, "Cancelled request timing is persisted")
+	trace.free()
+
 
 func _test_ndjson_and_retention(assertions: TestAssert) -> void:
 	var directory := "user://agent-session-test-%d" % Time.get_ticks_usec()

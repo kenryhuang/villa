@@ -383,7 +383,7 @@ func _commit_action(intent: Dictionary) -> Dictionary:
 		"till":
 			if cell.state != GridCell.State.WASTELAND or not _grid.set_cell_state(cell.gx, cell.gz, GridCell.State.FARMLAND):
 				return {"ok": false, "error": "invalid_plot"}
-			return _commit_success("阿禾开垦了地块 %d。" % plot_index, ["npc_farm:%s:%d" % [_agent_id, plot_index]])
+			return _commit_success("阿园开垦了地块 %d。" % plot_index, ["npc_farm:%s:%d" % [_agent_id, plot_index]])
 		"plant":
 			return _commit_plant(intent, cell, plot_index)
 		"harvest":
@@ -408,7 +408,7 @@ func _commit_plant(intent: Dictionary, cell: GridCell, plot_index: int) -> Dicti
 		return {"ok": false, "error": "plot_not_plantable"}
 	var crop_data: CropData = preview.crop_data
 	return _commit_success(
-		"阿禾播种了%s。" % (crop_data.name if not crop_data.name.is_empty() else crop_data.crop_id),
+		"阿园播种了%s。" % (crop_data.name if not crop_data.name.is_empty() else crop_data.crop_id),
 		["npc_farm:%s:%d" % [_agent_id, plot_index], "npc_inventory:" + _agent_id],
 		{seed_item_id: -1}
 	)
@@ -419,7 +419,7 @@ func _commit_harvest(cell: GridCell, plot_index: int) -> Dictionary:
 		if not _farming.clear_withered(cell):
 			return {"ok": false, "error": "crop_clear_failed"}
 		return _commit_success(
-			"阿禾清理了地块 %d 的枯萎作物，没有获得收成。" % plot_index,
+			"阿园清理了地块 %d 的枯萎作物，没有获得收成。" % plot_index,
 			["npc_farm:%s:%d" % [_agent_id, plot_index]]
 		).merged({"cleared_withered": true})
 	if _economy == null:
@@ -454,7 +454,7 @@ func _commit_harvest(cell: GridCell, plot_index: int) -> Dictionary:
 	var item_id := str((preview.items as Dictionary).keys()[0])
 	var quantity := int(preview.items[item_id])
 	return _commit_success(
-		"阿禾收获了%s ×%d，已进入库存。" % [item_id, quantity],
+		"阿园收获了%s ×%d，已进入库存。" % [item_id, quantity],
 		["npc_farm:%s:%d" % [_agent_id, plot_index], "npc_inventory:" + _agent_id],
 		{item_id: quantity}
 	)
@@ -464,7 +464,7 @@ func _commit_success(message: String, changed: Array, delta: Dictionary = {}) ->
 	var label := _agent_id
 	if _economy != null and _economy.get("_profiles") is Dictionary:
 		label = str(_economy._profiles.get(_agent_id,{}).get("display_name",_agent_id))
-	return {"ok": true, "message": message.replace("阿禾",label), "changed_entities": changed, "resource_delta": delta}
+	return {"ok": true, "message": message.replace("阿园",label), "changed_entities": changed, "resource_delta": delta}
 
 
 func _queued_result(record: Dictionary) -> Dictionary:

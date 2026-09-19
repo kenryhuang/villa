@@ -74,13 +74,28 @@ func accept_event(event: Dictionary) -> bool:
 		"stream.started":
 			record.trigger = str(payload.get("trigger", ""))
 		"loop.trace":
-			record.loop_events.append(payload.duplicate(true))
+			var timed_event := payload.duplicate(true)
+			timed_event["timestamp_msec"] = int(data.timestamp_msec)
+			record.loop_events.append(timed_event)
 		"provider.input":
 			record.input = payload.duplicate(true)
 		"reasoning.delta":
 			(record.reasoning_parts as Array).append(str(payload.get("delta", "")))
 		"content.delta":
 			(record.content_parts as Array).append(str(payload.get("delta", "")))
+			if not str(payload.get("delta", "")).is_empty():
+				var timing: Dictionary = record.content_timing
+				var received := Time.get_ticks_msec()
+				var sent := int(data.timestamp_msec)
+				if int(timing.chunks) == 0:
+					timing.first_delta_ms = maxi(0, sent - int(record.started_msec))
+					timing.first_received_ms = maxi(0, received - int(record.received_start_ticks))
+				else:
+					timing.max_server_gap_ms = maxi(int(timing.max_server_gap_ms), sent - int(record.last_content_sent))
+					timing.max_received_gap_ms = maxi(int(timing.max_received_gap_ms), received - int(record.last_content_received))
+				timing.chunks += 1
+				record.last_content_sent = sent
+				record.last_content_received = received
 		"tool_call.delta":
 			(record.tool_deltas as Array).append(payload.duplicate(true))
 		"provider.output":
@@ -245,6 +260,10 @@ func _append_record(
 		"content": "",
 		"reasoning_parts": [],
 		"content_parts": [],
+		"received_start_ticks": Time.get_ticks_msec(),
+		"last_content_sent": 0,
+		"last_content_received": 0,
+		"content_timing": {"first_delta_ms": -1, "first_received_ms": -1, "chunks": 0, "max_server_gap_ms": 0, "max_received_gap_ms": 0},
 		"tool_deltas": [],
 		"output": {},
 		"provider_rounds": [],
@@ -286,6 +305,7 @@ func _disk_record(record: Dictionary) -> Dictionary:
 		"response": {
 			"reasoning_content": str(materialized.reasoning),
 			"content": str(materialized.content),
+			"content_timing": materialized.content_timing.duplicate(true),
 			"tool_call_deltas": (materialized.tool_deltas as Array).duplicate(true),
 			"provider_output": (materialized.output as Dictionary).duplicate(true),
 			"provider_rounds": materialized.get("provider_rounds", []).duplicate(true),
@@ -300,6 +320,8 @@ func _disk_record(record: Dictionary) -> Dictionary:
 
 func _materialize_record(record: Dictionary) -> Dictionary:
 	var result := record.duplicate(true)
+	for key in ["received_start_ticks", "last_content_sent", "last_content_received"]:
+		result.erase(key)
 	if result.has("reasoning_parts"):
 		result.reasoning = "".join(PackedStringArray(result.reasoning_parts))
 		result.erase("reasoning_parts")
