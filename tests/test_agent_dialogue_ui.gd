@@ -125,6 +125,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 		["relationship_state_required: query_world", "无法核实当前关系"],
 		["stream_idle_timeout", "等待超时"],
 		["context_capacity_exceeded", "信息量过大"],
+		["chat_provider_output_limit", "达到模型输出上限"],
 		["provider_unauthorized_tool", "回复未能完成"],
 		["http_503", "服务暂时不可用"],
 	]:

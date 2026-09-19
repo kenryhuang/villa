@@ -13,7 +13,8 @@ test("zewei is an authored adult Agent using the shared game identity and tools"
   assert.equal(profile.soul.social_profile?.age, 22);
   assert.equal(profile.soul.social_profile?.gender, "female");
   assert.ok(profile.soul.traits.includes("对爱人忠诚专一"));
-  assert.match(profile.soul.speech_style, /不把陌生人当作爱人/);
+  assert.match(profile.soul.speech_style, /主动/);
+  assert.doesNotMatch(JSON.stringify(profile.soul), /娇羞|害羞/);
   assert.ok(profile.tools.includes("speak") && profile.tools.includes("propose_trade"));
   assert.ok(profile.decision_interval_hours[0] > 0);
   const social = JSON.parse(readFileSync("../../data/living_world/social_profiles.json", "utf8"));

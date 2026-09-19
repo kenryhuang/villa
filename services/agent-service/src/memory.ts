@@ -158,6 +158,11 @@ export class MemoryRepository {
     return Number(result.changes) === 1;
   }
 
+  chatContextGeneration(sessionId:string,scope:string):string {
+    const row=this.#db.prepare("SELECT event_id FROM events WHERE session_id=? AND agent_id=? AND kind='ChatContextReset' ORDER BY rowid DESC LIMIT 1").get(sessionId,scope) as {event_id:string}|undefined;
+    return row?.event_id??"";
+  }
+
   recent(sessionId: string, agentId: string, limit: number): MemoryEvent[] {
     const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
     const rows = this.#db.prepare(`SELECT event_id, kind, game_minute, importance, payload_json FROM events

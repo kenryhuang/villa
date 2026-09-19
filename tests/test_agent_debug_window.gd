@@ -57,6 +57,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(not window.visible, "Agent debug window toggle closes")
 	window.toggle()
 	assertions.truthy(window.visible, "Agent debug window toggle opens")
+	await _test_chat_calls(assertions, tree, trace, window)
 
 	var debug_panel = DebugPanelScene.instantiate()
 	tree.root.add_child(debug_panel)
@@ -70,6 +71,39 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	window.queue_free()
 	trace.queue_free()
 	await tree.process_frame
+
+
+func _test_chat_calls(assertions: TestAssert, tree: SceneTree, trace: Node, window: CanvasLayer) -> void:
+	trace.configure(false, "debug-calls")
+	var ids: Array[String] = ["request-1"]
+	window.show_requests(ids, "request-1")
+	trace.accept_event(_event("stream.started", 1, {"trigger": "dialogue"}))
+	trace.accept_event(_event("loop.trace", 2, {"event": "provider.route", "phase": "dialogue", "channel": "chat", "endpoint": "http://127.0.0.1:11434/v1/chat/completions"}))
+	trace.accept_event(_event("provider.input", 3, {"model": "cydonia-requested", "stream": true, "messages": [{"role": "system", "content": "CHAT_PERSONA"}]}))
+	trace.accept_event(_event("loop.trace", 4, {"event": "provider.response_model", "model": "cydonia-returned"}))
+	await tree.process_frame
+	assertions.truthy(window.model_label.text.contains("cydonia-requested") and window.model_label.text.contains("cydonia-returned"), "Shows requested and reported model while streaming")
+	assertions.truthy(window.model_label.text.contains("11434/v1/chat/completions"), "Shows actual provider endpoint")
+	trace.accept_event(_event("provider.output", 5, {"model": "cydonia-returned", "message": {"content": "hello"}}))
+	trace.accept_event(_event("loop.trace", 6, {"event": "provider.route", "phase": "extract_actions", "channel": "chat"}))
+	trace.accept_event(_event("provider.input", 7, {"model": "cydonia-requested", "messages": [{"role": "system", "content": "EXTRACT_ACTIONS"}]}))
+	await tree.process_frame
+	assertions.equal(window.call_picker.item_count, 2, "Both inputs appear before extraction finishes")
+	assertions.truthy(window.input_view.text.contains("EXTRACT_ACTIONS"), "Follows current extraction input")
+	window.call_picker.select(0)
+	window.call_picker.item_selected.emit(0)
+	assertions.truthy(window.input_view.text.contains("CHAT_PERSONA") and not window.input_view.text.contains("EXTRACT_ACTIONS"), "Earlier chat context is not overwritten by extraction")
+	trace.accept_event(_event("loop.trace", 8, {"event": "chat.timing"}))
+	await tree.process_frame
+	assertions.equal(window.call_picker.selected, 0, "Manual call selection survives streaming updates")
+	var other := _event("stream.started", 1, {"trigger": "schedule"})
+	other.data.request_id = "action-request"
+	trace.accept_event(other)
+	await tree.process_frame
+	assertions.equal(window.request_list.item_count, 1, "Chat debug filters unrelated action loops")
+	trace.finish_cancelled("farmer_ahe", "request-1", "closed")
+	var record: Dictionary = trace.get_request("request-1")
+	assertions.equal(trace._disk_record(record).response.provider_calls.size(), 2, "Cancellation persists every input even without final output")
 
 
 func _event(name: String, sequence: int, payload: Dictionary) -> Dictionary:

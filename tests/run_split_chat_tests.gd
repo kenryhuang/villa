@@ -16,6 +16,17 @@ class Runtime extends Node:
 	var registry = Registry.new()
 	var calls: Array = []
 	var cancelled: Array = []
+	var resets: Array = []
+	var reset_callbacks: Array[Callable] = []
+	func reset_chat_context(id: String, room: Dictionary, callback: Callable) -> bool:
+		resets.append({"actor": id, "room": room.duplicate(true)})
+		reset_callbacks.append(callback)
+		return true
+	var trace = preload("res://scripts/ai_agent/agent_session_trace.gd").new()
+	func _ready() -> void:
+		add_child(trace)
+		trace.configure(false, "chat-ui-test")
+	func get_session_trace() -> Node: return trace
 	func get_agent_display_name(id: String) -> String: return id
 	func trigger_dialogue(_id: String, _text: String) -> bool: return true
 	func trigger_chat(id: String, text: String, room: Dictionary) -> bool:
@@ -47,6 +58,9 @@ func run() -> void:
 	root.add_child(ui)
 	ui.configure_agent_runtime(runtime)
 	ui.open_agent_dialogue("farmer_ahe", "阿禾")
+	check(ui.has_node("DialoguePanel/Margin/VBox/Header/ChatDebugButton"), "Dialogue header exposes model/context debug")
+	ui.get_node("DialoguePanel/Margin/VBox/Header/ChatDebugButton").pressed.emit()
+	check(ui._chat_debug.visible, "Debug opens from dialogue without cancelling chat")
 	ui._append_history("farmer_ahe", "player", "PRIVATE_SENTINEL")
 	var group = ui._group
 	group.picker.select(0)
@@ -59,12 +73,17 @@ func run() -> void:
 	check(runtime.calls.size() == 1 and group.active and ui.send_button.disabled, "Only first member starts; composer locked")
 	check(group.add_button.disabled and group.private_button.disabled, "Membership cannot change in flight")
 	var first: Dictionary = runtime.calls[0]
+	check(first.request in ui._chat_debug._request_filter, "Debug follows first group speaker request")
 	runtime.dialogue_stream_delta.emit(first.actor, first.request, "第一位回复")
 	check(ui._current_history()[1].text == "第一位回复" and ui._agent_stream_pending, "Delta is visible before final reply")
-	runtime.dialogue_ready.emit(first.actor, first.request, "第一位回复")
+	var full_reply := "第一位回复" + "完整句子。".repeat(150)
+	runtime.dialogue_stream_delta.emit(first.actor, first.request, "完整句子。".repeat(150))
+	runtime.dialogue_ready.emit(first.actor, first.request, full_reply)
+	check(ui._current_history()[1].text == full_reply, "Final reply retains streamed text beyond 500 characters")
 	await process_frame
 	check(runtime.calls.size() == 2, "Next member starts after previous completion")
 	var second: Dictionary = runtime.calls[1]
+	check(second.request in ui._chat_debug._request_filter and first.request in ui._chat_debug._request_filter, "Debug retains both group speaker requests")
 	check(second.actor != first.actor and second.room == first.room, "Members share room and turn IDs")
 	runtime.dialogue_ready.emit(second.actor, second.request, "第二位回复")
 	await process_frame
@@ -84,11 +103,36 @@ func run() -> void:
 	check(runtime.calls.size() == 4, "A failed reply still advances to next member")
 	var cancelling: String = group.speaker
 	ui.close()
+	check(not ui._chat_debug.visible, "Closing dialogue also closes its debug window")
 	await process_frame
 	check(not group.active and group.queue.is_empty() and cancelling in runtime.cancelled, "Close cancels actual speaker and all remaining turns")
 	check(runtime.calls.size() == 4, "No queued member starts after close")
 	ui.open_agent_dialogue("farmer_ahe", "阿禾")
 	check(group.members.size() == 1 and ui._current_history()[0].text == "PRIVATE_SENTINEL", "Private history survives group conversation")
+	ui.get_node("DialoguePanel/Margin/VBox/Header/RestartChatButton").pressed.emit()
+	check(ui._chat_reset_pending and ui.send_button.disabled and runtime.resets[-1].room.is_empty(), "Private reset waits for backend acknowledgement and blocks sends")
+	runtime.reset_callbacks.pop_front().call(false, {}, "offline")
+	check(not ui._chat_reset_pending and ui._current_history()[0].text == "PRIVATE_SENTINEL", "Failed reset does not falsely clear local history")
+	ui.restart_chat()
+	runtime.reset_callbacks.pop_front().call(true, {"status":"reset"}, "")
+	check(ui._current_history().is_empty() and not ui.send_button.disabled and ui._chat_debug._request_filter.is_empty(), "Confirmed private reset clears history/debug and allows a fresh message")
+	group.add_selected()
+	var reset_room: String = group.key()
+	var reset_members: Array = group.members.duplicate()
+	group.start("旧话题")
+	var resetting: Dictionary = runtime.calls[-1]
+	runtime.dialogue_ready.emit(resetting.actor, resetting.request, "旧回复")
+	# A next-speaker callback is already queued when the user resets.
+	ui.restart_chat()
+	check(not group.active and group.queue.is_empty() and runtime.resets[-1].room.id == reset_room, "Group reset cancels queued speakers and resets the shared room")
+	runtime.reset_callbacks.pop_front().call(true, {"status":"reset"}, "")
+	check(group.members == reset_members and ui._current_history().is_empty(), "Group reset keeps participants but clears shared history")
+	group.start("全新话题")
+	var fresh_calls: int = runtime.calls.size()
+	runtime.dialogue_ready.emit(resetting.actor, resetting.request, "迟到的旧回复")
+	await process_frame
+	check(runtime.calls.size() == fresh_calls and group.active, "Stale deferred speaker callbacks cannot advance the new round")
+	check(not ui.history_view.text.contains("旧回复"), "Late old replies cannot repopulate reset conversation")
 	ui.close()
 	ui.free()
 	runtime.free()

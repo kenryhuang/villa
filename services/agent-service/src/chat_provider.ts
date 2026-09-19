@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import type {ProviderConfig} from "./config.ts";
 import type {DecisionRequest,ActionIntent} from "./protocol.ts";
+import {MAX_CHAT_SPEECH_CHARS} from "./protocol.ts";
 import type {AgentContext} from "./agents.ts";
 import type {MemoryEvent} from "./memory.ts";
 import type {ReadPort} from "./agent_loop.ts";
@@ -11,9 +12,12 @@ import {ProviderConcurrencyGate} from "./provider_concurrency_gate.ts";
 
 export interface ChatCatalog {actors:string[];places:string[];items:string[];}
 export const CHAT_KINDS=["visit","date","companionship","trade","plant","harvest","build","rest"] as const;
-export function chatRoomKey(r:DecisionRequest):string {
+export function chatRoomKey(r:Pick<DecisionRequest,"agent_id"|"chat_room">):string {
   const members=[...(r.chat_room?.participants??[r.agent_id])].sort();
   return `chat.room:${createHash("sha256").update(JSON.stringify(r.chat_room?["group",r.chat_room.id]:["private",members])).digest("hex")}`;
+}
+export function chatGenerationScope(scope:string,generation:string):string {
+  return generation?`${scope}:context:${createHash("sha256").update(generation).digest("hex")}`:scope;
 }
 export function validateHandoffs(value:unknown,catalog:ChatCatalog,reply:string):Record<string,unknown>[] {
   if(!Array.isArray(value)||value.length>3)return [];
@@ -81,7 +85,9 @@ export class LocalChatProvider implements ChatPort {
     try {
       const result=await this.#gate.run(combined,async gateSignal=>{
         dispatched=performance.now();
-        emit({type:"loop",payload:{event:"provider.route",channel:"chat",model:this.model,phase,queue_wait_ms:Math.round(dispatched-started)}});
+        const endpoint=new URL(`${this.#config.baseUrl}/chat/completions`);
+        endpoint.username="";endpoint.password="";endpoint.search="";endpoint.hash="";
+        emit({type:"loop",payload:{event:"provider.route",channel:"chat",model:this.model,endpoint:endpoint.toString(),phase,queue_wait_ms:Math.round(dispatched-started)}});
         const body={model:this.model,messages,stream:!json,max_tokens:json?1600:this.#config.maxOutputTokens,temperature:json?0:this.#config.temperature,...(json?{response_format:{type:"json_object"}}:{})};
         emit({type:"input",body});
         const response=await fetch(`${this.#config.baseUrl}/chat/completions`,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${this.#config.apiKey}`},body:JSON.stringify(body),signal:gateSignal});
@@ -91,8 +97,13 @@ export class LocalChatProvider implements ChatPort {
           if(!response.body || !response.headers.get("content-type")?.includes("text/event-stream"))throw new Error("chat_provider_stream_required");
           const assembler=new AgentStreamAssembler();
           let visible="",first=true;
+          let reportedModel="";
           for await(const chunk of decodeProviderSse(response.body)){
             gateSignal.throwIfAborted();
+            if(typeof chunk.model==="string" && chunk.model && chunk.model!==reportedModel){
+              reportedModel=chunk.model;
+              emit({type:"loop",payload:{event:"provider.response_model",channel:"chat",phase,requested_model:this.model,model:reportedModel}});
+            }
             for(const delta of assembler.accept(chunk)){
               if(delta.type==="tool_call")throw new Error("chat_provider_unexpected_tool_call");
               if(delta.type!=="content")continue;
@@ -104,9 +115,10 @@ export class LocalChatProvider implements ChatPort {
                 }
                 firstToken??=now;lastToken=now;chunks++;characters+=delta.delta.length;
               }
-              // Respect the executor's 500-character speech envelope without splitting
-              // surrogate pairs. Final speech is the same text the UI received.
-              const next=assembler.rawMessage().content.slice(0,500).replace(/[\uD800-\uDBFF]$/,"");
+              // Chat has its own envelope; never silently clip a completed reply
+              // to the action model's short speech limit.
+              const next=assembler.rawMessage().content;
+              if(next.length>MAX_CHAT_SPEECH_CHARS)throw new Error("chat_provider_reply_too_long");
               const addition=next.slice(visible.length);
               visible=next;
               if(addition){
@@ -117,13 +129,14 @@ export class LocalChatProvider implements ChatPort {
           }
           const output=assembler.rawOutput();
           emit({type:"output",output});
+          if(output.finish_reason==="length")throw new Error("chat_provider_output_limit");
           if(!visible.trim() || output.finish_reason!=="stop")throw new Error("chat_provider_incomplete_reply");
           return visible.trim();
         }
         const data=await response.json() as any;
         const text=String(data.choices?.[0]?.message?.content??"").trim();
         if(!text || data.choices?.[0]?.finish_reason==="length")throw new Error("chat_provider_incomplete_reply");
-        emit({type:"output",output:{id:String(data.id??"chat"),finish_reason:data.choices?.[0]?.finish_reason??"stop",message:{content:text,reasoning_content:"",tool_calls:[]},usage:data.usage}});
+        emit({type:"output",output:{id:String(data.id??"chat"),...(typeof data.model==="string"?{model:data.model}:{}),finish_reason:data.choices?.[0]?.finish_reason??"stop",message:{content:text,reasoning_content:"",tool_calls:[]},usage:data.usage}});
         return text;
       },"dialogue");
       status="completed";

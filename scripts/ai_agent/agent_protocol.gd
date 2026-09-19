@@ -49,7 +49,8 @@ static func parse_action_intent(value: Variant, allowed_tools: Array) -> Diction
 				return _failure("wait_must_be_exclusive")
 	if typeof(data.get("decision_summary")) != TYPE_STRING or str(data.decision_summary).length() > 500:
 		return _failure("invalid_decision_summary")
-	if data.has("speech") and (typeof(data.speech) != TYPE_STRING or str(data.speech).length() > 500):
+	var speech_limit := 16384 if data.get("chat_isolated") == true else 500
+	if data.has("speech") and (typeof(data.speech) != TYPE_STRING or str(data.speech).length() > speech_limit):
 		return _failure("invalid_speech")
 	var normalized := data.duplicate(true)
 	normalized.actions = actions

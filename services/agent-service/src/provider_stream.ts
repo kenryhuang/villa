@@ -24,6 +24,7 @@ export interface ProviderRawMessage {
 
 export interface ProviderRawOutput {
   id: string;
+  model?: string;
   message: ProviderRawMessage;
   finish_reason: string | null;
   usage?: Record<string, unknown>;
@@ -117,6 +118,7 @@ export interface ParsedProviderToolCall {index: number; id: string; name: string
 
 export class AgentStreamAssembler {
   #responseId = "";
+  #model = "";
   #reasoning = "";
   #content = "";
   #tools = new Map<number, ToolAccumulator>();
@@ -125,6 +127,7 @@ export class AgentStreamAssembler {
 
   accept(chunk: Record<string, unknown>): readonly ProviderDelta[] {
     if (typeof chunk.id === "string" && chunk.id) this.#responseId ||= chunk.id;
+    if (typeof chunk.model === "string" && chunk.model) this.#model = chunk.model;
     if (isRecord(chunk.usage)) this.#usage = {...chunk.usage};
     const choices = chunk.choices;
     if (choices === undefined) return [];
@@ -219,6 +222,7 @@ export class AgentStreamAssembler {
   rawOutput(): ProviderRawOutput {
     return {
       id: this.#responseId,
+      ...(this.#model ? {model: this.#model} : {}),
       message: this.rawMessage(),
       finish_reason: this.#finishReason,
       ...(this.#usage ? {usage: this.#usage} : {}),

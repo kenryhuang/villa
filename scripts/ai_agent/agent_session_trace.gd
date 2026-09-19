@@ -77,8 +77,13 @@ func accept_event(event: Dictionary) -> bool:
 			var timed_event := payload.duplicate(true)
 			timed_event["timestamp_msec"] = int(data.timestamp_msec)
 			record.loop_events.append(timed_event)
+			if payload.get("event") == "provider.route":
+				record.provider_route = payload.duplicate(true)
+			elif payload.get("event") == "provider.response_model" and not record.provider_calls.is_empty():
+				record.provider_calls[-1]["response_model"] = str(payload.get("model", ""))
 		"provider.input":
 			record.input = payload.duplicate(true)
+			record.provider_calls.append({"input": payload.duplicate(true), "route": record.provider_route.duplicate(true), "timestamp_msec": int(data.timestamp_msec), "output": {}})
 		"reasoning.delta":
 			(record.reasoning_parts as Array).append(str(payload.get("delta", "")))
 		"content.delta":
@@ -100,6 +105,8 @@ func accept_event(event: Dictionary) -> bool:
 			(record.tool_deltas as Array).append(payload.duplicate(true))
 		"provider.output":
 			record.output = payload.duplicate(true)
+			if not record.provider_calls.is_empty():
+				record.provider_calls[-1]["output"] = payload.duplicate(true)
 			record.provider_rounds.append({"usage": payload.get("usage", {}).duplicate(true), "metrics": payload.get("metrics", {}).duplicate(true), "input": record.input.duplicate(true), "output": payload.duplicate(true)})
 		"decision.final":
 			record.final = payload.duplicate(true)
@@ -267,6 +274,8 @@ func _append_record(
 		"tool_deltas": [],
 		"output": {},
 		"provider_rounds": [],
+		"provider_calls": [],
+		"provider_route": {},
 		"loop_events": [],
 		"final": {},
 		"error": {},
@@ -309,6 +318,7 @@ func _disk_record(record: Dictionary) -> Dictionary:
 			"tool_call_deltas": (materialized.tool_deltas as Array).duplicate(true),
 			"provider_output": (materialized.output as Dictionary).duplicate(true),
 			"provider_rounds": materialized.get("provider_rounds", []).duplicate(true),
+			"provider_calls": materialized.get("provider_calls", []).duplicate(true),
 			"loop_events": materialized.get("loop_events", []).duplicate(true),
 			"decision": (materialized.final as Dictionary).duplicate(true),
 			"error": (materialized.error as Dictionary).duplicate(true),

@@ -1,6 +1,7 @@
 import {validToolArguments} from "./tool_contracts.ts";
 
 export const PROTOCOL_VERSION = 2 as const;
+export const MAX_CHAT_SPEECH_CHARS = 16_384;
 
 export type Trigger = "schedule" | "event" | "dialogue" | "catch_up";
 export type OutcomeStatus = "accepted" | "in_progress" | "completed" | "rejected" | "failed";
@@ -248,7 +249,8 @@ export function parseActionIntent(value: unknown, allowedTools: readonly string[
     return failure("wait_must_be_exclusive");
   }
   if (typeof value.decision_summary !== "string" || value.decision_summary.length > 500) return failure("invalid_decision_summary");
-  if (value.speech !== undefined && (typeof value.speech !== "string" || value.speech.length > 500)) return failure("invalid_speech");
+  const speechLimit=value.chat_isolated===true?MAX_CHAT_SPEECH_CHARS:500;
+  if (value.speech !== undefined && (typeof value.speech !== "string" || value.speech.length > speechLimit)) return failure("invalid_speech");
   return { ok: true, value: {...value, actions} as unknown as ActionIntent };
 }
 

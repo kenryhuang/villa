@@ -32,16 +32,49 @@ var _agent_request_id := ""
 var _pending_history_index := -1
 var _agent_stream_pending := false
 var _is_open := false
+var _chat_debug: CanvasLayer
+var _chat_debug_requests: Array[String] = []
+var _chat_runtime: Node
+var _chat_reset_pending := false
+var _restart_chat_button: Button
 
 
 # Shared binding used by the 3D farm; the original dialogue/history UI is retained.
 func configure_agent_runtime(runtime: Node) -> void:
+	_chat_runtime = runtime
+	if runtime.has_method("reset_chat_context") and _restart_chat_button == null:
+		_restart_chat_button = Button.new()
+		_restart_chat_button.name = "RestartChatButton"
+		_restart_chat_button.text = "重新开始"
+		_restart_chat_button.tooltip_text = "清空当前对话上下文并重新交谈"
+		_restart_chat_button.pressed.connect(restart_chat)
+		var header := name_label.get_parent()
+		header.add_child(_restart_chat_button)
+		header.move_child(_restart_chat_button, close_button.get_index())
+	if runtime.has_method("get_session_trace") and _chat_debug == null:
+		_chat_debug = preload("res://scenes/ui/agent_debug_window.tscn").instantiate()
+		_chat_debug.name = "ChatDebugWindow"
+		_chat_debug.process_mode = Node.PROCESS_MODE_ALWAYS
+		add_child(_chat_debug)
+		_chat_debug.configure(runtime.get_session_trace())
+		_chat_debug.show_requests(_chat_debug_requests)
+		var button := Button.new()
+		button.name = "ChatDebugButton"
+		button.text = "模型 / Context"
+		button.pressed.connect(func(): _chat_debug.open())
+		var header := name_label.get_parent()
+		header.add_child(button)
+		header.move_child(button, close_button.get_index())
 	if runtime.has_method("trigger_chat"):
 		_group=preload("res://scripts/ui/group_chat.gd").new()
 		_group.configure(self,runtime)
 	agent_message_submitted.connect(func(id: String, message: String):
 		if not runtime.trigger_dialogue(id, message): fail_agent_submission(id, runtime.dialogue_unavailable_reason()))
 	runtime.dialogue_stream_started.connect(func(id: String, request_id: String):
+		if _chat_reset_pending: return
+		if _is_open and (id == _current_villager_id or (_group != null and _group.active and id == _group.speaker)):
+			_chat_debug_requests.append(request_id)
+			if _chat_debug != null: _chat_debug.show_requests(_chat_debug_requests, request_id)
 		if _group!=null and _group.started(id,request_id):return
 		if _is_open and id == _current_villager_id: begin_agent_dialogue(id, request_id))
 	runtime.dialogue_stream_delta.connect(func(_id: String, request_id: String, delta: String): append_agent_dialogue(request_id, delta))
@@ -74,6 +107,8 @@ func open_agent_dialogue(villager_id: String, display_name: String) -> bool:
 	if _is_open and _current_villager_id != villager_id:
 		close()
 	_current_villager_id = villager_id
+	_chat_debug_requests.clear()
+	if _chat_debug != null: _chat_debug.show_requests(_chat_debug_requests)
 	_pending_speaker_id = ""
 	_display_names[villager_id] = display_name if not display_name.strip_edges().is_empty() else villager_id
 	if not _histories.has(villager_id):
@@ -184,6 +219,8 @@ static func agent_failure_message(error: String) -> String:
 		return "暂时无法核实当前关系，请稍后再试。"
 	if code == "context_capacity_exceeded":
 		return "这次对话的信息量过大，未能完成回复，请重试。"
+	if code == "chat_provider_output_limit":
+		return "本次回复达到模型输出上限，回复未完成。"
 	if "timeout" in code:
 		return "这次回复等待超时，请重试。"
 	if code.begins_with("provider_http_401") or code.begins_with("provider_http_403"):
@@ -210,6 +247,7 @@ func fail_agent_submission(villager_id: String, message: String = FAILURE_TEXT) 
 
 
 func close() -> void:
+	if _chat_debug != null: _chat_debug.close()
 	if not _is_open:
 		return
 	if _group!=null:_group.cancel()
@@ -230,8 +268,47 @@ func close() -> void:
 	agent_dialogue_closed.emit(closed_villager, closed_request)
 
 
+func restart_chat() -> void:
+	if not _is_open or _chat_reset_pending or _chat_runtime == null: return
+	_chat_reset_pending = true
+	var actor := _current_villager_id
+	var key := _history_key(actor)
+	var room := {}
+	if _group != null and _group.members.size() > 1:
+		room = {"id": _group.key(), "participants": _group.members.duplicate()}
+	# Invalidate the old request before cancelling, including synchronous callbacks.
+	_agent_stream_pending = false
+	_agent_request_id = ""
+	_pending_history_index = -1
+	_pending_speaker_id = ""
+	if _group != null: _group.cancel()
+	_chat_runtime.cancel_chat_turn(actor)
+	_set_composer_enabled(false)
+	_restart_chat_button.disabled = true
+	if _group != null: _group.refresh()
+	status_label.text = "正在清理当前对话……"
+	var completed := func(ok: bool, _value: Dictionary, _error: String):
+		_chat_reset_pending = false
+		_restart_chat_button.disabled = false
+		if ok:
+			_histories[key] = []
+			if _is_open and _history_key(_current_villager_id) == key:
+				message_input.text = ""
+				_chat_debug_requests.clear()
+				if _chat_debug != null: _chat_debug.show_requests(_chat_debug_requests)
+		if _is_open:
+			_set_composer_enabled(true)
+			if _group != null: _group.refresh()
+			_render_history()
+			if _history_key(_current_villager_id) == key:
+				status_label.text = "当前对话已清空，可以重新开始。" if ok else "未能确认对话已清空，请点击重新开始重试。"
+			else: status_label.text = "可以继续交谈。"
+			message_input.grab_focus()
+	if not _chat_runtime.reset_chat_context(actor, room, completed): completed.call(false, {}, "unavailable")
+
+
 func _submit_message() -> void:
-	if not _is_open or _agent_stream_pending or (_group!=null and _group.active):
+	if not _is_open or _chat_reset_pending or _agent_stream_pending or (_group!=null and _group.active):
 		return
 	var message := message_input.text.strip_edges()
 	if message.is_empty():
@@ -291,6 +368,7 @@ func _finish_pending() -> void:
 
 
 func _set_composer_enabled(enabled: bool) -> void:
+	enabled = enabled and not _chat_reset_pending
 	if _group!=null:_group.refresh()
 	message_input.editable = enabled
 	send_button.disabled = not enabled

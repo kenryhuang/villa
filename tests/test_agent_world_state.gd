@@ -20,6 +20,15 @@ func _test_protocol_and_profiles(assertions: TestAssert) -> void:
 	assertions.truthy(parsed.ok, "Godot accepts role Agent intent fixture")
 	assertions.equal(parsed.value.actions[0].tool_name, "plant", "Godot preserves command tool")
 	assertions.truthy(not AgentProtocolScript.parse_action_intent(parsed.value, ["wait"]).ok, "Godot rejects unauthorized command")
+	var chat: Dictionary = parsed.value.duplicate(true)
+	chat.actions = []
+	chat.speech = "完整聊天回复".repeat(150)
+	assertions.truthy(not AgentProtocolScript.parse_action_intent(chat, []).ok, "Action speech keeps the original short limit")
+	chat.chat_isolated = true
+	var full_chat: Dictionary = AgentProtocolScript.parse_action_intent(chat, [])
+	assertions.truthy(full_chat.ok and full_chat.value.speech == chat.speech, "Isolated chat replies above 500 characters remain intact")
+	chat.speech = "长".repeat(16385)
+	assertions.truthy(not AgentProtocolScript.parse_action_intent(chat, []).ok, "Oversized chat is explicitly rejected instead of clipped")
 	var registry := AgentRegistryScript.new()
 	assertions.truthy(registry.load_defaults(), "Agent registry loads role data")
 	assertions.equal(registry.get_agent_ids(), ["farmer_ahe", "lao_li", "xuezhe_lin"], "Agent IDs are deterministic")

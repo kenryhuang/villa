@@ -482,6 +482,12 @@ func cancel_chat_turn(agent_id: String) -> void:
 	var request_id := get_in_flight_request_id(agent_id)
 	if not request_id.is_empty(): cancel_dialogue(agent_id, request_id)
 
+func reset_chat_context(agent_id: String, room: Dictionary, callback: Callable) -> bool:
+	if not service_enabled or not registry.is_agent_managed(agent_id): return false
+	var body := {"session_id": session_id, "session_epoch": gateway.session_epoch, "agent_id": agent_id, "game_minute": _absolute_game_minute(), "reset_id": "%s-%d-%d" % [session_id, Time.get_unix_time_from_system()*1000, Time.get_ticks_usec()]}
+	if not room.is_empty(): body.chat_room = room.duplicate(true)
+	return gateway.reset_chat_context(body, callback)
+
 func trigger_dialogue(agent_id: String, text: String = "") -> bool:
 	return service_enabled and scheduler.trigger_dialogue(agent_id, text, _absolute_game_minute())
 

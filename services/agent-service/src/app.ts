@@ -1,5 +1,5 @@
 import {actionActor,actionFacts,appendIsolatedEvent,prepareActionRequest} from "./context_channels.ts";
-import {chatRoomKey,renderHandoffs,type ChatPort} from "./chat_provider.ts";
+import {chatRoomKey,chatGenerationScope,renderHandoffs,type ChatPort} from "./chat_provider.ts";
 import {CHAT_HISTORY_MESSAGES} from "./chat_context.ts";
 import {WorldReadBroker} from "./world_read_broker.ts";
 import {createHash} from "node:crypto";
@@ -159,6 +159,19 @@ export function createApp(dependencies: AppDependencies) {
       }
       if (request.method !== "POST") { send(response, 404, {error: {code: "NOT_FOUND"}}); return; }
       const body = await readBody(request);
+      if(url.pathname==="/v1/chat/reset") {
+        const v=body as Record<string,any>;
+        const id=(x:unknown)=>typeof x==="string" && x.trim().length>0 && x.length<=200;
+        if(!dependencies.chatProvider || !v || !id(v.session_id) || !id(v.reset_id) || !dependencies.registry.get(v.agent_id) || v.agent_id==="village_public"
+          || !Number.isSafeInteger(v.session_epoch) || v.session_epoch<0 || !Number.isSafeInteger(v.game_minute) || v.game_minute<0)throw new Error("invalid_chat_reset");
+        if(v.chat_room!==undefined && (!v.chat_room || !id(v.chat_room.id) || !Array.isArray(v.chat_room.participants)
+          || v.chat_room.participants.length<2 || v.chat_room.participants.length>4 || new Set(v.chat_room.participants).size!==v.chat_room.participants.length
+          || !v.chat_room.participants.includes(v.agent_id) || v.chat_room.participants.some((actor:unknown)=>typeof actor!=="string" || actor==="village_public" || !dependencies.registry.get(actor))))throw new Error("invalid_chat_room");
+        dependencies.memory.syncSession(v.session_id,v.session_epoch);
+        const scope=chatRoomKey({agent_id:v.agent_id,chat_room:v.chat_room});
+        dependencies.memory.appendEvent(v.session_id,scope,{event_id:`chat-reset:${v.reset_id}`,kind:"ChatContextReset",game_minute:v.game_minute,payload:{}});
+        send(response,200,{status:"reset",generation:dependencies.memory.chatContextGeneration(v.session_id,scope)});return;
+      }
       if(url.pathname==="/v1/experience/sync") {
         const value=body as Record<string,unknown>;
         if(typeof value.session_id!=="string"||!Number.isSafeInteger(value.session_epoch)||!Array.isArray(value.actors)||value.actors.length>64)throw new Error("invalid_experience_sync");
@@ -193,7 +206,9 @@ export function createApp(dependencies: AppDependencies) {
         if (decisionRequest.agent_id !== streamMatch[1]) {
           send(response, 409, {error: {code: "AGENT_MISMATCH"}}); return;
         }
-        const decisionKey = (dependencies.chatProvider?`${decisionRequest.trigger==="dialogue"?"chat:"+dependencies.chatProvider.model:"action.v2"}:`:"")+decisionCacheKey(decisionRequest);
+        const chatScope=dependencies.chatProvider && decisionRequest.trigger==="dialogue"?chatRoomKey(decisionRequest):"";
+        const chatGeneration=chatScope?dependencies.memory.chatContextGeneration(decisionRequest.session_id,chatScope):"";
+        const decisionKey = (dependencies.chatProvider?`${decisionRequest.trigger==="dialogue"?"chat:"+dependencies.chatProvider.model:"action.v2"}:`:"")+decisionCacheKey(decisionRequest)+(chatGeneration?`:context:${chatGeneration}`:"");
         const cached = dependencies.memory.getIdempotent(decisionKey) as ActionIntent | undefined;
         beginSse(response);
         let sequence = 0;
@@ -248,7 +263,7 @@ export function createApp(dependencies: AppDependencies) {
             const participants=decisionRequest.chat_room?.participants??[decisionRequest.agent_id];
             if(participants.some(id=>!dependencies.registry.get(id)||id==="village_public"))throw new Error("invalid_chat_participant");
             dependencies.memory.syncSession(decisionRequest.session_id,decisionRequest.session_epoch);
-            const scope=chatRoomKey(decisionRequest);
+            const scope=chatGenerationScope(chatScope,chatGeneration);
             const userEventId=`chat-user:${decisionRequest.chat_room?.turn_id??decisionRequest.request_id}`;
             const existing=dependencies.memory.inspectEvent(decisionRequest.session_id,scope,userEventId);
             if(existing.found && (existing.payload as any).text!==decisionRequest.dialogue_input)throw new Error("chat_turn_changed");
@@ -258,6 +273,7 @@ export function createApp(dependencies: AppDependencies) {
             const intent=await dependencies.chatProvider.respond(decisionRequest,chatContext,dependencies.memory.recent(decisionRequest.session_id,scope,CHAT_HISTORY_MESSAGES).reverse(),
               dependencies.registry.ids().filter(id=>id!=="village_public").map(id=>{const a=dependencies.registry.get(id)!;return {id,name:a.display_name,role:a.role_id,soul:a.soul};}),
               (name,args,signal)=>reads.read(decisionRequest,name,args,p=>writeEvent("read.request",p),signal),emit,controller.signal);
+            if(dependencies.memory.chatContextGeneration(decisionRequest.session_id,chatScope)!==chatGeneration)throw new Error("chat_context_reset");
             if(!controller.signal.aborted){
               dependencies.memory.appendEvent(decisionRequest.session_id,scope,{event_id:`chat-reply:${decisionRequest.request_id}`,kind:"ChatMessage",game_minute:decisionRequest.game_minute,
                 payload:{speaker:decisionRequest.agent_id,text:intent.speech??"",participants}});

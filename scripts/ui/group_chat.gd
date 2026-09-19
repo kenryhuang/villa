@@ -10,6 +10,7 @@ var turn_id := ""
 var text := ""
 var room_id := ""
 var active := false
+var _generation := 0
 var picker: OptionButton
 var add_button: Button
 var private_button: Button
@@ -43,8 +44,8 @@ func refresh() -> void:
 	for id in runtime.registry.get_agent_ids():
 		if id=="village_public" or id in members:continue
 		picker.add_item(runtime.get_agent_display_name(id));picker.set_item_metadata(picker.item_count-1,id)
-	add_button.disabled=active or ui._agent_stream_pending or members.size()>=4 or picker.item_count==0
-	private_button.disabled=active or ui._agent_stream_pending or members.size()<2
+	add_button.disabled=active or ui._agent_stream_pending or ui._chat_reset_pending or members.size()>=4 or picker.item_count==0
+	private_button.disabled=active or ui._agent_stream_pending or ui._chat_reset_pending or members.size()<2
 	label.text="参与者："+"、".join(members.map(func(id):return runtime.get_agent_display_name(id)))
 	ui.interaction_scroll.visible=members.size()<2
 	ui.name_label.text="群聊" if members.size()>1 else runtime.get_agent_display_name(ui._current_villager_id)
@@ -56,7 +57,8 @@ func add_selected() -> void:
 	refresh();ui._render_history()
 
 func start(message: String) -> void:
-	if active or members.size()<2:return
+	if active or ui._chat_reset_pending or members.size()<2:return
+	_generation += 1
 	text=message;turn_id="chat-turn-%d-%d"%[Time.get_unix_time_from_system()*1000,Time.get_ticks_usec()]
 	queue=members.duplicate();active=true
 	ui._append_history(ui._current_villager_id,"player",message)
@@ -75,7 +77,10 @@ func next() -> void:
 	ui._render_history();refresh()
 	if not runtime.trigger_chat(speaker,text,{"id":key(),"participants":members.duplicate(),"turn_id":turn_id}):
 		ui._set_pending_failure(runtime.dialogue_unavailable_reason());ui._set_composer_enabled(false)
-		next.call_deferred()
+		_next_if_current.call_deferred(_generation)
+
+func _next_if_current(generation: int) -> void:
+	if generation == _generation: next()
 
 func started(actor: String, id: String) -> bool:
 	if not active:return false
@@ -89,10 +94,11 @@ func finished(actor: String, id: String, speech: String, error := "") -> bool:
 	if error.is_empty():ui.finish_agent_dialogue(id,speech)
 	else:ui.fail_agent_dialogue(id,error)
 	ui._set_composer_enabled(false)
-	next.call_deferred()
+	_next_if_current.call_deferred(_generation)
 	return true
 
 func cancel() -> void:
+	_generation += 1
 	var cancelled=speaker
 	active=false;queue.clear();speaker="";request_id=""
 	if not cancelled.is_empty():runtime.cancel_chat_turn(cancelled)

@@ -57,6 +57,10 @@ func report_outcome(agent_id: String, session_id: String, outcome: Dictionary) -
 	return request.request(_base_url + "/v1/agents/" + agent_id.uri_encode() + "/outcomes", headers, HTTPClient.METHOD_POST, JSON.stringify(outcome)) == OK
 
 
+func reset_chat_context(body: Dictionary, callback: Callable) -> bool:
+	return _request_json("/v1/chat/reset", body, callback)
+
+
 func sync_session(session_id: String, reset: bool, callback: Callable = Callable()) -> bool:
 	return _request_json(
 		"/v1/sessions/sync",

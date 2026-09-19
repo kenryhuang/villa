@@ -15,6 +15,12 @@ var _selected_request_id := ""
 var _refresh_pending := false
 var _reset_scroll_on_refresh := false
 var _render_generation := 0
+var _request_filter_enabled := false
+var _request_filter: Array[String] = []
+var _call_index := -1
+var _follow_latest_call := true
+var call_picker: OptionButton
+var model_label: Label
 
 
 func _ready() -> void:
@@ -25,6 +31,41 @@ func _ready() -> void:
 	input_view.editable = false
 	reasoning_view.editable = false
 	output_view.editable = false
+	var details := status_label.get_parent()
+	var call_bar := HBoxContainer.new()
+	call_picker = OptionButton.new()
+	call_picker.name = "CallPicker"
+	call_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	call_picker.item_selected.connect(func(index: int):
+		_call_index = index
+		_follow_latest_call = false
+		if _trace != null: _render_request(_trace.get_request(_selected_request_id), true))
+	call_bar.add_child(call_picker)
+	var copy := Button.new()
+	copy.text = "复制请求"
+	copy.pressed.connect(func(): DisplayServer.clipboard_set(input_view.text))
+	call_bar.add_child(copy)
+	details.add_child(call_bar)
+	details.move_child(call_bar, 1)
+	model_label = Label.new()
+	model_label.name = "ModelRoute"
+	model_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details.add_child(model_label)
+	details.move_child(model_label, 2)
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	(input_view.get_parent() as TabContainer).set_tab_title(0, "Context / 原始请求")
+
+
+func show_requests(request_ids: Array[String], preferred_request_id: String = "") -> void:
+	_request_filter_enabled = true
+	_request_filter = request_ids.duplicate()
+	clear_button.hide()
+	if not preferred_request_id.is_empty() and preferred_request_id != _selected_request_id:
+		_selected_request_id = preferred_request_id
+		_call_index = -1
+		_follow_latest_call = true
+		_reset_scroll_on_refresh = true
+	_schedule_refresh()
 
 
 func configure(trace: Node) -> bool:
@@ -101,6 +142,8 @@ func _refresh_list() -> void:
 	if request_list == null:
 		return
 	var requests: Array = [] if _trace == null else _trace.call("get_requests")
+	if _request_filter_enabled:
+		requests = requests.filter(func(record: Dictionary): return str(record.get("request_id", "")) in _request_filter)
 	request_list.clear()
 	var selected_index := -1
 	for index in range(requests.size()):
@@ -114,6 +157,8 @@ func _refresh_list() -> void:
 	if selected_index < 0 and not requests.is_empty():
 		selected_index = requests.size() - 1
 		_selected_request_id = str((requests[selected_index] as Dictionary).request_id)
+		_call_index = -1
+		_follow_latest_call = true
 		_reset_scroll_on_refresh = true
 	if selected_index >= 0:
 		request_list.select(selected_index)
@@ -125,6 +170,8 @@ func _refresh_list() -> void:
 
 func _on_request_selected(index: int) -> void:
 	_selected_request_id = str(request_list.get_item_metadata(index))
+	_call_index = -1
+	_follow_latest_call = true
 	if _trace != null and _trace.has_method("get_request"):
 		_render_request(_trace.call("get_request", _selected_request_id), true)
 
@@ -138,15 +185,39 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 		input_view.text = ""
 		reasoning_view.text = ""
 		output_view.text = ""
+		call_picker.clear()
+		model_label.text = "等待实际模型请求；尚未发送的 context 不作预估。"
 		call_deferred("_restore_scroll_state", scroll_state, generation)
 		return
 	status_label.text = _status_text(record)
-	input_view.text = JSON.stringify(record.get("input", {}), "\t")
+	var calls: Array = record.get("provider_calls", [])
+	if calls.is_empty() and not (record.get("input", {}) as Dictionary).is_empty():
+		calls = [{"input": record.input, "output": record.get("output", {}), "route": {}}]
+	call_picker.clear()
+	for index in range(calls.size()):
+		var call: Dictionary = calls[index]
+		var phase := str(call.get("route", {}).get("phase", ""))
+		var phase_name := str({"dialogue": "聊天回复", "extract_actions": "行动提取"}.get(phase, "模型调用"))
+		call_picker.add_item("%d · %s · %s" % [index + 1, phase_name, call.get("input", {}).get("model", "未提供模型")])
+	if _follow_latest_call: _call_index = calls.size() - 1
+	_call_index = mini(_call_index, calls.size() - 1)
+	var selected: Dictionary = calls[_call_index] if _call_index >= 0 else {}
+	if _call_index >= 0: call_picker.select(_call_index)
+	var body: Dictionary = selected.get("input", {})
+	var route: Dictionary = selected.get("route", {})
+	var reported := str(selected.get("output", {}).get("model", selected.get("response_model", "")))
+	model_label.text = "请求模型：%s    接口返回模型：%s\n目标地址：%s\n通道：%s    stream：%s    messages：%d" % [
+		body.get("model", "等待发送"), reported if not reported.is_empty() else "尚未返回 / 接口未提供",
+		route.get("endpoint", "此记录未提供地址"), route.get("channel", "未标记"), str(body.get("stream", false)), (body.get("messages", []) as Array).size()]
+	if not reported.is_empty() and reported != str(body.get("model", "")):
+		model_label.text += "\n注意：请求名与返回名不同，请核对服务端的模型别名或路由。"
+	input_view.text = JSON.stringify(body, "\t")
 	reasoning_view.text = str(record.get("reasoning", ""))
 	output_view.text = JSON.stringify({
 		"content": str(record.get("content", "")),
 		"tool_call_deltas": record.get("tool_deltas", []),
 		"provider_output": record.get("output", {}),
+		"selected_call_output": selected.get("output", {}),
 		"action_intent": record.get("final", {}),
 		"error": record.get("error", {}),
 		"cancellation": record.get("cancellation", {}),
@@ -160,6 +231,9 @@ func _capture_scroll_state(reset_scroll: bool) -> Dictionary:
 	for view_value in [input_view, reasoning_view, output_view]:
 		var view := view_value as TextEdit
 		var scroll_bar := view.get_v_scroll_bar()
+		if reset_scroll and view == input_view:
+			result[view.name] = {"follow": false, "position": 0.0}
+			continue
 		result[view.name] = {
 			"follow": reset_scroll or scroll_bar.value >= scroll_bar.max_value - scroll_bar.page - 0.5,
 			"position": view.scroll_vertical,
