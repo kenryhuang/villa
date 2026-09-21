@@ -9,6 +9,7 @@ signal closed
 @onready var input_view: TextEdit = $Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Input
 @onready var reasoning_view: TextEdit = $Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Reasoning
 @onready var output_view: TextEdit = $Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Output
+@onready var handoff_view: TextEdit = $Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs/Handoffs
 
 var _trace: Node
 var _selected_request_id := ""
@@ -31,6 +32,7 @@ func _ready() -> void:
 	input_view.editable = false
 	reasoning_view.editable = false
 	output_view.editable = false
+	handoff_view.add_theme_color_override("font_readonly_color", Color("d8e9df"))
 	var details := status_label.get_parent()
 	var call_bar := HBoxContainer.new()
 	call_picker = OptionButton.new()
@@ -54,6 +56,7 @@ func _ready() -> void:
 	details.move_child(model_label, 2)
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	(input_view.get_parent() as TabContainer).set_tab_title(0, "Context / 原始请求")
+	(input_view.get_parent() as TabContainer).set_tab_title(3, "行动指示")
 
 
 func show_requests(request_ids: Array[String], preferred_request_id: String = "") -> void:
@@ -185,6 +188,7 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 		input_view.text = ""
 		reasoning_view.text = ""
 		output_view.text = ""
+		handoff_view.text = "尚无行动提取记录。"
 		call_picker.clear()
 		model_label.text = "等待实际模型请求；尚未发送的 context 不作预估。"
 		call_deferred("_restore_scroll_state", scroll_state, generation)
@@ -197,7 +201,7 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 	for index in range(calls.size()):
 		var call: Dictionary = calls[index]
 		var phase := str(call.get("route", {}).get("phase", ""))
-		var phase_name := str({"dialogue": "聊天回复", "extract_actions": "行动提取"}.get(phase, "模型调用"))
+		var phase_name := str({"dialogue": "聊天回复", "extract_actions": "行动提取", "summarize_chat": "聊天摘要"}.get(phase, "模型调用"))
 		call_picker.add_item("%d · %s · %s" % [index + 1, phase_name, call.get("input", {}).get("model", "未提供模型")])
 	if _follow_latest_call: _call_index = calls.size() - 1
 	_call_index = mini(_call_index, calls.size() - 1)
@@ -223,15 +227,26 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 		"cancellation": record.get("cancellation", {}),
 		"loop_events": record.get("loop_events", []),
 	}, "\t")
+	if _trace.has_method("get_handoff_report"):
+		var handoff: Dictionary = _trace.get_handoff_report(str(record.request_id))
+		var summary: Array[String] = ["提取：" + str(handoff.get("extraction_status", "")), "交接：" + str(handoff.get("delivery_status", ""))]
+		for instruction in handoff.get("accepted", []):
+			summary.append("行动：%s · 地点 %s · 对象 %s · %s" % [instruction.get("activity", instruction.get("kind", "")), instruction.get("place_id", ""), instruction.get("target_actor_id", ""), instruction.get("status", "")])
+		var destinations := {}
+		for evidence in handoff.get("context_evidence", []):
+			var destination := "%s · %s" % [evidence.get("action_request_id", ""), evidence.get("model", "")]
+			if not destinations.has(destination): summary.append("已送入：" + destination)
+			destinations[destination] = true
+		handoff_view.text = "\n".join(summary) + "\n\ncontext_evidence 保留实际模型请求中的交接片段；raw_extractions 保留提取模型原始输出。\n\n" + JSON.stringify(handoff, "\t")
 	call_deferred("_restore_scroll_state", scroll_state, generation)
 
 
 func _capture_scroll_state(reset_scroll: bool) -> Dictionary:
 	var result := {}
-	for view_value in [input_view, reasoning_view, output_view]:
+	for view_value in [input_view, reasoning_view, output_view, handoff_view]:
 		var view := view_value as TextEdit
 		var scroll_bar := view.get_v_scroll_bar()
-		if reset_scroll and view == input_view:
+		if reset_scroll and view in [input_view, handoff_view]:
 			result[view.name] = {"follow": false, "position": 0.0}
 			continue
 		result[view.name] = {
@@ -244,7 +259,7 @@ func _capture_scroll_state(reset_scroll: bool) -> Dictionary:
 func _restore_scroll_state(state: Dictionary, generation: int) -> void:
 	if generation != _render_generation:
 		return
-	for view_value in [input_view, reasoning_view, output_view]:
+	for view_value in [input_view, reasoning_view, output_view, handoff_view]:
 		var view := view_value as TextEdit
 		var view_state := state.get(view.name, {}) as Dictionary
 		if bool(view_state.get("follow", true)):

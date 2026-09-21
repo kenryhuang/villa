@@ -42,6 +42,7 @@ export interface DecisionRequest {
   dialogue_input?: string;
   chat_room?: {id: string; participants: string[]; turn_id: string};
   chat_participants?: ChatParticipant[];
+  chat_focus_actors?: {actor_id:string;display_name:string}[];
 }
 
 export interface ActionCommand {
@@ -160,6 +161,9 @@ export function parseDecisionRequest(value: unknown): ParseResult<DecisionReques
         || !isUniqueIdList(room.participants,4) || !room.participants.includes(value.agent_id))return failure("invalid_chat_room");
     }
     if (value.identity_override !== undefined && !validIdentityOverride(value.identity_override)) return failure("invalid_identity_override");
+    if(value.chat_focus_actors!==undefined && (value.trigger!=="dialogue" || !isRecordList(value.chat_focus_actors,16)
+      || new Set(value.chat_focus_actors.map((p:any)=>p.actor_id)).size!==value.chat_focus_actors.length
+      || value.chat_focus_actors.some((p:any)=>!hasExactKeys(p,["actor_id","display_name"])||!isId(p.actor_id)||typeof p.display_name!=="string"||!p.display_name.trim()||p.display_name.length>80)))return failure("invalid_chat_focus_actors");
     if(value.chat_participants!==undefined){
       const ids=["player",...(value.chat_room?.participants??[value.agent_id])].filter(id=>id!==value.agent_id);
       if(value.trigger!=="dialogue" || !Array.isArray(value.chat_participants) || value.chat_participants.length!==ids.length

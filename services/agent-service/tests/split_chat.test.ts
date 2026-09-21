@@ -9,7 +9,8 @@ import {MemoryRepository} from "../src/memory.ts";
 import {AgentRegistry} from "../src/agents.ts";
 import {parseDecisionRequest,type DecisionRequest,type ActionIntent} from "../src/protocol.ts";
 import {actionActor,appendIsolatedEvent,prepareActionRequest,actionFacts} from "../src/context_channels.ts";
-import {LocalChatProvider,validateHandoffs,chatRoomKey,parseExtraction,relationshipAction} from "../src/chat_provider.ts";
+import {LocalChatProvider,validateHandoffs,inspectHandoffs,chatRoomKey,parseExtraction,relationshipAction} from "../src/chat_provider.ts";
+import {OpenAICompatibleProvider} from "../src/provider.ts";
 
 const handoff={kind:"date",status:"agreed",target_actor_id:"player",place_id:"lake",item_id:"",quantity:0,gold:0,delay_minutes:30,trade_side:"none",building_type:"",plot:-1};
 function fixture(id="chat-1",actor="farmer_ahe"):DecisionRequest {
@@ -27,6 +28,15 @@ test("handoffs retain only validated game fields and exact reply evidence",()=>{
   assert.deepEqual(validateHandoffs([candidate],catalog,"好，我们去南湖。"),[handoff]);
   for(const change of [{note:"private"},{place_id:"invented"},{confidence:.8},{reply_evidence:"明天出发"},{status:"hypothetical"},{kind:"trade",item_id:"grain_seed",quantity:2}])
     assert.deepEqual(validateHandoffs([{...candidate,...change}],catalog,"好，我们去南湖。"),[]);
+});
+
+test("extraction diagnostics distinguish invalid fields, evidence, and valid solo travel",()=>{
+  const solo={...candidate,kind:"visit",target_actor_id:""};
+  assert.equal(inspectHandoffs([solo],catalog,"我们去南湖").accepted.length,1);
+  for(const [change,reason] of [[{place_id:"unknown"},"unknown_place_id"],[{reply_evidence:"not said"},"reply_evidence_mismatch"],[{reply_evidence:"  "},"reply_evidence_mismatch"],[{confidence:.2},"insufficient_confidence"],[{target_actor_id:"",place_id:""},"missing_action_target"]] as const){
+    const result=inspectHandoffs([{...solo,...change}],catalog,"我们去南湖");
+    assert.deepEqual(result.accepted,[]);assert.equal(result.rejected[0].reason,reason);
+  }
 });
 
 test("local fenced JSON is parsed without admitting prose or extra fields",()=>{
@@ -86,14 +96,14 @@ test("HTTP routes chat separately, group replies share only room history, and ch
     assert.match(await post(legacy),/split_context_requires_protocol_v3/);
     const one=fixture(),two=fixture("chat-2",second);
     for(const r of [one,two])r.chat_room={id:"group-one",participants:["farmer_ahe",second],turn_id:"turn-one"};
-    assert.match(await post(one),/decision.final/);assert.match(await post(two),/decision.final/);assert.equal(mainCalls,0);
+    assert.match(await post(one),/chat.handoff_archived/);assert.match(await post(two),/decision.final/);assert.equal(mainCalls,0);
     assert.equal(histories[1].filter(e=>e.payload.speaker==="player").length,1);
     assert.ok(histories[1].some(e=>e.payload.speaker==="farmer_ahe"&&e.payload.text==="PRIVATE_SENTINEL"));
     assert.match(await post(fixture("private")),/decision.final/);
     assert.ok(!histories[2].some(e=>e.payload.text==="PRIVATE_SENTINEL"));
     const action=fixture("action");action.trigger="schedule";action.dialogue_input="PRIVATE_SENTINEL";
     action.dialogue_followups=[{event_id:"dialogue:chat-1",kind:"dialogue",game_minute:10,payload:{agent_speech:"PRIVATE_SENTINEL",player_text:"PRIVATE_SENTINEL",submitted_actions:[],outcomes:[]}}];
-    assert.match(await post(action),/decision.final/);assert.equal(mainCalls,1);
+    assert.match(await post(action),/chat.handoff_prepared/);assert.equal(mainCalls,1);
     failChat=true;assert.match(await post(fixture("failed")),/chat_provider_http_503/);assert.equal(mainCalls,1);
     const checkpoint=memory.exportCheckpoint("s",directory,"split");const restored=new MemoryRepository(":memory:");
     try{
@@ -104,27 +114,72 @@ test("HTTP routes chat separately, group replies share only room history, and ch
   }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));memory.close();rmSync(directory,{recursive:true,force:true});}
 });
 
+test("building movement extraction reaches the actual action model HTTP context without chat prose",async()=>{
+  const inputs:any[]=[],events:any[]=[];
+  const agreed={...handoff,kind:"visit",activity:"inspect_crops",place_id:"greenhouse:12:8",delay_minutes:0};
+  const reply="好，我们现在去你的温室。";
+  const upstream=createServer(async(req,res)=>{
+    let text="";for await(const chunk of req)text+=chunk;const body=JSON.parse(text);inputs.push(body);
+    if(!body.stream){
+      const instructions=JSON.parse(body.messages[0].content);
+      assert.ok(instructions.catalog.places.some((p:any)=>p.id===agreed.place_id&&p.owner_id==="player"));
+      assert.match(JSON.stringify(instructions.agreement_rules),/重新确认出发/);
+      res.setHeader("content-type","application/json");
+      res.end(JSON.stringify({choices:[{finish_reason:"stop",message:{content:JSON.stringify({handoffs:[{place_id:agreed.place_id,activity:"inspect_crops",status:"agreed",target_actor_id:"player",player_evidence:"现在跟我去我的温室吧",actor_evidence:"我们现在去你的温室"}],relationship:null})}}]}));return;
+    }
+    res.setHeader("content-type","text/event-stream");
+    res.end(`data: ${JSON.stringify({id:"reply",choices:[{index:0,delta:{content:body.model==="chat-model"?reply:""},finish_reason:"stop"}],usage:{prompt_tokens:100,completion_tokens:10}})}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise<void>(resolve=>upstream.listen(0,"127.0.0.1",resolve));
+  const memory=new MemoryRepository(":memory:");memory.syncSession("s",1);
+  try{
+    const config={baseUrl:`http://127.0.0.1:${(upstream.address() as any).port}/v1`,apiKey:"test",model:"chat-model",timeoutMs:3000,maxConcurrency:1,maxOutputTokens:800,temperature:0};
+    const chat=new LocalChatProvider(config);const r=fixture("building-chat");r.dialogue_input="现在跟我去我的温室吧。";
+    const registry=AgentRegistry.loadDefault();const context=registry.buildContext(r.agent_id,r,[]);
+    const result=await chat.respond(r,context,[],[],async(_name,args)=>({ok:true,items:args.domain==="buildings"?[{building_id:agreed.place_id,name:"温室",owner_id:"player"}]:[{id:"farm",name:"农庄"}],next_cursor:-1}),e=>events.push(e));
+    assert.deepEqual(result.chat_handoffs,[agreed]);
+    const extraction=events.find(e=>e.payload?.event==="chat.extraction_result").payload;
+    assert.deepEqual(extraction.accepted,[agreed]);assert.equal(extraction.candidates[0].actor_evidence,"我们现在去你的温室");assert.deepEqual(extraction.rejected,[]);
+    const entry={event_id:`dialogue:${r.request_id}`,kind:"ChatActionAgreed",game_minute:10,payload:{handoff_version:1,player_text:"",agent_speech:JSON.stringify([agreed]),submitted_actions:[],outcomes:[],handoffs:[agreed]}};
+    memory.appendEvent("s",actionActor(r.agent_id),entry);
+    const action=prepareActionRequest(memory,{...r,request_id:"building-action",trigger:"event",dialogue_followups:[{...entry,kind:"dialogue"}]});
+    const actionContext=registry.buildContext(r.agent_id,action,[]);
+    actionContext.loop_services={experience:memory.experience("s",actionActor(r.agent_id)),memories:[],read:async()=>({ok:true})};
+    await new OpenAICompatibleProvider({...config,model:"action-model"}).streamDecision(action,actionContext,e=>events.push(e));
+    const sent=inputs.find(b=>b.model==="action-model");
+    assert.deepEqual(JSON.parse(sent.messages[1].content).turn.dialogue_followups[0].payload.handoffs,[agreed]);
+    assert.doesNotMatch(JSON.stringify(sent),/现在跟我去我的温室吧|好，我们现在去你的温室|actor_evidence|player_evidence/);
+    assert.deepEqual(events.find(e=>e.type==="input"&&e.body.model==="action-model").body,sent,"trace input is exactly the HTTP request received by the action provider");
+  }finally{upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));memory.close();}
+});
+
 test("completion-only local model receives no tool protocol and extracts through a second JSON call",async()=>{
   const bodies:any[]=[];
-  let invalidExtraction=false;
+  const movement={place_id:"lake",activity:"walk",status:"agreed",target_actor_id:"player",player_evidence:"去南湖吗",actor_evidence:"我们去南湖",delay_minutes:30};
+  let invalidExtraction=false, truncatedExtraction=false;
   const server=createServer(async(req,res)=>{let text="";for await(const chunk of req)text+=chunk;const body=JSON.parse(text);bodies.push(body);
     if(body.stream){
       res.setHeader("content-type","text/event-stream");
       for(const content of ["好，","我们去南湖。"])
         res.write(`data: ${JSON.stringify({choices:[{delta:{content},finish_reason:null}]})}\n\n`);
       res.end(`data: ${JSON.stringify({choices:[{delta:{},finish_reason:"stop"}]})}\n\ndata: [DONE]\n\n`);
-    }else{res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{finish_reason:"stop",message:{content:invalidExtraction?"not json":JSON.stringify({handoffs:[candidate]})}}]}));}
+    }else{res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{finish_reason:truncatedExtraction?"length":"stop",message:{content:invalidExtraction?"not json":JSON.stringify({handoffs:[movement]})}}]}));}
   });
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   try{
     const provider=new LocalChatProvider({baseUrl:`http://127.0.0.1:${(server.address() as any).port}/v1`,apiKey:"local",model:"test",timeoutMs:2000,maxConcurrency:1,maxOutputTokens:800,temperature:.7});
     const r=fixture();const c=AgentRegistry.loadDefault().buildContext(r.agent_id,r,[]);
     const result=await provider.respond(r,c,[],[{id:r.agent_id,name:"阿禾"}],async(_name,args)=>args.domain==="map"?{ok:true,items:[{id:"lake",name:"南湖"}],next_cursor:-1}:{ok:true,data:{}},()=>{});
-    assert.deepEqual(result.chat_handoffs,[handoff]);assert.deepEqual(result.actions,[]);assert.equal(bodies.length,2);
+    assert.deepEqual(result.chat_handoffs,[{...handoff,kind:"visit",activity:"walk"}]);assert.deepEqual(result.actions,[]);assert.equal(bodies.length,2);
     assert.ok(bodies.every(b=>!b.tools&&!b.enable_thinking));assert.equal(bodies[1].response_format.type,"json_object");
     invalidExtraction=true;
     const failed=await provider.respond(r,c,[],[{id:r.agent_id,name:"阿禾"}],async()=>({ok:true,items:[],next_cursor:-1}),()=>{});
     assert.equal(failed.speech,"好，我们去南湖。");assert.equal(failed.chat_extraction_failed,true);
     assert.deepEqual(failed.chat_handoffs,[]);assert.deepEqual(failed.actions,[]);
+    truncatedExtraction=true;
+    const events:any[]=[];
+    const truncated=await provider.respond(r,c,[],[],async()=>({ok:true,items:[],next_cursor:-1}),e=>events.push(e));
+    assert.equal(truncated.chat_extraction_failed,true);
+    assert.ok(events.some(e=>e.type==="output"&&e.output.finish_reason==="length"&&e.output.message.content==="not json"),"failed extraction still exposes the original truncated provider output");
   }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });

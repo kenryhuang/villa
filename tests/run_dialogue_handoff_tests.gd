@@ -29,6 +29,9 @@ func run() -> void:
 	r.set_process(false)
 	var minute: int = r._absolute_game_minute()
 	var talk: Dictionary = r._build_loop_request("farmer_ahe", "agreed-trip", "dialogue", minute, "聊完去溪边看看？")
+	check(talk.chat_focus_actors.size() == session.living_world.society.focus.size(), "Chat roster contains only important actors")
+	for actor in talk.chat_focus_actors:
+		check(actor.actor_id in session.living_world.society.focus and actor.display_name == session.living_world.actor_name(actor.actor_id), "Important actor uses current display name")
 	paused = true
 	r._handle_response("farmer_ahe", reply(r, talk, "好，聊完我就去溪边。"))
 	var handoffs: Array = r.loop_state.dialogue_followups("farmer_ahe")
@@ -76,6 +79,42 @@ func run() -> void:
 	state.record_dialogue("b", "trade", 10, "买粮", "我提交了报价。", [], [{"action_id": "trade", "status": "in_progress"}])
 	state.update_dialogue_outcome("b", {"action_id": "trade", "status": "completed"})
 	check(state.dialogue_followups("b")[0].payload.outcomes[0].status == "completed", "Handoff tracks latest receipts to prevent duplicate actions")
+	# Split-chat extraction is reported after the chat stream has already finished.
+	var trace: Node = r.get_session_trace()
+	trace.accept_event({"event":"stream.started", "data":{"request_id":"split-debug", "agent_id":"lao_li", "timestamp_msec":1, "payload":{"trigger":"dialogue"}}})
+	trace.accept_event({"event":"stream.completed", "data":{"request_id":"split-debug", "agent_id":"lao_li", "timestamp_msec":2, "payload":{}}})
+	r.loop_state.record_chat_handoffs("lao_li", "split-debug", minute, [{"kind":"visit","activity":"buy","status":"agreed","target_actor_id":"player","place_id":"market","item_id":"","quantity":0,"gold":0,"delay_minutes":0,"trade_side":"none","building_type":"","plot":-1}])
+	var extracted: Array = r.loop_state.dialogue_followups("lao_li")
+	check(extracted.size() == 1 and extracted[0].payload.handoffs[0].activity == "buy", "Extracted behavior survives client acceptance")
+	var extracted_save: Dictionary = r.loop_state.to_dict()
+	check(State.validate(extracted_save), "Structured activity save validates")
+	var extracted_restored = State.new()
+	extracted_restored.restore(extracted_save)
+	check(extracted_restored.dialogue_followups("lao_li") == extracted, "Structured activity survives save and restore")
+	var action_request: Dictionary = r._build_loop_request("lao_li", "split-action", "event", minute + 1, "")
+	check(action_request.dialogue_followups == extracted, "Action context receives exact destination and activity")
+	r.service_enabled = true
+	paused = true
+	r._trace_pending_handoffs()
+	check(trace.get_handoff_report("split-debug").delivery_status.contains("暂停"), "Completed chat trace exposes the actual paused scheduling blocker")
+	paused = false
+	r.scheduler.restore_budget({"day":minute / 1080,"calls":16})
+	r.scheduler.max_daily_requests = 16
+	r._trace_pending_handoffs()
+	check(trace.get_handoff_report("split-debug").delivery_status.contains("16/16"), "Completed chat trace updates when the daily quota is the blocker")
+	var event_count: int = trace.get_request("split-debug").action_events.size()
+	r._trace_pending_handoffs()
+	check(trace.get_request("split-debug").action_events.size() == event_count, "Repeated frames do not duplicate identical pending diagnostics")
+	check(trace.get_handoff_report("split-debug").context_evidence.is_empty(), "Client queue diagnostics never claim model delivery")
+	r.service_enabled = false
+	var spoken: Array[String] = []
+	r.dialogue_ready.connect(func(_actor: String, _request_id: String, speech: String): spoken.append(speech))
+	var clean_chat: Dictionary = r._build_loop_request("lao_li", "clean-chat", "dialogue", minute, "你好")
+	var clean_reply: Dictionary = reply(r, clean_chat, "你好，我们去散步吧。")
+	clean_reply.chat_isolated = true
+	clean_reply.chat_extraction_failed = true
+	r._handle_response("lao_li", clean_reply)
+	check(spoken.size() == 1 and spoken[0] == clean_reply.speech, "Isolated chat displays only model reply, not extraction diagnostics")
 	scene.queue_free()
 	await process_frame
 	print("DIALOGUE HANDOFF: %d checks, %d failures" % [checks, failures])

@@ -13,7 +13,8 @@ func record_chat_handoffs(actor: String, request_id: String, minute: int, handof
 	if handoffs.is_empty() or handoffs.size() > 3: return
 	var fields := ["kind", "status", "target_actor_id", "place_id", "item_id", "quantity", "gold", "delay_minutes", "trade_side", "building_type", "plot"]
 	for h in handoffs:
-		if not h is Dictionary or h.size() != fields.size(): return
+		if not h is Dictionary or h.size() != fields.size() + (1 if h.has("activity") else 0): return
+		if h.has("activity") and h.activity not in ["visit","walk","chat","inspect_crops","fish","golf","eat","drink","rest","plant","water","harvest","buy","sell","build","work","explore"]: return
 		for field in fields:
 			if not h.has(field): return
 		if h.kind not in ["visit", "date", "companionship", "trade", "plant", "harvest", "build", "rest"] or h.status not in ["agreed", "cancelled"]: return

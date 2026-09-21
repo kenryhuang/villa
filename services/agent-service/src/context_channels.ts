@@ -21,7 +21,7 @@ export function appendIsolatedEvent(memory:MemoryRepository,session:string,actor
 }
 export function prepareActionRequest(memory:MemoryRepository,request:DecisionRequest):DecisionRequest {
   const clean=structuredClone(request);
-  delete clean.dialogue_input;delete clean.chat_room;delete clean.chat_participants;
+  delete clean.dialogue_input;delete clean.chat_room;delete clean.chat_participants;delete clean.chat_focus_actors;
   // Only a handoff already archived by this service's extraction path is trusted.
   clean.dialogue_followups=(request.dialogue_followups??[]).flatMap(entry=>{
     const stored=memory.inspectEvent(request.session_id,actionActor(request.agent_id),String(entry.event_id));

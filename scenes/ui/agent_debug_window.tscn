@@ -108,3 +108,8 @@ wrap_mode = 1
 layout_mode = 2
 editable = false
 wrap_mode = 1
+
+[node name="Handoffs" type="TextEdit" parent="Overlay/Center/Panel/Margin/Layout/Body/Details/Tabs"]
+layout_mode = 2
+editable = false
+wrap_mode = 1

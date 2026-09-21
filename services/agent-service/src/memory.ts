@@ -163,6 +163,20 @@ export class MemoryRepository {
     return row?.event_id??"";
   }
 
+  chatRecent(sessionId:string,scope:string,limit:number):MemoryEvent[] {
+    const rows=this.#db.prepare(`SELECT event_id,kind,game_minute,payload_json FROM events WHERE session_id=? AND agent_id=? AND kind='ChatMessage' ORDER BY rowid DESC LIMIT ?`)
+      .all(sessionId,scope,Math.max(1,Math.min(100,Math.trunc(limit)))) as Record<string,unknown>[];
+    return rows.reverse().map(r=>({event_id:String(r.event_id),kind:String(r.kind),game_minute:Number(r.game_minute),payload:JSON.parse(String(r.payload_json))}));
+  }
+
+  chatSummaryCandidates(sessionId:string,scope:string,firstRetainedId:string):{previous:string;through:number;events:MemoryEvent[]} {
+    const head=this.#db.prepare("SELECT through_sequence,summary FROM history_heads WHERE session_id=? AND agent_id=?").get(sessionId,scope) as {through_sequence:number;summary:string}|undefined;
+    const boundary=this.#db.prepare("SELECT rowid AS n FROM events WHERE session_id=? AND agent_id=? AND event_id=?").get(sessionId,scope,firstRetainedId) as {n:number}|undefined;
+    const rows=boundary?this.#db.prepare(`SELECT event_id,kind,game_minute,payload_json FROM events WHERE session_id=? AND agent_id=? AND kind='ChatMessage' AND rowid>? AND rowid<? ORDER BY rowid LIMIT 32`)
+      .all(sessionId,scope,head?.through_sequence??0,boundary.n) as Record<string,unknown>[]:[];
+    return {previous:head?.summary??"",through:head?.through_sequence??0,events:rows.map(r=>({event_id:String(r.event_id),kind:String(r.kind),game_minute:Number(r.game_minute),payload:JSON.parse(String(r.payload_json))}))};
+  }
+
   recent(sessionId: string, agentId: string, limit: number): MemoryEvent[] {
     const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
     const rows = this.#db.prepare(`SELECT event_id, kind, game_minute, importance, payload_json FROM events

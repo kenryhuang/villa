@@ -66,6 +66,7 @@ var _society_view: TextEdit
 var teleport_map: Control
 var _teleport_status: Label
 var character_state_panel: VBoxContainer
+var world_state_panel: VBoxContainer
 var _editor_paused := false
 var _was_paused := false
 
@@ -74,7 +75,16 @@ func configure_farm3d(runtime: Node) -> void:
 	_farm3d_runtime = runtime
 	_configured = true
 	title_label.text = "开发调试"
-	tabs.set_tab_hidden(0, true)
+	for child in tabs.get_child(0).get_children(): child.hide()
+	world_state_panel = preload("res://scripts/ui/farm3d_world_debug_panel.gd").new()
+	tabs.get_child(0).add_child(world_state_panel)
+	world_state_panel.configure(runtime.farm3d_session)
+	world_state_panel.busy_changed.connect(func(busy: bool):
+		for index in tabs.get_tab_count(): tabs.set_tab_disabled(index, busy and index != 0)
+		close_button.disabled = busy
+		cancel_button.disabled = busy
+		refresh_button.disabled = busy)
+	tabs.set_tab_title(0, "时间与等级")
 	tabs.set_tab_hidden(1, true)
 	tabs.set_tab_title(2, "决策间隔")
 	apply_button.hide()
@@ -182,6 +192,7 @@ func _build_teleport_tab(session: Node) -> void:
 
 
 func _refresh_farm3d() -> void:
+	world_state_panel.refresh()
 	var records: Array[Dictionary] = []
 	for id in _farm3d_runtime.registry.get_agent_ids():
 		var state: Variant = _farm3d_runtime.farm3d_session.npc_economy.get_npc_state(id)
@@ -283,6 +294,7 @@ func open(snapshot_value: Dictionary = {}) -> void:
 
 
 func close() -> void:
+	if world_state_panel != null and world_state_panel.busy: return
 	_release_editor_pause()
 	visible = false
 	if agent_trace_window != null:
@@ -291,12 +303,13 @@ func close() -> void:
 
 func _on_debug_tab_changed(_index: int) -> void:
 	if character_state_panel == null: return
-	if visible and tabs.get_current_tab_control() == character_state_panel:
+	if visible and (tabs.get_current_tab_control() == character_state_panel or tabs.current_tab == 0):
 		if not _editor_paused:
 			_was_paused = get_tree().paused
 			_editor_paused = true
 			get_tree().paused = true
-		character_state_panel.refresh_actor()
+		if tabs.current_tab == 0: world_state_panel.refresh()
+		else: character_state_panel.refresh_actor()
 	else: _release_editor_pause()
 
 func _release_editor_pause() -> void:

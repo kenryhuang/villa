@@ -1,6 +1,7 @@
 import {actionActor,actionFacts,appendIsolatedEvent,prepareActionRequest} from "./context_channels.ts";
 import {chatRoomKey,chatGenerationScope,renderHandoffs,type ChatPort} from "./chat_provider.ts";
-import {CHAT_HISTORY_MESSAGES} from "./chat_context.ts";
+import {importantChatActors} from "./chat_context.ts";
+import {prepareChatContext} from "./chat_summary.ts";
 import {WorldReadBroker} from "./world_read_broker.ts";
 import {createHash} from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -233,6 +234,12 @@ export function createApp(dependencies: AppDependencies) {
           return;
         }
         writeEvent("stream.started", {trigger: decisionRequest.trigger});
+        if(dependencies.chatProvider && decisionRequest.trigger!=="dialogue") {
+          const accepted=new Set((decisionRequest.dialogue_followups??[]).map(e=>String(e.event_id)));
+          writeEvent("loop.trace",{event:"chat.handoff_prepared",accepted_event_ids:[...accepted],
+            rejected_event_ids:(parsed.value.dialogue_followups??[]).map(e=>String(e.event_id)).filter(id=>!accepted.has(id)),
+            reason:"Only service-archived ChatActionAgreed events are admitted; provider.input is the actual model context evidence."});
+        }
         const controller = new AbortController();
         let finished = false;
         const cancel = () => { if (!finished) controller.abort(); };
@@ -270,16 +277,20 @@ export function createApp(dependencies: AppDependencies) {
             dependencies.memory.appendEvent(decisionRequest.session_id,scope,{event_id:`chat-user:${decisionRequest.chat_room?.turn_id??decisionRequest.request_id}`,
               kind:"ChatMessage",game_minute:decisionRequest.game_minute,payload:{speaker:"player",text:decisionRequest.dialogue_input??""}});
             const chatContext=dependencies.registry.buildContext(decisionRequest.agent_id,decisionRequest,[]);
-            const intent=await dependencies.chatProvider.respond(decisionRequest,chatContext,dependencies.memory.recent(decisionRequest.session_id,scope,CHAT_HISTORY_MESSAGES).reverse(),
-              dependencies.registry.ids().filter(id=>id!=="village_public").map(id=>{const a=dependencies.registry.get(id)!;return {id,name:a.display_name,role:a.role_id,soul:a.soul};}),
-              (name,args,signal)=>reads.read(decisionRequest,name,args,p=>writeEvent("read.request",p),signal),emit,controller.signal);
+            const window=await prepareChatContext(dependencies.memory,dependencies.chatProvider,decisionRequest,scope,emit,
+              ()=>dependencies.memory.chatContextGeneration(decisionRequest.session_id,chatScope)===chatGeneration,controller.signal);
+            const intent=await dependencies.chatProvider.respond(decisionRequest,chatContext,window.history,
+              importantChatActors(decisionRequest,dependencies.registry.ids().filter(id=>id!=="village_public").map(id=>{const a=dependencies.registry.get(id)!;return {id,name:a.display_name};})),
+              (name,args,signal)=>reads.read(decisionRequest,name,args,p=>writeEvent("read.request",p),signal),emit,controller.signal,window.summary);
             if(dependencies.memory.chatContextGeneration(decisionRequest.session_id,chatScope)!==chatGeneration)throw new Error("chat_context_reset");
             if(!controller.signal.aborted){
               dependencies.memory.appendEvent(decisionRequest.session_id,scope,{event_id:`chat-reply:${decisionRequest.request_id}`,kind:"ChatMessage",game_minute:decisionRequest.game_minute,
                 payload:{speaker:decisionRequest.agent_id,text:intent.speech??"",participants}});
-              if(intent.chat_handoffs?.length)dependencies.memory.appendEvent(decisionRequest.session_id,actionActor(decisionRequest.agent_id),{
+              if(intent.chat_handoffs?.length){dependencies.memory.appendEvent(decisionRequest.session_id,actionActor(decisionRequest.agent_id),{
                 event_id:`dialogue:${decisionRequest.request_id}`,kind:"ChatActionAgreed",game_minute:decisionRequest.game_minute,
                 payload:{handoff_version:1,player_text:"",agent_speech:renderHandoffs(intent.chat_handoffs),submitted_actions:[],outcomes:[],handoffs:intent.chat_handoffs}});
+                writeEvent("loop.trace",{event:"chat.handoff_archived",source_event_id:`dialogue:${decisionRequest.request_id}`,handoffs:intent.chat_handoffs});
+              }
               dependencies.memory.storeIdempotent(decisionKey,intent);
               writeEvent("decision.final",intent);writeEvent("stream.completed",{status:"completed",cached:false});
             }

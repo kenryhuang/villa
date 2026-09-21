@@ -92,6 +92,7 @@ var farm3d_actors: Dictionary = {}
 var _farm3d_memory_export_pending := false
 var _deferred_responses: Array[Dictionary] = []
 var _scheduled_tick_pending := false
+var _handoff_trace_status: Dictionary = {}
 var _restore_preparation_active := false
 var _prepared_restore: Dictionary = {}
 var _cancelled_requests: Dictionary = {}
@@ -1426,6 +1427,34 @@ func _build_request(agent_id: String, trigger: String, game_minute: int, dialogu
 	return request
 
 
+func _trace_pending_handoffs() -> void:
+	var active := {}
+	var minute := _absolute_game_minute()
+	for actor in loop_state.dialogue_handoffs:
+		if loop_state.dialogue_handoffs[actor].is_empty(): continue
+		var reason := "已在客户端排队，等待行动决策"
+		if not service_enabled: reason = "等待：Agent 服务未启用"
+		elif get_tree().paused: reason = "等待：游戏暂停，关闭对话或编辑窗口后再调度"
+		elif scheduler.max_daily_requests > 0 and scheduler.budget_day >= minute / 1080 and scheduler.budget_calls >= scheduler.max_daily_requests:
+			reason = "等待：自主规划每日额度已用尽（%d/%d）" % [scheduler.budget_calls, scheduler.max_daily_requests]
+		elif scheduler.is_in_flight(actor): reason = "等待当前请求；是否进入 context 以下方实际请求证据为准"
+		elif loop_state.has_execution(actor): reason = "等待：该角色已有行动正在执行"
+		elif is_instance_valid(farm3d_session) and farm3d_session.living_world != null:
+			var world: Node = farm3d_session.living_world
+			if actor not in world.society.focus: reason = "等待：角色未在重点 NPC 名单中"
+			elif not world.society.caught_up(minute): reason = "等待：居民社会结算"
+			elif not world.work.pending_negotiation(actor) and (not world.interruptions.running(actor).is_empty() or world.work.owns_schedule(actor)): reason = "等待：角色的运输或工作安排结束"
+			elif not world.work.pending_negotiation(actor) and not world.projects.active(actor).is_empty() and not world.projects.active(actor).steps.values().any(func(step): return step.status == "blocked"): reason = "等待：当前项目执行"
+			elif farm_registry.has_method("has_pending_work") and farm_registry.has_pending_work(actor): reason = "等待：当前农田操作结束"
+		for event_id in loop_state.dialogue_handoffs[actor]:
+			active[event_id] = true
+			if _handoff_trace_status.get(event_id) == reason: continue
+			_handoff_trace_status[event_id] = reason
+			session_trace.record_action_event(str(event_id).trim_prefix("dialogue:"), "chat.handoff_pending", {"source_event_id": event_id, "reason": reason, "game_minute": minute, "budget_calls": scheduler.budget_calls, "max_daily_requests": scheduler.max_daily_requests})
+	for event_id in _handoff_trace_status.keys():
+		if not active.has(event_id): _handoff_trace_status.erase(event_id)
+
+
 func _build_loop_request(actor: String, request_id: String, trigger: String, minute: int, dialogue: String) -> Dictionary:
 	loop_state.capture(self)
 	var caps: Dictionary = role_system.get_capabilities(actor)
@@ -1445,6 +1474,9 @@ func _build_loop_request(actor: String, request_id: String, trigger: String, min
 		_chat_request_context.erase(actor)
 	if trigger == "dialogue":
 		var world: Node = farm3d_session.living_world
+		request.chat_focus_actors = []
+		for focus_actor in world.society.focus:
+			request.chat_focus_actors.append({"actor_id":focus_actor,"display_name":world.actor_name(focus_actor)})
 		var participants: Array = ["player"]
 		participants.append_array(request.get("chat_room", {}).get("participants", [actor]))
 		request.chat_participants = []
@@ -1464,6 +1496,7 @@ func _build_loop_request(actor: String, request_id: String, trigger: String, min
 
 func _loop_tick() -> void:
 	if not is_instance_valid(farm3d_session): return
+	_trace_pending_handoffs()
 	loop_state.capture(self)
 	var minute := _absolute_game_minute()
 	loop_state.evaluate_goals(self, minute)
@@ -1627,20 +1660,21 @@ func _handle_response(agent_id: String, response: Dictionary) -> void:
 		# Decision summaries are diagnostics, never NPC dialogue. Some providers
 		# return the actual reply only in a speak tool call instead of content.
 		var speech := _dialogue_reply(response)
-		if response.get("chat_extraction_failed", false):
+		if not response.get("chat_isolated", false) and response.get("chat_extraction_failed", false):
 			speech += "\n（聊天已回复，但未能可靠记录行动约定；请重新确认具体安排。）"
 		var facts: Array[String] = []
 		for outcome in outcomes:
 			if str(outcome.get("tool_name", "")) not in ["speak", "wait"]:
 				var fact := _dialogue_outcome_fact(outcome)
 				if not fact.is_empty(): facts.append(fact)
-		if not facts.is_empty():
+		if not response.get("chat_isolated", false) and not facts.is_empty():
 			speech += "\n（" + "；".join(facts) + "）"
-		if not failed.is_empty():
+		if not response.get("chat_isolated", false) and not failed.is_empty():
 			speech += "\n（本次操作未全部完成：" + str(failed[0].get("failure_code", "transaction_failed")) + "。）"
 		if loop_state.loops.has(request_id):
 			if response.get("chat_isolated", false):
 				loop_state.record_chat_handoffs(agent_id, request_id, _absolute_game_minute(), response.get("chat_handoffs", []))
+				_trace_pending_handoffs()
 			else:
 				loop_state.record_dialogue(agent_id, request_id, _absolute_game_minute(), str(loop_state.loops[request_id].get("dialogue_input", "")), speech, checked.value.actions, outcomes)
 		dialogue_ready.emit(agent_id, request_id, speech)

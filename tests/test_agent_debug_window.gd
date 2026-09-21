@@ -58,6 +58,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	window.toggle()
 	assertions.truthy(window.visible, "Agent debug window toggle opens")
 	await _test_chat_calls(assertions, tree, trace, window)
+	await _test_handoff_trace(assertions, tree, trace, window)
 
 	var debug_panel = DebugPanelScene.instantiate()
 	tree.root.add_child(debug_panel)
@@ -119,3 +120,62 @@ func _event(name: String, sequence: int, payload: Dictionary) -> Dictionary:
 			"payload": payload,
 		},
 	}
+
+
+func _test_handoff_trace(assertions: TestAssert, tree: SceneTree, trace: Node, window: CanvasLayer) -> void:
+	trace.configure(false, "handoff-trace")
+	var ids: Array[String] = ["request-1"]
+	window.show_requests(ids, "request-1")
+	var handoff := {"kind":"visit", "status":"agreed", "target_actor_id":"player", "place_id":"greenhouse:12:8", "item_id":"", "quantity":0, "gold":0, "delay_minutes":0, "trade_side":"none", "building_type":"", "plot":-1}
+	trace.accept_event(_event("stream.started", 1, {"trigger":"dialogue"}))
+	trace.accept_event(_event("loop.trace", 2, {"event":"provider.route", "phase":"extract_actions", "channel":"chat"}))
+	trace.accept_event(_event("provider.input", 3, {"model":"chat-model", "messages":[]}))
+	trace.accept_event(_event("provider.output", 4, {"message":{"content":JSON.stringify({"handoffs":[handoff]})}}))
+	trace.accept_event(_event("loop.trace", 5, {"event":"chat.extraction_result", "candidates":[handoff], "accepted":[handoff], "rejected":[]}))
+	trace.accept_event(_event("loop.trace", 6, {"event":"chat.handoff_archived", "source_event_id":"dialogue:request-1"}))
+	trace.accept_event(_event("decision.final", 7, {"chat_isolated":true, "chat_handoffs":[handoff]}))
+	trace.accept_event(_event("stream.completed", 8, {}))
+	trace.record_action_event("request-1", "chat.handoff_pending", {"reason":"等待：自主规划每日额度已用尽（16/16）"})
+	await tree.process_frame
+	var report: Dictionary = trace.get_handoff_report("request-1")
+	assertions.equal(report.accepted, [handoff], "Handoff report retains validated instructions")
+	assertions.truthy(report.archived and report.context_evidence.is_empty(), "Archiving and queuing do not claim model context delivery")
+	assertions.truthy(report.delivery_status.contains("16/16"), "Daily-budget blocking reason is visible")
+	assertions.truthy(window.handoff_view.text.contains("greenhouse:12:8") and window.handoff_view.text.contains("chat-model"), "New tab shows extracted instruction and raw extraction output")
+	var entry := {"event_id":"dialogue:request-1", "kind":"dialogue", "game_minute":10, "payload":{"handoff_version":1, "handoffs":[handoff]}}
+	var started := _event("stream.started", 1, {"trigger":"event"})
+	started.data.request_id = "action-1"
+	trace.accept_event(started)
+	var review := _event("loop.trace", 2, {"event":"dialogue.handoff_review", "source_event_ids":[entry.event_id]})
+	review.data.request_id = "action-1"
+	trace.accept_event(review)
+	assertions.truthy(trace.get_handoff_report("request-1").context_evidence.is_empty(), "Review marker alone is not actual input evidence")
+	var input := _event("provider.input", 3, {"model":"action-model", "messages":[{"role":"system", "content":"Rules"}, {"role":"user", "content":JSON.stringify({"turn":{"trigger":"event", "dialogue_followups":[entry]}})}]})
+	input.data.request_id = "action-1"
+	trace.accept_event(input)
+	await tree.process_frame
+	report = trace.get_handoff_report("request-1")
+	assertions.equal(report.context_evidence.size(), 1, "Action input links back to the completed chat request")
+	assertions.equal(report.context_evidence[0].context_entry, JSON.parse_string(JSON.stringify(entry)), "Evidence is the exact entry from the actual model messages")
+	assertions.truthy(report.context_evidence[0].action_request_id == "action-1" and report.context_evidence[0].model == "action-model", "Evidence names destination request and model")
+	assertions.truthy(report.delivery_status.contains("已写入实际"), "Delivered status requires provider input")
+	assertions.equal(window.request_list.item_count, 1, "Chat-filtered debug does not need to expose other request rows")
+	assertions.truthy(window.handoff_view.text.contains("action-1") and window.handoff_view.text.contains("turn.dialogue_followups"), "Filtered chat view refreshes when action context arrives")
+	assertions.equal(trace.get_handoff_report("action-1").context_evidence[0].context_entry, JSON.parse_string(JSON.stringify(entry)), "Action request view exposes the same received evidence")
+	if "--capture-handoff-ui" in OS.get_cmdline_user_args():
+		(window.input_view.get_parent() as TabContainer).current_tab = 3
+		window.handoff_view.scroll_vertical = 0
+		for frame in 5: await tree.process_frame
+		await RenderingServer.frame_post_draw
+		tree.root.get_texture().get_image().save_png("res://tmp/handoff-trace-ui.png")
+	# Empty and invalid extractions must be distinguishable from waiting on dispatch.
+	trace.configure(false, "handoff-empty")
+	trace.accept_event(_event("stream.started", 1, {"trigger":"dialogue"}))
+	trace.accept_event(_event("decision.final", 2, {"chat_isolated":true, "chat_handoffs":[], "chat_extraction_failed":false}))
+	assertions.truthy(trace.get_handoff_report("request-1").extraction_status.contains("空数组"), "Empty extraction is explicitly identified")
+	trace.accept_event(_event("loop.trace", 3, {"event":"chat.extraction_failed", "reason":"invalid_json"}))
+	assertions.truthy(trace.get_handoff_report("request-1").extraction_status.contains("失败"), "Malformed JSON has a different status than no intention")
+	var rejected := _event("loop.trace", 4, {"event":"chat.handoff_prepared", "accepted_event_ids":[], "rejected_event_ids":["dialogue:request-1"]})
+	rejected.data.request_id = "rejected-action"
+	trace.accept_event(rejected)
+	assertions.truthy(trace.get_handoff_report("request-1").delivery_status.contains("拒绝"), "Server trust rejection is linked to the source chat")

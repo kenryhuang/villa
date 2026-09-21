@@ -81,9 +81,16 @@ func accept_event(event: Dictionary) -> bool:
 				record.provider_route = payload.duplicate(true)
 			elif payload.get("event") == "provider.response_model" and not record.provider_calls.is_empty():
 				record.provider_calls[-1]["response_model"] = str(payload.get("model", ""))
+			elif payload.get("event") == "chat.handoff_prepared":
+				for event_id in payload.get("accepted_event_ids", []) + payload.get("rejected_event_ids", []):
+					var source := str(event_id).trim_prefix("dialogue:")
+					var source_record := get_request(source)
+					if source_record.get("agent_id") == record.agent_id:
+						record_action_event(source, "chat.handoff_boundary", {"action_request_id": request_id, "source_event_id": event_id, "accepted": event_id in payload.get("accepted_event_ids", [])})
 		"provider.input":
 			record.input = payload.duplicate(true)
 			record.provider_calls.append({"input": payload.duplicate(true), "route": record.provider_route.duplicate(true), "timestamp_msec": int(data.timestamp_msec), "output": {}})
+			_link_handoff_context(record, payload)
 		"reasoning.delta":
 			(record.reasoning_parts as Array).append(str(payload.get("delta", "")))
 		"content.delta":
@@ -226,6 +233,76 @@ func record_action_event(request_id: String, event_name: String, metadata: Dicti
 		_log_file.flush()
 	trace_updated.emit(request_id)
 	return true
+
+
+func _handoffs_in_input(body: Dictionary) -> Array:
+	var result: Array = []
+	for index in body.get("messages", []).size():
+		var message: Dictionary = body.messages[index]
+		if message.get("role") != "user" or not message.get("content") is String: continue
+		var parser := JSON.new()
+		if parser.parse(message.content) != OK or not parser.data is Dictionary: continue
+		var turn: Variant = parser.data.get("turn")
+		if not turn is Dictionary or turn.get("trigger") == "dialogue": continue
+		for entry in turn.get("dialogue_followups", []):
+			if not entry is Dictionary or not str(entry.get("event_id", "")).begins_with("dialogue:"): continue
+			result.append({"source_event_id": entry.event_id, "context_path": "messages[%d].content → turn.dialogue_followups" % index, "context_entry": entry.duplicate(true)})
+	return result
+
+
+func _link_handoff_context(record: Dictionary, body: Dictionary) -> void:
+	# This is derived from provider.input, not a queued request or a review marker.
+	for evidence in _handoffs_in_input(body):
+		evidence.merge({"action_request_id": record.request_id, "call_index": record.provider_calls.size() - 1, "model": body.get("model", ""), "agent_id": record.agent_id})
+		var source := str(evidence.source_event_id).trim_prefix("dialogue:")
+		var source_index := int(_request_indexes.get(source, -1))
+		if source_index >= 0 and _requests[source_index].agent_id == record.agent_id:
+			record_action_event(source, "chat.handoff_context", evidence)
+
+
+func get_handoff_report(request_id: String) -> Dictionary:
+	var record := get_request(request_id)
+	if record.is_empty(): return {}
+	var report := {"source_event_id": "dialogue:" + request_id, "extraction_status": "未记录提取结果", "raw_extractions": [], "accepted": [], "rejected": [], "archived": false, "delivery_status": "尚无实际行动模型请求证据", "pending": {}, "context_evidence": [], "boundary_checks": []}
+	for call in record.get("provider_calls", []):
+		if call.get("route", {}).get("phase") == "extract_actions":
+			report.raw_extractions.append({"model": call.get("input", {}).get("model", ""), "output": call.get("output", {})})
+		for evidence in _handoffs_in_input(call.get("input", {})):
+			evidence.merge({"action_request_id": request_id, "call_index": record.provider_calls.find(call), "model": call.get("input", {}).get("model", "")})
+			report.context_evidence.append(evidence)
+	for event in record.get("loop_events", []):
+		match str(event.get("event", "")):
+			"chat.extraction_result":
+				report["candidates"] = event.get("candidates", [])
+				report.accepted = event.get("accepted", [])
+				report.rejected = event.get("rejected", [])
+				report["relationship_candidate"] = event.get("relationship_candidate")
+				report.extraction_status = "已提取并通过校验" if not report.accepted.is_empty() else "模型返回空数组：未提取到行动指示"
+				if not report.rejected.is_empty(): report.extraction_status = "部分或全部候选未通过校验"
+			"chat.handoffs_extracted":
+				if not report.has("candidates"):
+					report.accepted = event.get("handoffs", [])
+					report.extraction_status = "已提取并通过校验" if not report.accepted.is_empty() else "模型返回空数组：未提取到行动指示"
+			"chat.extraction_failed":
+				report["extraction_error"] = event
+				report.extraction_status = "提取失败或候选校验失败"
+			"chat.handoff_archived": report.archived = true
+			"chat.handoff_prepared": report.boundary_checks.append(event)
+	var final: Dictionary = record.get("final", {})
+	if final.get("chat_isolated", false):
+		report.accepted = final.get("chat_handoffs", [])
+		if report.extraction_status == "未记录提取结果":
+			report.extraction_status = "提取失败" if final.get("chat_extraction_failed", false) else "模型返回空数组：未提取到行动指示" if report.accepted.is_empty() else "已提取（缓存或旧记录，无本次原始提取调用）"
+	for event in record.get("action_events", []):
+		if event.event == "chat.handoff_pending": report.pending = event.metadata
+		elif event.event == "chat.handoff_context": report.context_evidence.append(event.metadata)
+		elif event.event == "chat.handoff_boundary": report.boundary_checks.append(event.metadata)
+	if not report.context_evidence.is_empty(): report.delivery_status = "已写入实际行动模型请求 context（不代表行动已执行）"
+	elif report.boundary_checks.any(func(check): return check.get("accepted") == false): report.delivery_status = "服务端未找到可信交接记录，已拒绝进入行动 context"
+	elif not report.pending.is_empty(): report.delivery_status = str(report.pending.get("reason", "等待行动调度"))
+	elif report.accepted.is_empty() and final.get("chat_isolated", false): report.delivery_status = "没有可交接的行动指示"
+	if record.get("trigger") != "dialogue" and not final.get("chat_isolated", false): report.extraction_status = "行动 loop：查看实际收到的 context_evidence"
+	return report
 
 
 func clear() -> void:

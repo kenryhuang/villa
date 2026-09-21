@@ -30,7 +30,8 @@ test("chat context keeps own persona, no other character profiles and only recen
   assert.equal(header.player,"玩家自定义");
   assert.equal(header.participants,undefined);
   assert.doesNotMatch(String(messages[0].content),/伊可存档名|mutual_affinity/);
-  assert.deepEqual(Object.keys(header).sort(),["background","identity","player","rules"]);
+  assert.deepEqual(Object.keys(header).sort(),["action_agreements","background","identity","important_characters","player","rules"]);
+  assert.deepEqual(header.important_characters,[]);
   assert.doesNotMatch(JSON.stringify(messages),/INVENTORY_SENTINEL|OUTSIDER_SENTINEL|conversation-0"/);
   assert.ok(messages.length<=CHAT_HISTORY_MESSAGES+1);assert.match(JSON.stringify(messages),/conversation-29/);
   assert.equal(messages.at(-1)?.content,"大家好");
@@ -44,7 +45,7 @@ test("history budget reserves current player turn, preserves group ordering, and
   r.dialogue_input="本轮".repeat(400);
   const history=[
     {event_id:"old-user",kind:"ChatMessage",game_minute:1,payload:{speaker:"player",text:"OLD_USER"}},
-    {event_id:"old-reply",kind:"ChatMessage",game_minute:1,payload:{speaker:r.agent_id,text:"OLD_REPLY".repeat(250)}},
+    {event_id:"old-reply",kind:"ChatMessage",game_minute:1,payload:{speaker:r.agent_id,text:"OLD_REPLY".repeat(900)}},
     {event_id:"chat-user:turn",kind:"ChatMessage",game_minute:2,payload:{speaker:"player",text:r.dialogue_input}},
     {event_id:"group-reply",kind:"ChatMessage",game_minute:2,payload:{speaker:"resident_yun",text:"本轮已经听到了"}},
   ];
