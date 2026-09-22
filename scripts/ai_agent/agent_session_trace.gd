@@ -16,6 +16,10 @@ var _store_to_disk := false
 var _directory := DEFAULT_DIRECTORY
 var _log_path := ""
 var _log_file: FileAccess
+var intent_debug_fetcher: Callable
+var _intent_fetching := {}
+var _intent_fetch_times := {}
+var _intent_generation := 0
 
 
 func configure(
@@ -27,6 +31,9 @@ func configure(
 	_requests.clear()
 	_request_indexes.clear()
 	_terminal_requests.clear()
+	_intent_generation += 1
+	_intent_fetching.clear()
+	_intent_fetch_times.clear()
 	_store_to_disk = store_to_disk
 	_directory = directory
 	_log_path = ""
@@ -208,6 +215,43 @@ func get_log_path() -> String:
 	return _log_path
 
 
+func refresh_intent_debug(request_id: String) -> void:
+	if not intent_debug_fetcher.is_valid() or _intent_fetching.has(request_id): return
+	var record := get_request(request_id)
+	if record.is_empty() or record.get("trigger") != "dialogue": return
+	var now := Time.get_ticks_msec()
+	if now - int(_intent_fetch_times.get(request_id, -2000)) < 2000: return
+	_intent_fetch_times[request_id] = now
+	_intent_fetching[request_id] = true
+	var generation := _intent_generation
+	var callback := func(ok: bool, body: Dictionary, error: String):
+		if generation != _intent_generation: return
+		_intent_fetching.erase(request_id)
+		if ok: accept_intent_debug(request_id, body)
+		else:
+			var index := int(_request_indexes.get(request_id, -1))
+			if index >= 0:
+				_requests[index]["intent_debug_error"] = error
+				trace_updated.emit(request_id)
+	if not bool(intent_debug_fetcher.call(str(record.agent_id), request_id, callback)):
+		callback.call(false, {}, "debug_service_unavailable")
+
+
+func accept_intent_debug(request_id: String, snapshot: Dictionary) -> bool:
+	var index := int(_request_indexes.get(request_id, -1))
+	if index < 0 or snapshot.get("request_id") != request_id or snapshot.get("agent_id") != _requests[index].agent_id: return false
+	if _requests[index].get("intent_diagnostics", {}) == snapshot:
+		if _requests[index].has("intent_debug_error"):
+			_requests[index].erase("intent_debug_error")
+			trace_updated.emit(request_id)
+		return true
+	_requests[index]["intent_diagnostics"] = snapshot.duplicate(true)
+	_requests[index].erase("intent_debug_error")
+	# Async extraction completes after stream.completed; store it as a linked update.
+	record_action_event(request_id, "chat.intent_diagnostics", snapshot)
+	return true
+
+
 func record_action_event(request_id: String, event_name: String, metadata: Dictionary) -> bool:
 	var index := int(_request_indexes.get(request_id, -1))
 	if index < 0 or event_name.strip_edges().is_empty():
@@ -244,9 +288,12 @@ func _handoffs_in_input(body: Dictionary) -> Array:
 		if parser.parse(message.content) != OK or not parser.data is Dictionary: continue
 		var turn: Variant = parser.data.get("turn")
 		if not turn is Dictionary or turn.get("trigger") == "dialogue": continue
-		for entry in turn.get("dialogue_followups", []):
-			if not entry is Dictionary or not str(entry.get("event_id", "")).begins_with("dialogue:"): continue
-			result.append({"source_event_id": entry.event_id, "context_path": "messages[%d].content → turn.dialogue_followups" % index, "context_entry": entry.duplicate(true)})
+		for field in ["dialogue_followups", "confirmed_dialogue"]:
+			for entry in turn.get(field, []):
+				if not entry is Dictionary: continue
+				var source := str(entry.get("event_id", ""))
+				if not source.begins_with("dialogue:") and not source.begins_with("chat-intents:"): continue
+				result.append({"source_event_id":source,"context_path":"messages[%d].content → turn.%s" % [index,field],"context_entry":entry.duplicate(true)})
 	return result
 
 
@@ -254,7 +301,7 @@ func _link_handoff_context(record: Dictionary, body: Dictionary) -> void:
 	# This is derived from provider.input, not a queued request or a review marker.
 	for evidence in _handoffs_in_input(body):
 		evidence.merge({"action_request_id": record.request_id, "call_index": record.provider_calls.size() - 1, "model": body.get("model", ""), "agent_id": record.agent_id})
-		var source := str(evidence.source_event_id).trim_prefix("dialogue:")
+		var source := str(evidence.source_event_id).trim_prefix("dialogue:").trim_prefix("chat-intents:")
 		var source_index := int(_request_indexes.get(source, -1))
 		if source_index >= 0 and _requests[source_index].agent_id == record.agent_id:
 			record_action_event(source, "chat.handoff_context", evidence)
@@ -265,13 +312,14 @@ func get_handoff_report(request_id: String) -> Dictionary:
 	if record.is_empty(): return {}
 	var report := {"source_event_id": "dialogue:" + request_id, "extraction_status": "未记录提取结果", "raw_extractions": [], "accepted": [], "rejected": [], "archived": false, "delivery_status": "尚无实际行动模型请求证据", "pending": {}, "context_evidence": [], "boundary_checks": []}
 	for call in record.get("provider_calls", []):
-		if call.get("route", {}).get("phase") == "extract_actions":
-			report.raw_extractions.append({"model": call.get("input", {}).get("model", ""), "output": call.get("output", {})})
+		if call.get("route", {}).get("phase") in ["extract_actions", "extract_intents"]:
+			report.raw_extractions.append({"model":call.get("input",{}).get("model",""),"input":call.get("input",{}),"output":call.get("output",{})})
 		for evidence in _handoffs_in_input(call.get("input", {})):
 			evidence.merge({"action_request_id": request_id, "call_index": record.provider_calls.find(call), "model": call.get("input", {}).get("model", "")})
 			report.context_evidence.append(evidence)
 	for event in record.get("loop_events", []):
 		match str(event.get("event", "")):
+			"chat.intent_queued": report.extraction_status = "已排队：异步提取尚未返回"
 			"chat.extraction_result":
 				report["candidates"] = event.get("candidates", [])
 				report.accepted = event.get("accepted", [])
@@ -290,9 +338,19 @@ func get_handoff_report(request_id: String) -> Dictionary:
 			"chat.handoff_prepared": report.boundary_checks.append(event)
 	var final: Dictionary = record.get("final", {})
 	if final.get("chat_isolated", false):
-		report.accepted = final.get("chat_handoffs", [])
+		if final.has("chat_handoffs"): report.accepted = final.chat_handoffs
 		if report.extraction_status == "未记录提取结果":
-			report.extraction_status = "提取失败" if final.get("chat_extraction_failed", false) else "模型返回空数组：未提取到行动指示" if report.accepted.is_empty() else "已提取（缓存或旧记录，无本次原始提取调用）"
+			if final.get("chat_extraction_failed", false): report.extraction_status = "提取失败"
+			elif final.has("chat_handoffs") and report.accepted.is_empty(): report.extraction_status = "模型返回空数组：未提取到行动指示"
+			else: report.extraction_status = "尚未取得异步提取记录" if report.accepted.is_empty() else "已提取（缓存或旧记录，无本次原始提取调用）"
+	var diagnostics: Dictionary = record.get("intent_diagnostics", {})
+	if not diagnostics.is_empty():
+		report["async_extraction"] = diagnostics
+		report.accepted = diagnostics.get("accepted", [])
+		report.archived = diagnostics.get("archived", false)
+		report.extraction_status = str({"queued":"已排队，等待模型", "running":"正在提取", "retry_wait":"提取失败，等待重试", "failed":"提取失败，自动重试已停止", "empty":"模型确实返回空数组", "completed":"已提取并通过校验", "cancelled":"上下文已失效，提取已取消", "not_recorded":"未找到提取任务（旧版本记录或尚未入队）"}.get(diagnostics.get("status", ""), "未知状态"))
+		if not str(diagnostics.get("error", "")).is_empty(): report.extraction_status += "：" + str(diagnostics.error)
+	if record.has("intent_debug_error"): report["debug_fetch_error"] = record.intent_debug_error
 	for event in record.get("action_events", []):
 		if event.event == "chat.handoff_pending": report.pending = event.metadata
 		elif event.event == "chat.handoff_context": report.context_evidence.append(event.metadata)
@@ -300,12 +358,17 @@ func get_handoff_report(request_id: String) -> Dictionary:
 	if not report.context_evidence.is_empty(): report.delivery_status = "已写入实际行动模型请求 context（不代表行动已执行）"
 	elif report.boundary_checks.any(func(check): return check.get("accepted") == false): report.delivery_status = "服务端未找到可信交接记录，已拒绝进入行动 context"
 	elif not report.pending.is_empty(): report.delivery_status = str(report.pending.get("reason", "等待行动调度"))
-	elif report.accepted.is_empty() and final.get("chat_isolated", false): report.delivery_status = "没有可交接的行动指示"
+	elif diagnostics.get("consumed", false): report.delivery_status = "服务端已消费本轮意图；具体模型请求见 context_evidence"
+	elif report.archived: report.delivery_status = "已暂存，等待下一次行动 loop"
+	elif diagnostics.get("status") == "empty": report.delivery_status = "没有可交接的行动指示"
 	if record.get("trigger") != "dialogue" and not final.get("chat_isolated", false): report.extraction_status = "行动 loop：查看实际收到的 context_evidence"
 	return report
 
 
 func clear() -> void:
+	_intent_generation += 1
+	_intent_fetching.clear()
+	_intent_fetch_times.clear()
 	_requests.clear()
 	_request_indexes.clear()
 	trace_cleared.emit()
@@ -407,6 +470,11 @@ func _disk_record(record: Dictionary) -> Dictionary:
 
 func _materialize_record(record: Dictionary) -> Dictionary:
 	var result := record.duplicate(true)
+	result.provider_calls = (result.provider_calls as Array).filter(func(call: Dictionary): return not call.get("async_intent", false))
+	for call in result.get("intent_diagnostics", {}).get("calls", []):
+		var copied: Dictionary = call.duplicate(true)
+		copied["async_intent"] = true
+		result.provider_calls.append(copied)
 	for key in ["received_start_ticks", "last_content_sent", "last_content_received"]:
 		result.erase(key)
 	if result.has("reasoning_parts"):

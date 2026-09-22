@@ -15,7 +15,7 @@ function Assert-Launcher([bool]$Value, [string]$Message) {
 }
 $projectRoots = @('D:/UnityProject/villa', 'D:/UnityProject/villa/.worktrees/painted-production-buildings', 'D:/Game Projects/villa')
 $legacyHealth = [pscustomobject]@{ status = 'ok'; protocol_version = 2; provider = 'configured' }
-$currentHealth = [pscustomobject]@{ status = 'ok'; protocol_version = 2; provider = 'configured'; capabilities = @('farm3d_environment', 'rent_production') }
+$currentHealth = [pscustomobject]@{ status = 'ok'; protocol_version = 2; provider = 'configured'; capabilities = @('farm3d_environment', 'rent_production', 'living_world_interruptions', 'public_coordination', 'inline_tool_execution', 'async_chat_intents') }
 $processInfo = [pscustomobject]@{ Name = 'node.exe'; CommandLine = '"C:\Program Files\nodejs\node.exe" --experimental-strip-types src/server.ts --config config/agent-service.local.json' }
 Assert-Launcher (Test-VillaAgentProcess $processInfo $legacyHealth $projectRoots) 'Recognize the original launcher command'
 Assert-Launcher (-not (Test-AgentServiceHealth $legacyHealth)) 'Legacy health must trigger replacement'

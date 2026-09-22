@@ -6,10 +6,12 @@
     "node": ">=24"
   },
   "scripts": {
+    "typecheck": "tsc -p tsconfig.service.json",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "start": "node --experimental-strip-types src/server.ts"
   },
   "devDependencies": {
-    "@types/node": "^26.5.1"
+    "@types/node": "^26.5.1",
+    "typescript": "^5.9.3"
   }
 }

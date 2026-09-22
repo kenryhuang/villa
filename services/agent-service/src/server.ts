@@ -20,12 +20,12 @@ const app = createApp({
   registry: AgentRegistry.loadDefault(),
   provider: new OpenAICompatibleProvider(config.provider, databasePath + ".provider-budget.json"),
   checkpointRoot: config.checkpointRoot,
-  ...(config.chatProvider?{chatProvider:new LocalChatProvider(config.chatProvider)}:{}),
+  chatProvider:new LocalChatProvider(config.chatProvider ?? config.provider, databasePath + ".chat-budget.json"),
 });
 const server = createServer(app);
 server.listen(config.port, config.host, () => {
   process.stdout.write(JSON.stringify({status: "started", host: config.host, port: config.port}) + "\n");
 });
-const shutdown = (): void => server.close(() => { memory.close(); process.exit(0); });
+const shutdown = (): void => { server.close(() => { memory.close(); process.exit(0); }); };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

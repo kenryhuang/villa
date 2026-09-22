@@ -14,6 +14,10 @@ func check(ok: bool, label: String) -> void:
 		push_error(label)
 
 func run() -> void:
+	var restored: RefCounted = preload("res://scripts/ai_agent/agent_loop_state.gd").new()
+	restored.restore({"loops":{"inline-save":{"agent_id":"farmer_ahe","state":"reasoning","trigger":"event","action_ids":["in-flight"],"started":0}}})
+	check(restored.loops["inline-save"].state == "executing", "Restored inline work retains execution tracking")
+	check(restored.has_execution("farmer_ahe"), "Restored inline work blocks duplicate background decisions")
 	var scene: Node = load("res://scenes/farm3d/main.tscn").instantiate()
 	root.add_child(scene)
 	scene.set_process(false)

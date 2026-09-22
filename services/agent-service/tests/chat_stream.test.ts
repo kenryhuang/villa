@@ -29,8 +29,13 @@ test("chat context keeps own persona, no other character profiles and only recen
   assert.deepEqual(header.identity.soul,c.agent.soul);
   assert.equal(header.player,"玩家自定义");
   assert.equal(header.participants,undefined);
-  assert.doesNotMatch(String(messages[0].content),/伊可存档名|mutual_affinity/);
-  assert.deepEqual(Object.keys(header).sort(),["action_agreements","background","identity","important_characters","player","rules"]);
+  assert.deepEqual(header.relationships.map((p:any)=>[p.actor_id,p.status,p.affinity]),[["player","dating",80],["resident_yun","dating",80]]);
+  assert.equal(header.relationships[1].name,"伊可存档名");
+  assert.ok(header.relationships.every((p:any)=>!p.soul));
+  assert.match(header.background,/农庄生活模拟游戏.*人物对话/);
+  assert.match(header.rules,/性格、价值观.*说话语气.*已有的关系/);
+  assert.match(header.rules,/只输出本轮该人物实际说出的自然语言段落/);
+  assert.deepEqual(Object.keys(header).sort(),["action_agreements","background","identity","important_characters","player","relationships","rules"]);
   assert.deepEqual(header.important_characters,[]);
   assert.doesNotMatch(JSON.stringify(messages),/INVENTORY_SENTINEL|OUTSIDER_SENTINEL|conversation-0"/);
   assert.ok(messages.length<=CHAT_HISTORY_MESSAGES+1);assert.match(JSON.stringify(messages),/conversation-29/);

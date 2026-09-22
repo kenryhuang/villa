@@ -61,6 +61,10 @@ func reset_chat_context(body: Dictionary, callback: Callable) -> bool:
 	return _request_json("/v1/chat/reset", body, callback)
 
 
+func fetch_intent_trace(body: Dictionary, callback: Callable) -> bool:
+	return _request_json("/v1/chat/intent-trace", body, callback)
+
+
 func sync_session(session_id: String, reset: bool, callback: Callable = Callable()) -> bool:
 	return _request_json(
 		"/v1/sessions/sync",

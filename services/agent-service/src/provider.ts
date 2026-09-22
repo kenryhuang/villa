@@ -1,9 +1,9 @@
+import {ProviderBudget} from "./budget/provider_budget.ts";
 import {DIALOGUE_COMMANDS} from "./agent_policy.ts";
 import {runAgentLoop, DEFAULT_LOOP} from "./agent_loop.ts";
 import type { AgentContext, AgentDefinition } from "./agents.ts";
 import type { ProviderConfig } from "./config.ts";
 import type { MemoryEvent } from "./memory.ts";
-import {existsSync, readFileSync, writeFileSync, renameSync} from "node:fs";
 import type { ActionIntent, DecisionRequest } from "./protocol.ts";
 import {ProviderConcurrencyGate} from "./provider_concurrency_gate.ts";
 import {
@@ -103,38 +103,13 @@ async function withProviderTimeout<T>(
 export class OpenAICompatibleProvider {
   readonly #config: ProviderConfig;
   readonly #concurrencyGate: ProviderConcurrencyGate;
-  readonly #dailyUsage = new Map<string, {day: number; reserved: number}>();
-  readonly #budgetPath?: string;
-
-  #reserveTokens(request: Pick<DecisionRequest, "session_id" | "game_minute">, body: Record<string, unknown>): void {
-    const day = Math.floor(request.game_minute / 1080);
-    const key = request.session_id;
-    const previous = this.#dailyUsage.get(key);
-    const usage = previous && day <= previous.day ? previous : {day, reserved: 0};
-    // UTF-8 bytes conservatively bound visible prompt tokens. Reserve completion
-    // capacity and template overhead before every network round, including retries.
-    const upperBound = new TextEncoder().encode(JSON.stringify(body)).length + Number(body.max_tokens ?? 16384) + 8192;
-    if (usage.reserved + upperBound > 8_000_000) throw new Error("provider_daily_budget_exhausted");
-    usage.reserved += upperBound;
-    this.#dailyUsage.set(key, usage);
-    if (this.#budgetPath) {
-      writeFileSync(this.#budgetPath + ".tmp", JSON.stringify(Object.fromEntries(this.#dailyUsage), null, 2) + "\n");
-      renameSync(this.#budgetPath + ".tmp", this.#budgetPath);
-    }
-  }
+  readonly #budget: ProviderBudget;
 
   constructor(config: ProviderConfig, budgetPath?: string) {
     this.#config = config;
     this.#concurrencyGate = new ProviderConcurrencyGate(config.maxConcurrency);
-    this.#budgetPath = budgetPath;
-    if (budgetPath && existsSync(budgetPath)) {
-      const saved = JSON.parse(readFileSync(budgetPath, "utf8"));
-      for (const [id, value] of Object.entries(saved)) {
-        const row = record(value);
-        if (!Number.isSafeInteger(row.day) || Number(row.day) < 0 || !Number.isSafeInteger(row.reserved) || Number(row.reserved) < 0 || Number(row.reserved) > 8_000_000) throw new Error("provider_budget_store_invalid");
-        this.#dailyUsage.set(id, {day: Number(row.day), reserved: Number(row.reserved)});
-      }
-    }
+    this.#budget = new ProviderBudget(budgetPath);
+
   }
 
   async decide(request: DecisionRequest, context: AgentContext): Promise<ActionIntent> {
@@ -168,7 +143,7 @@ export class OpenAICompatibleProvider {
             let received = false;
             try {
               status("waiting_provider");
-              this.#reserveTokens(request,body);
+              this.#budget.reserve(request,body);
               emit({type:"input",body:structuredClone(body)});
               const endpoint=this.#config.baseUrl.endsWith("/chat/completions")?this.#config.baseUrl:`${this.#config.baseUrl}/chat/completions`;
               const response=await fetch(endpoint,{method:"POST",signal:AbortSignal.any([signal,idle.signal]),headers:{"content-type":"application/json",authorization:`Bearer ${this.#config.apiKey}`},body:JSON.stringify(body)});
@@ -186,7 +161,7 @@ export class OpenAICompatibleProvider {
               }
               const output = assembler.rawOutput();
               output.metrics = {queue_wait_ms:queueWaitMs,game_day:Math.floor(request.game_minute/1080),
-                reserved_tokens_day:this.#dailyUsage.get(request.session_id)?.reserved ?? 0};
+                reserved_tokens_day:this.#budget.reserved(request.session_id)};
               status("round_completed"); emit({type:"output",output}); return assembler;
             } catch(error) {
               if(idle.signal.aborted && !signal.aborted)throw idle.signal.reason;
@@ -305,7 +280,7 @@ export class OpenAICompatibleProvider {
         delete providerBody.tools;
       }
       emit({type: "input", body: structuredClone(providerBody)});
-      this.#reserveTokens(request, providerBody);
+      this.#budget.reserve(request, providerBody);
       const queuedAt = performance.now();
       let queueWaitMs = 0;
       let round: {assembler: AgentStreamAssembler; rawOutput: ReturnType<AgentStreamAssembler["rawOutput"]>};
@@ -345,7 +320,7 @@ export class OpenAICompatibleProvider {
         throw error;
       }
       const {assembler, rawOutput} = round;
-      const reservation = this.#dailyUsage.get(request.session_id)!;
+      const reservation = {day:Math.floor(request.game_minute/1080),reserved:this.#budget.reserved(request.session_id)};
       rawOutput.metrics = {queue_wait_ms: queueWaitMs, game_day: reservation.day, reserved_tokens_day: reservation.reserved};
       emit({type: "output", output: rawOutput});
       externalSignal?.throwIfAborted();
@@ -414,7 +389,7 @@ export class OpenAICompatibleProvider {
         async (signal) => {
           const endpoint = this.#config.baseUrl.endsWith("/chat/completions")
             ? this.#config.baseUrl : `${this.#config.baseUrl}/chat/completions`;
-          this.#reserveTokens({session_id: sessionId, game_minute: Math.max(...events.map(e => e.game_minute))}, {events, max_tokens: Math.min(600, this.#config.maxOutputTokens)});
+          this.#budget.reserve({session_id: sessionId, game_minute: Math.max(...events.map(e => e.game_minute))}, {events, max_tokens: Math.min(600, this.#config.maxOutputTokens)});
           const response = await fetch(endpoint, {
             method: "POST", signal,
             headers: {"content-type": "application/json", authorization: `Bearer ${this.#config.apiKey}`},

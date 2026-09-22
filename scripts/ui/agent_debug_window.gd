@@ -25,6 +25,7 @@ var model_label: Label
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	close_button.pressed.connect(close)
 	clear_button.pressed.connect(clear)
@@ -57,6 +58,13 @@ func _ready() -> void:
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	(input_view.get_parent() as TabContainer).set_tab_title(0, "Context / 原始请求")
 	(input_view.get_parent() as TabContainer).set_tab_title(3, "行动指示")
+	var timer := Timer.new()
+	timer.wait_time = 2.0
+	timer.timeout.connect(func():
+		if visible and _trace != null and _trace.has_method("refresh_intent_debug"):
+			_trace.refresh_intent_debug(_selected_request_id))
+	add_child(timer)
+	timer.start()
 
 
 func show_requests(request_ids: Array[String], preferred_request_id: String = "") -> void:
@@ -98,6 +106,7 @@ func open() -> void:
 	visible = true
 	_reset_scroll_on_refresh = true
 	_refresh_list()
+	if _trace != null and _trace.has_method("refresh_intent_debug"): _trace.refresh_intent_debug(_selected_request_id)
 
 
 func close() -> void:
@@ -201,7 +210,7 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 	for index in range(calls.size()):
 		var call: Dictionary = calls[index]
 		var phase := str(call.get("route", {}).get("phase", ""))
-		var phase_name := str({"dialogue": "聊天回复", "extract_actions": "行动提取", "summarize_chat": "聊天摘要"}.get(phase, "模型调用"))
+		var phase_name := str({"dialogue": "聊天回复", "extract_actions": "行动提取", "extract_intents":"异步意图提取", "summarize_chat": "聊天摘要"}.get(phase, "模型调用"))
 		call_picker.add_item("%d · %s · %s" % [index + 1, phase_name, call.get("input", {}).get("model", "未提供模型")])
 	if _follow_latest_call: _call_index = calls.size() - 1
 	_call_index = mini(_call_index, calls.size() - 1)
@@ -231,14 +240,34 @@ func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 		var handoff: Dictionary = _trace.get_handoff_report(str(record.request_id))
 		var summary: Array[String] = ["提取：" + str(handoff.get("extraction_status", "")), "交接：" + str(handoff.get("delivery_status", ""))]
 		for instruction in handoff.get("accepted", []):
-			summary.append("行动：%s · 地点 %s · 对象 %s · %s" % [instruction.get("activity", instruction.get("kind", "")), instruction.get("place_id", ""), instruction.get("target_actor_id", ""), instruction.get("status", "")])
+			summary.append("行动：%s · 地点 %s · 对象 %s · %s" % [instruction.get("activity", instruction.get("kind", "")), instruction.get("place", instruction.get("place_id", "")), instruction.get("target", instruction.get("target_actor_id", "")), instruction.get("status", "")])
 		var destinations := {}
 		for evidence in handoff.get("context_evidence", []):
 			var destination := "%s · %s" % [evidence.get("action_request_id", ""), evidence.get("model", "")]
 			if not destinations.has(destination): summary.append("已送入：" + destination)
 			destinations[destination] = true
-		handoff_view.text = "\n".join(summary) + "\n\ncontext_evidence 保留实际模型请求中的交接片段；raw_extractions 保留提取模型原始输出。\n\n" + JSON.stringify(handoff, "\t")
+		var diagnostics: Dictionary = handoff.get("async_extraction", {})
+		var details := ""
+		if not diagnostics.is_empty():
+			details += "\n\n原始聊天 messages\n" + _debug_messages(diagnostics.get("raw_messages", []))
+			details += "\n\n准备的提取 prompt / messages（不代表请求已发出）\n" + _debug_messages(diagnostics.get("prepared_messages", []))
+			for call in diagnostics.get("calls", []):
+				details += "\n\n实际发送的提取 prompt / messages\n" + _debug_messages(call.get("input", {}).get("messages", []))
+				details += "\n\n模型原始提取结果\n" + str(call.get("output", {}).get("message", {}).get("content", "尚未返回"))
+			details += "\n\n校验结果\n" + JSON.stringify(diagnostics.get("validation"), "\t")
+		handoff_view.text = "\n".join(summary) + details + "\n\n完整提取与交接记录（含错误和重试）\n" + JSON.stringify(handoff, "\t")
 	call_deferred("_restore_scroll_state", scroll_state, generation)
+
+
+func _debug_messages(messages: Array) -> String:
+	var lines: Array[String] = []
+	for message in messages:
+		lines.append("[" + str(message.get("role", "")) + "]")
+		var content := str(message.get("content", ""))
+		var parser := JSON.new()
+		var valid := parser.parse(content) == OK
+		lines.append(JSON.stringify(parser.data, "\t") if valid and (parser.data is Dictionary or parser.data is Array) else content)
+	return "\n".join(lines)
 
 
 func _capture_scroll_state(reset_scroll: bool) -> Dictionary:

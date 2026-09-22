@@ -158,6 +158,55 @@ export class MemoryRepository {
     return Number(result.changes) === 1;
   }
 
+  sessionEpoch(sessionId: string): number | undefined {
+    return (this.#db.prepare("SELECT epoch FROM sessions WHERE session_id=?").get(sessionId) as {epoch:number}|undefined)?.epoch;
+  }
+
+  pendingIntentJobs(): (MemoryEvent & {actor:string})[] {
+    const rows = this.#db.prepare(`SELECT e.* FROM events e WHERE e.kind='ChatIntentPending'
+      AND NOT EXISTS (SELECT 1 FROM events done WHERE done.session_id=e.session_id AND done.agent_id=e.agent_id
+        AND done.kind='ChatIntentFinished' AND json_extract(done.payload_json,'$.job_id')=e.event_id)
+      AND NOT EXISTS (SELECT 1 FROM events err WHERE err.session_id=e.session_id AND err.agent_id=e.agent_id
+        AND err.kind='ChatIntentError' AND json_extract(err.payload_json,'$.job_id')=e.event_id
+        AND json_extract(err.payload_json,'$.retry_at')>?)
+      ORDER BY e.rowid LIMIT 32`).all(Date.now()) as Record<string,unknown>[];
+    return rows.map(r=>({event_id:String(r.event_id),actor:String(r.agent_id),kind:String(r.kind),game_minute:Number(r.game_minute),payload:JSON.parse(String(r.payload_json))}));
+  }
+
+  pendingDialogueIntents(sessionId:string, actor:string): Record<string,unknown>[] {
+    const unread=`FROM events e WHERE e.session_id=? AND e.agent_id=? AND e.kind='ChatIntentExtracted'
+      AND NOT EXISTS (SELECT 1 FROM events used WHERE used.session_id=e.session_id AND used.agent_id=e.agent_id
+        AND used.kind='ChatIntentConsumed' AND json_extract(used.payload_json,'$.event_id')=e.event_id)`;
+    const first=this.#db.prepare(`SELECT e.* ${unread} ORDER BY e.rowid LIMIT 8`).all(sessionId,actor) as Record<string,unknown>[];
+    const latest=this.#db.prepare(`SELECT e.* ${unread} ORDER BY e.rowid DESC LIMIT 1`).get(sessionId,actor) as Record<string,unknown>|undefined;
+    const rows=first.map(r=>({event_id:r.event_id,game_minute:r.game_minute,...JSON.parse(String(r.payload_json))}));
+    // Show the latest correction/cancellation without consuming it ahead of the backlog.
+    if(latest&&!first.some(r=>r.event_id===latest.event_id))rows.push({event_id:latest.event_id,game_minute:latest.game_minute,
+      ...JSON.parse(String(latest.payload_json)),context_only:true});
+    return rows;
+  }
+
+  consumeDialogueIntents(sessionId:string,actor:string,ids:string[],minute:number):void {
+    for(const id of ids)this.appendEvent(sessionId,actor,{event_id:`consumed:${id}`,kind:"ChatIntentConsumed",game_minute:minute,payload:{event_id:id}});
+  }
+
+  /** Stable per-character facts. Source events survive checkpoints with the memory. */
+  storeCoreMemory(sessionId:string,actor:string,key:string,summary:string,sources:string[],minute:number):void {
+    if(!key || !summary.trim() || !sources.length || sources.some(id=>!this.inspectEvent(sessionId,actor,id).found))throw new Error("invalid_core_memory");
+    const payload={key,summary:summary.slice(0,500),source_event_ids:sources};
+    const hash=createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    this.appendEvent(sessionId,`core:${actor}`,{event_id:`core:${key}:${hash}`,kind:"CoreMemoryUpdated",game_minute:minute,payload});
+  }
+
+  coreMemories(sessionId:string,actor:string):Record<string,unknown>[] {
+    const rows=this.#db.prepare(`SELECT payload_json FROM events WHERE session_id=? AND agent_id=? AND kind='CoreMemoryUpdated' ORDER BY rowid DESC LIMIT 100`)
+      .all(sessionId,`core:${actor}`) as {payload_json:string}[];
+    const seen=new Set<string>();
+    return rows.map(r=>JSON.parse(r.payload_json)).filter(r=>{
+      if(seen.has(r.key))return false;seen.add(r.key);return r.source_event_ids.every((id:string)=>this.inspectEvent(sessionId,actor,id).found);
+    }).slice(0,5);
+  }
+
   chatContextGeneration(sessionId:string,scope:string):string {
     const row=this.#db.prepare("SELECT event_id FROM events WHERE session_id=? AND agent_id=? AND kind='ChatContextReset' ORDER BY rowid DESC LIMIT 1").get(sessionId,scope) as {event_id:string}|undefined;
     return row?.event_id??"";
@@ -167,6 +216,29 @@ export class MemoryRepository {
     const rows=this.#db.prepare(`SELECT event_id,kind,game_minute,payload_json FROM events WHERE session_id=? AND agent_id=? AND kind='ChatMessage' ORDER BY rowid DESC LIMIT ?`)
       .all(sessionId,scope,Math.max(1,Math.min(100,Math.trunc(limit)))) as Record<string,unknown>[];
     return rows.reverse().map(r=>({event_id:String(r.event_id),kind:String(r.kind),game_minute:Number(r.game_minute),payload:JSON.parse(String(r.payload_json))}));
+  }
+
+  intentJobErrorCount(session:string,actor:string,request:string):number {
+    return Number((this.#db.prepare(`SELECT COUNT(*) AS n FROM events WHERE session_id=? AND agent_id=?
+      AND kind='ChatIntentError' AND json_extract(payload_json,'$.job_id')=?`)
+      .get(session,`chat.jobs:${actor}`,`intent-job:${request}`) as {n:number}).n);
+  }
+
+  intentJobTrace(session:string,actor:string,request:string):Record<string,unknown>[] {
+    return (this.#db.prepare(`SELECT kind,payload_json FROM events WHERE session_id=? AND agent_id=?
+      AND kind IN ('ChatIntentTrace','ChatIntentError') AND json_extract(payload_json,'$.job_id')=?
+      ORDER BY rowid DESC LIMIT 80`).all(session,`chat.jobs:${actor}`,`intent-job:${request}`) as {kind:string;payload_json:string}[])
+      .reverse().map(r=>({kind:r.kind,...JSON.parse(r.payload_json)}));
+  }
+
+  chatRecentTurns(sessionId:string,scope:string,turns:number):MemoryEvent[] {
+    const boundary=this.#db.prepare(`SELECT rowid AS n FROM events WHERE session_id=? AND agent_id=?
+      AND kind='ChatMessage' AND json_extract(payload_json,'$.speaker')='player'
+      ORDER BY rowid DESC LIMIT 1 OFFSET ?`).get(sessionId,scope,Math.max(0,Math.min(20,Math.trunc(turns))-1)) as {n:number}|undefined;
+    const rows=this.#db.prepare(`SELECT event_id,kind,game_minute,payload_json FROM events
+      WHERE session_id=? AND agent_id=? AND kind='ChatMessage' AND rowid>=? ORDER BY rowid`)
+      .all(sessionId,scope,boundary?.n??0) as Record<string,unknown>[];
+    return rows.map(r=>({event_id:String(r.event_id),kind:String(r.kind),game_minute:Number(r.game_minute),payload:JSON.parse(String(r.payload_json))}));
   }
 
   chatSummaryCandidates(sessionId:string,scope:string,firstRetainedId:string):{previous:string;through:number;events:MemoryEvent[]} {
@@ -283,7 +355,7 @@ export class MemoryRepository {
       target.syncResources(sessionId, String(row.agent_id), Number(row.epoch), Number(row.revision), JSON.parse(String(row.snapshot_json)));
     }
     for(const row of this.#db.prepare("SELECT * FROM history_heads WHERE session_id=?").all(sessionId) as Record<string,unknown>[]){
-      const sourceIds=this.#db.prepare("SELECT event_id FROM events WHERE session_id=? AND agent_id=? AND rowid<=? ORDER BY rowid").all(sessionId,row.agent_id,row.through_sequence) as {event_id:string}[];
+      const sourceIds=this.#db.prepare("SELECT event_id FROM events WHERE session_id=? AND agent_id=? AND rowid<=? ORDER BY rowid").all(sessionId,String(row.agent_id),Number(row.through_sequence)) as {event_id:string}[];
       if(sourceIds.length)target.storeHistory(sessionId,String(row.agent_id),sourceIds.map(r=>r.event_id),String(row.summary));
     }
     target.close();
@@ -318,13 +390,13 @@ export class MemoryRepository {
       for (const row of memories) {
         const sourceIds = JSON.parse(String(row.source_ids_json)) as string[];
         this.#db.prepare(`INSERT INTO long_term_memories(memory_id,session_id,agent_id,summary,importance,source_ids_json,valid)
-          VALUES(?,?,?,?,?,?,1)`).run(row.memory_id, sessionId, row.agent_id, row.summary, row.importance, row.source_ids_json);
+          VALUES(?,?,?,?,?,?,1)`).run(String(row.memory_id), sessionId, String(row.agent_id), String(row.summary), Number(row.importance), String(row.source_ids_json));
         this.#db.prepare("INSERT INTO memory_fts(memory_id,session_id,agent_id,summary) VALUES(?,?,?,?)")
-          .run(row.memory_id, sessionId, row.agent_id, row.summary);
+          .run(String(row.memory_id), sessionId, String(row.agent_id), String(row.summary));
         if (sourceIds.length > 0) {
           const placeholders = sourceIds.map(() => "?").join(",");
           this.#db.prepare(`UPDATE events SET compacted=1 WHERE session_id=? AND agent_id=? AND event_id IN (${placeholders})`)
-            .run(sessionId, row.agent_id, ...sourceIds);
+            .run(sessionId, String(row.agent_id), ...sourceIds);
         }
       }
       const hasResources = source.prepare("SELECT name FROM sqlite_master WHERE name='resource_snapshots'").get();
@@ -333,7 +405,7 @@ export class MemoryRepository {
       }
       if(source.prepare("SELECT name FROM sqlite_master WHERE name='history_heads'").get()){
         for(const row of source.prepare("SELECT * FROM history_heads WHERE session_id=?").all(sessionId) as Record<string,unknown>[]){
-          const ids=(source.prepare("SELECT event_id FROM events WHERE session_id=? AND agent_id=? AND rowid<=? ORDER BY rowid").all(sessionId,row.agent_id,row.through_sequence) as {event_id:string}[]).map(r=>r.event_id);
+          const ids=(source.prepare("SELECT event_id FROM events WHERE session_id=? AND agent_id=? AND rowid<=? ORDER BY rowid").all(sessionId,String(row.agent_id),Number(row.through_sequence)) as {event_id:string}[]).map(r=>r.event_id);
           if(ids.length)this.storeHistory(sessionId,String(row.agent_id),ids,String(row.summary));
         }
       }

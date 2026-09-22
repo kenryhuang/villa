@@ -59,6 +59,7 @@ func run(assertions: TestAssert, tree: SceneTree) -> void:
 	assertions.truthy(window.visible, "Agent debug window toggle opens")
 	await _test_chat_calls(assertions, tree, trace, window)
 	await _test_handoff_trace(assertions, tree, trace, window)
+	await _test_async_intents(assertions, tree, trace, window)
 
 	var debug_panel = DebugPanelScene.instantiate()
 	tree.root.add_child(debug_panel)
@@ -105,6 +106,49 @@ func _test_chat_calls(assertions: TestAssert, tree: SceneTree, trace: Node, wind
 	trace.finish_cancelled("farmer_ahe", "request-1", "closed")
 	var record: Dictionary = trace.get_request("request-1")
 	assertions.equal(trace._disk_record(record).response.provider_calls.size(), 2, "Cancellation persists every input even without final output")
+
+
+func _test_async_intents(assertions: TestAssert, tree: SceneTree, trace: Node, window: CanvasLayer) -> void:
+	trace.configure(false, "async-intents")
+	var ids: Array[String] = ["request-1"]
+	window.show_requests(ids, "request-1")
+	trace.accept_event(_event("stream.started", 1, {"trigger":"dialogue"}))
+	trace.accept_event(_event("provider.input", 2, {"model":"chat", "messages":[{"role":"user","content":"去钓鱼吗？"}]}))
+	trace.accept_event(_event("loop.trace", 3, {"event":"chat.intent_queued"}))
+	trace.accept_event(_event("decision.final", 4, {"chat_isolated":true,"speech":"好。"}))
+	trace.accept_event(_event("stream.completed", 5, {"status":"completed"}))
+	assertions.truthy(trace.get_handoff_report("request-1").extraction_status.contains("排队"), "Queued async work is not reported as an empty model result")
+	var messages := [{"role":"system","content":"EXTRACTION_PROMPT"},{"role":"user","content":"RAW_LATEST_PAIR"}]
+	var accepted := [{"kind":"activity","status":"confirmed","place":"南湖","activity":"钓鱼","target":"玩家"}]
+	var snapshot := {"request_id":"request-1","agent_id":"farmer_ahe","status":"completed","error":"","accepted":accepted,"archived":true,"consumed":false,
+		"raw_messages":[{"role":"user","content":"RAW_PLAYER"},{"role":"assistant","content":"RAW_REPLY"}],"prepared_messages":messages,
+		"validation":{"accepted":accepted,"error":null},"calls":[{"route":{"phase":"extract_intents","channel":"chat"},"input":{"model":"chat","messages":messages},"output":{"message":{"content":"RAW_EXTRACTED_JSON"}}}]}
+	assertions.truthy(trace.accept_intent_debug("request-1", snapshot), "Extraction can update a terminal chat trace")
+	await tree.process_frame
+	assertions.equal(window.call_picker.item_count, 2, "Async extraction appears beside the original chat call")
+	for text in ["EXTRACTION_PROMPT","RAW_PLAYER","RAW_REPLY","RAW_EXTRACTED_JSON","校验结果"]:
+		assertions.truthy(window.handoff_view.text.contains(text), "Extraction tab displays " + text)
+	assertions.equal(trace.get_request("request-1").final.speech,"好。","Diagnostics never overwrite the chat reply")
+	assertions.equal(trace._disk_record(trace.get_request("request-1")).response.provider_calls.size(),2,"Materializing async trace is idempotent")
+	var wrong: Dictionary = snapshot.duplicate(true)
+	wrong.agent_id = "lao_li"
+	assertions.truthy(not trace.accept_intent_debug("request-1",wrong),"Cross-actor diagnostics are rejected")
+	var entry := {"event_id":"chat-intents:request-1","intents":accepted}
+	var input := _event("provider.input", 1, {"model":"action", "messages":[{"role":"user","content":JSON.stringify({"turn":{"trigger":"schedule","confirmed_dialogue":[entry]}})}]})
+	input.data.request_id = "async-action"
+	trace.accept_event(input)
+	assertions.truthy(trace.get_handoff_report("request-1").delivery_status.contains("已写入实际"),"Async intention links to actual action model context")
+	var callbacks: Array[Callable] = []
+	trace.intent_debug_fetcher = func(_actor: String, _request: String, callback: Callable) -> bool:
+		callbacks.append(callback)
+		return true
+	trace.refresh_intent_debug("request-1")
+	trace.refresh_intent_debug("request-1")
+	assertions.equal(callbacks.size(),1,"Polling does not overlap requests")
+	trace.clear()
+	callbacks[0].call(true,snapshot,"")
+	assertions.truthy(trace.get_requests().is_empty(),"Late diagnostic fetch cannot resurrect cleared traces")
+	trace.intent_debug_fetcher = Callable()
 
 
 func _event(name: String, sequence: int, payload: Dictionary) -> Dictionary:

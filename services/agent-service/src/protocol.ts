@@ -13,6 +13,7 @@ export interface ChatParticipant {
 
 export interface DecisionRequest {
   protocol_version: 2 | 3;
+  tool_execution?: "inline";
   identity_override?: {display_name:string;soul:import("./agents.ts").Soul};
   resources?: Record<string, unknown>;
   experience_events?: readonly Record<string, unknown>[];
@@ -155,17 +156,18 @@ export function validIdentityOverride(value: unknown): value is {display_name:st
 
 export function parseDecisionRequest(value: unknown): ParseResult<DecisionRequest> {
   if (isRecord(value) && value.protocol_version === 3) {
+    if(value.tool_execution!==undefined && value.tool_execution!=="inline")return failure("invalid_tool_execution");
     if (value.chat_room !== undefined) {
       const room=value.chat_room;
       if(value.trigger!=="dialogue" || !isRecord(room) || !hasExactKeys(room,["id","participants","turn_id"]) || !isId(room.id) || !isId(room.turn_id)
-        || !isUniqueIdList(room.participants,4) || !room.participants.includes(value.agent_id))return failure("invalid_chat_room");
+        || !isUniqueIdList(room.participants,4) || !room.participants.includes(String(value.agent_id)))return failure("invalid_chat_room");
     }
     if (value.identity_override !== undefined && !validIdentityOverride(value.identity_override)) return failure("invalid_identity_override");
     if(value.chat_focus_actors!==undefined && (value.trigger!=="dialogue" || !isRecordList(value.chat_focus_actors,16)
       || new Set(value.chat_focus_actors.map((p:any)=>p.actor_id)).size!==value.chat_focus_actors.length
       || value.chat_focus_actors.some((p:any)=>!hasExactKeys(p,["actor_id","display_name"])||!isId(p.actor_id)||typeof p.display_name!=="string"||!p.display_name.trim()||p.display_name.length>80)))return failure("invalid_chat_focus_actors");
     if(value.chat_participants!==undefined){
-      const ids=["player",...(value.chat_room?.participants??[value.agent_id])].filter(id=>id!==value.agent_id);
+      const ids=["player",...((isRecord(value.chat_room)?value.chat_room.participants as string[]:undefined)??[value.agent_id])].filter(id=>id!==value.agent_id);
       if(value.trigger!=="dialogue" || !Array.isArray(value.chat_participants) || value.chat_participants.length!==ids.length
         || new Set(value.chat_participants.map((p:any)=>p?.actor_id)).size!==ids.length)return failure("invalid_chat_participants");
       for(const p of value.chat_participants){
@@ -180,7 +182,7 @@ export function parseDecisionRequest(value: unknown): ParseResult<DecisionReques
     for (const k of ["session_epoch","game_minute","world_revision"]) if (!isNonNegativeInteger(value[k])) return failure(`invalid_${k}`);
     if (!TRIGGERS.has(value.trigger as Trigger) || !isRecord(value.resources) || !isRecordList(value.experience_events) || !isRecordList(value.goal_refs ?? [])) return failure("invalid_loop_context");
     if (!isRecordList(value.dialogue_followups ?? [],5)) return failure("invalid_dialogue_followups");
-    for (const entry of value.dialogue_followups ?? []) {
+    for (const entry of (value.dialogue_followups ?? []) as Record<string,unknown>[]) {
       const p=entry.payload;
       if (!isId(entry.event_id) || entry.kind!=="dialogue" || !isNonNegativeInteger(entry.game_minute) || !isRecord(p)
         || typeof p.player_text!=="string" || p.player_text.length>1000 || typeof p.agent_speech!=="string" || p.agent_speech.length>2000

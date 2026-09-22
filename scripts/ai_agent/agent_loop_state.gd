@@ -212,7 +212,7 @@ func finish_batches(runtime: Node, minute: int) -> void:
 	for id in closed.slice(0, maxi(0, closed.size()-64)): loops.erase(id)
 
 func has_execution(actor: String) -> bool:
-	return loops.values().any(func(loop): return loop.agent_id == actor and loop.state == "executing" and not loop.action_ids.is_empty())
+	return loops.values().any(func(loop): return loop.agent_id == actor and loop.state in ["reasoning", "executing"] and not loop.action_ids.is_empty())
 
 func to_dict() -> Dictionary:
 	return {"version": 1, "goals": goals.duplicate(true), "pending": pending.duplicate(true), "resources": resources.duplicate(true), "loops": loops.duplicate(true), "feedback": feedback.duplicate(true), "queued_triggers": queued_triggers.duplicate(true), "dialogue_handoffs": dialogue_handoffs.duplicate(true)}
@@ -227,7 +227,8 @@ func restore(value: Dictionary) -> void:
 	dialogue_handoffs = value.get("dialogue_handoffs", {}).duplicate(true)
 	for loop in loops.values():
 		if loop.state == "reasoning":
-			loop.state = "cancelled"
+			# Inline tools may already be executing when a save interrupts inference.
+			loop.state = "executing" if not loop.get("action_ids", []).is_empty() else "cancelled"
 			if loop.trigger != "dialogue": queued_triggers[loop.agent_id] = {"trigger": "event", "game_minute": int(loop.get("started", 0)), "dialogue": "", "priority": 2}
 
 static func validate(value: Variant) -> bool:

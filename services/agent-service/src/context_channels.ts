@@ -14,7 +14,7 @@ export function appendIsolatedEvent(memory:MemoryRepository,session:string,actor
   if(rawKinds.has(event.kind)) {
     memory.appendEvent(session,`chat.legacy:${actor}`,event);return;
   }
-  if(event.kind==="ActionGoalPlan"||event.kind==="ChatActionAgreed")return;
+  if(["ActionGoalPlan","ActionToolDispatched","ChatActionAgreed","ChatIntentExtracted","ChatIntentConsumed","CoreMemoryUpdated","ChatIntentPending","ChatIntentFinished","ChatIntentTrace","ChatIntentError"].includes(event.kind))return;
   const payload=actionFacts(event.payload);
   delete payload.handoff_version;delete payload.handoffs;
   memory.appendEvent(session,actionActor(actor),{...event,payload});
