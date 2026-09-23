@@ -25,6 +25,7 @@ var _busy := false
 
 func configure(owner: Node) -> void:
 	world = owner
+	scheduler.max_concurrent_requests = 1
 	registry.load_public_coordinator()
 	validator = load("res://scripts/ai_agent/agent_action_validator.gd").new()
 	opening_balance = int(world.session.npc_economy.get_npc_state(Actor).gold)
@@ -272,7 +273,7 @@ func restore(v: Dictionary) -> void:
 	opening_balance = int(v.get("opening_balance", world.session.npc_economy.get_npc_state(Actor).gold))
 	requests.clear()
 	scheduler._in_flight.clear()
-	scheduler._pending.clear()
+	scheduler.restore_queue({})
 	scheduler._last_dispatched.clear()
 
 func summary() -> String:

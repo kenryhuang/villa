@@ -33,6 +33,7 @@ func _ready() -> void:
 	input_view.editable = false
 	reasoning_view.editable = false
 	output_view.editable = false
+	handoff_view.editable = false
 	handoff_view.add_theme_color_override("font_readonly_color", Color("d8e9df"))
 	var details := status_label.get_parent()
 	var call_bar := HBoxContainer.new()
@@ -190,6 +191,10 @@ func _on_request_selected(index: int) -> void:
 
 func _render_request(record: Dictionary, reset_scroll: bool = false) -> void:
 	var scroll_state := _capture_scroll_state(reset_scroll)
+	# Read-only TextEdit.clear() resets the cached first visible line even when
+	# the tab is hidden. Changing scroll_vertical alone does not reset that cache.
+	for view: TextEdit in [input_view, reasoning_view, output_view, handoff_view]:
+		view.clear()
 	_render_generation += 1
 	var generation := _render_generation
 	if record.is_empty():
@@ -291,10 +296,13 @@ func _restore_scroll_state(state: Dictionary, generation: int) -> void:
 	for view_value in [input_view, reasoning_view, output_view, handoff_view]:
 		var view := view_value as TextEdit
 		var view_state := state.get(view.name, {}) as Dictionary
+		var bar := view.get_v_scroll_bar()
+		# Hidden tabs can still expose the previous scrollbar range before layout.
+		var maximum := maxf(0.0, minf(bar.max_value - bar.page, float(view.get_total_visible_line_count() - 1)))
 		if bool(view_state.get("follow", true)):
-			view.scroll_vertical = view.get_v_scroll_bar().max_value
+			view.scroll_vertical = maximum
 		else:
-			view.scroll_vertical = clampf(float(view_state.get("position", 0.0)), 0.0, maxf(0.0, view.get_v_scroll_bar().max_value - view.get_v_scroll_bar().page))
+			view.scroll_vertical = clampf(float(view_state.get("position", 0.0)), 0.0, maximum)
 
 
 func _request_label(record: Dictionary) -> String:

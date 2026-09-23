@@ -8,6 +8,8 @@ Read [the loop architecture](docs/loops.md) first. Production entry points:
 
 | Responsibility | Implementation |
 | --- | --- |
+| NPC event queue, periodic clock producer, bounded execution engine | `../../scripts/ai_agent/agent_event_queue.gd`, `agent_clock_source.gd`, `agent_scheduler.gd` |
+| Public event recipients, role/item subscriptions, focus eligibility | `../../scripts/ai_agent/agent_event_router.gd` |
 | HTTP routes, SSE envelope, cancellation | `src/app.ts` |
 | Action request preparation and persistence | `src/agent/service.ts` |
 | Action loop: context → model → ordered tools → results → model | `src/agent/loop.ts` |
@@ -25,6 +27,12 @@ Read [the loop architecture](docs/loops.md) first. Production entry points:
 Root `agent_loop.ts`, `chat_provider.ts`, `chat_context.ts`, and `chat_summary.ts` are compatibility exports. The old terminal-batch runner and synchronous chat extraction adapter live in `agent/legacy_loop.ts` and `chat/legacy.ts`; the updated 3D client uses inline execution and asynchronous extraction.
 
 ## Separate chat and action models
+
+NPC action loops are event-driven. System events, extracted dialogue intentions and periodic clock events enter a FIFO queue in Godot; completion immediately schedules the next eligible NPC. Configure `max_concurrent_agent_loops` in `config/agent-client.local.json` (repository root): default 3, integer 1–32. Excess events wait, and each NPC runs at most one loop. Queue entries and interrupted active events survive game saves. This bounds whole NPC loops; service `provider.max_concurrency` separately bounds model calls. Foreground chat and the public coordinator retain separate slots.
+
+`POST /v1/agent-events/poll` accepts `{session_id, session_epoch, cursor}` and delivers up to 64 dialogue event notices plus `next_cursor`. The game polls automatically, including while paused; autonomous execution waits until resume. Notices are deduplicated by source ID and never consume intentions. Clock polling and delivery do not call the LLM without a queued event. Model input includes the triggering event in `turn.trigger_events`; the debug summary shows running and waiting counts.
+
+Public facts no longer broadcast decisions to every NPC. Market events select actors with matching inventory/reserves, active supply requests, open offers or typed item goals. Weather selects farmers/explorers; season changes select farmers; environmental events require explicit `affected_actor_ids`. Ordinary day changes update knowledge only. Public events and clocks target the 3D focus pool; demotion removes these incidental queued messages while preserving directed conversation/trade obligations. Waiting public updates coalesce by actor/topic/item, while distinct directed events remain separate. See [routing rules](docs/loops.md) for the full table.
 
 `provider` configures action decisions and action-memory extraction. `chat_provider` optionally selects a different model for chat and intent extraction. If omitted, the server uses the action model configuration for the separate chat loop. The loops and histories remain separate even when the model is the same.
 

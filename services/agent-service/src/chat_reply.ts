@@ -1,3 +1,5 @@
+import { replyContent } from "./chat/reply_content.ts";
+
 // Some local chat models echo their setup before answering. Only recognized
 // leading metadata is removed; ordinary headings and the reply body stay intact.
 const labels=["角色背景","角色设定","人物设定","角色信息","你的身份","你是","当前场景","场景设定","系统提示词","系统提示","System prompt","Character background","Character profile","Current scene"];
@@ -8,13 +10,14 @@ const metadata=new RegExp(`^(?:#{1,6}[ \\t]*)?(?:${labels.map(escape).join("|")}
 export function chatReplyText(raw:string,complete=true):string {
   let text=raw.trimStart();
   for(let pass=0;pass<24;pass++){
+    text=replyContent(text,complete).trimStart();
     // Older models sometimes emit the chat-history envelope (even nested).
     const wrapper=/^\{\s*"(?:speaker|text)"\s*:/.test(text);
     if(wrapper){
       try{
         const value=JSON.parse(text);
         if(value&&typeof value.speaker==="string"&&typeof value.text==="string"&&Object.keys(value).every(k=>["speaker","text"].includes(k))){text=value.text.trimStart();continue;}
-      }catch{if(!complete)return "";}
+      }catch{return "";}
     }
     if(!complete && /^\{\s*"?(?:s(?:p(?:e(?:a(?:k(?:e(?:r)?)?)?)?)?)?|t(?:e(?:x(?:t)?)?)?)?"?\s*$/.test(text))return "";
     const firstLine=text.split(/\r?\n/,1)[0];
@@ -40,5 +43,5 @@ export function chatReplyText(raw:string,complete=true):string {
     }
     break;
   }
-  return complete?text.trim():text;
+  return complete?text.trim():text.replace(/[\uD800-\uDBFF]$/, "");
 }

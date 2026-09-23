@@ -86,6 +86,7 @@ export function createApp(dependencies: AppDependencies) {
             "agent_loop_v3",
             "inline_tool_execution",
             "async_chat_intents",
+            "agent_event_feed",
             "lazy_world_reads",
             "farm3d_environment",
             "rent_production",
@@ -101,6 +102,17 @@ export function createApp(dependencies: AppDependencies) {
         return;
       }
       const body = await readBody(request);
+      if (url.pathname === "/v1/agent-events/poll") {
+        const v = body as any;
+        if (!v || typeof v.session_id !== "string" || !v.session_id.trim() || v.session_id.length > 200 ||
+          !Number.isSafeInteger(v.session_epoch) || v.session_epoch < 0 || !Number.isSafeInteger(v.cursor) || v.cursor < 0) {
+          send(response, 400, {error: {code: "invalid_agent_event_poll"}}); return;
+        }
+        if (dependencies.memory.sessionEpoch(v.session_id) !== v.session_epoch) {
+          send(response, 409, {error: {code: "stale_session_epoch"}}); return;
+        }
+        send(response, 200, dependencies.memory.agentEventFeed(v.session_id, v.cursor)); return;
+      }
       if (url.pathname === "/v1/chat/intent-trace") {
         const v=body as any;
         if(!v || typeof v.session_id!=="string" || !v.session_id || v.session_id.length>200 ||

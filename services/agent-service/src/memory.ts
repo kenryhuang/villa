@@ -218,6 +218,20 @@ export class MemoryRepository {
     return rows.reverse().map(r=>({event_id:String(r.event_id),kind:String(r.kind),game_minute:Number(r.game_minute),payload:JSON.parse(String(r.payload_json))}));
   }
 
+  /** Read-only outbox: advancing a delivery cursor does not consume an intent. */
+  agentEventFeed(sessionId: string, cursor: number) {
+    const rows = this.#db.prepare(`SELECT e.rowid AS cursor, e.* FROM events e
+      WHERE e.session_id=? AND e.rowid>? AND e.kind='ChatIntentExtracted'
+      AND NOT EXISTS (SELECT 1 FROM events used WHERE used.session_id=e.session_id AND used.agent_id=e.agent_id
+        AND used.kind='ChatIntentConsumed' AND json_extract(used.payload_json,'$.event_id')=e.event_id)
+      ORDER BY e.rowid LIMIT 64`).all(sessionId, cursor) as Record<string, unknown>[];
+    return {
+      next_cursor: rows.length ? Number(rows.at(-1)!.cursor) : cursor,
+      events: rows.map(r => ({event_id: String(r.event_id), agent_id: String(r.agent_id).replace(/^action\.v2:/, ""),
+        kind: "dialogue", source: "chat_intent_extracted", game_minute: Number(r.game_minute)})),
+    };
+  }
+
   intentJobErrorCount(session:string,actor:string,request:string):number {
     return Number((this.#db.prepare(`SELECT COUNT(*) AS n FROM events WHERE session_id=? AND agent_id=?
       AND kind='ChatIntentError' AND json_extract(payload_json,'$.job_id')=?`)

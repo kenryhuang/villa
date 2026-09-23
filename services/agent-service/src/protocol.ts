@@ -19,6 +19,7 @@ export interface DecisionRequest {
   experience_events?: readonly Record<string, unknown>[];
   goal_refs?: readonly Record<string, unknown>[];
   dialogue_followups?: readonly Record<string, unknown>[];
+  trigger_events?: readonly Record<string, unknown>[];
   request_id: string;
   session_id: string;
   session_epoch: number;
@@ -182,6 +183,13 @@ export function parseDecisionRequest(value: unknown): ParseResult<DecisionReques
     for (const k of ["session_epoch","game_minute","world_revision"]) if (!isNonNegativeInteger(value[k])) return failure(`invalid_${k}`);
     if (!TRIGGERS.has(value.trigger as Trigger) || !isRecord(value.resources) || !isRecordList(value.experience_events) || !isRecordList(value.goal_refs ?? [])) return failure("invalid_loop_context");
     if (!isRecordList(value.dialogue_followups ?? [],5)) return failure("invalid_dialogue_followups");
+    if (!isRecordList(value.trigger_events ?? [], 16)) return failure("invalid_trigger_events");
+    for (const e of (value.trigger_events ?? []) as Record<string, unknown>[]) {
+      if (!hasExactKeys(e, ["event_id","agent_id","kind","game_minute","source","priority","trigger"]) ||
+        typeof e.event_id !== "string" || !e.event_id.trim() || e.event_id.length > 256 || e.agent_id !== value.agent_id || !isId(e.source) ||
+        !["system","dialogue","clock"].includes(String(e.kind)) || !isNonNegativeInteger(e.game_minute) ||
+        !isNonNegativeInteger(e.priority) || !["event","schedule","catch_up"].includes(String(e.trigger))) return failure("invalid_trigger_events");
+    }
     for (const entry of (value.dialogue_followups ?? []) as Record<string,unknown>[]) {
       const p=entry.payload;
       if (!isId(entry.event_id) || entry.kind!=="dialogue" || !isNonNegativeInteger(entry.game_minute) || !isRecord(p)

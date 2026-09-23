@@ -180,6 +180,7 @@ test("successful, empty, queued and budget-blocked extractions are distinct and 
       if (state === "budget") assert.match(report.error!, /daily_budget/);
     }
     assert.equal(memory.pendingIntentJobs().length, 0);
+    assert.deepEqual(memory.agentEventFeed(job.session_id, 0).events.map(e => e.event_id), ["chat-intents:valid"], "only successful nonempty extractions publish action events");
   } finally {
     worker.close();
     memory.close();

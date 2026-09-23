@@ -18,6 +18,7 @@ const ActivityScript = preload("res://scripts/systems/npc_activity_system.gd")
 const KnowledgeScript = preload("res://scripts/systems/explorer_knowledge_registry.gd")
 const GameDataScript = preload("res://scripts/core/game_data.gd")
 const AgentClientConfigScript = preload("res://scripts/ai_agent/agent_client_config.gd")
+const EventRouter = preload("res://scripts/ai_agent/agent_event_router.gd")
 const AgentSessionTraceScript = preload("res://scripts/ai_agent/agent_session_trace.gd")
 const AgentWorldEventStoreScript = preload("res://scripts/ai_agent/agent_world_event_store.gd")
 const AgentWorldProjectorScript = preload("res://scripts/ai_agent/agent_world_projector.gd")
@@ -131,6 +132,7 @@ func spawn_farm3d_actors() -> void:
 	sync_focus_actors()
 
 func sync_focus_actors() -> void:
+	scheduler.prune_events()
 	var society: RefCounted = farm3d_session.living_world.society if farm3d_session.living_world != null else null
 	var focus: Array = society.focus if society != null else (preload("res://scripts/systems/resident_society_system.gd").configuration().focus_actors if preload("res://scripts/systems/resident_society_system.gd").expanded() else ["farmer_ahe", "lao_li", "xuezhe_lin"])
 	for id in farm3d_actors.keys():
@@ -215,7 +217,7 @@ func _on_rental_completed(agent_id: String, building: BuildingInstance, recipe_i
 	_publish("info", "%s在%s的租用加工完成，已收取成品。" % [get_agent_display_name(agent_id), building.data.display_name], {})
 	perception_inbox.push_event(agent_id, "rental_completed", recipe_id, {"outputs": outputs}, _absolute_game_minute(), 2)
 	if service_enabled:
-		scheduler.notify_event(agent_id, 2, _absolute_game_minute())
+		scheduler.notify_event(agent_id, 2, _absolute_game_minute(), "rental_completed")
 
 
 func save_farm3d_memory(save_path: String) -> void:
@@ -334,6 +336,10 @@ func configure(
 	gateway = AgentGatewayScript.new()
 	gateway.name = "AgentGateway"
 	add_child(gateway)
+	var event_receiver := preload("res://scripts/ai_agent/agent_event_receiver.gd").new()
+	event_receiver.name = "AgentEventReceiver"
+	event_receiver.runtime = self
+	add_child(event_receiver)
 	session_trace.name = "AgentSessionTrace"
 	add_child(session_trace)
 	session_trace.intent_debug_fetcher = func(actor: String, request_id: String, callback: Callable) -> bool:
@@ -344,6 +350,7 @@ func configure(
 		_publish("warning", "Agent 客户端配置不可用，远程决策已关闭：%s" % str(client_config.error), {})
 	else:
 		_store_agent_session = remote_enabled and bool(client_config.value.store_agent_session)
+		scheduler.max_concurrent_requests = int(client_config.value.max_concurrent_agent_loops)
 		_agent_session_directory = str(client_config.value.agent_session_directory)
 		if remote_enabled and bool(client_config.value.enabled):
 			service_enabled = gateway.configure(
@@ -365,6 +372,8 @@ func configure(
 	):
 		return false
 	_connect_events()
+	scheduler.execution_actors = func() -> Array: return registry.get_agent_ids().filter(func(actor): return loop_state.has_execution(actor))
+	scheduler.event_admission = func(actor: String, kind: String, source: String) -> bool: return EventRouter.accepts(self, actor, kind, source)
 	if service_enabled:
 		gateway.sync_session(session_id, false)
 	return true
@@ -470,6 +479,7 @@ func respond_to_player_interaction(agent_id: String, interaction_id: String, res
 
 
 var _chat_request_context: Dictionary = {}
+var _agent_queue_pump_at := 0
 
 func trigger_chat(agent_id: String, text: String, room: Dictionary) -> bool:
 	if not room.get("participants") is Array or room.participants.size() > 4 or agent_id not in room.participants: return false
@@ -482,7 +492,6 @@ func trigger_chat(agent_id: String, text: String, room: Dictionary) -> bool:
 
 func cancel_chat_turn(agent_id: String) -> void:
 	_chat_request_context.erase(agent_id)
-	if scheduler._pending.get(agent_id, {}).get("trigger", "") == "dialogue": scheduler._pending.erase(agent_id)
 	var request_id := get_in_flight_request_id(agent_id)
 	if not request_id.is_empty(): cancel_dialogue(agent_id, request_id)
 
@@ -685,7 +694,8 @@ func to_dict() -> Dictionary:
 
 func _current_state() -> Dictionary:
 	loop_state.capture(self)
-	loop_state.queued_triggers = scheduler._pending.duplicate(true)
+	loop_state.queued_triggers = {}
+	loop_state.event_queue = scheduler.snapshot_queue()
 	return _compact_current_state({
 		"loop_state": loop_state.to_dict(),
 		"version": CURRENT_STATE_VERSION,
@@ -868,11 +878,12 @@ func from_dict(value: Dictionary, apply_market_pressure := true) -> bool:
 	_deferred_responses.clear()
 	_request_triggers.clear()
 	_cancelled_requests.clear()
+	# Fence old callbacks before bump_epoch cancels their network streams.
+	scheduler.restore_queue(loop_state.event_queue, loop_state.queued_triggers)
 	if gateway != null:
 		gateway.bump_epoch()
 		if is_instance_valid(farm3d_session) and service_enabled:
 			gateway.sync_session(session_id, false)
-	scheduler._pending = loop_state.queued_triggers.duplicate(true)
 	return true
 
 
@@ -1188,9 +1199,7 @@ func _connect_events() -> void:
 
 func _on_time_changed(hour: int, minute: int) -> void:
 	var game_minute := _absolute_game_minute()
-	var had_pending_market_pressure := not _pending_market_pressure_facts.is_empty()
-	if had_pending_market_pressure and _retry_pending_market_pressure_facts():
-		_notify_public_event(2, game_minute)
+	_retry_pending_market_pressure_facts()
 	if minute == 0:
 		world_fact_bridge.publish_time(hour, minute, game_minute, "time:%d" % game_minute)
 	for expired in interaction_system.expire_due(game_minute):
@@ -1228,39 +1237,39 @@ func _advance_scheduled_decisions() -> void:
 func _on_market_price_changed(item_id: String, price: int) -> void:
 	var minute := _absolute_game_minute()
 	world_fact_bridge.publish_market_price(item_id, price, minute, "market-price:%s:%d:%d" % [item_id, minute, price], _market.call("get_item_state", item_id))
-	_notify_public_event(2, minute)
+	_route_public_event("market_price", {"item_id":item_id}, 2, minute, "market-price:%s:%d:%d" % [item_id, minute, price])
 
 
 func _on_market_stock_changed(item_id: String, stock: int) -> void:
 	var minute := _absolute_game_minute()
 	var priority := 1 if stock > 3 else 3
 	world_fact_bridge.publish_market_stock(item_id, stock, minute, "market-stock:%s:%d:%d" % [item_id, minute, stock], _market.call("get_item_state", item_id))
-	_notify_public_event(priority, minute)
+	_route_public_event("market_stock", {"item_id":item_id}, priority, minute, "market-stock:%s:%d:%d" % [item_id, minute, stock])
 
 
 func _on_day_changed(total_day: int) -> void:
 	var minute := _absolute_game_minute()
 	interaction_system.refresh_market_pressure(minute)
 	world_fact_bridge.publish_day(total_day, minute, "day:%d" % total_day)
-	_notify_public_event(2, minute)
+	# Calendar facts do not wake every NPC; individual clocks and goals still apply.
 
 
 func _on_season_changed(season: int) -> void:
 	var minute := _absolute_game_minute()
 	world_fact_bridge.publish_season(season, minute, "season:%d:%d" % [int(_season.total_days), season])
-	_notify_public_event(3, minute)
+	_route_public_event("season", {}, 3, minute, "season:%d:%d" % [int(_season.total_days), season])
 
 
 func _on_weather_changed(weather: String) -> void:
 	var minute := _absolute_game_minute()
 	world_fact_bridge.publish_weather(weather, minute, "weather:%d:%s" % [minute, weather])
-	_notify_public_event(2, minute)
+	_route_public_event("weather", {}, 2, minute, "weather:%d:%s" % [minute, weather])
 
 
 func _on_environment_condition_changed(condition_id: String, state: Dictionary) -> void:
 	var minute := _absolute_game_minute()
 	world_fact_bridge.publish_environment(condition_id, state, minute, "environment:%s:%d:%d" % [condition_id, minute, JSON.stringify(state).hash()])
-	_notify_public_event(2, minute)
+	_route_public_event("environment", state.merged({"condition_id":condition_id}, true), 2, minute, "environment:%s:%d:%d" % [condition_id, minute, JSON.stringify(state).hash()])
 
 
 func _on_market_pressure_settled(total_day: int, pressure: Dictionary) -> void:
@@ -1269,7 +1278,6 @@ func _on_market_pressure_settled(total_day: int, pressure: Dictionary) -> void:
 	if not _retry_pending_market_pressure_facts():
 		_publish("warning", "Agent 市场压力结算事件写入失败，保留待核对状态。", {"day": total_day})
 		return
-	_notify_public_event(2, minute)
 
 
 func _retry_pending_market_pressure_facts() -> bool:
@@ -1282,6 +1290,10 @@ func _retry_pending_market_pressure_facts() -> bool:
 			return false
 		interaction_system.mark_market_pressure_consumed(day)
 		_pending_market_pressure_facts.erase(day)
+		for item in record.pressure.get("items", {}):
+			var pressure: Dictionary = record.pressure.items[item]
+			if not pressure.values().any(func(amount): return (amount is int or amount is float) and amount != 0): continue
+			_route_public_event("market_pressure", {"item_id":item}, 2, int(record.game_minute), "market-pressure:%d:%s" % [day, item])
 	return true
 
 
@@ -1310,18 +1322,24 @@ func _normalize_pending_market_pressure_facts(value: Variant) -> Variant:
 	return result
 
 
-func _notify_public_event(priority: int, game_minute: int) -> void:
-	if not service_enabled:
-		return
-	for agent_id in registry.get_agent_ids():
-		scheduler.notify_event(str(agent_id), priority, game_minute)
+func _route_public_event(topic: String, details: Dictionary, priority: int, game_minute: int, event_id: String) -> void:
+	if not service_enabled or priority < 2: return
+	var subject := str(details.get("item_id", details.get("condition_id", "")))
+	var source := "ambient:" + topic + (":" + subject if not subject.is_empty() else "")
+	for actor in EventRouter.recipients(self, topic, details, _absolute_game_minute()):
+		# A price can change A -> B -> A within the same game minute. Each local
+		# observation needs its own ID even when the world fact label is identical.
+		var delivery_id := "world:%s:%s:%d" % [event_id.sha256_text().substr(0, 24), actor, scheduler.event_queue.sequence + 1]
+		scheduler.event_queue.enqueue(actor, "system", game_minute, source, delivery_id, priority)
+	# Batch all recipients before acquiring slots; queued messages coalesce by subject.
+	scheduler.pump(_absolute_game_minute())
 
 
 func _wake_agent_for_interaction(agent_id: String, priority: int, game_minute: int) -> void:
 	if _event_bus != null:
 		_event_bus.agent_interaction_changed.emit(agent_id, "urgent")
 	if service_enabled:
-		scheduler.notify_event(agent_id, priority, game_minute)
+		scheduler.notify_event(agent_id, priority, game_minute, "interaction_changed")
 
 
 func _build_request(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> Dictionary:
@@ -1506,13 +1524,13 @@ func _loop_tick() -> void:
 	loop_state.finish_batches(self, minute)
 	for actor in registry.get_agent_ids():
 		for goal in loop_state.goal_refs(actor, minute):
-			if int(goal.review_at) <= minute and not get_tree().paused:
+			if int(goal.review_at) <= minute and not get_tree().paused and EventRouter.autonomous(self, actor):
 				loop_state.goals[goal.goal_id].review_at = minute + 60
-				scheduler.notify_event(actor, 2, minute)
+				scheduler.notify_event(actor, 2, minute, "goal_review", "goal-review:%s:%d" % [goal.goal_id, minute])
 		var feedback: Dictionary = loop_state.feedback.get(actor, {})
-		if feedback.get("pending", false) and minute >= int(feedback.get("ready_at", 0)) and not get_tree().paused and not scheduler.is_in_flight(actor):
+		if feedback.get("pending", false) and minute >= int(feedback.get("ready_at", 0)) and not get_tree().paused and not scheduler.is_in_flight(actor) and EventRouter.autonomous(self, actor):
 			loop_state.feedback[actor].pending = false
-			scheduler.notify_event(actor, 2, minute)
+			scheduler.notify_event(actor, 2, minute, "action_feedback")
 	if not service_enabled or _loop_syncing or (_loop_sync_minute >= 0 and minute - _loop_sync_minute < 60): return
 	_loop_sync_minute = minute
 	_loop_syncing = true
@@ -1629,6 +1647,9 @@ func _process(_delta: float) -> void:
 		var pending: Dictionary = _deferred_responses.pop_front()
 		_handle_response(str(pending.agent_id), pending.response)
 	_advance_scheduled_decisions()
+	if service_enabled and Time.get_ticks_msec() >= _agent_queue_pump_at:
+		_agent_queue_pump_at = Time.get_ticks_msec() + 250
+		scheduler.pump(_absolute_game_minute())
 
 
 func _handle_response(agent_id: String, response: Dictionary) -> void:

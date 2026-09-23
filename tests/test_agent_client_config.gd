@@ -31,6 +31,13 @@ func run(assertions: TestAssert) -> void:
 	var disabled := AgentClientConfigScript.load_file(disabled_path)
 	assertions.truthy(disabled.ok, "disabled Agent client configuration loads")
 	assertions.truthy(not disabled.value.enabled, "explicit disablement is preserved")
+	assertions.equal(disabled.value.max_concurrent_agent_loops, 3, "default agent loop concurrency is three")
+	for limit in [1, 7, 32, 0, -1, 33, 1.5, "3", true]:
+		var path := _write_json("concurrency", {"enabled":false,"service_url":"","token":"","timeout_seconds":10,"max_concurrent_agent_loops":limit})
+		var result := AgentClientConfigScript.load_file(path)
+		assertions.equal(result.ok, limit is int and limit >= 1 and limit <= 32, "loop concurrency validates integer bounds")
+		if result.ok: assertions.equal(result.value.max_concurrent_agent_loops, limit, "configured loop concurrency loads")
+		_remove(path)
 	assertions.truthy(not disabled.value.store_agent_session, "missing Agent session storage defaults false")
 	assertions.truthy(
 		disabled.value.has("agent_session_directory"),

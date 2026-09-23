@@ -9,6 +9,47 @@ import { createApp } from "../src/app.ts";
 import { AgentRegistry } from "../src/agents.ts";
 import { MemoryRepository } from "../src/memory.ts";
 import { OpenAICompatibleProvider } from "../src/provider.ts";
+import { LocalChatProvider } from "../src/chat/provider.ts";
+
+test("Godot collects dialogue events while paused and drains them with one slot without clock ticks", {skip: process.env.RUN_GODOT_LOOP_TEST !== "1", timeout: 40000}, async () => {
+  const memory = new MemoryRepository(":memory:");
+  memory.syncSession("event-wire", 42);
+  for (const actor of ["farmer_ahe", "lao_li"]) memory.appendEvent("event-wire", `action.v2:${actor}`, {
+    event_id: `chat-intents:${actor}`, kind: "ChatIntentExtracted", game_minute: 0,
+    payload: {source_request_id: actor, intents: [{kind:"information",status:"stated",detail:"玩家说今天有活动",topic:"活动"}]},
+  });
+  const headers: any[] = [];
+  const model = createServer(async (req, res) => {
+    let source = ""; for await (const chunk of req) source += chunk;
+    const body = JSON.parse(source);
+    if (!body.stream) { res.end(JSON.stringify({choices:[{message:{content:'{"summary":"测试事件","importance":1}'}}]})); return; }
+    headers.push(JSON.parse(body.messages[1].content));
+    res.writeHead(200, {"content-type":"text/event-stream"});
+    res.end(`data: ${JSON.stringify({choices:[{index:0,delta:{content:"已收到事件。"},finish_reason:"stop"}]})}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise<void>(r => model.listen(0, "127.0.0.1", r));
+  const options = {baseUrl:`http://127.0.0.1:${(model.address() as any).port}`,apiKey:"test",model:"test",timeoutMs:4000,maxConcurrency:2,maxOutputTokens:300,temperature:0};
+  const service = createServer(createApp({memory,registry:AgentRegistry.loadDefault(),provider:new OpenAICompatibleProvider(options),chatProvider:new LocalChatProvider(options),checkpointRoot:"."}));
+  await new Promise<void>(r => service.listen(0, "127.0.0.1", r));
+  try {
+    const result = await new Promise<{code:number|null;text:string}>((done, reject) => {
+      const child = spawn("godot_console.exe", ["--headless","--path",".","--script","tests/run_agent_events_wire.gd","--","--farm-test",`--loop-service=http://127.0.0.1:${(service.address() as any).port}`], {cwd:resolve("../.."),windowsHide:true});
+      let text = "";
+      child.stdout.on("data", b => text += b); child.stderr.on("data", b => text += b);
+      child.on("error", reject); child.on("close", code => done({code,text}));
+    });
+    assert.equal(result.code, 0, result.text);
+    assert.match(result.text, /EVENT_WIRE_OK/);
+    assert.equal(headers.length, 2);
+    assert.deepEqual(headers.map(h => h.turn.trigger_events[0].event_id), ["chat-intents:farmer_ahe","chat-intents:lao_li"]);
+    for (const h of headers) assert.equal(h.turn.confirmed_dialogue.length, 1);
+    assert.deepEqual(memory.agentEventFeed("event-wire", 0).events, [], "successful action loops consume delivered dialogue intentions");
+  } finally {
+    service.closeAllConnections(); model.closeAllConnections();
+    await Promise.all([new Promise<void>(r => service.close(() => r())), new Promise<void>(r => model.close(() => r()))]);
+    memory.close();
+  }
+});
 
 // Explicit opt-in: npm test remains usable without an installed Godot binary.
 test(

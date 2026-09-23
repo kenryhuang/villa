@@ -118,3 +118,34 @@ test("streamed dialogue and final speech contain only reply body; trace preserve
     assert.equal(JSON.parse(inputs[1].messages[1].content).conversation[1].text,answer);
   }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });
+
+test("provider isolates reasoning and JSON formatting from streaming speech and future chat context",async()=>{
+  const raw=JSON.stringify({thinking:["内部分析",{response:"不能展示的嵌套字段"}],decision:["内部决策"],response:answer}).slice(0,-1);
+  const reasoning="单独的 reasoning_content 字段",events:any[]=[];
+  const server=createServer(async(req,res)=>{
+    for await(const _ of req){};
+    res.setHeader("content-type","text/event-stream");
+    res.write(`data: ${JSON.stringify({choices:[{delta:{reasoning_content:reasoning},finish_reason:null}]})}\n\n`);
+    for(const content of raw)res.write(`data: ${JSON.stringify({choices:[{delta:{content},finish_reason:null}]})}\n\n`);
+    res.end(`data: ${JSON.stringify({choices:[{delta:{},finish_reason:"stop"}]})}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  try{
+    const provider=new LocalChatProvider({baseUrl:`http://127.0.0.1:${(server.address() as any).port}/v1`,apiKey:"test",model:"test",temperature:0,maxConcurrency:1,maxOutputTokens:800,timeoutMs:3000});
+    const {r,context}=fixture();
+    const result=await provider.reply(r,context,[],[],e=>events.push(e));
+    assert.equal(result.speech,answer);
+    const deltas=events.filter(e=>e.type==="content");
+    assert.ok(deltas.length>1,"response must actually stream");
+    assert.equal(deltas.map(e=>e.delta).join(""),answer);
+    assert.equal(events.filter(e=>e.type==="reasoning").length,0);
+    const output=events.find(e=>e.type==="output").output;
+    assert.equal(output.message.content,raw);
+    assert.equal(output.message.reasoning_content,reasoning);
+    const history=[oldMessage("old-raw",raw),oldMessage("player-quote",raw,"player")];
+    const messages=chatMessages(r,context,history,[]);
+    assert.equal(messages.find(m=>m.role==="assistant")?.content,answer);
+    assert.ok(messages.some(m=>m.role==="user"&&m.content===raw));
+    assert.equal(history[0].payload.text,raw,"archive must remain unchanged");
+  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});

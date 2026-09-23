@@ -108,8 +108,8 @@ func configure_farm3d(runtime: Node) -> void:
 	toolbar.add_child(trigger)
 	trigger.pressed.connect(func():
 		var id := str(selector.get_item_metadata(selector.selected))
-		var ok: bool = runtime.service_enabled and runtime.scheduler.notify_event(id, 2, runtime._absolute_game_minute())
-		status_label.text = "已请求决策，请查看请求追踪。" if ok else "远程服务未启用或请求未能提交，请检查 Agent 客户端配置。")
+		var ok: bool = runtime.service_enabled and runtime.scheduler.notify_event(id, 2, runtime._absolute_game_minute(), "debug_manual")
+		status_label.text = "决策事件已入队，空闲时自动执行；暂停游戏时等待恢复。" if ok else "远程服务未启用或事件未能入队，请检查 Agent 客户端配置。")
 	var focus_bar := HBoxContainer.new()
 	overview.add_child(focus_bar)
 	for enabled in [true, false]:

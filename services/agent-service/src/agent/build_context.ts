@@ -52,6 +52,7 @@ export function buildContext(
     turn: {
       loop_id: request.request_id,
       trigger: request.trigger,
+      trigger_events: request.trigger_events ?? [],
       game_minute: request.game_minute,
       dialogue_input: request.dialogue_input,
       ...buildGoals(request, context),

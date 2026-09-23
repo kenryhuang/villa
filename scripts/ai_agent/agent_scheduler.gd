@@ -8,18 +8,23 @@ var _handle_stream_event: Callable
 var _handle_failure: Callable
 var _in_flight: Dictionary = {}
 var _dialogue_in_flight: Dictionary = {}
-var _pending: Dictionary = {}
+var event_queue = preload("res://scripts/ai_agent/agent_event_queue.gd").new()
+var clock_source = preload("res://scripts/ai_agent/agent_clock_source.gd").new()
+var _active_events: Dictionary = {}
+var _draining := false
+var _retry_at: Dictionary = {}
+var execution_actors: Callable
+var event_admission: Callable
 var _last_dispatched: Dictionary = {}
 var _decision_interval_overrides: Dictionary = {}
 var _current_minute := 0
 var max_daily_requests := 0
-var max_concurrent_requests := 0
+var max_concurrent_requests := 3
 var max_concurrent_dialogue_requests := 1
 var max_daily_dialogue_requests := 0
 var budget_day := -1
 var budget_calls := 0
 var dialogue_budget_calls := 0
-var _rotation := 0
 
 const MAX_DEBUG_INTERVAL_HOURS := 168
 
@@ -49,41 +54,67 @@ func advance_to(game_minute: int) -> int:
 	if game_minute < _current_minute:
 		_last_dispatched.clear()
 	_current_minute = game_minute
+	clock_source.publish(self,game_minute)
+	return pump(game_minute)
+
+
+func notify_event(agent_id: String, priority: int, game_minute: int, source := "world_event", event_id := "", kind := "system") -> bool:
+	if priority < 2:
+		return false
+	if not can_enqueue_event(agent_id, kind, source): return false
+	event_queue.enqueue(agent_id,kind,game_minute,source,event_id,priority)
+	pump(game_minute)
+	return true
+
+
+func pump(game_minute: int) -> int:
+	if _draining: return 0
+	prune_events()
+	_draining = true
+	_current_minute = game_minute
+	_reset_daily_budget(game_minute)
 	var dispatched := 0
-	for actor in _pending.keys():
-		if is_in_flight(actor): continue
-		var pending: Dictionary = _pending[actor]
-		if _dispatch(actor, pending.trigger, game_minute, pending.dialogue):
-			_pending.erase(actor); dispatched += 1
-	var ids: Array = _registry.call("get_agent_ids")
-	if not ids.is_empty():
-		_rotation = (_rotation + 1) % ids.size()
-		ids = ids.slice(_rotation) + ids.slice(0, _rotation)
-	for agent_id_value in ids:
-		var agent_id := str(agent_id_value)
-		var interval_hours := get_decision_interval_hours(agent_id)
-		if interval_hours <= 0:
-			continue
-		var interval := interval_hours * 60
-		var last := int(_last_dispatched.get(agent_id, 0))
-		if game_minute - last < interval:
-			continue
-		var trigger := "catch_up" if game_minute - last > interval else "schedule"
-		if _dispatch(agent_id, trigger, game_minute, ""):
+	for event in event_queue.messages.duplicate(true):
+		if not _has_budget("event") or not _has_capacity("event"): break
+		if is_in_flight(event.agent_id) or Time.get_ticks_msec() < int(_retry_at.get(event.agent_id, 0)): continue
+		if _dispatch(event.agent_id,event.trigger,game_minute,"",event):
+			event_queue.remove(event.event_id)
 			dispatched += 1
+	_draining = false
 	return dispatched
 
 
-func notify_event(agent_id: String, priority: int, game_minute: int) -> bool:
-	if priority < 2:
-		return false
-	return _queue_or_dispatch(agent_id, "event", game_minute, "", priority)
+func can_enqueue_event(actor: String, kind: String, source: String) -> bool:
+	return _registry.call("is_agent_managed", actor) and (not event_admission.is_valid() or bool(event_admission.call(actor, kind, source)))
+
+func prune_events() -> void:
+	event_queue.messages = event_queue.messages.filter(func(e): return can_enqueue_event(e.agent_id, e.kind, e.source))
+
+
+func queue_state() -> Dictionary:
+	return {"waiting":event_queue.messages.duplicate(true),"running":_active_events.duplicate(true),"concurrency":background_in_flight_count(),"limit":max_concurrent_requests}
+
+func snapshot_queue() -> Dictionary:
+	var state: Dictionary = event_queue.snapshot(_active_events)
+	state["last_dispatched"] = _last_dispatched.duplicate(true)
+	return state
+
+func restore_queue(state: Dictionary, legacy: Dictionary = {}) -> void:
+	_in_flight.clear(); _dialogue_in_flight.clear(); _active_events.clear()
+	_retry_at.clear()
+	event_queue.restore(state)
+	_last_dispatched = state.get("last_dispatched",{}).duplicate(true)
+	for actor in legacy:
+		if event_queue.has_actor(actor): continue
+		var entry: Dictionary = legacy[actor]
+		if entry.get("trigger") == "dialogue": continue
+		event_queue.enqueue(actor,"system",int(entry.get("game_minute",0)),"restored_pending_event")
 
 
 func trigger_dialogue(agent_id: String, text: String, game_minute: int) -> bool:
 	if text.length() > 1000 or not _registry.call("is_agent_managed", agent_id):
 		return false
-	return _queue_or_dispatch(agent_id, "dialogue", game_minute, text, 100)
+	return _queue_or_dispatch(agent_id, "dialogue", game_minute, text)
 
 
 func is_in_flight(agent_id: String) -> bool:
@@ -95,7 +126,11 @@ func get_in_flight_request_id(agent_id: String) -> String:
 
 
 func background_in_flight_count() -> int:
-	return _in_flight.size() - _dialogue_in_flight.size()
+	var count := _in_flight.size() - _dialogue_in_flight.size()
+	if execution_actors.is_valid():
+		for actor in execution_actors.call():
+			if not _in_flight.has(actor) or _dialogue_in_flight.has(actor): count += 1
+	return count
 
 
 func dialogue_in_flight_count() -> int:
@@ -106,7 +141,7 @@ func _has_capacity(trigger: String, replacing_agent: String = "") -> bool:
 	if trigger == "dialogue":
 		var count := dialogue_in_flight_count() - (1 if _dialogue_in_flight.has(replacing_agent) else 0)
 		return max_concurrent_dialogue_requests <= 0 or count < max_concurrent_dialogue_requests
-	return max_concurrent_requests <= 0 or background_in_flight_count() < max_concurrent_requests
+	return background_in_flight_count() < maxi(1,max_concurrent_requests)
 
 
 func _reset_daily_budget(game_minute: int) -> void:
@@ -140,7 +175,7 @@ func get_decision_interval_hours(agent_id: String) -> int:
 	return maxi(1, int(range_value[0]))
 
 
-func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String, priority: int) -> bool:
+func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> bool:
 	if is_in_flight(agent_id):
 		if trigger == "dialogue" and _gateway.has_method("cancel_agent"):
 			_reset_daily_budget(game_minute)
@@ -149,26 +184,19 @@ func _queue_or_dispatch(agent_id: String, trigger: String, game_minute: int, dia
 			var replaced_request_id := str(_in_flight.get(agent_id, ""))
 			_in_flight.erase(agent_id)
 			_dialogue_in_flight.erase(agent_id)
-			# Keep a coalesced world event while replacing the conversation.
-			if _pending.get(agent_id, {}).get("trigger", "") == "dialogue":
-				_pending.erase(agent_id)
+			if _active_events.has(agent_id):
+				event_queue.requeue(_active_events[agent_id])
+				_active_events.erase(agent_id)
 			_gateway.call("cancel_agent", agent_id, "dialogue_replaced")
 			if _handle_failure.is_valid():
 				_handle_failure.call(agent_id, replaced_request_id, "dialogue_replaced")
 			return _dispatch(agent_id, trigger, game_minute, dialogue)
-		var current: Dictionary = _pending.get(agent_id, {})
-		if priority >= int(current.get("priority", -1)):
-			_pending[agent_id] = {"trigger": trigger, "game_minute": game_minute, "dialogue": dialogue, "priority": priority}
-		return true
+		return false
 	if _dispatch(agent_id, trigger, game_minute, dialogue): return true
-	# Background events are coalesced for a later fair pass. Dialogues return a
-	# visible failure immediately rather than waiting for an entire game day.
-	if trigger != "dialogue":
-		_pending[agent_id] = {"trigger": trigger, "game_minute": game_minute, "dialogue": dialogue, "priority": priority}
 	return false
 
 
-func _dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String) -> bool:
+func _dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: String, event: Dictionary = {}) -> bool:
 	if is_in_flight(agent_id):
 		return false
 	_reset_daily_budget(game_minute)
@@ -179,16 +207,27 @@ func _dispatch(agent_id: String, trigger: String, game_minute: int, dialogue: St
 	var request_id := str(request.get("request_id", ""))
 	if request_id.is_empty():
 		return false
+	if not event.is_empty(): request["trigger_events"] = [event.duplicate(true)]
 	var callback := Callable(self, "_on_gateway_response").bind(agent_id, request_id)
 	var event_callback := Callable(self, "_on_gateway_event").bind(agent_id, request_id)
-	if not bool(_gateway.call("request_decision", agent_id, request, callback, event_callback)):
-		return false
+	# Reserve before IO: even an immediate transport callback cannot race the slot.
 	_in_flight[agent_id] = request_id
-	if trigger == "dialogue":
-		_dialogue_in_flight[agent_id] = request_id
-		dialogue_budget_calls += 1
-	else:
-		budget_calls += 1
+	if trigger == "dialogue": _dialogue_in_flight[agent_id] = request_id
+	elif not event.is_empty(): _active_events[agent_id] = event.duplicate(true)
+	if trigger == "dialogue": dialogue_budget_calls += 1
+	else: budget_calls += 1
+	if not bool(_gateway.call("request_decision", agent_id, request, callback, event_callback)):
+		var still_reserved := str(_in_flight.get(agent_id, "")) == request_id
+		if still_reserved:
+			_in_flight.erase(agent_id)
+			_dialogue_in_flight.erase(agent_id)
+			_active_events.erase(agent_id)
+		if trigger == "dialogue": dialogue_budget_calls -= 1
+		else: budget_calls -= 1
+		_retry_at[agent_id] = Time.get_ticks_msec() + 2000
+		if still_reserved and _handle_failure.is_valid(): _handle_failure.call(agent_id, request_id, "request_not_started")
+		return false
+	if trigger != "dialogue":
 		_last_dispatched[agent_id] = game_minute
 	return true
 
@@ -216,14 +255,18 @@ func _on_gateway_response(
 	if str(_in_flight.get(agent_id, "")) != request_id:
 		return
 	_in_flight.erase(agent_id)
+	_active_events.erase(agent_id)
 	var was_dialogue := _dialogue_in_flight.has(agent_id)
 	_dialogue_in_flight.erase(agent_id)
 	if not was_dialogue:
 		_last_dispatched[agent_id] = _current_minute
+	# Applying a result may publish more events; finish that transaction first.
+	var already_draining := _draining
+	_draining = true
 	if ok:
 		_handle_response.call(agent_id, response)
 	elif _handle_failure.is_valid():
 		_handle_failure.call(agent_id, request_id, error)
-	if _pending.has(agent_id):
-		var pending: Dictionary = _pending[agent_id]
-		if _dispatch(agent_id, str(pending.trigger), maxi(_current_minute, int(pending.game_minute)), str(pending.dialogue)): _pending.erase(agent_id)
+	_draining = already_draining
+	# Any freed slot serves the global FIFO, not just this NPC's pending request.
+	pump(_current_minute)

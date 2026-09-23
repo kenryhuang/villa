@@ -10,6 +10,7 @@ const ALLOWED_FIELDS := [
 	"timeout_seconds",
 	"store_agent_session",
 	"agent_session_directory",
+	"max_concurrent_agent_loops",
 ]
 
 
@@ -60,6 +61,9 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 	):
 		return _failure("invalid_agent_session_directory")
 	var timeout_seconds := float(data.timeout_seconds)
+	var concurrency: Variant = data.get("max_concurrent_agent_loops", 3)
+	if typeof(concurrency) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(concurrency)) or float(concurrency) != floor(float(concurrency)) or concurrency < 1 or concurrency > 32:
+		return _failure("invalid_max_concurrent_agent_loops")
 	if not is_finite(timeout_seconds) or timeout_seconds < 0.1 or timeout_seconds > 120.0:
 		return _failure("invalid_timeout_seconds")
 	var enabled := bool(data.enabled)
@@ -72,6 +76,7 @@ static func load_file(path: String = DEFAULT_PATH) -> Dictionary:
 		"ok": true,
 		"value": {
 			"enabled": enabled,
+			"max_concurrent_agent_loops": int(concurrency),
 			"service_url": service_url,
 			"token": str(data.token),
 			"timeout_seconds": timeout_seconds,

@@ -54,7 +54,6 @@ func configure(farm: Farm3DSession) -> void:
 	session.market.merchant_service = merchant
 	if Society.expanded():
 		session.agent_runtime.scheduler.max_daily_requests = 16
-		session.agent_runtime.scheduler.max_concurrent_requests = 3
 		session.agent_runtime.scheduler.max_concurrent_dialogue_requests = 1
 		# Player conversations have their own count and no per-game-day cap.
 		session.agent_runtime.scheduler.max_daily_dialogue_requests = 0
@@ -250,7 +249,7 @@ func restore(value: Dictionary) -> void:
 		if body != null and body.nameplate != null: body.nameplate.text = actor_name(id)
 
 func debug_text() -> String:
-	var lines: Array[String] = [society.summary(), "重点角色 %d / %d · 自主规划 %d / %d · 对话 %d（单独计数）· 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), society.focus_limit(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, session.agent_runtime.scheduler.dialogue_budget_calls, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", "思考中：后台 %d / 3 · 对话 %d / 1 · 公共 %d / 1" % [session.agent_runtime.scheduler.background_in_flight_count(), session.agent_runtime.scheduler.dialogue_in_flight_count(), public_plans.scheduler.background_in_flight_count()], "", public_plans.summary(), ""]
+	var lines: Array[String] = [society.summary(), "重点角色 %d / %d · 自主规划 %d / %d · 对话 %d（单独计数）· 公共请求 %d / %d · 待结算 %d 分钟" % [society.focus.size(), society.focus_limit(), session.agent_runtime.scheduler.budget_calls, session.agent_runtime.scheduler.max_daily_requests, session.agent_runtime.scheduler.dialogue_budget_calls, public_plans.scheduler.budget_calls, public_plans.scheduler.max_daily_requests, minute() - society.last_minute], "", "执行引擎：运行 %d / %d · 排队事件 %d · 对话 %d / 1 · 公共 %d / 1" % [session.agent_runtime.scheduler.background_in_flight_count(), session.agent_runtime.scheduler.max_concurrent_requests, session.agent_runtime.scheduler.event_queue.messages.size(), session.agent_runtime.scheduler.dialogue_in_flight_count(), public_plans.scheduler.background_in_flight_count()], "", public_plans.summary(), ""]
 	for record in society.residents.values():
 		var state: NpcEconomyState = session.npc_economy.get_npc_state(record.id)
 		lines.append("%s · %s · %d 金币 · %s" % [record.name, record.occupation, state.gold, record.state])

@@ -126,12 +126,12 @@ func run() -> void:
 		var outcomes: Array = r.executor.execute_batch(validated.value, r._absolute_game_minute())
 		check(outcomes.size() == 1 and outcomes[0].status == "completed", "Goal executes as real action")
 		check(r.executor.execute_batch(validated.value, r._absolute_game_minute())[0].status == "completed" and r.loop_state.goals.size() == 1, "Goal action idempotent")
-	r.scheduler._pending["farmer_ahe"] = {"trigger": "event", "game_minute": 0, "dialogue": "", "priority": 2}
+	r.scheduler.event_queue.enqueue("farmer_ahe", "system", 0, "test")
 	var saved: Dictionary = r.to_dict()
 	check(r.validate_dict(saved), "Runtime snapshot validates Loop state")
 	check(r.from_dict(saved), "Runtime reloads Loop state")
 	check(r.loop_state.goals.size() == 1, "Short goal survives restore")
-	check(r.scheduler._pending.has("farmer_ahe"), "Coalesced event trigger survives restore")
+	check(r.scheduler.event_queue.has_actor("farmer_ahe"), "Queued event survives restore")
 	var condition_args := args.duplicate(true)
 	condition_args.success_condition = {"kind": "inventory_at_least", "id": "grain", "quantity": 2}
 	check(r.loop_state.command("farmer_ahe", "adopt_short_term_goal", condition_args, "conditional", r._absolute_game_minute()).ok, "Goal has a typed completion condition")

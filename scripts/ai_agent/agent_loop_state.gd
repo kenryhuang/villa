@@ -7,6 +7,7 @@ var resources: Dictionary = {}
 var loops: Dictionary = {}
 var feedback: Dictionary = {}
 var queued_triggers: Dictionary = {}
+var event_queue: Dictionary = {}
 var dialogue_handoffs: Dictionary = {}
 
 func record_chat_handoffs(actor: String, request_id: String, minute: int, handoffs: Array) -> void:
@@ -215,7 +216,7 @@ func has_execution(actor: String) -> bool:
 	return loops.values().any(func(loop): return loop.agent_id == actor and loop.state in ["reasoning", "executing"] and not loop.action_ids.is_empty())
 
 func to_dict() -> Dictionary:
-	return {"version": 1, "goals": goals.duplicate(true), "pending": pending.duplicate(true), "resources": resources.duplicate(true), "loops": loops.duplicate(true), "feedback": feedback.duplicate(true), "queued_triggers": queued_triggers.duplicate(true), "dialogue_handoffs": dialogue_handoffs.duplicate(true)}
+	return {"version": 1, "goals": goals.duplicate(true), "pending": pending.duplicate(true), "resources": resources.duplicate(true), "loops": loops.duplicate(true), "feedback": feedback.duplicate(true), "queued_triggers": queued_triggers.duplicate(true), "event_queue": event_queue.duplicate(true), "dialogue_handoffs": dialogue_handoffs.duplicate(true)}
 
 func restore(value: Dictionary) -> void:
 	goals = value.get("goals", {}).duplicate(true)
@@ -224,6 +225,7 @@ func restore(value: Dictionary) -> void:
 	loops = value.get("loops", {}).duplicate(true)
 	feedback = value.get("feedback", {}).duplicate(true)
 	queued_triggers = value.get("queued_triggers", {}).duplicate(true)
+	event_queue = value.get("event_queue", {}).duplicate(true)
 	dialogue_handoffs = value.get("dialogue_handoffs", {}).duplicate(true)
 	for loop in loops.values():
 		if loop.state == "reasoning":
@@ -238,6 +240,7 @@ static func validate(value: Variant) -> bool:
 	for key in ["goals", "pending", "resources", "loops", "feedback"]:
 		if not value.get(key) is Dictionary: return false
 	if not value.get("queued_triggers", {}) is Dictionary: return false
+	if not preload("res://scripts/ai_agent/agent_event_queue.gd").validate(value.get("event_queue", {})): return false
 	if not value.get("dialogue_handoffs", {}) is Dictionary: return false
 	for actor in value.get("dialogue_handoffs", {}):
 		if not actor is String or not value.dialogue_handoffs[actor] is Dictionary: return false

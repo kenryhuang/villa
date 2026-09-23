@@ -65,6 +65,10 @@ func fetch_intent_trace(body: Dictionary, callback: Callable) -> bool:
 	return _request_json("/v1/chat/intent-trace", body, callback)
 
 
+func poll_agent_events(body: Dictionary, callback: Callable) -> bool:
+	return _request_json("/v1/agent-events/poll", body, callback)
+
+
 func sync_session(session_id: String, reset: bool, callback: Callable = Callable()) -> bool:
 	return _request_json(
 		"/v1/sessions/sync",

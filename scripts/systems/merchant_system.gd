@@ -105,7 +105,7 @@ func _emit(kind: String, details: Dictionary) -> void:
 			if r.actor == actor and r.item_id == id and int(r.expires) > int(m.minute): interested = true
 		if interested:
 			runtime.loop_state.record(actor, {"event_id": "merchant:%d" % m.sequence, "kind": kind, "game_minute": m.minute, "payload": details.duplicate(true)})
-			if kind in ["ImportArrived", "LocalProcurementOpened"]: runtime.scheduler.notify_event(actor, 2, int(m.minute))
+			if runtime.service_enabled and kind in ["ImportArrived", "LocalProcurementOpened"]: runtime.scheduler.notify_event(actor, 2, int(m.minute), "ambient:merchant:" + kind + ":" + id, "merchant:%d:%s" % [m.sequence, actor])
 
 func request_supply(actor: String, args: Dictionary, key: String) -> Dictionary:
 	if not world.assets.exists(actor) or not valid_request(args) or not market._items.has(args.item_id): return {"ok": false, "error": "invalid_supply_request"}
@@ -203,7 +203,7 @@ func _review_seed_reserves() -> void:
 			if int(_seed_alerts.get(key, -1)) == world.minute() / 1080: continue
 			_seed_alerts[key] = world.minute() / 1080
 			runtime.loop_state.record(actor, {"event_id": "seed-reserve:%s:%d" % [key, world.minute() / 1080], "kind": "SeedReserveLow", "game_minute": world.minute(), "payload": {"item_id": id, "held": held, "reserve_target": wanted, "rule": "请核对下一轮播种需要。可以购买种子、登记补货，或在风车将1份对应作物选为2份种子；由你决定是否采纳，尚未消费资产。"}})
-			runtime.scheduler.notify_event(actor, 2, world.minute())
+			if runtime.service_enabled: runtime.scheduler.notify_event(actor, 2, world.minute(), "ambient:seed_reserve:" + id, "seed-reserve:%s:%d" % [key, world.minute() / 1080])
 
 func _replenish(id: String) -> void:
 	var m: Dictionary = market.merchant
