@@ -4,7 +4,7 @@ const Data = preload("res://scripts/core/game_data.gd")
 const CONFIG_PATH := "res://data/living_world/residents.json"
 const DAY_MINUTES := 1080
 const Needs = preload("res://scripts/systems/resident_needs.gd")
-const FORMER_OCCUPATIONS := {"xiao_hua": "花艺师", "afu_shui": "渔民", "resident_shan": "园丁"}
+const FORMER_OCCUPATIONS := {"xiao_hua": "花艺师", "afu_shui": "渔民", "resident_shan": "园丁", "resident_yun": "厨工"}
 var world: Node
 var config: Dictionary
 var residents: Dictionary = {}

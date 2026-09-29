@@ -10,7 +10,7 @@
   "actors": {
     "player": {
       "age": 25,
-      "gender": "unspecified",
+      "gender": "male",
       "romance_interest": 50
     },
     "farmer_ahe": {
@@ -94,7 +94,7 @@
       "romance_interest": 55,
       "relationship_style": "直爽务实，有恋爱期待，欣赏能合作做事、认真听她想法的人。"
     },
-    "zewei": {
+    "flower_girl": {
       "age": 22,
       "gender": "female",
       "romance_interest": 90,

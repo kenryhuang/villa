@@ -49,7 +49,7 @@
     {
       "id": "resident_yun",
       "name": "伊可",
-      "occupation": "厨工"
+      "occupation": "舞蹈老师"
     },
     {
       "id": "resident_shan",
@@ -99,7 +99,7 @@
     "afu_shui",
     "xiao_hua",
     "resident_shan",
-    "zewei"
+    "flower_girl"
   ],
   "expanded_shift_slots": 24,
   "additional_organizations": [
@@ -240,10 +240,13 @@
       "occupation": "旅店杂务"
     },
     {
-      "id": "zewei",
+      "id": "flower_girl",
       "name": "zewei",
       "occupation": "花艺师",
-      "spawn": {"x": -6, "z": -6}
+      "spawn": {
+        "x": -6,
+        "z": -6
+      }
     }
   ]
 }

@@ -318,7 +318,8 @@ func _load_game_state() -> bool:
 
 
 func restore_save_data(parsed: Variant, restore_memory := true) -> bool:
-	_migrate_zewei(parsed)
+	_migrate_rename_zewei(parsed)
+	_migrate_flower_girl(parsed)
 	if not _valid_save(parsed):
 		return false
 	var data: Dictionary = parsed
@@ -776,13 +777,112 @@ func _migrate_population(value: Variant) -> void:
 		value.version = 13
 
 
-func _migrate_zewei(value: Variant) -> void:
-	# Add this authored resident once to the previous expanded roster. Never
-	# replenish existing accounts or relax validation of a damaged snapshot.
+const _RENAME_KEEP_DISPLAY_KEYS := ["name", "display_name"]
+
+
+func _migrate_rename_zewei(value: Variant) -> void:
+	# One-time id rename: saves authored before the rename reference the
+	# resident as "zewei"; config, registry and focus now use "flower_girl".
+	# Rewrite every id token (dictionary keys and string values) so all
+	# cross-references stay mutually consistent, but keep authored display
+	# fields showing "zewei". Never relax validation of a damaged snapshot.
+	if not value is Dictionary: return
+	var residents: Variant = value.get("living_world", {}).get("society", {}).get("residents")
+	if not residents is Dictionary or not (residents as Dictionary).has("zewei"): return
+	var migrated: Dictionary = _rename_agent_id_refs(value, "")
+	_canonicalize_renamed_agent_refs(migrated)
+	value.clear(); value.merge(migrated)
+
+
+func _rename_agent_id_refs(value: Variant, key: String) -> Variant:
+	if value is Dictionary:
+		var out := {}
+		for k in value:
+			out[str(k).replace("zewei", "flower_girl")] = _rename_agent_id_refs(value[k], str(k))
+		return out
+	if value is Array:
+		var out_arr := []
+		for item in value:
+			out_arr.append(_rename_agent_id_refs(item, key))
+		return out_arr
+	if value is String and not _RENAME_KEEP_DISPLAY_KEYS.has(key):
+		return str(value).replace("zewei", "flower_girl")
+	return value
+
+
+func _canonicalize_renamed_agent_refs(value: Dictionary) -> void:
+	# The token rewrite moves "flower_girl" into positions where "zewei" used
+	# to sort: record arrays validated as ascending (projection checkpoint,
+	# agreements) lose their order, and canonical pair keys ("a|b" / "a\nb"
+	# with sorted halves) flip. Rebuild exactly those structures; validators
+	# stay untouched and still reject anything genuinely damaged.
+	var relationships: Variant = value.get("living_world", {}).get("relationships")
+	if relationships is Dictionary and (relationships as Dictionary).get("pairs") is Dictionary:
+		var pairs: Dictionary = relationships.pairs
+		var rebuilt := {}
+		for key in pairs:
+			var pair: Dictionary = pairs[key]
+			if pair.get("participants") is Array and (pair.participants as Array).size() == 2:
+				var left := str(pair.participants[0])
+				var right := str(pair.participants[1])
+				pair.participants = [left, right] if left < right else [right, left]
+				rebuilt["|".join(pair.participants)] = pair
+			else:
+				rebuilt[str(key)] = pair
+		relationships.pairs = rebuilt
+	var checkpoint: Variant = value.get("agents", {}).get("projection_checkpoint")
+	if checkpoint is Dictionary:
+		_sort_records_by_field(checkpoint.get("actors", []), "actor_id")
+		_sort_records_by_field(checkpoint.get("actor_public_events", []), "actor_id")
+		var checkpoint_pairs: Variant = checkpoint.get("relationships", [])
+		for record in checkpoint_pairs:
+			if record is Dictionary and record.has("pair_key"):
+				record.pair_key = _canonical_pair_key(str(record.pair_key), "\n")
+		_sort_records_by_field(checkpoint_pairs, "pair_key")
+	var agreements: Variant = value.get("agents", {}).get("agreements")
+	if agreements is Dictionary:
+		var trust_records: Variant = agreements.get("relationships", [])
+		for record in trust_records:
+			if record is Dictionary and record.has("pair_key"):
+				record.pair_key = _canonical_pair_key(str(record.pair_key), "\n")
+		_sort_records_by_field(trust_records, "pair_key")
+		var daily_records: Variant = agreements.get("relationship_daily_changes", [])
+		for record in daily_records:
+			if record is Dictionary and record.has("daily_key"):
+				var parts := str(record.daily_key).split(":", true, 1)
+				if parts.size() == 2:
+					record.daily_key = parts[0] + ":" + _canonical_pair_key(parts[1], "\n")
+		_sort_records_by_field(daily_records, "daily_key")
+		_sort_records_by_field(agreements.get("agreements", []), "agreement_id")
+		_sort_records_by_field(agreements.get("idempotency_results", []), "idempotency_key")
+
+
+func _canonical_pair_key(key: String, separator: String) -> String:
+	var halves := key.split(separator)
+	if halves.size() != 2: return key
+	halves.sort()
+	return separator.join(halves)
+
+
+func _sort_records_by_field(records: Variant, field: String) -> void:
+	if not records is Array: return
+	(records as Array).sort_custom(_record_less.bind(field))
+
+
+func _record_less(left: Variant, right: Variant, field: String) -> bool:
+	var left_key := str(left.get(field, "")) if left is Dictionary else ""
+	var right_key := str(right.get(field, "")) if right is Dictionary else ""
+	return left_key < right_key
+
+
+func _migrate_flower_girl(value: Variant) -> void:
+	# Add this authored resident (flower_girl, display name "zewei") once to
+	# the previous expanded roster. Never replenish existing accounts or
+	# relax validation of a damaged snapshot.
 	if not LivingWorld.Society.expanded() or not value is Dictionary or value.get("version") != 13: return
 	if not value.get("living_world", {}).get("society", {}).get("residents") is Dictionary: return
 	var saved_residents: Dictionary = value.living_world.society.residents
-	if saved_residents.has("zewei") or saved_residents.size() != 36: return
+	if saved_residents.has("flower_girl") or saved_residents.size() != 36: return
 	if not value.get("npc_economy", {}).get("npc_states") is Array: return
 	var original_config: Dictionary = living_world.society.config
 	var original_profiles: Dictionary = npc_economy._profiles
@@ -791,15 +891,15 @@ func _migrate_zewei(value: Variant) -> void:
 	var original_actors: Array = agent_runtime._base_actor_profiles.duplicate(true)
 	var old_registry = preload("res://scripts/ai_agent/agent_registry.gd").new()
 	if not old_registry.load_defaults(true): return
-	old_registry._agents.erase("zewei")
+	old_registry._agents.erase("flower_girl")
 	var old_config := original_config.duplicate(true)
-	old_config.residents = old_config.residents.filter(func(p): return p.id != "zewei")
-	old_config.focus_actors.erase("zewei"); old_config.focus_limit = 8
+	old_config.residents = old_config.residents.filter(func(p): return p.id != "flower_girl")
+	old_config.focus_actors.erase("flower_girl"); old_config.focus_limit = 8
 	living_world.society.config = old_config
-	npc_economy._profiles = original_profiles.duplicate(); npc_economy._profiles.erase("zewei")
-	npc_economy._states = original_states.duplicate(); npc_economy._states.erase("zewei")
+	npc_economy._profiles = original_profiles.duplicate(); npc_economy._profiles.erase("flower_girl")
+	npc_economy._states = original_states.duplicate(); npc_economy._states.erase("flower_girl")
 	agent_runtime.registry = old_registry
-	agent_runtime._base_actor_profiles.assign(original_actors.filter(func(p): return p.actor_id != "zewei"))
+	agent_runtime._base_actor_profiles.assign(original_actors.filter(func(p): return p.actor_id != "flower_girl"))
 	var valid := _valid_save(value)
 	living_world.society.config = original_config
 	npc_economy._profiles = original_profiles
@@ -808,13 +908,13 @@ func _migrate_zewei(value: Variant) -> void:
 	agent_runtime._base_actor_profiles.assign(original_actors)
 	if not valid: return
 	var candidate: Dictionary = value.duplicate(true)
-	var profile: Dictionary = LivingWorld.Society.economy_profiles().filter(func(p): return p.id == "zewei")[0]
-	candidate.npc_economy.npc_states.append({"npc_id": "zewei", "gold": profile.gold, "inventory": profile.inventory.duplicate(true), "reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "last_simulated_day": candidate.npc_economy.last_simulated_day, "investment_planned": false})
+	var profile: Dictionary = LivingWorld.Society.economy_profiles().filter(func(p): return p.id == "flower_girl")[0]
+	candidate.npc_economy.npc_states.append({"npc_id": "flower_girl", "gold": profile.gold, "inventory": profile.inventory.duplicate(true), "reserve_targets": {}, "production_recipes": [], "sale_targets": {}, "last_simulated_day": candidate.npc_economy.last_simulated_day, "investment_planned": false})
 	if not candidate.agents.is_empty(): agent_runtime.expand_saved_population(candidate.agents)
 	var society: Dictionary = candidate.living_world.society
-	var resident: Dictionary = living_world.society.residents.zewei.duplicate(true)
+	var resident: Dictionary = living_world.society.residents.flower_girl.duplicate(true)
 	# Construct initial state, not a copy of a potentially already-playing NPC.
-	var spawn: Dictionary = original_config.residents.filter(func(p): return p.id == "zewei")[0].spawn
+	var spawn: Dictionary = original_config.residents.filter(func(p): return p.id == "flower_girl")[0].spawn
 	var origin := grid.world_to_grid(spawn.x, spawn.z)
 	for radius in range(5):
 		var found := false
@@ -824,12 +924,12 @@ func _migrate_zewei(value: Variant) -> void:
 				resident.position = {"x": point.x, "z": point.y}; found = true; break
 		if found: break
 	resident.state = "休息"; resident.last_meal_day = -1; resident.hungry_days = 0; resident.food_reason = ""
-	resident.needs = LivingWorld.Society.Needs.initial("zewei", int(society.last_minute))
-	society.residents.zewei = resident
-	if int(society.version) >= 2: society.focus.append("zewei")
-	if not society.get("feeding", {}).is_empty(): society.feeding.queue.append("zewei")
+	resident.needs = LivingWorld.Society.Needs.initial("flower_girl", int(society.last_minute))
+	society.residents.flower_girl = resident
+	if int(society.version) >= 2: society.focus.append("flower_girl")
+	if not society.get("feeding", {}).is_empty(): society.feeding.queue.append("flower_girl")
 	society.initial_gold = int(society.initial_gold) + int(profile.gold)
-	society.ledger.append({"minute": int(society.last_minute), "kind": "population_migration", "actor_id": "zewei", "gold": profile.gold, "items": profile.inventory.duplicate(true), "source": "zewei一次性移入初始资源"})
+	society.ledger.append({"minute": int(society.last_minute), "kind": "population_migration", "actor_id": "flower_girl", "gold": profile.gold, "items": profile.inventory.duplicate(true), "source": "flower_girl一次性移入初始资源"})
 	if society.ledger.size() > 4096: society.ledger.pop_front()
 	if not _valid_save(candidate): return
 	value.clear(); value.merge(candidate)

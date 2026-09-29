@@ -9,9 +9,13 @@
     }
   },
   "actors": {
-    "zewei": {
+    "flower_girl": {
       "gold": 3000,
-      "inventory": {"rose": 12, "honey": 4, "fiber": 12}
+      "inventory": {
+        "rose": 12,
+        "honey": 4,
+        "fiber": 12
+      }
     },
     "farmer_ahe": {
       "gold": 5000,
